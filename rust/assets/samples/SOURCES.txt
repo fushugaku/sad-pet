@@ -6,20 +6,28 @@ matrix-pov.wav
   Source: user-supplied POV：_If_You_Could_See_the_Matrix_in_Real_Life_6d4rVSRj61c.mp4
   Contains the complete audio stream, 7.453625 seconds.
 
-harvest-dawn-excerpt.wav
-  Name: Oblivion · Harvest Dawn
-  Track: Harvest Dawn — Jeremy Soule
-  Album: The Elder Scrolls IV: Oblivion (Original Game Soundtrack), 2006
-  Source: the publicly available Apple Music preview for the original recording.
-  https://music.apple.com/us/song/1876500032
-  Apple catalog track ID: 1876500032
-  Contains only the first 8 seconds of that preview, not the full soundtrack.
+The video recording is stereo 48 kHz PCM16 WAV, with short edge fades and
+peak gain adjusted to 0.78. Credits remain with the original creators and
+rights holders; it is separate from the project-authored procedural tracks.
 
-Both files are stereo 48 kHz PCM16 WAV, with short edge fades and peak gain
-adjusted to 0.78 for consistency with the procedural sample bank.
-Recording and composition credits remain with their original creators and
-rights holders. These two recordings are separate from the project-authored
-procedural tracks.
+harvest-dawn-cover (procedural cover, version 0.18)
+  Name: Harvest Dawn · synth cover
+  Composition: Harvest Dawn — Jeremy Soule
+  Album: The Elder Scrolls IV: Oblivion (Original Game Soundtrack), 2006
+  Arrangement/recording: SAD PET flute synth, felt piano and string pad.
+  Duration: eight seconds; this is not a cover of the entire track.
+  Renderer and short score: rust/src/samples/harvest_cover.rs
+
+The melody of the previous eight-second bank excerpt was transcribed, then
+performed entirely by local synthesis with a new accompaniment and timbres.
+The original soundtrack waveform is not mixed in, used by the renderer or
+bundled with the current application. The previous source recording was an
+Apple Music preview: https://music.apple.com/us/song/1876500032
+
+This is a new recording of Jeremy Soule's composition, not an original or
+royalty-free composition. Rights in the underlying work remain with their
+respective holders; creating this cover does not grant redistribution rights.
+Previously saved user library files are retained in IndexedDB.
 
 Original procedural expansion (20 sounds, version 0.17)
 ------------------------------------------------------

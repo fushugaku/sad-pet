@@ -94,3 +94,48 @@ fn native_bank_reuses_samples_and_glass_stays_compatible() {
     assert_eq!(sample.frames(), original.frames());
     assert!(samples::get("missing-track").is_none());
 }
+
+#[test]
+fn harvest_cover_renders_the_short_melody_at_both_audio_rates() {
+    let index = samples::TRACKS
+        .iter()
+        .position(|track| track.id == "harvest-dawn-cover")
+        .unwrap();
+    assert!(samples::get("harvest-dawn-excerpt").is_none());
+    for rate in [44_100, 48_000] {
+        let sample = samples::generate(index, rate);
+        assert_eq!(sample.duration(), 8.0);
+        assert_eq!(sample.frames()[0], [0.0; 2]);
+        assert_eq!(*sample.frames().last().unwrap(), [0.0; 2]);
+        for (center, note) in [
+            (0.6, 74),
+            (2.2, 69),
+            (4.5, 74),
+            (5.2, 76),
+            (6.3, 77),
+            (7.7, 81),
+        ] {
+            let correlation = |note: f64| {
+                let frequency = 440.0 * 2.0_f64.powf((note - 69.0) / 12.0);
+                let start = ((center - 0.08) * rate as f64) as usize;
+                let length = (0.16 * rate as f64) as usize;
+                let (mut real, mut imag) = (0.0, 0.0);
+                for i in 0..length {
+                    let phase = std::f64::consts::TAU * frequency * i as f64 / rate as f64;
+                    let window =
+                        0.5 - 0.5 * (std::f64::consts::TAU * i as f64 / length as f64).cos();
+                    let value = sample.frames()[start + i][0] as f64 * window;
+                    real += value * phase.cos();
+                    imag += value * phase.sin();
+                }
+                real * real + imag * imag
+            };
+            let expected = correlation(note as f64);
+            let neighbor = correlation(note as f64 - 1.0).max(correlation(note as f64 + 1.0));
+            assert!(
+                expected > neighbor * 10.0,
+                "cover melody at {center}s / {rate}Hz"
+            );
+        }
+    }
+}

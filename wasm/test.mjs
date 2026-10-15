@@ -220,7 +220,7 @@ assert.deepEqual(regionAudio.request("/api/state").fades, {
   fade_out: 0,
 });
 
-// Recorded bank entries must work through the same prepare/load path as files,
+// Recorded/cover bank entries must work through the same prepare/load path as files,
 // without a runtime request to the source video or a music service.
 const catalog = utility.request("/api/samples");
 assert.equal(catalog.length, 30, "the source bank must include 20 new tracks");
@@ -244,7 +244,7 @@ assert.ok(
   utility.wasm.memory.buffer.byteLength < 128 * 1024 * 1024,
   "exporting the bank must release sample buffers instead of retaining every track in mobile RAM",
 );
-for (const id of ["matrix-pov", "harvest-dawn-excerpt"]) {
+for (const id of ["matrix-pov", "harvest-dawn-cover"]) {
   const index = catalog.findIndex((track) => track.id === id);
   assert.ok(index >= 0, `${id} must be in the built-in catalog`);
   utility.call("sad_prepare", utility.call("sad_factory", undefined, index));

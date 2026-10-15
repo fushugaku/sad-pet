@@ -8,6 +8,7 @@ use std::{
 };
 
 mod bank;
+mod harvest_cover;
 
 #[derive(Clone, Copy, Serialize)]
 pub struct Track {
@@ -98,9 +99,9 @@ pub const TRACKS: [Track; 30] = [
         bpm: None,
     },
     Track {
-        id: "harvest-dawn-excerpt",
-        name: "Oblivion · Harvest Dawn",
-        character: "Jeremy Soule · NPC music · short excerpt",
+        id: "harvest-dawn-cover",
+        name: "Harvest Dawn · synth cover",
+        character: "Jeremy Soule · Flute, felt piano & strings cover",
         seconds: 8.0,
         bpm: None,
     },
@@ -251,11 +252,11 @@ fn envelope(age: f64, attack: f64, decay: f64) -> f64 {
 /// A variable rate is useful to verify the bank without allocating all 48 kHz files.
 pub fn generate(index: usize, sample_rate: u32) -> SampleBuffer {
     let track = &TRACKS[index];
+    if track.id == "harvest-dawn-cover" {
+        return harvest_cover::generate(track, sample_rate);
+    }
     let recording: Option<&[u8]> = match track.id {
         "matrix-pov" => Some(include_bytes!("../assets/samples/matrix-pov.wav")),
-        "harvest-dawn-excerpt" => {
-            Some(include_bytes!("../assets/samples/harvest-dawn-excerpt.wav"))
-        }
         _ => None,
     };
     if let Some(bytes) = recording {
