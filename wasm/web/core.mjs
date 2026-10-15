@@ -73,9 +73,18 @@ export class Core {
   request(path, data = null) {
     return this.json("sad_command", { path, data });
   }
-  process(frames) {
+  process(frames, input = []) {
     if (!Number.isInteger(frames) || frames < 1 || frames > 4096)
       throw new Error("Invalid audio block size.");
+    const incoming = new Float32Array(
+      this.wasm.memory.buffer,
+      this.wasm.sad_audio_input(),
+      frames * 2,
+    );
+    for (let i = 0; i < frames; i++) {
+      incoming[i * 2] = input[0]?.[i] ?? 0;
+      incoming[i * 2 + 1] = (input[1] || input[0])?.[i] ?? 0;
+    }
     const pointer = this.wasm.sad_process(frames);
     // A sample load or recording may grow memory. Always acquire the current
     // buffer after entering WASM, never retain a detached view between blocks.

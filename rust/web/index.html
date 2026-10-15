@@ -23,17 +23,64 @@
             <option>Init</option></select
           ><button id="save-preset" title="Save preset">Save preset</button
           ><button id="load-preset">Load preset</button
-          ><button id="load-wav" class="light">Open WAV <span>↗</span></button>
+          ><button id="load-wav" class="light" disabled>
+            Load WAV <span>↗</span>
+          </button>
         </div>
       </header>
       <div id="notice" role="status" hidden></div>
       <section class="sample-panel" aria-label="Sample and grains">
+        <div class="input-source" id="browser-input" hidden>
+          <div class="source-tabs" role="group" aria-label="Input source">
+            <button id="source-file" aria-pressed="true">File</button>
+            <button id="source-mic" aria-pressed="false" disabled>
+              Microphone
+            </button>
+          </div>
+          <div class="microphone-controls" id="microphone-controls" hidden>
+            <select id="input-device" aria-label="Microphone device">
+              <option value="">Default microphone</option>
+            </select>
+            <select id="input-mode" aria-label="Microphone processing">
+              <option value="effects">Filters + FX</option>
+              <option value="grains">Grains + Filters + FX</option>
+            </select>
+            <label class="input-gain"
+              >GAIN<input
+                id="input-gain"
+                type="range"
+                min="0"
+                max="2"
+                step="0.01"
+                value="1"
+              /><output id="input-gain-value">100%</output></label
+            >
+            <div
+              class="input-meter"
+              role="meter"
+              aria-label="Microphone level"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="0"
+            >
+              <i id="input-level"></i>
+            </div>
+            <button
+              id="input-capture"
+              title="Save up to the last 8 seconds of input as WAV"
+            >
+              Save input
+            </button>
+          </div>
+          <span id="input-status" class="muted" role="status"></span>
+        </div>
         <div class="sample-top">
           <div>
             <span class="led"></span
             ><strong id="sample-name" class="sr-only">Glass sequence</strong>
             <select id="sample-select" aria-label="Audio source" disabled>
               <option>Glass sequence</option></select
+            ><strong id="live-source-name" hidden>Microphone</strong
             ><span id="sample-info" class="muted">8.00 s</span>
           </div>
           <button
@@ -361,7 +408,12 @@
           ><button id="render">Render WAV <span>↓</span></button>
         </div>
       </footer>
-      <input id="wav-file" type="file" accept=".wav,audio/wav" hidden /><input
+      <input
+        id="wav-file"
+        type="file"
+        accept=".wav,audio/wav,audio/x-wav,audio/wave"
+        hidden
+      /><input
         id="preset-file"
         type="file"
         accept=".json,.sad.json,.evil.json"

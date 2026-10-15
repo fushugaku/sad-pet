@@ -1861,6 +1861,114 @@ input[type="range"] {
   padding: 18px;
   background: #1b221b;
 }
+.input-source {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+  background: #1b221b;
+}
+.source-tabs,
+.microphone-controls {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.source-tabs {
+  gap: 0;
+}
+.source-tabs button {
+  border-radius: 0;
+}
+.source-tabs button:first-child {
+  border-radius: 6px 0 0 6px;
+}
+.source-tabs button:last-child {
+  border-radius: 0 6px 6px 0;
+  margin-left: -1px;
+}
+.input-source button,
+.input-source select {
+  height: 32px;
+  font-size: 11px;
+}
+#input-device {
+  max-width: 190px;
+  text-overflow: ellipsis;
+}
+.input-gain {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+  color: var(--muted);
+}
+.input-gain input {
+  width: 65px;
+  accent-color: var(--accent);
+}
+.input-gain output {
+  width: 34px;
+  text-align: right;
+  font-family: ui-monospace, monospace;
+}
+.input-meter {
+  width: 40px;
+  height: 5px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: #354033;
+}
+.input-meter i {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--accent);
+}
+#input-status {
+  font:
+    10px ui-monospace,
+    monospace;
+}
+#input-status.live {
+  color: var(--accent);
+}
+#grain-controls.inactive {
+  opacity: 0.35;
+}
+#live-source-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 760px) {
+  .input-source {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+  .microphone-controls {
+    order: 3;
+    flex-wrap: wrap;
+    width: 100%;
+  }
+  #input-device,
+  #input-mode {
+    flex: 1 1 140px;
+    max-width: none;
+    min-width: 0;
+  }
+  .input-gain {
+    flex: 1;
+  }
+  .input-gain input {
+    flex: 1;
+    width: 60px;
+    max-width: 130px;
+  }
+}
 .library-heading,
 .library-heading > div,
 .library-tools,

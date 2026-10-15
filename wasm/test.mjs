@@ -92,6 +92,42 @@ assert.deepEqual(midi.request("/api/state").notes, []);
 assert.throws(() => midi.request("/api/preset", { format: "bad" }), /preset/);
 assert.throws(() => midi.json("sad_load", new Uint8Array([1, 2, 3])), /sample/);
 
+// Live input must replace the file, work with mono capture, and reach both
+// the filters/effects and the granular engine at real AudioWorklet block sizes.
+for (const rate of [44100, 48000]) {
+  for (const mode of ["effects", "grains"]) {
+    const live = new Core(module, rate);
+    live.json("sad_load", prepared);
+    live.request("/api/input", { active: true, mode });
+    live.request("/api/transport", { playing: true, midi_gate: false });
+    let peak = 0;
+    for (let offset = 0; offset < rate * 2; offset += 128) {
+      const n = Math.min(128, rate * 2 - offset);
+      const input = Float32Array.from(
+        { length: n },
+        (_, i) => Math.sin((offset + i) * 0.06) * 0.2,
+      );
+      const output = live.process(n, [input]);
+      assert.ok(output.every(Number.isFinite));
+      if (offset > rate)
+        for (const value of output) peak = Math.max(peak, Math.abs(value));
+    }
+    assert.ok(peak > 0.01, `${mode} must process incoming audio at ${rate} Hz`);
+    assert.equal(live.request("/api/state").input.seconds, 2);
+    const capture = live.call("sad_input_wav");
+    live.request("/api/transport", { frozen: true });
+    live.process(128, [new Float32Array(128).fill(0.9)]);
+    assert.deepEqual(
+      live.call("sad_input_wav"),
+      capture,
+      "Freeze must retain input history",
+    );
+    live.request("/api/input", { active: false });
+    assert.equal(live.request("/api/state").sample_name, "Стекло 🐾");
+    assert.throws(() => live.call("sad_input_wav"), /off/);
+  }
+}
+
 // Minimal worklet host: validate recording with varying quantum sizes and a
 // partial final chunk. The synthesis and processor are the production modules.
 globalThis.sampleRate = 48000;
@@ -134,6 +170,13 @@ assert.equal(
 );
 assert.ok(chunks.some((c) => c.some((v) => Math.abs(v) > 0.01)));
 assert.ok(!messages.some((m) => m.error || m.type === "fatal"));
+send("request", { active: true, mode: "effects" }, "/api/input");
+const microphoneChannels = [new Float32Array(128).fill(0.1)];
+const microphoneOutput = [[new Float32Array(128), new Float32Array(128)]];
+assert.equal(processor.process([microphoneChannels], microphoneOutput), true);
+assert.ok(microphoneOutput[0][0].some((v) => Math.abs(v) > 0.001));
+send("capture-input");
+assert.ok(messages.some((m) => m.result instanceof ArrayBuffer));
 console.log(
-  "WASM checks passed: portable module, stereo audio at 44.1/48 kHz, deterministic quanta, chord entry, MIDI, effect stack and sample-exact recording.",
+  "WASM checks passed: portable module, stereo audio at 44.1/48 kHz, deterministic quanta, chord entry, MIDI, effect stack, live microphone processing/capture/freeze and sample-exact recording.",
 );

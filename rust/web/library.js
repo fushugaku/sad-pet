@@ -80,6 +80,7 @@
       this.ready = false;
       this.initializing = true;
       this.loading = false;
+      this.activation = Promise.resolve();
       this.search = "";
       this.status = "Opening library…";
       this.bind();
@@ -153,6 +154,7 @@
       }
       await this.refresh();
       this.ready = true;
+      byId("load-wav").disabled = false;
       byId("sample-select").disabled = false;
       byId("library-import").disabled = false;
       const last = await this.store.setting("last-audio");
@@ -171,6 +173,7 @@
       }
       this.status = "";
       this.initializing = false;
+      byId("source-mic").disabled = false;
       this.render();
       this.seed().catch((error) => this.error(error));
     }
@@ -291,6 +294,7 @@
       this.renderCurrent();
     }
     observe(native) {
+      if (native.input?.active) return;
       if (!this.ready || this.initializing || this.loading || this.observing)
         return;
       if (
@@ -339,9 +343,13 @@
       if (!record) throw new Error("File is no longer in the library.");
       await this.activate(record);
     }
-    async activate(record) {
+    activate(record) {
+      const next = this.activation.then(() => this.activateNow(record));
+      this.activation = next.catch(() => {});
+      return next;
+    }
+    async activateNow(record) {
       if (!this.ready) throw new Error("The library is still opening.");
-      if (this.loading) return;
       this.loading = true;
       byId("sample-select").disabled = true;
       this.render();

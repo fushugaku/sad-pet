@@ -1,3 +1,5 @@
+import { Microphone } from "./microphone.mjs";
+
 class Rpc {
   constructor(port) {
     this.port = port;
@@ -91,14 +93,21 @@ export class BrowserBackend {
       new URL("./worklet.mjs", import.meta.url),
     );
     this.node = new AudioWorkletNode(this.context, "sad-pet", {
-      numberOfInputs: 0,
+      numberOfInputs: 1,
       numberOfOutputs: 1,
       outputChannelCount: [2],
+      channelCount: 2,
+      channelCountMode: "explicit",
       processorOptions: { module },
     });
     this.audio = new Rpc(this.node.port);
     this.audio.onmessage = (message) => this.audioMessage(message);
+    this.microphone = new Microphone(this);
+    window.addEventListener("pagehide", () => {
+      this.microphone.stop().catch(() => {});
+    });
     this.node.onprocessorerror = () => {
+      this.microphone.release();
       this.fatal = "The audio engine stopped. Reload the page to restart it.";
       this.audio.fail(new Error(this.fatal));
       this.updateStatus();
@@ -111,6 +120,7 @@ export class BrowserBackend {
     document.querySelector("h1 span").textContent = "WEBASSEMBLY";
     document.getElementById("midi-refresh").title = "Connect a MIDI keyboard";
     document.getElementById("cpu").hidden = true;
+    document.getElementById("browser-input").hidden = false;
     if (!navigator.requestMIDIAccess)
       document.getElementById("midi-refresh").disabled = true;
     this.updateStatus();
@@ -145,6 +155,7 @@ export class BrowserBackend {
         this.recording.error = error.message;
       });
     } else if (message.type === "fatal") {
+      this.microphone.release();
       this.fatal = message.error;
       this.audio.fail(new Error(message.error));
       this.updateStatus();
@@ -157,6 +168,13 @@ export class BrowserBackend {
       audio_enabled: this.context.state === "running" && !this.fatal,
       audio_error: this.fatal || null,
       recording: { ...this.recording },
+      input: {
+        ...this.state?.input,
+        ...this.microphone.snapshot(),
+        // A release is asynchronous: keep the live source visible until the
+        // worklet confirms it has restored the file, including for Library.
+        active: this.microphone.active || !!this.state?.input?.active,
+      },
     };
   }
   async finishRecording(error = null) {
@@ -241,7 +259,14 @@ export class BrowserBackend {
       let result,
         mime = "application/json";
       if (route === "/api/state") result = this.snapshot();
-      else if (route === "/api/midi") result = await this.midi(url, data);
+      else if (route === "/api/input")
+        result = data
+          ? await this.microphone.configure(data)
+          : this.microphone.snapshot();
+      else if (route === "/api/input.wav") {
+        result = await this.audio.call("capture-input");
+        mime = "audio/wav";
+      } else if (route === "/api/midi") result = await this.midi(url, data);
       else if (route === "/api/wav") {
         const wav =
           options.body instanceof Blob
@@ -261,6 +286,8 @@ export class BrowserBackend {
           },
           [wav],
         );
+        if (this.microphone.active || this.microphone.pending)
+          await this.microphone.stop();
         await this.audio.call("load", prepared.prepared, [prepared.prepared]);
         result = prepared.info;
       } else if (route === "/api/sample.wav") {
@@ -279,6 +306,10 @@ export class BrowserBackend {
         result = await this.worker.call("factory", index);
         mime = "audio/wav";
       } else if (route === "/api/render") {
+        if (this.microphone.active)
+          throw new Error(
+            "Use Record to save the live output, or switch to File before rendering.",
+          );
         const state = this.snapshot();
         result = await this.worker.call("render", {
           seconds: data.seconds,
@@ -313,6 +344,8 @@ export class BrowserBackend {
         );
         mime = route.endsWith(".mp3") ? "audio/mpeg" : "audio/wav";
       } else if (route === "/api/quit") {
+        if (this.microphone.active || this.microphone.pending)
+          await this.microphone.stop();
         if (this.recording.active) await this.finishRecording();
         await this.audio.call(
           "request",

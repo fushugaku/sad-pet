@@ -21,6 +21,7 @@ struct Host {
     input: Vec<u8>,
     output: Vec<u8>,
     frames: Box<[Stereo; BLOCK]>,
+    audio_input: Box<[Stereo; BLOCK]>,
     status: u32,
 }
 
@@ -34,20 +35,25 @@ impl Host {
             input: Vec::new(),
             output: Vec::new(),
             frames: Box::new([[0.0; 2]; BLOCK]),
+            audio_input: Box::new([[0.0; 2]; BLOCK]),
             status: 200,
         }
     }
 
     fn state(&self) -> Value {
         let e = &self.engine;
+        let sample = e.source_sample();
         json!({
             "version": env!("CARGO_PKG_VERSION"), "instance_id": "browser",
             "sample_rate": self.rate, "audio_device": "Web Audio", "audio_error": null,
             "audio_enabled": false, "playing": e.playing, "frozen": e.frozen,
             "bypass": e.bypass, "midi_gate": e.midi_gate, "preset": e.preset,
-            "sample_name": e.sample.name, "sample_id": e.sample.library_id,
-            "sample_seconds": e.sample.duration(), "waveform": e.sample.waveform,
-            "center": e.center() / e.sample.len() as f64, "grains": e.grain_views(),
+            "sample_name": sample.name, "sample_id": sample.library_id,
+            "sample_seconds": sample.duration(), "waveform": sample.waveform,
+            "center": e.center() / sample.len() as f64, "grains": e.grain_views(),
+            "input": {"active": e.live_input.is_some(),
+                "seconds": e.live_input.as_ref().map_or(0.0, |i| i.seconds()),
+                "peak": e.live_input.as_ref().map_or([0.0; 2], |i| i.peak)},
             "active_grains": e.active_grains(), "notes": e.held_notes(),
             "step_entry": e.step_entry, "step_edits": e.step_edits,
             "recording": {"active": false, "id": null, "seconds": 0, "available": false, "error": null},
@@ -64,6 +70,9 @@ impl Host {
             "/api/state" => {
                 let state = self.state();
                 self.engine.peak = [0.0; 2];
+                if let Some(input) = &mut self.engine.live_input {
+                    input.peak = [0.0; 2];
+                }
                 Ok(state)
             }
             "/api/preset" if data.is_null() => Ok(json!(self.engine.preset)),
@@ -100,6 +109,11 @@ impl Host {
                 if data["clear_hold"] == true {
                     self.engine.clear_hold();
                 }
+                Ok(json!({"ok": true}))
+            }
+            "/api/input" => {
+                self.engine
+                    .set_live_input(data["active"] == true, data["mode"] != "grains");
                 Ok(json!({"ok": true}))
             }
             "/api/note" => {
@@ -265,8 +279,32 @@ pub extern "C" fn sad_command() -> u32 {
 pub extern "C" fn sad_process(count: usize) -> *const Stereo {
     host(|h| {
         let count = count.min(BLOCK);
-        h.engine.process(&mut h.frames[..count]);
+        for (output, input) in h.frames[..count].iter_mut().zip(&h.audio_input[..count]) {
+            *output = h.engine.process_input_frame(*input);
+        }
         h.frames.as_ptr()
+    })
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_audio_input() -> *mut Stereo {
+    host(|h| h.audio_input.as_mut_ptr())
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_input_wav() -> u32 {
+    host(|h| {
+        let result = h
+            .engine
+            .live_input
+            .as_ref()
+            .ok_or_else(|| "Microphone is off".to_string())
+            .and_then(|input| {
+                let frames = input.capture();
+                if frames.is_empty() {
+                    return Err("The input buffer is empty".into());
+                }
+                wav::bytes(h.rate, &frames)
+            });
+        h.finish(result)
     })
 }
 #[unsafe(no_mangle)]

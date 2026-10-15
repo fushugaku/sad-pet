@@ -10,6 +10,98 @@ pub struct SampleBuffer {
     pub waveform: Vec<[f32; 2]>,
 }
 
+/// Eight seconds of input history, allocated once when the input is enabled.
+/// The mip levels are updated incrementally rather than rebuilding a sample on
+/// the audio callback. The original file remains available in Engine::sample.
+pub struct LiveInput {
+    pub sample: SampleBuffer,
+    pub effects_only: bool,
+    pub peak: Stereo,
+    write: usize,
+    captured: usize,
+    lowpass: [[Stereo; 2]; 6],
+}
+
+impl LiveInput {
+    pub fn new(sample_rate: u32, effects_only: bool) -> Self {
+        let mut length = sample_rate as usize * 8;
+        let mut levels = Vec::with_capacity(7);
+        for _ in 0..7 {
+            levels.push(vec![[0.0; 2]; length]);
+            length = length.div_ceil(2);
+        }
+        Self {
+            sample: SampleBuffer::from_prepared("Microphone".into(), None, sample_rate, levels)
+                .expect("valid input buffer"),
+            effects_only,
+            peak: [0.0; 2],
+            write: 0,
+            captured: 0,
+            lowpass: [[[0.0; 2]; 2]; 6],
+        }
+    }
+
+    pub fn push(&mut self, frame: Stereo, frozen: bool) {
+        let mut frame = frame.map(|x| {
+            if x.is_finite() {
+                x.clamp(-16.0, 16.0)
+            } else {
+                0.0
+            }
+        });
+        for (peak, value) in self.peak.iter_mut().zip(frame) {
+            *peak = peak.max(value.abs());
+        }
+        if frozen {
+            return;
+        }
+        let index = self.write;
+        self.sample.levels[0][index] = frame;
+        let bin = index * self.sample.waveform.len() / self.sample.len();
+        let value = (frame[0] + frame[1]) * 0.5;
+        if index == 0 || (index - 1) * self.sample.waveform.len() / self.sample.len() != bin {
+            self.sample.waveform[bin] = [value; 2];
+        } else {
+            self.sample.waveform[bin][0] = self.sample.waveform[bin][0].min(value);
+            self.sample.waveform[bin][1] = self.sample.waveform[bin][1].max(value);
+        }
+        let mut parent_index = index;
+        for (level, filter) in self.lowpass.iter_mut().enumerate() {
+            for (c, value) in frame.iter_mut().enumerate() {
+                filter[0][c] += 0.6 * (*value - filter[0][c]);
+                filter[1][c] += 0.6 * (filter[0][c] - filter[1][c]);
+                *value = filter[1][c];
+            }
+            if !parent_index.is_multiple_of(2) {
+                break;
+            }
+            parent_index /= 2;
+            self.sample.levels[level + 1][parent_index] = frame;
+        }
+        self.write = (index + 1) % self.sample.len();
+        self.captured = (self.captured + 1).min(self.sample.len());
+    }
+
+    pub fn head(&self) -> usize {
+        self.write
+    }
+    pub fn seconds(&self) -> f64 {
+        self.captured as f64 / self.sample.sample_rate as f64
+    }
+
+    /// Return only captured frames, oldest first, including after a ring wrap.
+    pub fn capture(&self) -> Vec<Stereo> {
+        let start = if self.captured == self.sample.len() {
+            self.write
+        } else {
+            0
+        };
+        (0..self.captured)
+            .map(|i| self.sample.frames()[(start + i) % self.sample.len()])
+            .collect()
+    }
+}
+
 impl SampleBuffer {
     pub fn new(name: String, sample_rate: u32, mut frames: Vec<Stereo>) -> Result<Self, String> {
         if !(8_000..=384_000).contains(&sample_rate) {

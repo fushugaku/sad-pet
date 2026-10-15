@@ -1658,7 +1658,7 @@ async function loadWav(file) {
   notify(`Loading ${file.name}…`, true);
   try {
     await fileLibrary.importFiles([file]);
-    $("notice").hidden = true;
+    notify(`Loaded ${file.name}`);
   } catch (e) {
     notify(e.message);
   } finally {
@@ -1701,6 +1701,40 @@ async function refreshMidi(ask = false) {
 }
 function bind() {
   bindPerformance();
+  const input = (data) =>
+    request("/api/input", data).catch((error) => notify(error.message, true));
+  $("source-file").onclick = () => {
+    if (state?.input?.active || state?.input?.pending || state?.input?.error)
+      input({ active: false });
+  };
+  $("source-mic").onclick = () =>
+    input({ active: !(state?.input?.active || state?.input?.pending) });
+  $("input-device").onchange = (e) =>
+    input({ active: true, device: e.target.value });
+  $("input-mode").onchange = (e) => input({ mode: e.target.value });
+  $("input-gain").oninput = (e) => {
+    $("input-gain-value").textContent = percent(Number(e.target.value));
+    input({ gain: Number(e.target.value) });
+  };
+  $("input-capture").onclick = async () => {
+    const button = $("input-capture");
+    button.disabled = true;
+    try {
+      const response = await api("/api/input.wav");
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "");
+      await fileLibrary.storeBlob(await response.blob(), {
+        kind: "audio",
+        name: `sad-pet-input-${stamp}.wav`,
+        displayName: `Input ${new Date().toLocaleTimeString()}`,
+        seconds: state?.input?.seconds,
+      });
+      notify("Input saved to Library");
+    } catch (error) {
+      notify(error.message);
+    } finally {
+      button.disabled = false;
+    }
+  };
   $("record").onclick = toggleRecording;
   $("octave-down").onclick = () => setKeyboardOctave(keyboardOctave - 1);
   $("octave-up").onclick = () => setKeyboardOctave(keyboardOctave + 1);
@@ -1963,6 +1997,63 @@ function draw() {
   requestAnimationFrame(draw);
 }
 let failures = 0;
+let inputDevicesKey = "";
+function syncInput(input) {
+  if (!input) return;
+  const active = input.active;
+  $("source-file").setAttribute(
+    "aria-pressed",
+    String(!active && !input.pending),
+  );
+  $("source-mic").setAttribute("aria-pressed", String(active || input.pending));
+  $("source-mic").textContent = input.pending
+    ? "Cancel microphone"
+    : "Microphone";
+  $("microphone-controls").hidden = !active;
+  $("sample-select").hidden = active;
+  $("live-source-name").hidden = !active;
+  $("live-source-name").textContent = input.name || "Microphone";
+  $("input-status").textContent = input.pending
+    ? "Waiting for microphone…"
+    : input.error || (active ? "LIVE" : "");
+  $("input-status").classList.toggle("live", active);
+  const peak = Math.max(...(input.peak || [0, 0]));
+  $("input-level").style.width = `${Math.min(1, peak) * 100}%`;
+  $("input-level").parentElement.setAttribute(
+    "aria-valuenow",
+    String(Math.round(Math.min(1, peak) * 100)),
+  );
+  if (active) $("render").disabled = true;
+  else if ($("render").dataset.liveDisabled === "true")
+    $("render").disabled = false;
+  $("render").dataset.liveDisabled = String(active);
+  $("render").title = active ? "Use Record to save the live output" : "";
+  const effectsOnly = active && input.mode === "effects";
+  $("grain-controls").inert = effectsOnly;
+  $("grain-controls").classList.toggle("inactive", effectsOnly);
+  $("antialias").disabled = effectsOnly;
+  $("reverse").disabled = effectsOnly;
+  const devicesKey = JSON.stringify(input.devices || []);
+  if (devicesKey !== inputDevicesKey) {
+    inputDevicesKey = devicesKey;
+    $("input-device").replaceChildren(
+      option("", "Default microphone"),
+      ...(input.devices || []).map((d) => option(d.id, d.name)),
+    );
+  }
+  if (document.activeElement !== $("input-device"))
+    $("input-device").value = (input.devices || []).some(
+      (d) => d.id === input.device,
+    )
+      ? input.device
+      : "";
+  if (document.activeElement !== $("input-mode"))
+    $("input-mode").value = input.mode || "effects";
+  if (document.activeElement !== $("input-gain")) {
+    $("input-gain").value = input.gain;
+    $("input-gain-value").textContent = percent(input.gain);
+  }
+}
 async function poll() {
   try {
     const next = await request("/api/state");
@@ -1998,6 +2089,7 @@ async function poll() {
     $("sample-name").textContent = next.sample_name;
     fileLibrary?.observe(next);
     $("sample-info").textContent = `${next.sample_seconds.toFixed(2)} s`;
+    syncInput(next.input);
     $("sample-end").textContent = formatTime(next.sample_seconds);
     $("position-info").textContent = formatTime(
       next.center * next.sample_seconds,

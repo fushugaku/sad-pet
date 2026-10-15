@@ -18,6 +18,7 @@ use crate::{
 use color::ColorRack;
 use filter::FilterBank;
 use modulation::{Envelope, Oscillator};
+use sample::LiveInput;
 pub use sample::SampleBuffer;
 use serde::Serialize;
 use std::sync::Arc;
@@ -249,6 +250,7 @@ pub struct Engine {
     pub sample_rate: u32,
     pub preset: Preset,
     pub sample: Arc<SampleBuffer>,
+    pub live_input: Option<LiveInput>,
     pub playing: bool,
     pub frozen: bool,
     pub bypass: bool,
@@ -300,6 +302,7 @@ impl Engine {
             sample_rate: sr,
             preset: Preset::default(),
             sample,
+            live_input: None,
             playing: false,
             frozen: false,
             bypass: false,
@@ -386,12 +389,42 @@ impl Engine {
         }
     }
     pub fn set_sample(&mut self, sample: Arc<SampleBuffer>) {
+        self.live_input = None;
         self.sample = sample;
         self.cursor = 0.0;
         self.frozen_center = 0.0;
         self.reset_grains();
         self.color_rack.clear();
         self.filters.iter_mut().for_each(FilterBank::clear);
+    }
+    pub fn set_live_input(&mut self, enabled: bool, effects_only: bool) {
+        if enabled {
+            if let Some(input) = &mut self.live_input {
+                input.effects_only = effects_only;
+            } else {
+                self.live_input = Some(LiveInput::new(self.sample_rate, effects_only));
+            }
+        } else {
+            self.live_input = None;
+        }
+        self.frozen = false;
+        self.cursor = 0.0;
+        self.reset_grains();
+        self.color_rack.clear();
+        self.filters.iter_mut().for_each(FilterBank::clear);
+        if !self.playing {
+            for voice in &mut self.voices {
+                voice.kill();
+            }
+            self.smooth_dry_gate = 0.0;
+            self.smooth_bypass_gate = 0.0;
+            self.peak = [0.0; 2];
+        }
+    }
+    pub fn source_sample(&self) -> &SampleBuffer {
+        self.live_input
+            .as_ref()
+            .map_or(&self.sample, |input| &input.sample)
     }
     pub fn reset_grains(&mut self) {
         self.grains.fill(Grain::default());
@@ -460,6 +493,18 @@ impl Engine {
     pub fn center(&self) -> f64 {
         if self.frozen {
             self.frozen_center
+        } else if let Some(input) = &self.live_input {
+            let length = input.sample.len() as f64;
+            let p = &self.modulated.params;
+            // Leave enough history for a grain to advance without overtaking
+            // the capture head. Position scans backwards through the history.
+            let margin =
+                (tables::grain_duration(p.grain_size) as f64 * self.sample_rate as f64 * 2.0
+                    + p.cloud as f64 * length * 0.5
+                    + 4.0)
+                    .min(length * 0.9);
+            (input.head() as f64 - margin - p.position as f64 * (length - margin))
+                .rem_euclid(length)
         } else {
             (self.cursor + self.modulated.params.position as f64 * self.sample.len() as f64)
                 .rem_euclid(self.sample.len() as f64)
@@ -480,8 +525,8 @@ impl Engine {
             .iter()
             .filter(|g| g.active)
             .map(|g| GrainView {
-                position: (g.position.rem_euclid(self.sample.len() as f64)
-                    / self.sample.len() as f64) as f32,
+                position: (g.position.rem_euclid(self.source_sample().len() as f64)
+                    / self.source_sample().len() as f64) as f32,
                 age: g.age as f32 / g.duration as f32,
                 pan: (g.pan[1] - g.pan[0] + 1.0) * 0.5,
             })
@@ -906,9 +951,10 @@ impl Engine {
             m.route(env.extra_destination, self.env_values[i] * env.extra_depth);
         }
         if self.frozen && (m.params.position - self.last_position).abs() > 0.00001 {
+            let length = self.source_sample().len() as f64;
             self.frozen_center = (self.frozen_center
-                + (m.params.position - self.last_position) as f64 * self.sample.len() as f64)
-                .rem_euclid(self.sample.len() as f64);
+                + (m.params.position - self.last_position) as f64 * length)
+                .rem_euclid(length);
         }
         self.last_position = m.params.position;
         crate::color::mirror_reverb(&mut m.params, &m.color_slots[..m.color_len]);
@@ -986,15 +1032,16 @@ impl Engine {
             + p.sample_tune_cents * 0.01
             + bend
             + self.random.unit() * tables::detune_range(p.detune);
-        let rate = tables::pitch_ratio(semis) * self.sample.sample_rate as f64
+        let length = self.source_sample().len() as f64;
+        let rate = tables::pitch_ratio(semis) * self.source_sample().sample_rate as f64
             / self.sample_rate as f64
             * if p.grain_size < 0.5 { -1.0 } else { 1.0 };
         let duration = (tables::grain_duration(p.grain_size) * self.sample_rate as f32)
             .round()
             .max(4.0) as u32;
         let position = (self.center()
-            + self.random.bipolar() as f64 * p.cloud as f64 * self.sample.len() as f64 * 0.5)
-            .rem_euclid(self.sample.len() as f64);
+            + self.random.bipolar() as f64 * p.cloud as f64 * length * 0.5)
+            .rem_euclid(length);
         let pan =
             (self.modulated.pan + self.random.bipolar() * p.stereo_spread * 0.5).clamp(0.0, 1.0);
         self.grains[slot] = Grain {
@@ -1010,6 +1057,14 @@ impl Engine {
     }
 
     pub fn process_frame(&mut self) -> Stereo {
+        self.process_input_frame([0.0; 2])
+    }
+
+    pub fn process_input_frame(&mut self, input: Stereo) -> Stereo {
+        let effects_only = self.live_input.as_ref().is_some_and(|i| i.effects_only);
+        if let Some(live) = &mut self.live_input {
+            live.push(input, self.frozen);
+        }
         if self.playing {
             for action in self
                 .performance
@@ -1021,8 +1076,18 @@ impl Engine {
             }
         }
         let sr = self.sample_rate as f32;
-        let source_rate = self.sample.sample_rate as f64 / self.sample_rate as f64;
-        let source = self.sample.read(self.cursor, source_rate, true);
+        let source_rate = self.source_sample().sample_rate as f64 / self.sample_rate as f64;
+        let source = if self.live_input.is_some() {
+            input.map(|x| {
+                if x.is_finite() {
+                    x.clamp(-16.0, 16.0)
+                } else {
+                    0.0
+                }
+            })
+        } else {
+            self.sample.read(self.cursor, source_rate, true)
+        };
         let level = source[0].abs().max(source[1].abs());
         self.follower += (level - self.follower)
             * if level > self.follower {
@@ -1058,28 +1123,33 @@ impl Engine {
             + (MAX_GRAINS as f32 - self.modulated.params.min_grains)
                 * self.modulated.params.grains.powi(3);
         self.grain_clock += density as f64 / self.sample_rate as f64;
-        if density > 0.0 && self.grain_clock >= 1.0 {
+        if !effects_only && density > 0.0 && self.grain_clock >= 1.0 {
             self.grain_clock = self.grain_clock.fract();
             self.spawn();
         }
         let mut voice_frames = [[0.0; 2]; VOICES];
+        if effects_only {
+            voice_frames.fill(source);
+        }
+        let sample = self
+            .live_input
+            .as_ref()
+            .map_or(&*self.sample, |i| &i.sample);
         for grain in &mut self.grains {
             if !grain.active {
                 continue;
             }
             let phase = 2.0 * grain.age as f32 / (grain.duration - 1) as f32;
             let amplitude = tables::grain_window(phase, grain.shape);
-            let sample =
-                self.sample
-                    .read(grain.position, grain.rate, self.preset.params.antialiasing);
+            let frame = sample.read(grain.position, grain.rate, self.preset.params.antialiasing);
             for c in 0..2 {
-                voice_frames[grain.voice][c] += sample[c] * amplitude * grain.pan[c];
+                voice_frames[grain.voice][c] += frame[c] * amplitude * grain.pan[c];
             }
-            grain.position = (grain.position + grain.rate).rem_euclid(self.sample.len() as f64);
+            grain.position = (grain.position + grain.rate).rem_euclid(sample.len() as f64);
             grain.age += 1;
             grain.active = grain.age < grain.duration;
         }
-        let norm = if self.overlap > 2.0 {
+        let norm = if !effects_only && self.overlap > 2.0 {
             tables::inverse_sqrt(self.overlap - 1.0)
         } else {
             1.0

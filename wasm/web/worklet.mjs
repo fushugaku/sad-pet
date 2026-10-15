@@ -18,6 +18,8 @@ class SadPetProcessor extends AudioWorkletProcessor {
       try {
         let result;
         if (type === "load") result = this.core.json("sad_load", data);
+        else if (type === "capture-input")
+          result = this.core.call("sad_input_wav");
         else if (type === "record-start") {
           if (this.recording) throw new Error("Recording is already running.");
           this.recordedFrames = 0;
@@ -30,7 +32,10 @@ class SadPetProcessor extends AudioWorkletProcessor {
           this.recording = false;
           result = { frames: this.recordedFrames };
         } else result = this.core.request(message.path, data);
-        this.port.postMessage({ id, result });
+        this.port.postMessage(
+          { id, result },
+          result instanceof ArrayBuffer ? [result] : [],
+        );
         this.snapshot();
       } catch (error) {
         this.port.postMessage({ id, error: error.message });
@@ -58,12 +63,12 @@ class SadPetProcessor extends AudioWorkletProcessor {
     this.recordBuffer = new Float32Array(16384 * 2);
     this.recordLength = 0;
   }
-  process(_inputs, outputs) {
+  process(inputs, outputs) {
     try {
       const channels = outputs[0];
       if (!channels?.length) return true;
       const count = channels[0].length;
-      const frames = this.core.process(count);
+      const frames = this.core.process(count, inputs[0]);
       for (let c = 0; c < channels.length; c++)
         for (let i = 0; i < count; i++)
           channels[c][i] = frames[i * 2 + Math.min(c, 1)];

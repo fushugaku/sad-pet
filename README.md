@@ -10,6 +10,8 @@ or installation is required. Click Play or a keyboard key to enable sound.
 The desktop version uses the system audio output and a local browser panel.
 
 - Eight built-in audio tracks, WAV import and an IndexedDB file library.
+- Browser microphone input with device selection, gain and level metering:
+  direct filters/effects or granular processing of an eight-second live buffer.
 - Polyphonic keyboard, note/chord hold, arpeggiator and a 16-step chord sequencer.
 - Three LFOs with tempo sync up to 8 bars, three ADSR envelopes and eight modulation routes.
 - Two filters with single, serial and parallel routing, envelope depth and key tracking.
@@ -54,6 +56,7 @@ Close a packaged instance with Quit before starting the development stack.
 rustup target add wasm32-unknown-unknown
 python3 wasm/build.py
 node wasm/test.mjs
+node wasm/test-microphone.mjs
 python3 -m http.server 8080 --directory dist/web --bind 127.0.0.1
 ```
 
@@ -67,6 +70,16 @@ requires a supported browser and permission through the MIDI refresh button.
 Audio files, presets, rendered WAVs and WAV/MP3 recordings stay in IndexedDB and
 can be downloaded from Library. Storage belongs to each browser profile and site
 origin; the hosted site and the local desktop panel have separate libraries.
+
+Use **Load WAV** or drop a mono/stereo WAV onto the waveform to import your own
+audio. Select **Microphone** to allow a live input, then choose **Filters + FX**
+for immediate processing or **Grains + Filters + FX** for granular processing.
+**Freeze** retains the granular input buffer; **Save input** saves up to the last
+eight seconds as WAV in Library. **Record** captures the actual processed output
+as WAV and MP3. **File**, **Stop audio**, loading a WAV or closing the page releases
+the microphone. Capture permission is requested only when selecting Microphone;
+audio and saved files stay in the browser. The packaged desktop edition continues
+to use file input; live microphone capture is available in the hosted web edition.
 
 ## Check and package
 
