@@ -186,8 +186,15 @@
       if (!last) return;
       // Upgrade the previously selected soundtrack source to its new cover,
       // while retaining the user's saved original as an accessible library file.
-      const cover = this.catalog.find((track) => track.id === "harvest-dawn-cover");
-      if (cover && last.id === "factory:harvest-dawn-excerpt:v1")
+      const cover =
+        this.catalog.find((track) => track.id === "harvest-dawn-loop") ||
+        this.catalog.find((track) => track.id === "harvest-dawn-cover");
+      if (
+        cover &&
+        (last.id === "factory:harvest-dawn-excerpt:v1" ||
+          (cover.id === "harvest-dawn-loop" &&
+            last.id === "factory:harvest-dawn-cover:v1"))
+      )
         return this.ensureFactory(cover);
       return this.store.read("files", last.id);
     }
@@ -260,10 +267,11 @@
     }
     async seed() {
       const queue = [...this.catalog];
+      const catalogIds = new Set(queue.map(factoryId));
       const worker = async () => {
         while (queue.length) {
           const track = queue.shift();
-          this.status = `Saving tracks ${this.files.filter((file) => file.kind === "audio" && file.factory).length} / ${this.catalog.length}…`;
+          this.status = `Saving tracks ${this.files.filter((file) => catalogIds.has(file.id)).length} / ${this.catalog.length}…`;
           this.render();
           await this.ensureFactory(track);
         }

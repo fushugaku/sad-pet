@@ -99,11 +99,11 @@ pub const TRACKS: [Track; 30] = [
         bpm: None,
     },
     Track {
-        id: "harvest-dawn-cover",
-        name: "Harvest Dawn · synth cover",
-        character: "Jeremy Soule · Flute, felt piano & strings cover",
-        seconds: 8.0,
-        bpm: None,
+        id: "harvest-dawn-loop",
+        name: "Harvest Dawn · harp loop",
+        character: "Jeremy Soule · Harp & chamber strings cover · 16 bars",
+        seconds: harvest_cover::SECONDS,
+        bpm: Some(harvest_cover::BPM),
     },
     loop_track(
         "lofi-beat",
@@ -252,7 +252,7 @@ fn envelope(age: f64, attack: f64, decay: f64) -> f64 {
 /// A variable rate is useful to verify the bank without allocating all 48 kHz files.
 pub fn generate(index: usize, sample_rate: u32) -> SampleBuffer {
     let track = &TRACKS[index];
-    if track.id == "harvest-dawn-cover" {
+    if track.id == "harvest-dawn-loop" {
         return harvest_cover::generate(track, sample_rate);
     }
     let recording: Option<&[u8]> = match track.id {

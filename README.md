@@ -10,9 +10,11 @@ or installation is required. Click Play or a keyboard key to enable sound.
 The desktop version uses the system audio output and a local browser panel.
 
 - Thirty built-in audio sources, WAV import and an IndexedDB file library, including
-  Matrix POV video audio and an eight-second synthesized Harvest Dawn cover
-  for flute, felt piano and strings. The cover replaces the original soundtrack
-  excerpt in the catalog; composition credit remains Jeremy Soule (Oblivion, 2006).
+  Matrix POV video audio and a 42.67-second Harvest Dawn harp/chamber-string cover
+  loop: 16 bars at 90 BPM, with the recognizable eight-bar introduction played
+  in two variations. Note pitches/rhythm are checked against published transcriptions.
+  Note releases and the room decay continue across the loop boundary.
+  Composition credit remains Jeremy Soule (Oblivion, 2006).
   It is a new recording of a copyrighted composition, not royalty-free music.
 - Twenty additional original synthesized sounds and loops: lo-fi, breakbeat,
   house drums, electro percussion, dub chords, acid bass, marimba, kalimba,

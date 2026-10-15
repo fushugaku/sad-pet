@@ -244,7 +244,7 @@ assert.ok(
   utility.wasm.memory.buffer.byteLength < 128 * 1024 * 1024,
   "exporting the bank must release sample buffers instead of retaining every track in mobile RAM",
 );
-for (const id of ["matrix-pov", "harvest-dawn-cover"]) {
+for (const id of ["matrix-pov", "harvest-dawn-loop"]) {
   const index = catalog.findIndex((track) => track.id === id);
   assert.ok(index >= 0, `${id} must be in the built-in catalog`);
   utility.call("sad_prepare", utility.call("sad_factory", undefined, index));

@@ -30,7 +30,7 @@ fn every_track_has_unique_identity_valid_audio_and_exact_duration() {
             fingerprints.insert(fingerprint),
             "tracks must contain different audio"
         );
-        if index > 0 && index < 10 {
+        if index > 0 && index < 10 && track.id != "harvest-dawn-loop" {
             assert_eq!(sample.frames()[0], [0.0; 2]);
             assert!(
                 sample
@@ -96,45 +96,62 @@ fn native_bank_reuses_samples_and_glass_stays_compatible() {
 }
 
 #[test]
-fn harvest_cover_renders_the_short_melody_at_both_audio_rates() {
+fn harvest_loop_preserves_the_opening_and_wraps_its_room_tail() {
     let index = samples::TRACKS
         .iter()
-        .position(|track| track.id == "harvest-dawn-cover")
+        .position(|track| track.id == "harvest-dawn-loop")
         .unwrap();
     assert!(samples::get("harvest-dawn-excerpt").is_none());
+    assert!(samples::get("harvest-dawn-cover").is_none());
     for rate in [44_100, 48_000] {
         let sample = samples::generate(index, rate);
-        assert_eq!(sample.duration(), 8.0);
-        assert_eq!(sample.frames()[0], [0.0; 2]);
-        assert_eq!(*sample.frames().last().unwrap(), [0.0; 2]);
-        for (center, note) in [
-            (0.6, 74),
-            (2.2, 69),
-            (4.5, 74),
-            (5.2, 76),
-            (6.3, 77),
-            (7.7, 81),
-        ] {
-            let correlation = |note: f64| {
-                let frequency = 440.0 * 2.0_f64.powf((note - 69.0) / 12.0);
-                let start = ((center - 0.08) * rate as f64) as usize;
-                let length = (0.16 * rate as f64) as usize;
-                let (mut real, mut imag) = (0.0, 0.0);
-                for i in 0..length {
-                    let phase = std::f64::consts::TAU * frequency * i as f64 / rate as f64;
-                    let window =
-                        0.5 - 0.5 * (std::f64::consts::TAU * i as f64 / length as f64).cos();
-                    let value = sample.frames()[start + i][0] as f64 * window;
-                    real += value * phase.cos();
-                    imag += value * phase.sin();
-                }
-                real * real + imag * imag
-            };
-            let expected = correlation(note as f64);
-            let neighbor = correlation(note as f64 - 1.0).max(correlation(note as f64 + 1.0));
+        assert!((sample.duration() - 64.0 * 60.0 / 90.0).abs() < 1.0 / rate as f64);
+        // Check the attack of A4, D4, F4, E4 at the written quarter/eighth
+        // positions, rather than accepting the old unrelated flute phrase.
+        let correlation = |center: f64, note: u8| {
+            let frequency = 440.0 * 2.0_f64.powf((note as f64 - 69.0) / 12.0);
+            let start = ((center - 0.06) * rate as f64).round() as isize;
+            let length = (0.12 * rate as f64) as usize;
+            let (mut real, mut imag) = (0.0, 0.0);
+            for i in 0..length {
+                let phase = std::f64::consts::TAU * frequency * i as f64 / rate as f64;
+                let window = 0.5 - 0.5 * (std::f64::consts::TAU * i as f64 / length as f64).cos();
+                let pos = (start + i as isize).rem_euclid(sample.len() as isize) as usize;
+                let value = sample.frames()[pos][0] as f64 * window;
+                real += value * phase.cos();
+                imag += value * phase.sin();
+            }
+            real * real + imag * imag
+        };
+        for (beat, note) in [(0.0, 69), (1.0, 62), (2.0, 65), (2.5, 64)] {
+            let onset = beat * 60.0 / 90.0;
+            let expected = correlation(onset + 0.14, note);
+            let before = correlation(onset - 0.10, note);
             assert!(
-                expected > neighbor * 10.0,
-                "cover melody at {center}s / {rate}Hz"
+                expected > before * 3.0,
+                "opening note {note} at beat {beat} / {rate}Hz: {expected} <= {before}"
+            );
+        }
+        for channel in 0..2 {
+            let frames = sample.frames();
+            let seam = (frames[0][channel] - frames.last().unwrap()[channel]).abs();
+            let neighborhood = frames[..2048]
+                .windows(2)
+                .chain(frames[frames.len() - 2048..].windows(2))
+                .map(|w| (w[1][channel] - w[0][channel]).abs())
+                .fold(0.0_f32, f32::max);
+            assert!(
+                seam <= neighborhood * 1.05 + 1e-6,
+                "loop seam: {seam} / {neighborhood}"
+            );
+            let tail = frames[frames.len() - 2048..]
+                .iter()
+                .map(|f| (f[channel] as f64).powi(2))
+                .sum::<f64>()
+                / 2048.0;
+            assert!(
+                tail > 1e-5,
+                "retain the room tail instead of fading to silence"
             );
         }
     }

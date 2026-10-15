@@ -10,19 +10,27 @@ The video recording is stereo 48 kHz PCM16 WAV, with short edge fades and
 peak gain adjusted to 0.78. Credits remain with the original creators and
 rights holders; it is separate from the project-authored procedural tracks.
 
-harvest-dawn-cover (procedural cover, version 0.18)
-  Name: Harvest Dawn · synth cover
+harvest-dawn-loop (procedural cover, version 0.19)
+  Name: Harvest Dawn · harp loop
   Composition: Harvest Dawn — Jeremy Soule
   Album: The Elder Scrolls IV: Oblivion (Original Game Soundtrack), 2006
-  Arrangement/recording: SAD PET flute synth, felt piano and string pad.
-  Duration: eight seconds; this is not a cover of the entire track.
-  Renderer and short score: rust/src/samples/harvest_cover.rs
+  Arrangement/recording: SAD PET modal harp and chamber-string synthesizers.
+  Duration: 42 2/3 seconds, 16 bars at 90 BPM; not the entire soundtrack.
+  The eight-bar introduction is played twice with different dynamics/voicings.
+  Renderer and opening score: rust/src/samples/harvest_cover.rs
 
-The melody of the previous eight-second bank excerpt was transcribed, then
-performed entirely by local synthesis with a new accompaniment and timbres.
-The original soundtrack waveform is not mixed in, used by the renderer or
-bundled with the current application. The previous source recording was an
-Apple Music preview: https://music.apple.com/us/song/1876500032
+Opening melody and rhythm references (only the short introduction is used):
+  Piano Letter Notes, Harvest Dawn, 2022-05:
+  https://pianoletternotes.blogspot.com/2022/05/harvest-dawn-elder-scrolls-iv-oblivion.html
+  Harry Murrell / Bhael, guitar transcription on Gametabs:
+  https://gametabs.net/tabs/the-elder-scrolls-iv-oblivion/harvest-dawn
+
+This replaces the earlier approximation of a different eight-second section.
+All audio is generated locally; no original soundtrack waveform or soundfont
+is sampled or bundled. Circular note rendering and a room primed with the
+previous period preserve tails across the seam without a global fade/dip.
+The new factory ID updates existing IndexedDB libraries while preserving
+older saved files and their edits.
 
 This is a new recording of Jeremy Soule's composition, not an original or
 royalty-free composition. Rights in the underlying work remain with their
