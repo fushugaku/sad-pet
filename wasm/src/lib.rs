@@ -326,8 +326,13 @@ pub extern "C" fn sad_factory(index: usize) -> u32 {
         let result = sad_pet::samples::TRACKS
             .get(index)
             .ok_or_else(|| "Unknown track".to_string())
-            .and_then(|t| sad_pet::samples::get(t.id).ok_or_else(|| "Unknown track".to_string()))
-            .and_then(|s| wav::bytes(s.sample_rate, s.frames()));
+            .and_then(|_| {
+                // IndexedDB retains the exported WAV. Keeping every generated
+                // sample and its mipmaps in the worker would duplicate the whole
+                // expanded bank in mobile RAM throughout the browser session.
+                let sample = sad_pet::samples::generate(index, 48_000);
+                wav::bytes(sample.sample_rate, sample.frames())
+            });
         h.finish(result)
     })
 }

@@ -9,8 +9,13 @@ sample preparation, WAV rendering and MP3 encoding in a separate worker. No back
 or installation is required. Click Play or a keyboard key to enable sound.
 The desktop version uses the system audio output and a local browser panel.
 
-- Ten built-in audio sources, WAV import and an IndexedDB file library, including
+- Thirty built-in audio sources, WAV import and an IndexedDB file library, including
   Matrix POV video audio and a short Harvest Dawn excerpt from Oblivion.
+- Twenty additional original synthesized sounds and loops: lo-fi, breakbeat,
+  house drums, electro percussion, dub chords, acid bass, marimba, kalimba,
+  nylon harmonics, music box, tape piano, strings, shimmer pad, drone, singing
+  bowl, bells, glitches, radio transmissions, ocean surf and vinyl texture.
+  Rhythmic additions are four-bar loops with BPM; tails and echoes wrap at the seam.
 - Browser microphone input with device selection, gain and level metering:
   direct filters/effects or granular processing of an eight-second live buffer.
 - Polyphonic keyboard, note/chord hold, arpeggiator and a 16-step chord sequencer.

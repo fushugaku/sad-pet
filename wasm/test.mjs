@@ -223,6 +223,27 @@ assert.deepEqual(regionAudio.request("/api/state").fades, {
 // Recorded bank entries must work through the same prepare/load path as files,
 // without a runtime request to the source video or a music service.
 const catalog = utility.request("/api/samples");
+assert.equal(catalog.length, 30, "the source bank must include 20 new tracks");
+const bankPlayer = new Core(module, 48000);
+for (const [index, track] of catalog.entries()) {
+  if (index < 10) continue;
+  const wave = utility.call("sad_factory", undefined, index);
+  const samples = pcm(wave);
+  assert.equal(samples.length, Math.round(track.seconds * 48000) * 2);
+  assert.ok(samples.every((v) => Number.isFinite(v) && Math.abs(v) <= 0.8));
+  assert.ok(signalEnergy(samples) / samples.length > 0.0004, `${track.id} must be audible`);
+  utility.call("sad_prepare", wave);
+  utility.call("sad_sample_name", { name: track.name, id: `factory:${track.id}:v1` });
+  bankPlayer.json("sad_load", utility.call("sad_pack"));
+  assert.equal(bankPlayer.request("/api/state").sample_name, track.name);
+  bankPlayer.request("/api/transport", { playing: true, bypass: true });
+  const output = bankPlayer.process(4096);
+  assert.ok(output.some((v) => Math.abs(v) > 0.001), `${track.id} must load and play`);
+}
+assert.ok(
+  utility.wasm.memory.buffer.byteLength < 128 * 1024 * 1024,
+  "exporting the bank must release sample buffers instead of retaining every track in mobile RAM",
+);
 for (const id of ["matrix-pov", "harvest-dawn-excerpt"]) {
   const index = catalog.findIndex((track) => track.id === id);
   assert.ok(index >= 0, `${id} must be in the built-in catalog`);
@@ -356,5 +377,5 @@ assert.deepEqual(
 );
 assert.ok(!messages.some((m) => m.error || m.type === "fatal"));
 console.log(
-  "WASM checks passed: portable module, stereo audio at 44.1/48 kHz, deterministic quanta, chord entry, MIDI, effect stack, live microphone, sample-exact recording, region loops and non-destructive trims/renders.",
+  "WASM checks passed: 30 factory sources, bounded bank memory, stereo audio at 44.1/48 kHz, deterministic quanta, chord entry, MIDI, effect stack, live microphone, sample-exact recording, region loops and non-destructive trims/renders.",
 );

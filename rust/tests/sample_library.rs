@@ -30,7 +30,7 @@ fn every_track_has_unique_identity_valid_audio_and_exact_duration() {
             fingerprints.insert(fingerprint),
             "tracks must contain different audio"
         );
-        if index > 0 {
+        if index > 0 && index < 10 {
             assert_eq!(sample.frames()[0], [0.0; 2]);
             assert!(
                 sample
@@ -39,6 +39,33 @@ fn every_track_has_unique_identity_valid_audio_and_exact_duration() {
                     .unwrap()
                     .iter()
                     .all(|v| v.abs() < 1e-6)
+            );
+        }
+    }
+}
+
+#[test]
+fn expanded_bank_preserves_four_bar_timing_and_loop_seams() {
+    assert_eq!(samples::TRACKS.len(), 30);
+    for (index, track) in samples::TRACKS.iter().enumerate().skip(10) {
+        if let Some(bpm) = track.bpm {
+            assert!((track.seconds * bpm as f64 / 60.0 - 16.0).abs() < 1e-10);
+        }
+        let sample = samples::generate(index, 48_000);
+        for channel in 0..2 {
+            let frames = sample.frames();
+            let mean: f64 =
+                frames.iter().map(|f| f[channel] as f64).sum::<f64>() / frames.len() as f64;
+            assert!(mean.abs() < 1e-6, "{} has DC offset", track.id);
+            let seam = (frames[0][channel] - frames.last().unwrap()[channel]).abs();
+            let max_delta = frames
+                .windows(2)
+                .map(|f| (f[1][channel] - f[0][channel]).abs())
+                .fold(0.0_f32, f32::max);
+            assert!(
+                seam <= max_delta * 1.05 + 1e-6,
+                "{} clicks at the seam: {seam} > {max_delta}",
+                track.id
             );
         }
     }

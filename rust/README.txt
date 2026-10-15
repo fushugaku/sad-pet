@@ -34,10 +34,17 @@ SAD PET — приложение для компьютера
 Как пользоваться
   Play / Space — запуск/пауза выбранного режима.
   Open WAV или перенос файла на волну — загрузить моно/стерео WAV.
-  Список над волной — восемь встроенных дорожек и ваше аудио:
+  Список над волной — 30 встроенных дорожек и ваше аудио:
   Glass sequence, Warm chords, Analog bass, Drum machine, Dusty keys,
-  Vowel choir, Metallic textures, Air & rain. Это оригинальные локально
-  синтезированные записи; выбор источника сохраняет настройки инструмента.
+  Vowel choir, Metallic textures, Air & rain; два записанных источника
+  Matrix POV и Oblivion · Harvest Dawn; ещё 20 оригинальных звуков:
+  Lo-fi beat, Breakbeat, Four on the floor, Electro percussion, Dub chords,
+  Acid line, FM marimba, Kalimba garden, Nylon harmonics, Music box,
+  Tape piano, String orbit, Shimmer pad, Dark drone, Singing bowl,
+  Resonant bells, Circuit glitches, Space transmission, Ocean swell, Vinyl dust.
+  Новые звуки синтезируются локально без сторонних записей; ритмические
+  лупы длятся четыре такта, BPM указан в Library. Хвосты и эхо переходят
+  через границу петли. Выбор источника сохраняет настройки инструмента.
   Library — библиотека аудио, пресетов и WAV-рендеров. All / Audio /
   Presets / Renders фильтруют список; Search ищет по имени. Load открывает
   файл, ↓ скачивает его. Import files принимает сразу несколько WAV/JSON.

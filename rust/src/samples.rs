@@ -7,6 +7,8 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
+mod bank;
+
 #[derive(Clone, Copy, Serialize)]
 pub struct Track {
     pub id: &'static str,
@@ -16,7 +18,22 @@ pub struct Track {
     pub bpm: Option<u32>,
 }
 
-pub const TRACKS: [Track; 10] = [
+const fn loop_track(
+    id: &'static str,
+    name: &'static str,
+    character: &'static str,
+    bpm: u32,
+) -> Track {
+    Track {
+        id,
+        name,
+        character,
+        seconds: 16.0 * 60.0 / bpm as f64,
+        bpm: Some(bpm),
+    }
+}
+
+pub const TRACKS: [Track; 30] = [
     Track {
         id: "glass-sequence",
         name: "Glass sequence",
@@ -87,6 +104,126 @@ pub const TRACKS: [Track; 10] = [
         seconds: 8.0,
         bpm: None,
     },
+    loop_track(
+        "lofi-beat",
+        "Lo-fi beat",
+        "Swung drums & mellow keys · 4 bars",
+        85,
+    ),
+    loop_track(
+        "breakbeat",
+        "Breakbeat",
+        "Syncopated drums & ghost snares · 4 bars",
+        132,
+    ),
+    loop_track(
+        "four-on-floor",
+        "Four on the floor",
+        "House kick, clap & offbeat hats · 4 bars",
+        124,
+    ),
+    loop_track(
+        "electro-percussion",
+        "Electro percussion",
+        "Toms, rims & metallic shakers · 4 bars",
+        112,
+    ),
+    loop_track(
+        "dub-chords",
+        "Dub chords",
+        "Minor stabs & stereo echoes · 4 bars",
+        96,
+    ),
+    loop_track(
+        "acid-line",
+        "Acid line",
+        "Resonant bass & sliding accents · 4 bars",
+        128,
+    ),
+    loop_track(
+        "fm-marimba",
+        "FM marimba",
+        "Wooden FM mallets · 4 bars",
+        110,
+    ),
+    loop_track(
+        "kalimba-garden",
+        "Kalimba garden",
+        "Interlocking thumb-piano plucks · 4 bars",
+        90,
+    ),
+    loop_track(
+        "nylon-harmonics",
+        "Nylon harmonics",
+        "Plucked strings & overtones · 4 bars",
+        100,
+    ),
+    loop_track("music-box", "Music box", "Tiny metallic tines · 4 bars", 72),
+    loop_track(
+        "tape-piano",
+        "Tape piano",
+        "Felt keys & gentle tape flutter · 4 bars",
+        78,
+    ),
+    loop_track(
+        "string-orbit",
+        "String orbit",
+        "Slow bowed chord movement · 4 bars",
+        68,
+    ),
+    loop_track(
+        "shimmer-pad",
+        "Shimmer pad",
+        "Airy chords & octave trails · 4 bars",
+        60,
+    ),
+    Track {
+        id: "dark-drone",
+        name: "Dark drone",
+        character: "Evolving sub, beating partials & air",
+        seconds: 16.0,
+        bpm: None,
+    },
+    Track {
+        id: "singing-bowl",
+        name: "Singing bowl",
+        character: "Long bronze resonance",
+        seconds: 12.0,
+        bpm: None,
+    },
+    loop_track(
+        "resonant-bells",
+        "Resonant bells",
+        "Wide, overlapping bell patterns · 4 bars",
+        80,
+    ),
+    loop_track(
+        "circuit-glitches",
+        "Circuit glitches",
+        "Digital clicks, stutters & bleeps · 4 bars",
+        140,
+    ),
+    Track {
+        id: "space-transmission",
+        name: "Space transmission",
+        character: "Radio chirps, pulses & static",
+        seconds: 12.0,
+        bpm: None,
+    },
+    Track {
+        id: "ocean-swell",
+        name: "Ocean swell",
+        character: "Soft stereo surf & rolling waves",
+        seconds: 16.0,
+        bpm: None,
+    },
+    Track {
+        id: "vinyl-dust",
+        name: "Vinyl dust",
+        character: "Record crackle, hiss & low hum",
+        seconds: 12.0,
+        bpm: None,
+    },
 ];
 
 static CACHE: [OnceLock<Arc<SampleBuffer>>; TRACKS.len()] =
@@ -144,6 +281,9 @@ pub fn generate(index: usize, sample_rate: u32) -> SampleBuffer {
         let mut sample = SampleBuffer::demo(sample_rate);
         sample.library_id = Some(format!("factory:{}:v1", track.id));
         return sample;
+    }
+    if index >= 10 {
+        return bank::generate(track, sample_rate);
     }
     let mut random = Random::default();
     let mut low_noise = 0.0;

@@ -20,3 +20,20 @@ adjusted to 0.78 for consistency with the procedural sample bank.
 Recording and composition credits remain with their original creators and
 rights holders. These two recordings are separate from the project-authored
 procedural tracks.
+
+Original procedural expansion (20 sounds, version 0.17)
+------------------------------------------------------
+Lo-fi beat, Breakbeat, Four on the floor, Electro percussion, Dub chords,
+Acid line, FM marimba, Kalimba garden, Nylon harmonics, Music box, Tape piano,
+String orbit, Shimmer pad, Dark drone, Singing bowl, Resonant bells,
+Circuit glitches, Space transmission, Ocean swell, Vinyl dust.
+
+Generated entirely by project-authored synthesis and note/event patterns in
+rust/src/samples/bank.rs. No third-party sound recordings or melodies are used
+for these additions. Noise is deterministic; instrument strikes, resonances,
+drum synthesis, textures and stereo echoes are calculated locally in Rust.
+Rhythmic entries last exactly 16 beats (four bars in 4/4) before frame rounding.
+Events and their release/echo tails wrap around the loop instead of truncating
+the end or shortening the musical duration. Each WAV is stereo 48 kHz float,
+DC-corrected and peak-normalized to 0.78, saved in the user's IndexedDB library
+and available for download through the same controls as the existing sources.
