@@ -106,10 +106,27 @@ assert.ok(
   dryFx.some((value, i) => Math.abs(value - dryOpen[i]) > 0.01),
   "0% wet must still reach the effect chain in WASM",
 );
-preset.color_chain = ["distortion", "reverb", "lcr_delay", "mod_delay"].map(
-  (kind, i) => ({ ...structuredClone(defaults.slot), id: i + 1, kind }),
+const compressor = {
+  ...structuredClone(defaults.slot), mix: 1, kind: "compressor",
+};
+compressor.settings.compressor_threshold = 0.4;
+compressor.settings.compressor_ratio = 1;
+compressor.settings.compressor_attack = 0;
+compressor.settings.compressor_knee = 0;
+dryPreset.color_chain = [compressor];
+assert.ok(
+  signalEnergy(dryOutput(dryPreset)) < signalEnergy(dryOpen) * 0.25,
+  "the stereo compressor must reduce above-threshold audio in WASM",
 );
+compressor.settings.compressor_ratio = 0;
+assert.deepEqual(dryOutput(dryPreset), dryOpen, "1:1 ratio must preserve audio");
+preset.color_chain = [
+  "distortion", "reverb", "lcr_delay", "mod_delay", "compressor",
+].map((kind, i) => ({ ...structuredClone(defaults.slot), id: i + 1, kind }));
 const effected = audio(48000, 128, preset);
+assert.deepEqual(
+  effected, audio(48000, 511, preset), "FX must preserve block-size independence",
+);
 assert.notDeepEqual(
   effected,
   audio(48000, 128),

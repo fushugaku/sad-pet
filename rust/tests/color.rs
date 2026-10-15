@@ -10,15 +10,16 @@ use sad_pet::{
 };
 use std::sync::Arc;
 
-const TYPES: [Type; 6] = [
+const TYPES: [Type; 7] = [
     Type::Distortion,
     Type::Reducer,
     Type::Crusher,
     Type::Flanger,
     Type::Chorus,
     Type::Binaural,
+    Type::Compressor,
 ];
-const PARAMETERS: [(Type, P); 22] = [
+const PARAMETERS: [(Type, P); 28] = [
     (Type::Distortion, P::DistortionDrive),
     (Type::Distortion, P::DistortionTone),
     (Type::Distortion, P::DistortionBias),
@@ -41,6 +42,12 @@ const PARAMETERS: [(Type, P); 22] = [
     (Type::Binaural, P::BinauralDelay),
     (Type::Binaural, P::BinauralCrossfeed),
     (Type::Binaural, P::BinauralWidth),
+    (Type::Compressor, P::CompressorThreshold),
+    (Type::Compressor, P::CompressorRatio),
+    (Type::Compressor, P::CompressorAttack),
+    (Type::Compressor, P::CompressorRelease),
+    (Type::Compressor, P::CompressorKnee),
+    (Type::Compressor, P::CompressorMakeup),
 ];
 fn slot(id: u32, kind: Type) -> ColorSlot {
     ColorSlot {
@@ -250,6 +257,7 @@ fn legacy_color_and_reverb_migrate_and_new_empty_chain_stays_empty() {
         "flanger",
         "chorus",
         "binaural",
+        "compressor",
     ]) {
         let p: Preset = serde_json::from_value(
             serde_json::json!({"params":{"saturator_type":name,"saturation":0.73}}),

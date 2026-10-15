@@ -112,6 +112,7 @@ fn fully_dry_audio_reaches_every_effect_and_their_order_matters() {
         SaturatorType::Reverb,
         SaturatorType::LcrDelay,
         SaturatorType::ModDelay,
+        SaturatorType::Compressor,
     ];
     for kind in types {
         let mut p = preset();

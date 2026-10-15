@@ -50,6 +50,7 @@ pub enum SaturatorType {
     Reverb,
     LcrDelay,
     ModDelay,
+    Compressor,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]

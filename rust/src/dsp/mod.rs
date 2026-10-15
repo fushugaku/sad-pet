@@ -1,4 +1,5 @@
 pub mod color;
+pub mod compressor;
 pub mod delay;
 pub mod effects;
 pub mod filter;

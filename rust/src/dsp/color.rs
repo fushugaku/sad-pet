@@ -1,3 +1,4 @@
+use super::compressor::Compressor;
 use super::delay::RadiasDelay;
 use super::effects::{Delay, Effects};
 use crate::{
@@ -34,6 +35,7 @@ pub struct ColorProcessor {
     reverb: Effects,
     reverb_params: Params,
     radias_delay: RadiasDelay,
+    compressor: Compressor,
 }
 impl ColorProcessor {
     pub fn new(sample_rate: u32) -> Self {
@@ -65,6 +67,7 @@ impl ColorProcessor {
             reverb: Effects::new(sample_rate),
             reverb_params: Params::default(),
             radias_delay: RadiasDelay::new(sample_rate),
+            compressor: Compressor::new(sample_rate),
         }
     }
     pub fn clear(&mut self) {
@@ -86,6 +89,7 @@ impl ColorProcessor {
         self.tone_state = [0.0; 2];
         self.dc_input = [0.0; 2];
         self.dc_output = [0.0; 2];
+        self.compressor.clear();
     }
     pub fn configure(&mut self, slot: ColorSlot) {
         self.configure_tempo(slot, 120.0);
@@ -162,6 +166,7 @@ impl ColorProcessor {
             SaturatorType::LcrDelay | SaturatorType::ModDelay => {
                 self.radias_delay.configure(slot, bpm)
             }
+            SaturatorType::Compressor => self.compressor.configure(&s),
         }
     }
     pub fn process(&mut self, frame: Stereo) -> Stereo {
@@ -241,6 +246,7 @@ impl ColorProcessor {
             // The outer Mix reproduces the previous reverb's dry/tail balance.
             SaturatorType::Reverb => self.reverb.reverb(frame, &self.reverb_params, 1.0),
             SaturatorType::LcrDelay | SaturatorType::ModDelay => self.radias_delay.process(frame),
+            SaturatorType::Compressor => self.compressor.process(frame),
         };
         std::array::from_fn(|c| frame[c] * (1.0 - self.slot.mix) + self.slot.mix * result[c])
     }

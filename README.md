@@ -27,7 +27,9 @@ The desktop version uses the system audio output and a local browser panel.
 - Three LFOs with tempo sync up to 8 bars, three ADSR envelopes and eight modulation routes.
 - Two filters with single, serial and parallel routing, envelope depth and key tracking.
 - A reorderable chain of up to 12 effects: distortion, rate reducer, bit crusher,
-  flanger, chorus, binaural processing, reverb, L/C/R delay and modulated delay.
+  flanger, chorus, binaural processing, reverb, L/C/R delay, modulated delay and
+  a stereo-linked compressor (threshold, ratio, attack, release, knee, makeup and mix).
+  All compressor controls accept LFO, envelope and matrix modulation.
 - Live modulation feedback on controls, MIDI input and stereo WAV/MP3 recording.
 - Dry/Wet blends the original source with grains before the voice filters and
   shared effect chain, so even fully dry audio receives filtering and effects.

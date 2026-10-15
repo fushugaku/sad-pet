@@ -111,6 +111,7 @@ fn every_visible_effect_knob_has_a_stable_key_and_correct_mapping() {
         Type::ModDelay,
         Type::LcrDelay,
         Type::ModDelay,
+        Type::Compressor,
     ];
     let p = Preset {
         color_chain: kinds

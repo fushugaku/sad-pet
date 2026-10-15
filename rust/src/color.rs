@@ -78,6 +78,12 @@ color_parameters! {
     ModDelayDepth => mod_delay_depth,
     ModDelayRate => mod_delay_rate,
     ModDelaySpread => mod_delay_spread,
+    CompressorThreshold => compressor_threshold,
+    CompressorRatio => compressor_ratio,
+    CompressorAttack => compressor_attack,
+    CompressorRelease => compressor_release,
+    CompressorKnee => compressor_knee,
+    CompressorMakeup => compressor_makeup,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
@@ -137,6 +143,12 @@ pub struct ColorSettings {
     pub mod_delay_depth: f32,
     pub mod_delay_rate: f32,
     pub mod_delay_spread: f32,
+    pub compressor_threshold: f32,
+    pub compressor_ratio: f32,
+    pub compressor_attack: f32,
+    pub compressor_release: f32,
+    pub compressor_knee: f32,
+    pub compressor_makeup: f32,
 }
 impl Default for ColorSettings {
     fn default() -> Self {
@@ -195,6 +207,12 @@ impl Default for ColorSettings {
             mod_delay_depth: 30.0 / 127.0,
             mod_delay_rate: 34.0 / 127.0,
             mod_delay_spread: 1.0,
+            compressor_threshold: 0.7, // -18 dBFS
+            compressor_ratio: 4.0_f32.ln() / 20.0_f32.ln(),
+            compressor_attack: 2.0 / 3.0,                       // 10 ms
+            compressor_release: 12.0_f32.ln() / 200.0_f32.ln(), // 120 ms
+            compressor_knee: 0.25,                              // 6 dB
+            compressor_makeup: 0.0,
         }
     }
 }
@@ -311,6 +329,15 @@ impl ColorSlot {
                 P::ModDelaySpread,
                 P::Mix,
             ],
+            SaturatorType::Compressor => &[
+                P::CompressorThreshold,
+                P::CompressorRatio,
+                P::CompressorAttack,
+                P::CompressorRelease,
+                P::CompressorKnee,
+                P::CompressorMakeup,
+                P::Mix,
+            ],
         }
     }
     pub fn legacy_reverb(id: u32, params: &Params) -> Self {
@@ -419,7 +446,13 @@ impl ColorSlot {
             mod_delay_feedback,
             mod_delay_depth,
             mod_delay_rate,
-            mod_delay_spread
+            mod_delay_spread,
+            compressor_threshold,
+            compressor_ratio,
+            compressor_attack,
+            compressor_release,
+            compressor_knee,
+            compressor_makeup
         );
     }
 }

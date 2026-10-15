@@ -494,6 +494,7 @@ const COLOR_TYPES = [
   ["reverb", "Reverb"],
   ["lcr_delay", "L/C/R Delay"],
   ["mod_delay", "Mod Delay"],
+  ["compressor", "Compressor"],
 ];
 const REVERB_TYPES = [
   ["plate_s", "Small plate"],
@@ -633,6 +634,18 @@ const COLOR_SCHEMAS = {
       (v) => `${Math.round((v * 2 - 1) * 180)}°`,
     ],
   ],
+  compressor: [
+    [
+      "compressor_threshold",
+      "THRESHOLD",
+      (v) => `${(-60 + 60 * v).toFixed(1)} dB`,
+    ],
+    ["compressor_ratio", "RATIO", (v) => `${(20 ** v).toFixed(1)}:1`],
+    ["compressor_attack", "ATTACK", (v) => `${(0.1 * 1000 ** v).toFixed(1)} ms`],
+    ["compressor_release", "RELEASE", (v) => `${Math.round(10 * 200 ** v)} ms`],
+    ["compressor_knee", "KNEE", (v) => `${(24 * v).toFixed(1)} dB`],
+    ["compressor_makeup", "MAKEUP", (v) => `${(24 * v).toFixed(1)} dB`],
+  ],
 };
 function colorSchema(kind, slot = null) {
   const prefix = delayPrefix(kind);
@@ -729,6 +742,7 @@ function buildColors() {
     const slot = structuredClone(colorDefaults.slot);
     slot.id = nextColorId++;
     slot.kind = $("color-add-type").value;
+    if (slot.kind === "compressor") slot.mix = 1;
     preset.color_chain.push(slot);
     editColorChain();
   };
@@ -854,7 +868,9 @@ function syncColors() {
             },
             reset: () =>
               parameter === "mix"
-                ? colorDefaults.slot.mix
+                ? slot.kind === "compressor"
+                  ? 1
+                  : colorDefaults.slot.mix
                 : colorDefaults.slot.settings[parameter],
           },
         );
