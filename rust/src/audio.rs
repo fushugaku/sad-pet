@@ -1,6 +1,6 @@
 use crate::{
     Stereo,
-    dsp::{Engine, GrainView, Region, SampleBuffer},
+    dsp::{Engine, Fades, GrainView, Region, SampleBuffer},
     midi::Message,
     preset::Preset,
 };
@@ -29,6 +29,7 @@ pub enum Command {
     Preset(Box<Preset>),
     Sample(Arc<SampleBuffer>),
     Region(Region, SyncSender<Result<Region, String>>),
+    Fades(Fades, SyncSender<Result<Fades, String>>),
     Transport(Transport),
     Midi(Message),
     StepEntry(Option<usize>, bool, bool),
@@ -54,6 +55,7 @@ pub struct State {
     pub sample_seconds: f64,
     pub sample_frames: usize,
     pub region: Region,
+    pub fades: Fades,
     pub waveform: Vec<[f32; 2]>,
     pub center: f32,
     pub grains: Vec<GrainView>,
@@ -210,6 +212,7 @@ impl Runtime {
             sample_seconds: sample.duration(),
             sample_frames: sample.len(),
             region: Region::default(),
+            fades: Fades::default(),
             waveform: sample.waveform.clone(),
             center: 0.0,
             grains: Vec::new(),
@@ -248,6 +251,11 @@ impl Runtime {
                         Command::Region(region,reply)=> {
                             let result=engine.set_region(region).map(|_|engine.region);
                             if let Ok(mut state)=worker_state.lock() {state.region=engine.region;}
+                            let _=reply.try_send(result);
+                        },
+                        Command::Fades(fades,reply)=> {
+                            let result=engine.set_fades(fades).map(|_|engine.fades);
+                            if let Ok(mut state)=worker_state.lock() {state.fades=engine.fades;}
                             let _=reply.try_send(result);
                         },
                         Command::Transport(t)=> {
@@ -290,6 +298,7 @@ impl Runtime {
                         state.playing=engine.playing;state.frozen=engine.frozen;state.bypass=engine.bypass;state.midi_gate=engine.midi_gate;
                         state.preset=engine.preset.clone();state.center=(engine.center()/engine.sample.len() as f64) as f32;
                         state.region=engine.region;
+                        state.fades=engine.fades;
                         state.grains=engine.grain_views();state.active_grains=engine.active_grains();state.notes=engine.held_notes();
                         state.performance=engine.performance_view();
                         state.step_entry=engine.step_entry;

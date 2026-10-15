@@ -72,6 +72,40 @@ entry.process(128);
 assert.deepEqual(entry.request("/api/state").notes, [60, 64, 67, 72]);
 
 const defaults = utility.request("/api/color-defaults");
+// Dry/wet blends the source and grains upstream of all filters and FX.
+const dryPreset = utility.request("/api/preset");
+dryPreset.params.mix = 0;
+dryPreset.params.filter_env_depth = 0;
+dryPreset.params.grains = 0;
+dryPreset.params.min_grains = 0;
+dryPreset.color_chain = [];
+function dryOutput(settings) {
+  const core = new Core(module, 48000);
+  core.json("sad_load", prepared);
+  core.request("/api/preset", settings);
+  core.request("/api/transport", { playing: true });
+  const frames = new Float32Array(48000 * 2);
+  for (let i = 0; i < 48000; i += 128)
+    frames.set(core.process(Math.min(128, 48000 - i)), i * 2);
+  assert.ok(frames.every(Number.isFinite));
+  return frames.subarray(48000);
+}
+const signalEnergy = (frames) => frames.reduce((sum, v) => sum + v * v, 0);
+const dryOpen = dryOutput(dryPreset);
+dryPreset.params.filter = 0;
+assert.ok(
+  signalEnergy(dryOutput(dryPreset)) < signalEnergy(dryOpen) * 0.02,
+  "0% wet must still pass through the filter in WASM",
+);
+dryPreset.params.filter = 1;
+dryPreset.color_chain = [
+  { ...structuredClone(defaults.slot), mix: 1, kind: "distortion" },
+];
+const dryFx = dryOutput(dryPreset);
+assert.ok(
+  dryFx.some((value, i) => Math.abs(value - dryOpen[i]) > 0.01),
+  "0% wet must still reach the effect chain in WASM",
+);
 preset.color_chain = ["distortion", "reverb", "lcr_delay", "mod_delay"].map(
   (kind, i) => ({ ...structuredClone(defaults.slot), id: i + 1, kind }),
 );
@@ -136,6 +170,19 @@ assert.deepEqual(
   pcm(trimmed),
   pcm(original).slice(48000 * 2 * 2, 48000 * 4 * 2),
 );
+const fades = { fade_in: 0.025, fade_out: 0.05 };
+regionAudio.request("/api/fades", fades);
+assert.deepEqual(regionAudio.request("/api/state").fades, fades);
+const fadeTrim = utility.call("sad_trim", { ...region, fades });
+const fadedPcm = pcm(fadeTrim);
+assert.equal(fadedPcm.length, pcm(trimmed).length);
+assert.ok(
+  [fadedPcm[0], fadedPcm[1], fadedPcm.at(-1), fadedPcm.at(-2)].every(
+    (v) => v === 0,
+  ),
+);
+assert.equal(fadedPcm[10000], pcm(trimmed)[10000]);
+assert.deepEqual(utility.call("sad_sample_wav"), original);
 assert.throws(
   () => utility.call("sad_trim", { ...region, sample_id: "wrong-source" }),
   /source changed/,
@@ -167,6 +214,10 @@ regionAudio.json("sad_load", prepared);
 assert.deepEqual(regionAudio.request("/api/state").region, {
   start: 0,
   end: 1,
+});
+assert.deepEqual(regionAudio.request("/api/state").fades, {
+  fade_in: 0,
+  fade_out: 0,
 });
 
 // Recorded bank entries must work through the same prepare/load path as files,

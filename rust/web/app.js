@@ -160,9 +160,11 @@ function showSavedRecording(record) {
   $("recording-result-title").textContent =
     record.kind === "recording"
       ? "Recording saved"
-      : record.trimmedFrom
-        ? "Trim saved"
-        : "Sample saved";
+      : record.appliedFades?.fade_in || record.appliedFades?.fade_out
+        ? "Edit saved"
+        : record.trimmedFrom
+          ? "Trim saved"
+          : "Sample saved";
   $("recording-result-info").textContent =
     `${record.displayName} · ${formatTime(record.seconds || 0)} · Library`;
   $("recording-mp3").hidden = !record.mp3Blob;
@@ -1732,7 +1734,9 @@ async function loadStoredAudio(record) {
     ),
     "X-Library-Id": record.id,
   });
-  return response.json();
+  const info = await response.json();
+  await request("/api/fades", await fileLibrary.fades(record.id));
+  return info;
 }
 async function loadStoredPreset(loaded) {
   clearTimeout(commitTimer);
@@ -2024,14 +2028,23 @@ function draw() {
       c.beginPath();
       for (let i = 0; i < waveform.length; i++) {
         const x = (i * w) / (waveform.length - 1),
-          y = h / 2 - waveform[i][1] * h * 0.43;
+          y =
+            h / 2 -
+            waveform[i][1] *
+              (sampleSelection?.gainAt(i / (waveform.length - 1)) ?? 1) *
+              h *
+              0.43;
         if (i === 0) c.moveTo(x, y);
         else c.lineTo(x, y);
       }
       for (let i = waveform.length - 1; i >= 0; i--)
         c.lineTo(
           (i * w) / (waveform.length - 1),
-          h / 2 - waveform[i][0] * h * 0.43,
+          h / 2 -
+            waveform[i][0] *
+              (sampleSelection?.gainAt(i / (waveform.length - 1)) ?? 1) *
+              h *
+              0.43,
         );
       c.closePath();
       c.fill();
@@ -2284,6 +2297,7 @@ async function init() {
       download,
       loadAudio: loadStoredAudio,
       loadPreset: loadStoredPreset,
+      loadFades: (fades) => request("/api/fades", fades),
     });
     request("/api/state")
       .then((native) => fileLibrary.initialize(native, presets))

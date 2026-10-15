@@ -19,7 +19,9 @@ The desktop version uses the system audio output and a local browser panel.
 - A reorderable chain of up to 12 effects: distortion, rate reducer, bit crusher,
   flanger, chorus, binaural processing, reverb, L/C/R delay and modulated delay.
 - Live modulation feedback on controls, MIDI input and stereo WAV/MP3 recording.
-- Waveform loop selection during playback and sample-exact trimming to new library files.
+- Dry/Wet blends the original source with grains before the voice filters and
+  shared effect chain, so even fully dry audio receives filtering and effects.
+- Waveform loop selection, adjustable fade in/out and sample-exact trimming to new library files.
 
 ## Run
 
@@ -77,7 +79,11 @@ Use **Load WAV** or drop a mono/stereo WAV onto the waveform to import your own
 audio. Drag across the waveform to choose a loop, adjust its **IN / OUT** handles,
 or enter exact boundaries in seconds. The selection immediately limits playback,
 including reverse grains and cloud spread. **Full** restores the whole file.
-**Save trim** saves and loads a new WAV in IndexedDB without changing the original;
+**Fade In / Fade Out** set smooth fades in milliseconds at the selection boundaries.
+They apply during playback and on each loop, including grain reads. Their settings
+are stored per source file in IndexedDB and restored when that file is loaded.
+**Save edit** saves and loads a new WAV with the selection and fades baked in,
+without changing the original;
 download it from the saved result or Library. After recording, **Trim** opens the
 saved take in this editor. Selecting a different source resets the loop.
 

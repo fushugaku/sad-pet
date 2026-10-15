@@ -350,6 +350,7 @@ export class BrowserBackend {
           bypass: state.bypass,
           frozen: state.frozen,
           region: state.region,
+          fades: state.fades,
         });
         mime = "audio/wav";
       } else if (route === "/api/recording") {

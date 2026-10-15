@@ -170,6 +170,8 @@
         await this.activate(previous);
       } else {
         await this.rememberNative(native);
+        if (native.fades && !native.playing && !native.input?.active)
+          await this.actions.loadFades(await this.fades(this.currentId));
       }
       this.status = "";
       this.initializing = false;
@@ -179,6 +181,17 @@
     }
     changed() {
       this.channel?.postMessage("files");
+    }
+    async fades(id) {
+      return (
+        (await this.store.setting(`sample-fades:${id}`)) || {
+          fade_in: 0,
+          fade_out: 0,
+        }
+      );
+    }
+    async saveFades(id, fades) {
+      if (id) await this.store.setting(`sample-fades:${id}`, fades);
     }
     async refresh() {
       this.files = await this.store.read("files");

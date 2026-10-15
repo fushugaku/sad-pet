@@ -1,6 +1,6 @@
 use crate::{
     audio::{Command, Runtime, State, Transport},
-    dsp::{Engine, SampleBuffer},
+    dsp::Engine,
     midi,
     preset::Preset,
     wav,
@@ -289,7 +289,24 @@ fn handle(
                 {
                     return Err("The audio source changed; select the region again".into());
                 }
-                Ok((sample.trim_wav(region)?, "audio/wav"))
+                let fades = serde_json::from_value(
+                    value
+                        .get("fades")
+                        .cloned()
+                        .unwrap_or_else(|| serde_json::json!({})),
+                )
+                .map_err(|e| e.to_string())?;
+                Ok((sample.trim_wav_with_fades(region, fades)?, "audio/wav"))
+            }
+            "/api/fades" => {
+                let fades: crate::dsp::Fades =
+                    serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+                let (reply, result) = std::sync::mpsc::sync_channel(1);
+                send(&commands, Command::Fades(fades, reply))?;
+                let fades = result
+                    .recv_timeout(Duration::from_secs(5))
+                    .map_err(|e| e.to_string())??;
+                json(&fades)
             }
             "/api/demo" => {
                 send(
@@ -358,15 +375,7 @@ fn handle(
                     return Err("Render duration must be 0.1–120 seconds".into());
                 }
                 let snapshot = state.lock().map_err(|e| e.to_string())?.clone();
-                let frames = render(
-                    snapshot.sample,
-                    snapshot.preset,
-                    snapshot.sample_rate,
-                    seconds,
-                    snapshot.bypass,
-                    snapshot.frozen,
-                    snapshot.region,
-                );
+                let frames = render(&snapshot, seconds);
                 Ok((wav::bytes(snapshot.sample_rate, &frames)?, "audio/wav"))
             }
             _ => Err("Route not found".into()),
@@ -386,21 +395,18 @@ fn handle(
     }
 }
 
-pub fn render(
-    sample: Arc<SampleBuffer>,
-    preset: Preset,
-    sample_rate: u32,
-    seconds: f64,
-    bypass: bool,
-    frozen: bool,
-    region: crate::dsp::Region,
-) -> Vec<crate::Stereo> {
-    let mut engine = Engine::new(sample_rate, sample, preset);
-    let _ = engine.set_region(region);
-    engine.bypass = bypass;
-    engine.set_frozen(frozen);
+pub fn render(snapshot: &crate::audio::State, seconds: f64) -> Vec<crate::Stereo> {
+    let mut engine = Engine::new(
+        snapshot.sample_rate,
+        snapshot.sample.clone(),
+        snapshot.preset.clone(),
+    );
+    let _ = engine.set_region(snapshot.region);
+    let _ = engine.set_fades(snapshot.fades);
+    engine.bypass = snapshot.bypass;
+    engine.set_frozen(snapshot.frozen);
     engine.set_playing(true);
-    let mut frames = vec![[0.0; 2]; (seconds * sample_rate as f64).round() as usize];
+    let mut frames = vec![[0.0; 2]; (seconds * snapshot.sample_rate as f64).round() as usize];
     engine.process(&mut frames);
     frames
 }

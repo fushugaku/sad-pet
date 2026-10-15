@@ -175,6 +175,32 @@
                 disabled
             /></label>
           </div>
+          <div class="region-times fade-times">
+            <label
+              >FADE IN
+              <input
+                id="fade-in"
+                type="number"
+                min="0"
+                step="1"
+                value="0"
+                aria-label="Fade in milliseconds"
+                disabled
+              /><span>ms</span></label
+            >
+            <label
+              >FADE OUT
+              <input
+                id="fade-out"
+                type="number"
+                min="0"
+                step="1"
+                value="0"
+                aria-label="Fade out milliseconds"
+                disabled
+              /><span>ms</span></label
+            >
+          </div>
           <output id="region-duration">0.000 s loop</output>
           <div class="region-actions">
             <button id="region-reset" title="Play the full file" disabled>
@@ -183,10 +209,10 @@
             <button
               id="region-save"
               class="light"
-              title="Save the selection as a new sample in Library"
+              title="Save the selection and fades as a new sample in Library"
               disabled
             >
-              Save trim
+              Save edit
             </button>
           </div>
         </div>
@@ -256,6 +282,7 @@
           <label
             >DRY / WET<input
               id="mix"
+              title="Blend source audio and grains before filters and effects"
               type="range"
               min="0"
               max="1"

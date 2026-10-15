@@ -3,10 +3,12 @@
   const $ = (id) => document.getElementById(id);
   const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
   const full = () => ({ start: 0, end: 1 });
+  const noFades = () => ({ fade_in: 0, fade_out: 0 });
   class SampleSelection {
     constructor(actions) {
       this.actions = actions;
       this.region = full();
+      this.fades = noFades();
       this.state = null;
       this.sending = null;
       this.queued = null;
@@ -22,6 +24,9 @@
         !this.state.input?.pending &&
         this.actions.library()?.ready &&
         !this.actions.library()?.loading &&
+        (!this.state.sample_id ||
+          !this.actions.library()?.currentId ||
+          this.state.sample_id === this.actions.library().currentId) &&
         !this.saving
       );
     }
@@ -42,6 +47,7 @@
       if (this.key !== key) {
         this.key = key;
         this.region = state.region || full();
+        this.fades = state.fades || noFades();
         this.drag = null;
         this.changedAt = 0;
       } else if (
@@ -50,6 +56,7 @@
         performance.now() - this.changedAt > 750
       ) {
         this.region = state.region || full();
+        this.fades = state.fades || noFades();
       }
       this.state = state;
       this.render();
@@ -86,13 +93,35 @@
       $("region-duration").textContent = `${duration.toFixed(3)} s loop`;
       const isFull = this.region.start === 0 && this.region.end === 1;
       $("region-reset").disabled = !available || isFull;
-      $("region-save").disabled = !available || isFull;
-      $("region-save").textContent = this.saving ? "Saving…" : "Save trim";
+      const hasFades = this.fades.fade_in > 0 || this.fades.fade_out > 0;
+      $("region-save").disabled = !available || (isFull && !hasFades);
+      $("region-save").textContent = this.saving ? "Saving…" : "Save edit";
+      for (const edge of ["in", "out"]) {
+        const input = $(`fade-${edge}`);
+        input.disabled = !available || !this.state?.fades;
+        input.max = String(
+          Math.round((this.state?.sample_seconds || 0) * 1000),
+        );
+        if (document.activeElement !== input)
+          input.value = String(Math.round(this.fades[`fade_${edge}`] * 1000));
+      }
       $("drop-zone").classList.toggle("selecting", !!this.drag);
     }
     queue(region) {
       this.region = { ...region };
-      this.queued = { ...region };
+      this.queued = { ...this.queued, region: { ...region } };
+      this.send();
+    }
+    queueFades(fades) {
+      this.fades = { ...fades };
+      this.queued = {
+        ...this.queued,
+        fades: { ...fades },
+        sampleId: this.state.sample_id,
+      };
+      this.send();
+    }
+    send() {
       this.error = null;
       this.changedAt = performance.now();
       this.render();
@@ -101,14 +130,28 @@
         while (this.queued) {
           const next = this.queued;
           this.queued = null;
-          const confirmed = await this.actions.request("/api/region", next);
-          if (!this.queued && !this.drag) this.region = confirmed;
+          if (next.region) {
+            const confirmed = await this.actions.request(
+              "/api/region",
+              next.region,
+            );
+            if (!this.queued?.region && !this.drag) this.region = confirmed;
+          }
+          if (next.fades) {
+            const confirmed = await this.actions.request(
+              "/api/fades",
+              next.fades,
+            );
+            await this.actions.library().saveFades(next.sampleId, confirmed);
+            if (!this.queued?.fades) this.fades = confirmed;
+          }
         }
       })()
         .catch((error) => {
           this.error = error;
           this.queued = null;
           this.region = this.state?.region || full();
+          this.fades = this.state?.fades || noFades();
           this.actions.notify(error.message, true);
         })
         .finally(() => {
@@ -235,6 +278,57 @@
       }
       $("region-reset").onclick = () => this.queue(full());
       $("region-save").onclick = () => this.save();
+      for (const edge of ["in", "out"]) {
+        const input = $(`fade-${edge}`);
+        const update = () => {
+          if (!input.value || !Number.isFinite(input.valueAsNumber)) return;
+          this.queueFades({
+            ...this.fades,
+            [`fade_${edge}`]: clamp(
+              input.valueAsNumber / 1000,
+              0,
+              this.state.sample_seconds,
+            ),
+          });
+        };
+        input.oninput = update;
+        input.onchange = () => {
+          update();
+          input.value = String(Math.round(this.fades[`fade_${edge}`] * 1000));
+        };
+      }
+    }
+    gainAt(position) {
+      if (
+        !this.state ||
+        this.state.input?.active ||
+        position < this.region.start ||
+        position > this.region.end
+      )
+        return 1;
+      const frames =
+        this.state.sample_frames ||
+        this.state.sample_seconds * this.state.sample_rate;
+      const length = Math.max(
+        0,
+        (this.region.end - this.region.start) * frames - 1,
+      );
+      const p = clamp((position - this.region.start) * frames, 0, length);
+      const ramp = (distance, seconds) => {
+        if (!seconds) return 1;
+        const fadeFrames = Math.min(
+          Math.max(
+            1,
+            Math.round((seconds * frames) / this.state.sample_seconds),
+          ),
+          Math.max(1, length),
+        );
+        const x = clamp(distance / fadeFrames, 0, 1);
+        return x * x * (3 - 2 * x);
+      };
+      return (
+        ramp(p, this.fades.fade_in) * ramp(length - p, this.fades.fade_out)
+      );
     }
     draw(context, width, height) {
       if (!this.state?.region || this.state.input?.active) return;
@@ -253,6 +347,34 @@
       context.moveTo(Math.min(width - 0.5, end), 0);
       context.lineTo(Math.min(width - 0.5, end), height);
       context.stroke();
+      if (this.fades.fade_in || this.fades.fade_out) {
+        context.strokeStyle = "#d7e9bcb3";
+        const points = new Set([this.region.start, this.region.end]);
+        const span = this.region.end - this.region.start;
+        const fadeIn = Math.min(
+          span,
+          this.fades.fade_in / this.state.sample_seconds,
+        );
+        const fadeOut = Math.min(
+          span,
+          this.fades.fade_out / this.state.sample_seconds,
+        );
+        for (let i = 0; i <= 32; i++) {
+          points.add(this.region.start + (fadeIn * i) / 32);
+          points.add(this.region.end - (fadeOut * i) / 32);
+        }
+        const positions = [...points].sort((a, b) => a - b);
+        for (const sign of [-1, 1]) {
+          context.beginPath();
+          for (const [i, position] of positions.entries()) {
+            const x = position * width,
+              y = height / 2 + sign * this.gainAt(position) * (height / 2 - 3);
+            if (i) context.lineTo(x, y);
+            else context.moveTo(x, y);
+          }
+          context.stroke();
+        }
+      }
     }
     async save() {
       if (!this.available()) return;
@@ -266,6 +388,7 @@
           seconds = this.state.sample_seconds;
         const response = await this.actions.api("/api/trim", {
           ...region,
+          fades: { ...this.fades },
           sample_id: this.state.sample_id,
         });
         const label = `${(source?.displayName || this.state.sample_name).replace(/\.wav$/i, "")} · ${(region.start * seconds).toFixed(3)}–${(region.end * seconds).toFixed(3)} s`;
@@ -276,10 +399,12 @@
           seconds: (region.end - region.start) * seconds,
           trimmedFrom: source?.id,
           region,
+          appliedFades: { ...this.fades },
         });
+        await library.saveFades(record.id, noFades());
         await library.activate(record);
         this.actions.saved(record);
-        this.actions.notify("Trim saved in Library");
+        this.actions.notify("Edited sample saved in Library");
       } catch (error) {
         this.actions.notify(error.message, true);
       } finally {

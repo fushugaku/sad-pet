@@ -34,6 +34,43 @@ impl Region {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, serde::Deserialize, serde::Serialize, PartialEq)]
+#[serde(default)]
+pub struct Fades {
+    pub fade_in: f64,
+    pub fade_out: f64,
+}
+impl Fades {
+    pub fn validate(self) -> Result<Self, String> {
+        if [self.fade_in, self.fade_out]
+            .iter()
+            .any(|x| !x.is_finite() || !(0.0..=1800.0).contains(x))
+        {
+            return Err("Fade times must be between 0 and 1800 seconds".into());
+        }
+        Ok(self)
+    }
+    pub fn gain(self, position: f64, sample_rate: u32, range: &std::ops::Range<usize>) -> f32 {
+        if self == Self::default() {
+            return 1.0;
+        }
+        let length = range.len().saturating_sub(1) as f64;
+        let p = (position - range.start as f64).rem_euclid(range.len() as f64);
+        let ramp = |distance: f64, seconds: f64| {
+            if seconds == 0.0 {
+                return 1.0;
+            }
+            let frames = (seconds * sample_rate as f64)
+                .round()
+                .max(1.0)
+                .min(length.max(1.0));
+            let x = (distance / frames).clamp(0.0, 1.0);
+            x * x * (3.0 - 2.0 * x)
+        };
+        (ramp(p, self.fade_in) * ramp(length - p, self.fade_out)) as f32
+    }
+}
+
 #[derive(Debug)]
 pub struct SampleBuffer {
     pub name: String,
@@ -344,8 +381,19 @@ impl SampleBuffer {
     }
 
     pub fn trim_wav(&self, region: Region) -> Result<Vec<u8>, String> {
+        self.trim_wav_with_fades(region, Fades::default())
+    }
+    pub fn trim_wav_with_fades(&self, region: Region, fades: Fades) -> Result<Vec<u8>, String> {
+        let fades = fades.validate()?;
         let range = region.bounds(self.len())?;
-        crate::wav::bytes(self.sample_rate, &self.frames()[range])
+        if fades == Fades::default() {
+            return crate::wav::bytes(self.sample_rate, &self.frames()[range]);
+        }
+        let frames: Vec<_> = range
+            .clone()
+            .map(|i| self.frames()[i].map(|v| v * fades.gain(i as f64, self.sample_rate, &range)))
+            .collect();
+        crate::wav::bytes(self.sample_rate, &frames)
     }
 
     pub fn demo(sample_rate: u32) -> Self {

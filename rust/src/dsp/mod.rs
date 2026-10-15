@@ -19,7 +19,7 @@ use color::ColorRack;
 use filter::FilterBank;
 use modulation::{Envelope, Oscillator};
 use sample::LiveInput;
-pub use sample::{Region, SampleBuffer};
+pub use sample::{Fades, Region, SampleBuffer};
 use serde::Serialize;
 use std::sync::Arc;
 
@@ -252,6 +252,7 @@ pub struct Engine {
     pub sample: Arc<SampleBuffer>,
     pub live_input: Option<LiveInput>,
     pub region: Region,
+    pub fades: Fades,
     file_range: std::ops::Range<usize>,
     pub playing: bool,
     pub frozen: bool,
@@ -292,7 +293,6 @@ pub struct Engine {
     overlap: f32,
     smooth_mix: f32,
     smooth_gain: f32,
-    smooth_dry_gate: f32,
     smooth_bypass_gate: f32,
     pub peak: Stereo,
 }
@@ -304,6 +304,7 @@ impl Engine {
             sample_rate: sr,
             preset: Preset::default(),
             region: Region::default(),
+            fades: Fades::default(),
             file_range: 0..sample.len(),
             sample,
             live_input: None,
@@ -348,7 +349,6 @@ impl Engine {
             overlap: 1.0,
             smooth_mix: 1.0,
             smooth_gain: 0.0,
-            smooth_dry_gate: 0.0,
             smooth_bypass_gate: 0.0,
             peak: [0.0; 2],
         };
@@ -396,6 +396,7 @@ impl Engine {
         self.live_input = None;
         self.sample = sample;
         self.region = Region::default();
+        self.fades = Fades::default();
         self.file_range = 0..self.sample.len();
         self.cursor = 0.0;
         self.frozen_center = 0.0;
@@ -432,6 +433,13 @@ impl Engine {
             .as_ref()
             .map_or_else(|| self.file_range.clone(), |input| 0..input.sample.len())
     }
+    pub fn set_fades(&mut self, fades: Fades) -> Result<(), String> {
+        if self.live_input.is_some() {
+            return Err("Load a recording or file to set fades".into());
+        }
+        self.fades = fades.validate()?;
+        Ok(())
+    }
     pub fn set_live_input(&mut self, enabled: bool, effects_only: bool) {
         if enabled {
             if let Some(input) = &mut self.live_input {
@@ -451,7 +459,6 @@ impl Engine {
             for voice in &mut self.voices {
                 voice.kill();
             }
-            self.smooth_dry_gate = 0.0;
             self.smooth_bypass_gate = 0.0;
             self.peak = [0.0; 2];
         }
@@ -1130,6 +1137,11 @@ impl Engine {
         } else {
             self.sample
                 .read_region(self.cursor, source_rate, true, &self.file_range)
+                .map(|v| {
+                    v * self
+                        .fades
+                        .gain(self.cursor, self.sample.sample_rate, &self.file_range)
+                })
         };
         let level = source[0].abs().max(source[1].abs());
         self.follower += (level - self.follower)
@@ -1147,7 +1159,8 @@ impl Engine {
             );
         }
         self.env_values = [0.0; 3];
-        let mut dry_envelope = 0.0_f32;
+        let mut loudest_voice = 0.0_f32;
+        let mut voice_sum = 0.0_f32;
         for v in &mut self.voices {
             for (i, env) in v.envelopes.iter_mut().enumerate() {
                 let value = env.next_sample();
@@ -1155,7 +1168,8 @@ impl Engine {
                 self.env_values[i] = self.env_values[i].max(value);
                 if i == 0 {
                     v.value = value * v.velocity;
-                    dry_envelope = dry_envelope.max(v.value);
+                    loudest_voice = loudest_voice.max(v.value);
+                    voice_sum += v.value;
                 }
             }
         }
@@ -1171,9 +1185,6 @@ impl Engine {
             self.spawn();
         }
         let mut voice_frames = [[0.0; 2]; VOICES];
-        if effects_only {
-            voice_frames.fill(source);
-        }
         let range = self.source_range();
         let sample = self
             .live_input
@@ -1185,12 +1196,16 @@ impl Engine {
             }
             let phase = 2.0 * grain.age as f32 / (grain.duration - 1) as f32;
             let amplitude = tables::grain_window(phase, grain.shape);
-            let frame = sample.read_region(
+            let mut frame = sample.read_region(
                 grain.position,
                 grain.rate,
                 self.preset.params.antialiasing,
                 &range,
             );
+            if self.live_input.is_none() {
+                let gain = self.fades.gain(grain.position, sample.sample_rate, &range);
+                frame = frame.map(|v| v * gain);
+            }
             for c in 0..2 {
                 voice_frames[grain.voice][c] += frame[c] * amplitude * grain.pan[c];
             }
@@ -1205,18 +1220,33 @@ impl Engine {
             1.0
         };
         let input_gain = 10.0_f32.powf(self.modulated.params.in_gain * 0.05);
-        let mut wet = [0.0; 2];
+        self.smooth_mix += (self.modulated.params.mix - self.smooth_mix) * 0.002;
+        // The source is shared by all notes. Distribute it across their filter
+        // banks without multiplying its level when a chord adds more voices.
+        let dry_scale = if voice_sum > 0.0 {
+            loudest_voice / voice_sum
+        } else {
+            0.0
+        };
+        let (dry_amount, grain_amount) = if effects_only {
+            (dry_scale, 0.0)
+        } else {
+            (dry_scale * (1.0 - self.smooth_mix), norm * self.smooth_mix)
+        };
+        let mut filtered = [0.0; 2];
         for (i, frame) in voice_frames.into_iter().enumerate() {
             if self.voices[i].value <= 0.0 {
                 continue;
             }
-            let filtered = self.filters[i].process(frame.map(|x| x * norm * input_gain));
+            let mixed = std::array::from_fn(|c| {
+                (source[c] * dry_amount + frame[c] * grain_amount) * input_gain
+            });
+            let voice = self.filters[i].process(mixed);
             for c in 0..2 {
-                wet[c] += filtered[c] * self.voices[i].value;
+                filtered[c] += voice[c] * self.voices[i].value;
             }
         }
-        wet = self.color_rack.process(wet);
-        self.smooth_mix += (self.modulated.params.mix - self.smooth_mix) * 0.002;
+        let processed = self.color_rack.process(filtered);
         let volume = if self.bypass {
             self.preset.params.master_volume
         } else {
@@ -1224,15 +1254,13 @@ impl Engine {
         };
         let gain = volume * 10.0_f32.powf(self.modulated.params.out_gain * 0.05);
         self.smooth_gain += (gain - self.smooth_gain) * 0.002;
-        self.smooth_dry_gate += (dry_envelope - self.smooth_dry_gate) * 0.002;
         self.smooth_bypass_gate +=
             ((if self.playing { 1.0 } else { 0.0 }) - self.smooth_bypass_gate) * 0.002;
         let output = std::array::from_fn(|c| {
-            let dry = source[c] * input_gain * self.smooth_dry_gate;
             let value = (if self.bypass {
                 source[c] * input_gain * self.smooth_bypass_gate
             } else {
-                dry * (1.0 - self.smooth_mix) + wet[c] * self.smooth_mix
+                processed[c]
             }) * self.smooth_gain;
             if !value.is_finite() {
                 0.0

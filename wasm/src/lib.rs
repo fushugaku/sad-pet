@@ -52,6 +52,7 @@ impl Host {
             "sample_seconds": sample.duration(), "waveform": sample.waveform,
             "sample_frames": sample.len(),
             "region": e.region,
+            "fades": e.fades,
             "center": e.center() / sample.len() as f64, "grains": e.grain_views(),
             "input": {"active": e.live_input.is_some(),
                 "seconds": e.live_input.as_ref().map_or(0.0, |i| i.seconds()),
@@ -122,6 +123,11 @@ impl Host {
                 let region = serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
                 self.engine.set_region(region)?;
                 Ok(json!(self.engine.region))
+            }
+            "/api/fades" => {
+                let fades = serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
+                self.engine.set_fades(fades)?;
+                Ok(json!(self.engine.fades))
             }
             "/api/note" => {
                 let message: Message =
@@ -397,8 +403,12 @@ pub extern "C" fn sad_trim() -> u32 {
                 {
                     return Err("The audio source changed; select the region again".into());
                 }
+                let fades = serde_json::from_value(
+                    value.get("fades").cloned().unwrap_or_else(|| json!({})),
+                )
+                .map_err(|e| e.to_string())?;
                 let region = serde_json::from_value(value).map_err(|e| e.to_string())?;
-                h.engine.sample.trim_wav(region)
+                h.engine.sample.trim_wav_with_fades(region, fades)
             });
         h.finish(result)
     })
@@ -422,6 +432,10 @@ pub extern "C" fn sad_render() -> u32 {
                 )?;
             }
             engine.bypass = value["bypass"] == true;
+            if let Some(fades) = value.get("fades") {
+                engine
+                    .set_fades(serde_json::from_value(fades.clone()).map_err(|e| e.to_string())?)?;
+            }
             engine.set_frozen(value["frozen"] == true);
             engine.set_playing(true);
             let mut frames = vec![[0.0; 2]; (seconds * h.rate as f64).round() as usize];
