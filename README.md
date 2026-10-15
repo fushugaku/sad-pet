@@ -75,9 +75,14 @@ origin; the hosted site and the local desktop panel have separate libraries.
 Use **Load WAV** or drop a mono/stereo WAV onto the waveform to import your own
 audio. Select **Microphone** to allow a live input, then choose **Filters + FX**
 for immediate processing or **Grains + Filters + FX** for granular processing.
-**Freeze** retains the granular input buffer; **Save input** saves up to the last
-eight seconds as WAV in Library. **Record** captures the actual processed output
-as WAV and MP3. **File**, **Stop audio**, loading a WAV or closing the page releases
+**Listen** enables microphone monitoring; it starts off, so connecting a microphone
+does not immediately feed it to the speakers. **Record mic** starts a timed take;
+choose **Microphone only** for input before filters/effects, or **With processing**
+for the processed output. **Stop & save** stores WAV and MP3 in Library and shows
+the saved take with **Use as sample** and download actions. Recording works with
+Listen off. **Capture last 8 s** saves a short buffer snapshot instead of starting
+a take. **Freeze** retains the granular input buffer. **File**, **Stop audio**,
+loading a WAV or closing the page releases
 the microphone. Capture permission is requested only when selecting Microphone;
 audio and saved files stay in the browser. The packaged desktop edition continues
 to use file input; live microphone capture is available in the hosted web edition.

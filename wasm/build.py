@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Build the standalone static site; no server, Node packages or wasm-bindgen needed."""
 import argparse
+import hashlib
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 
@@ -36,6 +38,15 @@ def main():
     (output / "index.html").write_text(index)
     shutil.copytree(ROOT / "wasm" / "web", output, dirs_exist_ok=True)
     shutil.copy2(target / "wasm32-unknown-unknown" / "release" / "sad_pet_wasm.wasm", output / "sad_pet.wasm")
+    # A cached worklet/bridge from another build can otherwise run alongside
+    # the new HTML. Give every runtime dependency one consistent build version.
+    runtime = sorted(p for p in output.rglob("*") if p.is_file() and p.suffix in (".js", ".mjs", ".css", ".wasm"))
+    version = hashlib.sha256(b"".join(p.read_bytes() for p in runtime)).hexdigest()[:12]
+    for path in [output / "index.html", *[p for p in runtime if p.suffix in (".js", ".mjs") and "vendor" not in p.relative_to(output).parts]]:
+        source = path.read_text()
+        source = re.sub(r'([\"\'])(\./[^\"\'\s?]+\.(?:mjs|js|css|wasm))\1',
+                        lambda match: f'{match[1]}{match[2]}?v={version}{match[1]}', source)
+        path.write_text(source)
     (output / ".nojekyll").touch()
     print(f"Built {output} ({(output / 'sad_pet.wasm').stat().st_size:,} byte WASM engine)")
 

@@ -409,7 +409,6 @@
       if (!this.ready) throw new Error("The library is still opening.");
       const id = `recording:${take.id}`;
       let record = await this.store.read("files", id);
-      const complete = Boolean(record?.mp3Blob);
       const read = async (extension) => {
         const response = await fetch(
           `/api/recording.${extension}?id=${take.id}`,
@@ -428,8 +427,9 @@
         record = await this.store.put({
           id,
           kind: "recording",
-          name: `sad-pet-recording-${stamp}.wav`,
-          displayName: `Recording ${new Date().toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" })}`,
+          name: `sad-pet-${take.source === "input" ? "microphone" : "recording"}-${stamp}.wav`,
+          displayName: `${take.source === "input" ? "Microphone" : "Output"} ${new Date().toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" })}`,
+          recordedSource: take.source || "output",
           seconds: take.seconds,
           blob: await read("wav"),
         });
@@ -444,18 +444,23 @@
         this.changed();
         await this.refresh();
       }
-      if (!complete) {
-        this.filter = "recording";
-        for (const button of document.querySelectorAll("[data-library-filter]"))
-          button.setAttribute(
-            "aria-pressed",
-            String(button.dataset.libraryFilter === this.filter),
-          );
-        byId("file-library").hidden = false;
-        byId("library-toggle").setAttribute("aria-expanded", "true");
-        this.render();
-      }
       return record;
+    }
+    reveal(record) {
+      this.filter = record.kind === "recording" ? "recording" : "audio";
+      this.search = (
+        record.displayName || stem(record.name)
+      ).toLocaleLowerCase();
+      byId("library-search").value = record.displayName || stem(record.name);
+      for (const button of document.querySelectorAll("[data-library-filter]"))
+        button.setAttribute(
+          "aria-pressed",
+          String(button.dataset.libraryFilter === this.filter),
+        );
+      byId("file-library").hidden = false;
+      byId("library-toggle").setAttribute("aria-expanded", "true");
+      this.render();
+      byId("file-library").scrollIntoView({ block: "nearest" });
     }
     async importFiles(files) {
       if (!this.ready) throw new Error("The library is still opening.");

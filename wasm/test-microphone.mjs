@@ -72,6 +72,11 @@ const microphone = new Microphone(backend, {
 assert.equal(requests, 0, "never ask for microphone access on page load");
 await microphone.configure({ active: true });
 assert.equal(microphone.snapshot().active, true);
+assert.equal(
+  microphone.snapshot().monitor,
+  false,
+  "connecting input must not enable speaker monitoring",
+);
 assert.equal(microphone.snapshot().device, "first");
 await microphone.configure({ gain: 0.4, mode: "grains" });
 assert.equal(microphone.gainNode.gain.value, 0.4);
@@ -122,6 +127,26 @@ const denied = new Microphone(host(), {
 await assert.rejects(denied.start(), /access was denied/);
 assert.equal(denied.pending, false);
 assert.equal(denied.active, false);
+const stopping = Object.create(BrowserBackend.prototype),
+  stopOrder = [];
+Object.assign(stopping, {
+  recording: { active: true, microphone: true },
+  async finishRecording() {
+    stopOrder.push("save");
+    this.recording.active = false;
+  },
+  microphone: {
+    async stop() {
+      stopOrder.push("disconnect");
+      return { active: false };
+    },
+  },
+  updateMonitor() {
+    stopOrder.push("monitor");
+  },
+});
+await stopping.stopInput();
+assert.deepEqual(stopOrder, ["save", "disconnect", "monitor"]);
 const restoring = Object.create(BrowserBackend.prototype);
 Object.assign(restoring, {
   state: { sample_name: "Microphone", input: { active: true } },

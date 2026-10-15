@@ -38,39 +38,59 @@
             </button>
           </div>
           <div class="microphone-controls" id="microphone-controls" hidden>
-            <select id="input-device" aria-label="Microphone device">
-              <option value="">Default microphone</option>
-            </select>
-            <select id="input-mode" aria-label="Microphone processing">
-              <option value="effects">Filters + FX</option>
-              <option value="grains">Grains + Filters + FX</option>
-            </select>
-            <label class="input-gain"
-              >GAIN<input
-                id="input-gain"
-                type="range"
-                min="0"
-                max="2"
-                step="0.01"
-                value="1"
-              /><output id="input-gain-value">100%</output></label
-            >
-            <div
-              class="input-meter"
-              role="meter"
-              aria-label="Microphone level"
-              aria-valuemin="0"
-              aria-valuemax="100"
-              aria-valuenow="0"
-            >
-              <i id="input-level"></i>
+            <div class="microphone-settings">
+              <select id="input-device" aria-label="Microphone device">
+                <option value="">Default microphone</option>
+              </select>
+              <select id="input-mode" aria-label="Microphone processing">
+                <option value="effects">Filters + FX</option>
+                <option value="grains">Grains + Filters + FX</option>
+              </select>
+              <label class="input-gain"
+                >GAIN<input
+                  id="input-gain"
+                  type="range"
+                  min="0"
+                  max="2"
+                  step="0.01"
+                  value="1"
+                /><output id="input-gain-value">100%</output></label
+              >
+              <div
+                class="input-meter"
+                role="meter"
+                aria-label="Microphone level"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="0"
+              >
+                <i id="input-level"></i>
+              </div>
+              <button
+                id="input-listen"
+                aria-pressed="false"
+                title="Hear the processed microphone through your speakers or headphones"
+              >
+                Listen
+              </button>
             </div>
-            <button
-              id="input-capture"
-              title="Save up to the last 8 seconds of input as WAV"
-            >
-              Save input
-            </button>
+            <div class="microphone-recording">
+              <div id="microphone-record-slot"></div>
+              <label class="record-source-label"
+                >RECORD<select id="record-source" aria-label="Recording source">
+                  <option value="input">Microphone only</option>
+                  <option value="output">With processing</option>
+                </select></label
+              >
+              <button
+                id="input-capture"
+                class="buffer-capture"
+                title="Save a snapshot of the input buffer as WAV"
+              >
+                Capture last 8 s
+              </button>
+            </div>
+            <div id="microphone-result-slot"></div>
           </div>
           <span id="input-status" class="muted" role="status"></span>
         </div>
@@ -189,6 +209,25 @@
             <i id="meter-l"></i><i id="meter-r"></i>
           </div>
         </div>
+      </div>
+      <div id="recording-result-slot">
+        <section
+          id="recording-result"
+          class="recording-result"
+          aria-label="Saved recording"
+          hidden
+        >
+          <div class="recording-result-info" role="status">
+            <strong id="recording-result-title">Recording saved</strong>
+            <span id="recording-result-info" class="muted"></span>
+          </div>
+          <div class="recording-result-actions">
+            <button id="recording-use" class="light">Use as sample</button>
+            <button id="recording-wav">WAV ↓</button>
+            <button id="recording-mp3">MP3 ↓</button>
+            <button id="recording-library">Show in Library</button>
+          </div>
+        </section>
       </div>
       <section class="bank">
         <div class="section-heading">

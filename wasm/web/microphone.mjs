@@ -8,6 +8,7 @@ export class Microphone {
     this.pending = false;
     this.mode = "effects";
     this.gain = 1;
+    this.monitor = false;
     this.device = "";
     this.name = "";
     this.devices = [];
@@ -18,6 +19,7 @@ export class Microphone {
       pending: this.pending,
       mode: this.mode,
       gain: this.gain,
+      monitor: this.monitor,
       device: this.device,
       name: this.name,
       devices: this.devices,
@@ -94,11 +96,12 @@ export class Microphone {
       if (generation !== this.generation) return this.snapshot();
       this.source.connect(this.gainNode).connect(this.backend.node);
       this.active = true;
+      this.backend.updateMonitor?.();
       track.onended = () => {
         if (this.stream !== stream) return;
         this.error =
           "Microphone disconnected. Choose an input and connect again.";
-        this.stop().catch(() => {});
+        (this.backend.stopInput?.() || this.stop()).catch(() => {});
       };
       await this.backend.audio.call(
         "request",
@@ -142,6 +145,10 @@ export class Microphone {
     }
   }
   async configure(data) {
+    if (data.monitor !== undefined) {
+      this.monitor = !!data.monitor;
+      this.backend.updateMonitor?.();
+    }
     if (data.gain !== undefined) {
       this.gain = Math.min(2, Math.max(0, Number(data.gain) || 0));
       if (this.gainNode)

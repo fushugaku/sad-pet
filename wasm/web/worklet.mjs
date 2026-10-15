@@ -23,6 +23,7 @@ class SadPetProcessor extends AudioWorkletProcessor {
         else if (type === "record-start") {
           if (this.recording) throw new Error("Recording is already running.");
           this.recordedFrames = 0;
+          this.recordSource = data?.source === "input" ? "input" : "output";
           this.recordBuffer = new Float32Array(16384 * 2);
           this.recordLength = 0;
           this.recording = true;
@@ -80,10 +81,23 @@ class SadPetProcessor extends AudioWorkletProcessor {
             n * 2 - offset,
             this.recordBuffer.length - this.recordLength,
           );
-          this.recordBuffer.set(
-            frames.subarray(offset, offset + length),
-            this.recordLength,
-          );
+          if (this.recordSource === "input") {
+            const incoming = inputs[0] || [];
+            for (let i = 0; i < length; i++) {
+              const sample = offset + i,
+                channel = sample % 2;
+              const value =
+                (incoming[channel] || incoming[0])?.[Math.floor(sample / 2)] ??
+                0;
+              this.recordBuffer[this.recordLength + i] = Number.isFinite(value)
+                ? value
+                : 0;
+            }
+          } else
+            this.recordBuffer.set(
+              frames.subarray(offset, offset + length),
+              this.recordLength,
+            );
           this.recordLength += length;
           offset += length;
           if (this.recordLength === this.recordBuffer.length)

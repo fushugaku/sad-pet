@@ -104,7 +104,8 @@ export class BrowserBackend {
     this.audio.onmessage = (message) => this.audioMessage(message);
     this.microphone = new Microphone(this);
     window.addEventListener("pagehide", () => {
-      this.microphone.stop().catch(() => {});
+      this.microphone.release();
+      this.stopInput().catch(() => {});
     });
     this.node.onprocessorerror = () => {
       this.microphone.release();
@@ -112,7 +113,8 @@ export class BrowserBackend {
       this.audio.fail(new Error(this.fatal));
       this.updateStatus();
     };
-    this.node.connect(this.context.destination);
+    this.monitor = this.context.createGain();
+    this.node.connect(this.monitor).connect(this.context.destination);
     await this.audio.call("load", prepared, [prepared]);
     this.state = await this.audio.call("request", null, [], "/api/state");
     const quit = document.getElementById("quit");
@@ -137,6 +139,30 @@ export class BrowserBackend {
       this.context.resume().catch((error) => {
         this.fatal = error.message;
       });
+  }
+  updateMonitor() {
+    this.monitor?.gain.setTargetAtTime(
+      this.microphone.active && !this.microphone.monitor ? 0 : 1,
+      this.context.currentTime,
+      0.01,
+    );
+  }
+  async stopInput() {
+    if (this.stoppingInput) return this.stoppingInput;
+    this.stoppingInput = (async () => {
+      // Finish a take before changing its source, so File and device disconnect
+      // cannot silently leave an input recording running into silence.
+      if (this.recording.active && this.recording.microphone)
+        await this.finishRecording();
+      const result = await this.microphone.stop();
+      this.updateMonitor();
+      return result;
+    })();
+    try {
+      return await this.stoppingInput;
+    } finally {
+      this.stoppingInput = null;
+    }
   }
   audioMessage(message) {
     if (message.type === "state") {
@@ -261,7 +287,9 @@ export class BrowserBackend {
       if (route === "/api/state") result = this.snapshot();
       else if (route === "/api/input")
         result = data
-          ? await this.microphone.configure(data)
+          ? data.active === false
+            ? await this.stopInput()
+            : await this.microphone.configure(data)
           : this.microphone.snapshot();
       else if (route === "/api/input.wav") {
         result = await this.audio.call("capture-input");
@@ -287,7 +315,7 @@ export class BrowserBackend {
           [wav],
         );
         if (this.microphone.active || this.microphone.pending)
-          await this.microphone.stop();
+          await this.stopInput();
         await this.audio.call("load", prepared.prepared, [prepared.prepared]);
         result = prepared.info;
       } else if (route === "/api/sample.wav") {
@@ -323,14 +351,21 @@ export class BrowserBackend {
           if (this.recording.active)
             throw new Error("Recording is already running.");
           const id = crypto.randomUUID();
+          const source = data.source === "input" ? "input" : "output";
+          if (source === "input" && !this.microphone.active)
+            throw new Error(
+              "Connect the microphone before recording its input.",
+            );
           await this.worker.call("record-start", { id, rate: this.rate });
-          await this.audio.call("record-start");
+          await this.audio.call("record-start", { source });
           this.recording = {
             active: true,
             id,
             seconds: 0,
             available: false,
             error: null,
+            source,
+            microphone: this.microphone.active,
           };
           result = { ...this.recording };
         } else result = await this.finishRecording();
@@ -345,7 +380,7 @@ export class BrowserBackend {
         mime = route.endsWith(".mp3") ? "audio/mpeg" : "audio/wav";
       } else if (route === "/api/quit") {
         if (this.microphone.active || this.microphone.pending)
-          await this.microphone.stop();
+          await this.stopInput();
         if (this.recording.active) await this.finishRecording();
         await this.audio.call(
           "request",

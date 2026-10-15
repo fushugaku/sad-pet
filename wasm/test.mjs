@@ -1,7 +1,7 @@
 // Exercise the compiled WASM, including the exact core/worklet used by the site.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { Core } from "./web/core.mjs";
+import { Core } from "../dist/web/core.mjs";
 
 const module = await WebAssembly.compile(
   await readFile(new URL("../dist/web/sad_pet.wasm", import.meta.url)),
@@ -164,7 +164,7 @@ globalThis.AudioWorkletProcessor = class {
     };
   }
 };
-await import("./web/worklet.mjs");
+await import("../dist/web/worklet.mjs");
 const processor = new Processor({ processorOptions: { module } });
 const send = (type, data, path) =>
   processor.port.onmessage({ data: { id: 1, type, data, path } });
@@ -196,6 +196,37 @@ assert.equal(processor.process([microphoneChannels], microphoneOutput), true);
 assert.ok(microphoneOutput[0][0].some((v) => Math.abs(v) > 0.001));
 send("capture-input");
 assert.ok(messages.some((m) => m.result instanceof ArrayBuffer));
+
+// A microphone-only take must contain the incoming signal, even with transport
+// paused, and must duplicate mono capture without applying filters or volume.
+messages.length = 0;
+send("request", { playing: false }, "/api/transport");
+send("record-start", { source: "input" });
+const rawExpected = [];
+for (const [n, stereo] of [
+  [128, true],
+  [511, false],
+  [4096, true],
+  [17, false],
+]) {
+  const left = Float32Array.from({ length: n }, (_, i) => ((i % 31) - 15) / 32);
+  const right = stereo ? Float32Array.from(left, (v) => -v * 0.5) : left;
+  processor.process(
+    [stereo ? [left, right] : [left]],
+    [[new Float32Array(n), new Float32Array(n)]],
+  );
+  for (let i = 0; i < n; i++) rawExpected.push(left[i], right[i]);
+}
+send("record-stop");
+const rawActual = messages
+  .filter((m) => m.type === "record-chunk")
+  .flatMap((m) => Array.from(new Float32Array(m.buffer)));
+assert.deepEqual(
+  rawActual,
+  rawExpected,
+  "microphone takes must preserve exact input samples",
+);
+assert.ok(!messages.some((m) => m.error || m.type === "fatal"));
 console.log(
   "WASM checks passed: portable module, stereo audio at 44.1/48 kHz, deterministic quanta, chord entry, MIDI, effect stack, live microphone processing/capture/freeze and sample-exact recording.",
 );

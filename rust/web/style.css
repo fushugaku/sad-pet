@@ -1871,11 +1871,90 @@ input[type="range"] {
   background: #1b221b;
 }
 .source-tabs,
-.microphone-controls {
+.microphone-settings,
+.microphone-recording {
   display: flex;
   align-items: center;
   gap: 7px;
   min-width: 0;
+}
+.microphone-controls {
+  width: 100%;
+  order: 2;
+  display: grid;
+  gap: 12px;
+}
+.microphone-recording {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.microphone-settings {
+  flex-wrap: wrap;
+}
+#microphone-record-slot {
+  display: flex;
+}
+#microphone-record-slot #record {
+  min-width: 174px;
+  justify-content: center;
+}
+.record-source-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font:
+    10px ui-monospace,
+    monospace;
+}
+.record-source-label select {
+  min-width: 148px;
+}
+.microphone-recording .buffer-capture {
+  margin-left: auto;
+}
+.recording-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  border-radius: 7px;
+  background: var(--panel);
+}
+#recording-result-slot > .recording-result {
+  margin-bottom: 20px;
+}
+.recording-result-info {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+.recording-result-info strong {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.recording-result-info span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font:
+    11px ui-monospace,
+    monospace;
+}
+.recording-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.recording-result button {
+  height: 32px;
+  font-size: 11px;
 }
 .source-tabs {
   gap: 0;
@@ -1930,11 +2009,17 @@ input[type="range"] {
 }
 #input-status {
   font:
-    10px ui-monospace,
+    11px ui-monospace,
     monospace;
+  line-height: 16px;
+  order: 1;
+  flex: 1;
 }
 #input-status.live {
   color: var(--accent);
+}
+#input-status.recording {
+  color: #eea49e;
 }
 #grain-controls.inactive {
   opacity: 0.35;
@@ -1949,10 +2034,51 @@ input[type="range"] {
     padding: 10px 12px;
     gap: 10px;
   }
-  .microphone-controls {
-    order: 3;
-    flex-wrap: wrap;
+  #input-status {
+    flex-basis: 100%;
+    min-height: 16px;
+  }
+  #input-status:empty {
+    display: none;
+  }
+  .microphone-settings {
+    gap: 8px;
+  }
+  .microphone-recording {
+    gap: 8px;
+  }
+  #microphone-record-slot {
+    flex: 1;
+  }
+  #microphone-record-slot #record {
     width: 100%;
+    min-width: 0;
+    height: 36px;
+  }
+  .record-source-label {
+    flex: 1;
+    min-width: 145px;
+  }
+  .record-source-label select {
+    width: 100%;
+    min-width: 0;
+    height: 36px;
+  }
+  .record-source-label {
+    font-size: 0;
+    gap: 0;
+  }
+  .microphone-recording .buffer-capture {
+    margin-left: 0;
+  }
+  .recording-result {
+    align-items: stretch;
+    flex-direction: column;
+    padding: 12px;
+  }
+  .recording-result-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
   }
   #input-device,
   #input-mode {

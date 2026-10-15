@@ -15,6 +15,8 @@ const controls = new Map(),
 let noteChain = Promise.resolve();
 let fileLibrary = null;
 let recordingBusy = false,
+  recordingAction = null,
+  lastSavedRecording = null,
   savedRecordingId = null,
   failedRecordingId = null;
 let keyboardOctave = 4;
@@ -95,7 +97,11 @@ function syncRecording() {
   const take = state?.recording;
   const active = !!take?.active;
   const retry = take?.available && take.id === failedRecordingId;
-  $("record").disabled = recordingBusy || !fileLibrary?.ready || !connected;
+  $("record").disabled =
+    recordingBusy ||
+    !!state?.input?.pending ||
+    !fileLibrary?.ready ||
+    !connected;
   $("record").setAttribute("aria-pressed", String(active));
   $("record").setAttribute(
     "aria-label",
@@ -103,25 +109,65 @@ function syncRecording() {
       ? "Stop recording"
       : retry
         ? "Retry saving recording"
-        : "Start recording",
+        : state?.input?.active
+          ? "Record microphone"
+          : "Record output",
   );
   $("record-label").textContent = recordingBusy
-    ? "Saving…"
+    ? recordingAction === "starting"
+      ? "Starting…"
+      : "Saving…"
     : active
-      ? "Stop"
+      ? "Stop & save"
       : retry
         ? "Retry save"
-        : "Record";
+        : state?.input?.active
+          ? "Record mic"
+          : "Record output";
   $("record-time").hidden = !active;
   const seconds = Math.floor(take?.seconds || 0);
   $("record-time").textContent =
     `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  $("record-source").disabled = active || recordingBusy;
+  if (active && take.source) $("record-source").value = take.source;
+  $("record").title =
+    state?.input?.active && $("record-source").value === "input"
+      ? "Record microphone input before filters and effects"
+      : "Record the processed audio output";
+  $("input-device").disabled = active || recordingBusy;
+  if (state?.input) {
+    const message = state.input.pending
+      ? "Allow microphone access in your browser…"
+      : state.input.error ||
+        (state.input.active
+          ? recordingBusy
+            ? recordingAction === "starting"
+              ? "Starting recording…"
+              : "Saving recording…"
+            : active
+              ? `Recording ${take.source === "input" ? "microphone" : "processed audio"} · ${$("record-time").textContent}`
+              : "Microphone connected · not recording"
+          : "");
+    if ($("input-status").textContent !== message)
+      $("input-status").textContent = message;
+    $("input-status").classList.toggle("recording", active);
+  }
+}
+function showSavedRecording(record) {
+  lastSavedRecording = record;
+  $("recording-result").hidden = false;
+  $("recording-result-title").textContent =
+    record.kind === "recording" ? "Recording saved" : "Buffer saved";
+  $("recording-result-info").textContent =
+    `${record.displayName} · ${formatTime(record.seconds || 0)} · Library`;
+  $("recording-mp3").hidden = !record.mp3Blob;
 }
 async function saveCompletedRecording(take) {
   recordingBusy = true;
+  recordingAction = "saving";
   syncRecording();
   try {
-    await fileLibrary.saveRecording(take);
+    showSavedRecording(await fileLibrary.saveRecording(take));
     savedRecordingId = take.id;
     failedRecordingId = null;
     if (take.error) notify(take.error, true);
@@ -130,6 +176,7 @@ async function saveCompletedRecording(take) {
     notify(`${error.message} Press Retry save to try again.`, true);
   } finally {
     recordingBusy = false;
+    recordingAction = null;
     syncRecording();
   }
 }
@@ -138,18 +185,24 @@ async function toggleRecording() {
   if (state?.recording?.available && state.recording.id === failedRecordingId)
     return saveCompletedRecording(state.recording);
   recordingBusy = true;
+  recordingAction = state?.recording?.active ? "saving" : "starting";
   syncRecording();
   try {
     const active = !state?.recording?.active;
-    if (active && !state.playing)
+    const source = state?.input?.active ? $("record-source").value : "output";
+    if (active && source === "output" && !state.playing)
       await transport({ playing: true, midi_gate: false });
-    const take = await request("/api/recording", { active });
+    const take = await request(
+      "/api/recording",
+      window.sadPetAudio ? { active, source } : { active },
+    );
     state.recording = take;
     if (!active) await saveCompletedRecording(take);
   } catch (error) {
     notify(error.message);
   } finally {
     recordingBusy = false;
+    recordingAction = null;
     syncRecording();
   }
 }
@@ -1712,6 +1765,7 @@ function bind() {
   $("input-device").onchange = (e) =>
     input({ active: true, device: e.target.value });
   $("input-mode").onchange = (e) => input({ mode: e.target.value });
+  $("input-listen").onclick = () => input({ monitor: !state?.input?.monitor });
   $("input-gain").oninput = (e) => {
     $("input-gain-value").textContent = percent(Number(e.target.value));
     input({ gain: Number(e.target.value) });
@@ -1722,13 +1776,14 @@ function bind() {
     try {
       const response = await api("/api/input.wav");
       const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "");
-      await fileLibrary.storeBlob(await response.blob(), {
-        kind: "audio",
-        name: `sad-pet-input-${stamp}.wav`,
-        displayName: `Input ${new Date().toLocaleTimeString()}`,
-        seconds: state?.input?.seconds,
-      });
-      notify("Input saved to Library");
+      showSavedRecording(
+        await fileLibrary.storeBlob(await response.blob(), {
+          kind: "audio",
+          name: `sad-pet-input-${stamp}.wav`,
+          displayName: `Input ${new Date().toLocaleTimeString()}`,
+          seconds: state?.input?.seconds,
+        }),
+      );
     } catch (error) {
       notify(error.message);
     } finally {
@@ -1736,6 +1791,25 @@ function bind() {
     }
   };
   $("record").onclick = toggleRecording;
+  $("recording-use").onclick = () => {
+    if (lastSavedRecording)
+      fileLibrary.activate(lastSavedRecording).catch((e) => notify(e.message));
+  };
+  $("recording-wav").onclick = () => {
+    if (lastSavedRecording)
+      fileLibrary
+        .download(lastSavedRecording.id)
+        .catch((e) => notify(e.message));
+  };
+  $("recording-mp3").onclick = () => {
+    if (lastSavedRecording)
+      fileLibrary
+        .download(lastSavedRecording.id, "mp3")
+        .catch((e) => notify(e.message));
+  };
+  $("recording-library").onclick = () => {
+    if (lastSavedRecording) fileLibrary.reveal(lastSavedRecording);
+  };
   $("octave-down").onclick = () => setKeyboardOctave(keyboardOctave - 1);
   $("octave-up").onclick = () => setKeyboardOctave(keyboardOctave + 1);
   $("keyboard-octave").onchange = (e) => {
@@ -2010,12 +2084,20 @@ function syncInput(input) {
     ? "Cancel microphone"
     : "Microphone";
   $("microphone-controls").hidden = !active;
+  const recordSlot = active
+    ? $("microphone-record-slot")
+    : document.querySelector(".transport-buttons");
+  if ($("record").parentElement !== recordSlot) recordSlot.append($("record"));
+  const resultSlot = active
+    ? $("microphone-result-slot")
+    : $("recording-result-slot");
+  if ($("recording-result").parentElement !== resultSlot)
+    resultSlot.append($("recording-result"));
+  $("input-listen").setAttribute("aria-pressed", String(!!input.monitor));
+  $("input-listen").textContent = input.monitor ? "Listen on" : "Listen off";
   $("sample-select").hidden = active;
   $("live-source-name").hidden = !active;
   $("live-source-name").textContent = input.name || "Microphone";
-  $("input-status").textContent = input.pending
-    ? "Waiting for microphone…"
-    : input.error || (active ? "LIVE" : "");
   $("input-status").classList.toggle("live", active);
   const peak = Math.max(...(input.peak || [0, 0]));
   $("input-level").style.width = `${Math.min(1, peak) * 100}%`;
