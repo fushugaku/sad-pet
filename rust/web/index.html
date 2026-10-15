@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>SAD PET</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/library.js" defer></script>
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true"><i></i><i></i><b></b></div>
+          <div>
+            <h1>SAD PET<span>RUST EDITION</span></h1>
+            <p>Granular instrument</p>
+          </div>
+        </div>
+        <div class="header-actions">
+          <select id="preset" aria-label="Factory preset">
+            <option>Init</option></select
+          ><button id="save-preset" title="Save preset">Save preset</button
+          ><button id="load-preset">Load preset</button
+          ><button id="load-wav" class="light">Open WAV <span>↗</span></button>
+        </div>
+      </header>
+      <div id="notice" role="status" hidden></div>
+      <section class="sample-panel" aria-label="Sample and grains">
+        <div class="sample-top">
+          <div>
+            <span class="led"></span
+            ><strong id="sample-name" class="sr-only">Glass sequence</strong>
+            <select id="sample-select" aria-label="Audio source" disabled>
+              <option>Glass sequence</option></select
+            ><span id="sample-info" class="muted">8.00 s</span>
+          </div>
+          <button
+            id="library-toggle"
+            aria-expanded="false"
+            aria-controls="file-library"
+          >
+            Library <span id="library-count">0</span>
+          </button>
+        </div>
+        <div class="wave-wrap" id="drop-zone">
+          <canvas
+            id="wave"
+            aria-label="Sample waveform, click to change position"
+          ></canvas>
+          <div class="drop-hint">Drop a WAV file</div>
+        </div>
+        <div class="sample-bottom">
+          <span id="position-info">00:00.00</span
+          ><span><b id="grain-count">0</b> / 128 grains</span
+          ><span id="sample-end">00:08.00</span>
+        </div>
+        <section
+          id="file-library"
+          class="file-library"
+          aria-label="File library"
+          hidden
+        >
+          <div class="library-heading">
+            <div>
+              <h2>Library</h2>
+              <span id="library-status" role="status">Opening library…</span>
+            </div>
+            <button id="library-import" disabled>+ Import files</button>
+          </div>
+          <div class="library-tools">
+            <div class="library-filters" aria-label="File type">
+              <button data-library-filter="all" aria-pressed="true">All</button>
+              <button data-library-filter="audio" aria-pressed="false">
+                Audio
+              </button>
+              <button data-library-filter="preset" aria-pressed="false">
+                Presets
+              </button>
+              <button data-library-filter="render" aria-pressed="false">
+                Renders
+              </button>
+              <button data-library-filter="recording" aria-pressed="false">
+                Recordings
+              </button>
+              <button data-library-filter="trash" aria-pressed="false">
+                Trash
+              </button>
+            </div>
+            <input
+              id="library-search"
+              type="search"
+              placeholder="Search files"
+              aria-label="Search library"
+            />
+          </div>
+          <div id="library-list" class="library-list"></div>
+        </section>
+      </section>
+      <div class="transport">
+        <div class="transport-buttons">
+          <button id="play" class="play" aria-pressed="false">
+            <span id="play-icon">▶</span><span id="play-label">Play</span
+            ><kbd>SPACE</kbd></button
+          ><button id="freeze" aria-pressed="false">Freeze</button
+          ><button id="reverse" aria-pressed="false">Reverse</button
+          ><button id="bypass" aria-pressed="false">Bypass</button>
+          <button
+            id="record"
+            aria-label="Start recording"
+            aria-pressed="false"
+            title="Record the audio output · up to 30 minutes / 512 MB per take"
+            disabled
+          >
+            <span class="record-dot" aria-hidden="true"></span>
+            <span id="record-label">Record</span>
+            <output id="record-time" hidden>00:00</output>
+          </button>
+        </div>
+        <div class="output-controls">
+          <label
+            >DRY / WET<input
+              id="mix"
+              type="range"
+              min="0"
+              max="1"
+              step="0.001"
+              value="1"
+            /><output id="mix-value">100%</output></label
+          ><label
+            >OUTPUT<input
+              id="volume"
+              type="range"
+              min="0"
+              max="1"
+              step="0.001"
+              value="0.65"
+            /><output id="volume-value">65%</output></label
+          >
+          <div class="meters" aria-label="Output level">
+            <i id="meter-l"></i><i id="meter-r"></i>
+          </div>
+        </div>
+      </div>
+      <section class="bank">
+        <div class="section-heading">
+          <h2>Grain engine</h2>
+          <label class="check"
+            ><input id="antialias" type="checkbox" checked />Anti-alias</label
+          >
+        </div>
+        <div id="grain-controls" class="knob-grid"></div>
+      </section>
+      <section class="bank filter-bank" aria-label="Filters">
+        <div class="section-heading">
+          <h2>Filters</h2>
+          <div class="filter-routing">
+            <output id="filter-path">IN → F1 → OUT</output>
+            <select id="filter-routing" aria-label="Filter routing">
+              <option value="single">Single</option>
+              <option value="serial">Serial</option>
+              <option value="parallel">Parallel</option>
+            </select>
+          </div>
+        </div>
+        <div id="filters" class="filter-grid"></div>
+      </section>
+      <section class="bank color-bank" aria-label="Effect chain">
+        <div class="section-heading">
+          <h2>Effects</h2>
+          <div class="color-add">
+            <select id="color-add-type" aria-label="Effect to add"></select>
+            <button id="color-add">+ Add effect</button>
+          </div>
+        </div>
+        <div id="color-chain" class="color-chain"></div>
+      </section>
+      <section class="mod-section">
+        <div class="section-heading">
+          <h2>Modulation</h2>
+          <label class="tempo"
+            >TEMPO<input
+              id="bpm"
+              type="number"
+              min="20"
+              max="300"
+              step="1"
+              value="120"
+            /><span>BPM</span></label
+          >
+        </div>
+        <div id="lfos" class="lfo-grid"></div>
+        <div id="envs" class="env-grid"></div>
+      </section>
+      <section class="bank matrix-bank" aria-label="Modulation matrix">
+        <div class="section-heading">
+          <h2>Mod matrix <span id="matrix-count">0 / 8</span></h2>
+          <button id="matrix-add">+ Add modulation</button>
+        </div>
+        <div id="matrix" class="matrix"></div>
+      </section>
+      <section class="performance-section">
+        <div class="section-heading">
+          <h2>Performance</h2>
+          <select id="performance-mode" aria-label="Performance mode">
+            <option value="keys">Keys</option>
+            <option value="hold">Hold note</option>
+            <option value="arp">Arpeggiator</option>
+            <option value="sequencer">Sequencer</option>
+            <option value="sequencer_arp">Sequencer + Arp</option>
+          </select>
+        </div>
+        <div id="arp-controls" class="performance-controls" hidden>
+          <label
+            >ORDER<select id="arp-direction" aria-label="Arpeggiator order">
+              <option value="up">Up</option>
+              <option value="down">Down</option>
+              <option value="up_down">Up / down</option>
+              <option value="random">Random</option>
+              <option value="as_played">As played</option>
+            </select></label
+          >
+          <label
+            >RATE<select id="arp-division" aria-label="Arpeggiator rate">
+              <option value="1">1/4</option>
+              <option value="0.5">1/8</option>
+              <option value="0.25">1/16</option>
+              <option value="0.125">1/32</option>
+              <option value="0.33333334">1/8 triplet</option>
+              <option value="0.16666667">1/16 triplet</option>
+            </select></label
+          >
+          <label
+            >OCTAVES<select id="arp-octaves" aria-label="Arpeggiator octaves">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+            </select></label
+          >
+          <label
+            >GATE<input
+              id="arp-gate"
+              type="range"
+              min="0.05"
+              max="0.95"
+              step="0.01"
+              aria-label="Arpeggiator gate"
+            /><output id="arp-gate-value">65%</output></label
+          >
+        </div>
+        <div id="hold-controls" class="hold-controls" hidden>
+          <label class="check" id="arp-hold-label"
+            ><input id="arp-hold" type="checkbox" checked />Hold chord</label
+          >
+          <label class="chord-input"
+            >NOTES<input
+              id="performance-chord"
+              type="text"
+              spellcheck="false"
+              aria-label="Held chord"
+              value="C4 E4 G4"
+          /></label>
+          <button id="clear-hold">Clear hold</button>
+        </div>
+        <div
+          id="sequence-controls"
+          class="performance-controls sequence-options"
+          hidden
+        >
+          <label
+            >STEP RATE<select
+              id="sequence-division"
+              aria-label="Sequencer step rate"
+            >
+              <option value="0.25">1/16</option>
+              <option value="0.5">1/8</option>
+              <option value="1">1/4</option>
+              <option value="2">1/2</option>
+              <option value="4">1 bar</option>
+            </select></label
+          >
+          <label
+            >LENGTH<input
+              id="sequence-length"
+              type="number"
+              min="1"
+              max="16"
+              step="1"
+              value="16"
+              aria-label="Sequencer length"
+          /></label>
+          <label id="sequence-gate-label"
+            >GATE<input
+              id="sequence-gate"
+              type="range"
+              min="0.05"
+              max="0.95"
+              step="0.01"
+              aria-label="Sequencer gate"
+            /><output id="sequence-gate-value">75%</output></label
+          >
+          <button id="reset-sequence">Reset pattern</button>
+        </div>
+        <p id="sequence-arp-hint" class="pattern-hint" hidden>
+          Arpeggiate the notes of each step. Each new step restarts the
+          arpeggio.
+        </p>
+        <div id="sequence-steps" class="sequence-grid" hidden></div>
+      </section>
+      <section class="keyboard-section" id="keyboard-section">
+        <div class="keyboard-head">
+          <div>
+            <h2>Keyboard</h2>
+            <span class="muted">A W S E D F T G Y H U J K</span>
+          </div>
+          <div class="midi-controls">
+            <span class="led" id="midi-led"></span
+            ><select id="midi" aria-label="MIDI input">
+              <option value="">Computer keyboard</option></select
+            ><button
+              id="midi-refresh"
+              class="icon-button"
+              aria-label="Refresh MIDI devices"
+              title="Refresh MIDI devices"
+            >
+              ↻
+            </button>
+          </div>
+        </div>
+        <div class="keyboard-tools">
+          <div class="octave-controls">
+            <button id="octave-down" aria-label="Octave down">−</button>
+            <select id="keyboard-octave" aria-label="Keyboard octave"></select>
+            <button id="octave-up" aria-label="Octave up">+</button>
+            <output id="keyboard-range" aria-live="polite">C4–C5</output>
+            <span class="octave-shortcut">Z / X</span>
+          </div>
+          <div id="step-entry-prompt" hidden>
+            <span id="step-entry-label" aria-live="polite"></span>
+            <button id="step-entry-clear">Clear</button>
+            <button id="step-entry-cancel">Done</button>
+          </div>
+        </div>
+        <div id="keyboard" aria-label="C4 to C5 keyboard"></div>
+      </section>
+      <footer>
+        <div class="runtime-status">
+          <span class="led" id="audio-led"></span
+          ><span id="audio-status">Connecting…</span
+          ><span class="divider">/</span><span id="cpu">DSP 0.0%</span>
+          <button id="quit" class="text-button">Quit</button>
+        </div>
+        <div class="render-controls">
+          <select id="render-duration" aria-label="Export duration">
+            <option value="8">8 seconds</option>
+            <option value="16" selected>16 seconds</option>
+            <option value="32">32 seconds</option>
+            <option value="60">60 seconds</option></select
+          ><button id="render">Render WAV <span>↓</span></button>
+        </div>
+      </footer>
+      <input id="wav-file" type="file" accept=".wav,audio/wav" hidden /><input
+        id="preset-file"
+        type="file"
+        accept=".json,.sad.json,.evil.json"
+        hidden
+      />
+      <input
+        id="library-files"
+        type="file"
+        accept=".wav,audio/wav,.json,.sad.json,.evil.json"
+        multiple
+        hidden
+      />
+    </main>
+  </body>
+</html>

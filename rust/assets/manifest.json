@@ -1,0 +1,38 @@
+{
+  "firmware": "evilpet1p63.fw",
+  "sha256": "fc626cad6ec60f84ed3971643a51c364587bf52a4cadec0c056004f98b5fdcbf",
+  "tables": [
+    {
+      "name": "pitch",
+      "runtime_address": "0xc00a9408",
+      "file_offset": "0xa9608",
+      "elements": 256,
+      "encoding": "f32 little-endian",
+      "sha256": "0dfd8bc6ea9e667907a4ef4d300369e6ea55bfb047130926627cbf03c1dcb54e"
+    },
+    {
+      "name": "fine_pitch",
+      "runtime_address": "0xc00a9000",
+      "file_offset": "0xa9200",
+      "elements": 257,
+      "encoding": "f32 little-endian",
+      "sha256": "dbc5c7f50b4185561298a3b21e17089b7f22c8864c9149c214ef8fb54e3182ca"
+    },
+    {
+      "name": "grain_window",
+      "runtime_address": "0xc00aeca0",
+      "file_offset": "0xaeea0",
+      "elements": 4097,
+      "encoding": "f32 little-endian",
+      "sha256": "e19a66543c51e7685cbfc7eb7c48689160286e1bf5ee179ebae795995284611d"
+    },
+    {
+      "name": "sine",
+      "runtime_address": "0xc00b7db0",
+      "file_offset": "0xb7fb0",
+      "elements": 256,
+      "encoding": "f32 little-endian",
+      "sha256": "b58c370dc40615e29308e27c05e0e5beb9c9ec350ed82177351cc32972044c89"
+    }
+  ]
+}

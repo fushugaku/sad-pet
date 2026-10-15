@@ -1,0 +1,13 @@
+/target/
+/dist/
+/rust/output/
+/analysis/
+/.interface-design/
+/*.fw
+/!_README_!_EVIL_UPDATE_NOTES.txt
+/EVIL_SCREEN_ISSUE_NOTE.txt
+__pycache__/
+*.py[cod]
+.env
+.env.*
+*.DS_Store
