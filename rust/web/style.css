@@ -666,6 +666,7 @@ h2 {
     width: 28px;
   }
   .color-knobs[data-count="6"],
+  .color-knobs[data-count="7"],
   .color-knobs[data-count="8"],
   .color-knobs[data-count="13"] {
     grid-template-columns: repeat(3, minmax(0, 1fr));
