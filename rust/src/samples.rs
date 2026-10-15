@@ -1,8 +1,9 @@
-//! Original, deterministic source material for the local sample library.
+//! Procedural tracks and short recorded sources for the local sample library.
 use crate::{Stereo, dsp::SampleBuffer, tables::Random};
 use serde::Serialize;
 use std::{
     f64::consts::TAU,
+    io::Cursor,
     sync::{Arc, OnceLock},
 };
 
@@ -11,65 +12,79 @@ pub struct Track {
     pub id: &'static str,
     pub name: &'static str,
     pub character: &'static str,
-    pub seconds: u32,
+    pub seconds: f64,
     pub bpm: Option<u32>,
 }
 
-pub const TRACKS: [Track; 8] = [
+pub const TRACKS: [Track; 10] = [
     Track {
         id: "glass-sequence",
         name: "Glass sequence",
         character: "Glass plucks",
-        seconds: 8,
+        seconds: 8.0,
         bpm: Some(120),
     },
     Track {
         id: "warm-chords",
         name: "Warm chords",
         character: "Slow analog pad",
-        seconds: 16,
+        seconds: 16.0,
         bpm: Some(60),
     },
     Track {
         id: "analog-bass",
         name: "Analog bass",
         character: "Pulsing bass line",
-        seconds: 8,
+        seconds: 8.0,
         bpm: Some(120),
     },
     Track {
         id: "drum-machine",
         name: "Drum machine",
         character: "Kick, snare & hats",
-        seconds: 8,
+        seconds: 8.0,
         bpm: Some(120),
     },
     Track {
         id: "dusty-keys",
         name: "Dusty keys",
         character: "Soft electric keys",
-        seconds: 12,
+        seconds: 12.0,
         bpm: Some(80),
     },
     Track {
         id: "vowel-choir",
         name: "Vowel choir",
         character: "Synthetic vocal phrases",
-        seconds: 8,
+        seconds: 8.0,
         bpm: Some(120),
     },
     Track {
         id: "metallic-textures",
         name: "Metallic textures",
         character: "Inharmonic struck tones",
-        seconds: 12,
+        seconds: 12.0,
         bpm: Some(80),
     },
     Track {
         id: "air-and-rain",
         name: "Air & rain",
         character: "Noise, droplets & air",
-        seconds: 12,
+        seconds: 12.0,
+        bpm: None,
+    },
+    Track {
+        id: "matrix-pov",
+        name: "Matrix POV",
+        character: "Audio from the Matrix POV video",
+        seconds: 7.453625,
+        bpm: None,
+    },
+    Track {
+        id: "harvest-dawn-excerpt",
+        name: "Oblivion · Harvest Dawn",
+        character: "Jeremy Soule · NPC music · short excerpt",
+        seconds: 8.0,
         bpm: None,
     },
 ];
@@ -99,6 +114,32 @@ fn envelope(age: f64, attack: f64, decay: f64) -> f64 {
 /// A variable rate is useful to verify the bank without allocating all 48 kHz files.
 pub fn generate(index: usize, sample_rate: u32) -> SampleBuffer {
     let track = &TRACKS[index];
+    let recording: Option<&[u8]> = match track.id {
+        "matrix-pov" => Some(include_bytes!("../assets/samples/matrix-pov.wav")),
+        "harvest-dawn-excerpt" => {
+            Some(include_bytes!("../assets/samples/harvest-dawn-excerpt.wav"))
+        }
+        _ => None,
+    };
+    if let Some(bytes) = recording {
+        let decoded = crate::wav::decode(Cursor::new(bytes), track.name.into())
+            .expect("valid bundled recording");
+        let mut sample = if sample_rate == decoded.sample_rate {
+            decoded
+        } else {
+            let rate = decoded.sample_rate as f64 / sample_rate as f64;
+            let length = (decoded.duration() * sample_rate as f64).round() as usize;
+            let mut frames: Vec<Stereo> = (0..length)
+                .map(|i| decoded.read(i as f64 * rate, rate, true))
+                .collect();
+            frames[0] = [0.0; 2];
+            frames[length - 1] = [0.0; 2];
+            SampleBuffer::new(track.name.into(), sample_rate, frames)
+                .expect("valid resampled recording")
+        };
+        sample.library_id = Some(format!("factory:{}:v1", track.id));
+        return sample;
+    }
     if index == 0 {
         let mut sample = SampleBuffer::demo(sample_rate);
         sample.library_id = Some(format!("factory:{}:v1", track.id));
@@ -106,7 +147,7 @@ pub fn generate(index: usize, sample_rate: u32) -> SampleBuffer {
     }
     let mut random = Random::default();
     let mut low_noise = 0.0;
-    let length = track.seconds as usize * sample_rate as usize;
+    let length = (track.seconds * sample_rate as f64).round() as usize;
     let mut frames: Vec<Stereo> = (0..length)
         .map(|i| {
             let t = i as f64 / sample_rate as f64;
@@ -271,7 +312,7 @@ pub fn generate(index: usize, sample_rate: u32) -> SampleBuffer {
                 _ => unreachable!(),
             }
             let fade = (t / 0.025).min(1.0)
-                * ((track.seconds as f64 - t - 1.0 / sample_rate as f64) / 0.04).clamp(0.0, 1.0);
+                * ((track.seconds - t - 1.0 / sample_rate as f64) / 0.04).clamp(0.0, 1.0);
             frame.map(|value| (value * fade) as f32)
         })
         .collect();

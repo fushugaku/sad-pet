@@ -1,0 +1,22 @@
+Recorded sample sources
+=======================
+
+matrix-pov.wav
+  Name: Matrix POV
+  Source: user-supplied POV：_If_You_Could_See_the_Matrix_in_Real_Life_6d4rVSRj61c.mp4
+  Contains the complete audio stream, 7.453625 seconds.
+
+harvest-dawn-excerpt.wav
+  Name: Oblivion · Harvest Dawn
+  Track: Harvest Dawn — Jeremy Soule
+  Album: The Elder Scrolls IV: Oblivion (Original Game Soundtrack), 2006
+  Source: the publicly available Apple Music preview for the original recording.
+  https://music.apple.com/us/song/1876500032
+  Apple catalog track ID: 1876500032
+  Contains only the first 8 seconds of that preview, not the full soundtrack.
+
+Both files are stereo 48 kHz PCM16 WAV, with short edge fades and peak gain
+adjusted to 0.78 for consistency with the procedural sample bank.
+Recording and composition credits remain with their original creators and
+rights holders. These two recordings are separate from the project-authored
+procedural tracks.

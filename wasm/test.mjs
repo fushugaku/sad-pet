@@ -92,6 +92,25 @@ assert.deepEqual(midi.request("/api/state").notes, []);
 assert.throws(() => midi.request("/api/preset", { format: "bad" }), /preset/);
 assert.throws(() => midi.json("sad_load", new Uint8Array([1, 2, 3])), /sample/);
 
+// Recorded bank entries must work through the same prepare/load path as files,
+// without a runtime request to the source video or a music service.
+const catalog = utility.request("/api/samples");
+for (const id of ["matrix-pov", "harvest-dawn-excerpt"]) {
+  const index = catalog.findIndex((track) => track.id === id);
+  assert.ok(index >= 0, `${id} must be in the built-in catalog`);
+  utility.call("sad_prepare", utility.call("sad_factory", undefined, index));
+  utility.call("sad_sample_name", {
+    name: catalog[index].name,
+    id: `factory:${id}:v1`,
+  });
+  const recorded = new Core(module, 48000);
+  recorded.json("sad_load", utility.call("sad_pack"));
+  const state = recorded.request("/api/state");
+  assert.equal(state.sample_id, `factory:${id}:v1`);
+  assert.equal(state.sample_seconds, catalog[index].seconds);
+  assert.ok(state.waveform.some(([low, high]) => high - low > 0.01));
+}
+
 // Live input must replace the file, work with mono capture, and reach both
 // the filters/effects and the granular engine at real AudioWorklet block sizes.
 for (const rate of [44100, 48000]) {

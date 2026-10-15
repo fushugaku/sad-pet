@@ -9,7 +9,8 @@ sample preparation, WAV rendering and MP3 encoding in a separate worker. No back
 or installation is required. Click Play or a keyboard key to enable sound.
 The desktop version uses the system audio output and a local browser panel.
 
-- Eight built-in audio tracks, WAV import and an IndexedDB file library.
+- Ten built-in audio sources, WAV import and an IndexedDB file library, including
+  Matrix POV video audio and a short Harvest Dawn excerpt from Oblivion.
 - Browser microphone input with device selection, gain and level metering:
   direct filters/effects or granular processing of an eight-second live buffer.
 - Polyphonic keyboard, note/chord hold, arpeggiator and a 16-step chord sequencer.
@@ -112,6 +113,9 @@ It does not claim bit-identical audio or full hardware firmware compatibility.
 [Reconstruction notes](rust/PORT_STATUS.txt) and the [table manifest](rust/assets/manifest.json)
 describe which formulas and lookup tables came from the supplied image.
 Original firmware images and decompiler output are excluded from this repository.
+
+The recorded sample sources and credits are listed in
+[rust/assets/samples/SOURCES.txt](rust/assets/samples/SOURCES.txt).
 
 Desktop MP3 support uses LAME and `mp3lame-encoder`; their source references and
 license texts are preserved in [rust/licenses](rust/licenses/README.txt) and in the

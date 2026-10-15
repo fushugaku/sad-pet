@@ -10,8 +10,8 @@ fn every_track_has_unique_identity_valid_audio_and_exact_duration() {
         let sample = samples::generate(index, 8_000);
         assert_eq!(sample.name, track.name);
         assert_eq!(sample.library_id, Some(format!("factory:{}:v1", track.id)));
-        assert_eq!(sample.len(), track.seconds as usize * 8_000);
-        assert_eq!(sample.duration(), track.seconds as f64);
+        assert_eq!(sample.len(), (track.seconds * 8_000.0).round() as usize);
+        assert!((sample.duration() - track.seconds).abs() < 1.0 / 8_000.0);
         let mut energy = 0.0;
         let mut fingerprint = 0_u64;
         for frame in sample.frames() {
