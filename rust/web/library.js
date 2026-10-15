@@ -158,7 +158,7 @@
       byId("sample-select").disabled = false;
       byId("library-import").disabled = false;
       const last = await this.store.setting("last-audio");
-      const previous = last && (await this.store.read("files", last.id));
+      const previous = await this.previousAudio(last);
       if (
         previous &&
         !previous.trashedAt &&
@@ -181,6 +181,15 @@
     }
     changed() {
       this.channel?.postMessage("files");
+    }
+    async previousAudio(last) {
+      if (!last) return;
+      // Upgrade the previously selected soundtrack source to its new cover,
+      // while retaining the user's saved original as an accessible library file.
+      const cover = this.catalog.find((track) => track.id === "harvest-dawn-cover");
+      if (cover && last.id === "factory:harvest-dawn-excerpt:v1")
+        return this.ensureFactory(cover);
+      return this.store.read("files", last.id);
     }
     async fades(id) {
       return (
@@ -335,7 +344,7 @@
         native.sample_id === factoryId(this.catalog[0])
       ) {
         const last = await this.store.setting("last-audio");
-        const previous = last && (await this.store.read("files", last.id));
+        const previous = await this.previousAudio(last);
         if (
           previous &&
           !previous.trashedAt &&
@@ -544,9 +553,10 @@
         factory.append(makeOption(factoryId(track), track.name));
       const user = document.createElement("optgroup");
       user.label = "Your audio";
+      const catalogIds = new Set(this.catalog.map(factoryId));
       for (const file of this.files.filter(
         (file) =>
-          !file.factory &&
+          (!file.factory || !catalogIds.has(file.id)) &&
           file.kind !== "preset" &&
           (!file.trashedAt || file.id === this.currentId),
       ))

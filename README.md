@@ -69,6 +69,7 @@ rustup target add wasm32-unknown-unknown
 python3 wasm/build.py
 node wasm/test.mjs
 node wasm/test-microphone.mjs
+node wasm/test-library.mjs
 python3 -m http.server 8080 --directory dist/web --bind 127.0.0.1
 ```
 
