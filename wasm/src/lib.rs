@@ -50,6 +50,8 @@ impl Host {
             "bypass": e.bypass, "midi_gate": e.midi_gate, "preset": e.preset,
             "sample_name": sample.name, "sample_id": sample.library_id,
             "sample_seconds": sample.duration(), "waveform": sample.waveform,
+            "sample_frames": sample.len(),
+            "region": e.region,
             "center": e.center() / sample.len() as f64, "grains": e.grain_views(),
             "input": {"active": e.live_input.is_some(),
                 "seconds": e.live_input.as_ref().map_or(0.0, |i| i.seconds()),
@@ -115,6 +117,11 @@ impl Host {
                 self.engine
                     .set_live_input(data["active"] == true, data["mode"] != "grains");
                 Ok(json!({"ok": true}))
+            }
+            "/api/region" => {
+                let region = serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
+                self.engine.set_region(region)?;
+                Ok(json!(self.engine.region))
             }
             "/api/note" => {
                 let message: Message =
@@ -379,6 +386,24 @@ pub extern "C" fn sad_sample_wav() -> u32 {
     })
 }
 #[unsafe(no_mangle)]
+pub extern "C" fn sad_trim() -> u32 {
+    host(|h| {
+        let result = serde_json::from_slice::<Value>(&h.input)
+            .map_err(|e| e.to_string())
+            .and_then(|value| {
+                if value
+                    .get("sample_id")
+                    .is_some_and(|id| id.as_str() != h.engine.sample.library_id.as_deref())
+                {
+                    return Err("The audio source changed; select the region again".into());
+                }
+                let region = serde_json::from_value(value).map_err(|e| e.to_string())?;
+                h.engine.sample.trim_wav(region)
+            });
+        h.finish(result)
+    })
+}
+#[unsafe(no_mangle)]
 pub extern "C" fn sad_render() -> u32 {
     host(|h| {
         let result = (|| {
@@ -391,6 +416,11 @@ pub extern "C" fn sad_render() -> u32 {
                 serde_json::from_value(value["preset"].clone()).map_err(|e| e.to_string())?;
             preset.sanitize();
             let mut engine = Engine::new(h.rate, h.engine.sample.clone(), preset);
+            if let Some(region) = value.get("region") {
+                engine.set_region(
+                    serde_json::from_value(region.clone()).map_err(|e| e.to_string())?,
+                )?;
+            }
             engine.bypass = value["bypass"] == true;
             engine.set_frozen(value["frozen"] == true);
             engine.set_playing(true);

@@ -321,6 +321,11 @@ export class BrowserBackend {
       } else if (route === "/api/sample.wav") {
         result = await this.worker.call("sample");
         mime = "audio/wav";
+      } else if (route === "/api/trim") {
+        if (this.microphone.active || this.state?.input?.active)
+          throw new Error("Load a recording or file to trim it.");
+        result = await this.worker.call("trim", data);
+        mime = "audio/wav";
       } else if (/^\/api\/samples\/[^/]+\.wav$/.test(route)) {
         const catalog = await this.worker.call(
           "request",
@@ -344,6 +349,7 @@ export class BrowserBackend {
           preset: state.preset,
           bypass: state.bypass,
           frozen: state.frozen,
+          region: state.region,
         });
         mime = "audio/wav";
       } else if (route === "/api/recording") {

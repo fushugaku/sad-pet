@@ -95,6 +95,9 @@ async function handle(message) {
       case "sample":
         result = core.call("sad_sample_wav");
         break;
+      case "trim":
+        result = core.call("sad_trim", data);
+        break;
       case "render":
         result = core.call("sad_render", data);
         break;

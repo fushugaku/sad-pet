@@ -1,6 +1,6 @@
 use crate::{
     Stereo,
-    dsp::{Engine, GrainView, SampleBuffer},
+    dsp::{Engine, GrainView, Region, SampleBuffer},
     midi::Message,
     preset::Preset,
 };
@@ -28,6 +28,7 @@ pub struct Transport {
 pub enum Command {
     Preset(Box<Preset>),
     Sample(Arc<SampleBuffer>),
+    Region(Region, SyncSender<Result<Region, String>>),
     Transport(Transport),
     Midi(Message),
     StepEntry(Option<usize>, bool, bool),
@@ -51,6 +52,8 @@ pub struct State {
     pub sample_name: String,
     pub sample_id: Option<String>,
     pub sample_seconds: f64,
+    pub sample_frames: usize,
+    pub region: Region,
     pub waveform: Vec<[f32; 2]>,
     pub center: f32,
     pub grains: Vec<GrainView>,
@@ -205,6 +208,8 @@ impl Runtime {
             sample_name: sample.name.clone(),
             sample_id: sample.library_id.clone(),
             sample_seconds: sample.duration(),
+            sample_frames: sample.len(),
+            region: Region::default(),
             waveform: sample.waveform.clone(),
             center: 0.0,
             grains: Vec::new(),
@@ -240,6 +245,11 @@ impl Runtime {
                     match command {
                         Command::Preset(preset)=>engine.set_preset(*preset),
                         Command::Sample(sample)=>engine.set_sample(sample),
+                        Command::Region(region,reply)=> {
+                            let result=engine.set_region(region).map(|_|engine.region);
+                            if let Ok(mut state)=worker_state.lock() {state.region=engine.region;}
+                            let _=reply.try_send(result);
+                        },
                         Command::Transport(t)=> {
                             if let Some(v)=t.midi_gate {engine.set_midi_gate(v);}
                             if let Some(v)=t.playing {engine.set_playing(v);}
@@ -279,6 +289,7 @@ impl Runtime {
                     if let Ok(mut state)=worker_state.lock() {
                         state.playing=engine.playing;state.frozen=engine.frozen;state.bypass=engine.bypass;state.midi_gate=engine.midi_gate;
                         state.preset=engine.preset.clone();state.center=(engine.center()/engine.sample.len() as f64) as f32;
+                        state.region=engine.region;
                         state.grains=engine.grain_views();state.active_grains=engine.active_grains();state.notes=engine.held_notes();
                         state.performance=engine.performance_view();
                         state.step_entry=engine.step_entry;
@@ -289,7 +300,7 @@ impl Runtime {
                         state.knobs=engine.knob_states();
                         state.underruns=underruns.load(Ordering::Relaxed);
                         if !Arc::ptr_eq(&state.sample,&engine.sample) {
-                            state.sample_name=engine.sample.name.clone();state.sample_id=engine.sample.library_id.clone();state.sample_seconds=engine.sample.duration();state.waveform=engine.sample.waveform.clone();state.sample=engine.sample.clone();
+                            state.sample_name=engine.sample.name.clone();state.sample_id=engine.sample.library_id.clone();state.sample_seconds=engine.sample.duration();state.sample_frames=engine.sample.len();state.waveform=engine.sample.waveform.clone();state.sample=engine.sample.clone();
                         }
                         if failed.load(Ordering::Relaxed) {state.audio_error=Some("Audio device disconnected. Restart the application after reconnecting it.".into());}
                     }

@@ -14,6 +14,7 @@ const controls = new Map(),
   scopes = [];
 let noteChain = Promise.resolve();
 let fileLibrary = null;
+let sampleSelection = null;
 let recordingBusy = false,
   recordingAction = null,
   lastSavedRecording = null,
@@ -157,7 +158,11 @@ function showSavedRecording(record) {
   lastSavedRecording = record;
   $("recording-result").hidden = false;
   $("recording-result-title").textContent =
-    record.kind === "recording" ? "Recording saved" : "Buffer saved";
+    record.kind === "recording"
+      ? "Recording saved"
+      : record.trimmedFrom
+        ? "Trim saved"
+        : "Sample saved";
   $("recording-result-info").textContent =
     `${record.displayName} · ${formatTime(record.seconds || 0)} · Library`;
   $("recording-mp3").hidden = !record.mp3Blob;
@@ -1719,6 +1724,7 @@ async function loadWav(file) {
   }
 }
 async function loadStoredAudio(record) {
+  await sampleSelection?.flush(false);
   const response = await api("/api/wav", record.blob, {
     "Content-Type": "audio/wav",
     "X-File-Name": encodeURIComponent(
@@ -1794,6 +1800,16 @@ function bind() {
   $("recording-use").onclick = () => {
     if (lastSavedRecording)
       fileLibrary.activate(lastSavedRecording).catch((e) => notify(e.message));
+  };
+  $("recording-trim").onclick = async () => {
+    if (!lastSavedRecording) return;
+    try {
+      await fileLibrary.activate(lastSavedRecording);
+      // Load acknowledgement precedes the next state poll.
+      sampleSelection.focus(lastSavedRecording.id);
+    } catch (error) {
+      notify(error.message, true);
+    }
   };
   $("recording-wav").onclick = () => {
     if (lastSavedRecording)
@@ -1887,13 +1903,6 @@ function bind() {
       .importFiles([...e.dataTransfer.files])
       .catch((error) => notify(error.message, true)),
   );
-  $("wave").addEventListener("pointerdown", (e) => {
-    const r = e.target.getBoundingClientRect();
-    setParam(
-      "position",
-      Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)),
-    );
-  });
   $("midi-refresh").onclick = () => refreshMidi(true);
   $("midi").onchange = async (e) => {
     try {
@@ -1944,6 +1953,7 @@ function bind() {
       e.metaKey ||
       e.altKey ||
       e.target.matches("input,select,textarea,[role=slider]") ||
+      e.target.closest(".sample-selection,.recording-result") ||
       e.target.closest(".file-library,.sample-top")
     )
       return;
@@ -2025,6 +2035,7 @@ function draw() {
       c.closePath();
       c.fill();
     }
+    sampleSelection?.draw(c, w, h);
     for (const grain of state.grains) {
       const x = grain.position * w,
         alpha = Math.sin(Math.PI * grain.age) * 0.6 + 0.15;
@@ -2172,6 +2183,7 @@ async function poll() {
     fileLibrary?.observe(next);
     $("sample-info").textContent = `${next.sample_seconds.toFixed(2)} s`;
     syncInput(next.input);
+    sampleSelection?.sync(next);
     $("sample-end").textContent = formatTime(next.sample_seconds);
     $("position-info").textContent = formatTime(
       next.center * next.sample_seconds,
@@ -2257,6 +2269,14 @@ async function init() {
     buildSequence();
     buildKeyboard();
     bind();
+    sampleSelection = new window.SadSampleSelection({
+      request,
+      api,
+      notify,
+      library: () => fileLibrary,
+      position: (value) => setParam("position", value),
+      saved: showSavedRecording,
+    });
     syncAll();
     fileLibrary = new window.EvilFileLibrary({
       notify,

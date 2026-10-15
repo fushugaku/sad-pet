@@ -6,6 +6,7 @@
     <title>SAD PET</title>
     <link rel="stylesheet" href="./style.css" />
     <script src="./library.js" defer></script>
+    <script src="./selection.js" defer></script>
     <script src="./app.js" defer></script>
   </head>
   <body>
@@ -114,14 +115,80 @@
         <div class="wave-wrap" id="drop-zone">
           <canvas
             id="wave"
-            aria-label="Sample waveform, click to change position"
+            aria-label="Sample waveform. Drag to select a loop, click to change position"
+            title="Drag to select a loop · drag the handles to adjust it"
           ></canvas>
+          <button
+            id="region-start-handle"
+            class="region-handle"
+            data-edge="start"
+            role="slider"
+            aria-label="Selection start"
+            aria-orientation="horizontal"
+            hidden
+          >
+            IN
+          </button>
+          <button
+            id="region-end-handle"
+            class="region-handle"
+            data-edge="end"
+            role="slider"
+            aria-label="Selection end"
+            aria-orientation="horizontal"
+            hidden
+          >
+            OUT
+          </button>
           <div class="drop-hint">Drop a WAV file</div>
         </div>
         <div class="sample-bottom">
           <span id="position-info">00:00.00</span
           ><span><b id="grain-count">0</b> / 128 grains</span
           ><span id="sample-end">00:08.00</span>
+        </div>
+        <div
+          id="sample-selection"
+          class="sample-selection"
+          aria-label="Playback region"
+          hidden
+        >
+          <div class="region-times">
+            <label
+              >IN
+              <input
+                id="region-start"
+                type="number"
+                min="0"
+                step="0.001"
+                aria-label="Selection start in seconds"
+                disabled
+            /></label>
+            <label
+              >OUT
+              <input
+                id="region-end"
+                type="number"
+                min="0"
+                step="0.001"
+                aria-label="Selection end in seconds"
+                disabled
+            /></label>
+          </div>
+          <output id="region-duration">0.000 s loop</output>
+          <div class="region-actions">
+            <button id="region-reset" title="Play the full file" disabled>
+              Full
+            </button>
+            <button
+              id="region-save"
+              class="light"
+              title="Save the selection as a new sample in Library"
+              disabled
+            >
+              Save trim
+            </button>
+          </div>
         </div>
         <section
           id="file-library"
@@ -223,6 +290,7 @@
           </div>
           <div class="recording-result-actions">
             <button id="recording-use" class="light">Use as sample</button>
+            <button id="recording-trim">Trim</button>
             <button id="recording-wav">WAV ↓</button>
             <button id="recording-mp3">MP3 ↓</button>
             <button id="recording-library">Show in Library</button>

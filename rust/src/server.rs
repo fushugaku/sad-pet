@@ -135,6 +135,10 @@ fn handle(
                     include_bytes!("../web/library.js").to_vec(),
                     "text/javascript; charset=utf-8",
                 )),
+                "/selection.js" => Ok((
+                    include_bytes!("../web/selection.js").to_vec(),
+                    "application/javascript",
+                )),
                 "/favicon.ico" => Ok((Vec::new(), "image/x-icon")),
                 "/api/state" => json(&*state.lock().map_err(|e| e.to_string())?),
                 "/api/preset" => json(&state.lock().map_err(|e| e.to_string())?.preset),
@@ -263,6 +267,30 @@ fn handle(
                 send(&commands, Command::Sample(sample))?;
                 json(&result)
             }
+            "/api/region" => {
+                let region: crate::dsp::Region =
+                    serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+                let (reply, result) = std::sync::mpsc::sync_channel(1);
+                send(&commands, Command::Region(region, reply))?;
+                let region = result
+                    .recv_timeout(Duration::from_secs(5))
+                    .map_err(|e| e.to_string())??;
+                json(&region)
+            }
+            "/api/trim" => {
+                let value: serde_json::Value =
+                    serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+                let region: crate::dsp::Region =
+                    serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
+                let sample = state.lock().map_err(|e| e.to_string())?.sample.clone();
+                if value
+                    .get("sample_id")
+                    .is_some_and(|id| id.as_str() != sample.library_id.as_deref())
+                {
+                    return Err("The audio source changed; select the region again".into());
+                }
+                Ok((sample.trim_wav(region)?, "audio/wav"))
+            }
             "/api/demo" => {
                 send(
                     &commands,
@@ -337,6 +365,7 @@ fn handle(
                     seconds,
                     snapshot.bypass,
                     snapshot.frozen,
+                    snapshot.region,
                 );
                 Ok((wav::bytes(snapshot.sample_rate, &frames)?, "audio/wav"))
             }
@@ -364,8 +393,10 @@ pub fn render(
     seconds: f64,
     bypass: bool,
     frozen: bool,
+    region: crate::dsp::Region,
 ) -> Vec<crate::Stereo> {
     let mut engine = Engine::new(sample_rate, sample, preset);
+    let _ = engine.set_region(region);
     engine.bypass = bypass;
     engine.set_frozen(frozen);
     engine.set_playing(true);

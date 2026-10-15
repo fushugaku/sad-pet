@@ -19,7 +19,7 @@ use color::ColorRack;
 use filter::FilterBank;
 use modulation::{Envelope, Oscillator};
 use sample::LiveInput;
-pub use sample::SampleBuffer;
+pub use sample::{Region, SampleBuffer};
 use serde::Serialize;
 use std::sync::Arc;
 
@@ -251,6 +251,8 @@ pub struct Engine {
     pub preset: Preset,
     pub sample: Arc<SampleBuffer>,
     pub live_input: Option<LiveInput>,
+    pub region: Region,
+    file_range: std::ops::Range<usize>,
     pub playing: bool,
     pub frozen: bool,
     pub bypass: bool,
@@ -301,6 +303,8 @@ impl Engine {
         let mut engine = Self {
             sample_rate: sr,
             preset: Preset::default(),
+            region: Region::default(),
+            file_range: 0..sample.len(),
             sample,
             live_input: None,
             playing: false,
@@ -391,11 +395,42 @@ impl Engine {
     pub fn set_sample(&mut self, sample: Arc<SampleBuffer>) {
         self.live_input = None;
         self.sample = sample;
+        self.region = Region::default();
+        self.file_range = 0..self.sample.len();
         self.cursor = 0.0;
         self.frozen_center = 0.0;
         self.reset_grains();
         self.color_rack.clear();
         self.filters.iter_mut().for_each(FilterBank::clear);
+    }
+    pub fn set_region(&mut self, region: Region) -> Result<(), String> {
+        if self.live_input.is_some() {
+            return Err("Load a recording or file to select a region".into());
+        }
+        let range = region.bounds(self.sample.len())?;
+        if range == self.file_range {
+            return Ok(());
+        }
+        self.region = Region {
+            start: range.start as f64 / self.sample.len() as f64,
+            end: range.end as f64 / self.sample.len() as f64,
+        };
+        self.cursor = (self.cursor.max(range.start as f64) - range.start as f64)
+            .rem_euclid(range.len() as f64)
+            + range.start as f64;
+        self.frozen_center = (self.frozen_center.max(range.start as f64) - range.start as f64)
+            .rem_euclid(range.len() as f64)
+            + range.start as f64;
+        self.file_range = range;
+        self.reset_grains();
+        self.color_rack.clear();
+        self.filters.iter_mut().for_each(FilterBank::clear);
+        Ok(())
+    }
+    fn source_range(&self) -> std::ops::Range<usize> {
+        self.live_input
+            .as_ref()
+            .map_or_else(|| self.file_range.clone(), |input| 0..input.sample.len())
     }
     pub fn set_live_input(&mut self, enabled: bool, effects_only: bool) {
         if enabled {
@@ -408,7 +443,7 @@ impl Engine {
             self.live_input = None;
         }
         self.frozen = false;
-        self.cursor = 0.0;
+        self.cursor = self.file_range.start as f64;
         self.reset_grains();
         self.color_rack.clear();
         self.filters.iter_mut().for_each(FilterBank::clear);
@@ -506,8 +541,11 @@ impl Engine {
             (input.head() as f64 - margin - p.position as f64 * (length - margin))
                 .rem_euclid(length)
         } else {
-            (self.cursor + self.modulated.params.position as f64 * self.sample.len() as f64)
-                .rem_euclid(self.sample.len() as f64)
+            let range = &self.file_range;
+            range.start as f64
+                + (self.cursor - range.start as f64
+                    + self.modulated.params.position as f64 * range.len() as f64)
+                    .rem_euclid(range.len() as f64)
         }
     }
     pub fn active_grains(&self) -> usize {
@@ -951,10 +989,12 @@ impl Engine {
             m.route(env.extra_destination, self.env_values[i] * env.extra_depth);
         }
         if self.frozen && (m.params.position - self.last_position).abs() > 0.00001 {
-            let length = self.source_sample().len() as f64;
-            self.frozen_center = (self.frozen_center
-                + (m.params.position - self.last_position) as f64 * length)
-                .rem_euclid(length);
+            let range = self.source_range();
+            let length = range.len() as f64;
+            self.frozen_center = range.start as f64
+                + (self.frozen_center - range.start as f64
+                    + (m.params.position - self.last_position) as f64 * length)
+                    .rem_euclid(length);
         }
         self.last_position = m.params.position;
         crate::color::mirror_reverb(&mut m.params, &m.color_slots[..m.color_len]);
@@ -1032,16 +1072,18 @@ impl Engine {
             + p.sample_tune_cents * 0.01
             + bend
             + self.random.unit() * tables::detune_range(p.detune);
-        let length = self.source_sample().len() as f64;
+        let range = self.source_range();
+        let length = range.len() as f64;
         let rate = tables::pitch_ratio(semis) * self.source_sample().sample_rate as f64
             / self.sample_rate as f64
             * if p.grain_size < 0.5 { -1.0 } else { 1.0 };
         let duration = (tables::grain_duration(p.grain_size) * self.sample_rate as f32)
             .round()
             .max(4.0) as u32;
-        let position = (self.center()
-            + self.random.bipolar() as f64 * p.cloud as f64 * length * 0.5)
-            .rem_euclid(length);
+        let position = range.start as f64
+            + (self.center() - range.start as f64
+                + self.random.bipolar() as f64 * p.cloud as f64 * length * 0.5)
+                .rem_euclid(length);
         let pan =
             (self.modulated.pan + self.random.bipolar() * p.stereo_spread * 0.5).clamp(0.0, 1.0);
         self.grains[slot] = Grain {
@@ -1086,7 +1128,8 @@ impl Engine {
                 }
             })
         } else {
-            self.sample.read(self.cursor, source_rate, true)
+            self.sample
+                .read_region(self.cursor, source_rate, true, &self.file_range)
         };
         let level = source[0].abs().max(source[1].abs());
         self.follower += (level - self.follower)
@@ -1131,6 +1174,7 @@ impl Engine {
         if effects_only {
             voice_frames.fill(source);
         }
+        let range = self.source_range();
         let sample = self
             .live_input
             .as_ref()
@@ -1141,11 +1185,17 @@ impl Engine {
             }
             let phase = 2.0 * grain.age as f32 / (grain.duration - 1) as f32;
             let amplitude = tables::grain_window(phase, grain.shape);
-            let frame = sample.read(grain.position, grain.rate, self.preset.params.antialiasing);
+            let frame = sample.read_region(
+                grain.position,
+                grain.rate,
+                self.preset.params.antialiasing,
+                &range,
+            );
             for c in 0..2 {
                 voice_frames[grain.voice][c] += frame[c] * amplitude * grain.pan[c];
             }
-            grain.position = (grain.position + grain.rate).rem_euclid(sample.len() as f64);
+            grain.position = range.start as f64
+                + (grain.position + grain.rate - range.start as f64).rem_euclid(range.len() as f64);
             grain.age += 1;
             grain.active = grain.age < grain.duration;
         }
@@ -1196,7 +1246,9 @@ impl Engine {
             self.peak[c] = self.peak[c].max(value.abs());
         }
         if self.playing {
-            self.cursor = (self.cursor + source_rate).rem_euclid(self.sample.len() as f64);
+            self.cursor = self.file_range.start as f64
+                + (self.cursor + source_rate - self.file_range.start as f64)
+                    .rem_euclid(self.file_range.len() as f64);
         }
         self.frame += 1;
         output

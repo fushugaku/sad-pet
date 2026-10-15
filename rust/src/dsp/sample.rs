@@ -1,6 +1,39 @@
 use crate::{Stereo, tables::Random};
 use std::f64::consts::PI;
 
+/// Normalized, non-destructive playback/trim boundaries. End is exclusive.
+#[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
+pub struct Region {
+    pub start: f64,
+    pub end: f64,
+}
+impl Default for Region {
+    fn default() -> Self {
+        Self {
+            start: 0.0,
+            end: 1.0,
+        }
+    }
+}
+impl Region {
+    pub fn bounds(self, length: usize) -> Result<std::ops::Range<usize>, String> {
+        if !self.start.is_finite()
+            || !self.end.is_finite()
+            || self.start < 0.0
+            || self.end > 1.0
+            || self.start >= self.end
+        {
+            return Err("Choose a start before the end, within the audio file".into());
+        }
+        let start = (self.start * length as f64).round() as usize;
+        let end = (self.end * length as f64).round() as usize;
+        if start >= end || end > length {
+            return Err("Select at least one audio frame".into());
+        }
+        Ok(start..end)
+    }
+}
+
 #[derive(Debug)]
 pub struct SampleBuffer {
     pub name: String,
@@ -260,6 +293,59 @@ impl SampleBuffer {
             let c3 = 0.5 * (d[i] - a[i]) + 1.5 * (b[i] - c[i]);
             ((c3 * fraction + c2) * fraction + c1) * fraction + b[i]
         })
+    }
+
+    /// Wrap interpolation inside the selection, including backwards grains.
+    /// A mip is safe only when its entire FIR footprint is inside the region;
+    /// near a cut we fall back to finer levels so excluded audio cannot leak in.
+    pub fn read_region(
+        &self,
+        position: f64,
+        rate: f64,
+        antialiasing: bool,
+        range: &std::ops::Range<usize>,
+    ) -> Stereo {
+        if range.start == 0 && range.end == self.len() {
+            return self.read(position, rate, antialiasing);
+        }
+        if !position.is_finite() {
+            return [0.0; 2];
+        }
+        let p = range.start as f64 + (position - range.start as f64).rem_euclid(range.len() as f64);
+        let mut level = if antialiasing && rate.abs() >= 2.0 {
+            (rate.abs().log2().floor() as usize).min(self.levels.len() - 1)
+        } else {
+            0
+        };
+        while level > 0 {
+            let scale = (1_usize << level) as f64;
+            let base = (p / scale).floor();
+            let support = 16.0 * (scale - 1.0);
+            if (base - 1.0) * scale - support >= range.start as f64
+                && (base + 2.0) * scale + support < range.end as f64
+            {
+                return self.read(p, scale, true);
+            }
+            level -= 1;
+        }
+        let base = p.floor() as i64;
+        let fraction = (p - p.floor()) as f32;
+        let get = |offset: i64| {
+            self.frames()[range.start
+                + (base + offset - range.start as i64).rem_euclid(range.len() as i64) as usize]
+        };
+        let (a, b, c, d) = (get(-1), get(0), get(1), get(2));
+        std::array::from_fn(|i| {
+            let c1 = 0.5 * (c[i] - a[i]);
+            let c2 = a[i] - 2.5 * b[i] + 2.0 * c[i] - 0.5 * d[i];
+            let c3 = 0.5 * (d[i] - a[i]) + 1.5 * (b[i] - c[i]);
+            ((c3 * fraction + c2) * fraction + c1) * fraction + b[i]
+        })
+    }
+
+    pub fn trim_wav(&self, region: Region) -> Result<Vec<u8>, String> {
+        let range = region.bounds(self.len())?;
+        crate::wav::bytes(self.sample_rate, &self.frames()[range])
     }
 
     pub fn demo(sample_rate: u32) -> Self {

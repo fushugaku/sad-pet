@@ -92,6 +92,83 @@ assert.deepEqual(midi.request("/api/state").notes, []);
 assert.throws(() => midi.request("/api/preset", { format: "bad" }), /preset/);
 assert.throws(() => midi.json("sad_load", new Uint8Array([1, 2, 3])), /sample/);
 
+// Region commands run on the audio instance; trim/render run on the separate
+// worker instance. Verify both use the same boundaries without altering a file.
+const regionAudio = new Core(module, 48000);
+regionAudio.json("sad_load", prepared);
+const original = utility.call("sad_sample_wav");
+const region = { start: 0.25, end: 0.5 };
+regionAudio.request("/api/region", region);
+regionAudio.request("/api/transport", { playing: true });
+for (let i = 0; i < 200; i++) {
+  regionAudio.process(511);
+  const state = regionAudio.request("/api/state");
+  assert.ok(state.center >= region.start && state.center < region.end);
+  assert.ok(
+    state.grains.every(
+      (g) => g.position >= region.start && g.position < region.end,
+    ),
+  );
+}
+const trimmed = utility.call("sad_trim", {
+  ...region,
+  sample_id: "factory:glass-sequence:v1",
+});
+assert.deepEqual(
+  utility.call("sad_sample_wav"),
+  original,
+  "trimming must preserve the original",
+);
+const trimmedFile = new Core(module, 48000);
+trimmedFile.call("sad_prepare", trimmed);
+assert.equal(trimmedFile.request("/api/state").sample_seconds, 2);
+const pcm = (buffer) => {
+  const view = new DataView(buffer);
+  for (let i = 12; i + 8 <= buffer.byteLength; ) {
+    const size = view.getUint32(i + 4, true);
+    if (view.getUint32(i, false) === 0x64617461)
+      return new Float32Array(buffer.slice(i + 8, i + 8 + size));
+    i += 8 + size + (size % 2);
+  }
+  throw new Error("WAV has no audio data");
+};
+assert.deepEqual(
+  pcm(trimmed),
+  pcm(original).slice(48000 * 2 * 2, 48000 * 4 * 2),
+);
+assert.throws(
+  () => utility.call("sad_trim", { ...region, sample_id: "wrong-source" }),
+  /source changed/,
+);
+assert.throws(
+  () => utility.call("sad_trim", { start: 0.6, end: 0.4 }),
+  /start/,
+);
+const renderedRegion = utility.call("sad_render", {
+  seconds: 0.2,
+  preset: utility.request("/api/preset"),
+  bypass: true,
+  frozen: false,
+  region,
+});
+assert.ok(pcm(renderedRegion).some((v) => Math.abs(v) > 0.01));
+const renderedFull = utility.call("sad_render", {
+  seconds: 0.2,
+  preset: utility.request("/api/preset"),
+  bypass: true,
+  frozen: false,
+});
+assert.notDeepEqual(
+  pcm(renderedRegion),
+  pcm(renderedFull),
+  "offline renders must honor the selection",
+);
+regionAudio.json("sad_load", prepared);
+assert.deepEqual(regionAudio.request("/api/state").region, {
+  start: 0,
+  end: 1,
+});
+
 // Recorded bank entries must work through the same prepare/load path as files,
 // without a runtime request to the source video or a music service.
 const catalog = utility.request("/api/samples");
@@ -228,5 +305,5 @@ assert.deepEqual(
 );
 assert.ok(!messages.some((m) => m.error || m.type === "fatal"));
 console.log(
-  "WASM checks passed: portable module, stereo audio at 44.1/48 kHz, deterministic quanta, chord entry, MIDI, effect stack, live microphone processing/capture/freeze and sample-exact recording.",
+  "WASM checks passed: portable module, stereo audio at 44.1/48 kHz, deterministic quanta, chord entry, MIDI, effect stack, live microphone, sample-exact recording, region loops and non-destructive trims/renders.",
 );
