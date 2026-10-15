@@ -1925,6 +1925,7 @@ function bind() {
         pending = 0;
         await new Promise((resolve) => setTimeout(resolve, 70));
       }
+      await sampleSelection?.flush();
       const response = await api("/api/render", {
         seconds: Number($("render-duration").value),
       });

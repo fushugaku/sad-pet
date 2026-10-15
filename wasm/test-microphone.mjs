@@ -159,6 +159,35 @@ assert.equal(
   true,
   "Library must see a live source until the worklet confirms restoration of the original file",
 );
+const exporting = Object.create(BrowserBackend.prototype);
+globalThis.location = { href: "http://127.0.0.1/" };
+const freshRegion = { start: 0.3, end: 0.6 };
+Object.assign(exporting, {
+  ready: Promise.resolve(),
+  microphone: { active: false },
+  state: { region: { start: 0, end: 1 } },
+  audio: {
+    async call(type, data, transfers, path) {
+      assert.equal(path, "/api/state");
+      return { region: freshRegion, preset: {}, bypass: false, frozen: false };
+    },
+  },
+  worker: {
+    async call(type, data) {
+      assert.equal(type, "render");
+      assert.deepEqual(
+        data.region,
+        freshRegion,
+        "render must use the acknowledged region instead of a delayed UI snapshot",
+      );
+      return new ArrayBuffer(0);
+    },
+  },
+});
+const exportResult = await exporting.fetch("/api/render", {
+  body: JSON.stringify({ seconds: 1 }),
+});
+assert.equal(exportResult.status, 200, await exportResult.text());
 console.log(
   "Microphone lifecycle passed: explicit access, device switching, gain/mode reuse, disconnect, cancellation and denied permission.",
 );

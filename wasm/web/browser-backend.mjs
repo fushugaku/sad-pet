@@ -343,7 +343,7 @@ export class BrowserBackend {
           throw new Error(
             "Use Record to save the live output, or switch to File before rendering.",
           );
-        const state = this.snapshot();
+        const state = await this.audio.call("request", null, [], "/api/state");
         result = await this.worker.call("render", {
           seconds: data.seconds,
           preset: state.preset,
