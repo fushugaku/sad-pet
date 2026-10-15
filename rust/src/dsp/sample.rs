@@ -93,6 +93,55 @@ impl SampleBuffer {
         &self.levels[0]
     }
 
+    /// Transfer already prepared antialiasing levels from a Web Worker to the
+    /// audio worklet, so loading a sample never runs the FIR on the audio thread.
+    pub fn prepared_levels(&self) -> &[Vec<Stereo>] {
+        &self.levels
+    }
+
+    pub fn from_prepared(
+        name: String,
+        library_id: Option<String>,
+        sample_rate: u32,
+        levels: Vec<Vec<Stereo>>,
+    ) -> Result<Self, String> {
+        if !(8_000..=384_000).contains(&sample_rate)
+            || levels.is_empty()
+            || levels.len() > 7
+            || levels[0].is_empty()
+            || levels[0].len() > sample_rate as usize * 30 * 60
+            || levels
+                .windows(2)
+                .any(|l| l[1].len() != l[0].len().div_ceil(2))
+            || levels
+                .iter()
+                .flatten()
+                .flatten()
+                .any(|x| !x.is_finite() || x.abs() > 16.0)
+        {
+            return Err("Invalid prepared sample".into());
+        }
+        let frames = &levels[0];
+        let bins = frames.len().min(640);
+        let waveform = (0..bins)
+            .map(|i| {
+                let start = i * frames.len() / bins;
+                let end = ((i + 1) * frames.len() / bins).max(start + 1);
+                frames[start..end].iter().fold([1.0_f32, -1.0_f32], |m, x| {
+                    let value = (x[0] + x[1]) * 0.5;
+                    [m[0].min(value), m[1].max(value)]
+                })
+            })
+            .collect();
+        Ok(Self {
+            name,
+            library_id,
+            sample_rate,
+            levels,
+            waveform,
+        })
+    }
+
     pub fn read(&self, position: f64, rate: f64, antialiasing: bool) -> Stereo {
         if !position.is_finite() {
             return [0.0; 2];

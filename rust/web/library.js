@@ -1,5 +1,6 @@
 "use strict";
 (() => {
+  const fetch = (...args) => (window.sadPetFetch || window.fetch)(...args);
   const byId = (id) => document.getElementById(id);
   const factoryId = (track) => `factory:${track.id}:v1`;
   const makeOption = (value, label) => new Option(label, value);

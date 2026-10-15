@@ -136,6 +136,7 @@ pub struct Port {
     pub name: String,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn ports() -> Result<Vec<Port>, String> {
     let input = midir::MidiInput::new("SAD PET ports").map_err(|e| e.to_string())?;
     input
@@ -151,10 +152,12 @@ pub fn ports() -> Result<Vec<Port>, String> {
         .collect()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub struct Connection {
     _input: midir::MidiInputConnection<Parser>,
     pub name: String,
 }
+#[cfg(not(target_arch = "wasm32"))]
 impl Connection {
     pub fn open(
         id: usize,

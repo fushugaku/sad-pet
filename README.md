@@ -1,7 +1,13 @@
 # SAD PET
 
-A desktop granular instrument with a Rust audio engine and a local browser panel.
-Audio plays through the system output; the browser controls the same running engine.
+A granular instrument with a shared Rust audio engine for desktop and WebAssembly.
+
+**[Play SAD PET in your browser](https://fushugaku.github.io/sad-pet/)**
+
+The web version runs entirely in the browser: Rust DSP in an AudioWorklet, with
+sample preparation, WAV rendering and MP3 encoding in a separate worker. No backend
+or installation is required. Click Play or a keyboard key to enable sound.
+The desktop version uses the system audio output and a local browser panel.
 
 - Eight built-in audio tracks, WAV import and an IndexedDB file library.
 - Polyphonic keyboard, note/chord hold, arpeggiator and a 16-step chord sequencer.
@@ -42,6 +48,26 @@ Close a packaged instance with Quit before starting the development stack.
 ./dev.sh --frontend-port 3314 --backend-port 3315
 ```
 
+## Build the web version
+
+```sh
+rustup target add wasm32-unknown-unknown
+python3 wasm/build.py
+node wasm/test.mjs
+python3 -m http.server 8080 --directory dist/web --bind 127.0.0.1
+```
+
+Open `http://127.0.0.1:8080/`. Deployment needs only the files in `dist/web` on an
+HTTPS static host. Relative asset paths also work under a project subdirectory.
+The GitHub Actions workflow builds, checks and publishes the site on every push to
+`main`; repository Settings → Pages uses **GitHub Actions** as its source.
+
+Use a browser with WebAssembly and AudioWorklet support. Web MIDI is optional and
+requires a supported browser and permission through the MIDI refresh button.
+Audio files, presets, rendered WAVs and WAV/MP3 recordings stay in IndexedDB and
+can be downloaded from Library. Storage belongs to each browser profile and site
+origin; the hosted site and the local desktop panel have separate libraries.
+
 ## Check and package
 
 ```sh
@@ -74,5 +100,7 @@ It does not claim bit-identical audio or full hardware firmware compatibility.
 describe which formulas and lookup tables came from the supplied image.
 Original firmware images and decompiler output are excluded from this repository.
 
-MP3 support uses LAME and `mp3lame-encoder`; their source references and license texts
-are preserved in [rust/licenses](rust/licenses/README.txt) and in the application bundle.
+Desktop MP3 support uses LAME and `mp3lame-encoder`; their source references and
+license texts are preserved in [rust/licenses](rust/licenses/README.txt) and in the
+application bundle. Browser MP3 support uses the unmodified, locally bundled
+[`@breezystack/lamejs`](wasm/web/vendor/README.txt) module.

@@ -45,7 +45,7 @@ function notify(message, persistent = false) {
     noticeTimer = setTimeout(() => ($("notice").hidden = true), 6500);
 }
 async function api(path, data, headers) {
-  const response = await fetch(
+  const response = await (window.sadPetFetch || window.fetch)(
     path,
     data === undefined
       ? {}
@@ -1682,9 +1682,11 @@ async function loadStoredPreset(loaded) {
   preset = await request("/api/preset", loaded);
   syncAll();
 }
-async function refreshMidi() {
+async function refreshMidi(ask = false) {
   try {
-    const data = await request("/api/midi"),
+    const data = await request(
+        window.sadPetFetch && ask ? "/api/midi?request=1" : "/api/midi",
+      ),
       select = $("midi");
     select.replaceChildren(option("", "Computer keyboard"));
     for (const p of data.ports) select.append(option(String(p.id), p.name));
@@ -1784,7 +1786,7 @@ function bind() {
       Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)),
     );
   });
-  $("midi-refresh").onclick = refreshMidi;
+  $("midi-refresh").onclick = () => refreshMidi(true);
   $("midi").onchange = async (e) => {
     try {
       await request("/api/midi", {
@@ -2011,9 +2013,11 @@ async function poll() {
       );
     $("meter-l").style.width = `${Math.min(1, next.peak[0]) * 100}%`;
     $("meter-r").style.width = `${Math.min(1, next.peak[1]) * 100}%`;
-    $("audio-status").textContent = next.audio_enabled
-      ? `${(next.sample_rate / 1000).toFixed(1)} kHz · stereo`
-      : "Audio output disabled";
+    $("audio-status").textContent =
+      window.sadPetAudio?.status() ||
+      (next.audio_enabled
+        ? `${(next.sample_rate / 1000).toFixed(1)} kHz · stereo`
+        : "Audio output disabled");
     $("audio-led").classList.toggle("off", !next.audio_enabled);
     syncRecording();
     if (
