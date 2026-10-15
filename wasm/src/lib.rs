@@ -205,7 +205,9 @@ fn unpack(bytes: &[u8]) -> Result<SampleBuffer, String> {
         let block = tail.get(..count).ok_or("Incomplete sample levels")?;
         levels.push(
             block
-                .chunks_exact(8)
+                .as_chunks::<8>()
+                .0
+                .iter()
                 .map(|b| {
                     [
                         f32::from_le_bytes(b[..4].try_into().unwrap()),

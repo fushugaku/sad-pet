@@ -34,7 +34,7 @@ pub fn decode<R: Read + Seek>(reader: R, name: String) -> Result<SampleBuffer, S
     let frames = if spec.channels == 1 {
         samples.into_iter().map(|s| [s, s]).collect()
     } else {
-        samples.chunks_exact(2).map(|s| [s[0], s[1]]).collect()
+        samples.as_chunks::<2>().0.to_vec()
     };
     SampleBuffer::new(name, spec.sample_rate, frames)
 }
