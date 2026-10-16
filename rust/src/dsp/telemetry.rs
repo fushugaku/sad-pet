@@ -28,7 +28,9 @@ pub struct RealtimeView {
     pub params: crate::preset::Params,
     pub color: [crate::color::ColorSlot; crate::color::MAX_COLOR_SLOTS],
     pub color_len: usize,
-    pub gain_reduction: [(u32, f32); crate::color::MAX_COLOR_SLOTS],
+    pub pre_color: [crate::color::ColorSlot; crate::color::MAX_COLOR_SLOTS],
+    pub pre_color_len: usize,
+    pub gain_reduction: [(u32, f32); crate::color::MAX_COLOR_SLOTS * 2],
     pub step: Option<usize>,
     pub arp_index: usize,
     pub gate: bool,
@@ -62,7 +64,9 @@ impl Default for RealtimeView {
             params: crate::preset::Params::default(),
             color: [crate::color::ColorSlot::default(); crate::color::MAX_COLOR_SLOTS],
             color_len: 0,
-            gain_reduction: [(0, 0.0); crate::color::MAX_COLOR_SLOTS],
+            pre_color: [crate::color::ColorSlot::default(); crate::color::MAX_COLOR_SLOTS],
+            pre_color_len: 0,
+            gain_reduction: [(0, 0.0); crate::color::MAX_COLOR_SLOTS * 2],
             step: None,
             arp_index: 0,
             gate: false,
@@ -137,7 +141,12 @@ impl Engine {
         view.params = self.modulated.params;
         view.color = self.modulated.color_slots;
         view.color_len = self.modulated.color_len;
-        view.gain_reduction = self.color_rack.realtime_gain_reduction();
+        view.pre_color = self.modulated.pre_color_slots;
+        view.pre_color_len = self.modulated.pre_color_len;
+        let split = crate::color::MAX_COLOR_SLOTS;
+        view.gain_reduction[..split].copy_from_slice(&self.color_rack.realtime_gain_reduction());
+        view.gain_reduction[split..]
+            .copy_from_slice(&self.pre_color_rack.realtime_gain_reduction());
         if !self.playing || self.bypass {
             view.gain_reduction.iter_mut().for_each(|(_, db)| *db = 0.0);
         }
@@ -172,6 +181,7 @@ impl Engine {
 
     pub fn gain_reduction(&self) -> BTreeMap<u32, f32> {
         let mut meters = self.color_rack.gain_reduction();
+        meters.extend(self.pre_color_rack.gain_reduction());
         if !self.playing || self.bypass {
             meters.values_mut().for_each(|value| *value = 0.0);
         }
@@ -299,20 +309,35 @@ impl Engine {
                 ),
             );
         }
-        for (i, slot) in self.preset.color_chain.iter().enumerate() {
-            for &parameter in slot.control_parameters() {
-                let mut base = *slot;
-                let mut current = self.modulated.color_slots[i];
-                let mut min = low.color_slots[i];
-                let mut max = high.color_slots[i];
-                let key = format!("color:{}:{}", slot.id, parameter.key());
-                let state = KnobState::new(
-                    *base.parameter_mut(parameter),
-                    *current.parameter_mut(parameter),
-                    *min.parameter_mut(parameter),
-                    *max.parameter_mut(parameter),
-                );
-                result.insert(key, state);
+        for (slots, current_slots, low_slots, high_slots) in [
+            (
+                &self.preset.color_chain,
+                &self.modulated.color_slots,
+                &low.color_slots,
+                &high.color_slots,
+            ),
+            (
+                &self.preset.pre_color_chain,
+                &self.modulated.pre_color_slots,
+                &low.pre_color_slots,
+                &high.pre_color_slots,
+            ),
+        ] {
+            for (i, slot) in slots.iter().enumerate() {
+                for &parameter in slot.control_parameters() {
+                    let mut base = *slot;
+                    let mut current = current_slots[i];
+                    let mut min = low_slots[i];
+                    let mut max = high_slots[i];
+                    let key = format!("color:{}:{}", slot.id, parameter.key());
+                    let state = KnobState::new(
+                        *base.parameter_mut(parameter),
+                        *current.parameter_mut(parameter),
+                        *min.parameter_mut(parameter),
+                        *max.parameter_mut(parameter),
+                    );
+                    result.insert(key, state);
+                }
             }
         }
         result

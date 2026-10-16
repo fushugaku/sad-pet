@@ -497,7 +497,39 @@ const COLOR_TYPES = [
   ["lcr_delay", "L/C/R Delay"],
   ["mod_delay", "Mod Delay"],
   ["compressor", "Compressor"],
+  ["waveshaper", "Waveshaper"],
 ];
+const COLOR_RACKS = [
+  {
+    key: "pre_color_chain",
+    element: "pre-color-chain",
+    add: "pre-color-add",
+    label: "Pre FX",
+  },
+  { key: "color_chain", element: "color-chain", add: "color-add", label: "FX" },
+];
+const WAVESHAPER_TYPES = [
+  ["drive", "Drive"],
+  ["hard_clip", "Hard Clip"],
+  ["decimator", "Decimator"],
+  ["oct_saw", "OctSaw"],
+  ["multi_triangle", "MultiTri"],
+  ["multi_sine", "MultiSin"],
+  ["sub_saw", "SubSaw"],
+  ["sub_square", "SubSquare"],
+  ["sub_triangle", "SubTriangle"],
+  ["sub_sine", "SubSine"],
+  ["pickup", "Pickup"],
+  ["level_boost", "LvlBoost"],
+];
+function colorEntries() {
+  return COLOR_RACKS.flatMap((rack) =>
+    (preset?.[rack.key] || []).map((slot, index) => ({ rack, slot, index })),
+  );
+}
+function findColor(id) {
+  return colorEntries().find((entry) => entry.slot.id === id)?.slot;
+}
 const REVERB_TYPES = [
   ["plate_s", "Small plate"],
   ["plate_l", "Large plate"],
@@ -546,6 +578,9 @@ function delayTime(v, slot, prefix, sync) {
   return sync ? `${DELAY_NOTES[delayIndex(v, 14)]} · ${ms} ms` : `${ms} ms`;
 }
 const COLOR_SCHEMAS = {
+  waveshaper: [
+    ["waveshaper_depth", "DEPTH", (v) => String(Math.round(v * 127))],
+  ],
   distortion: [
     ["distortion_drive", "DRIVE", colorDrive],
     [
@@ -643,7 +678,11 @@ const COLOR_SCHEMAS = {
       (v) => `${(-60 + 60 * v).toFixed(1)} dB`,
     ],
     ["compressor_ratio", "RATIO", (v) => `${(20 ** v).toFixed(1)}:1`],
-    ["compressor_attack", "ATTACK", (v) => `${(0.1 * 1000 ** v).toFixed(1)} ms`],
+    [
+      "compressor_attack",
+      "ATTACK",
+      (v) => `${(0.1 * 1000 ** v).toFixed(1)} ms`,
+    ],
     ["compressor_release", "RELEASE", (v) => `${Math.round(10 * 200 ** v)} ms`],
     ["compressor_knee", "KNEE", (v) => `${(24 * v).toFixed(1)} dB`],
     ["compressor_makeup", "MAKEUP", (v) => `${(24 * v).toFixed(1)} dB`],
@@ -679,7 +718,17 @@ function colorDestinationSchema(kind) {
   return schema;
 }
 const destinationValue = (value) =>
-  typeof value === "string" ? value : JSON.stringify(value);
+  typeof value === "string"
+    ? value
+    : JSON.stringify(value, (_, entry) =>
+        entry && typeof entry === "object" && !Array.isArray(entry)
+          ? Object.fromEntries(
+              Object.keys(entry)
+                .sort()
+                .map((key) => [key, entry[key]]),
+            )
+          : entry,
+      );
 const parseDestination = (value) =>
   value.startsWith("{") ? JSON.parse(value) : value;
 function colorLegacy() {
@@ -709,7 +758,8 @@ function editColorChain() {
   schedulePreset();
 }
 function removeColor(id) {
-  preset.color_chain = preset.color_chain.filter((s) => s.id !== id);
+  for (const rack of COLOR_RACKS)
+    preset[rack.key] = preset[rack.key].filter((s) => s.id !== id);
   for (const lfo of preset.lfos)
     if (lfo.destination?.color?.slot === id) lfo.destination = "none";
   for (const env of preset.envs)
@@ -720,46 +770,49 @@ function removeColor(id) {
   editColorChain();
 }
 function moveColor(id, delta) {
-  const index = preset.color_chain.findIndex((s) => s.id === id),
+  const rack = COLOR_RACKS.find((r) => preset[r.key].some((s) => s.id === id));
+  if (!rack) return;
+  const chain = preset[rack.key];
+  const index = chain.findIndex((s) => s.id === id),
     target = index + delta;
-  if (index < 0 || target < 0 || target >= preset.color_chain.length) return;
-  [preset.color_chain[index], preset.color_chain[target]] = [
-    preset.color_chain[target],
-    preset.color_chain[index],
-  ];
+  if (target < 0 || target >= chain.length) return;
+  [chain[index], chain[target]] = [chain[target], chain[index]];
   editColorChain();
 }
 function buildColors() {
-  $("color-add-type").replaceChildren(
-    ...COLOR_TYPES.map(([value, label]) => option(value, label)),
-  );
-  $("color-add").onclick = () => {
-    if (preset.color_chain.length >= colorDefaults.max_slots) return;
-    nextColorId = Math.max(
-      nextColorId,
-      ...preset.color_chain.map((s) => s.id + 1),
+  for (const rack of COLOR_RACKS) {
+    $(`${rack.add}-type`).replaceChildren(
+      ...COLOR_TYPES.map(([value, label]) => option(value, label)),
     );
-    if (nextColorId > 4294967295) nextColorId = 1;
-    while (preset.color_chain.some((s) => s.id === nextColorId)) nextColorId++;
-    const slot = structuredClone(colorDefaults.slot);
-    slot.id = nextColorId++;
-    slot.kind = $("color-add-type").value;
-    if (slot.kind === "compressor") slot.mix = 1;
-    preset.color_chain.push(slot);
-    editColorChain();
-  };
+    $(rack.add).onclick = () => {
+      if (preset[rack.key].length >= colorDefaults.max_slots) return;
+      const slots = colorEntries().map((e) => e.slot);
+      nextColorId = Math.max(nextColorId, ...slots.map((s) => s.id + 1));
+      if (nextColorId > 4294967295) nextColorId = 1;
+      while (slots.some((s) => s.id === nextColorId)) nextColorId++;
+      const slot = structuredClone(colorDefaults.slot);
+      slot.id = nextColorId++;
+      slot.kind = $(`${rack.add}-type`).value;
+      if (slot.kind === "compressor") slot.mix = 1;
+      preset[rack.key].push(slot);
+      editColorChain();
+    };
+  }
 }
 function syncColors() {
   if (!preset?.color_chain || !colorDefaults) return;
-  const signature = preset.color_chain
+  preset.pre_color_chain ||= [];
+  const signature = colorEntries()
     .map(
-      (s) =>
-        `${s.id}:${s.kind}:${s.settings[`${delayPrefix(s.kind)}_sync`] ?? ""}`,
+      ({ rack, slot: s }) =>
+        `${rack.key}:${s.id}:${s.kind}:${s.settings[`${delayPrefix(s.kind)}_sync`] ?? ""}`,
     )
     .join(",");
   if (
     signature !== colorSignature ||
-    $("color-chain").children.length !== preset.color_chain.length
+    COLOR_RACKS.some(
+      (r) => $(r.element).children.length !== preset[r.key].length,
+    )
   ) {
     colorSignature = signature;
     for (const key of controls.keys())
@@ -767,21 +820,21 @@ function syncColors() {
         controls.delete(key);
         modulationViews.delete(key);
       }
-    $("color-chain").replaceChildren();
-    for (const [index, slot] of preset.color_chain.entries()) {
+    for (const rack of COLOR_RACKS) $(rack.element).replaceChildren();
+    for (const { rack, index, slot } of colorEntries()) {
       const number = index + 1,
         id = slot.id;
       const card = document.createElement("div");
       card.className = "color-card";
       card.dataset.id = id;
-      card.innerHTML = `<div class="color-title"><strong class="color-order">${String(number).padStart(2, "0")}</strong><select aria-label="FX ${number} type"></select><div class="color-actions"><button class="color-bypass" aria-label="Bypass FX ${number}" title="Bypass" aria-pressed="false">⏻</button><button class="color-up" aria-label="Move FX ${number} up" title="Move up">↑</button><button class="color-down" aria-label="Move FX ${number} down" title="Move down">↓</button><button class="color-remove" aria-label="Remove FX ${number}" title="Remove">×</button></div></div><div id="color-${id}-knobs" class="knob-grid color-knobs"></div>`;
+      card.innerHTML = `<div class="color-title"><strong class="color-order">${String(number).padStart(2, "0")}</strong><select aria-label="${rack.label} ${number} type"></select><div class="color-actions"><button class="color-bypass" aria-label="Bypass ${rack.label} ${number}" title="Bypass" aria-pressed="false">⏻</button><button class="color-up" aria-label="Move ${rack.label} ${number} up" title="Move up">↑</button><button class="color-down" aria-label="Move ${rack.label} ${number} down" title="Move down">↓</button><button class="color-remove" aria-label="Remove ${rack.label} ${number}" title="Remove">×</button></div></div><div id="color-${id}-knobs" class="knob-grid color-knobs"></div>`;
       const select = card.querySelector("select");
       select.replaceChildren(
         ...COLOR_TYPES.map(([value, label]) => option(value, label)),
       );
       select.value = slot.kind;
       select.onchange = () => {
-        preset.color_chain.find((s) => s.id === id).kind = select.value;
+        findColor(id).kind = select.value;
         editColorChain();
       };
       if (slot.kind === "reverb") {
@@ -789,14 +842,32 @@ function syncColors() {
         title.classList.add("has-options");
         const mode = document.createElement("select");
         mode.className = "color-option color-reverb-type";
-        mode.setAttribute("aria-label", `FX ${number} reverb type`);
+        mode.setAttribute("aria-label", `${rack.label} ${number} reverb type`);
         mode.replaceChildren(
           ...REVERB_TYPES.map(([value, label]) => option(value, label)),
         );
         mode.value = slot.settings.reverb_type;
         mode.onchange = () => {
-          preset.color_chain.find((s) => s.id === id).settings.reverb_type =
-            mode.value;
+          findColor(id).settings.reverb_type = mode.value;
+          editColorChain();
+        };
+        title.insertBefore(mode, card.querySelector(".color-actions"));
+      }
+      if (slot.kind === "waveshaper") {
+        const title = card.querySelector(".color-title");
+        title.classList.add("has-options");
+        const mode = document.createElement("select");
+        mode.className = "color-option color-waveshaper-type";
+        mode.setAttribute(
+          "aria-label",
+          `${rack.label} ${number} waveshaper type`,
+        );
+        mode.replaceChildren(
+          ...WAVESHAPER_TYPES.map(([value, label]) => option(value, label)),
+        );
+        mode.value = slot.settings.waveshaper_type;
+        mode.onchange = () => {
+          findColor(id).settings.waveshaper_type = mode.value;
           editColorChain();
         };
         title.insertBefore(mode, card.querySelector(".color-actions"));
@@ -807,22 +878,20 @@ function syncColors() {
         title.classList.add("has-options");
         const clock = document.createElement("select");
         clock.className = "color-option color-delay-clock";
-        clock.setAttribute("aria-label", `FX ${number} delay clock`);
+        clock.setAttribute("aria-label", `${rack.label} ${number} delay clock`);
         clock.replaceChildren(
           option("free", "Milliseconds"),
           option("sync", "Tempo sync"),
         );
         clock.value = slot.settings[`${prefix}_sync`] ? "sync" : "free";
         clock.onchange = () => {
-          preset.color_chain.find((s) => s.id === id).settings[
-            `${prefix}_sync`
-          ] = clock.value === "sync";
+          findColor(id).settings[`${prefix}_sync`] = clock.value === "sync";
           editColorChain();
         };
         title.insertBefore(clock, card.querySelector(".color-actions"));
       }
       card.querySelector(".color-bypass").onclick = () => {
-        const s = preset.color_chain.find((s) => s.id === id);
+        const s = findColor(id);
         s.enabled = !s.enabled;
         editColorChain();
       };
@@ -837,10 +906,10 @@ function syncColors() {
           schema.length === 8 ? 4 : Math.min(7, schema.length),
         );
       card.querySelector(".color-knobs").dataset.count = schema.length;
-      $("color-chain").append(card);
+      $(rack.element).append(card);
       for (const [parameter, label, format] of schema) {
         const key = `color:${id}:${parameter}`;
-        const getSlot = () => preset.color_chain.find((s) => s.id === id);
+        const getSlot = () => findColor(id);
         const get = () => {
           const current = getSlot() || colorDefaults.slot;
           return parameter === "mix"
@@ -854,7 +923,7 @@ function syncColors() {
             (v) => format(v, getSlot() || colorDefaults.slot),
             0,
             1,
-            `FX ${number} ${label.toLowerCase()}`,
+            `${rack.label} ${number} ${label.toLowerCase()}`,
           ],
           `color-${id}-knobs`,
           {
@@ -882,7 +951,10 @@ function syncColors() {
         meter.className = "gain-reduction";
         meter.dataset.slot = id;
         meter.setAttribute("role", "meter");
-        meter.setAttribute("aria-label", `FX ${number} gain reduction`);
+        meter.setAttribute(
+          "aria-label",
+          `${rack.label} ${number} gain reduction`,
+        );
         meter.setAttribute("aria-valuemin", "0");
         meter.setAttribute("aria-valuemax", "30");
         meter.setAttribute("aria-valuenow", "0");
@@ -902,39 +974,51 @@ function syncColors() {
     colorRoutesSignature = routesSignature;
     refreshColorDestinations();
   }
-  for (const [i, slot] of preset.color_chain.entries()) {
-    const card = $("color-chain").children[i];
+  for (const { rack, index, slot } of colorEntries()) {
+    const card = $(rack.element).children[index];
     const mode = card.querySelector(".color-reverb-type");
     if (mode && document.activeElement !== mode)
       mode.value = slot.settings.reverb_type;
+    const shaper = card.querySelector(".color-waveshaper-type");
+    if (shaper && document.activeElement !== shaper)
+      shaper.value = slot.settings.waveshaper_type;
     card.classList.toggle("is-bypassed", !slot.enabled);
     card
       .querySelector(".color-bypass")
       .setAttribute("aria-pressed", String(!slot.enabled));
-    card.querySelector(".color-up").disabled = i === 0;
+    card.querySelector(".color-up").disabled = index === 0;
     card.querySelector(".color-down").disabled =
-      i === preset.color_chain.length - 1;
+      index === preset[rack.key].length - 1;
   }
-  $("color-add").disabled =
-    preset.color_chain.length >= colorDefaults.max_slots;
+  for (const rack of COLOR_RACKS)
+    $(rack.add).disabled = preset[rack.key].length >= colorDefaults.max_slots;
   for (const [key, update] of controls) if (key.startsWith("color:")) update();
   syncGainReduction(state);
 }
 function syncGainReduction(next) {
-  for (const meter of $("color-chain").querySelectorAll(".gain-reduction")) {
-    const slot = preset?.color_chain.find(
-      (s) => s.id === Number(meter.dataset.slot),
-    );
+  for (const meter of document.querySelectorAll(
+    ".color-chain .gain-reduction",
+  )) {
+    const slot = findColor(Number(meter.dataset.slot));
     const raw = Number(next?.gain_reduction?.[meter.dataset.slot] ?? 0);
-    const value = next?.playing && !next.bypass && slot?.enabled
-      && slot.mix > 0 && Number.isFinite(raw) ? Math.max(0, raw) : 0;
+    const value =
+      next?.playing &&
+      !next.bypass &&
+      slot?.enabled &&
+      slot.mix > 0 &&
+      Number.isFinite(raw)
+        ? Math.max(0, raw)
+        : 0;
     const rounded = Math.round(value * 10) / 10;
     const text = `${rounded > 0 ? "−" : ""}${rounded.toFixed(1)} dB`;
     meter.querySelector("output").textContent = text;
     meter.querySelector(".gr-fill").style.width =
       `${(Math.min(30, value) / 30) * 100}%`;
     meter.setAttribute("aria-valuenow", String(Math.min(30, rounded)));
-    meter.setAttribute("aria-valuetext", `${rounded.toFixed(1)} dB gain reduction`);
+    meter.setAttribute(
+      "aria-valuetext",
+      `${rounded.toFixed(1)} dB gain reduction`,
+    );
   }
 }
 function fillDestination(select, destination) {
@@ -947,14 +1031,14 @@ function fillDestination(select, destination) {
       group.append(option(destinationValue(value), text));
     select.append(group);
   }
-  for (const [index, slot] of preset.color_chain.entries()) {
+  for (const { rack, index, slot } of colorEntries()) {
     const group = document.createElement("optgroup");
-    group.label = `FX ${index + 1} · ${COLOR_TYPES.find(([k]) => k === slot.kind)[1]}`;
+    group.label = `${rack.label} ${index + 1} · ${COLOR_TYPES.find(([k]) => k === slot.kind)[1]}`;
     for (const [parameter, label] of colorDestinationSchema(slot.kind))
       group.append(
         option(
           destinationValue({ color: { slot: slot.id, parameter } }),
-          `FX ${index + 1} · ${label.charAt(0) + label.slice(1).toLowerCase()}`,
+          `${rack.label} ${index + 1} · ${label.charAt(0) + label.slice(1).toLowerCase()}`,
         ),
       );
     select.append(group);
@@ -963,11 +1047,17 @@ function fillDestination(select, destination) {
     ![...select.options].some((o) => o.value === value) &&
     typeof destination !== "string"
   ) {
-    const index = preset.color_chain.findIndex(
-      (s) => s.id === destination.color.slot,
+    const entry = colorEntries().find(
+      (e) => e.slot.id === destination.color?.slot,
     );
-    const label = destination.color.parameter.replaceAll("_", " ");
-    select.append(option(value, `FX ${index + 1} · ${label} (inactive)`));
+    const label =
+      destination.color?.parameter.replaceAll("_", " ") || "Unassigned";
+    select.append(
+      option(
+        value,
+        `${entry ? `${entry.rack.label} ${entry.index + 1}` : "FX"} · ${label} (inactive)`,
+      ),
+    );
   }
   select.value = value;
 }
@@ -2157,7 +2247,9 @@ function syncInput(input) {
   $("source-mic").setAttribute("aria-pressed", String(active || input.pending));
   $("source-mic").textContent = input.pending
     ? "Cancel microphone"
-    : window.sadPetPlugin ? "DAW input" : "Microphone";
+    : window.sadPetPlugin
+      ? "DAW input"
+      : "Microphone";
   $("microphone-controls").hidden = !active;
   const recordSlot = active
     ? $("microphone-record-slot")

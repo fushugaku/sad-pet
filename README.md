@@ -26,14 +26,19 @@ The desktop version uses the system audio output and a local browser panel.
 - Polyphonic keyboard, note/chord hold, arpeggiator and a 16-step chord sequencer.
 - Three LFOs with tempo sync up to 8 bars, three ADSR envelopes and eight modulation routes.
 - Two filters with single, serial and parallel routing, envelope depth and key tracking.
-- A reorderable chain of up to 12 effects: distortion, rate reducer, bit crusher,
+- Two independent reorderable chains of up to 12 effects each, before and after
+  the filters: distortion, rate reducer, bit crusher,
   flanger, chorus, binaural processing, reverb, L/C/R delay, modulated delay and
   a stereo-linked compressor (threshold, ratio, attack, release, knee, makeup and mix).
   All compressor controls accept LFO, envelope and matrix modulation.
   Each compressor has a live gain reduction meter with a dB readout.
+- RADIAS Waveshaper in either chain: Drive, Hard Clip, Decimator, OctSaw,
+  MultiTri, MultiSin, SubSaw, SubSquare, SubTriangle, SubSine, Pickup and LvlBoost.
+  Original fixed-point kernels and Depth transfer, plus per-slot Mix and bypass.
+  Depth accepts LFO, envelope, matrix and DAW automation; SubOSC/Pickup follow MIDI pitch.
 - Live modulation feedback on controls, MIDI input and stereo WAV/MP3 recording.
-- Dry/Wet blends the original source with grains before the voice filters and
-  shared effect chain, so even fully dry audio receives filtering and effects.
+- Dry/Wet blends the original source with grains before pre-filter FX, note
+  filters and post-filter FX, so even fully dry audio receives the full chain.
 - Waveform loop selection, adjustable fade in/out and sample-exact trimming to new library files.
 
 ## Run

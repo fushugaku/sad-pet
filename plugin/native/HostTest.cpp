@@ -77,6 +77,11 @@ int main() {
         require(listener.changed, "Sample import did not notify the DAW to save its changed state");
         auto* position = processor.parameters.getParameter("position");
         position->setValueNotifyingHost(0.37f);
+        auto preset = command(processor, "/api/preset");
+        auto pre = juce::JSON::parse(R"([{"id":31,"kind":"waveshaper","mix":0.8,"settings":{"waveshaper_type":"multi_sine","waveshaper_depth":0.7}}])");
+        preset.getDynamicObject()->setProperty("pre_color_chain", pre);
+        command(processor, "/api/preset", preset);
+        processor.parameters.getParameter("pre_fx1_waveshaper_depth")->setValueNotifyingHost(0.33f);
         auto* region = new juce::DynamicObject;
         region->setProperty("start", 0.25); region->setProperty("end", 0.75);
         command(processor, "/api/region", juce::var(region));
@@ -90,6 +95,9 @@ int main() {
         require(state["sample_name"].toString() == "Embedded test.wav", "Custom sample was not restored");
         require(std::abs(static_cast<float>(state["preset"]["params"]["position"]) - 0.37f) < 0.00001f, "Automation value was not restored");
         require(static_cast<double>(state["region"]["start"]) == 0.25, "Sample selection was not restored");
+        auto preState = state["preset"]["pre_color_chain"][0];
+        require(preState["settings"]["waveshaper_type"].toString() == "multi_sine", "Pre-filter waveshaper type was not restored");
+        require(std::abs(static_cast<float>(preState["settings"]["waveshaper_depth"]) - 0.33f) < 0.00001f, "Pre-filter FX automation was not restored");
         require(command(processor, "/api/state")["sample_name"].toString() == "Embedded test.wav", "Instances shared sample state");
         SadPetProcessor fresh;
         require(command(fresh, "/api/state")["sample_name"].toString() != "Embedded test.wav", "Fresh instance inherited another instance's state");

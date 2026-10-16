@@ -18,6 +18,14 @@
   in `rust/assets/samples/SOURCES.txt`, included with each package. The Harvest
   Dawn cover is a new recording of a copyrighted composition by Jeremy Soule;
   it is not royalty-free music.
+- **RADIAS Drive / Waveshaper reconstruction** is ported from radias-emulator's
+  shared Rustias synthesis source at `6a7ce839d9c4e76f5568feffb47ec4527b1c526e`:
+  `radias-synth-domain/src/waveshaper.rs`, `controller_shaper.rs`, the three used
+  `fixed.rs` helpers, and the firmware-free `standalone_tables::shapers` formula.
+  The original integer kernels and DEPTH transfers are retained in
+  `rust/src/dsp/radias_waveshaper/`; a stereo adapter supplies host sample rate,
+  MIDI pitch and the original four-sample coefficient slew. No firmware binary
+  or reference recording is included in this port.
 
 This document records the added dependencies; it does not replace their license
 texts or the repository's existing source and sample notices.

@@ -117,6 +117,50 @@ fn effect_processes_audio_and_granular_source_is_prepared_off_thread() {
 }
 
 #[test]
+fn both_fx_racks_waveshaper_changes_automation_and_feedback_are_realtime_safe() {
+    use sad_pet::{
+        color::ColorSlot, dsp::radias_waveshaper::WaveshaperMode, preset::SaturatorType,
+    };
+    let mut control = Controller::new(true);
+    let mut audio = control.prepare(48000);
+    let pre_depth = parameters::specs()
+        .iter()
+        .position(|p| p.id == "pre_fx1_waveshaper_depth")
+        .unwrap();
+    let mut preset = control.preset.clone();
+    preset.pre_color_chain = vec![ColorSlot {
+        id: 40,
+        kind: SaturatorType::Waveshaper,
+        ..ColorSlot::default()
+    }];
+    preset.color_chain = vec![ColorSlot {
+        id: 41,
+        kind: SaturatorType::Compressor,
+        ..ColorSlot::default()
+    }];
+    for mode in WaveshaperMode::ALL {
+        preset.pre_color_chain[0].settings.waveshaper_type = mode;
+        call(&mut control, "/api/preset", json!(preset));
+        let mut values = control.values();
+        values[pre_depth] = 0.73;
+        no_heap(|| {
+            audio.begin(&values, 120.0, Some(1.0), true, 2048);
+            render(&mut audio, 2048, [0.2, -0.1]);
+        });
+        let state = call(&mut control, "/api/state", Value::Null);
+        assert!(state["knobs"]["color:40:waveshaper_depth"]["current"].is_number());
+        assert!(
+            (audio.engine.modulated_pre_color_slots()[0]
+                .settings
+                .waveshaper_depth
+                - 0.73)
+                .abs()
+                < 1e-5
+        );
+    }
+}
+
+#[test]
 fn preset_mode_changes_midi_capture_automation_and_seek_do_not_allocate() {
     let mut control = Controller::new(false);
     let mut audio = control.prepare(48000);

@@ -14,7 +14,7 @@ enum Target {
     },
     Lfo(usize, usize),
     Env(usize, usize),
-    Fx(usize, ColorParameter),
+    Fx(bool, usize, ColorParameter),
     Performance(usize),
 }
 
@@ -52,12 +52,15 @@ impl Spec {
                     _ => e.extra_depth,
                 }
             }
-            Target::Fx(i, field) => *preset
-                .color_chain
-                .get(i)
-                .copied()
-                .unwrap_or_default()
-                .parameter_mut(field),
+            Target::Fx(pre, i, field) => *(if pre {
+                &preset.pre_color_chain
+            } else {
+                &preset.color_chain
+            })
+            .get(i)
+            .copied()
+            .unwrap_or_default()
+            .parameter_mut(field),
             Target::Performance(field) => {
                 let p = &preset.performance;
                 match field {
@@ -98,8 +101,14 @@ impl Spec {
                     _ => &mut e.extra_depth,
                 } = value;
             }
-            Target::Fx(i, field) => {
-                if let Some(slot) = preset.color_chain.get_mut(i) {
+            Target::Fx(pre, i, field) => {
+                if let Some(slot) = (if pre {
+                    &mut preset.pre_color_chain
+                } else {
+                    &mut preset.color_chain
+                })
+                .get_mut(i)
+                {
                     *slot.parameter_mut(field) = value;
                 }
             }
@@ -231,6 +240,10 @@ pub fn specs() -> &'static [Spec] {
         }
         for i in 0..MAX_COLOR_SLOTS {
             for &field in ColorParameter::ALL {
+                // Existing AU parameter order stays stable; append new controls below.
+                if field == ColorParameter::WaveshaperDepth {
+                    continue;
+                }
                 let default = *ColorSlot::default().parameter_mut(field);
                 result.push(Spec {
                     id: format!("fx{}_{}", i + 1, field.key()),
@@ -241,8 +254,37 @@ pub fn specs() -> &'static [Spec] {
                         .color_chain
                         .get(i)
                         .map_or(default, |s| *s.to_owned().parameter_mut(field)),
-                    target: Target::Fx(i, field),
+                    target: Target::Fx(false, i, field),
                 });
+            }
+        }
+        for pre in [false, true] {
+            for i in 0..MAX_COLOR_SLOTS {
+                for &field in ColorParameter::ALL {
+                    if !pre && field != ColorParameter::WaveshaperDepth {
+                        continue;
+                    }
+                    let mut spec = Spec {
+                        id: format!(
+                            "{}fx{}_{}",
+                            if pre { "pre_" } else { "" },
+                            i + 1,
+                            field.key()
+                        ),
+                        name: format!(
+                            "{}FX {} {}",
+                            if pre { "Pre " } else { "" },
+                            i + 1,
+                            field.key().replace('_', " ")
+                        ),
+                        min: 0.0,
+                        max: 1.0,
+                        default: 0.0,
+                        target: Target::Fx(pre, i, field),
+                    };
+                    spec.default = spec.get(&preset);
+                    result.push(spec);
+                }
             }
         }
         result

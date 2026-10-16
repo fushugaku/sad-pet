@@ -292,12 +292,18 @@ impl Controller {
                 knobs.insert(key.clone(), json!({"base": value, "current": now, "min": value, "max": now, "modulated": value != now}));
             }
         }
-        for slot in &self.preset.color_chain {
+        for slot in self
+            .preset
+            .color_chain
+            .iter()
+            .chain(&self.preset.pre_color_chain)
+        {
             for &parameter in slot.control_parameters() {
                 let mut copy = *slot;
                 let base = *copy.parameter_mut(parameter);
                 let current = view.color[..view.color_len]
                     .iter()
+                    .chain(view.pre_color[..view.pre_color_len].iter())
                     .find(|s| s.id == slot.id)
                     .map_or(base, |s| {
                         let mut copy = *s;
@@ -664,7 +670,7 @@ impl Audio {
             .zip(&mut self.parameters)
             .zip(values)
         {
-            if value != *previous {
+            if preset_changed || value != *previous {
                 spec.set(&mut self.engine.preset, value);
                 *previous = value;
                 changed = true;

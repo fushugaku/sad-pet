@@ -51,6 +51,7 @@ pub enum SaturatorType {
     LcrDelay,
     ModDelay,
     Compressor,
+    Waveshaper,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -379,6 +380,7 @@ pub struct Preset {
     pub lfos: [Lfo; 3],
     pub envs: [Env; 3],
     pub performance: crate::performance::Settings,
+    pub pre_color_chain: Vec<crate::color::ColorSlot>,
     pub color_chain: Vec<crate::color::ColorSlot>,
     pub fx_chain_version: u8,
     pub matrix: Vec<crate::matrix::Route>,
@@ -393,6 +395,7 @@ impl Default for Preset {
             lfos: std::array::from_fn(|_| Lfo::default()),
             envs: default_envs(),
             performance: crate::performance::Settings::default(),
+            pre_color_chain: Vec::new(),
             color_chain: vec![
                 crate::color::ColorSlot::legacy(SaturatorType::Distortion, 0.0),
                 crate::color::ColorSlot::legacy_reverb(2, &Params::default()),
@@ -413,6 +416,7 @@ impl<'de> Deserialize<'de> for Preset {
             lfos: [Lfo; 3],
             envs: Option<[Env; 3]>,
             performance: crate::performance::Settings,
+            pre_color_chain: Vec<crate::color::ColorSlot>,
             color_chain: Option<Vec<crate::color::ColorSlot>>,
             fx_chain_version: u8,
             matrix: Vec<crate::matrix::Route>,
@@ -427,6 +431,7 @@ impl<'de> Deserialize<'de> for Preset {
                     lfos: p.lfos,
                     envs: None,
                     performance: p.performance,
+                    pre_color_chain: Vec::new(),
                     color_chain: None,
                     fx_chain_version: 0,
                     matrix: Vec::new(),
@@ -479,7 +484,11 @@ impl<'de> Deserialize<'de> for Preset {
                         .flat_map(|e| [e.destination, e.extra_destination]),
                 )
                 .chain(matrix.iter().map(|r| r.destination));
-            let mut reserved: Vec<_> = color_chain.iter().map(|s| s.id).collect();
+            let mut reserved: Vec<_> = color_chain
+                .iter()
+                .chain(&d.pre_color_chain)
+                .map(|s| s.id)
+                .collect();
             reserved.extend(referenced.filter_map(|d| {
                 if let Destination::Color { slot, .. } = d {
                     Some(slot)
@@ -515,6 +524,7 @@ impl<'de> Deserialize<'de> for Preset {
             lfos,
             envs,
             performance: d.performance,
+            pre_color_chain: d.pre_color_chain,
             color_chain,
             fx_chain_version: 1,
             matrix,
@@ -527,7 +537,13 @@ impl Preset {
         self.params.sanitize();
         self.matrix.truncate(crate::matrix::MAX_ROUTES);
         self.color_chain.truncate(crate::color::MAX_COLOR_SLOTS);
-        let mut reserved: Vec<u32> = self.color_chain.iter().map(|s| s.id).collect();
+        self.pre_color_chain.truncate(crate::color::MAX_COLOR_SLOTS);
+        let mut reserved: Vec<u32> = self
+            .color_chain
+            .iter()
+            .chain(&self.pre_color_chain)
+            .map(|s| s.id)
+            .collect();
         reserved.extend(
             self.lfos
                 .iter()
@@ -547,7 +563,7 @@ impl Preset {
                 }),
         );
         let mut used = Vec::new();
-        for slot in &mut self.color_chain {
+        for slot in self.color_chain.iter_mut().chain(&mut self.pre_color_chain) {
             if slot.id == 0 || used.contains(&slot.id) {
                 slot.id = (1..).find(|id| !reserved.contains(id)).unwrap();
                 reserved.push(slot.id);

@@ -65,8 +65,21 @@ with the host transport. Moving or looping the playhead repositions those modes.
 continues to work while the host is stopped. Audio processing adds zero latency;
 grain position/history and individual effects can introduce audible delays.
 
+The signal path is grains/source blend → Pre-filter effects → note filters →
+Post-filter effects. Both racks have the same catalog and up to 12 independent
+slots. Old presets load with an empty pre-filter rack and retain their sound.
+
+**Waveshaper** ports Drive and all eleven RADIAS WS types from radias-emulator:
+Hard Clip, Decimator, OctSaw, MultiTri, MultiSin, SubSaw, SubSquare, SubTriangle,
+SubSine, Pickup and LvlBoost. Type and Depth retain their original transfers;
+Mix and bypass belong to the FX slot. Select a rack for its placement. SubOSC
+and Pickup use the latest MIDI pitch (C4 before the first note); SubOSC in the
+post-filter rack follows the note envelope and stays silent without a voice.
+
 Host automation exposes grain, filter, gain, tuning, LFO, envelope, performance
-and every numeric FX setting. FX automation addresses rack positions (FX 1–12).
+and every numeric FX setting. FX automation addresses rack positions (FX 1–12
+and Pre FX 1–12), including Waveshaper Depth. Existing parameter IDs and order
+are preserved.
 Discrete routing, waveform/type selections and modulation routes are stored in
 the full preset. Automation follows the host's parameter-block delivery; MIDI
 events are rendered at their exact sample offsets within each block.

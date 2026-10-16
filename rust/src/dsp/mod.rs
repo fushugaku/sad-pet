@@ -4,6 +4,7 @@ pub mod delay;
 pub mod effects;
 pub mod filter;
 pub mod modulation;
+pub mod radias_waveshaper;
 pub mod sample;
 pub mod telemetry;
 
@@ -87,6 +88,8 @@ struct Modulated {
     pan: f32,
     color_slots: [ColorSlot; MAX_COLOR_SLOTS],
     color_len: usize,
+    pre_color_slots: [ColorSlot; MAX_COLOR_SLOTS],
+    pre_color_len: usize,
     lfos: [Lfo; 3],
     envs: [Env; 3],
     performance: crate::performance::Modulation,
@@ -98,11 +101,14 @@ impl Modulated {
             pan: 0.5,
             color_slots: [ColorSlot::default(); MAX_COLOR_SLOTS],
             color_len: preset.color_chain.len(),
+            pre_color_slots: [ColorSlot::default(); MAX_COLOR_SLOTS],
+            pre_color_len: preset.pre_color_chain.len(),
             lfos: preset.lfos,
             envs: preset.envs,
             performance: crate::performance::Modulation::from_settings(&preset.performance),
         };
         result.color_slots[..result.color_len].copy_from_slice(&preset.color_chain);
+        result.pre_color_slots[..result.pre_color_len].copy_from_slice(&preset.pre_color_chain);
         result
     }
     fn route(&mut self, destination: Destination, value: f32) {
@@ -225,6 +231,7 @@ impl Modulated {
             Destination::Color { slot, parameter } => {
                 let Some(effect) = self.color_slots[..self.color_len]
                     .iter_mut()
+                    .chain(self.pre_color_slots[..self.pre_color_len].iter_mut())
                     .find(|s| s.id == slot)
                 else {
                     return;
@@ -269,6 +276,7 @@ pub struct Engine {
     pub lfo_values: [f32; 3],
     pub env_values: [f32; 3],
     color_rack: ColorRack,
+    pre_color_rack: ColorRack,
     filters: [FilterBank; VOICES],
     random: Random,
     frame: u64,
@@ -325,6 +333,7 @@ impl Engine {
             lfo_values: [0.0; 3],
             env_values: [0.0; 3],
             color_rack: ColorRack::new(sr),
+            pre_color_rack: ColorRack::new(sr),
             filters: std::array::from_fn(|_| FilterBank::new(sr)),
             random: Random::default(),
             frame: 0,
@@ -422,6 +431,7 @@ impl Engine {
         self.frozen_center = 0.0;
         self.reset_grains();
         self.color_rack.clear();
+        self.pre_color_rack.clear();
         self.filters.iter_mut().for_each(FilterBank::clear);
     }
 
@@ -474,6 +484,7 @@ impl Engine {
         self.file_range = range;
         self.reset_grains();
         self.color_rack.clear();
+        self.pre_color_rack.clear();
         self.filters.iter_mut().for_each(FilterBank::clear);
         Ok(())
     }
@@ -503,6 +514,7 @@ impl Engine {
         self.cursor = self.file_range.start as f64;
         self.reset_grains();
         self.color_rack.clear();
+        self.pre_color_rack.clear();
         self.filters.iter_mut().for_each(FilterBank::clear);
         if !self.playing {
             for voice in &mut self.voices {
@@ -900,6 +912,7 @@ impl Engine {
                     }
                 }
                 self.color_rack.clear();
+                self.pre_color_rack.clear();
             }
             Message::Control {
                 channel,
@@ -974,6 +987,7 @@ impl Engine {
                 self.source_channel = 0;
                 self.mod_random = Random(0x4d41545249585f31);
                 self.color_rack.clear();
+                self.pre_color_rack.clear();
                 self.filters.iter_mut().for_each(FilterBank::clear);
             }
             _ => {}
@@ -1058,6 +1072,15 @@ impl Engine {
         crate::color::mirror_reverb(&mut m.params, &m.color_slots[..m.color_len]);
         self.color_rack
             .configure_tempo(&m.color_slots[..m.color_len], m.params.bpm);
+        self.pre_color_rack
+            .configure_tempo(&m.pre_color_slots[..m.pre_color_len], m.params.bpm);
+        let shaper_note = self.source_note as f32
+            + self.bend[self.source_channel as usize] * m.params.midi_pitchbend_range
+            + (m.params.pitch * 2.0 - 1.0) * m.params.pitch_range
+            + m.params.sample_tune_semis
+            + m.params.sample_tune_cents * 0.01;
+        self.pre_color_rack.set_pitch(shaper_note);
+        self.color_rack.set_pitch(shaper_note);
         self.performance.modulate(m.performance);
         for (i, env) in m.envs.iter().enumerate() {
             if *env != self.modulated.envs[i] {
@@ -1083,6 +1106,9 @@ impl Engine {
     }
     pub fn modulated_color_slots(&self) -> &[ColorSlot] {
         &self.modulated.color_slots[..self.modulated.color_len]
+    }
+    pub fn modulated_pre_color_slots(&self) -> &[ColorSlot] {
+        &self.modulated.pre_color_slots[..self.modulated.pre_color_len]
     }
     pub fn modulated_envs(&self) -> [Env; 3] {
         self.modulated.envs
@@ -1284,20 +1310,45 @@ impl Engine {
         } else {
             (dry_scale * (1.0 - self.smooth_mix), norm * self.smooth_mix)
         };
-        let mut filtered = [0.0; 2];
+        let mut mixed_frames = [[0.0; 2]; VOICES];
+        let mut before_fx = [0.0; 2];
         for (i, frame) in voice_frames.into_iter().enumerate() {
             if self.voices[i].value <= 0.0 {
                 continue;
             }
-            let mixed = std::array::from_fn(|c| {
+            mixed_frames[i] = std::array::from_fn(|c| {
                 (source[c] * dry_amount + frame[c] * grain_amount) * input_gain
             });
-            let voice = self.filters[i].process(mixed);
+            for (c, total) in before_fx.iter_mut().enumerate() {
+                *total += mixed_frames[i][c] * self.voices[i].value;
+            }
+        }
+        // One stereo pre-filter rack, with its own tails and delay clock. The
+        // shared return enters each note's filter before its VCA. Normalizing
+        // the send/return by voice weight preserves per-note envelopes and the
+        // dry voice/filter separation; an empty or bypassed rack is transparent.
+        if voice_sum > 0.0 {
+            before_fx.iter_mut().for_each(|v| *v /= voice_sum);
+        }
+        let pre_output = self.pre_color_rack.process(before_fx);
+        let correction = if self.pre_color_rack.is_active() {
+            std::array::from_fn(|c| pre_output[c] - before_fx[c])
+        } else {
+            [0.0; 2]
+        };
+        let mut filtered = [0.0; 2];
+        for (i, mixed) in mixed_frames.into_iter().enumerate() {
+            if self.voices[i].value <= 0.0 {
+                continue;
+            }
+            let voice = self.filters[i].process(std::array::from_fn(|c| mixed[c] + correction[c]));
             for c in 0..2 {
                 filtered[c] += voice[c] * self.voices[i].value;
             }
         }
-        let processed = self.color_rack.process(filtered);
+        let processed = self
+            .color_rack
+            .process_with_voice_gain(filtered, loudest_voice);
         let volume = if self.bypass {
             self.preset.params.master_volume
         } else {

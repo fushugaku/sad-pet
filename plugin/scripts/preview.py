@@ -80,7 +80,7 @@ def main():
             url = urlparse(self.path)
             name = url.path.rsplit("/", 1)[-1] or "index.html"
             paths = {
-                "index.html": PROJECT / "target/plugins/web/index.html",
+                "index.html": PROJECT / "rust/web/index.html",
                 **{name: PROJECT / "rust/web" / name for name in ["app.js", "style.css", "library.js", "selection.js"]},
                 **{name: ROOT / "web" / name for name in ["plugin-backend.js", "plugin.css"]},
             }
@@ -90,12 +90,16 @@ def main():
                 return
             body = file.read_bytes()
             if name == "index.html":
+                for script_name in ["library", "selection", "app"]:
+                    body = body.replace(f'    <script src="./{script_name}.js" defer></script>\n'.encode(), b"")
+                body = body.replace(b"</head>", b'<link rel="stylesheet" href="./plugin.css" /><script type="module" src="./plugin-backend.js"></script></head>')
                 endpoint = "/native?fx" if "fx" in url.query else "/native"
                 script = f'<script>window.sadPetNativeRequest = async (request) => (await fetch({json.dumps(endpoint)}, {{method:"POST",headers:{{"Content-Type":"application/json"}},body:JSON.stringify(request)}})).json();</script>'
                 body = body.replace(b"</head>", script.encode() + b"</head>")
             self.send_response(200)
             self.send_header("Content-Type", {".html": "text/html", ".js": "text/javascript", ".css": "text/css"}[file.suffix])
             self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
 

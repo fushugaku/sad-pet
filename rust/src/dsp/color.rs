@@ -1,6 +1,7 @@
 use super::compressor::Compressor;
 use super::delay::RadiasDelay;
 use super::effects::{Delay, Effects};
+use super::radias_waveshaper::RadiasWaveshaper;
 use crate::{
     Stereo,
     color::{ColorSlot, MAX_COLOR_SLOTS},
@@ -36,6 +37,7 @@ pub struct ColorProcessor {
     reverb_params: Params,
     radias_delay: RadiasDelay,
     compressor: Compressor,
+    waveshaper: RadiasWaveshaper,
 }
 impl ColorProcessor {
     pub fn new(sample_rate: u32) -> Self {
@@ -68,6 +70,7 @@ impl ColorProcessor {
             reverb_params: Params::default(),
             radias_delay: RadiasDelay::new(sample_rate),
             compressor: Compressor::new(sample_rate),
+            waveshaper: RadiasWaveshaper::new(sample_rate),
         }
     }
     pub fn clear(&mut self) {
@@ -90,6 +93,7 @@ impl ColorProcessor {
         self.dc_input = [0.0; 2];
         self.dc_output = [0.0; 2];
         self.compressor.clear();
+        self.waveshaper.clear();
     }
     pub fn configure(&mut self, slot: ColorSlot) {
         self.configure_tempo(slot, 120.0);
@@ -167,9 +171,15 @@ impl ColorProcessor {
                 self.radias_delay.configure(slot, bpm)
             }
             SaturatorType::Compressor => self.compressor.configure(&s),
+            SaturatorType::Waveshaper => self
+                .waveshaper
+                .configure(s.waveshaper_type, s.waveshaper_depth),
         }
     }
     pub fn process(&mut self, frame: Stereo) -> Stereo {
+        self.process_with_voice_gain(frame, 1.0)
+    }
+    fn process_with_voice_gain(&mut self, frame: Stereo, voice_gain: f32) -> Stereo {
         if !self.slot.enabled {
             return frame;
         }
@@ -247,6 +257,7 @@ impl ColorProcessor {
             SaturatorType::Reverb => self.reverb.reverb(frame, &self.reverb_params, 1.0),
             SaturatorType::LcrDelay | SaturatorType::ModDelay => self.radias_delay.process(frame),
             SaturatorType::Compressor => self.compressor.process(frame),
+            SaturatorType::Waveshaper => self.waveshaper.process_with_voice_gain(frame, voice_gain),
         };
         std::array::from_fn(|c| frame[c] * (1.0 - self.slot.mix) + self.slot.mix * result[c])
     }
@@ -263,12 +274,14 @@ impl ColorProcessor {
 pub struct ColorRack {
     processors: [ColorProcessor; MAX_COLOR_SLOTS],
     len: usize,
+    active: bool,
 }
 impl ColorRack {
     pub fn new(sample_rate: u32) -> Self {
         Self {
             processors: std::array::from_fn(|_| ColorProcessor::new(sample_rate)),
             len: 0,
+            active: false,
         }
     }
     pub fn clear(&mut self) {
@@ -299,10 +312,27 @@ impl ColorRack {
             }
         }
         self.len = slots.len();
+        self.active = slots.iter().any(|s| s.enabled && s.mix > 0.0);
+    }
+    pub fn is_active(&self) -> bool {
+        self.active
+    }
+    pub fn set_pitch(&mut self, note: f32) {
+        for processor in &mut self.processors[..self.len] {
+            if processor.slot.kind == SaturatorType::Waveshaper {
+                processor.waveshaper.set_pitch(note);
+            }
+        }
     }
     pub fn process(&mut self, mut frame: Stereo) -> Stereo {
         for processor in &mut self.processors[..self.len] {
             frame = processor.process(frame);
+        }
+        frame
+    }
+    pub fn process_with_voice_gain(&mut self, mut frame: Stereo, voice_gain: f32) -> Stereo {
+        for processor in &mut self.processors[..self.len] {
+            frame = processor.process_with_voice_gain(frame, voice_gain);
         }
         frame
     }

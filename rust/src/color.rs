@@ -85,6 +85,7 @@ color_parameters! {
     CompressorRelease => compressor_release,
     CompressorKnee => compressor_knee,
     CompressorMakeup => compressor_makeup,
+    WaveshaperDepth => waveshaper_depth,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
@@ -150,6 +151,8 @@ pub struct ColorSettings {
     pub compressor_release: f32,
     pub compressor_knee: f32,
     pub compressor_makeup: f32,
+    pub waveshaper_type: crate::dsp::radias_waveshaper::WaveshaperMode,
+    pub waveshaper_depth: f32,
 }
 impl Default for ColorSettings {
     fn default() -> Self {
@@ -214,6 +217,8 @@ impl Default for ColorSettings {
             compressor_release: 12.0_f32.ln() / 200.0_f32.ln(), // 120 ms
             compressor_knee: 0.25,                              // 6 dB
             compressor_makeup: 0.0,
+            waveshaper_type: crate::dsp::radias_waveshaper::WaveshaperMode::Drive,
+            waveshaper_depth: 64.0 / 127.0,
         }
     }
 }
@@ -339,6 +344,7 @@ impl ColorSlot {
                 P::CompressorMakeup,
                 P::Mix,
             ],
+            SaturatorType::Waveshaper => &[P::WaveshaperDepth, P::Mix],
         }
     }
     pub fn legacy_reverb(id: u32, params: &Params) -> Self {
@@ -453,7 +459,8 @@ impl ColorSlot {
             compressor_attack,
             compressor_release,
             compressor_knee,
-            compressor_makeup
+            compressor_makeup,
+            waveshaper_depth
         );
     }
 }
