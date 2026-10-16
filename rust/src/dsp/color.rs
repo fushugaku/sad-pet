@@ -13,6 +13,8 @@ pub struct ColorProcessor {
     id: u32,
     sample_rate: f32,
     slot: ColorSlot,
+    configured: bool,
+    configured_bpm: f32,
     delay: Delay,
     phase: f64,
     random: Random,
@@ -46,6 +48,8 @@ impl ColorProcessor {
             id: 0,
             sample_rate: sr,
             slot: ColorSlot::default(),
+            configured: false,
+            configured_bpm: 120.0,
             delay: Delay::new((sr * 0.08) as usize + 4),
             phase: 0.0,
             random: Random::default(),
@@ -74,6 +78,7 @@ impl ColorProcessor {
         }
     }
     pub fn clear(&mut self) {
+        self.configured = false;
         if self.slot.kind == SaturatorType::Reverb {
             self.reverb.clear();
         }
@@ -99,6 +104,14 @@ impl ColorProcessor {
         self.configure_tempo(slot, 120.0);
     }
     pub fn configure_tempo(&mut self, slot: ColorSlot, bpm: f32) {
+        let tempo = if matches!(slot.kind, SaturatorType::LcrDelay | SaturatorType::ModDelay) {
+            bpm
+        } else {
+            120.0
+        };
+        if self.configured && self.slot == slot && self.configured_bpm == tempo {
+            return;
+        }
         let reset = self.id != slot.id
             || self.slot.kind != slot.kind
             || self.slot.enabled != slot.enabled
@@ -109,6 +122,8 @@ impl ColorProcessor {
             self.clear();
         }
         self.slot = slot;
+        self.configured = true;
+        self.configured_bpm = tempo;
         let s = slot.settings;
         match slot.kind {
             SaturatorType::Distortion => {

@@ -100,6 +100,12 @@ Host automation exposes grain, filter, gain, tuning, LFO, envelope, performance
 and every numeric FX setting. FX automation addresses rack positions (FX 1–12
 and Pre FX 1–12), including Waveshaper Depth. Existing parameter IDs and order
 are preserved.
+Editor knobs send coalesced numeric changes through `/api/parameters`, including
+both FX racks, LFOs, envelopes, performance controls and matrix depths. They do
+not replace the preset, rebuild performance state or restart held notes. The
+audio callback refreshes changed values once per block, after host tempo sync;
+unchanged FX/filter/envelope coefficients are reused. Loading a preset and
+editing routing or rack structure still use the complete preset.
 Discrete routing, waveform/type selections and modulation routes are stored in
 the full preset. Automation follows the host's parameter-block delivery; MIDI
 events are rendered at their exact sample offsets within each block.

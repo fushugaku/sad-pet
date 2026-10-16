@@ -16,6 +16,9 @@ let noteChain = Promise.resolve();
 let fileLibrary = null;
 let presetLibrary = null;
 let presetWrites = Promise.resolve();
+let presetWriteCount = 0;
+let structuralPending = false;
+const parameterEdits = new Map();
 let sampleSelection = null;
 let recordingBusy = false,
   recordingAction = null,
@@ -75,7 +78,7 @@ async function request(path, data) {
   const result = await (await api(path, data)).json();
   if (
     data !== undefined &&
-    ["/api/preset", "/api/input", "/api/region", "/api/fades"].includes(path)
+    ["/api/preset", "/api/parameters", "/api/input", "/api/region", "/api/fades"].includes(path)
   )
     presetLibrary?.markDirty();
   return result;
@@ -91,39 +94,82 @@ function download(blob, name) {
 function schedulePreset() {
   presetLibrary?.markDirty();
   pending++;
+  structuralPending = true;
+  parameterEdits.clear();
   clearTimeout(commitTimer);
-  commitTimer = setTimeout(async () => {
-    const version = pending;
-    try {
-      await writePreset(preset);
-      if (version === pending) pending = 0;
-    } catch (e) {
-      notify(e.message);
-      if (version === pending) pending = 0;
-    }
-  }, 50);
+  armPresetWrite(50);
+}
+function scheduleParameter(id, value) {
+  if (!Number.isFinite(value)) return;
+  presetLibrary?.markDirty();
+  pending++;
+  parameterEdits.set(id, value);
+  // Throttle while dragging; do not wait for the gesture to stop.
+  if (commitTimer === null && !presetWriteCount) armPresetWrite(16);
+}
+function armPresetWrite(delay) {
+  commitTimer = setTimeout(() => {
+    commitTimer = null;
+    return commitEdits().catch((e) => notify(e.message));
+  }, delay);
+}
+function enqueuePresetWrite(path, value) {
+  presetWriteCount++;
+  const write = presetWrites.catch(() => {}).then(() => request(path, value));
+  presetWrites = write.finally(() => {
+    presetWriteCount--;
+    if (!presetWriteCount && commitTimer === null &&
+        (structuralPending || parameterEdits.size)) armPresetWrite(16);
+  });
+  return presetWrites;
 }
 function writePreset(value) {
-  const next = structuredClone(value);
-  const write = presetWrites
-    .catch(() => {})
-    .then(() => request("/api/preset", next));
-  presetWrites = write;
-  return write;
+  return enqueuePresetWrite("/api/preset", structuredClone(value));
+}
+function commitEdits() {
+  if (!structuralPending && (!parameterEdits.size || presetWriteCount))
+    return presetWrites;
+  const version = pending;
+  const full = structuralPending;
+  const values = Object.fromEntries(parameterEdits);
+  structuralPending = false;
+  parameterEdits.clear();
+  const write = full ? writePreset(preset) : enqueuePresetWrite("/api/parameters", values);
+  return write.then(() => {
+    if (version === pending) pending = 0;
+  }, (error) => {
+    if (full) structuralPending = true;
+    else for (const [id, value] of Object.entries(values))
+      if (!parameterEdits.has(id)) parameterEdits.set(id, value);
+    throw error;
+  });
+}
+async function flushEdits() {
+  do {
+    clearTimeout(commitTimer);
+    commitTimer = null;
+    await commitEdits();
+  } while (structuralPending || parameterEdits.size || presetWriteCount);
+  clearTimeout(commitTimer);
+  commitTimer = null;
 }
 async function flushPreset() {
-  clearTimeout(commitTimer);
-  const version = pending;
-  if (version) await writePreset(preset);
-  else await presetWrites;
-  if (version === pending) pending = 0;
+  await flushEdits();
   await sampleSelection?.flush();
   await refreshPresetState();
 }
 async function preparePresetRecall() {
   clearTimeout(commitTimer);
+  commitTimer = null;
+  structuralPending = false;
+  parameterEdits.clear();
   pending = 0;
   await presetWrites.catch(() => {});
+  // A failed in-flight write may have restored its unsent changes.
+  clearTimeout(commitTimer);
+  commitTimer = null;
+  structuralPending = false;
+  parameterEdits.clear();
   await queueStepEntry(null, true);
 }
 async function refreshPresetState() {
@@ -257,7 +303,8 @@ async function toggleRecording() {
 function setParam(key, value) {
   preset.params[key] = value;
   syncControl(key);
-  schedulePreset();
+  if (typeof value === "number") scheduleParameter(key, value);
+  else schedulePreset();
 }
 const grainSchema = [
   ["position", "POSITION", (v) => percent(v)],
@@ -974,7 +1021,7 @@ function syncColors() {
               colorLegacy();
               controls.get(key)?.();
               if (parameter.endsWith("_ratio")) syncColors();
-              schedulePreset();
+              scheduleParameter(`${rack.key === "pre_color_chain" ? "pre_" : ""}fx${index + 1}_${parameter}`, value);
             },
             reset: () =>
               parameter === "mix"
@@ -1251,7 +1298,7 @@ function syncMatrix() {
         row.querySelector("output").textContent = signedPercent(
           preset.matrix[i].depth,
         );
-        schedulePreset();
+        scheduleParameter(`matrix${i + 1}_depth`, preset.matrix[i].depth);
       };
       row.querySelector(".matrix-bypass").onclick = () => {
         preset.matrix[i].enabled = !preset.matrix[i].enabled;
@@ -1347,7 +1394,9 @@ function buildLfos() {
         }
         preset.lfos[i][field] = value;
         if (field === "sync") syncLfos();
-        schedulePreset();
+        if (typeof value === "number")
+          scheduleParameter(`lfo${i + 1}_${field === "rate_hz" ? "rate" : field}`, value);
+        else schedulePreset();
       });
     }
     $("lfos").append(card);
@@ -1397,7 +1446,7 @@ function buildEnvs() {
       input.oninput = () => {
         preset.envs[i][field] = Number(input.value);
         syncEnvs();
-        schedulePreset();
+        scheduleParameter(`env${i + 1}_${field}`, preset.envs[i][field]);
       };
       card.querySelector(".env-controls").append(label);
     }
@@ -1420,7 +1469,7 @@ function buildEnvs() {
       input.oninput = () => {
         preset.envs[i][depth] = Number(input.value);
         syncEnvs();
-        schedulePreset();
+        scheduleParameter(`env${i + 1}_${depth}`, preset.envs[i][depth]);
       };
       routes.push({
         select,
@@ -1643,10 +1692,7 @@ function queueStepEntry(step, reset = false, clear = false) {
   noteChain = noteChain
     .then(async () => {
       if (pending && !reset) {
-        clearTimeout(commitTimer);
-        const version = pending;
-        await writePreset(preset);
-        if (pending === version) pending = 0;
+        await flushEdits();
       }
       await request("/api/step-entry", { step, reset, clear });
     })
@@ -1701,7 +1747,11 @@ function bindPerformance() {
         value = Math.max(1, Math.min(16, Math.round(value)));
       preset.performance[field] = value;
       syncPerformance();
-      schedulePreset();
+      if (numeric) {
+        const id = { arp_division: "arp_rate", octaves: "arp_octaves",
+          sequence_division: "sequence_rate", length: "sequence_length" }[field] || field;
+        scheduleParameter(id, value);
+      } else schedulePreset();
     };
   $("arp-hold").onchange = (e) => {
     preset.performance.hold = e.target.checked;
@@ -1727,15 +1777,15 @@ function bindPerformance() {
     releaseKeyboard();
     preset.performance.chord = [];
     syncPerformance();
-    if (pending) {
-      clearTimeout(commitTimer);
-      await writePreset(preset).catch((e) => notify(e.message));
-      pending = 0;
-    }
+    schedulePreset();
+    await flushPreset().catch((e) => notify(e.message));
     await transport({ clear_hold: true });
   };
   $("reset-sequence").onclick = async () => {
     clearTimeout(commitTimer);
+    commitTimer = null;
+    parameterEdits.clear();
+    structuralPending = false;
     pending = 0;
     await queueStepEntry(null, true);
     const defaults = presets[0].performance;
@@ -2073,12 +2123,7 @@ function bind() {
     b.disabled = true;
     b.textContent = "Rendering…";
     try {
-      if (pending) {
-        clearTimeout(commitTimer);
-        await writePreset(preset);
-        pending = 0;
-        await new Promise((resolve) => setTimeout(resolve, 70));
-      }
+      await flushEdits();
       await sampleSelection?.flush();
       const response = await api("/api/render", {
         seconds: Number($("render-duration").value),

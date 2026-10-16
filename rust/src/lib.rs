@@ -6,6 +6,7 @@ pub mod dsp;
 pub mod firmware;
 pub mod matrix;
 pub mod midi;
+pub mod parameters;
 pub mod performance;
 pub mod preset;
 pub mod radias_delay;

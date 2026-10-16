@@ -8,6 +8,7 @@ use crate::{
 struct Filter {
     sample_rate: f32,
     kind: FilterType,
+    configured: bool,
     state: [[f32; 2]; 2],
     comb: Delay,
     cutoff: f32,
@@ -21,6 +22,7 @@ impl Filter {
         Self {
             sample_rate: sample_rate as f32,
             kind: FilterType::LowPass,
+            configured: false,
             state: [[0.0; 2]; 2],
             comb: Delay::new((sample_rate as f32 * 0.1) as usize),
             cutoff: 1.0,
@@ -35,10 +37,20 @@ impl Filter {
         self.comb.clear();
     }
     fn configure(&mut self, kind: FilterType, cutoff: f32, resonance: f32) {
+        let cutoff = cutoff.clamp(0.0, 1.0);
+        let resonance = resonance.clamp(0.0, 1.0);
+        if self.configured
+            && self.kind == kind
+            && self.cutoff == cutoff
+            && self.resonance == resonance
+        {
+            return;
+        }
         if self.kind != kind {
             self.clear();
         }
         self.kind = kind;
+        self.configured = true;
         self.cutoff = cutoff.clamp(0.0, 1.0);
         self.resonance = resonance.clamp(0.0, 1.0);
         let hz = cutoff_hz(kind, self.cutoff);

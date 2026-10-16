@@ -21,9 +21,15 @@ pub struct Envelope {
     decay_coeff: f32,
     release_coeff: f32,
     sustain: f32,
+    configured: Option<(f32, [f32; 4])>,
 }
 impl Envelope {
     pub fn configure(&mut self, sample_rate: f32, p: &Env) {
+        let settings = (sample_rate, [p.attack, p.decay, p.sustain, p.release]);
+        if self.configured == Some(settings) {
+            return;
+        }
+        self.configured = Some(settings);
         self.attack_step = 1.0 / (p.attack_seconds() * sample_rate);
         self.decay_coeff = (-6.0 / (p.decay_seconds() * sample_rate)).exp();
         self.release_coeff = (-9.0 / (p.release_seconds() * sample_rate)).exp();

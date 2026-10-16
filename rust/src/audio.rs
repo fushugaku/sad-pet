@@ -26,7 +26,8 @@ pub struct Transport {
 }
 
 pub enum Command {
-    Preset(Box<Preset>),
+    Preset(Box<Preset>, SyncSender<()>),
+    Parameters(Vec<crate::parameters::Change>, SyncSender<()>),
     Sample(Arc<SampleBuffer>),
     Region(Region, SyncSender<Result<Region, String>>),
     Fades(Fades, SyncSender<Result<Fades, String>>),
@@ -248,7 +249,16 @@ impl Runtime {
                 for _ in 0..64 {
                     let Ok(command)=receiver.try_recv() else {break;};
                     match command {
-                        Command::Preset(preset)=>engine.set_preset(*preset),
+                        Command::Preset(preset,reply)=> {
+                            engine.set_preset(*preset);
+                            if let Ok(mut state)=worker_state.lock() {state.preset=engine.preset.clone();}
+                            let _=reply.try_send(());
+                        },
+                        Command::Parameters(changes,reply)=> {
+                            engine.apply_parameters(&changes);
+                            if let Ok(mut state)=worker_state.lock() {crate::parameters::apply(&mut state.preset,&changes);}
+                            let _=reply.try_send(());
+                        },
                         Command::Sample(sample)=>engine.set_sample(sample),
                         Command::Region(region,reply)=> {
                             let result=engine.set_region(region).map(|_|engine.region);

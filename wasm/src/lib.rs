@@ -27,6 +27,7 @@ struct Host {
 
 impl Host {
     fn new(rate: u32) -> Self {
+        sad_pet::parameters::specs();
         let sample = SampleBuffer::new("Loading…".into(), rate, vec![[0.0; 2]; 2]).unwrap();
         Self {
             engine: Engine::new(rate, Arc::new(sample), Preset::default()),
@@ -89,6 +90,11 @@ impl Host {
                 preset.sanitize();
                 self.engine.set_preset(preset);
                 Ok(json!(self.engine.preset))
+            }
+            "/api/parameters" => {
+                let changes = sad_pet::parameters::parse(data)?;
+                self.engine.apply_parameters(&changes);
+                Ok(json!({"ok":true}))
             }
             "/api/presets" => Ok(json!((0..5).map(Preset::builtin).collect::<Vec<_>>())),
             "/api/samples" => Ok(json!(sad_pet::samples::TRACKS)),

@@ -219,6 +219,17 @@ fn handle(
                 running.store(false, Ordering::Relaxed);
                 json(&serde_json::json!({"ok":true}))
             }
+            "/api/parameters" => {
+                let data =
+                    serde_json::from_slice(&bytes).map_err(|e| format!("Parameters: {e}"))?;
+                let changes = crate::parameters::parse(&data)?;
+                let (reply, result) = std::sync::mpsc::sync_channel(1);
+                send(&commands, Command::Parameters(changes, reply))?;
+                result
+                    .recv_timeout(Duration::from_secs(5))
+                    .map_err(|e| format!("Parameters: {e}"))?;
+                json(&serde_json::json!({"ok":true}))
+            }
             "/api/preset" => {
                 let value: serde_json::Value =
                     serde_json::from_slice(&bytes).map_err(|e| format!("Preset: {e}"))?;
@@ -228,7 +239,11 @@ fn handle(
                 let mut preset: Preset =
                     serde_json::from_value(value).map_err(|e| format!("Preset: {e}"))?;
                 preset.sanitize();
-                send(&commands, Command::Preset(Box::new(preset.clone())))?;
+                let (reply, result) = std::sync::mpsc::sync_channel(1);
+                send(&commands, Command::Preset(Box::new(preset.clone()), reply))?;
+                result
+                    .recv_timeout(Duration::from_secs(5))
+                    .map_err(|e| format!("Preset: {e}"))?;
                 json(&preset)
             }
             "/api/transport" => {

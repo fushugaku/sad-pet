@@ -49,6 +49,7 @@ struct Transport {
 
 enum Command {
     Preset(Box<Preset>),
+    Parameters(Box<[parameters::Change]>),
     Source(Box<PreparedSource>),
     Restore(Box<Restore>),
     Transport(Transport),
@@ -469,6 +470,23 @@ impl Controller {
                 self.preset = preset;
                 Ok(json!(self.preset))
             }
+            ("/api/parameters", true) => {
+                let changes = parameters::parse(data)?;
+                // Host-backed values arrive through the existing atomic parameter
+                // snapshot. Only non-host controls need an audio command.
+                let extra: Box<[_]> = changes
+                    .iter()
+                    .copied()
+                    .filter(|change| change.host_index().is_none())
+                    .collect();
+                if !extra.is_empty() {
+                    self.enqueue(Command::Parameters(extra))?;
+                }
+                if parameters::apply(&mut self.preset, &changes) {
+                    self.selection.dirty = true;
+                }
+                Ok(ok())
+            }
             ("/api/transport", true) => {
                 let transport: Transport =
                     serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
@@ -639,6 +657,7 @@ impl Audio {
     }
     fn begin(&mut self, values: &[f32], bpm: f32, beat: Option<f64>, playing: bool, frames: usize) {
         let mut preset_changed = false;
+        let mut numeric_changed = false;
         while self.retired.slots() > 0 {
             let Ok(mut update) = self.commands.pop() else {
                 break;
@@ -647,6 +666,9 @@ impl Audio {
                 Command::Preset(preset) => {
                     self.engine.exchange_preset(preset);
                     preset_changed = true;
+                }
+                Command::Parameters(changes) => {
+                    numeric_changed |= parameters::apply(&mut self.engine.preset, changes);
                 }
                 Command::Source(source) => self.source(source),
                 Command::Restore(state) => {
@@ -704,27 +726,27 @@ impl Audio {
             let result = self.retired.push(update);
             debug_assert!(result.is_ok());
         }
-        let mut changed = preset_changed;
         for ((spec, previous), &value) in parameters::specs()
             .iter()
             .zip(&mut self.parameters)
             .zip(values)
         {
             if preset_changed || value != *previous {
+                let before = spec.get(&self.engine.preset);
                 spec.set(&mut self.engine.preset, value);
                 *previous = value;
-                changed = true;
+                numeric_changed |= before != spec.get(&self.engine.preset);
             }
         }
-        if changed {
+        if numeric_changed {
             parameters::mirror(&mut self.engine.preset);
-            self.engine.refresh_parameters();
         }
         let bpm = if bpm.is_finite() && (20.0..=300.0).contains(&bpm) {
             bpm
         } else {
             self.engine.preset.params.bpm
         };
+        let previous_bpm = self.engine.preset.params.bpm;
         if self.sync {
             let jumped = playing
                 && beat
@@ -740,9 +762,9 @@ impl Audio {
                 beat,
                 performance && (started || jumped || preset_changed),
             );
-            if changed || bpm != self.host_bpm {
-                self.engine.refresh_parameters();
-            }
+        }
+        if numeric_changed || self.engine.preset.params.bpm != previous_bpm {
+            self.engine.refresh_parameters();
         }
         self.host_bpm = bpm;
         self.host_playing = playing;

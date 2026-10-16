@@ -90,12 +90,19 @@ int main() {
         command(processor, "/api/wav", juce::var(import));
         require(listener.changed, "Sample import did not notify the DAW to save its changed state");
         auto* position = processor.parameters.getParameter("position");
-        position->setValueNotifyingHost(0.37f);
+        position->setValueNotifyingHost(0.15f);
+        auto* volume = processor.parameters.getParameter("master_volume");
+        volume->setValueNotifyingHost(0.42f);
+        command(processor, "/api/parameters", juce::JSON::parse(R"({"position":0.37})"));
+        require(std::abs(position->getValue() - 0.37f) < 0.00001f, "Numeric editor change did not publish its host parameter");
+        require(std::abs(volume->getValue() - 0.42f) < 0.00001f, "Editor change overwrote a concurrent host automation value");
         auto preset = command(processor, "/api/preset");
         auto pre = juce::JSON::parse(R"([{"id":31,"kind":"waveshaper","mix":0.8,"settings":{"waveshaper_type":"multi_sine","waveshaper_depth":0.7}}])");
         preset.getDynamicObject()->setProperty("pre_color_chain", pre);
         command(processor, "/api/preset", preset);
-        processor.parameters.getParameter("pre_fx1_waveshaper_depth")->setValueNotifyingHost(0.33f);
+        command(processor, "/api/parameters", juce::JSON::parse(R"({"pre_fx1_waveshaper_depth":0.33})"));
+        require(std::abs(processor.parameters.getParameter("pre_fx1_waveshaper_depth")->getValue() - 0.33f) < 0.00001f,
+            "Numeric pre-filter effect edit did not publish its host parameter");
         auto* region = new juce::DynamicObject;
         region->setProperty("start", 0.25); region->setProperty("end", 0.75);
         command(processor, "/api/region", juce::var(region));

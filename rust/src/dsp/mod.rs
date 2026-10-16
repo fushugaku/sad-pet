@@ -363,6 +363,14 @@ impl Engine {
             peak: [0.0; 2],
         };
         engine.set_preset(preset);
+        // Idle voices need their initial coefficients even when the first preset
+        // has the same envelopes as Modulated::default(). Later refreshes only
+        // configure envelopes whose values actually changed.
+        for voice in &mut engine.voices {
+            for (i, envelope) in voice.envelopes.iter_mut().enumerate() {
+                envelope.configure(sr as f32, &engine.modulated.envs[i]);
+            }
+        }
         engine
     }
 
@@ -395,11 +403,6 @@ impl Engine {
         std::mem::swap(&mut self.preset, preset);
         self.sync_stored_chord();
         self.update_modulation();
-        for voice in &mut self.voices {
-            for (i, env) in voice.envelopes.iter_mut().enumerate() {
-                env.configure(self.sample_rate as f32, &self.modulated.envs[i]);
-            }
-        }
         if mode_changed || hold_chord_changed {
             self.release_notes();
             self.midi_gate = self.performance.mode() != Mode::Keys;
@@ -454,13 +457,11 @@ impl Engine {
 
     /// Refresh numeric host automation without rebuilding the preset or effects.
     pub fn refresh_parameters(&mut self) {
-        self.performance
-            .configure_prepared(&self.preset.performance);
         self.update_modulation();
-        for voice in &mut self.voices {
-            for (i, env) in voice.envelopes.iter_mut().enumerate() {
-                env.configure(self.sample_rate as f32, &self.modulated.envs[i]);
-            }
+    }
+    pub fn apply_parameters(&mut self, changes: &[crate::parameters::Change]) {
+        if crate::parameters::apply(&mut self.preset, changes) {
+            self.refresh_parameters();
         }
     }
     pub fn set_region(&mut self, region: Region) -> Result<(), String> {

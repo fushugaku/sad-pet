@@ -3,9 +3,9 @@ name: Build DAW plug-ins
 on:
   push:
     branches: [main, 'codex/daw-plugins']
-    paths: ['plugin/**', 'rust/**', 'Cargo.toml', 'Cargo.lock', 'wasm/test-presets.mjs', '.github/workflows/plugins.yml']
+    paths: ['plugin/**', 'rust/**', 'Cargo.toml', 'Cargo.lock', 'wasm/test-presets.mjs', 'wasm/test-parameters.mjs', '.github/workflows/plugins.yml']
   pull_request:
-    paths: ['plugin/**', 'rust/**', 'Cargo.toml', 'Cargo.lock', 'wasm/test-presets.mjs', '.github/workflows/plugins.yml']
+    paths: ['plugin/**', 'rust/**', 'Cargo.toml', 'Cargo.lock', 'wasm/test-presets.mjs', 'wasm/test-parameters.mjs', '.github/workflows/plugins.yml']
   workflow_dispatch:
 
 permissions:
@@ -43,6 +43,7 @@ jobs:
           cargo clippy -p sad-pet-plugin --no-default-features --all-targets --locked -- -D warnings
           cargo test -p sad-pet-plugin --no-default-features --locked
           node wasm/test-presets.mjs
+          node wasm/test-parameters.mjs
       - name: Build, test and package
         run: python plugin/scripts/build.py ${{ matrix.arguments }}
       - name: Validate macOS installer and Audio Units

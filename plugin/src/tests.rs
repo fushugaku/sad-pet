@@ -410,6 +410,98 @@ fn preset_mode_changes_midi_capture_automation_and_seek_do_not_allocate() {
 }
 
 #[test]
+fn numeric_editor_updates_preserve_routes_host_values_and_playing_notes_without_heap_work() {
+    let mut control = Controller::new(false);
+    let mut audio = control.prepare(48000);
+    let mut preset = control.preset.clone();
+    preset.performance.mode = Mode::Sequencer;
+    preset.color_chain = vec![sad_pet::color::ColorSlot::default()];
+    preset.pre_color_chain = vec![sad_pet::color::ColorSlot {
+        id: 2,
+        kind: sad_pet::preset::SaturatorType::Waveshaper,
+        ..Default::default()
+    }];
+    preset.matrix = vec![sad_pet::matrix::Route::default()];
+    call(&mut control, "/api/preset", json!(preset));
+    let mut values = control.values();
+    audio.begin(&values, 120.0, Some(0.0), true, 128);
+    render(&mut audio, 128, [0.0; 2]);
+    control.drain();
+    let matrix = audio.engine.preset.matrix.as_ptr();
+    let effects = audio.engine.preset.color_chain.as_ptr();
+    let chord = audio.engine.preset.performance.chord.as_ptr();
+    let notes = audio.engine.held_notes();
+    let volume = parameters::specs()
+        .iter()
+        .position(|p| p.id == "master_volume")
+        .unwrap();
+    // A concurrent DAW edit must survive a knob update from an older UI snapshot.
+    values[volume] = 0.21;
+    control.set_values(&values);
+    let route = control.preset.matrix[0];
+    for i in 1..=100 {
+        let position = i as f32 / 100.0;
+        call(
+            &mut control,
+            "/api/parameters",
+            json!({
+                "position":position,"env1_attack":0.12,"lfo2_depth":-0.4,
+                "fx1_mix":0.3,"pre_fx1_waveshaper_depth":0.7,
+            }),
+        );
+        assert_eq!(
+            control.commands.slots(),
+            QUEUE,
+            "Numeric host controls enqueued a full preset"
+        );
+        values = control.values();
+        no_heap(|| audio.begin(&values, 120.0, Some(128.0 * 2.0 / 48000.0), true, 128));
+        assert_eq!(
+            audio.engine.held_notes(),
+            notes,
+            "A knob released playing notes"
+        );
+        assert_eq!(audio.engine.preset.params.position, position);
+        assert_eq!(audio.engine.preset.params.master_volume, 0.21);
+        assert_eq!(audio.engine.preset.matrix.as_ptr(), matrix);
+        assert_eq!(audio.engine.preset.color_chain.as_ptr(), effects);
+        assert_eq!(audio.engine.preset.performance.chord.as_ptr(), chord);
+        assert_eq!(audio.engine.preset.matrix[0], route);
+        assert_eq!(audio.engine.preset.envs[0].attack, 0.12);
+        assert_eq!(
+            audio.engine.modulated_pre_color_slots()[0]
+                .settings
+                .waveshaper_depth,
+            0.7
+        );
+    }
+    call(
+        &mut control,
+        "/api/parameters",
+        json!({"matrix1_depth":-0.75}),
+    );
+    values = control.values();
+    no_heap(|| {
+        audio.begin(&values, 120.0, Some(128.0 * 2.0 / 48000.0), true, 128);
+        render(&mut audio, 128, [0.0; 2]);
+    });
+    assert_eq!(audio.engine.preset.matrix[0].depth, -0.75);
+    assert_eq!(audio.engine.preset.matrix.as_ptr(), matrix);
+    assert!(control.selection.dirty);
+    let before = control.preset.params.position;
+    assert!(
+        control
+            .request(&json!({"path":"/api/parameters","method":"POST",
+        "data":{"position":0.9,"unknown_control":0.4}}))
+            .is_err()
+    );
+    assert_eq!(
+        control.preset.params.position, before,
+        "Invalid messages applied partial changes"
+    );
+}
+
+#[test]
 fn custom_sample_full_preset_and_selection_survive_project_recall() {
     let mut control = Controller::new(false);
     let _audio = control.prepare(48000);

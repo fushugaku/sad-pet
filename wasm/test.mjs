@@ -155,6 +155,17 @@ assert.deepEqual(midi.request("/api/state").notes, [60, 64, 67]);
 midi.request("/api/midi-bytes", [60, 0, 64, 0, 67, 0]);
 assert.deepEqual(midi.request("/api/state").notes, []);
 assert.throws(() => midi.request("/api/preset", { format: "bad" }), /preset/);
+const parameterState = midi.request("/api/state");
+midi.request("/api/parameters", { position: 0.37, env1_attack: 0.12, lfo2_depth: -0.4 });
+let numericState = midi.request("/api/state");
+assert.ok(Math.abs(numericState.preset.params.position - 0.37) < 1e-6);
+assert.ok(Math.abs(numericState.preset.envs[0].attack - 0.12) < 1e-6);
+assert.ok(Math.abs(numericState.preset.lfos[1].depth + 0.4) < 1e-6);
+assert.deepEqual(numericState.preset.matrix, parameterState.preset.matrix);
+assert.throws(() => midi.request("/api/parameters", { position: 0.9, unknown: 0.3 }), /parameter/);
+numericState = midi.request("/api/state");
+assert.ok(Math.abs(numericState.preset.params.position - 0.37) < 1e-6,
+  "Invalid numeric messages must not apply partial changes");
 assert.throws(() => midi.json("sad_load", new Uint8Array([1, 2, 3])), /sample/);
 
 // Region commands run on the audio instance; trim/render run on the separate
