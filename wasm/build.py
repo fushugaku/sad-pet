@@ -30,7 +30,7 @@ def main():
     ], cwd=ROOT, env=env, check=True)
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    for name in ("index.html", "app.js", "library.js", "selection.js", "style.css"):
+    for name in ("index.html", "app.js", "library.js", "selection.js", "presets.js", "style.css"):
         shutil.copy2(ROOT / "rust" / "web" / name, output / name)
     index = (output / "index.html").read_text()
     index = index.replace('<script src="./library.js"', '<script src="./browser.js" defer></script>\n    <script src="./library.js"')

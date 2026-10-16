@@ -81,7 +81,7 @@ def main():
             name = url.path.rsplit("/", 1)[-1] or "index.html"
             paths = {
                 "index.html": PROJECT / "rust/web/index.html",
-                **{name: PROJECT / "rust/web" / name for name in ["app.js", "style.css", "library.js", "selection.js"]},
+                **{name: PROJECT / "rust/web" / name for name in ["app.js", "style.css", "library.js", "selection.js", "presets.js"]},
                 **{name: ROOT / "web" / name for name in ["plugin-backend.js", "plugin.css"]},
             }
             file = paths.get(name)
@@ -90,7 +90,7 @@ def main():
                 return
             body = file.read_bytes()
             if name == "index.html":
-                for script_name in ["library", "selection", "app"]:
+                for script_name in ["library", "selection", "presets", "app"]:
                     body = body.replace(f'    <script src="./{script_name}.js" defer></script>\n'.encode(), b"")
                 body = body.replace(b"</head>", b'<link rel="stylesheet" href="./plugin.css" /><script type="module" src="./plugin-backend.js"></script></head>')
                 endpoint = "/native?fx" if "fx" in url.query else "/native"

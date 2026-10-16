@@ -139,6 +139,10 @@ fn handle(
                     include_bytes!("../web/selection.js").to_vec(),
                     "application/javascript",
                 )),
+                "/presets.js" => Ok((
+                    include_bytes!("../web/presets.js").to_vec(),
+                    "application/javascript",
+                )),
                 "/favicon.ico" => Ok((Vec::new(), "image/x-icon")),
                 "/api/state" => json(&*state.lock().map_err(|e| e.to_string())?),
                 "/api/preset" => json(&state.lock().map_err(|e| e.to_string())?.preset),

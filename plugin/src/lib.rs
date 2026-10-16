@@ -1,6 +1,7 @@
 //! Native plugin boundary. Only Audio is touched by the host's audio callback.
 //! Controller prepares files/presets and reclaims retired allocations off-thread.
 mod parameters;
+mod preset_library;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use rtrb::{Consumer, Producer, RingBuffer};
@@ -102,6 +103,8 @@ pub struct Controller {
     view: RealtimeView,
     host_bpm: f32,
     host_playing: bool,
+    library: preset_library::Library,
+    selection: preset_library::Selection,
 }
 
 pub struct Audio {
@@ -135,6 +138,8 @@ struct SavedState {
     bypass: bool,
     midi_gate: bool,
     playing: bool,
+    #[serde(default)]
+    selection: preset_library::Selection,
 }
 
 impl Controller {
@@ -164,6 +169,11 @@ impl Controller {
             view: RealtimeView::default(),
             host_bpm: 120.0,
             host_playing: false,
+            library: preset_library::Library::standard(),
+            selection: preset_library::Selection {
+                id: "factory:0".into(),
+                dirty: false,
+            },
         }
     }
 
@@ -185,6 +195,9 @@ impl Controller {
                     .extend_from_slice(&self.view.chord[..self.view.chord_len]);
                 for (i, step) in self.view.step_edits.iter().enumerate() {
                     if let Some(step) = step {
+                        if self.preset.performance.steps[i] != *step {
+                            self.selection.dirty = true;
+                        }
                         self.preset.performance.steps[i] = *step;
                     }
                 }
@@ -270,7 +283,11 @@ impl Controller {
     }
     fn set_values(&mut self, values: &[f32]) {
         for (spec, &value) in parameters::specs().iter().zip(values) {
+            let previous = spec.get(&self.preset);
             spec.set(&mut self.preset, value);
+            if previous != spec.get(&self.preset) {
+                self.selection.dirty = true;
+            }
         }
         parameters::mirror(&mut self.preset);
     }
@@ -324,6 +341,7 @@ impl Controller {
             "sample_rate":self.rate,"audio_device":"DAW","audio_enabled":true,"audio_error":null,
             "playing":self.playing,"midi_gate":self.midi_gate,"frozen":self.frozen,"bypass":self.bypass,
             "preset":displayed_preset,"sample_name":if live { "DAW input" } else { &self.sample.name },
+            "preset_selection":self.selection,
             "sample_id":if live { None } else { self.sample.library_id.as_ref() },
             "sample_seconds":if live { 8.0 } else { self.sample.duration() },
             "sample_frames":if live { self.rate as usize * 8 } else { self.sample.len() },
@@ -340,10 +358,10 @@ impl Controller {
         })
     }
 
-    fn save(&mut self) -> Result<Vec<u8>, String> {
+    fn snapshot(&mut self) -> Result<SavedState, String> {
         self.drain();
         let sample_wav = BASE64.encode(wav::bytes(self.sample.sample_rate, self.sample.frames())?);
-        serde_json::to_vec(&SavedState {
+        Ok(SavedState {
             version: 1,
             preset: self.preset.clone(),
             sample_name: self.sample.name.clone(),
@@ -357,13 +375,21 @@ impl Controller {
             bypass: self.bypass,
             midi_gate: self.midi_gate,
             playing: self.playing && !self.midi_gate,
+            selection: self.selection.clone(),
         })
-        .map_err(|e| e.to_string())
+    }
+
+    fn save(&mut self) -> Result<Vec<u8>, String> {
+        serde_json::to_vec(&self.snapshot()?).map_err(|e| e.to_string())
     }
 
     fn restore(&mut self, bytes: &[u8]) -> Result<(), String> {
-        let mut saved: SavedState =
+        let saved: SavedState =
             serde_json::from_slice(bytes).map_err(|e| format!("Plugin state: {e}"))?;
+        self.restore_saved(saved)
+    }
+
+    fn restore_saved(&mut self, mut saved: SavedState) -> Result<(), String> {
         if saved.version != 1 {
             return Err("Unsupported SAD PET plugin state version".into());
         }
@@ -402,6 +428,7 @@ impl Controller {
         self.bypass = saved.bypass;
         self.midi_gate = saved.midi_gate;
         self.playing = saved.playing;
+        self.selection = saved.selection;
         Ok(())
     }
 
@@ -413,7 +440,10 @@ impl Controller {
         let post = request["method"] == "POST";
         let ok = || json!({"ok":true});
         let binary = |bytes: Vec<u8>| json!({"binary":BASE64.encode(bytes),"mime":"audio/wav"});
-        match (path, post) {
+        if path.starts_with("/api/preset-library") {
+            return self.preset_library_request(path, post, data);
+        }
+        let result = match (path, post) {
             ("/api/state", _) => Ok(self.state()),
             ("/api/preset", false) => Ok(json!(self.preset)),
             ("/api/presets", false) => Ok(json!((0..5).map(Preset::builtin).collect::<Vec<_>>())),
@@ -583,7 +613,17 @@ impl Controller {
                 Ok(binary(wav::bytes(sample.sample_rate, sample.frames())?))
             }
             _ => Err(format!("Unsupported plugin request: {path}")),
+        };
+        if result.is_ok()
+            && post
+            && matches!(
+                path,
+                "/api/preset" | "/api/wav" | "/api/region" | "/api/fades" | "/api/input"
+            )
+        {
+            self.selection.dirty = true;
         }
+        result
     }
 }
 

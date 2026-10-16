@@ -82,7 +82,7 @@ midiLabel.textContent = "DAW MIDI";
 document.querySelector(".midi-controls").append(midiLabel);
 updateHost(initial);
 
-for (const name of ["library", "selection", "app"]) {
+for (const name of ["library", "selection", "presets", "app"]) {
   await new Promise((resolve, reject) => {
     const script = document.createElement("script");
     script.src = `./${name}.js`;

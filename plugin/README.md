@@ -49,6 +49,23 @@ Restart your DAW and rescan plug-ins:
 
 ## Controls and project recall
 
+The preset selector opens **Factory** and **User** banks. **Save** opens a name
+field and saves directly into User. Saving an existing user preset replaces it;
+**Save as new** creates a separate patch. The dot beside the name marks changes.
+The same User bank is available to every SAD PET / SAD PET FX instance.
+
+User presets live in `~/Library/Application Support/SAD PET/Presets` on macOS
+and `%APPDATA%\SAD PET\Presets` on Windows. A `.sadpet` file contains compressed
+settings, both FX racks, modulation, tuning, sequence data and embedded sample
+audio with its region/fades. It can be transferred between computers without the
+original WAV. Import and Export are in the preset browser; older `.sad.json`
+presets can still be imported. Previously saved browser presets migrate into
+the native User bank once. Delete moves user files to the preset folder's Trash.
+
+Preset loading retains this instance's transport and bypass. An input FX patch
+also opens in the instrument using its stored file source. DAW projects retain
+their active preset name/selection and modified status as well as the sound.
+
 SAD PET starts silently and responds to MIDI notes. SAD PET FX starts processing
 its stereo host input immediately with **Grains + Filters + FX** selected.
 Choose **Filters + FX** to bypass the grain engine. **File** switches to the

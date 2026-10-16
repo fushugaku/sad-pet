@@ -207,9 +207,12 @@ juce::var SadPetProcessor::request(const juce::var& requestValue) {
         reinterpret_cast<const std::uint8_t*>(requestText.toRawUTF8()), requestText.getNumBytesAsUTF8())));
     if (requestValue["method"].toString() == "POST" && static_cast<int>(result["status"]) == 200) {
         const auto path = requestValue["path"].toString();
-        if (path == "/api/preset") publishParameters(previous, true);
+        if (path == "/api/preset" || path == "/api/preset-library/load" || path == "/api/preset-library/factory")
+            publishParameters(previous, true);
         if (path == "/api/preset" || path == "/api/wav" || path == "/api/region"
-            || path == "/api/fades" || path == "/api/input" || path == "/api/transport")
+            || path == "/api/fades" || path == "/api/input" || path == "/api/transport"
+            || path == "/api/preset-library/load" || path == "/api/preset-library/factory"
+            || path == "/api/preset-library/save" || path == "/api/preset-library/delete")
             updateHostDisplay(juce::AudioProcessorListener::ChangeDetails{}.withNonParameterStateChanged(true));
     }
     return result;

@@ -40,6 +40,9 @@ The desktop version uses the system audio output and a local browser panel.
 - Dry/Wet blends the original source with grains before pre-filter FX, note
   filters and post-filter FX, so even fully dry audio receives the full chain.
 - Waveform loop selection, adjustable fade in/out and sample-exact trimming to new library files.
+- Factory/User preset browser with named saving, overwrite, Save as new and
+  portable `.sadpet` import/export, including the source sample and region/fades.
+  Plug-ins share an on-disk User bank; the browser keeps its bank in IndexedDB.
 
 ## Run
 
@@ -80,6 +83,7 @@ python3 wasm/build.py
 node wasm/test.mjs
 node wasm/test-microphone.mjs
 node wasm/test-library.mjs
+node wasm/test-presets.mjs
 python3 -m http.server 8080 --directory dist/web --bind 127.0.0.1
 ```
 

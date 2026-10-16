@@ -79,9 +79,10 @@ class DevelopmentStack(unittest.TestCase):
     def test_proxy_assets_audio_upload_origin_and_ctrl_c_cleanup(self):
         process, front, back, state, pids = self.launch()
         root = f"http://127.0.0.1:{front}"
-        with urllib.request.urlopen(root + "/library.js") as response:
-            self.assertEqual(response.read(), (ROOT / "rust/web/library.js").read_bytes())
-            self.assertEqual(response.headers["Cache-Control"], "no-store")
+        for name in ("library.js", "selection.js", "presets.js"):
+            with urllib.request.urlopen(root + "/" + name) as response:
+                self.assertEqual(response.read(), (ROOT / "rust/web" / name).read_bytes())
+                self.assertEqual(response.headers["Cache-Control"], "no-store")
         with urllib.request.urlopen(f"http://127.0.0.1:{back}/api/state") as response:
             self.assertEqual(json.load(response)["instance_id"], state["instance_id"])
         data = io.BytesIO()

@@ -11,7 +11,10 @@
   statically; the separately installed Microsoft Edge WebView2 Runtime renders
   the interface. [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/).
 - **Rust engine dependencies** are recorded in the workspace `Cargo.lock`,
-  including serde, serde_json, hound, rtrb and base64. The plug-in dependency on
+  including serde, serde_json, hound, rtrb and base64. Preset compression uses
+  flate2 with the pure Rust miniz_oxide backend; both offer MIT or Apache-2.0
+  licensing.
+  The plug-in dependency on
   `sad-pet` disables the standalone desktop feature, so it does not link CPAL,
   MIDI-device drivers, the HTTP server or the LAME encoder.
 - **Sample sources** are inherited from SAD PET. Credits and usage boundaries are

@@ -14,6 +14,8 @@ const controls = new Map(),
   scopes = [];
 let noteChain = Promise.resolve();
 let fileLibrary = null;
+let presetLibrary = null;
+let presetWrites = Promise.resolve();
 let sampleSelection = null;
 let recordingBusy = false,
   recordingAction = null,
@@ -70,7 +72,13 @@ async function api(path, data, headers) {
   return response;
 }
 async function request(path, data) {
-  return (await api(path, data)).json();
+  const result = await (await api(path, data)).json();
+  if (
+    data !== undefined &&
+    ["/api/preset", "/api/input", "/api/region", "/api/fades"].includes(path)
+  )
+    presetLibrary?.markDirty();
+  return result;
 }
 function download(blob, name) {
   const url = URL.createObjectURL(blob),
@@ -81,18 +89,49 @@ function download(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function schedulePreset() {
+  presetLibrary?.markDirty();
   pending++;
   clearTimeout(commitTimer);
   commitTimer = setTimeout(async () => {
     const version = pending;
     try {
-      await request("/api/preset", preset);
+      await writePreset(preset);
       if (version === pending) pending = 0;
     } catch (e) {
       notify(e.message);
       if (version === pending) pending = 0;
     }
   }, 50);
+}
+function writePreset(value) {
+  const next = structuredClone(value);
+  const write = presetWrites
+    .catch(() => {})
+    .then(() => request("/api/preset", next));
+  presetWrites = write;
+  return write;
+}
+async function flushPreset() {
+  clearTimeout(commitTimer);
+  const version = pending;
+  if (version) await writePreset(preset);
+  else await presetWrites;
+  if (version === pending) pending = 0;
+  await sampleSelection?.flush();
+  await refreshPresetState();
+}
+async function preparePresetRecall() {
+  clearTimeout(commitTimer);
+  pending = 0;
+  await presetWrites.catch(() => {});
+  await queueStepEntry(null, true);
+}
+async function refreshPresetState() {
+  state = await request("/api/state");
+  preset = structuredClone(state.preset);
+  syncAll();
+  sampleSelection?.sync(state);
+  fileLibrary?.observe(state);
 }
 function syncRecording() {
   const take = state?.recording;
@@ -1606,7 +1645,7 @@ function queueStepEntry(step, reset = false, clear = false) {
       if (pending && !reset) {
         clearTimeout(commitTimer);
         const version = pending;
-        await request("/api/preset", preset);
+        await writePreset(preset);
         if (pending === version) pending = 0;
       }
       await request("/api/step-entry", { step, reset, clear });
@@ -1690,7 +1729,7 @@ function bindPerformance() {
     syncPerformance();
     if (pending) {
       clearTimeout(commitTimer);
-      await request("/api/preset", preset).catch((e) => notify(e.message));
+      await writePreset(preset).catch((e) => notify(e.message));
       pending = 0;
     }
     await transport({ clear_hold: true });
@@ -1875,14 +1914,13 @@ async function loadStoredAudio(record) {
     "X-Library-Id": record.id,
   });
   const info = await response.json();
+  presetLibrary?.markDirty();
   await request("/api/fades", await fileLibrary.fades(record.id));
   return info;
 }
 async function loadStoredPreset(loaded) {
-  clearTimeout(commitTimer);
-  pending = 0;
-  await queueStepEntry(null, true);
-  preset = await request("/api/preset", loaded);
+  await preparePresetRecall();
+  preset = await writePreset(loaded);
   syncAll();
 }
 async function refreshMidi(ask = false) {
@@ -2001,34 +2039,6 @@ function bind() {
   $("antialias").onchange = (e) => setParam("antialiasing", e.target.checked);
   $("bpm").oninput = (e) =>
     setParam("bpm", Math.max(20, Math.min(300, Number(e.target.value) || 120)));
-  $("preset").onchange = async (e) => {
-    clearTimeout(commitTimer);
-    pending = 0;
-    await queueStepEntry(null, true);
-    preset = structuredClone(presets[Number(e.target.value)]);
-    syncAll();
-    schedulePreset();
-  };
-  $("save-preset").onclick = async () => {
-    try {
-      const name = `${preset.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "sad-pet"}.sad.json`;
-      const saved = await fileLibrary.savePreset(preset, name);
-      download(saved.blob, saved.name);
-    } catch (error) {
-      notify(error.message, true);
-    }
-  };
-  $("load-preset").onclick = () => $("preset-file").click();
-  $("preset-file").onchange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    try {
-      await fileLibrary.importFiles([file]);
-    } catch (error) {
-      notify(error.message);
-    }
-    e.target.value = "";
-  };
   $("load-wav").onclick = () => $("wav-file").click();
   $("wav-file").onchange = (e) => loadWav(e.target.files[0]);
   const drop = $("drop-zone");
@@ -2065,7 +2075,7 @@ function bind() {
     try {
       if (pending) {
         clearTimeout(commitTimer);
-        await request("/api/preset", preset);
+        await writePreset(preset);
         pending = 0;
         await new Promise((resolve) => setTimeout(resolve, 70));
       }
@@ -2336,6 +2346,7 @@ async function poll() {
       syncAll();
     }
     $("sample-name").textContent = next.sample_name;
+    presetLibrary?.observe(next, pending > 0);
     fileLibrary?.observe(next);
     $("sample-info").textContent = `${next.sample_seconds.toFixed(2)} s`;
     syncInput(next.input);
@@ -2415,9 +2426,6 @@ async function init() {
     presets = await request("/api/presets");
     colorDefaults = await request("/api/color-defaults");
     preset = structuredClone(presets[0]);
-    $("preset").replaceChildren(
-      ...presets.map((p, i) => option(String(i), p.name)),
-    );
     for (const s of grainSchema) createKnob(s, "grain-controls");
     buildFilters();
     buildColors();
@@ -2442,9 +2450,34 @@ async function init() {
       loadAudio: loadStoredAudio,
       loadPreset: loadStoredPreset,
       loadFades: (fades) => request("/api/fades", fades),
+      presets: true,
+      importPreset: (file) => presetLibrary.importFile(file),
     });
+    presetLibrary = new window.SadPresetLibrary(
+      {
+        request,
+        api,
+        notify,
+        download,
+        read: () => ({ preset, state }),
+        flush: flushPreset,
+        recall: preparePresetRecall,
+        applyPreset: loadStoredPreset,
+        refresh: refreshPresetState,
+      },
+      fileLibrary,
+    );
     request("/api/state")
-      .then((native) => fileLibrary.initialize(native, presets))
+      .then(async (native) => {
+        state = native;
+        preset = structuredClone(native.preset);
+        syncAll();
+        sampleSelection.sync(native);
+        if (native.plugin) await presetLibrary.initialize(native, presets);
+        await fileLibrary.initialize(native, presets);
+        if (native.plugin) await presetLibrary.migrate();
+        else await presetLibrary.initialize(native, presets);
+      })
       .catch((error) => notify(`Library: ${error.message}`, true));
     refreshMidi();
     poll();

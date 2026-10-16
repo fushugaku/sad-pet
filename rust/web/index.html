@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="./style.css" />
     <script src="./library.js" defer></script>
     <script src="./selection.js" defer></script>
+    <script src="./presets.js" defer></script>
     <script src="./app.js" defer></script>
   </head>
   <body>
@@ -20,15 +21,124 @@
           </div>
         </div>
         <div class="header-actions">
-          <select id="preset" aria-label="Factory preset">
-            <option>Init</option></select
-          ><button id="save-preset" title="Save preset">Save preset</button
-          ><button id="load-preset">Load preset</button
-          ><button id="load-wav" class="light" disabled>
+          <div class="preset-picker" id="preset-picker">
+            <button
+              id="preset"
+              aria-label="Choose preset"
+              aria-haspopup="dialog"
+              aria-expanded="false"
+              aria-controls="preset-browser"
+              disabled
+            >
+              <span id="preset-name">Init</span
+              ><span id="preset-modified" aria-label="Modified" hidden>•</span
+              ><span class="preset-chevron" aria-hidden="true">⌄</span>
+            </button>
+            <div
+              id="preset-browser"
+              class="preset-browser"
+              role="dialog"
+              aria-label="Presets"
+              hidden
+            >
+              <div class="preset-browser-top">
+                <div
+                  class="preset-banks"
+                  role="tablist"
+                  aria-label="Preset bank"
+                >
+                  <button
+                    role="tab"
+                    data-preset-bank="factory"
+                    aria-selected="true"
+                  >
+                    Factory
+                  </button>
+                  <button
+                    role="tab"
+                    data-preset-bank="user"
+                    aria-selected="false"
+                    tabindex="-1"
+                  >
+                    User
+                  </button>
+                </div>
+                <button
+                  id="preset-close"
+                  class="preset-icon"
+                  aria-label="Close presets"
+                >
+                  ×
+                </button>
+              </div>
+              <input
+                id="preset-search"
+                type="search"
+                aria-label="Search presets"
+                placeholder="Search presets"
+                autocomplete="off"
+              />
+              <div
+                id="preset-list"
+                class="preset-list"
+                role="listbox"
+                aria-label="Preset list"
+              ></div>
+              <p id="preset-empty" class="muted" hidden>No user presets yet.</p>
+              <p id="preset-error" class="preset-error" role="alert"></p>
+              <div
+                id="preset-delete-confirm"
+                class="preset-delete-confirm"
+                hidden
+              >
+                <span id="preset-delete-label"></span>
+                <div>
+                  <button id="preset-delete-cancel">Cancel</button
+                  ><button id="preset-delete-yes">Delete</button>
+                </div>
+              </div>
+              <div class="preset-browser-actions">
+                <button id="preset-import">Import…</button
+                ><button id="preset-export" disabled>Export…</button
+                ><button id="preset-delete" disabled>Delete</button>
+              </div>
+            </div>
+          </div>
+          <button id="save-preset" title="Save preset" disabled>Save</button>
+          <button id="load-wav" class="light" disabled>
             Load WAV <span>↗</span>
           </button>
         </div>
       </header>
+      <div
+        id="preset-save-modal"
+        class="preset-save-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="preset-save-title"
+        hidden
+      >
+        <form id="preset-save-form" class="preset-save-form">
+          <h2 id="preset-save-title">Save preset</h2>
+          <label for="preset-save-name">Name</label>
+          <input
+            id="preset-save-name"
+            type="text"
+            maxlength="80"
+            required
+            autocomplete="off"
+          />
+          <p id="preset-save-error" class="preset-error" role="alert"></p>
+          <div class="preset-save-actions">
+            <button id="preset-save-cancel" type="button">Cancel</button
+            ><button id="preset-save-new" type="button" hidden>
+              Save as new</button
+            ><button id="preset-save-submit" type="submit" class="light">
+              Save
+            </button>
+          </div>
+        </form>
+      </div>
       <div id="notice" role="status" hidden></div>
       <section class="sample-panel" aria-label="Sample and grains">
         <div class="input-source" id="browser-input" hidden>
@@ -234,9 +344,6 @@
               <button data-library-filter="all" aria-pressed="true">All</button>
               <button data-library-filter="audio" aria-pressed="false">
                 Audio
-              </button>
-              <button data-library-filter="preset" aria-pressed="false">
-                Presets
               </button>
               <button data-library-filter="render" aria-pressed="false">
                 Renders
@@ -563,13 +670,13 @@
       /><input
         id="preset-file"
         type="file"
-        accept=".json,.sad.json,.evil.json"
+        accept=".sadpet,.json,.sad.json,.evil.json"
         hidden
       />
       <input
         id="library-files"
         type="file"
-        accept=".wav,audio/wav,.json,.sad.json,.evil.json"
+        accept=".wav,audio/wav,.sadpet,.json,.sad.json,.evil.json"
         multiple
         hidden
       />

@@ -1,6 +1,7 @@
 #include "Processor.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 
@@ -26,11 +27,24 @@ struct StateListener final : juce::AudioProcessorListener {
         changed |= details.nonParameterStateChanged;
     }
 };
+struct PresetFolder {
+    juce::File path = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getNonexistentChildFile("sad-pet-presets", "", true);
+    PresetFolder() {
+       #if JUCE_WINDOWS
+        _putenv_s("SAD_PET_PRESET_DIR", path.getFullPathName().toRawUTF8());
+       #else
+        setenv("SAD_PET_PRESET_DIR", path.getFullPathName().toRawUTF8(), 1);
+       #endif
+    }
+    ~PresetFolder() { path.deleteRecursively(); }
+};
 }
 
 int main() {
     const juce::ScopedJuceInitialiser_GUI juce;
     try {
+        PresetFolder presetFolder;
         StateListener listener;
         SadPetProcessor processor;
         processor.addListener(&listener);
@@ -85,6 +99,17 @@ int main() {
         auto* region = new juce::DynamicObject;
         region->setProperty("start", 0.25); region->setProperty("end", 0.75);
         command(processor, "/api/region", juce::var(region));
+        const auto userPreset = command(processor, "/api/preset-library/save", juce::JSON::parse(R"({"name":"Native patch"})"));
+        const auto patchId = userPreset["id"].toString();
+        require(presetFolder.path.getChildFile(patchId + ".sadpet").existsAsFile(), "Preset was not saved to disk");
+        position->setValueNotifyingHost(0.82f);
+        require(static_cast<bool>(command(processor, "/api/state")["preset_selection"]["dirty"]), "Host automation did not mark the patch modified");
+        auto* loadPatch = new juce::DynamicObject;
+        loadPatch->setProperty("id", patchId);
+        listener.changed = false;
+        command(processor, "/api/preset-library/load", juce::var(loadPatch));
+        require(std::abs(position->getValue() - 0.37f) < 0.00001f, "Preset recall did not publish host automation values");
+        require(listener.changed, "Preset recall did not mark the DAW project changed");
         juce::MemoryBlock saved;
         processor.getStateInformation(saved);
         require(saved.getSize() > 100, "Host state was empty");
@@ -92,6 +117,8 @@ int main() {
         SadPetProcessor restored;
         restored.setStateInformation(saved.getData(), static_cast<int>(saved.getSize()));
         auto state = command(restored, "/api/state");
+        require(state["preset_selection"]["id"].toString() == patchId, "DAW recall lost the user preset selection");
+        require(!static_cast<bool>(state["preset_selection"]["dirty"]), "Clean preset became modified after DAW recall");
         require(state["sample_name"].toString() == "Embedded test.wav", "Custom sample was not restored");
         require(std::abs(static_cast<float>(state["preset"]["params"]["position"]) - 0.37f) < 0.00001f, "Automation value was not restored");
         require(static_cast<double>(state["region"]["start"]) == 0.25, "Sample selection was not restored");
@@ -100,6 +127,7 @@ int main() {
         require(std::abs(static_cast<float>(preState["settings"]["waveshaper_depth"]) - 0.33f) < 0.00001f, "Pre-filter FX automation was not restored");
         require(command(processor, "/api/state")["sample_name"].toString() == "Embedded test.wav", "Instances shared sample state");
         SadPetProcessor fresh;
+        require(command(fresh, "/api/preset-library").getArray()->size() == 1, "User preset library was not shared between instances");
         require(command(fresh, "/api/state")["sample_name"].toString() != "Embedded test.wav", "Fresh instance inherited another instance's state");
         // Malformed state must leave the current project state intact.
         const char corrupt[] = "invalid";

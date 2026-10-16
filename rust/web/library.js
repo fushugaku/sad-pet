@@ -140,7 +140,7 @@
       ]);
       if (!response.ok) throw new Error("Cannot load the sample catalog.");
       this.catalog = await response.json();
-      for (const [index, preset] of presets.entries()) {
+      for (const [index, preset] of (this.actions.presets ? [] : presets).entries()) {
         const id = `factory-preset:${index}:v1`;
         if (await this.store.read("files", id)) continue;
         await this.store.put({
@@ -504,6 +504,10 @@
         try {
           if (file.size > 128 * 1024 * 1024)
             throw new Error(`${file.name}: file exceeds 128 MB.`);
+          if (this.actions.importPreset && /\.(sadpet|json)$/i.test(file.name)) {
+            await this.actions.importPreset(file);
+            continue;
+          }
           if (/\.json$/i.test(file.name)) {
             const value = JSON.parse(await file.text());
             if (value.format !== "evil-pet-rust-v1")
@@ -591,13 +595,14 @@
       }
     }
     render() {
-      const active = this.files.filter((file) => !file.trashedAt);
-      const total = this.files.reduce((sum, file) => sum + file.size, 0);
+      const files = this.files.filter(file => !this.actions.presets || file.kind !== "preset");
+      const active = files.filter((file) => !file.trashedAt);
+      const total = files.reduce((sum, file) => sum + file.size, 0);
       byId("library-count").textContent = String(active.length);
       byId("library-status").textContent =
         this.status || `${active.length} files · ${sizeLabel(total)}`;
       const list = byId("library-list");
-      const shown = this.files.filter((file) => {
+      const shown = files.filter((file) => {
         if (this.filter === "trash" ? !file.trashedAt : file.trashedAt)
           return false;
         if (

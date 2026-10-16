@@ -60,6 +60,204 @@ fn render(audio: &mut Audio, frames: usize, input: Stereo) -> f32 {
     peak
 }
 
+struct PresetDirectory(std::path::PathBuf);
+impl PresetDirectory {
+    fn new() -> Self {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "sad-pet-test-{}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
+        Self(root)
+    }
+    fn control(&self, effect: bool) -> Controller {
+        let mut control = Controller::new(effect);
+        control.library = preset_library::Library::at(self.0.clone());
+        control
+    }
+}
+impl Drop for PresetDirectory {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+#[test]
+fn disk_presets_restore_sound_sample_region_and_host_values_in_another_instance() {
+    let folder = PresetDirectory::new();
+    let mut control = folder.control(false);
+    let _audio = control.prepare(48000);
+    let frames: Vec<Stereo> = (0..1600)
+        .map(|n| [(n as f32 * 0.09).sin() * 0.4; 2])
+        .collect();
+    call(
+        &mut control,
+        "/api/wav",
+        json!({"base64":BASE64.encode(wav::bytes(8000, &frames).unwrap()),"name":"Own sample.wav","id":"my-sample"}),
+    );
+    call(&mut control, "/api/region", json!({"start":0.2,"end":0.8}));
+    call(
+        &mut control,
+        "/api/fades",
+        json!({"fade_in":0.01,"fade_out":0.02}),
+    );
+    let mut patch = control.preset.clone();
+    patch.pre_color_chain = vec![sad_pet::color::ColorSlot {
+        id: 40,
+        kind: sad_pet::preset::SaturatorType::Waveshaper,
+        ..Default::default()
+    }];
+    patch.pre_color_chain[0].settings.waveshaper_type =
+        sad_pet::dsp::radias_waveshaper::WaveshaperMode::MultiSine;
+    call(&mut control, "/api/preset", json!(patch));
+    let mut values = control.values();
+    let position = parameters::specs()
+        .iter()
+        .position(|s| s.id == "position")
+        .unwrap();
+    values[position] = 0.37;
+    control.set_values(&values);
+    let saved = call(
+        &mut control,
+        "/api/preset-library/save",
+        json!({"name":"Моя атмосфера"}),
+    );
+    let id = saved["id"].as_str().unwrap();
+    let bytes = std::fs::read(folder.0.join(format!("{id}.sadpet"))).unwrap();
+    assert_eq!(&bytes[..8], b"SADPET\x01\0");
+    assert!(!control.selection.dirty);
+    let mut other = folder.control(false);
+    let mut audio = other.prepare(48000);
+    assert_eq!(
+        call(&mut other, "/api/preset-library", Value::Null)
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    call(&mut other, "/api/preset-library/load", json!({"id":id}));
+    assert_eq!(other.preset.name, "Моя атмосфера");
+    assert_eq!(other.sample.frames(), frames);
+    assert_eq!(other.region.start, 0.2);
+    assert_eq!(other.fades.fade_out, 0.02);
+    assert_eq!(other.preset.params.position, 0.37);
+    assert_eq!(
+        other.preset.pre_color_chain[0].settings.waveshaper_type,
+        sad_pet::dsp::radias_waveshaper::WaveshaperMode::MultiSine
+    );
+    let values = other.values();
+    no_heap(|| {
+        audio.begin(&values, 120.0, None, false, 128);
+        render(&mut audio, 128, [0.0; 2]);
+    });
+    let state = other.save().unwrap();
+    let mut recalled = folder.control(false);
+    recalled.restore(&state).unwrap();
+    assert_eq!(recalled.selection.id, id);
+    assert!(!recalled.selection.dirty);
+}
+
+#[test]
+fn preset_overwrite_import_export_and_invalid_files_preserve_existing_patches() {
+    let folder = PresetDirectory::new();
+    let mut control = folder.control(false);
+    let _audio = control.prepare(48000);
+    let saved = call(
+        &mut control,
+        "/api/preset-library/save",
+        json!({"name":"Texture"}),
+    );
+    let id = saved["id"].as_str().unwrap();
+    let path = folder.0.join(format!("{id}.sadpet"));
+    let initial = std::fs::read(&path).unwrap();
+    for data in [
+        json!({"name":""}),
+        json!({"name":"texture"}),
+        json!({"name":"X","id":"../../evil"}),
+    ] {
+        assert!(
+            control
+                .request(&json!({"path":"/api/preset-library/save","method":"POST","data":data}))
+                .is_err()
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), initial);
+    }
+    control.preset.params.position = 0.61;
+    call(
+        &mut control,
+        "/api/preset-library/save",
+        json!({"id":id,"name":"Texture renamed"}),
+    );
+    assert_eq!(
+        call(&mut control, "/api/preset-library", Value::Null)
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let exported = call(&mut control, "/api/preset-library/export", json!({"id":id}));
+    assert!(exported["filename"].as_str().unwrap().ends_with(".sadpet"));
+    let bytes = BASE64.decode(exported["binary"].as_str().unwrap()).unwrap();
+    let original_name = control.preset.name.clone();
+    for bytes in [&b"garbage"[..], &bytes[..bytes.len() - 4]] {
+        assert!(control.request(&json!({"path":"/api/preset-library/import","method":"POST","data":{"base64":BASE64.encode(bytes)}})).is_err());
+        assert_eq!(control.preset.name, original_name);
+    }
+    let imported = call(
+        &mut control,
+        "/api/preset-library/import",
+        json!({"base64":BASE64.encode(&bytes)}),
+    );
+    assert_ne!(imported["id"], saved["id"]);
+    assert_eq!(imported["name"], "Texture renamed (2)");
+    call(&mut control, "/api/preset-library/delete", json!({"id":id}));
+    assert!(!path.exists());
+    assert_eq!(
+        std::fs::read_dir(folder.0.join("Trash")).unwrap().count(),
+        1
+    );
+}
+
+#[test]
+fn legacy_preset_migration_is_idempotent_and_fx_patches_can_load_in_the_instrument() {
+    let folder = PresetDirectory::new();
+    let mut control = folder.control(true);
+    let _audio = control.prepare(48000);
+    let legacy = json!({"base64":BASE64.encode(serde_json::to_vec(&control.preset).unwrap()),"import_key":"legacy:preset-1"});
+    let first = call(&mut control, "/api/preset-library/import", legacy.clone());
+    let again = call(&mut control, "/api/preset-library/import", legacy.clone());
+    assert_eq!(first["id"], again["id"]);
+    call(
+        &mut control,
+        "/api/preset-library/save",
+        json!({"id":first["id"],"name":"Changed"}),
+    );
+    assert_eq!(
+        call(&mut control, "/api/preset-library/import", legacy)["id"],
+        first["id"]
+    );
+    let mut instrument = folder.control(false);
+    let _other = instrument.prepare(44100);
+    call(
+        &mut instrument,
+        "/api/preset-library/load",
+        json!({"id":first["id"]}),
+    );
+    assert!(instrument.source == Source::File);
+    assert!(instrument.midi_gate);
+    assert!(!instrument.playing);
+    let mut old_host_state: Value = serde_json::from_slice(&instrument.save().unwrap()).unwrap();
+    old_host_state.as_object_mut().unwrap().remove("selection");
+    instrument
+        .restore(&serde_json::to_vec(&old_host_state).unwrap())
+        .unwrap();
+}
+
 #[test]
 fn instrument_is_silent_until_midi_and_instances_are_independent() {
     let mut a = Controller::new(false);

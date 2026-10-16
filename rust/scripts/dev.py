@@ -21,7 +21,8 @@ ROOT = Path(__file__).resolve().parents[2]
 WEB = ROOT / "rust" / "web"
 MAX_BODY = 128 * 1024 * 1024
 ASSETS = {"/": "index.html", "/index.html": "index.html", "/app.js": "app.js",
-          "/library.js": "library.js", "/style.css": "style.css"}
+          "/library.js": "library.js", "/selection.js": "selection.js",
+          "/presets.js": "presets.js", "/style.css": "style.css"}
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; "
        "img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
 
