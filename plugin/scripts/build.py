@@ -10,6 +10,8 @@ import subprocess
 import urllib.request
 import zipfile
 
+from package_macos import build_pkg
+
 PLUGIN = Path(__file__).resolve().parents[1]
 ROOT = PLUGIN.parent
 WEBVIEW_VERSION = "1.0.3485.44"
@@ -53,9 +55,9 @@ def main():
             with zipfile.ZipFile(archive) as package:
                 package.extractall(sdk)
         options += [f"-DJUCE_WEBVIEW2_PACKAGE_LOCATION={package_root}"]
-    if args.universal:
-        if system != "Darwin":
-            parser.error("--universal requires macOS")
+    if args.universal and system != "Darwin":
+        parser.error("--universal requires macOS")
+    if args.universal and not args.package_only:
         rust = build / "universal-rust"
         archives = []
         run("rustup", "target", "add", "aarch64-apple-darwin", "x86_64-apple-darwin")
@@ -107,6 +109,8 @@ def main():
     checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
     archive.with_suffix(".zip.sha256").write_text(f"{checksum}  {archive.name}\n")
     print(f"Packaged {archive}")
+    if system == "Darwin":
+        build_pkg(output)
 
 
 if __name__ == "__main__":

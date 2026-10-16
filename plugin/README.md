@@ -12,11 +12,14 @@ the plug-in window; it does not launch a separate browser, audio device or serve
 
 Close your DAW before installing or replacing plug-ins.
 
-On macOS, unpack the ZIP and open `Install.command`. It copies both plug-ins into
-your user's `~/Library/Audio/Plug-Ins/Components` and `VST3` folders. A native build
-supports the architecture in its filename; a universal build supports both Apple
-silicon and Intel. These development builds have an ad-hoc signature. Developer ID
-signing and Apple notarization are separate release steps.
+On macOS, open `SAD-PET-Plugins-macOS-universal.pkg` and follow Installer. It installs
+both plug-ins as AU and VST3 for the current user, without administrator access, in
+`~/Library/Audio/Plug-Ins/Components` and `~/Library/Audio/Plug-Ins/VST3`. Reinstalling
+replaces the bundles at those paths; user presets stay in Application Support.
+The universal package supports both Apple silicon and Intel. The ZIP with
+`Install.command` remains available for manual installation. These development
+builds have an ad-hoc signature; the installer is unsigned. Developer ID signing
+and Apple notarization are separate release steps.
 
 On Windows, copy the two `.vst3` directories from the `VST3` folder into
 `C:\Program Files\Common Files\VST3`, or run `Install.ps1` from an administrator
@@ -125,13 +128,18 @@ python3 plugin/scripts/build.py
 python3 plugin/scripts/build.py --universal --build-dir target/plugins-universal
 ```
 
-Builds and native host integration tests run before packaging. ZIPs and SHA-256
-checksums are written to `dist/plugins/`. `--package-only` packages an existing
-build; `--skip-tests` is available for local iteration.
+Builds and native host integration tests run before packaging. ZIPs, a macOS
+`.pkg` installer and SHA-256 checksums are written to `dist/plugins/`.
+`--package-only` packages an existing build without recompiling it; `--skip-tests`
+is available for local iteration. macOS packaging uses the system `pkgbuild` and
+`productbuild` tools. The package contains no sample/preset library writes or
+network downloads; documentation and notices go in
+`~/Library/Application Support/SAD PET/Documentation`.
 
 The GitHub Actions **Build DAW plug-ins** workflow creates Windows x64 and macOS
 universal packages, runs native integration tests on both systems, and validates
-both Audio Units on macOS. Workflow artifacts contain the installable ZIPs.
+both Audio Units on macOS. Workflow artifacts contain the ZIPs, macOS installer
+and checksums.
 
 ```sh
 cargo fmt --all -- --check

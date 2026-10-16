@@ -45,11 +45,27 @@ jobs:
           node wasm/test-presets.mjs
       - name: Build, test and package
         run: python plugin/scripts/build.py ${{ matrix.arguments }}
-      - name: Validate Audio Units
+      - name: Validate macOS installer and Audio Units
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          bash dist/plugins/SAD-PET-Plugins-macOS-universal/Install.command
+          installer -pkg dist/plugins/SAD-PET-Plugins-macOS-universal.pkg -dominfo
+          installer -pkg dist/plugins/SAD-PET-Plugins-macOS-universal.pkg -target CurrentUserHomeDirectory
+          # Same-version reinstall must replace a bundle rather than merge stale files.
+          for plugin in "$HOME/Library/Audio/Plug-Ins/Components/SAD PET"*.component "$HOME/Library/Audio/Plug-Ins/VST3/SAD PET"*.vst3; do
+            touch "$plugin/stale-installer-test"
+          done
+          mkdir -p "$HOME/Library/Application Support/SAD PET/Presets"
+          echo 'Preserve user data' > "$HOME/Library/Application Support/SAD PET/Presets/installer-test.txt"
+          installer -pkg dist/plugins/SAD-PET-Plugins-macOS-universal.pkg -target CurrentUserHomeDirectory
+          for plugin in "$HOME/Library/Audio/Plug-Ins/Components/SAD PET"*.component "$HOME/Library/Audio/Plug-Ins/VST3/SAD PET"*.vst3; do
+            test ! -e "$plugin/stale-installer-test"
+          done
+          test "$(cat "$HOME/Library/Application Support/SAD PET/Presets/installer-test.txt")" = 'Preserve user data'
+          codesign --verify --deep --strict "$HOME/Library/Audio/Plug-Ins/Components/SAD PET.component"
+          codesign --verify --deep --strict "$HOME/Library/Audio/Plug-Ins/Components/SAD PET FX.component"
+          codesign --verify --deep --strict "$HOME/Library/Audio/Plug-Ins/VST3/SAD PET.vst3"
+          codesign --verify --deep --strict "$HOME/Library/Audio/Plug-Ins/VST3/SAD PET FX.vst3"
           auval -a > /tmp/sad-pet-au-list.log 2>&1
           auval -v aumu SaPi SdPt
           auval -v aumf SaPf SdPt
@@ -58,5 +74,6 @@ jobs:
           name: SAD-PET-Plugins-${{ matrix.platform }}
           path: |
             dist/plugins/*.zip
+            dist/plugins/*.pkg
             dist/plugins/*.sha256
           if-no-files-found: error
