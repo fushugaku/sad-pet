@@ -150,11 +150,7 @@ impl Controller {
             feedback,
             preset,
             sample: sad_pet::samples::get("glass-sequence").expect("bundled sample"),
-            source: if effect {
-                Source::Effects
-            } else {
-                Source::File
-            },
+            source: if effect { Source::Grains } else { Source::File },
             region: Region::default(),
             fades: Fades::default(),
             sync: true,
@@ -330,7 +326,7 @@ impl Controller {
             "region":self.region,"fades":self.fades,"center":view.center,
             "grains":&view.grains[..view.grain_count],"active_grains":view.grain_count,
             "notes":&view.notes[..view.note_count],"step_entry":view.step_entry,"step_edits":view.step_edits,
-            "input":{"active":live,"available":self.effect,"name":"DAW input","mode":if self.source==Source::Grains {"grains"} else {"effects"},"gain":1.0,"monitor":true,"pending":false,"devices":[],"seconds":view.input_seconds,"peak":view.input_peak},
+            "input":{"active":live,"available":self.effect,"name":"DAW input","mode":if self.source==Source::Effects {"effects"} else {"grains"},"gain":1.0,"monitor":true,"pending":false,"devices":[],"seconds":view.input_seconds,"peak":view.input_peak},
             "recording":{"active":false,"available":false,"seconds":0,"error":null},
             "performance":{"mode":self.preset.performance.mode,"step":view.step,"arp_index":view.arp_index,"chord":&view.chord[..view.chord_len],"gate":view.gate,"beat":view.beat},
             "lfos":view.lfos,"envs":view.envs,"matrix_values":view.matrix,"knobs":knobs,
@@ -471,10 +467,15 @@ impl Controller {
                 }
                 let source = if data["active"] == false {
                     Source::File
-                } else if data["mode"] == "grains" {
-                    Source::Grains
                 } else {
-                    Source::Effects
+                    match data["mode"].as_str() {
+                        Some("effects") => Source::Effects,
+                        Some("grains") => Source::Grains,
+                        _ => match self.source {
+                            Source::File => Source::Grains,
+                            source => source,
+                        },
+                    }
                 };
                 let prepared =
                     self.prepared_source(self.sample.clone(), source, self.region, self.fades);

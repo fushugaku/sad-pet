@@ -42,9 +42,14 @@ int main() {
         render(processor, buffer, midi);
         require(peak(buffer) == 0.0f, "Silence generated nonzero audio");
        #if SAD_PET_EFFECT
-        for (int c = 0; c < 2; ++c) for (int i = 0; i < buffer.getNumSamples(); ++i) buffer.setSample(c, i, 0.2f);
-        render(processor, buffer, midi);
-        require(peak(buffer) > 0.01f, "Effect did not process the host input");
+        // The granular path needs input history before it can emit sound.
+        float inputPeak = 0.0f;
+        for (int block = 0; block < 12; ++block) {
+            for (int c = 0; c < 2; ++c) for (int i = 0; i < buffer.getNumSamples(); ++i) buffer.setSample(c, i, 0.2f);
+            render(processor, buffer, midi);
+            inputPeak = juce::jmax(inputPeak, peak(buffer));
+        }
+        require(inputPeak > 0.01f, "Effect did not process the host input");
        #else
         midi.addEvent(juce::MidiMessage::noteOn(1, 60, static_cast<juce::uint8>(110)), 512);
         buffer.clear(); render(processor, buffer, midi);

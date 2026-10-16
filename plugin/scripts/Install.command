@@ -9,4 +9,6 @@ for plugin_type in AU VST3; do
         ditto "$plugin_bundle" "$HOME/Library/Audio/Plug-Ins/$plugin_folder/$(basename "$plugin_bundle")"
     done
 done
+# Refresh discovery after installing a new Audio Unit.
+killall -9 AudioComponentRegistrar 2>/dev/null || true
 echo "SAD PET and SAD PET FX installed. Restart your DAW and rescan plug-ins."

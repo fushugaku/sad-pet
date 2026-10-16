@@ -92,6 +92,10 @@ fn effect_processes_audio_and_granular_source_is_prepared_off_thread() {
     let mut control = Controller::new(true);
     let mut audio = control.prepare(44100);
     let values = control.values();
+    assert!(!audio.engine.live_input.as_ref().unwrap().effects_only);
+    audio.begin(&values, 120.0, None, false, 44100);
+    no_heap(|| assert!(render(&mut audio, 44100, [0.2; 2]) > 0.01));
+    call(&mut control, "/api/input", json!({"mode":"effects"}));
     audio.begin(&values, 120.0, None, false, 4096);
     no_heap(|| assert!(render(&mut audio, 4096, [0.2; 2]) > 0.01));
     call(&mut control, "/api/input", json!({"mode":"grains"}));
@@ -106,6 +110,9 @@ fn effect_processes_audio_and_granular_source_is_prepared_off_thread() {
         render(&mut audio, 128, [0.0; 2]);
     });
     assert!(audio.engine.live_input.is_none());
+    call(&mut control, "/api/input", json!({"active":true}));
+    no_heap(|| audio.begin(&values, 140.0, None, false, 128));
+    assert!(!audio.engine.live_input.as_ref().unwrap().effects_only);
     control.drain();
 }
 

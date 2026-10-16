@@ -42,8 +42,8 @@ Restart your DAW and rescan plug-ins:
 ## Controls and project recall
 
 SAD PET starts silently and responds to MIDI notes. SAD PET FX starts processing
-its stereo host input immediately. Choose **DAW input** and **Filters + FX** or
-**Grains + Filters + FX** to change input processing. **File** switches to the
+its stereo host input immediately with **Grains + Filters + FX** selected.
+Choose **Filters + FX** to bypass the grain engine. **File** switches to the
 sample instrument path. Loading a WAV also selects File.
 
 MIDI includes note velocity, sustain, pitch bend, modulation wheel, channel

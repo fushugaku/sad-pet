@@ -137,18 +137,20 @@ function syncRecording() {
       : "Record the processed audio output";
   $("input-device").disabled = active || recordingBusy;
   if (state?.input) {
-    const message = state.input.pending
-      ? "Allow microphone access in your browser…"
-      : state.input.error ||
-        (state.input.active
-          ? recordingBusy
-            ? recordingAction === "starting"
-              ? "Starting recording…"
-              : "Saving recording…"
-            : active
-              ? `Recording ${take.source === "input" ? "microphone" : "processed audio"} · ${$("record-time").textContent}`
-              : "Microphone connected · not recording"
-          : "");
+    const message = window.sadPetPlugin
+      ? ""
+      : state.input.pending
+        ? "Allow microphone access in your browser…"
+        : state.input.error ||
+          (state.input.active
+            ? recordingBusy
+              ? recordingAction === "starting"
+                ? "Starting recording…"
+                : "Saving recording…"
+              : active
+                ? `Recording ${take.source === "input" ? "microphone" : "processed audio"} · ${$("record-time").textContent}`
+                : "Microphone connected · not recording"
+            : "");
     if ($("input-status").textContent !== message)
       $("input-status").textContent = message;
     $("input-status").classList.toggle("recording", active);
