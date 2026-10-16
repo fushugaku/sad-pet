@@ -875,6 +875,20 @@ function syncColors() {
           },
         );
       }
+      if (slot.kind === "compressor") {
+        const meter = document.createElement("div");
+        meter.className = "gain-reduction";
+        meter.dataset.slot = id;
+        meter.setAttribute("role", "meter");
+        meter.setAttribute("aria-label", `FX ${number} gain reduction`);
+        meter.setAttribute("aria-valuemin", "0");
+        meter.setAttribute("aria-valuemax", "30");
+        meter.setAttribute("aria-valuenow", "0");
+        meter.setAttribute("aria-valuetext", "0.0 dB gain reduction");
+        meter.title = "Compression before Makeup and Mix";
+        meter.innerHTML = `<div class="gr-heading"><span>GAIN REDUCTION</span><output>0.0 dB</output></div><div class="gr-track" aria-hidden="true"><span class="gr-fill"></span></div><div class="gr-scale" aria-hidden="true"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span><span>30 dB</span></div>`;
+        card.append(meter);
+      }
     }
     colorRoutesSignature = "";
   }
@@ -902,6 +916,24 @@ function syncColors() {
   $("color-add").disabled =
     preset.color_chain.length >= colorDefaults.max_slots;
   for (const [key, update] of controls) if (key.startsWith("color:")) update();
+  syncGainReduction(state);
+}
+function syncGainReduction(next) {
+  for (const meter of $("color-chain").querySelectorAll(".gain-reduction")) {
+    const slot = preset?.color_chain.find(
+      (s) => s.id === Number(meter.dataset.slot),
+    );
+    const raw = Number(next?.gain_reduction?.[meter.dataset.slot] ?? 0);
+    const value = next?.playing && !next.bypass && slot?.enabled
+      && slot.mix > 0 && Number.isFinite(raw) ? Math.max(0, raw) : 0;
+    const rounded = Math.round(value * 10) / 10;
+    const text = `${rounded > 0 ? "−" : ""}${rounded.toFixed(1)} dB`;
+    meter.querySelector("output").textContent = text;
+    meter.querySelector(".gr-fill").style.width =
+      `${(Math.min(30, value) / 30) * 100}%`;
+    meter.setAttribute("aria-valuenow", String(Math.min(30, rounded)));
+    meter.setAttribute("aria-valuetext", `${rounded.toFixed(1)} dB gain reduction`);
+  }
 }
 function fillDestination(select, destination) {
   const value = destinationValue(destination);
@@ -2229,6 +2261,7 @@ async function poll() {
       );
     $("meter-l").style.width = `${Math.min(1, next.peak[0]) * 100}%`;
     $("meter-r").style.width = `${Math.min(1, next.peak[1]) * 100}%`;
+    syncGainReduction(next);
     $("audio-status").textContent =
       window.sadPetAudio?.status() ||
       (next.audio_enabled
@@ -2277,6 +2310,7 @@ async function poll() {
       connected = false;
       $("audio-status").textContent = "Application disconnected";
       $("audio-led").classList.add("off");
+      syncGainReduction(null);
     }
   } finally {
     setTimeout(poll, 80);

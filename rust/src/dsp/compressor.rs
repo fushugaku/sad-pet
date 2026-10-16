@@ -32,6 +32,11 @@ impl Compressor {
         self.reduction_db = 0.0;
     }
 
+    /// Applied attenuation before makeup gain, in dB. Reading never changes DSP.
+    pub fn gain_reduction_db(&self) -> f32 {
+        self.reduction_db
+    }
+
     pub fn configure(&mut self, settings: &ColorSettings) {
         self.threshold_db = -60.0 + 60.0 * settings.compressor_threshold;
         self.slope = 1.0 - 1.0 / 20.0_f32.powf(settings.compressor_ratio);

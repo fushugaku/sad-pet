@@ -1,6 +1,9 @@
 use sad_pet::{
     color::{ColorSettings, ColorSlot},
-    dsp::color::{ColorProcessor, ColorRack},
+    dsp::{
+        Engine, SampleBuffer,
+        color::{ColorProcessor, ColorRack},
+    },
     preset::{Preset, SaturatorType},
 };
 
@@ -43,6 +46,7 @@ fn threshold_ratio_and_stereo_link_match_the_expected_static_curve() {
                 "{rate} Hz, {db} dB: {out:?}"
             );
             assert!((out[1] / out[0] + 0.25).abs() < 1e-6);
+            assert!((fx.gain_reduction_db() - (db - expected_db)).abs() < 0.001);
         }
     }
 }
@@ -129,12 +133,19 @@ fn independent_compressors_stack_and_keep_their_envelopes_when_reordered() {
     first.configure(a);
     second.configure(b);
     for _ in 0..4800 {
+        // Reading the meters must never change either audio stream.
+        let _ = rack.gain_reduction();
         assert_eq!(
             rack.process([0.8, 0.2]),
             second.process(first.process([0.8, 0.2]))
         );
     }
+    let before = rack.gain_reduction();
+    assert!((before[&11] - first.gain_reduction_db()).abs() < 1e-6);
+    assert!((before[&22] - second.gain_reduction_db()).abs() < 1e-6);
+    assert!((before[&11] - before[&22]).abs() > 1.0);
     rack.configure(&[b, a]);
+    assert_eq!(rack.gain_reduction(), before);
     for _ in 0..4800 {
         assert_eq!(
             rack.process([0.8, 0.2]),
@@ -142,12 +153,47 @@ fn independent_compressors_stack_and_keep_their_envelopes_when_reordered() {
         );
     }
     rack.clear();
+    assert!(rack.gain_reduction().values().all(|&db| db == 0.0));
     first.clear();
     second.clear();
     assert_eq!(
         rack.process([0.8, 0.2]),
         first.process(second.process([0.8, 0.2]))
     );
+    b.enabled = false;
+    rack.configure(&[b]);
+    assert_eq!(rack.gain_reduction(), [(22, 0.0)].into_iter().collect());
+    b.enabled = true;
+    b.mix = 0.0;
+    rack.configure(&[b]);
+    for _ in 0..4800 {
+        rack.process([0.8; 2]);
+    }
+    assert_eq!(rack.gain_reduction()[&22], 0.0);
+}
+
+#[test]
+fn engine_meters_show_real_attenuation_and_zero_during_pause_or_global_bypass() {
+    let sample =
+        std::sync::Arc::new(SampleBuffer::new("meter".into(), 8000, vec![[0.8; 2]; 8000]).unwrap());
+    let mut preset = Preset {
+        color_chain: vec![slot(17)],
+        ..Preset::default()
+    };
+    preset.params.mix = 0.0;
+    let mut engine = Engine::new(8000, sample, preset);
+    assert_eq!(engine.gain_reduction()[&17], 0.0);
+    engine.set_playing(true);
+    for _ in 0..4000 {
+        engine.process_frame();
+    }
+    assert!(engine.gain_reduction()[&17] > 6.0);
+    engine.bypass = true;
+    assert_eq!(engine.gain_reduction()[&17], 0.0);
+    engine.bypass = false;
+    assert!(engine.gain_reduction()[&17] > 6.0);
+    engine.set_playing(false);
+    assert_eq!(engine.gain_reduction()[&17], 0.0);
 }
 
 #[test]

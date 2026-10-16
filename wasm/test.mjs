@@ -118,6 +118,20 @@ assert.ok(
   signalEnergy(dryOutput(dryPreset)) < signalEnergy(dryOpen) * 0.25,
   "the stereo compressor must reduce above-threshold audio in WASM",
 );
+const metering = new Core(module, 48000);
+metering.json("sad_load", prepared);
+metering.request("/api/preset", dryPreset);
+metering.request("/api/transport", { playing: true });
+for (let i = 0; i < 48000; i += 128)
+  metering.process(Math.min(128, 48000 - i));
+const reductions = metering.request("/api/state").gain_reduction;
+assert.ok(reductions[compressor.id] > 6, "WASM must publish actual compressor attenuation");
+assert.deepEqual(metering.request("/api/state").gain_reduction, reductions,
+  "reading the meter must not reset the compression envelope");
+metering.request("/api/transport", { bypass: true });
+assert.equal(metering.request("/api/state").gain_reduction[compressor.id], 0);
+metering.request("/api/transport", { bypass: false, playing: false });
+assert.equal(metering.request("/api/state").gain_reduction[compressor.id], 0);
 compressor.settings.compressor_ratio = 0;
 assert.deepEqual(dryOutput(dryPreset), dryOpen, "1:1 ratio must preserve audio");
 preset.color_chain = [

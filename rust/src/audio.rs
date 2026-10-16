@@ -69,6 +69,7 @@ pub struct State {
     pub envs: [f32; 3],
     pub matrix_values: [f32; crate::matrix::MAX_ROUTES],
     pub knobs: std::collections::BTreeMap<String, crate::dsp::telemetry::KnobState>,
+    pub gain_reduction: std::collections::BTreeMap<u32, f32>,
     pub peak: Stereo,
     pub cpu_percent: f32,
     pub underruns: u64,
@@ -227,6 +228,7 @@ impl Runtime {
             envs: [0.0; 3],
             matrix_values: [0.0; crate::matrix::MAX_ROUTES],
             knobs: Default::default(),
+            gain_reduction: Default::default(),
             peak: [0.0; 2],
             cpu_percent: 0.0,
             underruns: 0,
@@ -307,6 +309,7 @@ impl Runtime {
                         state.lfos=engine.lfo_values;state.envs=engine.env_values;state.peak=engine.peak;state.cpu_percent=cpu;
                         state.matrix_values=engine.matrix_values;
                         state.knobs=engine.knob_states();
+                        state.gain_reduction=engine.gain_reduction();
                         state.underruns=underruns.load(Ordering::Relaxed);
                         if !Arc::ptr_eq(&state.sample,&engine.sample) {
                             state.sample_name=engine.sample.name.clone();state.sample_id=engine.sample.library_id.clone();state.sample_seconds=engine.sample.duration();state.sample_frames=engine.sample.len();state.waveform=engine.sample.waveform.clone();state.sample=engine.sample.clone();

@@ -536,6 +536,62 @@ h2 {
   max-width: calc(var(--color-knobs) * 150px);
   margin-inline: auto;
 }
+.gain-reduction {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font: 10px ui-monospace, monospace;
+  color: var(--muted);
+}
+.gr-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 7px;
+  letter-spacing: 0.08em;
+}
+.gr-heading output {
+  color: var(--accent);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+.gr-track {
+  height: 9px;
+  overflow: hidden;
+  border: 1px solid #3c4735;
+  border-radius: 3px;
+  background: repeating-linear-gradient(
+    to right,
+    #141a11 0,
+    #141a11 calc(20% - 1px),
+    #394030 calc(20% - 1px),
+    #394030 20%
+  );
+}
+.gr-fill {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), #d8be76);
+  transition: width 80ms linear;
+}
+.gr-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 5px;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+.color-card.is-bypassed .gain-reduction {
+  opacity: 0.55;
+}
+@media (prefers-reduced-motion: reduce) {
+  .gr-fill {
+    transition: none;
+  }
+}
 .matrix {
   display: grid;
   gap: 8px;

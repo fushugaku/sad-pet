@@ -51,6 +51,14 @@ fn apply(low: &mut Modulated, high: &mut Modulated, destination: Destination, ra
 }
 
 impl Engine {
+    pub fn gain_reduction(&self) -> BTreeMap<u32, f32> {
+        let mut meters = self.color_rack.gain_reduction();
+        if !self.playing || self.bypass {
+            meters.values_mut().for_each(|value| *value = 0.0);
+        }
+        meters
+    }
+
     fn control_limits(&self) -> (Modulated, Modulated) {
         let mut low = Modulated::from_preset(&self.preset);
         let mut high = low;

@@ -62,6 +62,7 @@ impl Host {
             "recording": {"active": false, "id": null, "seconds": 0, "available": false, "error": null},
             "performance": e.performance_view(), "lfos": e.lfo_values, "envs": e.env_values,
             "matrix_values": e.matrix_values, "knobs": e.knob_states(), "peak": e.peak,
+            "gain_reduction": e.gain_reduction(),
             "cpu_percent": 0, "underruns": 0,
         })
     }

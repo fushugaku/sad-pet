@@ -250,6 +250,14 @@ impl ColorProcessor {
         };
         std::array::from_fn(|c| frame[c] * (1.0 - self.slot.mix) + self.slot.mix * result[c])
     }
+
+    pub fn gain_reduction_db(&self) -> f32 {
+        if self.slot.kind == SaturatorType::Compressor && self.slot.enabled && self.slot.mix > 0.0 {
+            self.compressor.gain_reduction_db()
+        } else {
+            0.0
+        }
+    }
 }
 
 pub struct ColorRack {
@@ -297,5 +305,13 @@ impl ColorRack {
             frame = processor.process(frame);
         }
         frame
+    }
+
+    pub fn gain_reduction(&self) -> std::collections::BTreeMap<u32, f32> {
+        self.processors[..self.len]
+            .iter()
+            .filter(|p| p.slot.kind == SaturatorType::Compressor)
+            .map(|p| (p.id, p.gain_reduction_db()))
+            .collect()
     }
 }

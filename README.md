@@ -30,6 +30,7 @@ The desktop version uses the system audio output and a local browser panel.
   flanger, chorus, binaural processing, reverb, L/C/R delay, modulated delay and
   a stereo-linked compressor (threshold, ratio, attack, release, knee, makeup and mix).
   All compressor controls accept LFO, envelope and matrix modulation.
+  Each compressor has a live gain reduction meter with a dB readout.
 - Live modulation feedback on controls, MIDI input and stereo WAV/MP3 recording.
 - Dry/Wet blends the original source with grains before the voice filters and
   shared effect chain, so even fully dry audio receives filtering and effects.
