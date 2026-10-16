@@ -49,6 +49,7 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
+          set -x
           installer -pkg dist/plugins/SAD-PET-Plugins-macOS-universal.pkg -dominfo
           installer -pkg dist/plugins/SAD-PET-Plugins-macOS-universal.pkg -target CurrentUserHomeDirectory
           # Same-version reinstall must replace a bundle rather than merge stale files.

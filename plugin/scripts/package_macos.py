@@ -42,26 +42,6 @@ def build_pkg(source: Path) -> Path:
 
     with tempfile.TemporaryDirectory(prefix="sad-pet-installer-") as temporary:
         work = Path(temporary)
-        payload = work / "payload"
-        components = []
-        for bundle, folder in bundles:
-            relative = folder / bundle.name
-            shutil.copytree(bundle, payload / relative)
-            components.append({
-                "RootRelativeBundlePath": relative.as_posix(),
-                "BundleIsRelocatable": False,
-                "BundleIsVersionChecked": True,
-                "BundleHasStrictIdentifier": True,
-                "BundleOverwriteAction": "upgrade",
-            })
-        component_plist = work / "components.plist"
-        component_plist.write_bytes(plistlib.dumps(components))
-
-        documentation = payload / "Library/Application Support/SAD PET/Documentation"
-        documentation.mkdir(parents=True)
-        shutil.copy2(source / "README.md", documentation / "README.md")
-        shutil.copytree(source / "Licenses", documentation / "Licenses")
-
         scripts = work / "scripts"
         scripts.mkdir()
         postinstall = scripts / "postinstall"
@@ -74,11 +54,41 @@ def build_pkg(source: Path) -> Path:
             encoding="utf-8",
         )
         postinstall.chmod(0o755)
-        component = work / "plugins.pkg"
-        run("pkgbuild", "--root", payload, "--component-plist", component_plist,
-            "--identifier", PACKAGE_ID, "--version", version,
-            "--install-location", "/", "--ownership", "recommended",
-            "--scripts", scripts, component)
+        packages = []
+        # AU and VST3 share bundle identifiers. Separate component packages keep
+        # Installer's upgrade bookkeeping from conflating their two install paths.
+        for kind in ("AU", "VST3"):
+            payload = work / kind / "payload"
+            components = []
+            for bundle, folder in bundles:
+                if bundle.parent.name != kind:
+                    continue
+                relative = folder / bundle.name
+                shutil.copytree(bundle, payload / relative)
+                components.append({
+                    "RootRelativeBundlePath": relative.as_posix(),
+                    "BundleIsRelocatable": False,
+                    # Also replace the same version when the user reinstalls it.
+                    "BundleIsVersionChecked": False,
+                    "BundleHasStrictIdentifier": True,
+                    "BundleOverwriteAction": "upgrade",
+                })
+            component_plist = work / kind / "components.plist"
+            component_plist.write_bytes(plistlib.dumps(components))
+            script_options = []
+            if kind == "AU":
+                documentation = payload / "Library/Application Support/SAD PET/Documentation"
+                documentation.mkdir(parents=True)
+                shutil.copy2(source / "README.md", documentation / "README.md")
+                shutil.copytree(source / "Licenses", documentation / "Licenses")
+                script_options = ["--scripts", scripts]
+            component = work / f"{kind.lower()}.pkg"
+            identifier = f"{PACKAGE_ID}.{kind.lower()}"
+            run("pkgbuild", "--root", payload, "--component-plist", component_plist,
+                "--identifier", identifier, "--version", version,
+                "--install-location", "/", "--ownership", "recommended",
+                *script_options, component)
+            packages.append((identifier, component))
 
         resources = work / "resources"
         messages = {
@@ -131,9 +141,10 @@ def build_pkg(source: Path) -> Path:
         ET.SubElement(outline, "line", choice="plugins")
         choice = ET.SubElement(distribution, "choice", id="plugins", visible="false",
                                title="SAD PET + SAD PET FX", description="Audio Units and VST3")
-        ET.SubElement(choice, "pkg-ref", id=PACKAGE_ID)
-        ET.SubElement(distribution, "pkg-ref", id=PACKAGE_ID, version=version,
-                      onConclusion="None").text = component.name
+        for identifier, component in packages:
+            ET.SubElement(choice, "pkg-ref", id=identifier)
+            ET.SubElement(distribution, "pkg-ref", id=identifier, version=version,
+                          onConclusion="None").text = component.name
         distribution_path = work / "Distribution.xml"
         ET.indent(distribution)
         ET.ElementTree(distribution).write(distribution_path, encoding="utf-8", xml_declaration=True)
