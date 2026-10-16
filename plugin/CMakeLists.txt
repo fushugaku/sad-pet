@@ -14,8 +14,10 @@ set(SAD_PET_JUCE_PATH "" CACHE PATH "Optional existing JUCE checkout")
 if(SAD_PET_JUCE_PATH)
     add_subdirectory("${SAD_PET_JUCE_PATH}" "${CMAKE_BINARY_DIR}/JUCE")
 else()
-    FetchContent_Declare(JUCE GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
-        GIT_TAG a74b024c188339fdfe07b73088e6f6961ff66709 GIT_SHALLOW FALSE)
+    FetchContent_Declare(JUCE
+        URL https://codeload.github.com/juce-framework/JUCE/tar.gz/a74b024c188339fdfe07b73088e6f6961ff66709
+        URL_HASH SHA256=30bb5854fe207da084d9146eef30677aadb8a29617e2451e6894bc30a1c5199d
+        DOWNLOAD_EXTRACT_TIMESTAMP FALSE)
     FetchContent_MakeAvailable(JUCE)
 endif()
 

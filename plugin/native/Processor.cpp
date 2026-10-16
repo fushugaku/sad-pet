@@ -205,8 +205,13 @@ juce::var SadPetProcessor::request(const juce::var& requestValue) {
     const auto requestText = juce::JSON::toString(requestValue, true);
     const auto result = juce::JSON::parse(takeString(sad_control_request(control,
         reinterpret_cast<const std::uint8_t*>(requestText.toRawUTF8()), requestText.getNumBytesAsUTF8())));
-    if (requestValue["method"].toString() == "POST" && requestValue["path"].toString() == "/api/preset"
-        && static_cast<int>(result["status"]) == 200) publishParameters(previous, true);
+    if (requestValue["method"].toString() == "POST" && static_cast<int>(result["status"]) == 200) {
+        const auto path = requestValue["path"].toString();
+        if (path == "/api/preset") publishParameters(previous, true);
+        if (path == "/api/preset" || path == "/api/wav" || path == "/api/region"
+            || path == "/api/fades" || path == "/api/input" || path == "/api/transport")
+            updateHostDisplay(juce::AudioProcessorListener::ChangeDetails{}.withNonParameterStateChanged(true));
+    }
     return result;
 }
 

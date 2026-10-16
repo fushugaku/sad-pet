@@ -19,12 +19,21 @@ float peak(const juce::AudioBuffer<float>& buffer, int start = 0, int count = -1
     return buffer.getMagnitude(0, start, count < 0 ? buffer.getNumSamples() - start : count);
 }
 void render(SadPetProcessor& processor, juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) { processor.processBlock(buffer, midi); }
+struct StateListener final : juce::AudioProcessorListener {
+    bool changed = false;
+    void audioProcessorParameterChanged(juce::AudioProcessor*, int, float) override {}
+    void audioProcessorChanged(juce::AudioProcessor*, const ChangeDetails& details) override {
+        changed |= details.nonParameterStateChanged;
+    }
+};
 }
 
 int main() {
     const juce::ScopedJuceInitialiser_GUI juce;
     try {
+        StateListener listener;
         SadPetProcessor processor;
+        processor.addListener(&listener);
         processor.setPlayConfigDetails(SAD_PET_EFFECT ? 2 : 0, 2, 48000.0, 4096);
         processor.prepareToPlay(48000.0, 4096);
         juce::AudioBuffer<float> buffer(2, 4096);
@@ -60,6 +69,7 @@ int main() {
         import->setProperty("name", "Embedded test.wav");
         import->setProperty("id", "test:embedded");
         command(processor, "/api/wav", juce::var(import));
+        require(listener.changed, "Sample import did not notify the DAW to save its changed state");
         auto* position = processor.parameters.getParameter("position");
         position->setValueNotifyingHost(0.37f);
         auto* region = new juce::DynamicObject;
