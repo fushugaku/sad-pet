@@ -38,6 +38,14 @@ Restart your DAW and rescan plug-ins:
   AU MIDI-controlled Effects → SAD PET, select the source audio track in the
   plug-in's Side Chain menu, and play MIDI on the instrument channel. This is
   Logic's routing for effects that accept MIDI.
+  When processing another software instrument, keep that instrument on its
+  source track and put SAD PET FX in the Instrument slot of a second track.
+  Copy the MIDI region to the SAD PET FX track and select the source instrument
+  in Side Chain. Inserting SAD PET FX in Audio FX after the source instrument
+  sends it audio alone; that track's MIDI region does not reach its envelopes.
+  Bypass that earlier insert when using the second track. To hear only the
+  processed signal, route the source output to an unused bus, set the bus's aux
+  output to No Output, and choose that bus as the SAD PET FX Side Chain source.
 
 ## Controls and project recall
 
