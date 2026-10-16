@@ -1,7 +1,7 @@
 use super::compressor::Compressor;
 use super::delay::RadiasDelay;
 use super::effects::{Delay, Effects};
-use super::radias_waveshaper::RadiasWaveshaper;
+use super::radias_waveshaper::{RadiasWaveshaper, WaveshaperMode};
 use crate::{
     Stereo,
     color::{ColorSlot, MAX_COLOR_SLOTS},
@@ -15,6 +15,7 @@ pub struct ColorProcessor {
     slot: ColorSlot,
     configured: bool,
     configured_bpm: f32,
+    configured_pitch: u16,
     delay: Delay,
     phase: f64,
     random: Random,
@@ -50,6 +51,7 @@ impl ColorProcessor {
             slot: ColorSlot::default(),
             configured: false,
             configured_bpm: 120.0,
+            configured_pitch: 0,
             delay: Delay::new((sr * 0.08) as usize + 4),
             phase: 0.0,
             random: Random::default(),
@@ -109,7 +111,19 @@ impl ColorProcessor {
         } else {
             120.0
         };
-        if self.configured && self.slot == slot && self.configured_bpm == tempo {
+        // Pickup retains this pitch in its target coefficients for future resets.
+        let pitch = if slot.kind == SaturatorType::Waveshaper
+            && slot.settings.waveshaper_type == WaveshaperMode::Pickup
+        {
+            self.waveshaper.pitch_code()
+        } else {
+            0
+        };
+        if self.configured
+            && self.slot == slot
+            && self.configured_bpm == tempo
+            && self.configured_pitch == pitch
+        {
             return;
         }
         let reset = self.id != slot.id
@@ -124,6 +138,7 @@ impl ColorProcessor {
         self.slot = slot;
         self.configured = true;
         self.configured_bpm = tempo;
+        self.configured_pitch = pitch;
         let s = slot.settings;
         match slot.kind {
             SaturatorType::Distortion => {

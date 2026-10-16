@@ -163,6 +163,9 @@ impl RadiasWaveshaper {
             current.target_depth = target.target_depth;
         }
     }
+    pub(super) fn pitch_code(&self) -> u16 {
+        self.pitch
+    }
     pub fn set_pitch(&mut self, note: f32) {
         let note = note.clamp(0.0, 127.996);
         self.pitch = (note * 256.0).round().clamp(0.0, 32767.0) as u16;
