@@ -1,11 +1,77 @@
 use sad_pet::{
     color::ColorSlot,
     dsp::{
+        Engine, SampleBuffer,
         color::ColorRack,
         radias_waveshaper::{RadiasWaveshaper, WaveshaperMode},
     },
-    preset::SaturatorType,
+    performance::{Mode, Modulation, Performance, Settings},
+    preset::{Preset, SaturatorType},
 };
+use std::sync::Arc;
+
+#[test]
+fn sparse_rate_edits_retime_the_next_note_like_a_full_preset_update() {
+    for (mode, parameter) in [(Mode::Arp, "arp_rate"), (Mode::Sequencer, "sequence_rate")] {
+        let mut preset = Preset::default();
+        preset.performance.mode = mode;
+        preset.performance.arp_division = 8.0;
+        preset.performance.sequence_division = 8.0;
+        let sample = Arc::new(
+            SampleBuffer::new(
+                "tone".into(),
+                8000,
+                (0..8000)
+                    .map(|i| [(i as f32 * 0.17).sin() * 0.2; 2])
+                    .collect(),
+            )
+            .unwrap(),
+        );
+        let mut sparse = Engine::new(8000, sample.clone(), preset.clone());
+        let mut full = Engine::new(8000, sample, preset.clone());
+        sparse.set_playing(true);
+        full.set_playing(true);
+        for _ in 0..128 {
+            assert_eq!(sparse.process_frame(), full.process_frame());
+        }
+        assert_eq!(sparse.held_notes(), vec![60]);
+        if mode == Mode::Arp {
+            preset.performance.arp_division = 0.25;
+        } else {
+            preset.performance.sequence_division = 0.25;
+        }
+        let changes = sad_pet::parameters::parse(&serde_json::json!({parameter: 0.25})).unwrap();
+        sparse.apply_parameters(&changes);
+        full.set_preset(preset);
+        // Editing a rate leaves the old note held until the next audio frame.
+        assert_eq!(sparse.held_notes(), vec![60]);
+        for frame in 0..256 {
+            assert_eq!(
+                sparse.process_frame(),
+                full.process_frame(),
+                "{mode:?}, frame {frame}"
+            );
+            assert_eq!(sparse.held_notes(), vec![64]);
+        }
+    }
+}
+
+#[test]
+fn unrelated_numeric_refresh_does_not_retrigger_a_modulated_clock() {
+    let settings = Settings {
+        mode: Mode::Arp,
+        arp_division: 8.0,
+        ..Settings::default()
+    };
+    let mut performance = Performance::new(settings.clone());
+    let mut modulation = Modulation::from_settings(&settings);
+    modulation.arp_rate = 4.0;
+    performance.modulate(modulation);
+    performance.start();
+    assert!(performance.tick(8000, 120.0).iter().any(Option::is_some));
+    performance.refresh_timing(&settings);
+    assert!(performance.tick(8000, 120.0).iter().all(Option::is_none));
+}
 
 #[test]
 fn cached_waveshapers_match_direct_processing_across_pitch_changes_bypass_and_resets() {

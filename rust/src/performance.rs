@@ -342,6 +342,7 @@ pub struct View {
 
 pub struct Performance {
     settings: Settings,
+    base_rates: [f32; 2],
     physical: Notes,
     latched: Notes,
     active: Notes,
@@ -376,6 +377,7 @@ impl Performance {
             settings.chord.clear();
         }
         Self {
+            base_rates: [settings.arp_division, settings.sequence_division],
             settings,
             physical: Notes::default(),
             latched,
@@ -403,6 +405,17 @@ impl Performance {
         self.settings.sequence_gate = values.sequence_gate;
         self.settings.length = values.sequence_length.round() as u8;
         self.settings.steps = values.steps;
+    }
+    /// Retiming base controls must not confuse an LFO's current rate with an edit.
+    pub fn refresh_timing(&mut self, settings: &Settings) {
+        let rates = [settings.arp_division, settings.sequence_division];
+        if self.base_rates[0] != rates[0] {
+            self.next_arp = self.beat;
+        }
+        if self.base_rates[1] != rates[1] {
+            self.next_step = self.beat;
+        }
+        self.base_rates = rates;
     }
     pub fn configure(&mut self, settings: &Settings) -> bool {
         let mut settings = settings.clone();
@@ -463,6 +476,7 @@ impl Performance {
             steps: settings.steps,
             chord,
         };
+        self.base_rates = [settings.arp_division, settings.sequence_division];
         if release_latch {
             self.store_chord();
         }

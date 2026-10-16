@@ -457,6 +457,7 @@ impl Engine {
 
     /// Refresh numeric host automation without rebuilding the preset or effects.
     pub fn refresh_parameters(&mut self) {
+        self.performance.refresh_timing(&self.preset.performance);
         self.update_modulation();
     }
     pub fn apply_parameters(&mut self, changes: &[crate::parameters::Change]) {
