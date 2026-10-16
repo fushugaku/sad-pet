@@ -12,6 +12,7 @@ macro_rules! color_parameters {
         #[serde(rename_all = "snake_case")]
         pub enum ColorParameter { Mix, $($variant),* }
         impl ColorParameter {
+            pub const ALL: &'static [Self] = &[Self::Mix, $(Self::$variant),*];
             pub fn key(self) -> &'static str {
                 match self { Self::Mix => "mix", $(Self::$variant => stringify!($field)),* }
             }

@@ -585,6 +585,10 @@ impl Preset {
         self.params.adsr_sustain = self.envs[0].sustain;
         self.params.adsr_release = self.envs[0].release;
         self.performance.sanitize();
+        // Hold/arp MIDI capture must never grow a vector on the audio thread.
+        self.performance
+            .chord
+            .reserve(32 - self.performance.chord.len());
         self.name = self.name.chars().take(80).collect();
         for lfo in &mut self.lfos {
             validate(&mut lfo.destination);

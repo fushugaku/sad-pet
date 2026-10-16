@@ -138,6 +138,18 @@ profile at `http://127.0.0.1:3214/` to access the existing IndexedDB library.
 
 See [the user guide](rust/README.txt) for controls, recording and CLI rendering.
 
+## DAW plug-ins
+
+The native plug-in build reuses this engine and embeds the existing editor.
+**SAD PET** is a MIDI instrument; **SAD PET FX** processes stereo host audio and
+also accepts MIDI. Both provide VST3 on macOS/Windows and Audio Units on macOS.
+Projects save the full preset and sample audio. See the [plug-in guide](plugin/README.md)
+for installation, Logic's MIDI-controlled effect routing, building and validation.
+
+```sh
+python3 plugin/scripts/build.py
+```
+
 ## Background
 
 SAD PET began as a desktop reconstruction informed by analysis of EVIL PET 1.63.

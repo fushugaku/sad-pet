@@ -1,0 +1,947 @@
+//! Native plugin boundary. Only Audio is touched by the host's audio callback.
+//! Controller prepares files/presets and reclaims retired allocations off-thread.
+mod parameters;
+
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use rtrb::{Consumer, Producer, RingBuffer};
+use sad_pet::{
+    Stereo,
+    dsp::{Engine, Fades, Region, SampleBuffer, sample::LiveInput, telemetry::RealtimeView},
+    midi::{Message, Parser},
+    performance::Mode,
+    preset::Preset,
+    wav,
+};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use std::{io::Cursor, sync::Arc};
+
+const QUEUE: usize = 64;
+const MAX_BYTES: usize = 128 * 1024 * 1024;
+
+#[derive(Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Source {
+    #[default]
+    File,
+    Effects,
+    Grains,
+}
+
+struct PreparedSource {
+    sample: Arc<SampleBuffer>,
+    live: Option<LiveInput>,
+    region: Region,
+    fades: Fades,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct Transport {
+    playing: Option<bool>,
+    midi_gate: Option<bool>,
+    frozen: Option<bool>,
+    bypass: Option<bool>,
+    sync: Option<bool>,
+    clear_hold: bool,
+}
+
+enum Command {
+    Preset(Box<Preset>),
+    Source(Box<PreparedSource>),
+    Restore(Box<Restore>),
+    Transport(Transport),
+    Region(Region),
+    Fades(Fades),
+    Midi(Message),
+    Step {
+        index: Option<usize>,
+        reset: bool,
+        clear: bool,
+    },
+}
+
+struct Restore {
+    preset: Preset,
+    source: PreparedSource,
+    sync: bool,
+    frozen: bool,
+    bypass: bool,
+    midi_gate: bool,
+    playing: bool,
+}
+
+struct Update {
+    revision: u64,
+    command: Command,
+}
+struct Feedback {
+    revision: u64,
+    view: RealtimeView,
+    bpm: f32,
+    host_playing: bool,
+}
+
+pub struct Controller {
+    commands: Producer<Update>,
+    retired: Consumer<Update>,
+    feedback: Consumer<Feedback>,
+    preset: Preset,
+    sample: Arc<SampleBuffer>,
+    source: Source,
+    region: Region,
+    fades: Fades,
+    sync: bool,
+    frozen: bool,
+    bypass: bool,
+    midi_gate: bool,
+    playing: bool,
+    effect: bool,
+    rate: u32,
+    revision: u64,
+    view: RealtimeView,
+    host_bpm: f32,
+    host_playing: bool,
+}
+
+pub struct Audio {
+    engine: Engine,
+    commands: Consumer<Update>,
+    retired: Producer<Update>,
+    feedback: Producer<Feedback>,
+    parser: Parser,
+    parameters: Vec<f32>,
+    revision: u64,
+    sync: bool,
+    host_playing: bool,
+    host_bpm: f32,
+    expected_beat: Option<f64>,
+    frames_since_feedback: usize,
+    view: RealtimeView,
+}
+
+#[derive(Serialize, Deserialize)]
+struct SavedState {
+    version: u32,
+    preset: Preset,
+    sample_name: String,
+    sample_id: Option<String>,
+    sample_wav: String,
+    source: Source,
+    region: Region,
+    fades: Fades,
+    sync: bool,
+    frozen: bool,
+    bypass: bool,
+    midi_gate: bool,
+    playing: bool,
+}
+
+impl Controller {
+    fn new(effect: bool) -> Self {
+        let (commands, _) = RingBuffer::new(QUEUE);
+        let (_, retired) = RingBuffer::new(QUEUE);
+        let (_, feedback) = RingBuffer::new(3);
+        let mut preset = Preset::default();
+        preset.sanitize();
+        Self {
+            commands,
+            retired,
+            feedback,
+            preset,
+            sample: sad_pet::samples::get("glass-sequence").expect("bundled sample"),
+            source: if effect {
+                Source::Effects
+            } else {
+                Source::File
+            },
+            region: Region::default(),
+            fades: Fades::default(),
+            sync: true,
+            frozen: false,
+            bypass: false,
+            midi_gate: !effect,
+            playing: effect,
+            effect,
+            rate: 44_100,
+            revision: 0,
+            view: RealtimeView::default(),
+            host_bpm: 120.0,
+            host_playing: false,
+        }
+    }
+
+    fn drain(&mut self) {
+        while self.retired.pop().is_ok() {}
+        while let Ok(feedback) = self.feedback.pop() {
+            self.view = feedback.view;
+            self.host_bpm = feedback.bpm;
+            self.host_playing = feedback.host_playing;
+            if feedback.revision == self.revision {
+                self.playing = self.view.playing;
+                self.midi_gate = self.view.midi_gate;
+                self.frozen = self.view.frozen;
+                self.bypass = self.view.bypass;
+                self.preset.performance.chord.clear();
+                self.preset
+                    .performance
+                    .chord
+                    .extend_from_slice(&self.view.chord[..self.view.chord_len]);
+                for (i, step) in self.view.step_edits.iter().enumerate() {
+                    if let Some(step) = step {
+                        self.preset.performance.steps[i] = *step;
+                    }
+                }
+            }
+        }
+    }
+
+    fn enqueue(&mut self, command: Command) -> Result<(), String> {
+        self.drain();
+        let revision = self.revision.wrapping_add(1);
+        self.commands
+            .push(Update { revision, command })
+            .map_err(|_| "Plugin update queue is full. Try again.".to_string())?;
+        self.revision = revision;
+        Ok(())
+    }
+
+    fn prepared_source(
+        &self,
+        sample: Arc<SampleBuffer>,
+        source: Source,
+        region: Region,
+        fades: Fades,
+    ) -> PreparedSource {
+        PreparedSource {
+            sample,
+            live: (source != Source::File).then(|| {
+                let mut input = LiveInput::new(self.rate, source == Source::Effects);
+                input.sample.name = "DAW input".into();
+                input
+            }),
+            region,
+            fades,
+        }
+    }
+
+    fn prepare(&mut self, rate: u32) -> Audio {
+        self.drain();
+        self.rate = rate.clamp(8_000, 384_000);
+        let (commands, receiver) = RingBuffer::new(QUEUE);
+        let (retire, retired) = RingBuffer::new(QUEUE);
+        let (publish, feedback) = RingBuffer::new(3);
+        self.commands = commands;
+        self.retired = retired;
+        self.feedback = feedback;
+        let mut engine = Engine::new(self.rate, self.sample.clone(), self.preset.clone());
+        engine.set_midi_gate(self.midi_gate);
+        let mut source =
+            self.prepared_source(self.sample.clone(), self.source, self.region, self.fades);
+        engine.exchange_source(&mut source.sample, &mut source.live);
+        if self.source == Source::File {
+            let _ = engine.set_region(self.region);
+            let _ = engine.set_fades(self.fades);
+        }
+        engine.set_playing(
+            self.playing
+                && (self.effect || self.preset.performance.mode != Mode::Keys || !self.midi_gate),
+        );
+        engine.set_frozen(self.frozen && self.source == Source::File);
+        engine.bypass = self.bypass;
+        Audio {
+            engine,
+            commands: receiver,
+            retired: retire,
+            feedback: publish,
+            parser: Parser::default(),
+            parameters: vec![f32::NAN; parameters::specs().len()],
+            revision: self.revision,
+            sync: self.sync,
+            host_playing: false,
+            host_bpm: 120.0,
+            expected_beat: None,
+            frames_since_feedback: 0,
+            view: RealtimeView::default(),
+        }
+    }
+
+    fn values(&self) -> Vec<f32> {
+        parameters::specs()
+            .iter()
+            .map(|p| p.get(&self.preset))
+            .collect()
+    }
+    fn set_values(&mut self, values: &[f32]) {
+        for (spec, &value) in parameters::specs().iter().zip(values) {
+            spec.set(&mut self.preset, value);
+        }
+        parameters::mirror(&mut self.preset);
+    }
+
+    fn state(&mut self) -> Value {
+        self.drain();
+        let mut displayed_preset = self.preset.clone();
+        if self.sync {
+            displayed_preset.params.bpm = self.host_bpm;
+        }
+        let view = &self.view;
+        let live = self.source != Source::File;
+        let mut knobs = serde_json::Map::new();
+        let base = serde_json::to_value(self.preset.params).unwrap_or_default();
+        let current = serde_json::to_value(view.params).unwrap_or_default();
+        if let (Some(base), Some(current)) = (base.as_object(), current.as_object()) {
+            for (key, value) in base.iter().filter(|(_, v)| v.is_number()) {
+                let now = current.get(key).unwrap_or(value);
+                knobs.insert(key.clone(), json!({"base": value, "current": now, "min": value, "max": now, "modulated": value != now}));
+            }
+        }
+        for slot in &self.preset.color_chain {
+            for &parameter in slot.control_parameters() {
+                let mut copy = *slot;
+                let base = *copy.parameter_mut(parameter);
+                let current = view.color[..view.color_len]
+                    .iter()
+                    .find(|s| s.id == slot.id)
+                    .map_or(base, |s| {
+                        let mut copy = *s;
+                        *copy.parameter_mut(parameter)
+                    });
+                knobs.insert(format!("color:{}:{}", slot.id, parameter.key()), json!({"base":base,"current":current,"min":base.min(current),"max":base.max(current),"modulated":(base-current).abs()>0.00001}));
+            }
+        }
+        let reduction: std::collections::BTreeMap<_, _> = view
+            .gain_reduction
+            .iter()
+            .filter(|(id, _)| *id != 0)
+            .map(|(id, db)| (id.to_string(), *db))
+            .collect();
+        json!({
+            "version": env!("CARGO_PKG_VERSION"), "instance_id": "plugin",
+            "plugin": {"effect":self.effect,"sync":self.sync,"host_bpm":self.host_bpm,"host_playing":self.host_playing},
+            "sample_rate":self.rate,"audio_device":"DAW","audio_enabled":true,"audio_error":null,
+            "playing":self.playing,"midi_gate":self.midi_gate,"frozen":self.frozen,"bypass":self.bypass,
+            "preset":displayed_preset,"sample_name":if live { "DAW input" } else { &self.sample.name },
+            "sample_id":if live { None } else { self.sample.library_id.as_ref() },
+            "sample_seconds":if live { 8.0 } else { self.sample.duration() },
+            "sample_frames":if live { self.rate as usize * 8 } else { self.sample.len() },
+            "file_source":{"sample_name":self.sample.name,"sample_id":self.sample.library_id,"sample_seconds":self.sample.duration(),"sample_frames":self.sample.len(),"waveform":self.sample.waveform},
+            "waveform":if live { &view.waveform[..view.waveform_len] } else { &self.sample.waveform },
+            "region":self.region,"fades":self.fades,"center":view.center,
+            "grains":&view.grains[..view.grain_count],"active_grains":view.grain_count,
+            "notes":&view.notes[..view.note_count],"step_entry":view.step_entry,"step_edits":view.step_edits,
+            "input":{"active":live,"available":self.effect,"name":"DAW input","mode":if self.source==Source::Grains {"grains"} else {"effects"},"gain":1.0,"monitor":true,"pending":false,"devices":[],"seconds":view.input_seconds,"peak":view.input_peak},
+            "recording":{"active":false,"available":false,"seconds":0,"error":null},
+            "performance":{"mode":self.preset.performance.mode,"step":view.step,"arp_index":view.arp_index,"chord":&view.chord[..view.chord_len],"gate":view.gate,"beat":view.beat},
+            "lfos":view.lfos,"envs":view.envs,"matrix_values":view.matrix,"knobs":knobs,
+            "peak":view.peak,"gain_reduction":reduction,"cpu_percent":0.0,"underruns":0,
+        })
+    }
+
+    fn save(&mut self) -> Result<Vec<u8>, String> {
+        self.drain();
+        let sample_wav = BASE64.encode(wav::bytes(self.sample.sample_rate, self.sample.frames())?);
+        serde_json::to_vec(&SavedState {
+            version: 1,
+            preset: self.preset.clone(),
+            sample_name: self.sample.name.clone(),
+            sample_id: self.sample.library_id.clone(),
+            sample_wav,
+            source: self.source,
+            region: self.region,
+            fades: self.fades,
+            sync: self.sync,
+            frozen: self.frozen && self.source == Source::File,
+            bypass: self.bypass,
+            midi_gate: self.midi_gate,
+            playing: self.playing && !self.midi_gate,
+        })
+        .map_err(|e| e.to_string())
+    }
+
+    fn restore(&mut self, bytes: &[u8]) -> Result<(), String> {
+        let mut saved: SavedState =
+            serde_json::from_slice(bytes).map_err(|e| format!("Plugin state: {e}"))?;
+        if saved.version != 1 {
+            return Err("Unsupported SAD PET plugin state version".into());
+        }
+        if saved.source != Source::File && !self.effect {
+            return Err("Use SAD PET FX for audio input".into());
+        }
+        saved.preset.sanitize();
+        let decoded = BASE64
+            .decode(&saved.sample_wav)
+            .map_err(|e| format!("Saved sample: {e}"))?;
+        if decoded.len() > MAX_BYTES {
+            return Err("Saved sample exceeds 128 MB".into());
+        }
+        let mut sample = wav::decode(Cursor::new(decoded), saved.sample_name)?;
+        sample.library_id = saved.sample_id;
+        saved.region.bounds(sample.len())?;
+        saved.fades.validate()?;
+        let sample = Arc::new(sample);
+        let source = self.prepared_source(sample.clone(), saved.source, saved.region, saved.fades);
+        self.enqueue(Command::Restore(Box::new(Restore {
+            preset: saved.preset.clone(),
+            source,
+            sync: saved.sync,
+            frozen: saved.frozen,
+            bypass: saved.bypass,
+            midi_gate: saved.midi_gate,
+            playing: saved.playing,
+        })))?;
+        self.preset = saved.preset;
+        self.sample = sample;
+        self.source = saved.source;
+        self.region = saved.region;
+        self.fades = saved.fades;
+        self.sync = saved.sync;
+        self.frozen = saved.frozen;
+        self.bypass = saved.bypass;
+        self.midi_gate = saved.midi_gate;
+        self.playing = saved.playing;
+        Ok(())
+    }
+
+    fn request(&mut self, request: &Value) -> Result<Value, String> {
+        self.drain();
+        let url = request["path"].as_str().ok_or("Missing request path")?;
+        let path = url.split('?').next().unwrap_or(url);
+        let data = &request["data"];
+        let post = request["method"] == "POST";
+        let ok = || json!({"ok":true});
+        let binary = |bytes: Vec<u8>| json!({"binary":BASE64.encode(bytes),"mime":"audio/wav"});
+        match (path, post) {
+            ("/api/state", _) => Ok(self.state()),
+            ("/api/preset", false) => Ok(json!(self.preset)),
+            ("/api/presets", false) => Ok(json!((0..5).map(Preset::builtin).collect::<Vec<_>>())),
+            ("/api/color-defaults", false) => Ok(
+                json!({"max_slots":sad_pet::color::MAX_COLOR_SLOTS,"slot":sad_pet::color::ColorSlot::default(),"delay_tables":sad_pet::radias_delay::display_tables()}),
+            ),
+            ("/api/samples", false) => Ok(json!(sad_pet::samples::TRACKS)),
+            ("/api/sample.wav", false) => Ok(binary(wav::bytes(
+                self.sample.sample_rate,
+                self.sample.frames(),
+            )?)),
+            ("/api/midi", _) => {
+                Ok(json!({"ports":[{"id":0,"name":"DAW MIDI"}],"connected":"DAW MIDI"}))
+            }
+            ("/api/preset", true) => {
+                if data["format"] != "evil-pet-rust-v1" {
+                    return Err("Use a SAD PET preset (.sad.json)".into());
+                }
+                let mut preset: Preset =
+                    serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
+                preset.sanitize();
+                self.enqueue(Command::Preset(Box::new(preset.clone())))?;
+                self.preset = preset;
+                Ok(json!(self.preset))
+            }
+            ("/api/transport", true) => {
+                let transport: Transport =
+                    serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
+                self.enqueue(Command::Transport(Transport {
+                    playing: transport.playing,
+                    midi_gate: transport.midi_gate,
+                    frozen: transport.frozen,
+                    bypass: transport.bypass,
+                    sync: transport.sync,
+                    clear_hold: transport.clear_hold,
+                }))?;
+                if let Some(v) = transport.playing {
+                    self.playing = v;
+                }
+                if let Some(v) = transport.midi_gate {
+                    self.midi_gate = v;
+                }
+                if let Some(v) = transport.frozen {
+                    self.frozen = v;
+                }
+                if let Some(v) = transport.bypass {
+                    self.bypass = v;
+                }
+                if let Some(v) = transport.sync {
+                    self.sync = v;
+                }
+                Ok(ok())
+            }
+            ("/api/input", true) => {
+                if !self.effect {
+                    return Err("Use SAD PET FX for audio input".into());
+                }
+                let source = if data["active"] == false {
+                    Source::File
+                } else if data["mode"] == "grains" {
+                    Source::Grains
+                } else {
+                    Source::Effects
+                };
+                let prepared =
+                    self.prepared_source(self.sample.clone(), source, self.region, self.fades);
+                self.enqueue(Command::Source(Box::new(prepared)))?;
+                self.source = source;
+                self.frozen = false;
+                Ok(ok())
+            }
+            ("/api/region", true) => {
+                if self.source != Source::File {
+                    return Err("Load a file to select a region".into());
+                }
+                let region: Region =
+                    serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
+                region.bounds(self.sample.len())?;
+                self.enqueue(Command::Region(region))?;
+                self.region = region;
+                Ok(json!(region))
+            }
+            ("/api/fades", true) => {
+                let fades: Fades =
+                    serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
+                fades.validate()?;
+                self.enqueue(Command::Fades(fades))?;
+                self.fades = fades;
+                Ok(json!(fades))
+            }
+            ("/api/wav", true) => {
+                let bytes = BASE64
+                    .decode(data["base64"].as_str().ok_or("Missing audio file")?)
+                    .map_err(|e| e.to_string())?;
+                if bytes.len() > MAX_BYTES {
+                    return Err("File exceeds 128 MB".into());
+                }
+                let mut sample = wav::decode(
+                    Cursor::new(bytes),
+                    data["name"].as_str().unwrap_or("Sample.wav").into(),
+                )?;
+                sample.library_id = data["id"].as_str().map(str::to_string);
+                let sample = Arc::new(sample);
+                let source = self.prepared_source(
+                    sample.clone(),
+                    Source::File,
+                    Region::default(),
+                    Fades::default(),
+                );
+                self.enqueue(Command::Source(Box::new(source)))?;
+                self.sample = sample;
+                self.source = Source::File;
+                self.region = Region::default();
+                self.fades = Fades::default();
+                self.frozen = false;
+                Ok(
+                    json!({"name":self.sample.name,"seconds":self.sample.duration(),"sample_id":self.sample.library_id}),
+                )
+            }
+            ("/api/note", true) => {
+                let message = serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
+                self.enqueue(Command::Midi(message))?;
+                Ok(ok())
+            }
+            ("/api/step-entry", true) => {
+                let index = data["step"].as_u64().map(|n| n as usize);
+                if index.is_some_and(|i| i >= 16) {
+                    return Err("Step must be between 0 and 15".into());
+                }
+                self.enqueue(Command::Step {
+                    index,
+                    reset: data["reset"] == true,
+                    clear: data["clear"] == true,
+                })?;
+                Ok(ok())
+            }
+            ("/api/trim", true) => {
+                let region: Region =
+                    serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
+                let fades: Fades =
+                    serde_json::from_value(data["fades"].clone()).map_err(|e| e.to_string())?;
+                let range = region.bounds(self.sample.len())?;
+                fades.validate()?;
+                let frames: Vec<Stereo> = self.sample.frames()[range.clone()]
+                    .iter()
+                    .enumerate()
+                    .map(|(i, f)| {
+                        f.map(|v| {
+                            v * fades.gain(
+                                (range.start + i) as f64,
+                                self.sample.sample_rate,
+                                &range,
+                            )
+                        })
+                    })
+                    .collect();
+                Ok(binary(wav::bytes(self.sample.sample_rate, &frames)?))
+            }
+            _ if path.starts_with("/api/samples/") && path.ends_with(".wav") && !post => {
+                let id = &path[13..path.len() - 4];
+                let sample = sad_pet::samples::get(id).ok_or("Unknown factory sample")?;
+                Ok(binary(wav::bytes(sample.sample_rate, sample.frames())?))
+            }
+            _ => Err(format!("Unsupported plugin request: {path}")),
+        }
+    }
+}
+
+impl Audio {
+    fn source(&mut self, source: &mut PreparedSource) {
+        self.engine
+            .exchange_source(&mut source.sample, &mut source.live);
+        if self.engine.live_input.is_none() {
+            let _ = self.engine.set_region(source.region);
+            let _ = self.engine.set_fades(source.fades);
+        }
+        self.engine.set_frozen(false);
+    }
+    fn begin(&mut self, values: &[f32], bpm: f32, beat: Option<f64>, playing: bool, frames: usize) {
+        let mut preset_changed = false;
+        while self.retired.slots() > 0 {
+            let Ok(mut update) = self.commands.pop() else {
+                break;
+            };
+            match &mut update.command {
+                Command::Preset(preset) => {
+                    self.engine.exchange_preset(preset);
+                    preset_changed = true;
+                }
+                Command::Source(source) => self.source(source),
+                Command::Restore(state) => {
+                    self.engine.midi(Message::Reset);
+                    self.engine.exchange_preset(&mut state.preset);
+                    self.source(&mut state.source);
+                    self.sync = state.sync;
+                    self.engine.bypass = state.bypass;
+                    self.engine.set_midi_gate(state.midi_gate);
+                    self.engine.set_playing(state.playing);
+                    self.engine.set_frozen(state.frozen);
+                    preset_changed = true;
+                }
+                Command::Transport(t) => {
+                    if let Some(v) = t.sync {
+                        self.sync = v;
+                        self.expected_beat = None;
+                    }
+                    if let Some(v) = t.midi_gate {
+                        self.engine.set_midi_gate(v);
+                    }
+                    if let Some(v) = t.playing {
+                        self.engine.set_playing(v);
+                    }
+                    if let Some(v) = t.frozen {
+                        self.engine.set_frozen(v);
+                    }
+                    if let Some(v) = t.bypass {
+                        self.engine.bypass = v;
+                    }
+                    if t.clear_hold {
+                        self.engine.clear_hold();
+                    }
+                }
+                Command::Region(region) => {
+                    let _ = self.engine.set_region(*region);
+                }
+                Command::Fades(fades) => {
+                    let _ = self.engine.set_fades(*fades);
+                }
+                Command::Midi(message) => self.engine.midi(*message),
+                Command::Step {
+                    index,
+                    reset,
+                    clear,
+                } => {
+                    self.engine.set_step_entry(*index, *reset);
+                    if *clear {
+                        self.engine.clear_step_notes();
+                    }
+                }
+            }
+            self.revision = update.revision;
+            // Space was checked above; no allocation can be freed in this callback.
+            let result = self.retired.push(update);
+            debug_assert!(result.is_ok());
+        }
+        let mut changed = preset_changed;
+        for ((spec, previous), &value) in parameters::specs()
+            .iter()
+            .zip(&mut self.parameters)
+            .zip(values)
+        {
+            if value != *previous {
+                spec.set(&mut self.engine.preset, value);
+                *previous = value;
+                changed = true;
+            }
+        }
+        if changed {
+            parameters::mirror(&mut self.engine.preset);
+            self.engine.refresh_parameters();
+        }
+        let bpm = if bpm.is_finite() && (20.0..=300.0).contains(&bpm) {
+            bpm
+        } else {
+            self.engine.preset.params.bpm
+        };
+        if self.sync {
+            let jumped = playing
+                && beat
+                    .zip(self.expected_beat)
+                    .is_some_and(|(now, expected)| (now - expected).abs() > 0.02);
+            let started = playing && !self.host_playing;
+            let performance = self.engine.preset.performance.mode != Mode::Keys;
+            if performance && (playing != self.host_playing || preset_changed) {
+                self.engine.set_playing(playing);
+            }
+            self.engine.host_transport(
+                bpm,
+                beat,
+                performance && (started || jumped || preset_changed),
+            );
+            if changed || bpm != self.host_bpm {
+                self.engine.refresh_parameters();
+            }
+        }
+        self.host_bpm = bpm;
+        self.host_playing = playing;
+        self.expected_beat = beat.map(|b| {
+            b + if playing {
+                frames as f64 * bpm as f64 / (60.0 * self.engine.sample_rate as f64)
+            } else {
+                0.0
+            }
+        });
+    }
+    fn end(&mut self, frames: usize) {
+        self.frames_since_feedback += frames;
+        if self.frames_since_feedback >= self.engine.sample_rate as usize / 30
+            && self.feedback.slots() > 0
+        {
+            self.engine.realtime_view(&mut self.view);
+            let result = self.feedback.push(Feedback {
+                revision: self.revision,
+                view: self.view,
+                bpm: self.host_bpm,
+                host_playing: self.host_playing,
+            });
+            debug_assert!(result.is_ok());
+            self.frames_since_feedback = 0;
+        }
+    }
+}
+
+/// Owned bytes returned across the C ABI. Always release with sad_bytes_free.
+#[repr(C)]
+pub struct Bytes {
+    pub data: *mut u8,
+    pub len: usize,
+}
+impl Bytes {
+    fn new(bytes: Vec<u8>) -> Self {
+        let mut bytes = bytes.into_boxed_slice();
+        let result = Self {
+            data: bytes.as_mut_ptr(),
+            len: bytes.len(),
+        };
+        std::mem::forget(bytes);
+        result
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_parameters() -> Bytes {
+    Bytes::new(serde_json::to_vec(parameters::specs()).unwrap_or_default())
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_control_new(effect: bool) -> *mut Controller {
+    Box::into_raw(Box::new(Controller::new(effect)))
+}
+
+// The wrapper serializes Controller calls and calls prepare/free only while audio is stopped.
+// Audio methods have exactly one owner: the DAW audio callback. Buffers are valid for each call.
+/// # Safety
+/// The pointer must be null or a live Controller from sad_control_new, used exclusively and freed once.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sad_control_free(control: *mut Controller) {
+    if !control.is_null() {
+        drop(unsafe { Box::from_raw(control) });
+    }
+}
+/// # Safety
+/// The pointer must be null or a live Audio from sad_control_prepare. Stop all audio calls before freeing it.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sad_audio_free(audio: *mut Audio) {
+    if !audio.is_null() {
+        drop(unsafe { Box::from_raw(audio) });
+    }
+}
+/// # Safety
+/// The pointer and length must be an unchanged Bytes result from this library, released exactly once.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sad_bytes_free(data: *mut u8, len: usize) {
+    if !data.is_null() {
+        drop(unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(data, len)) });
+    }
+}
+/// # Safety
+/// Controller must be live and exclusively held. Stop and free its previous Audio before preparing again.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sad_control_prepare(control: *mut Controller, rate: u32) -> *mut Audio {
+    if control.is_null() {
+        return std::ptr::null_mut();
+    }
+    Box::into_raw(Box::new(unsafe { &mut *control }.prepare(rate)))
+}
+/// # Safety
+/// Controller must be exclusively held; values must address len readable floats for the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sad_control_set_parameters(
+    control: *mut Controller,
+    values: *const f32,
+    len: usize,
+) {
+    if control.is_null() || values.is_null() || len != parameters::specs().len() {
+        return;
+    }
+    unsafe { &mut *control }.set_values(unsafe { std::slice::from_raw_parts(values, len) });
+}
+/// # Safety
+/// Controller must be exclusively held; values must address len writable floats for the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sad_control_get_parameters(
+    control: *mut Controller,
+    values: *mut f32,
+    len: usize,
+) {
+    if control.is_null() || values.is_null() || len != parameters::specs().len() {
+        return;
+    }
+    let current = unsafe { &*control }.values();
+    unsafe { std::slice::from_raw_parts_mut(values, len) }.copy_from_slice(&current);
+}
+/// # Safety
+/// Controller must be exclusively held; data must address len readable bytes for the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sad_control_request(
+    control: *mut Controller,
+    data: *const u8,
+    len: usize,
+) -> Bytes {
+    if control.is_null() || data.is_null() || len > MAX_BYTES * 2 {
+        return Bytes::new(br#"{"status":400,"data":{"error":"Invalid request"}}"#.to_vec());
+    }
+    let control = unsafe { &mut *control };
+    let result = serde_json::from_slice::<Value>(unsafe { std::slice::from_raw_parts(data, len) })
+        .map_err(|e| e.to_string())
+        .and_then(|v| control.request(&v));
+    let envelope = match result {
+        Ok(data) => json!({"status":200,"data":data}),
+        Err(error) => json!({"status":400,"data":{"error":error}}),
+    };
+    Bytes::new(serde_json::to_vec(&envelope).unwrap_or_default())
+}
+/// # Safety
+/// Controller must be live and exclusively held. Release the returned bytes with sad_bytes_free.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sad_control_save(control: *mut Controller) -> Bytes {
+    if control.is_null() {
+        return Bytes::new(Vec::new());
+    }
+    Bytes::new(unsafe { &mut *control }.save().unwrap_or_default())
+}
+/// # Safety
+/// Controller must be exclusively held; data must address len readable bytes for the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sad_control_restore(
+    control: *mut Controller,
+    data: *const u8,
+    len: usize,
+) -> bool {
+    if control.is_null() || data.is_null() || len > MAX_BYTES * 2 {
+        return false;
+    }
+    unsafe { &mut *control }
+        .restore(unsafe { std::slice::from_raw_parts(data, len) })
+        .is_ok()
+}
+/// # Safety
+/// Audio must be exclusively held by the render thread; values must address len readable floats.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sad_audio_begin(
+    audio: *mut Audio,
+    values: *const f32,
+    len: usize,
+    bpm: f32,
+    beat: f64,
+    has_beat: bool,
+    playing: bool,
+    frames: usize,
+) {
+    if audio.is_null() || values.is_null() || len != parameters::specs().len() {
+        return;
+    }
+    unsafe { &mut *audio }.begin(
+        unsafe { std::slice::from_raw_parts(values, len) },
+        bpm,
+        has_beat.then_some(beat),
+        playing,
+        frames,
+    );
+}
+/// # Safety
+/// Audio must be exclusively held by the render thread; data must address len readable MIDI bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sad_audio_midi(audio: *mut Audio, data: *const u8, len: usize) {
+    if audio.is_null() || data.is_null() {
+        return;
+    }
+    let audio = unsafe { &mut *audio };
+    for &byte in unsafe { std::slice::from_raw_parts(data, len) } {
+        if let Some(message) = audio.parser.feed(byte) {
+            audio.engine.midi(message);
+        }
+    }
+}
+/// # Safety
+/// Audio must be exclusively held. Non-null inputs and both outputs must address frames floats; each input may alias its corresponding output.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sad_audio_process(
+    audio: *mut Audio,
+    left: *const f32,
+    right: *const f32,
+    out_left: *mut f32,
+    out_right: *mut f32,
+    frames: usize,
+) {
+    if audio.is_null() || out_left.is_null() || out_right.is_null() {
+        return;
+    }
+    let audio = unsafe { &mut *audio };
+    // Read each input frame before writing it; DAWs normally supply in-place buffers.
+    for i in 0..frames {
+        let input = [
+            if left.is_null() {
+                0.0
+            } else {
+                unsafe { *left.add(i) }
+            },
+            if right.is_null() {
+                0.0
+            } else {
+                unsafe { *right.add(i) }
+            },
+        ];
+        let frame = audio.engine.process_input_frame(input);
+        unsafe {
+            *out_left.add(i) = frame[0];
+            *out_right.add(i) = frame[1];
+        }
+    }
+}
+/// # Safety
+/// Audio must be live and exclusively held by the render thread.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sad_audio_end(audio: *mut Audio, frames: usize) {
+    if !audio.is_null() {
+        unsafe { &mut *audio }.end(frames);
+    }
+}
+
+#[cfg(test)]
+mod tests;

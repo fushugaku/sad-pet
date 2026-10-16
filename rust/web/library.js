@@ -131,6 +131,8 @@
       }
     }
     async initialize(native, presets) {
+      if (native.plugin && native.input?.active && native.file_source)
+        native = { ...native, ...native.file_source };
       this.instanceId = native.instance_id;
       const [, response] = await Promise.all([
         this.store.open(),
@@ -160,6 +162,7 @@
       const last = await this.store.setting("last-audio");
       const previous = await this.previousAudio(last);
       if (
+        !native.plugin &&
         previous &&
         !previous.trashedAt &&
         native.sample_id === factoryId(this.catalog[0]) &&
@@ -170,7 +173,7 @@
         await this.activate(previous);
       } else {
         await this.rememberNative(native);
-        if (native.fades && !native.playing && !native.input?.active)
+        if (!native.plugin && native.fades && !native.playing && !native.input?.active)
           await this.actions.loadFades(await this.fades(this.currentId));
       }
       this.status = "";
@@ -347,6 +350,7 @@
     }
     async synchronizeNative(native) {
       if (
+        !native.plugin &&
         native.instance_id !== this.instanceId &&
         !native.playing &&
         native.sample_id === factoryId(this.catalog[0])

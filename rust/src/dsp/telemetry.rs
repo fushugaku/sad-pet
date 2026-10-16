@@ -5,6 +5,76 @@ use crate::{matrix::Source, preset::Destination};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
+/// Fixed-size feedback for hosts. Publishing it does not allocate or lock.
+#[derive(Clone, Copy)]
+pub struct RealtimeView {
+    pub peak: [f32; 2],
+    pub input_peak: [f32; 2],
+    pub input_seconds: f64,
+    pub center: f64,
+    pub playing: bool,
+    pub midi_gate: bool,
+    pub frozen: bool,
+    pub bypass: bool,
+    pub lfos: [f32; 3],
+    pub envs: [f32; 3],
+    pub matrix: [f32; crate::matrix::MAX_ROUTES],
+    pub notes: [u8; 8],
+    pub note_count: usize,
+    pub grains: [super::GrainView; super::MAX_GRAINS],
+    pub grain_count: usize,
+    pub waveform: [[f32; 2]; 640],
+    pub waveform_len: usize,
+    pub params: crate::preset::Params,
+    pub color: [crate::color::ColorSlot; crate::color::MAX_COLOR_SLOTS],
+    pub color_len: usize,
+    pub gain_reduction: [(u32, f32); crate::color::MAX_COLOR_SLOTS],
+    pub step: Option<usize>,
+    pub arp_index: usize,
+    pub gate: bool,
+    pub beat: f64,
+    pub chord: [u8; 32],
+    pub chord_len: usize,
+    pub step_entry: Option<usize>,
+    pub step_edits: [Option<crate::performance::Step>; 16],
+}
+
+impl Default for RealtimeView {
+    fn default() -> Self {
+        Self {
+            peak: [0.0; 2],
+            input_peak: [0.0; 2],
+            input_seconds: 0.0,
+            center: 0.0,
+            playing: false,
+            midi_gate: true,
+            frozen: false,
+            bypass: false,
+            lfos: [0.0; 3],
+            envs: [0.0; 3],
+            matrix: [0.0; crate::matrix::MAX_ROUTES],
+            notes: [0; 8],
+            note_count: 0,
+            grains: [super::GrainView::default(); super::MAX_GRAINS],
+            grain_count: 0,
+            waveform: [[0.0; 2]; 640],
+            waveform_len: 0,
+            params: crate::preset::Params::default(),
+            color: [crate::color::ColorSlot::default(); crate::color::MAX_COLOR_SLOTS],
+            color_len: 0,
+            gain_reduction: [(0, 0.0); crate::color::MAX_COLOR_SLOTS],
+            step: None,
+            arp_index: 0,
+            gate: false,
+            beat: 0.0,
+            chord: [0; 32],
+            chord_len: 0,
+            step_entry: None,
+            step_edits: [None; 16],
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct KnobState {
     pub base: f32,
@@ -51,6 +121,55 @@ fn apply(low: &mut Modulated, high: &mut Modulated, destination: Destination, ra
 }
 
 impl Engine {
+    pub fn realtime_view(&mut self, view: &mut RealtimeView) {
+        view.peak = self.peak;
+        self.peak = [0.0; 2];
+        view.input_peak = self.live_input.as_ref().map_or([0.0; 2], |i| i.peak);
+        view.input_seconds = self.live_input.as_ref().map_or(0.0, |i| i.seconds());
+        view.center = self.center() / self.source_sample().len() as f64;
+        view.playing = self.playing;
+        view.midi_gate = self.midi_gate;
+        view.frozen = self.frozen;
+        view.bypass = self.bypass;
+        view.lfos = self.lfo_values;
+        view.envs = self.env_values;
+        view.matrix = self.matrix_values;
+        view.params = self.modulated.params;
+        view.color = self.modulated.color_slots;
+        view.color_len = self.modulated.color_len;
+        view.gain_reduction = self.color_rack.realtime_gain_reduction();
+        if !self.playing || self.bypass {
+            view.gain_reduction.iter_mut().for_each(|(_, db)| *db = 0.0);
+        }
+        view.note_count = 0;
+        for voice in self.voices[1..].iter().filter(|v| v.held || v.sustained) {
+            view.notes[view.note_count] = voice.note;
+            view.note_count += 1;
+        }
+        view.grain_count = 0;
+        for grain in self.grains.iter().filter(|g| g.active) {
+            view.grains[view.grain_count] = super::GrainView {
+                position: (grain.position.rem_euclid(self.source_sample().len() as f64)
+                    / self.source_sample().len() as f64) as f32,
+                age: grain.age as f32 / grain.duration as f32,
+                pan: (grain.pan[1] - grain.pan[0] + 1.0) * 0.5,
+            };
+            view.grain_count += 1;
+        }
+        let waveform = &self.source_sample().waveform;
+        view.waveform_len = waveform.len().min(view.waveform.len());
+        view.waveform[..view.waveform_len].copy_from_slice(&waveform[..view.waveform_len]);
+        (view.step, view.arp_index, view.gate, view.beat) = self.performance.realtime_position();
+        let chord = &self.preset.performance.chord;
+        view.chord_len = chord.len().min(32);
+        view.chord[..view.chord_len].copy_from_slice(&chord[..view.chord_len]);
+        view.step_entry = self.step_entry;
+        view.step_edits = self.step_edits;
+        if let Some(input) = &mut self.live_input {
+            input.peak = [0.0; 2];
+        }
+    }
+
     pub fn gain_reduction(&self) -> BTreeMap<u32, f32> {
         let mut meters = self.color_rack.gain_reduction();
         if !self.playing || self.bypass {

@@ -1,0 +1,16 @@
+[package]
+name = "sad-pet-plugin"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Host-driven SAD PET engine for VST3 and Audio Unit wrappers"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+sad-pet = { path = "../rust", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+rtrb = "0.3"

@@ -134,7 +134,7 @@ impl From<LegacyStep> for Step {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     pub mode: Mode,
@@ -149,6 +149,25 @@ pub struct Settings {
     pub length: u8,
     pub steps: [Step; STEPS],
     pub chord: Vec<u8>,
+}
+impl Clone for Settings {
+    fn clone(&self) -> Self {
+        let mut chord = Vec::with_capacity(MAX_CHORD.max(self.chord.len()));
+        chord.extend_from_slice(&self.chord);
+        Self {
+            mode: self.mode,
+            hold: self.hold,
+            direction: self.direction,
+            octaves: self.octaves,
+            arp_division: self.arp_division,
+            arp_gate: self.arp_gate,
+            sequence_division: self.sequence_division,
+            sequence_gate: self.sequence_gate,
+            length: self.length,
+            steps: self.steps,
+            chord,
+        }
+    }
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -345,6 +364,7 @@ impl Default for Performance {
 impl Performance {
     pub fn new(mut settings: Settings) -> Self {
         settings.sanitize();
+        settings.chord.reserve(MAX_CHORD - settings.chord.len());
         let latched = if settings.mode == Mode::Hold
             || (matches!(settings.mode, Mode::Arp | Mode::SequencerArp) && !settings.hold)
         {
@@ -387,13 +407,32 @@ impl Performance {
     pub fn configure(&mut self, settings: &Settings) -> bool {
         let mut settings = settings.clone();
         settings.sanitize();
-        let settings = &settings;
+        self.configure_prepared(&settings)
+    }
+
+    /// Apply settings validated off the audio thread, reusing chord storage.
+    pub fn configure_prepared(&mut self, settings: &Settings) -> bool {
         let mode_changed = self.settings.mode != settings.mode;
         if mode_changed {
-            *self = Self::new(settings.clone());
-            return true;
+            self.physical.clear();
+            self.latched = if settings.mode == Mode::Hold
+                || (matches!(settings.mode, Mode::Arp | Mode::SequencerArp) && !settings.hold)
+            {
+                Notes::default()
+            } else {
+                Notes::from_notes(&settings.chord)
+            };
+            self.stop();
+            self.beat = 0.0;
+            self.next_arp = 0.0;
+            self.next_step = 0.0;
+            self.off_at = 0.0;
+            self.arp_counter = 0;
+            self.step_counter = 0;
+            self.last_arp_index = 0;
+            self.random = Random::default();
         }
-        if self.settings.chord != settings.chord {
+        if !mode_changed && self.settings.chord != settings.chord {
             self.latched = Notes::from_notes(&settings.chord);
             self.arp_counter = 0;
         }
@@ -403,15 +442,53 @@ impl Performance {
         if self.settings.sequence_division != settings.sequence_division {
             self.next_step = self.beat;
         }
-        let release_latch = !settings.hold && matches!(self.mode(), Mode::Arp | Mode::SequencerArp);
+        let release_latch =
+            !settings.hold && matches!(settings.mode, Mode::Arp | Mode::SequencerArp);
         if release_latch {
             self.latched = self.physical;
         }
-        self.settings = settings.clone();
+        let mut chord = std::mem::take(&mut self.settings.chord);
+        chord.clear();
+        chord.extend_from_slice(&settings.chord);
+        self.settings = Settings {
+            mode: settings.mode,
+            hold: settings.hold,
+            direction: settings.direction,
+            octaves: settings.octaves,
+            arp_division: settings.arp_division,
+            arp_gate: settings.arp_gate,
+            sequence_division: settings.sequence_division,
+            sequence_gate: settings.sequence_gate,
+            length: settings.length,
+            steps: settings.steps,
+            chord,
+        };
         if release_latch {
             self.store_chord();
         }
-        false
+        mode_changed
+    }
+
+    /// Seek the sample clock when a DAW starts, loops or moves its playhead.
+    pub fn seek(&mut self, beat: f64) {
+        let beat = beat.max(0.0);
+        self.beat = beat;
+        self.next_arp = beat;
+        self.next_step = beat;
+        self.off_at = beat;
+        self.arp_counter = (beat / self.settings.arp_division as f64).floor() as usize;
+        self.step_counter = (beat / self.settings.sequence_division as f64).floor() as usize;
+        self.current_step = None;
+        self.active.clear();
+    }
+
+    pub fn realtime_position(&self) -> (Option<usize>, usize, bool, f64) {
+        (
+            self.current_step,
+            self.last_arp_index,
+            self.active.len != 0,
+            self.beat,
+        )
     }
     pub fn start(&mut self) {
         self.beat = 0.0;

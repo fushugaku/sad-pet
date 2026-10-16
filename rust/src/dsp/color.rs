@@ -314,4 +314,17 @@ impl ColorRack {
             .map(|p| (p.id, p.gain_reduction_db()))
             .collect()
     }
+
+    pub fn realtime_gain_reduction(&self) -> [(u32, f32); MAX_COLOR_SLOTS] {
+        std::array::from_fn(|i| {
+            if i < self.len {
+                (
+                    self.processors[i].id,
+                    self.processors[i].gain_reduction_db(),
+                )
+            } else {
+                (0, 0.0)
+            }
+        })
+    }
 }

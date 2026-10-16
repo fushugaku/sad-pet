@@ -74,7 +74,7 @@ impl Voice {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Serialize)]
 pub struct GrainView {
     pub position: f32,
     pub age: f32,
@@ -359,6 +359,12 @@ impl Engine {
 
     pub fn set_preset(&mut self, mut preset: Preset) {
         preset.sanitize();
+        self.exchange_preset(&mut preset);
+    }
+
+    /// Exchange a sanitized preset without allocating or destroying its buffers.
+    /// The caller retires the previous preset away from the audio callback.
+    pub fn exchange_preset(&mut self, preset: &mut Preset) {
         if preset.performance.mode != self.performance.mode() {
             self.step_edits.fill(None);
         }
@@ -373,11 +379,11 @@ impl Engine {
         }
         let hold_chord_changed = preset.performance.mode == Mode::Hold
             && self.preset.performance.chord != preset.performance.chord;
-        let mode_changed = self.performance.configure(&preset.performance);
+        let mode_changed = self.performance.configure_prepared(&preset.performance);
         if mode_changed {
             self.step_entry = None;
         }
-        self.preset = preset;
+        std::mem::swap(&mut self.preset, preset);
         self.sync_stored_chord();
         self.update_modulation();
         for voice in &mut self.voices {
@@ -396,6 +402,19 @@ impl Engine {
     pub fn set_sample(&mut self, sample: Arc<SampleBuffer>) {
         self.live_input = None;
         self.sample = sample;
+        self.reset_source();
+    }
+    /// Swap prepared file/live sources, returning their old allocations to the caller.
+    pub fn exchange_source(
+        &mut self,
+        sample: &mut Arc<SampleBuffer>,
+        live_input: &mut Option<LiveInput>,
+    ) {
+        std::mem::swap(&mut self.sample, sample);
+        std::mem::swap(&mut self.live_input, live_input);
+        self.reset_source();
+    }
+    fn reset_source(&mut self) {
         self.region = Region::default();
         self.fades = Fades::default();
         self.file_range = 0..self.sample.len();
@@ -404,6 +423,35 @@ impl Engine {
         self.reset_grains();
         self.color_rack.clear();
         self.filters.iter_mut().for_each(FilterBank::clear);
+    }
+
+    pub fn host_transport(&mut self, bpm: f32, beat: Option<f64>, restart: bool) {
+        if bpm.is_finite() && (20.0..=300.0).contains(&bpm) {
+            self.preset.params.bpm = bpm;
+        }
+        if restart {
+            self.release_notes();
+            if let Some(beat) = beat.filter(|b| b.is_finite()) {
+                self.performance.seek(beat);
+                for (oscillator, lfo) in self.oscillators.iter_mut().zip(self.preset.lfos) {
+                    if lfo.sync {
+                        oscillator.phase = (beat / lfo.division as f64).rem_euclid(1.0);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Refresh numeric host automation without rebuilding the preset or effects.
+    pub fn refresh_parameters(&mut self) {
+        self.performance
+            .configure_prepared(&self.preset.performance);
+        self.update_modulation();
+        for voice in &mut self.voices {
+            for (i, env) in voice.envelopes.iter_mut().enumerate() {
+                env.configure(self.sample_rate as f32, &self.modulated.envs[i]);
+            }
+        }
     }
     pub fn set_region(&mut self, region: Region) -> Result<(), String> {
         if self.live_input.is_some() {
@@ -620,7 +668,8 @@ impl Engine {
         if let Some(index) = self.step_entry {
             self.preset.performance.steps[index].notes = Default::default();
             self.step_edits[index] = Some(self.preset.performance.steps[index]);
-            self.performance.configure(&self.preset.performance);
+            self.performance
+                .configure_prepared(&self.preset.performance);
         }
     }
 
@@ -654,7 +703,8 @@ impl Engine {
         step.velocity = velocity;
         step.enabled = true;
         self.step_edits[index] = Some(*step);
-        self.performance.configure(&self.preset.performance);
+        self.performance
+            .configure_prepared(&self.preset.performance);
         *captured |= mask;
         true
     }

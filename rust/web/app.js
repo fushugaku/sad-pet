@@ -2155,7 +2155,7 @@ function syncInput(input) {
   $("source-mic").setAttribute("aria-pressed", String(active || input.pending));
   $("source-mic").textContent = input.pending
     ? "Cancel microphone"
-    : "Microphone";
+    : window.sadPetPlugin ? "DAW input" : "Microphone";
   $("microphone-controls").hidden = !active;
   const recordSlot = active
     ? $("microphone-record-slot")

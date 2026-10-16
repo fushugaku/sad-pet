@@ -1,0 +1,61 @@
+name: Build DAW plug-ins
+
+on:
+  push:
+    branches: [main, 'codex/daw-plugins']
+    paths: ['plugin/**', 'rust/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/plugins.yml']
+  pull_request:
+    paths: ['plugin/**', 'rust/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/plugins.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plugins-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macOS-universal
+            runner: macos-latest
+            arguments: --universal
+          - platform: Windows-x64
+            runner: windows-latest
+            arguments: ''
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Set up Rust
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+      - name: Check plugin engine
+        shell: bash
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy -p sad-pet-plugin --no-default-features --all-targets --locked -- -D warnings
+          cargo test -p sad-pet-plugin --no-default-features --locked
+      - name: Build, test and package
+        run: python plugin/scripts/build.py ${{ matrix.arguments }}
+      - name: Validate Audio Units
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          bash dist/plugins/SAD-PET-Plugins-macOS-universal/Install.command
+          auval -a > /tmp/sad-pet-au-list.log 2>&1
+          auval -v aumu SaPi SdPt
+          auval -v aumf SaPf SdPt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: SAD-PET-Plugins-${{ matrix.platform }}
+          path: |
+            dist/plugins/*.zip
+            dist/plugins/*.sha256
+          if-no-files-found: error

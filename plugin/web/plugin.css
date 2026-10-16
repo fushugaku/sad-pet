@@ -1,0 +1,32 @@
+.plugin #record,
+.plugin #recording-result-slot,
+.plugin #quit,
+.plugin #midi,
+.plugin #midi-refresh,
+.plugin #render,
+.plugin #render-duration,
+.plugin #cpu,
+.plugin .runtime-status .divider,
+.plugin .microphone-recording,
+.plugin #input-device,
+.plugin .input-gain,
+.plugin #input-listen,
+.plugin #microphone-result-slot {
+  display: none !important;
+}
+.plugin:not(.plugin-fx) #browser-input {
+  display: none !important;
+}
+.plugin .microphone-settings {
+  justify-content: flex-start;
+}
+.plugin #host-sync {
+  white-space: nowrap;
+}
+.plugin #host-sync[aria-pressed="true"] {
+  border-color: var(--accent, #c4cc7f);
+}
+.plugin footer {
+  gap: 12px;
+  flex-wrap: wrap;
+}

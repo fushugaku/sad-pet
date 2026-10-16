@@ -1,0 +1,122 @@
+# SAD PET plug-ins
+
+The existing Rust granular engine runs inside the DAW. The editor is embedded in
+the plug-in window; it does not launch a separate browser, audio device or server.
+
+| Plug-in | Use | macOS | Windows x64 |
+| --- | --- | --- | --- |
+| SAD PET | MIDI instrument with imported or built-in samples | VST3, AU instrument | VST3 |
+| SAD PET FX | Stereo input through filters/effects or an eight-second granular buffer; also receives MIDI | VST3, AU MIDI-controlled effect | VST3 |
+
+## Install
+
+Close your DAW before installing or replacing plug-ins.
+
+On macOS, unpack the ZIP and open `Install.command`. It copies both plug-ins into
+your user's `~/Library/Audio/Plug-Ins/Components` and `VST3` folders. A native build
+supports the architecture in its filename; a universal build supports both Apple
+silicon and Intel. These development builds have an ad-hoc signature. Developer ID
+signing and Apple notarization are separate release steps.
+
+On Windows, copy the two `.vst3` directories from the `VST3` folder into
+`C:\Program Files\Common Files\VST3`, or run `Install.ps1` from an administrator
+PowerShell window. The editor requires the Microsoft Edge WebView2 Runtime,
+normally already installed on Windows 10/11. If it is missing, install it from
+[Microsoft](https://developer.microsoft.com/microsoft-edge/webview2/).
+
+Restart your DAW and rescan plug-ins:
+
+- **Ableton Live:** enable VST3 system folders in Settings → Plug-ins. Place SAD
+  PET on a MIDI track or SAD PET FX on an audio track. To send MIDI to the effect,
+  route a MIDI track's output to the track and the SAD PET FX device.
+- **FL Studio:** use Options → Manage plugins → Find installed plugins. Load SAD
+  PET as a channel instrument or SAD PET FX in a mixer slot. To control the
+  effect with MIDI, assign its wrapper a MIDI input port and send a MIDI Out
+  channel to that port.
+- **Logic Pro:** select SAD PET under AU Instruments → SAD PET. SAD PET FX is an
+  **AU MIDI-controlled effect**: load it in a software instrument channel from
+  AU MIDI-controlled Effects → SAD PET, select the source audio track in the
+  plug-in's Side Chain menu, and play MIDI on the instrument channel. This is
+  Logic's routing for effects that accept MIDI.
+
+## Controls and project recall
+
+SAD PET starts silently and responds to MIDI notes. SAD PET FX starts processing
+its stereo host input immediately. Choose **DAW input** and **Filters + FX** or
+**Grains + Filters + FX** to change input processing. **File** switches to the
+sample instrument path. Loading a WAV also selects File.
+
+MIDI includes note velocity, sustain, pitch bend, modulation wheel, channel
+pressure and polyphonic pressure. Notes engage the engine's MIDI gate, including
+in the effect, so they can trigger envelopes and gate the processed input.
+Use Play to return to continuous playback when the keys are released.
+
+**DAW · … BPM** follows the host tempo and starts/stops the sequencer/arpeggiator
+with the host transport. Moving or looping the playhead repositions those modes.
+**Free tempo** enables the instrument's own tempo control. The MIDI keyboard
+continues to work while the host is stopped. Audio processing adds zero latency;
+grain position/history and individual effects can introduce audible delays.
+
+Host automation exposes grain, filter, gain, tuning, LFO, envelope, performance
+and every numeric FX setting. FX automation addresses rack positions (FX 1–12).
+Discrete routing, waveform/type selections and modulation routes are stored in
+the full preset. Automation follows the host's parameter-block delivery; MIDI
+events are rendered at their exact sample offsets within each block.
+
+DAW project state contains the full preset, imported sample audio, selected
+region, fades, input mode and sync settings. It does not depend on an IndexedDB
+library or an external sample path. Live input history, held keys and effect
+tails are transient. Live input Freeze is cleared on recall. The embedded
+browser library remains useful for browsing/importing files, but cannot replace
+the source or fades restored by the DAW.
+
+Use the DAW to record, bounce and export. The standalone application's recording,
+microphone selection, MIDI-device selection and Quit controls are hidden here.
+
+## Build
+
+Install stable Rust, Python 3, CMake 3.22+ and the native C++ tools: Xcode Command
+Line Tools on macOS or Visual Studio's Desktop development with C++ on Windows.
+The build uses JUCE **8.0.16-security** at a pinned commit. It downloads JUCE on
+the first build; `--juce /path/to/JUCE` uses an existing checkout. Windows also
+downloads a pinned WebView2 SDK package from NuGet.
+
+```sh
+python3 plugin/scripts/build.py
+# Apple silicon + Intel in the same macOS package:
+python3 plugin/scripts/build.py --universal --build-dir target/plugins-universal
+```
+
+Builds and native host integration tests run before packaging. ZIPs and SHA-256
+checksums are written to `dist/plugins/`. `--package-only` packages an existing
+build; `--skip-tests` is available for local iteration.
+
+The GitHub Actions **Build DAW plug-ins** workflow creates Windows x64 and macOS
+universal packages, runs native integration tests on both systems, and validates
+both Audio Units on macOS. Workflow artifacts contain the installable ZIPs.
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+ctest --test-dir target/plugins -C Release --output-on-failure
+auval -v aumu SaPi SdPt
+auval -v aumf SaPf SdPt
+```
+
+For browser editor QA without playing sound:
+
+```sh
+cargo rustc -p sad-pet-plugin --lib --release --crate-type cdylib --locked
+python3 plugin/scripts/preview.py
+# http://127.0.0.1:8766/ and http://127.0.0.1:8766/?fx
+```
+
+`plugin/src` owns the host-driven Rust adapter, its stable parameter registry and
+the C ABI. `plugin/native` owns the JUCE format wrappers and editor bridge.
+Commands and fixed-size telemetry cross bounded SPSC queues. Presets, sample
+mipmaps, live buffers and restored project data are prepared off the audio
+callback; retired buffers are also destroyed off it. Tests track heap allocation
+and freeing during rendering, MIDI capture, preset/source changes and transport.
+
+See [third-party notices](THIRD_PARTY.md) before distributing binaries.
