@@ -11,6 +11,7 @@ import urllib.request
 import zipfile
 
 from package_macos import build_pkg
+from package_windows import build_exe
 
 PLUGIN = Path(__file__).resolve().parents[1]
 ROOT = PLUGIN.parent
@@ -105,6 +106,8 @@ def main():
     shutil.copy2(PLUGIN / "THIRD_PARTY.md", licenses / "THIRD_PARTY.md")
     for license_file in (ROOT / "rust/assets/samples").glob("*SOURCES*"):
         shutil.copy2(license_file, licenses / license_file.name)
+    if system == "Windows":
+        build_exe(output)
     archive = Path(shutil.make_archive(str(output), "zip", output.parent, output.name))
     checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
     archive.with_suffix(".zip.sha256").write_text(f"{checksum}  {archive.name}\n")

@@ -150,6 +150,8 @@ See [the user guide](rust/README.txt) for controls, recording and CLI rendering.
 
 ## DAW plug-ins
 
+**[Download macOS and Windows installers](https://github.com/fushugaku/sad-pet/releases/tag/plugins-v0.3.1)**
+
 The native plug-in build reuses this engine and embeds the existing editor.
 **SAD PET** is a MIDI instrument; **SAD PET FX** processes stereo host audio and
 also accepts MIDI. Both provide VST3 on macOS/Windows and Audio Units on macOS.

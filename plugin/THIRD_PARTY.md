@@ -10,6 +10,14 @@
 - **Microsoft WebView2** is used for the Windows editor. The SDK loader is linked
   statically; the separately installed Microsoft Edge WebView2 Runtime renders
   the interface. [WebView2](https://developer.microsoft.com/microsoft-edge/webview2/).
+  The Windows installer includes Microsoft's original signed Evergreen Bootstrapper
+  and Visual C++ Runtime installer. They run only when the corresponding runtime
+  is missing/outdated and remain independently maintained Microsoft components.
+  Download URLs, original signatures, versions and SHA-256 hashes are recorded in
+  `Licenses/Microsoft-runtime-packages.json` in the Windows distribution.
+- **Inno Setup 6** creates the Windows Setup/uninstaller. Its compiler is a build
+  tool; generated installers include the Inno Setup installer engine.
+  [License and installer distribution terms](https://github.com/jrsoftware/issrc/blob/main/license.txt).
 - **Rust engine dependencies** are recorded in the workspace `Cargo.lock`,
   including serde, serde_json, hound, rtrb and base64. Preset compression uses
   flate2 with the pure Rust miniz_oxide backend; both offer MIT or Apache-2.0

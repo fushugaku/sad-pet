@@ -10,6 +10,8 @@ the plug-in window; it does not launch a separate browser, audio device or serve
 
 ## Install
 
+[Download the macOS and Windows installers](https://github.com/fushugaku/sad-pet/releases/tag/plugins-v0.3.1).
+
 Close your DAW before installing or replacing plug-ins.
 
 On macOS, open `SAD-PET-Plugins-macOS-universal.pkg` and follow Installer. It installs
@@ -21,11 +23,14 @@ The universal package supports both Apple silicon and Intel. The ZIP with
 builds have an ad-hoc signature; the installer is unsigned. Developer ID signing
 and Apple notarization are separate release steps.
 
-On Windows, copy the two `.vst3` directories from the `VST3` folder into
-`C:\Program Files\Common Files\VST3`, or run `Install.ps1` from an administrator
-PowerShell window. The editor requires the Microsoft Edge WebView2 Runtime,
-normally already installed on Windows 10/11. If it is missing, install it from
-[Microsoft](https://developer.microsoft.com/microsoft-edge/webview2/).
+On Windows 10/11 x64, run `SAD-PET-Plugins-Windows-x64-Setup.exe`. It installs both
+VST3 bundles in `C:\Program Files\Common Files\VST3` and adds an uninstaller to
+Windows Settings → Apps. Updates replace the plug-in bundles and preserve User
+presets. The installer includes Microsoft's Visual C++ Runtime installer and
+installs WebView2 from Microsoft if missing; only that WebView2 step needs internet.
+It checks Microsoft signatures when packaging prerequisites. The SAD PET installer
+itself is unsigned. The ZIP and administrator `Install.ps1` remain available for
+manual installation.
 
 Restart your DAW and rescan plug-ins:
 
@@ -135,17 +140,27 @@ python3 plugin/scripts/build.py --universal --build-dir target/plugins-universal
 ```
 
 Builds and native host integration tests run before packaging. ZIPs, a macOS
-`.pkg` installer and SHA-256 checksums are written to `dist/plugins/`.
+`.pkg` installer, a Windows Setup `.exe` and SHA-256 checksums are written to `dist/plugins/`.
 `--package-only` packages an existing build without recompiling it; `--skip-tests`
 is available for local iteration. macOS packaging uses the system `pkgbuild` and
 `productbuild` tools. The package contains no sample/preset library writes or
 network downloads; documentation and notices go in
 `~/Library/Application Support/SAD PET/Documentation`.
+Windows packaging needs [Inno Setup 6](https://jrsoftware.org/isinfo.php),
+preinstalled on GitHub's Windows runner. Prerequisite installers are downloaded
+from Microsoft and their Authenticode signatures are checked before inclusion.
+Windows documentation/notices go in `C:\Program Files\SAD PET\Plugins\Documentation`.
 
 The GitHub Actions **Build DAW plug-ins** workflow creates Windows x64 and macOS
 universal packages, runs native integration tests on both systems, and validates
-both Audio Units on macOS. Workflow artifacts contain the ZIPs, macOS installer
-and checksums.
+both Audio Units on macOS. Windows CI installs twice, verifies payload hashes and
+stale-file removal, then uninstalls while checking preset/other-plug-in preservation.
+Workflow artifacts contain both installers, ZIPs and checksums. Pushing
+`plugins-v<version>` publishes a GitHub Release only after both systems pass;
+the tagged commit must already have successful CI, and the version must match
+`plugin/Cargo.toml`. The release reuses those exact tested packages without
+rebuilding them. Packages are verified together and uploaded
+to a draft before the complete release becomes public.
 
 ```sh
 cargo fmt --all -- --check

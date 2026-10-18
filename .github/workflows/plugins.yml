@@ -3,6 +3,7 @@ name: Build DAW plug-ins
 on:
   push:
     branches: [main, 'codex/daw-plugins']
+    tags: ['plugins-v*']
     paths: ['plugin/**', 'rust/**', 'Cargo.toml', 'Cargo.lock', 'wasm/test-presets.mjs', 'wasm/test-parameters.mjs', '.github/workflows/plugins.yml']
   pull_request:
     paths: ['plugin/**', 'rust/**', 'Cargo.toml', 'Cargo.lock', 'wasm/test-presets.mjs', 'wasm/test-parameters.mjs', '.github/workflows/plugins.yml']
@@ -17,6 +18,7 @@ concurrency:
 
 jobs:
   build:
+    if: ${{ !startsWith(github.ref, 'refs/tags/plugins-v') }}
     name: ${{ matrix.platform }}
     strategy:
       fail-fast: false
@@ -45,6 +47,11 @@ jobs:
           cargo test -p sad-pet --no-default-features --test parameter_updates --locked
           node wasm/test-presets.mjs
           node wasm/test-parameters.mjs
+          python -m unittest discover -s plugin/scripts -p 'test_*.py'
+      - name: Check release tag
+        if: startsWith(github.ref, 'refs/tags/plugins-v')
+        shell: bash
+        run: python plugin/scripts/publish_release.py "$GITHUB_REF_NAME" --check-tag
       - name: Build, test and package
         run: python plugin/scripts/build.py ${{ matrix.arguments }}
       - name: Validate macOS installer and Audio Units
@@ -69,14 +76,42 @@ jobs:
           codesign --verify --deep --strict "$HOME/Library/Audio/Plug-Ins/Components/SAD PET FX.component"
           codesign --verify --deep --strict "$HOME/Library/Audio/Plug-Ins/VST3/SAD PET.vst3"
           codesign --verify --deep --strict "$HOME/Library/Audio/Plug-Ins/VST3/SAD PET FX.vst3"
-          auval -a > /tmp/sad-pet-au-list.log 2>&1
-          auval -v aumu SaPi SdPt
-          auval -v aumf SaPf SdPt
+          python3 plugin/scripts/validate_audio_units.py
+      - name: Validate Windows installer and uninstaller
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./plugin/scripts/validate_windows.ps1
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: SAD-PET-Plugins-${{ matrix.platform }}
           path: |
             dist/plugins/*.zip
             dist/plugins/*.pkg
+            dist/plugins/*.exe
             dist/plugins/*.sha256
           if-no-files-found: error
+
+  release:
+    name: Publish installers
+    if: ${{ always() && startsWith(github.ref, 'refs/tags/plugins-v') }}
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Download tested packages
+        run: |
+          python3 plugin/scripts/publish_release.py "$GITHUB_REF_NAME" --check-tag
+          tested_run=$(gh run list --workflow plugins.yml --commit "$GITHUB_SHA" --event push --status success --limit 20 --json databaseId,headBranch --jq '[.[] | select(.headBranch == "main" or .headBranch == "codex/daw-plugins")][0].databaseId // empty')
+          if [ -z "$tested_run" ]; then
+            echo 'Build and validate this exact commit on main before tagging a release.'
+            exit 1
+          fi
+          gh run download "$tested_run" --pattern 'SAD-PET-Plugins-*' --dir dist/release
+      - name: Verify packages and publish release
+        run: python3 plugin/scripts/publish_release.py "$GITHUB_REF_NAME"
