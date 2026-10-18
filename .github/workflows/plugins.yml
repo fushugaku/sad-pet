@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: plugins-${{ github.ref }}
@@ -52,8 +53,14 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/plugins-v')
         shell: bash
         run: python plugin/scripts/publish_release.py "$GITHUB_REF_NAME" --check-tag
+      - name: Reuse validated native binaries for installer-only edits
+        id: native
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: python plugin/scripts/reuse_native.py ${{ matrix.platform }}
       - name: Build, test and package
-        run: python plugin/scripts/build.py ${{ matrix.arguments }}
+        run: python plugin/scripts/build.py ${{ matrix.arguments }} ${{ steps.native.outputs.arguments }}
       - name: Validate macOS installer and Audio Units
         if: runner.os == 'macOS'
         shell: bash

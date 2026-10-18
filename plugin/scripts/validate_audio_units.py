@@ -5,11 +5,20 @@ import sys
 import time
 from pathlib import Path
 import plistlib
+import os
 
 
-for bundle in (Path.home() / "Library/Audio/Plug-Ins/Components").glob("SAD PET*.component"):
+print("AU validation user:", os.getuid(), "home:", Path.home(), flush=True)
+folder = Path.home() / "Library/Audio/Plug-Ins/Components"
+for parent in [Path.home(), *reversed(folder.relative_to(Path.home()).parents)]:
+    if not parent.is_absolute():
+        parent = Path.home() / parent
+    subprocess.run(["ls", "-ld", str(parent)], check=False)
+subprocess.run(["ls", "-ld", str(folder)], check=False)
+for bundle in folder.glob("SAD PET*.component"):
     info = plistlib.loads((bundle / "Contents/Info.plist").read_bytes())
     print(bundle, info.get("AudioComponents"), flush=True)
+    subprocess.run(["ls", "-ld", str(bundle), str(bundle / "Contents/MacOS" / info["CFBundleExecutable"])], check=False)
 
 # Enumerate first: this triggers normal host discovery before validating IDs.
 subprocess.run(["auval", "-a"], check=True, stdout=subprocess.DEVNULL)

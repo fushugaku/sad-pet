@@ -161,6 +161,10 @@ the tagged commit must already have successful CI, and the version must match
 `plugin/Cargo.toml`. The release reuses those exact tested packages without
 rebuilding them. Packages are verified together and uploaded
 to a draft before the complete release becomes public.
+Installer-only CI changes may reuse previously validated native binaries after
+comparing every Rust source/manifest, C++ wrapper, CMake setting and embedded editor
+file against the reference commit. The installer is rebuilt and tested on both
+systems; any native source change uses a full compilation instead.
 
 ```sh
 cargo fmt --all -- --check
