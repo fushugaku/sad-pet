@@ -84,6 +84,7 @@ node wasm/test.mjs
 node wasm/test-microphone.mjs
 node wasm/test-library.mjs
 node wasm/test-presets.mjs
+node wasm/test-parameters.mjs
 python3 -m http.server 8080 --directory dist/web --bind 127.0.0.1
 ```
 
