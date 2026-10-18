@@ -3,7 +3,14 @@
 import subprocess
 import sys
 import time
+from pathlib import Path
+import plistlib
 
+
+for bundle in (Path.home() / "Library/Audio/Plug-Ins/Components").glob("SAD PET*.component"):
+    info = plistlib.loads((bundle / "Contents/Info.plist").read_bytes())
+    print(bundle, info.get("AudioComponents"), flush=True)
+    bundle.touch()
 
 for kind, code in (("aumu", "SaPi"), ("aumf", "SaPf")):
     for attempt in range(10):
@@ -13,6 +20,7 @@ for kind, code in (("aumu", "SaPi"), ("aumf", "SaPf")):
             print(result.stdout, flush=True)
             break
         if "didn't find the component" not in result.stdout or attempt == 9:
+            subprocess.run(["auval", "-a"], check=False)
             print(result.stdout, flush=True)
             sys.exit(result.returncode)
         print(f"Waiting for macOS to discover {code} ({attempt + 1}/10)", flush=True)

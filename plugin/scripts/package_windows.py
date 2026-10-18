@@ -45,6 +45,9 @@ def build_exe(source: Path, compiler: Path | None = None) -> Path:
     dependencies = ROOT / "target/plugin-deps/WindowsInstaller"
     dependencies.mkdir(parents=True, exist_ok=True)
     notices = {}
+    powershell = shutil.which("pwsh") or shutil.which("powershell")
+    if not powershell:
+        raise FileNotFoundError("PowerShell is required to verify Microsoft prerequisite signatures")
     for name, url in PREREQUISITES.items():
         path = dependencies / name
         if not path.is_file():
@@ -54,7 +57,7 @@ def build_exe(source: Path, compiler: Path | None = None) -> Path:
             temporary.replace(path)
         # Only redistribute the original Microsoft-signed prerequisite installers.
         info = json.loads(subprocess.check_output(
-            ["powershell", "-NoProfile", "-NonInteractive", "-File",
+            [powershell, "-NoProfile", "-NonInteractive", "-File",
              str(SCRIPTS / "windows_prerequisite.ps1"), str(path)], text=True))
         notices[name] = {"url": url, "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), **info}
     runtime_version = re.search(r"\d+\.\d+\.\d+\.\d+", notices["vc_redist.x64.exe"]["version"])

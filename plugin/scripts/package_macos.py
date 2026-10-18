@@ -48,6 +48,11 @@ def build_pkg(source: Path) -> Path:
         # CurrentUserHomeDirectory runs this as the installing user, never root.
         postinstall.write_text(
             "#!/bin/sh\n"
+            "# Installer preserves payload timestamps. Mark upgraded AUs as new\n"
+            "# so a negative discovery cache from replacement is invalidated.\n"
+            "for bundle in \"$HOME/Library/Audio/Plug-Ins/Components/SAD PET.component\" \"$HOME/Library/Audio/Plug-Ins/Components/SAD PET FX.component\"; do\n"
+            "    [ ! -d \"$bundle\" ] || /usr/bin/touch \"$bundle\"\n"
+            "done\n"
             "# Refresh AU discovery for this user; hosts are reopened separately.\n"
             "/usr/bin/killall AudioComponentRegistrar 2>/dev/null || true\n"
             "exit 0\n",

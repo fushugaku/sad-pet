@@ -4,8 +4,10 @@ import plistlib
 import tempfile
 import unittest
 import zipfile
+import sys
 
 from publish_release import PACKAGES, stage_assets, validate_tag
+from package_windows import build_exe
 
 
 class ReleaseAssets(unittest.TestCase):
@@ -64,6 +66,23 @@ class ReleaseAssets(unittest.TestCase):
             stage_assets(self.artifacts, self.output, self.version)
         with self.assertRaisesRegex(ValueError, "Expected release tag"):
             validate_tag("plugins-v99.0.0")
+
+
+@unittest.skipUnless(sys.platform == "win32", "Windows installer compiler")
+class WindowsInstaller(unittest.TestCase):
+    def test_real_installer_compiles_before_the_native_build(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "staged"
+            for name in ("SAD PET", "SAD PET FX"):
+                contents = source / "VST3" / f"{name}.vst3/Contents"
+                (contents / "Resources").mkdir(parents=True)
+                (contents / "x86_64-win").mkdir()
+                (contents / "Resources/moduleinfo.json").write_text('{"Version":"0.3.1",}')
+                (contents / "x86_64-win" / f"{name}.vst3").write_bytes(b"MZfixture")
+            (source / "Licenses").mkdir()
+            (source / "Licenses/notice.txt").write_text("Installer compilation fixture")
+            (source / "README.md").write_text("Installer compilation fixture")
+            self.assertTrue(build_exe(source).is_file())
 
 
 if __name__ == "__main__":
