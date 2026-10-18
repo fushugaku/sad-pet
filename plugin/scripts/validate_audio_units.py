@@ -10,7 +10,9 @@ import plistlib
 for bundle in (Path.home() / "Library/Audio/Plug-Ins/Components").glob("SAD PET*.component"):
     info = plistlib.loads((bundle / "Contents/Info.plist").read_bytes())
     print(bundle, info.get("AudioComponents"), flush=True)
-    bundle.touch()
+
+# Enumerate first: this triggers normal host discovery before validating IDs.
+subprocess.run(["auval", "-a"], check=True, stdout=subprocess.DEVNULL)
 
 for kind, code in (("aumu", "SaPi"), ("aumf", "SaPf")):
     for attempt in range(10):
