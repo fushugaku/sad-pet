@@ -26,7 +26,7 @@ jobs:
       matrix:
         include:
           - platform: macOS-universal
-            runner: macos-latest
+            runner: macos-15
             arguments: --universal
           - platform: Windows-x64
             runner: windows-latest
