@@ -531,7 +531,8 @@ impl SampleBuffer {
     }
 }
 
-#[inline]
+#[cfg_attr(target_arch = "wasm32", inline(always))]
+#[cfg_attr(not(target_arch = "wasm32"), inline)]
 fn interpolation_frames(data: &[Stereo], base: i64, range: &std::ops::Range<usize>) -> [Stereo; 4] {
     // Most grain reads are inside the region. Boundary reads retain the exact
     // wrap used for tiny selections, negative positions and reverse grains.
