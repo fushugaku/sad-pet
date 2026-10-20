@@ -21,6 +21,11 @@ for bundle in folder.glob("SAD PET*.component"):
     print(bundle, info.get("AudioComponents"), flush=True)
     subprocess.run(["ls", "-ld", str(bundle), str(bundle / "Contents/MacOS" / info["CFBundleExecutable"])], check=False)
 
+# Some macOS runners keep the registrar alive after SIGTERM with a stale AU
+# list. SIGKILL actually restarts this user service; it does not terminate hosts.
+subprocess.run(["killall", "-9", "AudioComponentRegistrar"], stdout=subprocess.DEVNULL,
+               stderr=subprocess.DEVNULL, check=False)
+
 # Enumerate first: this triggers normal host discovery before validating IDs.
 subprocess.run(["auval", "-a"], check=True, stdout=subprocess.DEVNULL)
 
@@ -50,6 +55,6 @@ for kind, code in (("aumu", "SaPi"), ("aumf", "SaPf")):
             print(result.stdout, flush=True)
             sys.exit(result.returncode)
         print(f"Waiting for macOS to discover {code} ({attempt + 1}/10)", flush=True)
-        subprocess.run(["killall", "AudioComponentRegistrar"], stdout=subprocess.DEVNULL,
+        subprocess.run(["killall", "-9", "AudioComponentRegistrar"], stdout=subprocess.DEVNULL,
                        stderr=subprocess.DEVNULL, check=False)
         time.sleep(2)

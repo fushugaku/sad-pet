@@ -61,6 +61,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: python plugin/scripts/reuse_native.py ${{ matrix.platform }}
       - name: Build, test and package
+        id: package
         run: python plugin/scripts/build.py ${{ matrix.arguments }} ${{ steps.native.outputs.arguments }}
       - name: Validate macOS installer and Audio Units
         if: runner.os == 'macOS'
@@ -90,6 +91,7 @@ jobs:
         shell: pwsh
         run: ./plugin/scripts/validate_windows.ps1
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ always() && steps.package.conclusion == 'success' }}
         with:
           name: SAD-PET-Plugins-${{ matrix.platform }}
           path: |

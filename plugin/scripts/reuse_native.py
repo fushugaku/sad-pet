@@ -13,7 +13,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[2]
 VALIDATED = {
     "macOS-universal": (38980814940, "562db49057171eee7c4078a6f1903b8a0aab57b5"),
-    "Windows-x64": (39128391146, "b4305b42ba585c9f0f4072a8237bca1526a728dd"),
+    "Windows-x64": (39474031573, "fa470c61288f8b87ef42c1bf046b8340813156bf"),
 }
 NATIVE_SOURCES = ["Cargo.toml", "Cargo.lock", "rust", "plugin/Cargo.toml",
                   "plugin/CMakeLists.txt", "plugin/src", "plugin/native", "plugin/web"]

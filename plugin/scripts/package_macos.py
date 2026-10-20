@@ -56,7 +56,7 @@ def build_pkg(source: Path) -> Path:
             "    [ ! -d \"$bundle\" ] || /usr/bin/touch \"$bundle\"\n"
             "done\n"
             "# Refresh AU discovery for this user; hosts are reopened separately.\n"
-            "/usr/bin/killall AudioComponentRegistrar 2>/dev/null || true\n"
+            "/usr/bin/killall -9 AudioComponentRegistrar 2>/dev/null || true\n"
             "exit 0\n",
             encoding="utf-8",
         )
