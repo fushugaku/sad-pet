@@ -108,6 +108,7 @@ enum Target {
     Fx(bool, usize, ColorParameter),
     SourceFx(ColorParameter),
     Performance(usize),
+    ResynthOsc(usize, usize),
 }
 
 #[derive(Serialize)]
@@ -130,6 +131,21 @@ impl Spec {
                 .copied()
                 .unwrap_or_default()
                 .parameter_mut(field),
+            Target::ResynthOsc(i, field) => {
+                let o = preset.resynth.oscillators[i];
+                match field {
+                    0 => f32::from(o.enabled),
+                    1 => o.waveform.code() as f32,
+                    2 => o.mode.code() as f32,
+                    3 => o.control1,
+                    4 => o.control2,
+                    5 => o.transpose,
+                    6 => o.fine,
+                    7 => o.level,
+                    8 => o.pan,
+                    _ => o.cross_source as f32,
+                }
+            }
             Target::Core { get, .. } => get(preset),
             Target::Lfo(i, field) => {
                 let l = preset.lfos[i];
@@ -179,6 +195,21 @@ impl Spec {
             self.default
         };
         match self.target {
+            Target::ResynthOsc(i, field) => {
+                let o = &mut preset.resynth.oscillators[i];
+                match field {
+                    0 => o.enabled = value >= 0.5,
+                    1 => o.waveform = crate::resynth::Waveform::ALL[value.round() as usize],
+                    2 => o.mode = crate::resynth::Mode::ALL[value.round() as usize],
+                    3 => o.control1 = value,
+                    4 => o.control2 = value,
+                    5 => o.transpose = value,
+                    6 => o.fine = value,
+                    7 => o.level = value,
+                    8 => o.pan = value,
+                    _ => o.cross_source = value.round() as u8,
+                }
+            }
             Target::Core { set, .. } => set(preset, value),
             Target::Lfo(i, field) => {
                 let l = &mut preset.lfos[i];
@@ -423,6 +454,99 @@ pub fn specs() -> &'static [Spec] {
                 target: Target::SourceFx(field),
             });
         }
+        macro_rules! resynth {
+            ($field:ident, $name:literal, $min:expr, $max:expr) => {
+                result.push(Spec {
+                    id: concat!("resynth_", stringify!($field)).into(),
+                    name: concat!("Resynth ", $name).into(),
+                    min: $min,
+                    max: $max,
+                    default: preset.resynth.$field,
+                    target: Target::Core {
+                        get: |p| p.resynth.$field,
+                        set: |p, v| p.resynth.$field = v,
+                    },
+                });
+            };
+        }
+        resynth!(mix, "mix", 0.0, 1.0);
+        resynth!(sensitivity, "sensitivity", 0.0, 1.0);
+        resynth!(attack, "attack", 0.0, 1.0);
+        resynth!(release, "release", 0.0, 1.0);
+        resynth!(threshold, "threshold", 0.0, 1.0);
+        result.push(Spec {
+            id: "resynth_enabled".into(),
+            name: "Resynth enabled".into(),
+            min: 0.0,
+            max: 1.0,
+            default: 0.0,
+            target: Target::Core {
+                get: |p| f32::from(p.resynth.enabled),
+                set: |p, v| p.resynth.enabled = v >= 0.5,
+            },
+        });
+        result.push(Spec {
+            id: "resynth_input".into(),
+            name: "Resynth input".into(),
+            min: 0.0,
+            max: 1.0,
+            default: 0.0,
+            target: Target::Core {
+                get: |p| {
+                    if p.resynth.input == crate::resynth::Input::Source {
+                        0.0
+                    } else {
+                        1.0
+                    }
+                },
+                set: |p, v| {
+                    p.resynth.input = if v < 0.5 {
+                        crate::resynth::Input::Source
+                    } else {
+                        crate::resynth::Input::Grains
+                    }
+                },
+            },
+        });
+        result.push(Spec {
+            id: "resynth_count".into(),
+            name: "Resynth oscillator count".into(),
+            min: 1.0,
+            max: 4.0,
+            default: 1.0,
+            target: Target::Core {
+                get: |p| p.resynth.count as f32,
+                set: |p, v| p.resynth.count = v.round() as u8,
+            },
+        });
+        for i in 0..crate::resynth::MAX_OSCILLATORS {
+            for (field, (key, name, min, max)) in [
+                ("enabled", "enabled", 0.0, 1.0),
+                ("waveform", "waveform", 0.0, 7.0),
+                ("mode", "mode", 0.0, 3.0),
+                ("control1", "control 1", 0.0, 1.0),
+                ("control2", "control 2", 0.0, 1.0),
+                ("transpose", "transpose", -48.0, 48.0),
+                ("fine", "fine tune", -100.0, 100.0),
+                ("level", "level", 0.0, 1.0),
+                ("pan", "pan", 0.0, 1.0),
+                ("cross_source", "cross source", 0.0, 4.0),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let mut spec = Spec {
+                    id: format!("resynth_osc{}_{}", i + 1, key),
+                    name: format!("Resynth OSC {} {name}", i + 1),
+                    min,
+                    max,
+                    default: 0.0,
+                    target: Target::ResynthOsc(i, field),
+                };
+                spec.default = spec.get(&preset);
+                result.push(spec);
+            }
+        }
         result
     })
 }
@@ -441,6 +565,37 @@ pub fn mirror(preset: &mut Preset) {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn resynth_is_backward_compatible_and_appended_controls_roundtrip() {
+        let mut old = serde_json::to_value(Preset::default()).unwrap();
+        old.as_object_mut().unwrap().remove("resynth");
+        let mut preset: Preset = serde_json::from_value(old).unwrap();
+        assert_eq!(preset.resynth, crate::resynth::Settings::default());
+        assert_eq!(specs()[1475].id, "sample_root_note");
+        assert_eq!(specs()[1476].id, "loop_one_bar");
+        assert_eq!(specs()[1477 + ColorParameter::ALL.len()].id, "resynth_mix");
+        let changes=parse(&json!({"resynth_enabled":1,"resynth_count":4,"resynth_input":1,"resynth_attack":0.31,"resynth_osc4_waveform":7,"resynth_osc4_transpose":-12,"resynth_osc4_control1":0.7,"resynth_osc3_mode":3,"resynth_osc3_cross_source":4})).unwrap();
+        apply(&mut preset, &changes);
+        preset.sanitize();
+        assert_eq!(preset.resynth.count, 4);
+        assert_eq!(
+            preset.resynth.oscillators[3].waveform,
+            crate::resynth::Waveform::Pcm
+        );
+        assert_eq!(
+            preset.resynth.oscillators[2].mode,
+            crate::resynth::Mode::Vpm
+        );
+        let restored: Preset =
+            serde_json::from_slice(&serde_json::to_vec(&preset).unwrap()).unwrap();
+        assert_eq!(restored.resynth, preset.resynth);
+        let changes=parse(&json!({"resynth_count":99,"resynth_osc4_cross_source":999,"resynth_osc4_transpose":-900})).unwrap();
+        apply(&mut preset, &changes);
+        assert_eq!(preset.resynth.count, 4);
+        assert_eq!(preset.resynth.oscillators[3].cross_source, 4);
+        assert_eq!(preset.resynth.oscillators[3].transpose, -48.0);
+    }
 
     #[test]
     fn old_presets_keep_original_playback_and_new_loop_settings_roundtrip() {

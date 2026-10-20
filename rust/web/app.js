@@ -567,6 +567,7 @@ function syncFilters() {
 }
 function syncAll() {
   syncColors();
+  syncResynth();
   for (const update of controls.values()) update();
   syncSliders();
   $("antialias").checked = preset.params.antialiasing;
@@ -593,6 +594,299 @@ function option(value, label) {
   o.textContent = label;
   return o;
 }
+
+const RESYNTH_WAVES = [
+  ["saw", "Saw"],
+  ["pulse", "Pulse"],
+  ["triangle", "Triangle"],
+  ["sine", "Sine"],
+  ["formant", "Formant"],
+  ["noise", "Noise"],
+  ["audio_in", "Audio In"],
+  ["pcm", "PCM"],
+];
+const RESYNTH_MODES = [
+  ["wave", "Wave"],
+  ["cross", "Cross"],
+  ["unison", "Unison"],
+  ["vpm", "VPM"],
+];
+const resynthOscDefault = () => ({
+  enabled: true,
+  waveform: "sine",
+  mode: "wave",
+  control1: 0,
+  control2: 0,
+  transpose: 0,
+  fine: 0,
+  level: 0.7,
+  pan: 0.5,
+  cross_source: 0,
+});
+let resynthSignature = "";
+function resynthSettings() {
+  return (preset.resynth ||= {
+    enabled: false,
+    input: "source",
+    mix: 0.8,
+    sensitivity: 0.5,
+    attack: 0.15,
+    release: 0.3,
+    threshold: 0.2,
+    count: 1,
+    oscillators: Array.from({ length: 4 }, resynthOscDefault),
+  });
+}
+function editResynth(field, value, index = null) {
+  const r = resynthSettings();
+  const target = index === null ? r : r.oscillators[index];
+  target[field] = value;
+  let numeric = value;
+  if (field === "waveform")
+    numeric = RESYNTH_WAVES.findIndex(([key]) => key === value);
+  if (field === "mode")
+    numeric = RESYNTH_MODES.findIndex(([key]) => key === value);
+  if (field === "input") numeric = value === "grains" ? 1 : 0;
+  if (field === "enabled") numeric = Number(value);
+  const key =
+    index === null ? `resynth_${field}` : `resynth_osc${index + 1}_${field}`;
+  controls.get(key)?.();
+  scheduleParameter(key, numeric);
+}
+function resynthKnob(index, field, label, format = percent, min = 0, max = 1) {
+  const key =
+    index === null ? `resynth_${field}` : `resynth_osc${index + 1}_${field}`;
+  const get = () =>
+    index === null
+      ? resynthSettings()[field]
+      : resynthSettings().oscillators[index][field];
+  const defaults =
+    index === null
+      ? {
+          mix: 0.8,
+          sensitivity: 0.5,
+          attack: 0.15,
+          release: 0.3,
+          threshold: 0.2,
+        }
+      : resynthOscDefault();
+  createKnob(
+    [
+      key,
+      label,
+      format,
+      min,
+      max,
+      index === null
+        ? `Resynth ${label.toLowerCase()}`
+        : `Resynth OSC ${index + 1} ${label.toLowerCase()}`,
+    ],
+    index === null ? "resynth-controls" : `resynth-osc${index + 1}-knobs`,
+    {
+      get,
+      set: (value) => editResynth(field, value, index),
+      reset: () => defaults[field],
+    },
+  );
+}
+function buildResynth() {
+  resynthKnob(
+    null,
+    "sensitivity",
+    "SENSITIVITY",
+    (v) => `${v * 48 - 24 >= 0 ? "+" : ""}${(v * 48 - 24).toFixed(1)} dB`,
+  );
+  resynthKnob(
+    null,
+    "attack",
+    "ATTACK",
+    (v) => `${Math.round(1 + v ** 3 * 500)} ms`,
+  );
+  resynthKnob(
+    null,
+    "release",
+    "RELEASE",
+    (v) => `${Math.round(5 + v ** 3 * 2000)} ms`,
+  );
+  resynthKnob(
+    null,
+    "threshold",
+    "THRESHOLD",
+    (v) => `${Math.round(-84 + v * 60)} dB`,
+  );
+  resynthKnob(null, "mix", "MIX");
+  for (let i = 0; i < 16; i++) {
+    const bar = document.createElement("div");
+    bar.className = "resynth-band";
+    bar.innerHTML = "<i></i>";
+    $("resynth-spectrum").append(bar);
+  }
+  $("resynth-enabled").onchange = () => {
+    editResynth("enabled", $("resynth-enabled").checked);
+    syncResynth();
+  };
+  $("resynth-input").onchange = () =>
+    editResynth("input", $("resynth-input").value);
+  $("resynth-add").onclick = () => {
+    const r = resynthSettings();
+    if (r.count >= 4) return;
+    editResynth("count", r.count + 1);
+    syncResynth();
+  };
+}
+function syncResynth() {
+  const r = resynthSettings();
+  $("resynth-enabled").checked = r.enabled;
+  $("resynth-input").value = r.input;
+  $("resynth-add").disabled = r.count >= 4;
+  $("resynth-spectrum").classList.toggle("inactive", !r.enabled);
+  const signature = JSON.stringify([
+    r.count,
+    r.oscillators.slice(0, r.count).map((o) => [o.waveform, o.mode]),
+  ]);
+  if (signature !== resynthSignature) {
+    resynthSignature = signature;
+    for (const key of controls.keys())
+      if (key.startsWith("resynth_osc")) {
+        controls.delete(key);
+        modulationViews.delete(key);
+      }
+    $("resynth-oscillators").replaceChildren();
+    for (let i = 0; i < r.count; i++) {
+      const o = r.oscillators[i],
+        analog = RESYNTH_WAVES.findIndex(([key]) => key === o.waveform) < 4;
+      const card = document.createElement("div");
+      card.className = "color-card resynth-oscillator";
+      card.dataset.oscillator = i + 1;
+      card.innerHTML = `<div class="resynth-osc-title"><strong class="color-order">${String(i + 1).padStart(2, "0")}</strong><select class="resynth-wave" aria-label="Resynth OSC ${i + 1} waveform"></select><select class="resynth-mode" aria-label="Resynth OSC ${i + 1} mode"></select><div class="color-actions"><button class="color-bypass" aria-label="Bypass Resynth OSC ${i + 1}" title="Bypass">⏻</button><button class="resynth-remove" aria-label="Remove Resynth OSC ${i + 1}" title="Remove">×</button></div></div><div class="resynth-extra"></div><div id="resynth-osc${i + 1}-knobs" class="knob-grid resynth-knobs"></div>`;
+      const wave = card.querySelector(".resynth-wave"),
+        mode = card.querySelector(".resynth-mode");
+      wave.replaceChildren(
+        ...RESYNTH_WAVES.map(([key, label]) => option(key, label)),
+      );
+      wave.value = o.waveform;
+      wave.onchange = () => {
+        editResynth("waveform", wave.value, i);
+        syncResynth();
+      };
+      mode.replaceChildren(
+        ...RESYNTH_MODES.map(([key, label]) => option(key, label)),
+      );
+      mode.value = o.mode;
+      mode.hidden = !analog;
+      mode.onchange = () => {
+        editResynth("mode", mode.value, i);
+        syncResynth();
+      };
+      card.querySelector(".color-bypass").onclick = () => {
+        editResynth("enabled", !resynthSettings().oscillators[i].enabled, i);
+        syncResynth();
+      };
+      card.querySelector(".resynth-remove").disabled = r.count === 1;
+      card.querySelector(".resynth-remove").onclick = () => {
+        const current = resynthSettings();
+        const remaining = current.oscillators
+          .slice(0, current.count)
+          .filter((_, index) => index !== i);
+        remaining.push(resynthOscDefault());
+        remaining.forEach((osc, index) =>
+          Object.entries(osc).forEach(([field, value]) =>
+            editResynth(field, value, index),
+          ),
+        );
+        editResynth("count", current.count - 1);
+        syncResynth();
+      };
+      if (analog && o.mode === "cross") {
+        const cross = document.createElement("select");
+        cross.setAttribute("aria-label", `Resynth OSC ${i + 1} cross source`);
+        cross.replaceChildren(
+          option(0, "Cross · Input"),
+          ...Array.from({ length: 4 }, (_, j) =>
+            option(j + 1, `Cross · OSC ${j + 1}`),
+          ),
+        );
+        cross.value = o.cross_source;
+        cross.onchange = () =>
+          editResynth("cross_source", Number(cross.value), i);
+        card.querySelector(".resynth-extra").append(cross);
+      }
+      if (o.waveform === "pcm") {
+        const source = document.createElement("span");
+        source.className = "muted";
+        source.textContent = "Selected sample";
+        card.querySelector(".resynth-extra").append(source);
+      }
+      $("resynth-oscillators").append(card);
+      if (o.waveform !== "audio_in") {
+        const labels =
+          o.waveform === "pcm"
+            ? ["START", "LOOP FADE"]
+            : analog
+              ? {
+                  wave: ["SHAPE", "LFO 1"],
+                  cross: ["DEPTH", "LFO 1"],
+                  unison: ["DETUNE", "PHASE"],
+                  vpm: ["DEPTH", "RATIO"],
+                }[o.mode]
+              : ["CTRL 1", "CTRL 2"];
+        resynthKnob(i, "control1", labels[0]);
+        resynthKnob(
+          i,
+          "control2",
+          labels[1],
+          analog && o.mode === "vpm"
+            ? (v) => `${Math.floor(Math.round(v * 127) / 4) + 1}:1`
+            : percent,
+        );
+        resynthKnob(
+          i,
+          "transpose",
+          "TRANSPOSE",
+          (v) => `${v >= 0 ? "+" : ""}${v.toFixed(1)} st`,
+          -48,
+          48,
+        );
+        resynthKnob(
+          i,
+          "fine",
+          "FINE",
+          (v) => `${v >= 0 ? "+" : ""}${v.toFixed(1)} ct`,
+          -100,
+          100,
+        );
+      }
+      resynthKnob(i, "level", "LEVEL");
+      resynthKnob(i, "pan", "PAN", (v) =>
+        v === 0.5
+          ? "C"
+          : `${Math.round(Math.abs(v - 0.5) * 200)}${v < 0.5 ? "L" : "R"}`,
+      );
+    }
+  }
+  for (const card of $("resynth-oscillators").children) {
+    const o = r.oscillators[Number(card.dataset.oscillator) - 1];
+    card.classList.toggle("is-bypassed", !o.enabled);
+    card
+      .querySelector(".color-bypass")
+      .setAttribute("aria-pressed", String(!o.enabled));
+    const cross = card.querySelector(".resynth-extra select");
+    if (cross) cross.value = o.cross_source;
+  }
+  for (const [key, update] of controls)
+    if (key.startsWith("resynth_")) update();
+}
+function updateResynthMeter(meter) {
+  const active = resynthSettings().enabled && state?.playing;
+  [...$("resynth-spectrum").children].forEach((bar, i) => {
+    const level = active ? meter?.bands?.[i] || 0 : 0;
+    bar.firstElementChild.style.transform = `scaleY(${Math.min(1, Math.sqrt(level))})`;
+    const hz = meter?.frequencies?.[i];
+    if (hz)
+      bar.title = `${hz < 1000 ? Math.round(hz) + " Hz" : (hz / 1000).toFixed(1) + " kHz"} · ${Math.round(level * 100)}%`;
+  });
+}
+
 let colorDefaults = null,
   colorSignature = "",
   colorRoutesSignature = "",
@@ -2461,6 +2755,7 @@ async function poll() {
     fileLibrary?.observe(next);
     $("sample-info").textContent = `${next.sample_seconds.toFixed(2)} s`;
     syncInput(next.input);
+    updateResynthMeter(next.resynth);
     sampleSelection?.sync(next);
     $("sample-end").textContent = formatTime(next.sample_seconds);
     $("position-info").textContent = formatTime(
@@ -2540,6 +2835,7 @@ async function init() {
     for (const s of grainSchema) createKnob(s, "grain-controls");
     buildFilters();
     buildColors();
+    buildResynth();
     buildLfos();
     buildEnvs();
     buildMatrix();

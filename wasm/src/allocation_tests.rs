@@ -39,6 +39,53 @@ fn no_heap(f: impl FnOnce()) {
         "Audio-side snapshot allocated/freed"
     );
 }
+
+#[test]
+fn resynth_render_scalar_edits_and_binary_meters_have_no_heap_operations() {
+    let mut audio = Host::new(48000);
+    audio.engine.set_sample(Arc::new(SampleBuffer::demo(48000)));
+    audio.engine.set_live_input(true, false);
+    audio.engine.set_playing(true);
+    audio.engine.preset.resynth.enabled = true;
+    audio.engine.preset.resynth.count = 4;
+    for (i, o) in audio
+        .engine
+        .preset
+        .resynth
+        .oscillators
+        .iter_mut()
+        .enumerate()
+    {
+        o.waveform = sad_pet::resynth::Waveform::ALL[i];
+        o.mode = sad_pet::resynth::Mode::ALL[i];
+        o.control1 = 0.6;
+        o.control2 = 0.4;
+    }
+    audio.engine.refresh_parameters();
+    let changes = sad_pet::parameters::parse(
+        &json!({"resynth_osc4_control1":0.8,"resynth_osc2_transpose":12,"resynth_mix":0.7}),
+    )
+    .unwrap();
+    let mut n = 0;
+    no_heap(|| {
+        audio.engine.apply_parameters(&changes);
+        for n in 0..4096 {
+            audio
+                .engine
+                .process_input_frame([(n as f32 * 0.04).sin() * 0.2; 2]);
+        }
+        n = audio.publish_snapshot();
+        assert!(n > 0);
+    });
+    let mut worker = Host::new(48000);
+    worker.input.extend_from_slice(&audio.snapshot_buffer[..n]);
+    let state = worker.import_snapshot().unwrap();
+    assert_eq!(
+        state["state"]["resynth"]["bands"].as_array().unwrap().len(),
+        16
+    );
+    assert_eq!(state["state"]["preset"]["resynth"]["count"], 4);
+}
 #[test]
 fn binary_publication_has_no_heap_and_worker_matches_original_state() {
     let mut audio = Host::new(8000);

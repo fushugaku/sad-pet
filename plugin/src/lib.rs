@@ -373,7 +373,7 @@ impl Controller {
                 view.source_gain_reduction.1,
             );
         }
-        json!({
+        let mut state = json!({
             "version": env!("CARGO_PKG_VERSION"), "instance_id": "plugin",
             "plugin": {"effect":self.effect,"sync":self.sync,"host_bpm":self.host_bpm,"host_playing":self.host_playing,"bar_beats":view.bar_beats},
             "sample_rate":self.rate,"audio_device":"DAW","audio_enabled":true,"audio_error":null,
@@ -394,7 +394,10 @@ impl Controller {
             "lfos":view.lfos,"envs":view.envs,"matrix_values":view.matrix,"knobs":knobs,
             "peak":view.peak,"gain_reduction":reduction,"cpu_percent":0.0,"underruns":0,
             "source_fx":{"pending":view.source_fx_pending,"error":if view.source_fx_error {Some("Could not prepare Source FX")}else{None}},
-        })
+        });
+        state["resynth"] =
+            json!({"bands":view.resynth_bands,"frequencies":view.resynth_frequencies});
+        state
     }
 
     fn snapshot(&mut self) -> Result<SavedState, String> {

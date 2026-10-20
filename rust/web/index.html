@@ -472,6 +472,33 @@
         </div>
         <div id="grain-controls" class="knob-grid"></div>
       </section>
+      <section class="bank resynth-bank" aria-label="Resynth">
+        <div class="section-heading">
+          <h2>Resynth</h2>
+          <div class="resynth-actions">
+            <select id="resynth-input" aria-label="Resynth analysis input">
+              <option value="source">Source</option>
+              <option value="grains">Grains</option>
+            </select>
+            <button id="resynth-add">+ Oscillator</button>
+            <label class="check"
+              ><input
+                id="resynth-enabled"
+                type="checkbox"
+                aria-label="Enable Resynth"
+              />On</label
+            >
+          </div>
+        </div>
+        <div
+          id="resynth-spectrum"
+          class="resynth-spectrum"
+          role="img"
+          aria-label="Resynth 16 band envelopes"
+        ></div>
+        <div id="resynth-controls" class="knob-grid resynth-controls"></div>
+        <div id="resynth-oscillators" class="resynth-oscillators"></div>
+      </section>
       <section class="bank color-bank" aria-label="Pre-filter effects">
         <div class="section-heading">
           <h2>Pre-filter effects</h2>

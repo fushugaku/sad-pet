@@ -6,7 +6,9 @@ pub mod delay;
 pub mod effects;
 pub mod filter;
 pub mod modulation;
+mod radias_oscillator;
 pub mod radias_waveshaper;
+pub mod resynth;
 pub mod sample;
 pub mod source_fx;
 #[cfg(all(feature = "source-worker", not(target_arch = "wasm32")))]
@@ -286,6 +288,7 @@ pub struct Engine {
     color_rack: ColorRack,
     pre_color_rack: ColorRack,
     source_color: color::ColorProcessor,
+    resynth: resynth::Resynth,
     pub processed_source: Option<Arc<source_fx::ProcessedSource>>,
     previous_source: Option<Arc<source_fx::ProcessedSource>>,
     source_fade_remaining: u32,
@@ -354,6 +357,7 @@ impl Engine {
             color_rack: ColorRack::new(sr),
             pre_color_rack: ColorRack::new(sr),
             source_color: color::ColorProcessor::new(sr),
+            resynth: resynth::Resynth::new(sr),
             processed_source: None,
             previous_source: None,
             source_fade_remaining: 0,
@@ -523,6 +527,7 @@ impl Engine {
         self.color_rack.clear();
         self.pre_color_rack.clear();
         self.source_color.clear();
+        self.resynth.clear();
         self.filters.iter_mut().for_each(FilterBank::clear);
     }
 
@@ -1225,6 +1230,8 @@ impl Engine {
                 }),
             m.params.bpm,
         );
+        self.resynth
+            .configure(self.preset.resynth, &self.sample, m.params.sample_root_note);
         let shaper_note = self.source_note as f32
             + self.bend[self.source_channel as usize] * m.params.midi_pitchbend_range
             + (m.params.pitch * 2.0 - 1.0) * m.params.pitch_range
@@ -1258,6 +1265,12 @@ impl Engine {
             m.params.bpm as f64 / (60.0 * self.sample_rate as f64 * self.bar_beats);
         let count = self.active_grains() as f32;
         self.overlap += (count - self.overlap) * if count > self.overlap { 0.9 } else { 0.2 };
+    }
+    pub fn resynth_meter(&self) -> crate::resynth::Meter {
+        crate::resynth::Meter {
+            bands: self.resynth.levels(),
+            frequencies: self.resynth.frequencies(),
+        }
     }
     pub fn modulated_params(&self) -> Params {
         self.modulated.params
@@ -1524,8 +1537,17 @@ impl Engine {
         if voice_sum > 0.0 {
             before_fx.iter_mut().for_each(|v| *v /= voice_sum);
         }
-        let pre_output = self.pre_color_rack.process(before_fx);
-        let correction = if self.pre_color_rack.is_active() {
+        let resynth_active = self.resynth.active();
+        let resynth_output = self.resynth.process(
+            before_fx,
+            source.map(|x| x * input_gain),
+            self.lfo_values[0],
+            dry_scale,
+            &self.sample,
+            &self.file_range,
+        );
+        let pre_output = self.pre_color_rack.process(resynth_output);
+        let correction = if self.pre_color_rack.is_active() || resynth_active {
             std::array::from_fn(|c| pre_output[c] - before_fx[c])
         } else {
             [0.0; 2]

@@ -12,6 +12,7 @@ pub mod preset;
 pub mod radias_delay;
 #[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
 pub mod recording;
+pub mod resynth;
 pub mod samples;
 #[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
 pub mod server;

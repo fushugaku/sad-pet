@@ -38,6 +38,19 @@
   MIDI pitch and the original four-sample coefficient slew. No firmware binary
   or reference recording is included in this port.
 
+- **Rustias Resynth oscillator model** uses `radias-synth-domain` and
+  `radias-synth-application`, pinned to
+  [91cae3f57a868a80d32a2e6ebb113938efd65025](https://github.com/fushugaku/Rustias/tree/91cae3f57a868a80d32a2e6ebb113938efd65025).
+  The OSC1 adapter and analytic table formulas are adapted from
+  `radias-synth-infrastructure/src/circuit/primary.rs` and `standalone_tables.rs`.
+  The shared fixed-point kernels, control transfers, phase initialization,
+  feedback and four-frame coefficient slew are retained. SAD PET supplies its
+  own host-rate 16-band analyzer, stereo adapter and oversampling/decimation.
+  PCM uses the selected SAD PET sample; Audio In uses the analyzed audio bands.
+  No hardware PCM ROM, firmware image or reference recording is distributed.
+  The original Rustias source is maintained by the same repository owner; this
+  notice does not assign it a different license.
+
 This document records the added dependencies; it does not replace their license
 texts or the repository's existing source and sample notices.
 

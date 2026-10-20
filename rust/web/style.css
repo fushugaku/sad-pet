@@ -477,6 +477,131 @@ h2 {
   border-radius: 8px;
   padding: 12px 14px 16px;
 }
+.resynth-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.resynth-actions button,
+.resynth-actions select {
+  height: 31px;
+  font-size: 11px;
+}
+.resynth-actions .check {
+  margin-left: 4px;
+}
+.resynth-spectrum {
+  display: grid;
+  grid-template-columns: repeat(16, minmax(0, 1fr));
+  gap: 5px;
+  height: 54px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  margin-bottom: 12px;
+}
+.resynth-spectrum.inactive {
+  opacity: 0.45;
+}
+.resynth-band {
+  position: relative;
+  overflow: hidden;
+  background: #293025;
+  border-radius: 2px;
+}
+.resynth-band i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transform-origin: center bottom;
+  transform: scaleY(0);
+  transition: transform 0.05s linear;
+}
+.resynth-controls {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  max-width: 760px;
+  margin: 0 auto 18px;
+}
+.resynth-oscillators {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.resynth-oscillator {
+  min-width: 0;
+}
+.resynth-osc-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 31px;
+  margin-bottom: 12px;
+}
+.resynth-osc-title select {
+  width: 110px;
+  min-width: 0;
+  height: 31px;
+  font-size: 11px;
+}
+.resynth-extra:empty {
+  visibility: hidden;
+}
+.resynth-extra {
+  min-height: 31px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  font-size: 11px;
+}
+.resynth-extra select {
+  height: 31px;
+  font-size: 11px;
+}
+.resynth-knobs {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 6px;
+}
+.resynth-oscillator.is-bypassed .resynth-knobs {
+  opacity: 0.55;
+}
+@media (min-width: 1100px) {
+  .resynth-knobs {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .resynth-oscillators {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .resynth-knobs {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+@media (max-width: 540px) {
+  .resynth-bank > .section-heading {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .resynth-actions {
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .resynth-controls {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .resynth-knobs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .resynth-osc-title {
+    gap: 6px;
+  }
+  .resynth-osc-title select {
+    flex: 1;
+    width: 65px;
+  }
+}
 .color-title {
   display: flex;
   gap: 8px;
@@ -2442,7 +2567,9 @@ input[type="range"] {
   align-items: center;
   gap: 8px;
   min-height: 32px;
-  font: 11px ui-monospace, monospace;
+  font:
+    11px ui-monospace,
+    monospace;
   white-space: nowrap;
 }
 .bar-loop-toggle {

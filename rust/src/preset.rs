@@ -386,6 +386,7 @@ pub struct Preset {
     pub lfos: [Lfo; 3],
     pub envs: [Env; 3],
     pub performance: crate::performance::Settings,
+    pub resynth: crate::resynth::Settings,
     pub pre_color_chain: Vec<crate::color::ColorSlot>,
     pub source_color_chain: Vec<crate::color::ColorSlot>,
     pub color_chain: Vec<crate::color::ColorSlot>,
@@ -402,6 +403,7 @@ impl Default for Preset {
             lfos: std::array::from_fn(|_| Lfo::default()),
             envs: default_envs(),
             performance: crate::performance::Settings::default(),
+            resynth: crate::resynth::Settings::default(),
             pre_color_chain: Vec::new(),
             source_color_chain: Vec::new(),
             color_chain: vec![
@@ -424,6 +426,7 @@ impl<'de> Deserialize<'de> for Preset {
             lfos: [Lfo; 3],
             envs: Option<[Env; 3]>,
             performance: crate::performance::Settings,
+            resynth: crate::resynth::Settings,
             pre_color_chain: Vec<crate::color::ColorSlot>,
             source_color_chain: Vec<crate::color::ColorSlot>,
             color_chain: Option<Vec<crate::color::ColorSlot>>,
@@ -440,6 +443,7 @@ impl<'de> Deserialize<'de> for Preset {
                     lfos: p.lfos,
                     envs: None,
                     performance: p.performance,
+                    resynth: p.resynth,
                     pre_color_chain: Vec::new(),
                     source_color_chain: Vec::new(),
                     color_chain: None,
@@ -535,6 +539,7 @@ impl<'de> Deserialize<'de> for Preset {
             lfos,
             envs,
             performance: d.performance,
+            resynth: d.resynth,
             pre_color_chain: d.pre_color_chain,
             source_color_chain: d.source_color_chain,
             color_chain,
@@ -547,6 +552,7 @@ impl Preset {
     pub fn sanitize(&mut self) {
         self.fx_chain_version = 1;
         self.params.sanitize();
+        self.resynth.sanitize();
         self.matrix.truncate(crate::matrix::MAX_ROUTES);
         self.color_chain.truncate(crate::color::MAX_COLOR_SLOTS);
         self.pre_color_chain.truncate(crate::color::MAX_COLOR_SLOTS);

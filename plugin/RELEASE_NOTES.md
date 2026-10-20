@@ -1,24 +1,19 @@
 SAD PET instrument and SAD PET FX, with native Rust DSP and an embedded editor.
 
-**Source FX** adds one independent effect slot before the Grain Engine, with
-all existing effect types, including the RADIAS Waveshaper. Live input is processed
-once before entering the grain history. For files, the selected region is prepared
-in the background using the original-quality FIR mipmaps, then crossfaded without
-restarting held notes or one-bar loops. File FX changes are asynchronous; tails
-outside the selection are excluded. The slot is saved in presets/projects and its
-numeric controls have new host IDs; previous parameter indices remain unchanged.
+**Resynth** adds a 16-band audio-excited oscillator bank with up to four
+independent Rustias layers (64 carriers). It supports Saw, Pulse, Triangle, Sine,
+Formant, Noise, Audio In and PCM, plus Wave, Cross, Unison and VPM modes for
+analog waves. Each layer has its own controls, tuning, level and pan. Shared
+sensitivity, attack, release, threshold and Mix shape the response; Source or
+Grains selects the analysis input. PCM uses the selected SAD PET sample and trim.
 
-DSP now caches exact filter/gain/distortion coefficients and grain mip selection,
-with the original interpolation and antialiasing intact. Web telemetry uses pooled
-binary snapshots, while knob metadata, recording ingestion and utility renders run
-on separate workers. Audio views and recording buffers are reused.
+Resynth runs in the shared Rust engine, natively in AU/VST3 and as WASM on the
+web. All settings are stored in presets/projects; new automation IDs are appended
+without moving existing controls. Knob updates retain phase, feedback and
+envelope histories. Old presets keep Resynth disabled and retain their sound.
 
-**Loop 1 bar** checkbox beside the sample selection: each MIDI note scans the
-whole selection in one bar, with independent pitch and its own loop position.
-**Root** sets the original sample note. Pitch, tuning and pitch bend remain
-editable. Plug-ins follow the host tempo and time signature, including 3/4 and
-6/8. Loop settings are saved in User presets and DAW projects; existing presets
-keep this mode disabled.
+The existing Source FX slot, both 12-slot effects racks, RADIAS Waveshaper,
+Loop 1 bar, portable presets and MIDI routing remain available.
 
 | System | Installer | Plug-in formats |
 | --- | --- | --- |
@@ -50,11 +45,12 @@ are supplied individually and in `SHA256SUMS.txt`.
 ---
 
 В обоих установщиках есть инструмент **SAD PET** и эффект **SAD PET FX**.
-**Source FX** — новый слот до грануляции. Файлы обрабатываются в фоне, DAW input — в реальном времени.
-Сохранены интерполяция, anti-alias и качество звука; ускорены Rust DSP и web.
-**Loop 1 bar**: любая MIDI-нота проигрывает всё выделение за один
-такт. Pitch меняется независимо от длительности, **Root** задаёт исходную ноту
-сэмпла. Каждый голос имеет свой цикл; учитываются темп и размер проекта.
+**Resynth**: 16 полос входа управляют огибающими до четырёх слоёв Rustias.
+Saw, Pulse, Triangle, Sine, Formant, Noise, Audio In и PCM; аналоговые волны
+поддерживают Wave, Cross, Unison и VPM. Отдельные настройки и строй каждого
+слоя, общие Sensitivity, Attack/Release, Threshold и Mix. PCM использует
+выбранный сэмпл SAD PET. Все настройки сохраняются в пресетах и проекте.
+Нативный Rust в плагинах и тот же движок в web; старые пресеты звучат без изменений.
 macOS: AU и VST3 для Apple silicon и Intel. Windows: VST3 x64.
 Закройте DAW перед установкой, затем обновите список плагинов.
 Пользовательские пресеты сохраняются при обновлении и удалении.

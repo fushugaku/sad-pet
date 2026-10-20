@@ -92,6 +92,7 @@ impl Host {
             "performance": e.performance_view(), "lfos": e.lfo_values, "envs": e.env_values,
             "matrix_values": e.matrix_values, "knobs": e.knob_states(), "peak": e.peak,
             "gain_reduction": e.gain_reduction(),
+            "resynth": e.resynth_meter(),
             "cpu_percent": 0, "underruns": 0,
             "source_fx":{"pending":e.source_effects_pending(),"recipe":sad_pet::dsp::source_fx::Recipe::from_engine(e)},
         })

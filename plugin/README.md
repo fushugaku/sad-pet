@@ -64,7 +64,7 @@ The same User bank is available to every SAD PET / SAD PET FX instance.
 
 User presets live in `~/Library/Application Support/SAD PET/Presets` on macOS
 and `%APPDATA%\SAD PET\Presets` on Windows. A `.sadpet` file contains compressed
-settings, Source FX and both FX racks, modulation, tuning, sequence data and embedded sample
+settings, Resynth, Source FX and both FX racks, modulation, tuning, sequence data and embedded sample
 audio with its region/fades. It can be transferred between computers without the
 original WAV. Import and Export are in the preset browser; older `.sad.json`
 presets can still be imported. Previously saved browser presets migrate into
@@ -78,6 +78,25 @@ SAD PET starts silently and responds to MIDI notes. SAD PET FX starts processing
 its stereo host input immediately with **Grains + Filters + FX** selected.
 Choose **Filters + FX** to bypass the grain engine. **File** switches to the
 sample instrument path. Loading a WAV also selects File.
+
+**Resynth** uses 16 frequency-band envelopes to excite up to four Rustias
+oscillator layers (64 carriers). Turn **On**, choose **Source** or **Grains** as
+the detector input, and add layers with **+ Oscillator**. Each layer offers Saw,
+Pulse, Triangle, Sine, Formant, Noise, Audio In or PCM. Saw/Pulse/Triangle/Sine
+also have Wave, Cross, Unison and VPM modes. CTRL 1/2 retain the original Rustias
+control transfers; Wave/Cross LFO depth uses LFO 1, Unison uses detune/phase,
+and VPM uses depth/ratio. Cross can use the input or another layer; self/forward
+connections use the previous internal sample. PCM reads and loops the selected
+sample region at the layer's tuning, using **Root** as its original pitch. Start
+and Loop Fade adjust that loop. Audio In passes the analyzed input through the
+band envelopes. Sensitivity, attack, release, threshold and Mix are shared.
+The signal then enters the existing per-note filters and envelopes.
+
+Resynth settings and all four layers are saved in User presets and DAW projects;
+its host controls are appended after existing parameter IDs. Old presets keep
+Resynth off and preserve their original output. Numeric changes retain oscillator
+phase/feedback and envelope histories. All processing is native Rust in the
+plug-ins, with the same Rust implementation compiled to WASM for the web version.
 
 MIDI includes note velocity, sustain, pitch bend, modulation wheel, channel
 pressure and polyphonic pressure. Notes engage the engine's MIDI gate, including
@@ -100,8 +119,8 @@ the loop. Without a host, the bar is four beats at the Tempo setting. Freeze pau
 the scan; note releases still follow the envelope. Save a live recording as a file
 to select and loop it. The checkbox and Root are stored in presets and DAW projects.
 
-The signal path is source → **Source FX** → grains/source blend → Pre-filter
-effects → note filters → Post-filter effects. Source FX is one independent slot
+The signal path is source → **Source FX** → grains/source blend → **Resynth**
+→ Pre-filter effects → note filters → Post-filter effects. Source FX is one independent slot
 with the same effect catalog. Live input is processed before entering the grain
 history. For files, only the selection is prepared in the background; changes
 become audible when ready and crossfade without restarting notes or loops.

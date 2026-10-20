@@ -30,6 +30,8 @@ pub struct RealtimeView {
     pub waveform_len: usize,
     pub params: crate::preset::Params,
     pub filter_cutoffs: [f32; 2],
+    pub resynth_bands: [f32; crate::resynth::BANDS],
+    pub resynth_frequencies: [f32; crate::resynth::BANDS],
     pub source_fx_pending: bool,
     pub source_fx_error: bool,
     pub source_gain_reduction: (u32, f32),
@@ -73,6 +75,8 @@ impl Default for RealtimeView {
             waveform_len: 0,
             params: crate::preset::Params::default(),
             filter_cutoffs: [1.0; 2],
+            resynth_bands: [0.0; crate::resynth::BANDS],
+            resynth_frequencies: [0.0; crate::resynth::BANDS],
             source_fx_pending: false,
             source_fx_error: false,
             source_gain_reduction: (0, 0.0),
@@ -163,6 +167,8 @@ impl Engine {
         view.matrix = self.matrix_values;
         view.params = self.modulated.params;
         view.filter_cutoffs = self.current_filter_cutoffs();
+        view.resynth_bands = self.resynth.levels();
+        view.resynth_frequencies = self.resynth.frequencies();
         view.source_fx_pending = self.source_effects_pending();
         view.source_fx_error = self.source_fx_error;
         view.source_gain_reduction = self

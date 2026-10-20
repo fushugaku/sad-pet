@@ -81,6 +81,7 @@ pub struct State {
     pub cpu_percent: f32,
     pub underruns: u64,
     pub source_fx: SourceFxStatus,
+    pub resynth: crate::resynth::Meter,
     #[serde(skip)]
     pub sample: Arc<SampleBuffer>,
     #[serde(skip)]
@@ -237,6 +238,7 @@ impl Runtime {
             matrix_values: [0.0; crate::matrix::MAX_ROUTES],
             knobs: Default::default(),
             gain_reduction: Default::default(),
+            resynth: Default::default(),
             peak: [0.0; 2],
             cpu_percent: 0.0,
             underruns: 0,
@@ -333,6 +335,7 @@ impl Runtime {
                         state.matrix_values=engine.matrix_values;
                         state.knobs=engine.knob_states();
                         state.gain_reduction=engine.gain_reduction();
+                        state.resynth=engine.resynth_meter();
                         state.source_fx=SourceFxStatus {pending:engine.source_effects_pending(),error:if engine.source_fx_error{Some("Could not prepare Source FX")}else{None}};
                         state.underruns=underruns.load(Ordering::Relaxed);
                         if !Arc::ptr_eq(&state.sample,&engine.sample) {

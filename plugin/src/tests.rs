@@ -61,6 +61,53 @@ fn render(audio: &mut Audio, frames: usize, input: Stereo) -> f32 {
 }
 
 #[test]
+fn four_resynth_layers_automation_and_project_recall_are_realtime_safe() {
+    let mut control = Controller::new(true);
+    let mut preset = control.preset.clone();
+    preset.resynth.enabled = true;
+    preset.resynth.count = 4;
+    for (i, o) in preset.resynth.oscillators.iter_mut().enumerate() {
+        o.waveform = sad_pet::resynth::Waveform::ALL[i];
+        o.mode = sad_pet::resynth::Mode::ALL[i];
+        o.control1 = 0.7;
+        o.control2 = 0.4;
+    }
+    call(&mut control, "/api/preset", json!(preset));
+    let mut audio = control.prepare(48000);
+    let mut values = control.values();
+    let spec = parameters::specs()
+        .iter()
+        .position(|s| s.id == "resynth_osc2_transpose")
+        .unwrap();
+    call(
+        &mut control,
+        "/api/transport",
+        json!({"playing":true,"midi_gate":false}),
+    );
+    for block in 0..8 {
+        values[spec] = block as f32;
+        control.set_values(&values);
+        no_heap(|| {
+            audio.begin(&values, 120.0, None, false, 128);
+            render(&mut audio, 128, [0.3, -0.2]);
+        });
+    }
+    control.drain();
+    let saved = control.save().unwrap();
+    let mut restored = Controller::new(true);
+    restored.restore(&saved).unwrap();
+    assert_eq!(restored.preset.resynth, control.preset.resynth);
+    assert_eq!(control.preset.resynth.oscillators[1].transpose, 7.0);
+    assert_eq!(
+        control.state()["resynth"]["bands"]
+            .as_array()
+            .unwrap()
+            .len(),
+        16
+    );
+}
+
+#[test]
 fn one_bar_loop_host_controls_and_meter_are_realtime_safe_and_saved() {
     let mut control = Controller::new(false);
     call(

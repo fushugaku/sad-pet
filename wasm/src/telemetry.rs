@@ -172,6 +172,7 @@ impl Host {
         state["matrix_values"] = json!(v.matrix);
         state["knobs"] = json!(self.engine.knob_states_from_view(&v));
         state["peak"] = json!(v.peak);
+        state["resynth"] = json!({"bands":v.resynth_bands,"frequencies":v.resynth_frequencies});
         state["source_fx"] = json!({"pending":v.source_fx_pending,"recipe":sad_pet::dsp::source_fx::Recipe::from_engine(&self.engine),"error":if v.source_fx_error {Some("Could not prepare Source FX")}else{None}});
         state["gain_reduction"] = json!(
             v.gain_reduction
