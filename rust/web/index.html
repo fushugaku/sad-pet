@@ -312,12 +312,20 @@
             >
           </div>
           <div class="region-loop">
-            <label class="bar-loop-toggle" title="Play the selection in one bar at any MIDI note or pitch">
+            <label
+              class="bar-loop-toggle"
+              title="Play the selection in one bar at any MIDI note or pitch"
+            >
               <input id="loop-one-bar" type="checkbox" disabled />
               Loop 1 bar
             </label>
             <label class="sample-root-label" for="sample-root-note">Root</label>
-            <select id="sample-root-note" aria-label="Sample root note" title="Original pitch of the sample" disabled></select>
+            <select
+              id="sample-root-note"
+              aria-label="Sample root note"
+              title="Original pitch of the sample"
+              disabled
+            ></select>
           </div>
           <output id="region-duration">0.000 s loop</output>
           <div class="region-actions">
@@ -439,6 +447,22 @@
           </div>
         </section>
       </div>
+      <section class="bank color-bank" aria-label="Source effects">
+        <div class="section-heading">
+          <h2>
+            Source FX
+            <output id="source-fx-status" class="muted" role="status"></output>
+          </h2>
+          <div class="color-add">
+            <select
+              id="source-color-add-type"
+              aria-label="Source effect to add"
+            ></select>
+            <button id="source-color-add">+ Add effect</button>
+          </div>
+        </div>
+        <div id="source-color-chain" class="color-chain"></div>
+      </section>
       <section class="bank">
         <div class="section-heading">
           <h2>Grain engine</h2>

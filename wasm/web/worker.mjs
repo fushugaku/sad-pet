@@ -4,6 +4,7 @@ import { Mp3Encoder } from "./vendor/lamejs.mjs";
 let core,
   take = null;
 let queue = Promise.resolve();
+let sourceGeneration = 0;
 
 function wave(chunks, rate, frames) {
   const buffer = new ArrayBuffer(44 + frames * 8),
@@ -74,6 +75,22 @@ async function handle(message) {
   try {
     let result;
     switch (type) {
+      case "snapshot": {
+        const packet = core.json(
+          "sad_snapshot_import",
+          new Uint8Array(message.buffer, 0, message.length),
+        );
+        self.postMessage(
+          {
+            type: "snapshot",
+            ...packet,
+            sequence: message.sequence,
+            buffer: message.buffer,
+          },
+          [message.buffer],
+        );
+        return;
+      }
       case "init":
         core = new Core(data.module, data.rate);
         result = true;
@@ -87,11 +104,32 @@ async function handle(message) {
       case "prepare":
         core.call("sad_prepare", data.wav);
         core.call("sad_sample_name", { name: data.name, id: data.libraryId });
+        sourceGeneration = data.generation ?? sourceGeneration + 1;
         result = {
           prepared: core.call("sad_pack"),
           info: core.request("/sample-info"),
         };
         break;
+      case "source-fx": {
+        if (data.generation !== sourceGeneration) {
+          result = { stale: true };
+          break;
+        }
+        const prepared = data.recipe.slot
+          ? core.call("sad_source_prepare", data.recipe)
+          : null;
+        let header = null,
+          offset = 0;
+        if (prepared) {
+          const length = new DataView(prepared).getUint32(8, true);
+          header = JSON.parse(
+            new TextDecoder().decode(new Uint8Array(prepared, 12, length)),
+          );
+          offset = 12 + length;
+        }
+        result = { prepared, header, offset, recipe: data.recipe };
+        break;
+      }
       case "sample":
         result = core.call("sad_sample_wav");
         break;
@@ -113,10 +151,15 @@ async function handle(message) {
         break;
       case "record-chunk":
         if (take && !take.done) {
-          const chunk = new Float32Array(data);
+          const chunk = new Float32Array(
+            data,
+            0,
+            message.length ?? data.byteLength / 4,
+          ).slice();
           take.chunks.push(chunk);
           take.frames += chunk.length / 2;
         }
+        self.postMessage({ type: "record-return", buffer: data }, [data]);
         return;
       case "record-stop":
         if (!take) throw new Error("There is no recording yet.");
@@ -145,6 +188,18 @@ async function handle(message) {
           : [];
     self.postMessage({ id, result }, transfers);
   } catch (error) {
+    if (type === "snapshot") {
+      self.postMessage(
+        {
+          type: "snapshot",
+          sequence: message.sequence,
+          buffer: message.buffer,
+          error: error.message,
+        },
+        [message.buffer],
+      );
+      return;
+    }
     self.postMessage({ id, error: error.message });
   }
 }

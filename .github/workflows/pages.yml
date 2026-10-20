@@ -32,6 +32,7 @@ jobs:
       - name: Exercise the compiled audio engine
         run: |
           node wasm/test.mjs
+          node wasm/test-realtime.mjs
           node wasm/test-microphone.mjs
           node wasm/test-library.mjs
           node wasm/test-presets.mjs

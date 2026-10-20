@@ -106,6 +106,7 @@ enum Target {
     Lfo(usize, usize),
     Env(usize, usize),
     Fx(bool, usize, ColorParameter),
+    SourceFx(ColorParameter),
     Performance(usize),
 }
 
@@ -123,6 +124,12 @@ pub struct Spec {
 impl Spec {
     pub fn get(&self, preset: &Preset) -> f32 {
         match self.target {
+            Target::SourceFx(field) => *preset
+                .source_color_chain
+                .first()
+                .copied()
+                .unwrap_or_default()
+                .parameter_mut(field),
             Target::Core { get, .. } => get(preset),
             Target::Lfo(i, field) => {
                 let l = preset.lfos[i];
@@ -200,6 +207,11 @@ impl Spec {
                 })
                 .get_mut(i)
                 {
+                    *slot.parameter_mut(field) = value;
+                }
+            }
+            Target::SourceFx(field) => {
+                if let Some(slot) = preset.source_color_chain.first_mut() {
                     *slot.parameter_mut(field) = value;
                 }
             }
@@ -401,6 +413,16 @@ pub fn specs() -> &'static [Spec] {
                 set: |p, v| p.params.loop_one_bar = v >= 0.5,
             },
         });
+        for &field in ColorParameter::ALL {
+            result.push(Spec {
+                id: format!("source_fx1_{}", field.key()),
+                name: format!("Source FX {}", field.key().replace('_', " ")),
+                min: 0.0,
+                max: 1.0,
+                default: *ColorSlot::default().parameter_mut(field),
+                target: Target::SourceFx(field),
+            });
+        }
         result
     })
 }

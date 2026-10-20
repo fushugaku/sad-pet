@@ -45,7 +45,7 @@ jobs:
           cargo fmt --all -- --check
           cargo clippy -p sad-pet-plugin --no-default-features --all-targets --locked -- -D warnings
           cargo test -p sad-pet-plugin --no-default-features --locked
-          cargo test -p sad-pet --lib --no-default-features --locked
+          cargo test -p sad-pet --lib --no-default-features --features source-worker --locked
           cargo test -p sad-pet --no-default-features --test parameter_updates --locked
           node wasm/test-presets.mjs
           node wasm/test-parameters.mjs

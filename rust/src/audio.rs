@@ -39,6 +39,12 @@ pub enum Command {
 }
 
 #[derive(Clone, Serialize)]
+pub struct SourceFxStatus {
+    pub pending: bool,
+    pub error: Option<&'static str>,
+}
+
+#[derive(Clone, Serialize)]
 pub struct State {
     pub version: &'static str,
     pub instance_id: String,
@@ -74,6 +80,7 @@ pub struct State {
     pub peak: Stereo,
     pub cpu_percent: f32,
     pub underruns: u64,
+    pub source_fx: SourceFxStatus,
     #[serde(skip)]
     pub sample: Arc<SampleBuffer>,
     #[serde(skip)]
@@ -233,6 +240,10 @@ impl Runtime {
             peak: [0.0; 2],
             cpu_percent: 0.0,
             underruns: 0,
+            source_fx: SourceFxStatus {
+                pending: false,
+                error: None,
+            },
             sample: sample.clone(),
         }));
         let running = Arc::new(AtomicBool::new(true));
@@ -241,6 +252,7 @@ impl Runtime {
         let worker_state = state.clone();
         let worker=thread::Builder::new().name("evil-dsp".into()).spawn(move || {
             let mut engine=Engine::new(sr,sample,preset);
+            let mut source_renderer=crate::dsp::source_fx_worker::Renderer::new(&engine);
             let mut recorder=crate::recording::Recorder::new(sr);
             let mut frames=[[0.0;2];128];
             let mut last_publish=Instant::now(); let mut cpu=0.0;
@@ -296,6 +308,7 @@ impl Runtime {
                 let device_active=worker_device.load(Ordering::Relaxed);
                 if device_active && producer.slots()<frames.len() {thread::sleep(Duration::from_micros(700));continue;}
                 let start=Instant::now();
+                source_renderer.update(&mut engine);
                 engine.process(&mut frames);
                 recorder.capture(&frames);
                 let load=start.elapsed().as_secs_f32()/(frames.len() as f32/sr as f32)*100.0;
@@ -320,6 +333,7 @@ impl Runtime {
                         state.matrix_values=engine.matrix_values;
                         state.knobs=engine.knob_states();
                         state.gain_reduction=engine.gain_reduction();
+                        state.source_fx=SourceFxStatus {pending:engine.source_effects_pending(),error:if engine.source_fx_error{Some("Could not prepare Source FX")}else{None}};
                         state.underruns=underruns.load(Ordering::Relaxed);
                         if !Arc::ptr_eq(&state.sample,&engine.sample) {
                             state.sample_name=engine.sample.name.clone();state.sample_id=engine.sample.library_id.clone();state.sample_seconds=engine.sample.duration();state.sample_frames=engine.sample.len();state.waveform=engine.sample.waveform.clone();state.sample=engine.sample.clone();

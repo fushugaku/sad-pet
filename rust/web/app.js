@@ -78,7 +78,13 @@ async function request(path, data) {
   const result = await (await api(path, data)).json();
   if (
     data !== undefined &&
-    ["/api/preset", "/api/parameters", "/api/input", "/api/region", "/api/fades"].includes(path)
+    [
+      "/api/preset",
+      "/api/parameters",
+      "/api/input",
+      "/api/region",
+      "/api/fades",
+    ].includes(path)
   )
     presetLibrary?.markDirty();
   return result;
@@ -118,8 +124,12 @@ function enqueuePresetWrite(path, value) {
   const write = presetWrites.catch(() => {}).then(() => request(path, value));
   presetWrites = write.finally(() => {
     presetWriteCount--;
-    if (!presetWriteCount && commitTimer === null &&
-        (structuralPending || parameterEdits.size)) armPresetWrite(16);
+    if (
+      !presetWriteCount &&
+      commitTimer === null &&
+      (structuralPending || parameterEdits.size)
+    )
+      armPresetWrite(16);
   });
   return presetWrites;
 }
@@ -134,15 +144,21 @@ function commitEdits() {
   const values = Object.fromEntries(parameterEdits);
   structuralPending = false;
   parameterEdits.clear();
-  const write = full ? writePreset(preset) : enqueuePresetWrite("/api/parameters", values);
-  return write.then(() => {
-    if (version === pending) pending = 0;
-  }, (error) => {
-    if (full) structuralPending = true;
-    else for (const [id, value] of Object.entries(values))
-      if (!parameterEdits.has(id)) parameterEdits.set(id, value);
-    throw error;
-  });
+  const write = full
+    ? writePreset(preset)
+    : enqueuePresetWrite("/api/parameters", values);
+  return write.then(
+    () => {
+      if (version === pending) pending = 0;
+    },
+    (error) => {
+      if (full) structuralPending = true;
+      else
+        for (const [id, value] of Object.entries(values))
+          if (!parameterEdits.has(id)) parameterEdits.set(id, value);
+      throw error;
+    },
+  );
 }
 async function flushEdits() {
   do {
@@ -477,7 +493,8 @@ function syncControl(key) {
   if (key.startsWith("filter") || key.startsWith("vcf")) syncFilters();
   if (key === "mix" || key === "master_volume") syncSliders();
   if (key === "bpm") syncColors();
-  if (["loop_one_bar", "sample_root_note", "bpm"].includes(key)) syncLoopControls();
+  if (["loop_one_bar", "sample_root_note", "bpm"].includes(key))
+    syncLoopControls();
   $("reverse").setAttribute(
     "aria-pressed",
     String(preset.params.grain_size < 0.5),
@@ -595,10 +612,19 @@ const COLOR_TYPES = [
 ];
 const COLOR_RACKS = [
   {
+    key: "source_color_chain",
+    element: "source-color-chain",
+    add: "source-color-add",
+    label: "Source FX",
+    max: 1,
+    prefix: "source_",
+  },
+  {
     key: "pre_color_chain",
     element: "pre-color-chain",
     add: "pre-color-add",
     label: "Pre FX",
+    prefix: "pre_",
   },
   { key: "color_chain", element: "color-chain", add: "color-add", label: "FX" },
 ];
@@ -879,7 +905,8 @@ function buildColors() {
       ...COLOR_TYPES.map(([value, label]) => option(value, label)),
     );
     $(rack.add).onclick = () => {
-      if (preset[rack.key].length >= colorDefaults.max_slots) return;
+      if (preset[rack.key].length >= (rack.max || colorDefaults.max_slots))
+        return;
       const slots = colorEntries().map((e) => e.slot);
       nextColorId = Math.max(nextColorId, ...slots.map((s) => s.id + 1));
       if (nextColorId > 4294967295) nextColorId = 1;
@@ -896,6 +923,7 @@ function buildColors() {
 function syncColors() {
   if (!preset?.color_chain || !colorDefaults) return;
   preset.pre_color_chain ||= [];
+  preset.source_color_chain ||= [];
   const signature = colorEntries()
     .map(
       ({ rack, slot: s }) =>
@@ -989,6 +1017,10 @@ function syncColors() {
         s.enabled = !s.enabled;
         editColorChain();
       };
+      if (rack.max === 1) {
+        card.querySelector(".color-up").hidden = true;
+        card.querySelector(".color-down").hidden = true;
+      }
       card.querySelector(".color-up").onclick = () => moveColor(id, -1);
       card.querySelector(".color-down").onclick = () => moveColor(id, 1);
       card.querySelector(".color-remove").onclick = () => removeColor(id);
@@ -1029,7 +1061,10 @@ function syncColors() {
               colorLegacy();
               controls.get(key)?.();
               if (parameter.endsWith("_ratio")) syncColors();
-              scheduleParameter(`${rack.key === "pre_color_chain" ? "pre_" : ""}fx${index + 1}_${parameter}`, value);
+              scheduleParameter(
+                `${rack.prefix || ""}fx${index + 1}_${parameter}`,
+                value,
+              );
             },
             reset: () =>
               parameter === "mix"
@@ -1085,15 +1120,22 @@ function syncColors() {
       index === preset[rack.key].length - 1;
   }
   for (const rack of COLOR_RACKS)
-    $(rack.add).disabled = preset[rack.key].length >= colorDefaults.max_slots;
+    $(rack.add).disabled =
+      preset[rack.key].length >= (rack.max || colorDefaults.max_slots);
   for (const [key, update] of controls) if (key.startsWith("color:")) update();
   syncGainReduction(state);
 }
 function syncGainReduction(next) {
+  $("source-fx-status").textContent =
+    next?.source_fx?.error || (next?.source_fx?.pending ? "Preparing…" : "");
   for (const meter of document.querySelectorAll(
     ".color-chain .gain-reduction",
   )) {
     const slot = findColor(Number(meter.dataset.slot));
+    meter.hidden =
+      preset?.source_color_chain?.some(
+        (s) => s.id === Number(meter.dataset.slot),
+      ) && !next?.input?.active;
     const raw = Number(next?.gain_reduction?.[meter.dataset.slot] ?? 0);
     const value =
       next?.playing &&
@@ -1125,7 +1167,9 @@ function fillDestination(select, destination) {
       group.append(option(destinationValue(value), text));
     select.append(group);
   }
-  for (const { rack, index, slot } of colorEntries()) {
+  for (const { rack, index, slot } of colorEntries().filter(
+    (e) => e.rack.key !== "source_color_chain",
+  )) {
     const group = document.createElement("optgroup");
     group.label = `${rack.label} ${index + 1} · ${COLOR_TYPES.find(([k]) => k === slot.kind)[1]}`;
     for (const [parameter, label] of colorDestinationSchema(slot.kind))
@@ -1403,7 +1447,10 @@ function buildLfos() {
         preset.lfos[i][field] = value;
         if (field === "sync") syncLfos();
         if (typeof value === "number")
-          scheduleParameter(`lfo${i + 1}_${field === "rate_hz" ? "rate" : field}`, value);
+          scheduleParameter(
+            `lfo${i + 1}_${field === "rate_hz" ? "rate" : field}`,
+            value,
+          );
         else schedulePreset();
       });
     }
@@ -1756,8 +1803,13 @@ function bindPerformance() {
       preset.performance[field] = value;
       syncPerformance();
       if (numeric) {
-        const id = { arp_division: "arp_rate", octaves: "arp_octaves",
-          sequence_division: "sequence_rate", length: "sequence_length" }[field] || field;
+        const id =
+          {
+            arp_division: "arp_rate",
+            octaves: "arp_octaves",
+            sequence_division: "sequence_rate",
+            length: "sequence_length",
+          }[field] || field;
         scheduleParameter(id, value);
       } else schedulePreset();
     };
@@ -2095,10 +2147,12 @@ function bind() {
   $("volume").oninput = (e) =>
     setParam("master_volume", Number(e.target.value));
   $("antialias").onchange = (e) => setParam("antialiasing", e.target.checked);
-  $("loop-one-bar").onchange = (e) => setParam("loop_one_bar", e.target.checked);
+  $("loop-one-bar").onchange = (e) =>
+    setParam("loop_one_bar", e.target.checked);
   for (let note = 0; note < 128; note++)
     $("sample-root-note").append(option(note, noteName(note)));
-  $("sample-root-note").onchange = (e) => setParam("sample_root_note", Number(e.target.value));
+  $("sample-root-note").onchange = (e) =>
+    setParam("sample_root_note", Number(e.target.value));
   $("bpm").oninput = (e) =>
     setParam("bpm", Math.max(20, Math.min(300, Number(e.target.value) || 120)));
   $("load-wav").onclick = () => $("wav-file").click();

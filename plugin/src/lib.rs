@@ -2,6 +2,7 @@
 //! Controller prepares files/presets and reclaims retired allocations off-thread.
 mod parameters;
 mod preset_library;
+use sad_pet::dsp::source_fx_worker as source_fx;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use rtrb::{Consumer, Producer, RingBuffer};
@@ -34,6 +35,7 @@ struct PreparedSource {
     live: Option<LiveInput>,
     region: Region,
     fades: Fades,
+    processed: Option<Arc<sad_pet::dsp::source_fx::ProcessedSource>>,
 }
 
 #[derive(Default, Deserialize)]
@@ -122,6 +124,7 @@ pub struct Audio {
     expected_beat: Option<f64>,
     frames_since_feedback: usize,
     view: RealtimeView,
+    source_renderer: source_fx::Renderer,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -223,7 +226,31 @@ impl Controller {
         region: Region,
         fades: Fades,
     ) -> PreparedSource {
+        self.prepared_source_for(sample, source, region, fades, &self.preset)
+    }
+    fn prepared_source_for(
+        &self,
+        sample: Arc<SampleBuffer>,
+        source: Source,
+        region: Region,
+        fades: Fades,
+        preset: &Preset,
+    ) -> PreparedSource {
         PreparedSource {
+            processed: if source == Source::File {
+                sad_pet::dsp::source_fx::prepare(
+                    sample.clone(),
+                    region,
+                    preset.source_color_chain.first().copied(),
+                    preset.params.bpm,
+                    preset.params.sample_root_note,
+                    || false,
+                )
+                .ok()
+                .flatten()
+            } else {
+                None
+            },
             sample,
             live: (source != Source::File).then(|| {
                 let mut input = LiveInput::new(self.rate, source == Source::Effects);
@@ -253,12 +280,14 @@ impl Controller {
             let _ = engine.set_region(self.region);
             let _ = engine.set_fades(self.fades);
         }
+        engine.exchange_processed_source(&mut source.processed);
         engine.set_playing(
             self.playing
                 && (self.effect || self.preset.performance.mode != Mode::Keys || !self.midi_gate),
         );
         engine.set_frozen(self.frozen && self.source == Source::File);
         engine.bypass = self.bypass;
+        let source_renderer = source_fx::Renderer::new(&engine);
         Audio {
             engine,
             commands: receiver,
@@ -273,6 +302,7 @@ impl Controller {
             expected_beat: None,
             frames_since_feedback: 0,
             view: RealtimeView::default(),
+            source_renderer,
         }
     }
 
@@ -315,6 +345,7 @@ impl Controller {
             .color_chain
             .iter()
             .chain(&self.preset.pre_color_chain)
+            .chain(&self.preset.source_color_chain)
         {
             for &parameter in slot.control_parameters() {
                 let mut copy = *slot;
@@ -330,12 +361,18 @@ impl Controller {
                 knobs.insert(format!("color:{}:{}", slot.id, parameter.key()), json!({"base":base,"current":current,"min":base.min(current),"max":base.max(current),"modulated":(base-current).abs()>0.00001}));
             }
         }
-        let reduction: std::collections::BTreeMap<_, _> = view
+        let mut reduction: std::collections::BTreeMap<_, _> = view
             .gain_reduction
             .iter()
             .filter(|(id, _)| *id != 0)
             .map(|(id, db)| (id.to_string(), *db))
             .collect();
+        if view.source_gain_reduction.0 != 0 {
+            reduction.insert(
+                view.source_gain_reduction.0.to_string(),
+                view.source_gain_reduction.1,
+            );
+        }
         json!({
             "version": env!("CARGO_PKG_VERSION"), "instance_id": "plugin",
             "plugin": {"effect":self.effect,"sync":self.sync,"host_bpm":self.host_bpm,"host_playing":self.host_playing,"bar_beats":view.bar_beats},
@@ -356,6 +393,7 @@ impl Controller {
             "performance":{"mode":self.preset.performance.mode,"step":view.step,"arp_index":view.arp_index,"chord":&view.chord[..view.chord_len],"gate":view.gate,"beat":view.beat},
             "lfos":view.lfos,"envs":view.envs,"matrix_values":view.matrix,"knobs":knobs,
             "peak":view.peak,"gain_reduction":reduction,"cpu_percent":0.0,"underruns":0,
+            "source_fx":{"pending":view.source_fx_pending,"error":if view.source_fx_error {Some("Could not prepare Source FX")}else{None}},
         })
     }
 
@@ -409,7 +447,13 @@ impl Controller {
         saved.region.bounds(sample.len())?;
         saved.fades.validate()?;
         let sample = Arc::new(sample);
-        let source = self.prepared_source(sample.clone(), saved.source, saved.region, saved.fades);
+        let source = self.prepared_source_for(
+            sample.clone(),
+            saved.source,
+            saved.region,
+            saved.fades,
+            &saved.preset,
+        );
         self.enqueue(Command::Restore(Box::new(Restore {
             preset: saved.preset.clone(),
             source,
@@ -654,6 +698,7 @@ impl Audio {
             let _ = self.engine.set_fades(source.fades);
         }
         self.engine.set_frozen(false);
+        self.engine.exchange_processed_source(&mut source.processed);
     }
     fn begin(&mut self, values: &[f32], bpm: f32, beat: Option<f64>, playing: bool, frames: usize) {
         let mut preset_changed = false;
@@ -775,6 +820,7 @@ impl Audio {
                 0.0
             }
         });
+        self.source_renderer.update(&mut self.engine);
     }
     fn end(&mut self, frames: usize) {
         self.frames_since_feedback += frames;

@@ -97,6 +97,76 @@ fn one_bar_loop_host_controls_and_meter_are_realtime_safe_and_saved() {
     assert_eq!(restored.preset.params.sample_root_note, 48.0);
 }
 
+#[test]
+fn source_fx_cache_updates_and_host_automation_never_allocate_on_audio() {
+    let mut control = Controller::new(false);
+    let mut p = control.preset.clone();
+    p.params.loop_one_bar = true;
+    p.source_color_chain = vec![sad_pet::color::ColorSlot {
+        id: 40,
+        mix: 1.0,
+        ..Default::default()
+    }];
+    call(&mut control, "/api/preset", json!(p));
+    let mut audio = control.prepare(8000);
+    assert!(audio.engine.processed_source.is_some());
+    audio.engine.midi(Message::NoteOn {
+        channel: 0,
+        note: 72,
+        velocity: 100,
+    });
+    let mut values = control.values();
+    let index = parameters::specs()
+        .iter()
+        .position(|p| p.id == "source_fx1_distortion_drive")
+        .unwrap();
+    values[index] = 0.9;
+    no_heap(|| {
+        audio.begin(&values, 120.0, None, false, 128);
+        render(&mut audio, 128, [0.0; 2]);
+    });
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while audio.engine.source_effects_pending() && std::time::Instant::now() < until {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        no_heap(|| {
+            audio.begin(&values, 120.0, None, false, 128);
+            render(&mut audio, 128, [0.0; 2]);
+        });
+    }
+    assert!(!audio.engine.source_effects_pending());
+    assert_eq!(audio.engine.held_notes(), vec![72]);
+    assert_eq!(
+        audio
+            .engine
+            .processed_source
+            .as_ref()
+            .unwrap()
+            .slot
+            .settings
+            .distortion_drive,
+        0.9
+    );
+    control.set_values(&values);
+    let saved = control.save().unwrap();
+    let mut other = Controller::new(false);
+    other.restore(&saved).unwrap();
+    let restored = other.prepare(8000);
+    assert_eq!(
+        restored.engine.preset.source_color_chain[0]
+            .settings
+            .distortion_drive,
+        0.9
+    );
+    let mut effect = Controller::new(true);
+    effect.preset.source_color_chain = p.source_color_chain;
+    let mut live = effect.prepare(8000);
+    let values = effect.values();
+    no_heap(|| {
+        live.begin(&values, 120.0, None, false, 128);
+        render(&mut live, 128, [0.2; 2]);
+    });
+}
+
 struct PresetDirectory(std::path::PathBuf);
 impl PresetDirectory {
     fn new() -> Self {

@@ -37,6 +37,7 @@ function decode(bytes) {
   return text;
 }
 
+const NO_INPUT = [];
 export class Core {
   constructor(module, rate = 48000) {
     this.wasm = new WebAssembly.Instance(module, {}).exports;
@@ -73,21 +74,58 @@ export class Core {
   request(path, data = null) {
     return this.json("sad_command", { path, data });
   }
-  process(frames, input = []) {
+  snapshot(target) {
+    const length = this.wasm.sad_snapshot();
+    if (!length) return 0;
+    if (length > target.length)
+      throw new Error("Telemetry buffer is too small.");
+    const pointer = this.wasm.sad_snapshot_pointer(),
+      memory = this.wasm.memory.buffer;
+    if (
+      this.snapshotView?.buffer !== memory ||
+      this.snapshotView.byteOffset !== pointer
+    )
+      this.snapshotView = new Uint8Array(memory, pointer, target.length);
+    for (let i = 0; i < length; i++) target[i] = this.snapshotView[i];
+    return length;
+  }
+  sourceChunk(bytes, offset) {
+    const length = Math.min(32768, bytes.length - offset),
+      pointer = this.wasm.sad_source_input(),
+      memory = this.wasm.memory.buffer;
+    if (
+      this.sourceView?.buffer !== memory ||
+      this.sourceView.byteOffset !== pointer
+    )
+      this.sourceView = new Uint8Array(memory, pointer, 32768);
+    for (let i = 0; i < length; i++) this.sourceView[i] = bytes[offset + i];
+    this.sourceCopied = length;
+    return this.wasm.sad_source_push(length / 8);
+  }
+  process(frames, input = NO_INPUT) {
     if (!Number.isInteger(frames) || frames < 1 || frames > 4096)
       throw new Error("Invalid audio block size.");
-    const incoming = new Float32Array(
-      this.wasm.memory.buffer,
-      this.wasm.sad_audio_input(),
-      frames * 2,
-    );
+    const inputPointer = this.wasm.sad_audio_input(),
+      before = this.wasm.memory.buffer;
+    if (
+      this.incoming?.buffer !== before ||
+      this.incoming.byteOffset !== inputPointer ||
+      this.incoming.length !== frames * 2
+    )
+      this.incoming = new Float32Array(before, inputPointer, frames * 2);
+    const incoming = this.incoming;
     for (let i = 0; i < frames; i++) {
       incoming[i * 2] = input[0]?.[i] ?? 0;
       incoming[i * 2 + 1] = (input[1] || input[0])?.[i] ?? 0;
     }
     const pointer = this.wasm.sad_process(frames);
-    // A sample load or recording may grow memory. Always acquire the current
-    // buffer after entering WASM, never retain a detached view between blocks.
-    return new Float32Array(this.wasm.memory.buffer, pointer, frames * 2);
+    const after = this.wasm.memory.buffer;
+    if (
+      this.processed?.buffer !== after ||
+      this.processed.byteOffset !== pointer ||
+      this.processed.length !== frames * 2
+    )
+      this.processed = new Float32Array(after, pointer, frames * 2);
+    return this.processed;
   }
 }

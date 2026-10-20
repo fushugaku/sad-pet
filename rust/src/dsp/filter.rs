@@ -15,6 +15,8 @@ struct Filter {
     resonance: f32,
     g: f32,
     k: f32,
+    coefficients: [f32; 3],
+    band_gain: f32,
     delay: f32,
 }
 impl Filter {
@@ -29,6 +31,8 @@ impl Filter {
             resonance: 0.0,
             g: 1.0,
             k: 2.0,
+            coefficients: [0.25; 3],
+            band_gain: 2.0_f32.sqrt(),
             delay: 1.0,
         }
     }
@@ -56,6 +60,10 @@ impl Filter {
         let hz = cutoff_hz(kind, self.cutoff);
         self.g = (std::f32::consts::PI * hz.min(self.sample_rate * 0.45) / self.sample_rate).tan();
         self.k = 2.0 - 1.94 * self.resonance;
+        let a1 = 1.0 / (1.0 + self.g * (self.g + self.k));
+        let a2 = self.g * a1;
+        self.coefficients = [a1, a2, self.g * a2];
+        self.band_gain = self.k.sqrt();
         self.delay = self.sample_rate / hz;
     }
     fn process(&mut self, frame: Stereo) -> Stereo {
@@ -66,11 +74,8 @@ impl Filter {
             self.comb.push(result);
             return result;
         }
-        let g = self.g;
         let k = self.k;
-        let a1 = 1.0 / (1.0 + g * (g + k));
-        let a2 = g * a1;
-        let a3 = g * a2;
+        let [a1, a2, a3] = self.coefficients;
         std::array::from_fn(|c| {
             let [ic1, ic2] = self.state[c];
             let v3 = frame[c] - ic2;
@@ -82,7 +87,7 @@ impl Filter {
             } else {
                 match self.kind {
                     FilterType::LowPass => low,
-                    FilterType::BandPass => band * k.sqrt(),
+                    FilterType::BandPass => band * self.band_gain,
                     FilterType::HighPass => frame[c] - k * band - low,
                     FilterType::Comb => unreachable!(),
                 }

@@ -9,22 +9,78 @@ class SadPetProcessor extends AudioWorkletProcessor {
     this.recordedFrames = 0;
     this.recordBuffer = null;
     this.recordLength = 0;
+    this.snapshotPool = Array.from({ length: 3 }, () => new Uint8Array(131072));
+    this.recordPool = Array.from(
+      { length: 4 },
+      () => new Float32Array(16384 * 2),
+    );
     this.limit = Math.min(
       sampleRate * 30 * 60,
       Math.floor((512 * 1024 * 1024 - 4096) / 8),
     );
     this.port.onmessage = ({ data: message }) => {
       const { id, type, data } = message;
+      if (type === "snapshot-return") {
+        this.core.wasm.sad_snapshot_ack(
+          message.sequence,
+          message.success ? 1 : 0,
+        );
+        this.snapshotPool.push(new Uint8Array(data));
+        return;
+      }
+      if (type === "record-return") {
+        if (this.recordPool.length < 8)
+          this.recordPool.push(new Float32Array(data));
+        return;
+      }
       try {
         let result;
-        if (type === "load") result = this.core.json("sad_load", data);
-        else if (type === "capture-input")
+        if (type === "load") {
+          if (this.sourceTransfer)
+            this.port.postMessage({
+              type: "source-ready",
+              key: this.sourceTransfer.key,
+              generation: this.sourceTransfer.generation,
+              status: 2,
+            });
+          this.sourceTransfer = null;
+          result = this.core.json("sad_load", data.prepared || data);
+          this.core.wasm.sad_source_generation(
+            data.generation ?? (this.sourceGeneration || 0) + 1,
+          );
+          this.sourceGeneration =
+            data.generation ?? (this.sourceGeneration || 0) + 1;
+        } else if (type === "source-load") {
+          result = this.core.json("sad_source_begin", {
+            recipe: data.recipe,
+            header: data.header,
+            generation: data.generation,
+          });
+          if (result.started) {
+            if (this.sourceTransfer)
+              this.port.postMessage({
+                type: "source-ready",
+                key: this.sourceTransfer.key,
+                generation: this.sourceTransfer.generation,
+                status: 2,
+              });
+            this.sourceTransfer = {
+              bytes: data.prepared
+                ? new Uint8Array(data.prepared, data.offset)
+                : new Uint8Array(0),
+              offset: 0,
+              key: data.key,
+              generation: data.generation,
+            };
+          }
+        } else if (type === "capture-input")
           result = this.core.call("sad_input_wav");
         else if (type === "record-start") {
           if (this.recording) throw new Error("Recording is already running.");
           this.recordedFrames = 0;
           this.recordSource = data?.source === "input" ? "input" : "output";
-          this.recordBuffer = new Float32Array(16384 * 2);
+          this.recordBuffer ||=
+            this.recordPool.pop() || new Float32Array(16384 * 2);
           this.recordLength = 0;
           this.recording = true;
           result = { frames: 0 };
@@ -37,7 +93,12 @@ class SadPetProcessor extends AudioWorkletProcessor {
           { id, result },
           result instanceof ArrayBuffer ? [result] : [],
         );
-        this.snapshot();
+        if (
+          !["/api/note", "/api/midi-bytes", "/api/parameters"].includes(
+            message.path,
+          )
+        )
+          this.snapshot();
       } catch (error) {
         this.port.postMessage({ id, error: error.message });
       }
@@ -45,23 +106,45 @@ class SadPetProcessor extends AudioWorkletProcessor {
     this.port.postMessage({ type: "ready" });
   }
   snapshot() {
-    const state = this.core.request("/api/state");
-    this.port.postMessage({
-      type: "state",
-      state,
-      recordedFrames: this.recordedFrames,
-    });
+    const buffer = this.snapshotPool.pop();
+    // UI backpressure must never delay audio/MIDI or discard unreported peaks.
+    if (!buffer) return;
+    let length;
+    try {
+      length = this.core.snapshot(buffer);
+    } catch {
+      this.snapshotPool.push(buffer);
+      return;
+    }
+    if (!length) {
+      this.snapshotPool.push(buffer);
+      return;
+    }
+    this.port.postMessage(
+      {
+        type: "snapshot",
+        buffer: buffer.buffer,
+        length,
+        sequence: this.core.wasm.sad_snapshot_sequence(),
+        recordedFrames: this.recordedFrames,
+      },
+      [buffer.buffer],
+    );
   }
   flushRecording() {
     if (!this.recordLength) return;
-    const buffer =
-      this.recordLength === this.recordBuffer.length
-        ? this.recordBuffer
-        : this.recordBuffer.slice(0, this.recordLength);
-    this.port.postMessage({ type: "record-chunk", buffer: buffer.buffer }, [
-      buffer.buffer,
-    ]);
-    this.recordBuffer = new Float32Array(16384 * 2);
+    const buffer = this.recordBuffer;
+    this.port.postMessage(
+      {
+        type: "record-chunk",
+        buffer: buffer.buffer,
+        length: this.recordLength,
+      },
+      [buffer.buffer],
+    );
+    // If the utility worker is busy, keep every recorded frame. Normally its
+    // returned buffers avoid allocations here; starvation has a lossless fallback.
+    this.recordBuffer = this.recordPool.pop() || new Float32Array(16384 * 2);
     this.recordLength = 0;
   }
   process(inputs, outputs) {
@@ -69,6 +152,20 @@ class SadPetProcessor extends AudioWorkletProcessor {
       const channels = outputs[0];
       if (!channels?.length) return true;
       const count = channels[0].length;
+      if (this.sourceTransfer) {
+        const stage = this.sourceTransfer;
+        const status = this.core.sourceChunk(stage.bytes, stage.offset);
+        stage.offset += this.core.sourceCopied;
+        if (status !== 0) {
+          this.port.postMessage({
+            type: "source-ready",
+            key: stage.key,
+            generation: stage.generation,
+            status,
+          });
+          this.sourceTransfer = null;
+        }
+      }
       const frames = this.core.process(count, inputs[0]);
       for (let c = 0; c < channels.length; c++)
         for (let i = 0; i < count; i++)
@@ -94,10 +191,8 @@ class SadPetProcessor extends AudioWorkletProcessor {
                 : 0;
             }
           } else
-            this.recordBuffer.set(
-              frames.subarray(offset, offset + length),
-              this.recordLength,
-            );
+            for (let i = 0; i < length; i++)
+              this.recordBuffer[this.recordLength + i] = frames[offset + i];
           this.recordLength += length;
           offset += length;
           if (this.recordLength === this.recordBuffer.length)

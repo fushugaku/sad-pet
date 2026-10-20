@@ -2,11 +2,11 @@
 //! running processors or changing audio state. Called at UI publication time.
 use super::{Engine, Modulated, filter};
 use crate::{matrix::Source, preset::Destination};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Fixed-size feedback for hosts. Publishing it does not allocate or lock.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct RealtimeView {
     pub peak: [f32; 2],
     pub input_peak: [f32; 2],
@@ -22,13 +22,21 @@ pub struct RealtimeView {
     pub matrix: [f32; crate::matrix::MAX_ROUTES],
     pub notes: [u8; 8],
     pub note_count: usize,
+    #[serde(skip, default = "empty_grains")]
     pub grains: [super::GrainView; super::MAX_GRAINS],
     pub grain_count: usize,
+    #[serde(skip, default = "empty_waveform")]
     pub waveform: [[f32; 2]; 640],
     pub waveform_len: usize,
     pub params: crate::preset::Params,
+    pub filter_cutoffs: [f32; 2],
+    pub source_fx_pending: bool,
+    pub source_fx_error: bool,
+    pub source_gain_reduction: (u32, f32),
+    #[serde(skip)]
     pub color: [crate::color::ColorSlot; crate::color::MAX_COLOR_SLOTS],
     pub color_len: usize,
+    #[serde(skip)]
     pub pre_color: [crate::color::ColorSlot; crate::color::MAX_COLOR_SLOTS],
     pub pre_color_len: usize,
     pub gain_reduction: [(u32, f32); crate::color::MAX_COLOR_SLOTS * 2],
@@ -64,6 +72,10 @@ impl Default for RealtimeView {
             waveform: [[0.0; 2]; 640],
             waveform_len: 0,
             params: crate::preset::Params::default(),
+            filter_cutoffs: [1.0; 2],
+            source_fx_pending: false,
+            source_fx_error: false,
+            source_gain_reduction: (0, 0.0),
             color: [crate::color::ColorSlot::default(); crate::color::MAX_COLOR_SLOTS],
             color_len: 0,
             pre_color: [crate::color::ColorSlot::default(); crate::color::MAX_COLOR_SLOTS],
@@ -79,6 +91,14 @@ impl Default for RealtimeView {
             step_edits: [None; 16],
         }
     }
+}
+
+fn empty_waveform() -> [[f32; 2]; 640] {
+    [[0.0; 2]; 640]
+}
+
+fn empty_grains() -> [super::GrainView; super::MAX_GRAINS] {
+    [super::GrainView::default(); super::MAX_GRAINS]
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -142,6 +162,23 @@ impl Engine {
         view.envs = self.env_values;
         view.matrix = self.matrix_values;
         view.params = self.modulated.params;
+        view.filter_cutoffs = self.current_filter_cutoffs();
+        view.source_fx_pending = self.source_effects_pending();
+        view.source_fx_error = self.source_fx_error;
+        view.source_gain_reduction = self
+            .preset
+            .source_color_chain
+            .first()
+            .map_or((0, 0.0), |s| {
+                (
+                    s.id,
+                    if self.live_input.is_some() {
+                        self.source_color.gain_reduction_db()
+                    } else {
+                        0.0
+                    },
+                )
+            });
         view.color = self.modulated.color_slots;
         view.color_len = self.modulated.color_len;
         view.pre_color = self.modulated.pre_color_slots;
@@ -252,9 +289,41 @@ impl Engine {
         (low, high)
     }
     pub fn knob_states(&self) -> BTreeMap<String, KnobState> {
+        self.knob_states_at(&self.modulated, self.current_filter_cutoffs())
+    }
+
+    pub fn knob_states_from_view(&self, view: &RealtimeView) -> BTreeMap<String, KnobState> {
+        let mut m = Modulated::from_preset(&self.preset);
+        m.params = view.params;
+        m.color_slots = view.color;
+        m.pre_color_slots = view.pre_color;
+        self.knob_states_at(&m, view.filter_cutoffs)
+    }
+
+    fn current_filter_cutoffs(&self) -> [f32; 2] {
+        let m = self.modulated.params;
+        let voice = self
+            .voices
+            .iter()
+            .find(|v| v.active() && v.note == self.source_note && v.channel == self.source_channel)
+            .or_else(|| self.voices.iter().find(|v| v.active()));
+        let (note, envs) = voice.map_or((60.0, [0.0; 3]), |v| {
+            (
+                v.note as f32 + self.bend[v.channel as usize] * m.midi_pitchbend_range,
+                v.env_values,
+            )
+        });
+        filter::voice_cutoffs(&m, note, envs)
+    }
+
+    fn knob_states_at(
+        &self,
+        modulated: &Modulated,
+        current: [f32; 2],
+    ) -> BTreeMap<String, KnobState> {
         let (low, high) = self.control_limits();
         let p = self.preset.params;
-        let m = self.modulated.params;
+        let m = modulated.params;
         let mut result = BTreeMap::new();
         macro_rules! parameter {($($field:ident),* $(,)?)=>{$(
             result.insert(stringify!($field).into(),KnobState::new(p.$field,m.$field,low.params.$field,high.params.$field));
@@ -280,18 +349,6 @@ impl Engine {
 
         // Cutoff includes each voice's dedicated envelope and keyboard tracking.
         // A single marker follows the latest sounding note, as do note sources.
-        let voice = self
-            .voices
-            .iter()
-            .find(|v| v.active() && v.note == self.source_note && v.channel == self.source_channel)
-            .or_else(|| self.voices.iter().find(|v| v.active()));
-        let (note, envs) = voice.map_or((60.0, [0.0; 3]), |v| {
-            (
-                v.note as f32 + self.bend[v.channel as usize] * m.midi_pitchbend_range,
-                v.env_values,
-            )
-        });
-        let current = filter::voice_cutoffs(&m, note, envs);
         let mut lo = low.params;
         let hi = high.params;
         // Negative notes give the minimum at maximum nonnegative key tracking.
@@ -315,13 +372,13 @@ impl Engine {
         for (slots, current_slots, low_slots, high_slots) in [
             (
                 &self.preset.color_chain,
-                &self.modulated.color_slots,
+                &modulated.color_slots,
                 &low.color_slots,
                 &high.color_slots,
             ),
             (
                 &self.preset.pre_color_chain,
-                &self.modulated.pre_color_slots,
+                &modulated.pre_color_slots,
                 &low.pre_color_slots,
                 &high.pre_color_slots,
             ),
@@ -341,6 +398,15 @@ impl Engine {
                     );
                     result.insert(key, state);
                 }
+            }
+        }
+        for slot in &self.preset.source_color_chain {
+            for &parameter in slot.control_parameters() {
+                let base = *slot.to_owned().parameter_mut(parameter);
+                result.insert(
+                    format!("color:{}:{}", slot.id, parameter.key()),
+                    KnobState::new(base, base, base, base),
+                );
             }
         }
         result

@@ -1,6 +1,6 @@
 [package]
 name = "sad-pet"
-version = "0.22.0"
+version = "0.23.0"
 edition = "2024"
 description = "SAD PET desktop granular instrument"
 publish = false
@@ -15,7 +15,8 @@ required-features = ["desktop"]
 
 [features]
 default = ["desktop"]
-desktop = ["dep:cpal", "dep:ctrlc", "dep:midir", "dep:mp3lame-encoder", "dep:rtrb", "dep:tiny_http"]
+source-worker = ["dep:rtrb"]
+desktop = ["source-worker", "dep:cpal", "dep:ctrlc", "dep:midir", "dep:mp3lame-encoder", "dep:rtrb", "dep:tiny_http"]
 
 [dependencies]
 hound = "3.5"

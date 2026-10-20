@@ -40,3 +40,6 @@
 
 This document records the added dependencies; it does not replace their license
 texts or the repository's existing source and sample notices.
+
+- **Web binary telemetry** uses rmp-serde/rmp (MIT), recorded in Cargo.lock.
+  They run only in the web build and are not linked into native plug-ins.

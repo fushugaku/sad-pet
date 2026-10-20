@@ -32,6 +32,7 @@ const state = {
   preset: {
     format: "evil-pet-rust-v1",
     name: record.name,
+    source_color_chain: [{ id: 2, kind: "flanger" }],
     pre_color_chain: [{ id: 3, kind: "waveshaper" }],
     color_chain: [{ id: 4, kind: "compressor" }],
   },
@@ -52,6 +53,7 @@ assert.deepEqual(
 );
 const restored = await decode(blob);
 assert.equal(restored.state.preset.name, record.name);
+assert.equal(restored.state.preset.source_color_chain[0].kind, "flanger");
 assert.equal(restored.state.preset.pre_color_chain[0].kind, "waveshaper");
 assert.equal(restored.state.preset.color_chain[0].kind, "compressor");
 assert.equal(
@@ -66,7 +68,7 @@ const corrupt = bytes.slice();
 new DataView(corrupt.buffer).setUint32(8, 99999, true);
 await assert.rejects(() => decode(new Blob([corrupt])));
 console.log(
-  "Preset files passed: portable gzip format, Unicode names, both FX racks, legacy import and damaged-file rejection.",
+  "Preset files passed: portable gzip format, Unicode names, Source FX and both racks, legacy import and damaged-file rejection.",
 );
 if (process.argv[2]) {
   const native = await decode(new Blob([await readFile(process.argv[2])]));

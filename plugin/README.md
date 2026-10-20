@@ -64,7 +64,7 @@ The same User bank is available to every SAD PET / SAD PET FX instance.
 
 User presets live in `~/Library/Application Support/SAD PET/Presets` on macOS
 and `%APPDATA%\SAD PET\Presets` on Windows. A `.sadpet` file contains compressed
-settings, both FX racks, modulation, tuning, sequence data and embedded sample
+settings, Source FX and both FX racks, modulation, tuning, sequence data and embedded sample
 audio with its region/fades. It can be transferred between computers without the
 original WAV. Import and Export are in the preset browser; older `.sad.json`
 presets can still be imported. Previously saved browser presets migrate into
@@ -100,8 +100,13 @@ the loop. Without a host, the bar is four beats at the Tempo setting. Freeze pau
 the scan; note releases still follow the envelope. Save a live recording as a file
 to select and loop it. The checkbox and Root are stored in presets and DAW projects.
 
-The signal path is grains/source blend → Pre-filter effects → note filters →
-Post-filter effects. Both racks have the same catalog and up to 12 independent
+The signal path is source → **Source FX** → grains/source blend → Pre-filter
+effects → note filters → Post-filter effects. Source FX is one independent slot
+with the same effect catalog. Live input is processed before entering the grain
+history. For files, only the selection is prepared in the background; changes
+become audible when ready and crossfade without restarting notes or loops.
+Tails outside that selection are excluded. Source FX numeric controls accept DAW
+automation with asynchronous file updates; the slot is not an LFO/matrix destination. Both racks have the same catalog and up to 12 independent
 slots. Old presets load with an empty pre-filter rack and retain their sound.
 
 **Waveshaper** ports Drive and all eleven RADIAS WS types from radias-emulator:

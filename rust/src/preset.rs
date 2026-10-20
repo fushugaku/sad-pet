@@ -217,7 +217,7 @@ fn default_envs() -> [Env; 3] {
     ]
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Params {
     pub grain_size: f32,
@@ -387,6 +387,7 @@ pub struct Preset {
     pub envs: [Env; 3],
     pub performance: crate::performance::Settings,
     pub pre_color_chain: Vec<crate::color::ColorSlot>,
+    pub source_color_chain: Vec<crate::color::ColorSlot>,
     pub color_chain: Vec<crate::color::ColorSlot>,
     pub fx_chain_version: u8,
     pub matrix: Vec<crate::matrix::Route>,
@@ -402,6 +403,7 @@ impl Default for Preset {
             envs: default_envs(),
             performance: crate::performance::Settings::default(),
             pre_color_chain: Vec::new(),
+            source_color_chain: Vec::new(),
             color_chain: vec![
                 crate::color::ColorSlot::legacy(SaturatorType::Distortion, 0.0),
                 crate::color::ColorSlot::legacy_reverb(2, &Params::default()),
@@ -423,6 +425,7 @@ impl<'de> Deserialize<'de> for Preset {
             envs: Option<[Env; 3]>,
             performance: crate::performance::Settings,
             pre_color_chain: Vec<crate::color::ColorSlot>,
+            source_color_chain: Vec<crate::color::ColorSlot>,
             color_chain: Option<Vec<crate::color::ColorSlot>>,
             fx_chain_version: u8,
             matrix: Vec<crate::matrix::Route>,
@@ -438,6 +441,7 @@ impl<'de> Deserialize<'de> for Preset {
                     envs: None,
                     performance: p.performance,
                     pre_color_chain: Vec::new(),
+                    source_color_chain: Vec::new(),
                     color_chain: None,
                     fx_chain_version: 0,
                     matrix: Vec::new(),
@@ -493,6 +497,7 @@ impl<'de> Deserialize<'de> for Preset {
             let mut reserved: Vec<_> = color_chain
                 .iter()
                 .chain(&d.pre_color_chain)
+                .chain(&d.source_color_chain)
                 .map(|s| s.id)
                 .collect();
             reserved.extend(referenced.filter_map(|d| {
@@ -531,6 +536,7 @@ impl<'de> Deserialize<'de> for Preset {
             envs,
             performance: d.performance,
             pre_color_chain: d.pre_color_chain,
+            source_color_chain: d.source_color_chain,
             color_chain,
             fx_chain_version: 1,
             matrix,
@@ -544,10 +550,12 @@ impl Preset {
         self.matrix.truncate(crate::matrix::MAX_ROUTES);
         self.color_chain.truncate(crate::color::MAX_COLOR_SLOTS);
         self.pre_color_chain.truncate(crate::color::MAX_COLOR_SLOTS);
+        self.source_color_chain.truncate(1);
         let mut reserved: Vec<u32> = self
             .color_chain
             .iter()
             .chain(&self.pre_color_chain)
+            .chain(&self.source_color_chain)
             .map(|s| s.id)
             .collect();
         reserved.extend(
@@ -569,7 +577,12 @@ impl Preset {
                 }),
         );
         let mut used = Vec::new();
-        for slot in self.color_chain.iter_mut().chain(&mut self.pre_color_chain) {
+        for slot in self
+            .color_chain
+            .iter_mut()
+            .chain(&mut self.pre_color_chain)
+            .chain(&mut self.source_color_chain)
+        {
             if slot.id == 0 || used.contains(&slot.id) {
                 slot.id = (1..).find(|id| !reserved.contains(id)).unwrap();
                 reserved.push(slot.id);
@@ -583,12 +596,15 @@ impl Preset {
             .first()
             .map_or(SaturatorType::Distortion, |s| s.kind);
         crate::color::mirror_reverb(&mut self.params, &self.color_chain);
+        // Source FX for files is prepared off-thread, so it cannot be an
+        // audio-rate modulation destination. Host automation uses its own IDs.
+        let source_id = self.source_color_chain.first().map(|slot| slot.id);
         let validate = |route: &mut Destination| {
             if !crate::matrix::valid(*route) {
                 *route = Destination::None;
             }
             if let Destination::Color { slot, .. } = *route
-                && !used.contains(&slot)
+                && (!used.contains(&slot) || source_id == Some(slot))
             {
                 *route = Destination::None;
             }

@@ -5,7 +5,9 @@ A granular instrument with a shared Rust audio engine for desktop and WebAssembl
 **[Play SAD PET in your browser](https://fushugaku.github.io/sad-pet/)**
 
 The web version runs entirely in the browser: Rust DSP in an AudioWorklet, with
-sample preparation, WAV rendering and MP3 encoding in a separate worker. No backend
+sample preparation, WAV rendering and MP3 encoding off the audio thread. Dedicated
+workers handle binary UI telemetry and recording ingestion. Audio views and
+recording buffers are reused. No backend
 or installation is required. Click Play or a keyboard key to enable sound.
 The desktop version uses the system audio output and a local browser panel.
 
@@ -26,6 +28,9 @@ The desktop version uses the system audio output and a local browser panel.
 - Polyphonic keyboard, note/chord hold, arpeggiator and a 16-step chord sequencer.
 - Three LFOs with tempo sync up to 8 bars, three ADSR envelopes and eight modulation routes.
 - Two filters with single, serial and parallel routing, envelope depth and key tracking.
+- A **Source FX** slot before the Grain Engine, with all existing effect types.
+  Live audio is processed before grain capture; file selections are prepared in
+  the background with the original FIR antialiasing and smooth source changes.
 - Two independent reorderable chains of up to 12 effects each, before and after
   the filters: distortion, rate reducer, bit crusher,
   flanger, chorus, binaural processing, reverb, L/C/R delay, modulated delay and
@@ -84,6 +89,7 @@ Close a packaged instance with Quit before starting the development stack.
 rustup target add wasm32-unknown-unknown
 python3 wasm/build.py
 node wasm/test.mjs
+node wasm/test-realtime.mjs
 node wasm/test-microphone.mjs
 node wasm/test-library.mjs
 node wasm/test-presets.mjs

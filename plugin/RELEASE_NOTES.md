@@ -1,6 +1,19 @@
 SAD PET instrument and SAD PET FX, with native Rust DSP and an embedded editor.
 
-New **Loop 1 bar** checkbox beside the sample selection: each MIDI note scans the
+**Source FX** adds one independent effect slot before the Grain Engine, with
+all existing effect types, including the RADIAS Waveshaper. Live input is processed
+once before entering the grain history. For files, the selected region is prepared
+in the background using the original-quality FIR mipmaps, then crossfaded without
+restarting held notes or one-bar loops. File FX changes are asynchronous; tails
+outside the selection are excluded. The slot is saved in presets/projects and its
+numeric controls have new host IDs; previous parameter indices remain unchanged.
+
+DSP now caches exact filter/gain/distortion coefficients and grain mip selection,
+with the original interpolation and antialiasing intact. Web telemetry uses pooled
+binary snapshots, while knob metadata, recording ingestion and utility renders run
+on separate workers. Audio views and recording buffers are reused.
+
+**Loop 1 bar** checkbox beside the sample selection: each MIDI note scans the
 whole selection in one bar, with independent pitch and its own loop position.
 **Root** sets the original sample note. Pitch, tuning and pitch bend remain
 editable. Plug-ins follow the host tempo and time signature, including 3/4 and
@@ -37,7 +50,9 @@ are supplied individually and in `SHA256SUMS.txt`.
 ---
 
 В обоих установщиках есть инструмент **SAD PET** и эффект **SAD PET FX**.
-Новая галочка **Loop 1 bar**: любая MIDI-нота проигрывает всё выделение за один
+**Source FX** — новый слот до грануляции. Файлы обрабатываются в фоне, DAW input — в реальном времени.
+Сохранены интерполяция, anti-alias и качество звука; ускорены Rust DSP и web.
+**Loop 1 bar**: любая MIDI-нота проигрывает всё выделение за один
 такт. Pitch меняется независимо от длительности, **Root** задаёт исходную ноту
 сэмпла. Каждый голос имеет свой цикл; учитываются темп и размер проекта.
 macOS: AU и VST3 для Apple silicon и Intel. Windows: VST3 x64.

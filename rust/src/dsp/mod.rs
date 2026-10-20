@@ -8,6 +8,9 @@ pub mod filter;
 pub mod modulation;
 pub mod radias_waveshaper;
 pub mod sample;
+pub mod source_fx;
+#[cfg(all(feature = "source-worker", not(target_arch = "wasm32")))]
+pub mod source_fx_worker;
 pub mod telemetry;
 
 use crate::{
@@ -36,6 +39,7 @@ struct Grain {
     active: bool,
     position: f64,
     rate: f64,
+    read_level: usize,
     age: u32,
     duration: u32,
     shape: f32,
@@ -79,7 +83,7 @@ impl Voice {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Serialize, serde::Deserialize)]
 pub struct GrainView {
     pub position: f32,
     pub age: f32,
@@ -281,6 +285,11 @@ pub struct Engine {
     pub env_values: [f32; 3],
     color_rack: ColorRack,
     pre_color_rack: ColorRack,
+    source_color: color::ColorProcessor,
+    pub processed_source: Option<Arc<source_fx::ProcessedSource>>,
+    previous_source: Option<Arc<source_fx::ProcessedSource>>,
+    source_fade_remaining: u32,
+    pub source_fx_error: bool,
     filters: [FilterBank; VOICES],
     random: Random,
     frame: u64,
@@ -308,6 +317,11 @@ pub struct Engine {
     smooth_mix: f32,
     smooth_gain: f32,
     smooth_bypass_gate: f32,
+    input_gain: f32,
+    output_gain: f32,
+    grain_density: f32,
+    grain_step: f64,
+    bar_phase_step: f64,
     pub peak: Stereo,
 }
 
@@ -339,6 +353,11 @@ impl Engine {
             env_values: [0.0; 3],
             color_rack: ColorRack::new(sr),
             pre_color_rack: ColorRack::new(sr),
+            source_color: color::ColorProcessor::new(sr),
+            processed_source: None,
+            previous_source: None,
+            source_fade_remaining: 0,
+            source_fx_error: false,
             filters: std::array::from_fn(|_| FilterBank::new(sr)),
             random: Random::default(),
             frame: 0,
@@ -366,6 +385,11 @@ impl Engine {
             smooth_mix: 1.0,
             smooth_gain: 0.0,
             smooth_bypass_gate: 0.0,
+            input_gain: 1.0,
+            output_gain: 1.0,
+            grain_density: 0.0,
+            grain_step: 0.0,
+            bar_phase_step: 0.0,
             peak: [0.0; 2],
         };
         engine.set_preset(preset);
@@ -422,6 +446,62 @@ impl Engine {
         self.sample = sample;
         self.reset_source();
     }
+    /// Swap a prepared file cache without resetting held notes or loop phases.
+    /// Return the older allocation to the caller for retirement off the callback.
+    pub fn exchange_processed_source(
+        &mut self,
+        prepared: &mut Option<Arc<source_fx::ProcessedSource>>,
+    ) {
+        self.source_fx_error = false;
+        if self.processed_source.is_none() && prepared.is_none() {
+            return;
+        }
+        std::mem::swap(&mut self.processed_source, prepared);
+        std::mem::swap(&mut self.previous_source, prepared);
+        self.source_fade_remaining = if self.playing { 128 } else { 0 };
+    }
+    pub fn prepare_source_effects(&mut self) -> Result<(), String> {
+        let mut prepared = source_fx::prepare(
+            self.sample.clone(),
+            self.region,
+            self.preset.source_color_chain.first().copied(),
+            self.preset.params.bpm,
+            self.preset.params.sample_root_note,
+            || false,
+        )?;
+        self.exchange_processed_source(&mut prepared);
+        self.source_fade_remaining = 0;
+        Ok(())
+    }
+    /// File-load/control boundary only: retires the previous file's cache pool.
+    pub fn clear_processed_sources(&mut self) {
+        self.processed_source = None;
+        self.previous_source = None;
+        self.source_fade_remaining = 0;
+    }
+    pub fn source_effects_pending(&self) -> bool {
+        if self.live_input.is_some() || self.source_fx_error {
+            return false;
+        }
+        let slot = self
+            .preset
+            .source_color_chain
+            .first()
+            .copied()
+            .filter(|s| s.enabled && s.mix > 0.0);
+        let recipe = source_fx::Recipe::from_engine(self);
+        match (&self.processed_source, slot) {
+            (Some(cache), Some(slot)) => {
+                !(Arc::ptr_eq(&cache.original, &self.sample)
+                    && cache.range == self.file_range
+                    && cache.slot == slot
+                    && cache.bpm == recipe.bpm
+                    && cache.root == recipe.root)
+            }
+            (None, None) => false,
+            _ => true,
+        }
+    }
     /// Swap prepared file/live sources, returning their old allocations to the caller.
     pub fn exchange_source(
         &mut self,
@@ -442,6 +522,7 @@ impl Engine {
         self.reset_grains();
         self.color_rack.clear();
         self.pre_color_rack.clear();
+        self.source_color.clear();
         self.filters.iter_mut().for_each(FilterBank::clear);
     }
 
@@ -455,6 +536,8 @@ impl Engine {
         } else {
             4.0
         };
+        self.bar_phase_step =
+            self.modulated.params.bpm as f64 / (60.0 * self.sample_rate as f64 * self.bar_beats);
     }
     pub fn bar_beats(&self) -> f64 {
         self.bar_beats
@@ -523,6 +606,7 @@ impl Engine {
         self.reset_grains();
         self.color_rack.clear();
         self.pre_color_rack.clear();
+        self.source_color.clear();
         self.filters.iter_mut().for_each(FilterBank::clear);
         Ok(())
     }
@@ -553,6 +637,7 @@ impl Engine {
         self.reset_grains();
         self.color_rack.clear();
         self.pre_color_rack.clear();
+        self.source_color.clear();
         self.filters.iter_mut().for_each(FilterBank::clear);
         if !self.playing {
             for voice in &mut self.voices {
@@ -960,6 +1045,7 @@ impl Engine {
                 }
                 self.color_rack.clear();
                 self.pre_color_rack.clear();
+                self.source_color.clear();
             }
             Message::Control {
                 channel,
@@ -1035,6 +1121,7 @@ impl Engine {
                 self.mod_random = Random(0x4d41545249585f31);
                 self.color_rack.clear();
                 self.pre_color_rack.clear();
+                self.source_color.clear();
                 self.filters.iter_mut().for_each(FilterBank::clear);
             }
             _ => {}
@@ -1126,6 +1213,18 @@ impl Engine {
             .configure_tempo(&m.color_slots[..m.color_len], m.params.bpm);
         self.pre_color_rack
             .configure_tempo(&m.pre_color_slots[..m.pre_color_len], m.params.bpm);
+        self.source_color.set_pitch(m.params.sample_root_note);
+        self.source_color.configure_tempo(
+            self.preset
+                .source_color_chain
+                .first()
+                .copied()
+                .unwrap_or(ColorSlot {
+                    enabled: false,
+                    ..ColorSlot::default()
+                }),
+            m.params.bpm,
+        );
         let shaper_note = self.source_note as f32
             + self.bend[self.source_channel as usize] * m.params.midi_pitchbend_range
             + (m.params.pitch * 2.0 - 1.0) * m.params.pitch_range
@@ -1150,6 +1249,13 @@ impl Engine {
             self.filters[i].configure(&m.params, note, voice.env_values);
         }
         self.modulated = m;
+        self.input_gain = 10.0_f32.powf(m.params.in_gain * 0.05);
+        self.output_gain = 10.0_f32.powf(m.params.out_gain * 0.05);
+        self.grain_density = m.params.min_grains
+            + (MAX_GRAINS as f32 - m.params.min_grains) * m.params.grains.powi(3);
+        self.grain_step = self.grain_density as f64 / self.sample_rate as f64;
+        self.bar_phase_step =
+            m.params.bpm as f64 / (60.0 * self.sample_rate as f64 * self.bar_beats);
         let count = self.active_grains() as f32;
         self.overlap += (count - self.overlap) * if count > self.overlap { 0.9 } else { 0.2 };
     }
@@ -1230,6 +1336,7 @@ impl Engine {
             active: true,
             position,
             rate,
+            read_level: self.source_sample().level_for_rate(rate, true),
             age: 0,
             duration,
             shape: p.grain_shape,
@@ -1244,8 +1351,19 @@ impl Engine {
 
     pub fn process_input_frame(&mut self, input: Stereo) -> Stereo {
         let effects_only = self.live_input.as_ref().is_some_and(|i| i.effects_only);
+        let source_input = if self.live_input.is_some() {
+            self.source_color.process(input.map(|x| {
+                if x.is_finite() {
+                    x.clamp(-16.0, 16.0)
+                } else {
+                    0.0
+                }
+            }))
+        } else {
+            input
+        };
         if let Some(live) = &mut self.live_input {
-            live.push(input, self.frozen);
+            live.push_with_meter(source_input, input, self.frozen);
         }
         if self.playing {
             for action in self
@@ -1260,7 +1378,7 @@ impl Engine {
         let sr = self.sample_rate as f32;
         let source_rate = self.source_sample().sample_rate as f64 / self.sample_rate as f64;
         let source = if self.live_input.is_some() {
-            input.map(|x| {
+            source_input.map(|x| {
                 if x.is_finite() {
                     x.clamp(-16.0, 16.0)
                 } else {
@@ -1268,13 +1386,20 @@ impl Engine {
                 }
             })
         } else {
-            self.sample
-                .read_region(self.cursor, source_rate, true, &self.file_range)
-                .map(|v| {
-                    v * self
-                        .fades
-                        .gain(self.cursor, self.sample.sample_rate, &self.file_range)
-                })
+            source_fx::read(
+                &self.sample,
+                &self.processed_source,
+                &self.previous_source,
+                self.source_fade_remaining,
+                self.cursor,
+                self.sample.level_for_rate(source_rate, true),
+                &self.file_range,
+            )
+            .map(|v| {
+                v * self
+                    .fades
+                    .gain(self.cursor, self.sample.sample_rate, &self.file_range)
+            })
         };
         let level = source[0].abs().max(source[1].abs());
         self.follower += (level - self.follower)
@@ -1309,10 +1434,8 @@ impl Engine {
         if self.frame.is_multiple_of(CONTROL_INTERVAL) {
             self.update_modulation();
         }
-        let density = self.modulated.params.min_grains
-            + (MAX_GRAINS as f32 - self.modulated.params.min_grains)
-                * self.modulated.params.grains.powi(3);
-        self.grain_clock += density as f64 / self.sample_rate as f64;
+        let density = self.grain_density;
+        self.grain_clock += self.grain_step;
         if !effects_only && density > 0.0 && self.grain_clock >= 1.0 {
             self.grain_clock = self.grain_clock.fract();
             self.spawn();
@@ -1329,12 +1452,24 @@ impl Engine {
             }
             let phase = 2.0 * grain.age as f32 / (grain.duration - 1) as f32;
             let amplitude = tables::grain_window(phase, grain.shape);
-            let mut frame = sample.read_region(
-                grain.position,
-                grain.rate,
-                self.preset.params.antialiasing,
-                &range,
-            );
+            let level = if self.preset.params.antialiasing {
+                grain.read_level
+            } else {
+                0
+            };
+            let mut frame = if self.live_input.is_none() {
+                source_fx::read(
+                    &self.sample,
+                    &self.processed_source,
+                    &self.previous_source,
+                    self.source_fade_remaining,
+                    grain.position,
+                    level,
+                    &range,
+                )
+            } else {
+                sample.read_region_level(grain.position, level, &range)
+            };
             if self.live_input.is_none() {
                 let gain = self.fades.gain(grain.position, sample.sample_rate, &range);
                 frame = frame.map(|v| v * gain);
@@ -1352,7 +1487,7 @@ impl Engine {
         } else {
             1.0
         };
-        let input_gain = 10.0_f32.powf(self.modulated.params.in_gain * 0.05);
+        let input_gain = self.input_gain;
         self.smooth_mix += (self.modulated.params.mix - self.smooth_mix) * 0.002;
         // The source is shared by all notes. Distribute it across their filter
         // banks without multiplying its level when a chord adds more voices.
@@ -1410,13 +1545,38 @@ impl Engine {
         } else {
             self.modulated.params.master_volume
         };
-        let gain = volume * 10.0_f32.powf(self.modulated.params.out_gain * 0.05);
+        let gain = volume * self.output_gain;
         self.smooth_gain += (gain - self.smooth_gain) * 0.002;
         self.smooth_bypass_gate +=
             ((if self.playing { 1.0 } else { 0.0 }) - self.smooth_bypass_gate) * 0.002;
+        let bypass_source = if self.bypass
+            && (self.processed_source.is_some()
+                || self.previous_source.is_some()
+                || !self.preset.source_color_chain.is_empty())
+        {
+            if self.live_input.is_some() {
+                input.map(|x| {
+                    if x.is_finite() {
+                        x.clamp(-16.0, 16.0)
+                    } else {
+                        0.0
+                    }
+                })
+            } else {
+                self.sample
+                    .read_region(self.cursor, source_rate, true, &self.file_range)
+                    .map(|v| {
+                        v * self
+                            .fades
+                            .gain(self.cursor, self.sample.sample_rate, &self.file_range)
+                    })
+            }
+        } else {
+            source
+        };
         let output = std::array::from_fn(|c| {
             let value = (if self.bypass {
-                source[c] * input_gain * self.smooth_bypass_gate
+                bypass_source[c] * input_gain * self.smooth_bypass_gate
             } else {
                 processed[c]
             }) * self.smooth_gain;
@@ -1433,8 +1593,7 @@ impl Engine {
         }
         if self.playing {
             let bar_loop = self.bar_loop_active();
-            let phase_step = self.modulated.params.bpm as f64
-                / (60.0 * self.sample_rate as f64 * self.bar_beats);
+            let phase_step = self.bar_phase_step;
             if bar_loop && !self.frozen {
                 for voice in &mut self.voices {
                     if voice.active() {
@@ -1456,6 +1615,7 @@ impl Engine {
                     .rem_euclid(self.file_range.len() as f64);
         }
         self.frame += 1;
+        self.source_fade_remaining = self.source_fade_remaining.saturating_sub(1);
         output
     }
 

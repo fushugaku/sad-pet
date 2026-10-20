@@ -385,14 +385,14 @@ let frameCount = 0;
 for (const n of [128, 511, 4096, 1024, 128, 4096, 4096, 511, 256, 128, 4096]) {
   assert.equal(
     processor.process([], [[new Float32Array(n), new Float32Array(n)]]),
-    true,
+    true, JSON.stringify(messages.filter(m=>m.error||m.type==="fatal")),
   );
   frameCount += n;
 }
 send("record-stop");
 const chunks = messages
   .filter((m) => m.type === "record-chunk")
-  .map((m) => new Float32Array(m.buffer));
+  .map((m) => new Float32Array(m.buffer,0,m.length));
 assert.equal(
   chunks.reduce((n, c) => n + c.length / 2, 0),
   frameCount,
@@ -430,7 +430,7 @@ for (const [n, stereo] of [
 send("record-stop");
 const rawActual = messages
   .filter((m) => m.type === "record-chunk")
-  .flatMap((m) => Array.from(new Float32Array(m.buffer)));
+  .flatMap((m) => Array.from(new Float32Array(m.buffer,0,m.length)));
 assert.deepEqual(
   rawActual,
   rawExpected,

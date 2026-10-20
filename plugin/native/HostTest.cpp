@@ -99,10 +99,17 @@ int main() {
         auto preset = command(processor, "/api/preset");
         auto pre = juce::JSON::parse(R"([{"id":31,"kind":"waveshaper","mix":0.8,"settings":{"waveshaper_type":"multi_sine","waveshaper_depth":0.7}}])");
         preset.getDynamicObject()->setProperty("pre_color_chain", pre);
+        auto source = juce::JSON::parse(R"([{"id":32,"kind":"waveshaper","mix":0.9,"settings":{"waveshaper_type":"hard_clip","waveshaper_depth":0.8}}])");
+        preset.getDynamicObject()->setProperty("source_color_chain", source);
         command(processor, "/api/preset", preset);
         command(processor, "/api/parameters", juce::JSON::parse(R"({"pre_fx1_waveshaper_depth":0.33})"));
         require(std::abs(processor.parameters.getParameter("pre_fx1_waveshaper_depth")->getValue() - 0.33f) < 0.00001f,
             "Numeric pre-filter effect edit did not publish its host parameter");
+        auto* sourceDepth = processor.parameters.getParameter("source_fx1_waveshaper_depth");
+        require(sourceDepth != nullptr, "Source FX host parameter is missing");
+        command(processor, "/api/parameters", juce::JSON::parse(R"({"source_fx1_waveshaper_depth":0.61})"));
+        require(std::abs(sourceDepth->getValue() - 0.61f) < 0.00001f,
+            "Numeric source effect edit did not publish its host parameter");
         auto* region = new juce::DynamicObject;
         region->setProperty("start", 0.25); region->setProperty("end", 0.75);
         command(processor, "/api/region", juce::var(region));
@@ -137,6 +144,9 @@ int main() {
         auto preState = state["preset"]["pre_color_chain"][0];
         require(preState["settings"]["waveshaper_type"].toString() == "multi_sine", "Pre-filter waveshaper type was not restored");
         require(std::abs(static_cast<float>(preState["settings"]["waveshaper_depth"]) - 0.33f) < 0.00001f, "Pre-filter FX automation was not restored");
+        const auto sourceState = state["preset"]["source_color_chain"][0];
+        require(sourceState["settings"]["waveshaper_type"].toString() == "hard_clip", "Source waveshaper type was not restored");
+        require(std::abs(static_cast<float>(sourceState["settings"]["waveshaper_depth"]) - 0.61f) < 0.00001f, "Source FX automation was not restored");
         require(command(processor, "/api/state")["sample_name"].toString() == "Embedded test.wav", "Instances shared sample state");
         SadPetProcessor fresh;
         require(command(fresh, "/api/preset-library").getArray()->size() == 1, "User preset library was not shared between instances");

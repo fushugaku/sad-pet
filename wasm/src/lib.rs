@@ -1,5 +1,9 @@
 //! A small, dependency-free WebAssembly ABI shared by the audio worklet and
 //! utility worker. All synthesis uses the same Engine as the desktop build.
+#[cfg(test)]
+mod allocation_tests;
+mod source_fx;
+mod telemetry;
 use sad_pet::{
     Stereo,
     dsp::{Engine, SampleBuffer},
@@ -23,6 +27,18 @@ struct Host {
     frames: Box<[Stereo; BLOCK]>,
     audio_input: Box<[Stereo; BLOCK]>,
     status: u32,
+    view: sad_pet::dsp::telemetry::RealtimeView,
+    snapshot_buffer: Box<[u8; 131072]>,
+    config_revision: u64,
+    sent_revision: Option<u64>,
+    snapshot_state: Value,
+    snapshot_sequence: u32,
+    unacked_peaks: [Option<(u32, Stereo, Stereo)>; 3],
+    source_stage: Option<source_fx::Stage>,
+    retired_source: Option<Arc<sad_pet::dsp::source_fx::ProcessedSource>>,
+    source_pool: Vec<Arc<sad_pet::dsp::source_fx::ProcessedSource>>,
+    source_upload: Box<[Stereo; BLOCK]>,
+    file_generation: u32,
 }
 
 impl Host {
@@ -38,6 +54,18 @@ impl Host {
             frames: Box::new([[0.0; 2]; BLOCK]),
             audio_input: Box::new([[0.0; 2]; BLOCK]),
             status: 200,
+            view: sad_pet::dsp::telemetry::RealtimeView::default(),
+            snapshot_buffer: Box::new([0; 131072]),
+            config_revision: 0,
+            sent_revision: None,
+            snapshot_state: Value::Null,
+            snapshot_sequence: 0,
+            unacked_peaks: [None; 3],
+            source_stage: None,
+            retired_source: None,
+            source_pool: Vec::with_capacity(3),
+            source_upload: Box::new([[0.0; 2]; BLOCK]),
+            file_generation: 0,
         }
     }
 
@@ -65,13 +93,22 @@ impl Host {
             "matrix_values": e.matrix_values, "knobs": e.knob_states(), "peak": e.peak,
             "gain_reduction": e.gain_reduction(),
             "cpu_percent": 0, "underruns": 0,
+            "source_fx":{"pending":e.source_effects_pending(),"recipe":sad_pet::dsp::source_fx::Recipe::from_engine(e)},
         })
     }
 
     fn command(&mut self, request: Value) -> Result<Value, String> {
         let path = request["path"].as_str().ok_or("Missing command")?;
         let data = &request["data"];
-        match path {
+        let before = self.engine.preset.params;
+        let midi = matches!(path, "/api/note" | "/api/midi-bytes");
+        if !data.is_null()
+            && !midi
+            && !matches!(path, "/api/state" | "/api/transport" | "/api/step-entry")
+        {
+            self.config_revision = self.config_revision.wrapping_add(1);
+        }
+        let result = match path {
             "/api/state" => {
                 let state = self.state();
                 self.engine.peak = [0.0; 2];
@@ -170,7 +207,19 @@ impl Host {
                 json!({"name": self.engine.sample.name, "id": self.engine.sample.library_id, "seconds": self.engine.sample.duration()}),
             ),
             _ => Err(format!("Unknown command: {path}")),
+        };
+        if midi
+            && (before != self.engine.preset.params
+                || data["kind"] == "program"
+                || data.as_array().is_some_and(|bytes| {
+                    bytes
+                        .iter()
+                        .any(|v| v.as_u64().is_some_and(|b| (0xc0..=0xcf).contains(&b)))
+                }))
+        {
+            self.config_revision = self.config_revision.wrapping_add(1);
         }
+        result
     }
 
     fn finish(&mut self, result: Result<Vec<u8>, String>) -> u32 {
@@ -359,6 +408,8 @@ pub extern "C" fn sad_load() -> u32 {
     host(|h| {
         let result = unpack(&h.input).map(|sample| {
             h.engine.set_sample(Arc::new(sample));
+            h.reserve_source_buffers();
+            h.config_revision = h.config_revision.wrapping_add(1);
             serde_json::to_vec(&h.command(json!({"path": "/sample-info"})).unwrap()).unwrap()
         });
         h.finish(result)
@@ -449,6 +500,7 @@ pub extern "C" fn sad_render() -> u32 {
                     .set_fades(serde_json::from_value(fades.clone()).map_err(|e| e.to_string())?)?;
             }
             engine.set_frozen(value["frozen"] == true);
+            engine.prepare_source_effects()?;
             engine.set_playing(true);
             let mut frames = vec![[0.0; 2]; (seconds * h.rate as f64).round() as usize];
             engine.process(&mut frames);

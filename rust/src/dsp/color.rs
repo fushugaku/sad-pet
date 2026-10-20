@@ -26,6 +26,9 @@ pub struct ColorProcessor {
     dc_input: Stereo,
     dc_output: Stereo,
     drive: f32,
+    drive_sqrt: f32,
+    bias: f32,
+    bias_offset: f32,
     tone_alpha: f32,
     dc_r: f32,
     period: f32,
@@ -62,6 +65,9 @@ impl ColorProcessor {
             dc_input: [0.0; 2],
             dc_output: [0.0; 2],
             drive: 1.0,
+            drive_sqrt: 1.0,
+            bias: 0.0,
+            bias_offset: 0.0,
             tone_alpha: 1.0,
             dc_r: (-std::f32::consts::TAU * 5.0 / sr).exp(),
             period: 1.0,
@@ -105,6 +111,9 @@ impl ColorProcessor {
     pub fn configure(&mut self, slot: ColorSlot) {
         self.configure_tempo(slot, 120.0);
     }
+    pub fn set_pitch(&mut self, note: f32) {
+        self.waveshaper.set_pitch(note);
+    }
     pub fn configure_tempo(&mut self, slot: ColorSlot, bpm: f32) {
         let tempo = if matches!(slot.kind, SaturatorType::LcrDelay | SaturatorType::ModDelay) {
             bpm
@@ -143,6 +152,9 @@ impl ColorProcessor {
         match slot.kind {
             SaturatorType::Distortion => {
                 self.drive = 1.0 + 18.0 * s.distortion_drive;
+                self.drive_sqrt = self.drive.sqrt();
+                self.bias = (s.distortion_bias * 2.0 - 1.0) * 0.5;
+                self.bias_offset = self.bias.tanh();
                 let hz = 20.0 * 1000.0_f32.powf(s.distortion_tone);
                 self.tone_alpha = 1.0 - (-std::f32::consts::TAU * hz / self.sample_rate).exp();
             }
@@ -159,6 +171,7 @@ impl ColorProcessor {
             SaturatorType::Crusher => {
                 self.levels = 2.0_f32.powf(1.0 + 15.0 * s.crusher_bits);
                 self.drive = 1.0 + 18.0 * s.crusher_drive;
+                self.drive_sqrt = self.drive.sqrt();
             }
             SaturatorType::Chorus | SaturatorType::Flanger => {
                 let chorus = slot.kind == SaturatorType::Chorus;
@@ -216,11 +229,10 @@ impl ColorProcessor {
         let s = self.slot.settings;
         let result = match self.slot.kind {
             SaturatorType::Distortion => {
-                let bias = (s.distortion_bias * 2.0 - 1.0) * 0.5;
-                let offset = bias.tanh();
+                let bias = self.bias;
+                let offset = self.bias_offset;
                 std::array::from_fn(|c| {
-                    let shaped =
-                        ((frame[c] * self.drive + bias).tanh() - offset) / self.drive.sqrt();
+                    let shaped = ((frame[c] * self.drive + bias).tanh() - offset) / self.drive_sqrt;
                     // Remove the DC produced by asymmetric clipping.
                     let highpass = shaped - self.dc_input[c] + self.dc_r * self.dc_output[c];
                     self.dc_input[c] = shaped;
@@ -257,7 +269,7 @@ impl ColorProcessor {
                     0.0
                 };
                 let input = (frame[c] * self.drive).clamp(-1.0, 1.0);
-                ((input * self.levels + dither).round() / self.levels) / self.drive.sqrt()
+                ((input * self.levels + dither).round() / self.levels) / self.drive_sqrt
             }),
             SaturatorType::Chorus | SaturatorType::Flanger => {
                 let l = self

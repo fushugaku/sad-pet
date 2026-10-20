@@ -59,6 +59,7 @@ export class BrowserBackend {
     this.ready = this.initialize();
   }
   async initialize() {
+    this.sourceGeneration = 1;
     if (!window.AudioContext || !window.AudioWorkletNode)
       throw new Error(
         "This browser needs Web Audio with AudioWorklet support.",
@@ -73,11 +74,21 @@ export class BrowserBackend {
       this.fatal = error.message;
       this.updateStatus();
     };
+    this.worker.onmessage = (message) => this.workerMessage(message);
+    this.telemetry = new Rpc(
+      new Worker(new URL("./worker.mjs", import.meta.url), { type: "module" }),
+    );
+    this.recorder = new Rpc(
+      new Worker(new URL("./worker.mjs", import.meta.url), { type: "module" }),
+    );
+    this.telemetry.onmessage = (message) => this.workerMessage(message);
+    this.recorder.onmessage = (message) => this.workerMessage(message);
     const response = await fetch(new URL("./sad_pet.wasm", import.meta.url));
     if (!response.ok)
       throw new Error("Cannot download the WebAssembly engine.");
     const module = await WebAssembly.compile(await response.arrayBuffer());
     await this.worker.call("init", { module, rate: this.rate });
+    await this.telemetry.call("init", { module, rate: this.rate });
     const catalog = await this.worker.call("request", null, [], "/api/samples");
     const wav = await this.worker.call("factory", 0);
     const { prepared } = await this.worker.call(
@@ -86,6 +97,7 @@ export class BrowserBackend {
         wav,
         name: catalog[0].name,
         libraryId: `factory:${catalog[0].id}:v1`,
+        generation: this.sourceGeneration,
       },
       [wav],
     );
@@ -115,7 +127,11 @@ export class BrowserBackend {
     };
     this.monitor = this.context.createGain();
     this.node.connect(this.monitor).connect(this.context.destination);
-    await this.audio.call("load", prepared, [prepared]);
+    await this.audio.call(
+      "load",
+      { prepared, generation: this.sourceGeneration },
+      [prepared],
+    );
     this.state = await this.audio.call("request", null, [], "/api/state");
     const quit = document.getElementById("quit");
     quit.textContent = "Stop audio";
@@ -165,13 +181,23 @@ export class BrowserBackend {
     }
   }
   audioMessage(message) {
-    if (message.type === "state") {
-      this.state = message.state;
+    if (message.type === "source-ready") {
+      if (message.generation !== this.sourceGeneration) return;
+      if (this.sourceUploadingKey === message.key)
+        this.sourceUploadingKey = null;
+      if (message.status === 1) this.sourcePublishedKey = message.key;
+      else if (message.status === 3) {
+        this.sourceFailedKey = message.key;
+        this.sourceError = "Could not load Source FX";
+      } else if (this.sourceRecipeKey === message.key)
+        this.sourceRecipeKey = null;
+    } else if (message.type === "snapshot") {
+      this.telemetry.port.postMessage(message, [message.buffer]);
       if (this.recording.active)
         this.recording.seconds = message.recordedFrames / this.rate;
     } else if (message.type === "record-chunk") {
-      this.worker.port.postMessage(
-        { type: "record-chunk", data: message.buffer },
+      this.recorder.port.postMessage(
+        { type: "record-chunk", data: message.buffer, length: message.length },
         [message.buffer],
       );
     } else if (message.type === "record-limit") {
@@ -185,6 +211,97 @@ export class BrowserBackend {
       this.fatal = message.error;
       this.audio.fail(new Error(message.error));
       this.updateStatus();
+    }
+  }
+  workerMessage(message) {
+    if (message.type === "snapshot") {
+      if (message.state) {
+        this.state = message.state;
+        this.scheduleSourceEffects(message.state);
+      }
+      this.audio.port.postMessage(
+        {
+          type: "snapshot-return",
+          data: message.buffer,
+          sequence: message.sequence,
+          success: !message.error,
+        },
+        [message.buffer],
+      );
+    } else if (message.type === "record-return") {
+      this.audio.port.postMessage(
+        { type: "record-return", data: message.buffer },
+        [message.buffer],
+      );
+    } else if (message.type === "fatal") {
+      this.fatal = message.error;
+      this.updateStatus();
+    }
+  }
+  scheduleSourceEffects(state) {
+    if (state?.input?.active || this.loadingSource) return;
+    const p = state?.preset;
+    if (!p) return;
+    const slot = p.source_color_chain?.[0];
+    const recipe = state.source_fx?.recipe || {
+      region: state.region,
+      slot: slot?.enabled && slot.mix > 0 ? slot : null,
+      bpm: p.params.bpm,
+      root: p.params.sample_root_note ?? 60,
+    };
+    const key = JSON.stringify([this.sourceGeneration, recipe]);
+    if (key === this.sourceFailedKey) {
+      state.source_fx = {
+        ...state.source_fx,
+        pending: false,
+        error: this.sourceError,
+      };
+      return;
+    }
+    if (
+      key === this.sourceRecipeKey &&
+      (!state.source_fx?.pending ||
+        this.preparingSource ||
+        this.sourceUploadingKey === key)
+    )
+      return;
+    this.sourceRecipeKey = key;
+    this.sourceFailedKey = null;
+    this.queuedSource = { key, generation: this.sourceGeneration, recipe };
+    this.prepareSourceEffects();
+  }
+  async prepareSourceEffects() {
+    if (this.preparingSource) return;
+    this.preparingSource = true;
+    try {
+      while (this.queuedSource) {
+        const job = this.queuedSource;
+        this.queuedSource = null;
+        try {
+          const result = await this.worker.call("source-fx", job);
+          if (
+            !result.stale &&
+            job.key === this.sourceRecipeKey &&
+            job.generation === this.sourceGeneration &&
+            !this.microphone.active &&
+            !this.loadingSource
+          ) {
+            const started = await this.audio.call(
+              "source-load",
+              { ...result, key: job.key, generation: job.generation },
+              result.prepared ? [result.prepared] : [],
+            );
+            if (started.started) this.sourceUploadingKey = job.key;
+            else if (this.sourceRecipeKey === job.key)
+              this.sourceRecipeKey = null;
+          }
+        } catch (error) {
+          this.sourceFailedKey = job.key;
+          this.sourceError = error.message;
+        }
+      }
+    } finally {
+      this.preparingSource = false;
     }
   }
   snapshot() {
@@ -207,7 +324,7 @@ export class BrowserBackend {
     if (this.finishing) return this.finishing;
     this.finishing = (async () => {
       const result = await this.audio.call("record-stop");
-      const saved = await this.worker.call("record-stop");
+      const saved = await this.recorder.call("record-stop");
       if (saved.frames !== result.frames)
         throw new Error(
           "Recording was interrupted before all audio could be saved.",
@@ -296,28 +413,54 @@ export class BrowserBackend {
         mime = "audio/wav";
       } else if (route === "/api/midi") result = await this.midi(url, data);
       else if (route === "/api/wav") {
-        const wav =
-          options.body instanceof Blob
-            ? await options.body.arrayBuffer()
-            : options.body;
-        if (wav.byteLength > 128 * 1024 * 1024)
-          throw new Error("File exceeds 128 MB");
-        const headers = new Headers(options.headers);
-        const prepared = await this.worker.call(
-          "prepare",
-          {
-            wav,
-            name: decodeURIComponent(
-              headers.get("X-File-Name") || "Sample.wav",
-            ),
-            libraryId: headers.get("X-Library-Id"),
-          },
-          [wav],
-        );
-        if (this.microphone.active || this.microphone.pending)
-          await this.stopInput();
-        await this.audio.call("load", prepared.prepared, [prepared.prepared]);
-        result = prepared.info;
+        // Keep utility sample state, worklet state and the generation in one
+        // order, including two file selections made before either load returns.
+        const previousLoad = this.sourceLoadTail;
+        let finishLoad;
+        const thisLoad = new Promise((resolve) => {
+          finishLoad = resolve;
+        });
+        this.sourceLoadTail = thisLoad;
+        this.loadingSource = true;
+        this.queuedSource = null;
+        await previousLoad;
+        try {
+          const wav =
+            options.body instanceof Blob
+              ? await options.body.arrayBuffer()
+              : options.body;
+          if (wav.byteLength > 128 * 1024 * 1024)
+            throw new Error("File exceeds 128 MB");
+          const headers = new Headers(options.headers);
+          const generation = this.sourceGeneration + 1;
+          const prepared = await this.worker.call(
+            "prepare",
+            {
+              wav,
+              name: decodeURIComponent(
+                headers.get("X-File-Name") || "Sample.wav",
+              ),
+              libraryId: headers.get("X-Library-Id"),
+              generation,
+            },
+            [wav],
+          );
+          if (this.microphone.active || this.microphone.pending)
+            await this.stopInput();
+          await this.audio.call(
+            "load",
+            { prepared: prepared.prepared, generation },
+            [prepared.prepared],
+          );
+          this.sourceGeneration = generation;
+          this.sourceRecipeKey = null;
+          this.sourceUploadingKey = null;
+          this.sourceFailedKey = null;
+          result = prepared.info;
+        } finally {
+          finishLoad();
+          if (this.sourceLoadTail === thisLoad) this.loadingSource = false;
+        }
       } else if (route === "/api/sample.wav") {
         result = await this.worker.call("sample");
         mime = "audio/wav";
@@ -363,7 +506,7 @@ export class BrowserBackend {
             throw new Error(
               "Connect the microphone before recording its input.",
             );
-          await this.worker.call("record-start", { id, rate: this.rate });
+          await this.recorder.call("record-start", { id, rate: this.rate });
           await this.audio.call("record-start", { source });
           this.recording = {
             active: true,
@@ -380,7 +523,7 @@ export class BrowserBackend {
         route === "/api/recording.wav" ||
         route === "/api/recording.mp3"
       ) {
-        result = await this.worker.call(
+        result = await this.recorder.call(
           route.endsWith(".mp3") ? "record-mp3" : "record-wav",
           url.searchParams.get("id"),
         );
