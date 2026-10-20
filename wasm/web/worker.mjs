@@ -84,6 +84,7 @@ async function handle(message) {
           {
             type: "snapshot",
             ...packet,
+            stamp: message.stamp || 0,
             sequence: message.sequence,
             buffer: message.buffer,
           },

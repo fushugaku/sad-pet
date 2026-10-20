@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { Core } from "../dist/web/core.mjs";
+import { BrowserBackend } from "../dist/web/browser-backend.mjs";
 const module = await WebAssembly.compile(
   await readFile("dist/web/sad_pet.wasm"),
 );
@@ -104,6 +105,10 @@ assert.ok(
 );
 const first = messages.find((m) => m.type === "snapshot");
 assert.ok(first.length > 131072);
+assert.ok(
+  first.stamp > 0,
+  "Snapshot must identify its acknowledged configuration",
+);
 processor.port.onmessage({
   data: {
     type: "snapshot-return",
@@ -126,6 +131,70 @@ assert.equal(
   "Steady audio processing grew the heap",
 );
 assert.equal(messages.filter((m) => m.error).length, 0);
+
+// A successful add-track reply can overtake telemetry decoding. A state reader
+// must not return the previous one-track program and deselect the new track.
+const backend = Object.create(BrowserBackend.prototype),
+  posted = [];
+globalThis.location = { href: "https://example.test/sad-pet/" };
+backend.ready = Promise.resolve();
+backend.context = { state: "running" };
+backend.state = { preset: { sequencer: { tracks: [{ id: 1 }] } } };
+backend.viewStamp = 1;
+backend.stateWaiters = new Set();
+backend.scheduleSourceEffects = () => {};
+backend.snapshot = () => backend.state;
+backend.audio = { stamp: 2, port: { postMessage: (m) => posted.push(m) } };
+let responded = false;
+const reading = backend.fetch("/api/state").then(async (response) => {
+  responded = true;
+  return response.json();
+});
+await new Promise((resolve) => setImmediate(resolve));
+assert.equal(
+  responded,
+  false,
+  "An acknowledged edit was overwritten by stale feedback",
+);
+assert.ok(posted.some((m) => m.type === "snapshot-now"));
+backend.workerMessage({
+  type: "snapshot",
+  stamp: 1,
+  state: { preset: { sequencer: { tracks: [{ id: 1 }] } } },
+  buffer: new ArrayBuffer(8),
+  sequence: 1,
+});
+assert.equal(responded, false);
+backend.workerMessage({
+  type: "snapshot",
+  stamp: 2,
+  state: { preset: { sequencer: { tracks: [{ id: 1 }, { id: 2 }] } } },
+  buffer: new ArrayBuffer(8),
+  sequence: 2,
+});
+assert.equal((await reading).preset.sequencer.tracks.length, 2);
+backend.workerMessage({
+  type: "snapshot",
+  stamp: 1,
+  state: { preset: { sequencer: { tracks: [{ id: 1 }] } } },
+  buffer: new ArrayBuffer(8),
+  sequence: 1,
+});
+assert.equal(
+  backend.state.preset.sequencer.tracks.length,
+  2,
+  "An older view replaced the new track",
+);
+backend.context.state = "suspended";
+backend.audio.stamp = 3;
+backend.audio.call = async () => ({
+  preset: { sequencer: { tracks: [{ id: 1 }, { id: 2 }, { id: 3 }] } },
+});
+assert.equal(
+  (await (await backend.fetch("/api/state")).json()).preset.sequencer.tracks
+    .length,
+  3,
+);
 console.log(
   "Neuropolis WASM: 257 tracks, independent clocks, ID adoption, sparse edits and worklet buffers passed",
 );

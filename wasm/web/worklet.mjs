@@ -5,6 +5,7 @@ class SadPetProcessor extends AudioWorkletProcessor {
     super();
     this.core = new Core(options.processorOptions.module, sampleRate);
     this.telemetryFrames = 0;
+    this.stateStamp = 0;
     this.recording = false;
     this.recordedFrames = 0;
     this.recordBuffer = null;
@@ -20,6 +21,10 @@ class SadPetProcessor extends AudioWorkletProcessor {
     );
     this.port.onmessage = ({ data: message }) => {
       const { id, type, data } = message;
+      if (type === "snapshot-now") {
+        this.snapshot();
+        return;
+      }
       if (type === "snapshot-return") {
         this.core.wasm.sad_snapshot_ack(
           message.sequence,
@@ -94,12 +99,14 @@ class SadPetProcessor extends AudioWorkletProcessor {
           this.recording = false;
           result = { frames: this.recordedFrames };
         } else result = this.core.request(message.path, data);
+        if (type !== "capture-input" && (type !== "request" || data != null))
+          this.stateStamp++;
         const capacity = this.core.wasm.sad_snapshot_capacity();
         this.snapshotPool = this.snapshotPool.map((buffer) =>
           buffer.length >= capacity ? buffer : new Uint8Array(capacity),
         );
         this.port.postMessage(
-          { id, result },
+          { id, result, stamp: this.stateStamp },
           result instanceof ArrayBuffer ? [result] : [],
         );
         if (
@@ -135,6 +142,7 @@ class SadPetProcessor extends AudioWorkletProcessor {
     this.port.postMessage(
       {
         type: "snapshot",
+        stamp: this.stateStamp,
         buffer: buffer.buffer,
         length,
         sequence: this.core.wasm.sad_snapshot_sequence(),

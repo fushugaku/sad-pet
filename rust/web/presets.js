@@ -220,7 +220,11 @@
       await this.refresh();
       if (!this.native) {
         const last = await this.files.store.setting("preset-selection");
-        if (last && this.users.some((r) => r.id === last.id))
+        if (
+          !this.actions.edited?.() &&
+          last &&
+          this.users.some((r) => r.id === last.id)
+        )
           await this.load(last.id);
       }
       this.ready = true;

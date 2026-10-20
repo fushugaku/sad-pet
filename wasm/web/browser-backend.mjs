@@ -7,6 +7,7 @@ class Rpc {
     this.pending = new Map();
     port.onmessage = ({ data }) => {
       if (data.id !== undefined) {
+        this.stamp = Math.max(this.stamp || 0, data.stamp || 0);
         const pending = this.pending.get(data.id);
         if (!pending) return;
         this.pending.delete(data.id);
@@ -47,6 +48,8 @@ class Rpc {
 export class BrowserBackend {
   constructor() {
     this.instanceId = crypto.randomUUID();
+    this.viewStamp = 0;
+    this.stateWaiters = new Set();
     this.recording = {
       active: false,
       id: null,
@@ -133,6 +136,7 @@ export class BrowserBackend {
       [prepared],
     );
     this.state = await this.audio.call("request", null, [], "/api/state");
+    this.viewStamp = this.audio.stamp || 0;
     const quit = document.getElementById("quit");
     quit.textContent = "Stop audio";
     document.querySelector("h1 span").textContent = "WEBASSEMBLY";
@@ -215,9 +219,17 @@ export class BrowserBackend {
   }
   workerMessage(message) {
     if (message.type === "snapshot") {
-      if (message.state) {
+      if (message.state && (message.stamp || 0) >= (this.viewStamp || 0)) {
         this.state = message.state;
+        this.viewStamp = message.stamp || 0;
         this.scheduleSourceEffects(message.state);
+        for (const waiter of this.stateWaiters || []) {
+          if (this.viewStamp >= waiter.stamp) {
+            clearTimeout(waiter.timer);
+            this.stateWaiters.delete(waiter);
+            waiter.resolve();
+          }
+        }
       }
       this.audio.port.postMessage(
         {
@@ -269,6 +281,32 @@ export class BrowserBackend {
     this.sourceFailedKey = null;
     this.queuedSource = { key, generation: this.sourceGeneration, recipe };
     this.prepareSourceEffects();
+  }
+  async freshState() {
+    const stamp = this.audio.stamp || 0;
+    if ((this.viewStamp || 0) >= stamp) return;
+    if (this.context.state !== "running") {
+      this.state = await this.audio.call("request", null, [], "/api/state");
+      this.viewStamp = this.audio.stamp || 0;
+      return;
+    }
+    // Do not delay knob writes or audio. Only a state reader waits for a view
+    // that contains its acknowledged edits, instead of undoing them with an old
+    // decoded packet. The bounded transfer pool still provides backpressure.
+    await new Promise((resolve, reject) => {
+      const waiter = { stamp, resolve, timer: null };
+      this.stateWaiters ||= new Set();
+      waiter.timer = setTimeout(() => {
+        this.stateWaiters.delete(waiter);
+        reject(
+          new Error(
+            "Audio views did not update. Reload the page to reconnect.",
+          ),
+        );
+      }, 5000);
+      this.stateWaiters.add(waiter);
+      this.audio.port.postMessage({ type: "snapshot-now" });
+    });
   }
   async prepareSourceEffects() {
     if (this.preparingSource) return;
@@ -401,8 +439,10 @@ export class BrowserBackend {
         options.body === undefined || binary ? null : JSON.parse(options.body);
       let result,
         mime = "application/json";
-      if (route === "/api/state") result = this.snapshot();
-      else if (route === "/api/input")
+      if (route === "/api/state") {
+        await this.freshState();
+        result = this.snapshot();
+      } else if (route === "/api/input")
         result = data
           ? data.active === false
             ? await this.stopInput()

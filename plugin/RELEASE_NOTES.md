@@ -1,5 +1,9 @@
 SAD PET instrument and SAD PET FX, with native Rust DSP and an embedded editor.
 
+The editor keeps the selected track during rapid add/duplicate/retarget actions.
+Startup restore does not overwrite edits already made while the library opens,
+and web feedback waits for acknowledged changes before updating the editor.
+
 **Neuropolis replaces the old sequencer editor.** Add any number of independently
 clocked tracks and route each to the main sample pitch, any of the four Resynth
 oscillators, notes/envelopes or a realtime parameter. Each track offers all 21

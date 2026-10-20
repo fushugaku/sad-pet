@@ -21,6 +21,26 @@ runInNewContext(
   },
 );
 const { encode, decode } = window.SadPresetFile;
+// Restoring a remembered patch must not replace a track the user just added
+// while the IndexedDB library was opening.
+{
+  const bank = Object.create(window.SadPresetLibrary.prototype);
+  let edited = true,
+    loads = 0;
+  bank.actions = { edited: () => edited };
+  bank.files = { store: { setting: async () => ({ id: "remembered" }) } };
+  bank.users = [{ id: "remembered" }];
+  bank.refresh = async () => {};
+  bank.render = () => {};
+  bank.load = async () => {
+    loads++;
+  };
+  await bank.initialize({}, []);
+  assert.equal(loads, 0);
+  edited = false;
+  await bank.initialize({}, []);
+  assert.equal(loads, 1);
+}
 const record = {
   id: "1234567890abcdef1234567890abcdef",
   name: "Тихая комната 🎹",

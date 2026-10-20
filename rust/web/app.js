@@ -18,6 +18,7 @@ let presetLibrary = null;
 let presetWrites = Promise.resolve();
 let presetWriteCount = 0;
 let structuralPending = false;
+let editGeneration = 0;
 const parameterEdits = new Map();
 const sequenceEdits = new Map();
 let neuroEditor = null;
@@ -102,6 +103,7 @@ function download(blob, name) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function schedulePreset() {
+  editGeneration++;
   presetLibrary?.markDirty();
   pending++;
   structuralPending = true;
@@ -113,6 +115,7 @@ function schedulePreset() {
 }
 function scheduleParameter(id, value) {
   if (!Number.isFinite(value)) return;
+  editGeneration++;
   presetLibrary?.markDirty();
   pending++;
   parameterEdits.set(id, value);
@@ -120,6 +123,7 @@ function scheduleParameter(id, value) {
   if (commitTimer === null && !presetWriteCount) armPresetWrite(16);
 }
 function scheduleSequence(edit) {
+  editGeneration++;
   presetLibrary?.markDirty();
   pending++;
   sequenceEdits.set(`${edit.track}:${edit.stage}:${edit.field}`, edit);
@@ -2858,12 +2862,13 @@ function syncInput(input) {
 }
 async function poll() {
   try {
+    const generation = editGeneration;
     const next = await request("/api/state");
     const initial = state === null;
     state = next;
     connected = true;
     failures = 0;
-    if (initial) {
+    if (initial && generation === editGeneration && !pending) {
       preset = structuredClone(next.preset);
       syncAll();
     }
@@ -2880,7 +2885,8 @@ async function poll() {
     }
     if (
       !preset ||
-      (!pending &&
+      (generation === editGeneration &&
+        !pending &&
         !editing &&
         !document.activeElement?.matches("input,select") &&
         JSON.stringify(preset) !== JSON.stringify(next.preset))
@@ -2966,7 +2972,8 @@ async function init() {
     presets = await request("/api/presets");
     colorDefaults = await request("/api/color-defaults");
     sequenceCatalog = await request("/api/sequencer/catalog");
-    preset = structuredClone(presets[0]);
+    state = await request("/api/state");
+    preset = structuredClone(state.preset);
     for (const s of grainSchema) createKnob(s, "grain-controls");
     buildFilters();
     buildColors();
@@ -3003,6 +3010,7 @@ async function init() {
         notify,
         download,
         read: () => ({ preset, state }),
+        edited: () => editGeneration > 0,
         flush: flushPreset,
         recall: preparePresetRecall,
         applyPreset: loadStoredPreset,
@@ -3010,11 +3018,8 @@ async function init() {
       },
       fileLibrary,
     );
-    request("/api/state")
+    Promise.resolve(state)
       .then(async (native) => {
-        state = native;
-        preset = structuredClone(native.preset);
-        syncAll();
         sampleSelection.sync(native);
         if (native.plugin) await presetLibrary.initialize(native, presets);
         await fileLibrary.initialize(native, presets);
