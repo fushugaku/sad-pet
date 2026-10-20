@@ -24,214 +24,6 @@ struct Band {
     z: [[f32; 2]; 2],
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    fn tone(n: usize, hz: f32, sr: u32) -> Stereo {
-        [(n as f32 * 2.0 * PI * hz / sr as f32).sin() * 0.2; 2]
-    }
-    fn setup(sr: u32) -> (Resynth, SampleBuffer, Settings) {
-        let sample = SampleBuffer::new(
-            "PCM".into(),
-            sr,
-            (0..4096).map(|n| tone(n, 261.6256, sr)).collect(),
-        )
-        .unwrap();
-        let mut settings = Settings {
-            enabled: true,
-            mix: 1.0,
-            ..Settings::default()
-        };
-        settings.oscillators[0].control1 = 0.37;
-        settings.oscillators[0].control2 = 0.41;
-        (Resynth::new(sr), sample, settings)
-    }
-    #[test]
-    fn all_radias_types_and_modes_render_at_host_rates() {
-        for sr in [44100, 48000, 96000] {
-            let (mut engine, sample, mut settings) = setup(sr);
-            for waveform in Waveform::ALL {
-                for mode in Mode::ALL {
-                    if !waveform.analog() && mode != Mode::Wave {
-                        continue;
-                    }
-                    settings.oscillators[0].waveform = waveform;
-                    settings.oscillators[0].mode = mode;
-                    engine.configure(settings, &sample, 60.0);
-                    let mut energy = 0.0;
-                    for n in 0..4096 {
-                        let source = tone(n, engine.frequencies[7], sr);
-                        let out =
-                            engine.process([0.0; 2], source, 0.3, 1.0, &sample, &(0..sample.len()));
-                        assert!(
-                            out.iter().all(|x| x.is_finite() && x.abs() < 16.0),
-                            "{sr} {waveform:?} {mode:?}"
-                        );
-                        energy += out[0] * out[0];
-                    }
-                    assert!(energy > 1e-7, "silent {sr} {waveform:?} {mode:?}: {energy}");
-                }
-            }
-        }
-    }
-    #[test]
-    fn analysis_selects_bands_and_envelopes_release_to_silence() {
-        let (mut engine, sample, mut settings) = setup(48000);
-        settings.release = 0.0;
-        settings.attack = 0.0;
-        engine.configure(settings, &sample, 60.0);
-        for n in 0..24000 {
-            engine.process(
-                [0.0; 2],
-                tone(n, engine.frequencies[8], 48000),
-                0.0,
-                1.0,
-                &sample,
-                &(0..sample.len()),
-            );
-        }
-        let levels = engine.levels();
-        let peak = levels
-            .iter()
-            .enumerate()
-            .max_by(|a, b| a.1.total_cmp(b.1))
-            .unwrap()
-            .0;
-        assert_eq!(peak, 8);
-        assert!(levels[8] > levels[2] * 10.0 && levels[8] > levels[14] * 10.0);
-        for _ in 0..48000 {
-            engine.process([0.0; 2], [0.0; 2], 0.0, 1.0, &sample, &(0..sample.len()));
-        }
-        assert!(engine.levels().iter().all(|x| *x < 0.0001));
-        assert!(engine.gains.iter().all(|x| *x < 0.0001));
-    }
-    #[test]
-    fn scalar_edits_keep_phase_and_disabled_processing_is_exact() {
-        let (mut engine, sample, mut settings) = setup(48000);
-        engine.configure(settings, &sample, 60.0);
-        for n in 0..1024 {
-            engine.process(
-                [0.0; 2],
-                tone(n, 440.0, 48000),
-                0.0,
-                1.0,
-                &sample,
-                &(0..sample.len()),
-            );
-        }
-        let phases = engine.layers[0]
-            .carriers
-            .each_ref()
-            .map(|c| c.oscillator.phase);
-        settings.oscillators[0].control1 = 0.8;
-        settings.oscillators[0].transpose = 12.0;
-        settings.attack = 0.2;
-        engine.configure(settings, &sample, 60.0);
-        assert_eq!(
-            phases,
-            engine.layers[0]
-                .carriers
-                .each_ref()
-                .map(|c| c.oscillator.phase)
-        );
-        settings.enabled = false;
-        engine.configure(settings, &sample, 60.0);
-        for _ in 0..129 {
-            engine.process([0.0; 2], [0.0; 2], 0.0, 1.0, &sample, &(0..sample.len()));
-        }
-        assert!(!engine.active());
-        let dry = [f32::from_bits(0x3e723456), -0.0];
-        let out = engine.process(dry, [1.0; 2], 0.0, 1.0, &sample, &(0..sample.len()));
-        assert_eq!(dry.map(f32::to_bits), out.map(f32::to_bits));
-    }
-    #[test]
-    fn four_independent_layers_cross_feedback_and_pcm_trim_stay_bounded() {
-        let (mut engine, sample, mut settings) = setup(48000);
-        settings.count = 4;
-        for (i, o) in settings.oscillators.iter_mut().enumerate() {
-            o.waveform = [
-                Waveform::Saw,
-                Waveform::Pcm,
-                Waveform::Formant,
-                Waveform::Sine,
-            ][i];
-            o.mode = if o.waveform.analog() {
-                Mode::Cross
-            } else {
-                Mode::Wave
-            };
-            o.cross_source = ((i + 1) % 4 + 1) as u8;
-            o.control1 = 0.99;
-            o.control2 = 1.0;
-            o.transpose = i as f32 * 12.0 - 12.0;
-        }
-        engine.configure(settings, &sample, 60.0);
-        let mut energy = 0.0;
-        for n in 0..12000 {
-            let out = engine.process(
-                [0.0; 2],
-                tone(n, 440.0, 48000),
-                0.8,
-                1.0,
-                &sample,
-                &(17..19),
-            );
-            assert!(out.iter().all(|x| x.is_finite() && x.abs() < 16.0));
-            energy += out[0] * out[0];
-        }
-        assert!(energy > 0.001);
-    }
-
-    #[test]
-    fn shared_source_carriers_do_not_multiply_with_a_midi_chord() {
-        use crate::{dsp::Engine, midi::Message, preset::Preset};
-        use std::sync::Arc;
-        let sample = Arc::new(
-            SampleBuffer::new(
-                "Tone".into(),
-                8000,
-                (0..8000).map(|n| tone(n, 440.0, 8000)).collect(),
-            )
-            .unwrap(),
-        );
-        let render = |count: usize| {
-            let mut p = Preset::default();
-            p.color_chain.clear();
-            p.params.filter_env_depth = 0.0;
-            p.params.filter_resonance = 0.0;
-            p.envs[0].attack = 0.0;
-            p.envs[0].decay = 0.0;
-            p.envs[0].sustain = 1.0;
-            p.resynth.enabled = true;
-            p.resynth.mix = 1.0;
-            let mut e = Engine::new(8000, sample.clone(), p);
-            e.set_midi_gate(true);
-            e.set_playing(true);
-            for note in 0..count {
-                e.midi(Message::NoteOn {
-                    channel: 0,
-                    note: 48 + note as u8 * 3,
-                    velocity: 127,
-                });
-            }
-            let mut energy = 0.0;
-            for n in 0..6000 {
-                let x = e.process_frame();
-                if n > 2000 {
-                    energy += x[0] * x[0];
-                }
-            }
-            energy
-        };
-        let single = render(1);
-        let chord = render(8);
-        assert!(single > 0.01);
-        assert!(
-            (chord / single - 1.0).abs() < 0.02,
-            "one={single}, eight={chord}"
-        );
-    }
-}
 impl Band {
     fn new(hz: f32, sr: f32) -> Self {
         let g = (PI * hz / sr).tan();
@@ -302,6 +94,54 @@ struct Carrier {
     pcm_rate: f64,
     pcm_level: usize,
     audible: bool,
+}
+
+struct PcmLoop {
+    start: f64,
+    length: f64,
+    fade: f64,
+}
+impl PcmLoop {
+    fn new(sample: &SampleBuffer, range: &Range<usize>, o: crate::resynth::Oscillator) -> Self {
+        let length = range.len().max(1) as f64;
+        let offset = o.control1 as f64 * (length - 1.0);
+        let length = (length - offset).max(1.0);
+        let fade = o.control2 as f64 * (length * 0.1).min(sample.sample_rate as f64 * 0.1);
+        Self {
+            start: range.start as f64 + offset,
+            length,
+            fade: if fade > 1.0 { fade } else { 0.0 },
+        }
+    }
+    fn read(&self, carrier: &mut Carrier, sample: &SampleBuffer, range: &Range<usize>) -> Stereo {
+        let p = if carrier.pcm_phase < self.length {
+            carrier.pcm_phase
+        } else {
+            carrier.pcm_phase.rem_euclid(self.length)
+        };
+        let mut x = sample.read_region_level(self.start + p, carrier.pcm_level, range);
+        if self.fade > 0.0 && p > self.length - self.fade {
+            let y = sample.read_region_level(
+                self.start + p - self.length + self.fade,
+                carrier.pcm_level,
+                range,
+            );
+            let t = ((p - self.length + self.fade) / self.fade) as f32;
+            let mix = t * t * (3.0 - 2.0 * t);
+            x = std::array::from_fn(|c| x[c] + (y[c] - x[c]) * mix);
+        }
+        let next = p + carrier.pcm_rate;
+        carrier.pcm_phase = if next < self.length {
+            next
+        } else if self.fade > 0.0 {
+            // The head overlap was already played during the crossfade. Resume
+            // after it, including when a high pitch crosses several periods.
+            self.fade + (next - self.length).rem_euclid(self.length - self.fade)
+        } else {
+            next.rem_euclid(self.length)
+        };
+        x
+    }
 }
 impl Default for Carrier {
     fn default() -> Self {
@@ -576,6 +416,8 @@ impl Resynth {
                     continue;
                 }
                 let o = layer.settings;
+                let pcm_loop =
+                    (o.waveform == Waveform::Pcm).then(|| PcmLoop::new(sample, range, o));
                 let lfo = if o.waveform.analog()
                     && matches!(o.mode, Mode::Wave | Mode::Cross)
                     && o.control2 != 0.0
@@ -599,30 +441,11 @@ impl Resynth {
                         Waveform::AudioIn => {
                             analyzed_band.map(|x| x * self.sensitivity * self.gains[band])
                         }
-                        Waveform::Pcm => {
-                            let length = range.len().max(1) as f64;
-                            let start = o.control1 as f64 * (length - 1.0);
-                            let loop_len = (length - start).max(1.0);
-                            let p = carrier.pcm_phase.rem_euclid(loop_len);
-                            let mut x = sample.read_region_level(
-                                range.start as f64 + start + p,
-                                carrier.pcm_level,
-                                range,
-                            );
-                            let fade = o.control2 as f64
-                                * (loop_len * 0.1).min(sample.sample_rate as f64 * 0.1);
-                            if fade > 1.0 && p > loop_len - fade {
-                                let y = sample.read_region_level(
-                                    range.start as f64 + start + p - loop_len + fade,
-                                    carrier.pcm_level,
-                                    range,
-                                );
-                                let mix = ((p - loop_len + fade) / fade) as f32;
-                                x = std::array::from_fn(|c| x[c] + (y[c] - x[c]) * mix);
-                            }
-                            carrier.pcm_phase = (p + carrier.pcm_rate).rem_euclid(loop_len);
-                            x.map(|x| x * self.gains[band])
-                        }
+                        Waveform::Pcm => pcm_loop
+                            .as_ref()
+                            .unwrap()
+                            .read(carrier, sample, range)
+                            .map(|x| x * self.gains[band]),
                         _ => {
                             let modulator = Sample(
                                 (modulator as f64 * i32::MAX as f64)
@@ -673,5 +496,276 @@ impl Resynth {
                     - dry[c])
                     * self.wet
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn tone(n: usize, hz: f32, sr: u32) -> Stereo {
+        [(n as f32 * 2.0 * PI * hz / sr as f32).sin() * 0.2; 2]
+    }
+    fn setup(sr: u32) -> (Resynth, SampleBuffer, Settings) {
+        let sample = SampleBuffer::new(
+            "PCM".into(),
+            sr,
+            (0..4096).map(|n| tone(n, 261.6256, sr)).collect(),
+        )
+        .unwrap();
+        let mut settings = Settings {
+            enabled: true,
+            mix: 1.0,
+            ..Settings::default()
+        };
+        settings.oscillators[0].control1 = 0.37;
+        settings.oscillators[0].control2 = 0.41;
+        (Resynth::new(sr), sample, settings)
+    }
+    #[test]
+    fn all_radias_types_and_modes_render_at_host_rates() {
+        for sr in [44100, 48000, 96000] {
+            let (mut engine, sample, mut settings) = setup(sr);
+            for waveform in Waveform::ALL {
+                for mode in Mode::ALL {
+                    if !waveform.analog() && mode != Mode::Wave {
+                        continue;
+                    }
+                    settings.oscillators[0].waveform = waveform;
+                    settings.oscillators[0].mode = mode;
+                    engine.configure(settings, &sample, 60.0);
+                    let mut energy = 0.0;
+                    for n in 0..4096 {
+                        let source = tone(n, engine.frequencies[7], sr);
+                        let out =
+                            engine.process([0.0; 2], source, 0.3, 1.0, &sample, &(0..sample.len()));
+                        assert!(
+                            out.iter().all(|x| x.is_finite() && x.abs() < 16.0),
+                            "{sr} {waveform:?} {mode:?}"
+                        );
+                        energy += out[0] * out[0];
+                    }
+                    assert!(energy > 1e-7, "silent {sr} {waveform:?} {mode:?}: {energy}");
+                }
+            }
+        }
+    }
+    #[test]
+    fn analysis_selects_bands_and_envelopes_release_to_silence() {
+        let (mut engine, sample, mut settings) = setup(48000);
+        settings.release = 0.0;
+        settings.attack = 0.0;
+        engine.configure(settings, &sample, 60.0);
+        for n in 0..24000 {
+            engine.process(
+                [0.0; 2],
+                tone(n, engine.frequencies[8], 48000),
+                0.0,
+                1.0,
+                &sample,
+                &(0..sample.len()),
+            );
+        }
+        let levels = engine.levels();
+        let peak = levels
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.total_cmp(b.1))
+            .unwrap()
+            .0;
+        assert_eq!(peak, 8);
+        assert!(levels[8] > levels[2] * 10.0 && levels[8] > levels[14] * 10.0);
+        for _ in 0..48000 {
+            engine.process([0.0; 2], [0.0; 2], 0.0, 1.0, &sample, &(0..sample.len()));
+        }
+        assert!(engine.levels().iter().all(|x| *x < 0.0001));
+        assert!(engine.gains.iter().all(|x| *x < 0.0001));
+    }
+    #[test]
+    fn scalar_edits_keep_phase_and_disabled_processing_is_exact() {
+        let (mut engine, sample, mut settings) = setup(48000);
+        engine.configure(settings, &sample, 60.0);
+        for n in 0..1024 {
+            engine.process(
+                [0.0; 2],
+                tone(n, 440.0, 48000),
+                0.0,
+                1.0,
+                &sample,
+                &(0..sample.len()),
+            );
+        }
+        let phases = engine.layers[0]
+            .carriers
+            .each_ref()
+            .map(|c| c.oscillator.phase);
+        settings.oscillators[0].control1 = 0.8;
+        settings.oscillators[0].transpose = 12.0;
+        settings.attack = 0.2;
+        engine.configure(settings, &sample, 60.0);
+        assert_eq!(
+            phases,
+            engine.layers[0]
+                .carriers
+                .each_ref()
+                .map(|c| c.oscillator.phase)
+        );
+        settings.enabled = false;
+        engine.configure(settings, &sample, 60.0);
+        for _ in 0..129 {
+            engine.process([0.0; 2], [0.0; 2], 0.0, 1.0, &sample, &(0..sample.len()));
+        }
+        assert!(!engine.active());
+        let dry = [f32::from_bits(0x3e723456), -0.0];
+        let out = engine.process(dry, [1.0; 2], 0.0, 1.0, &sample, &(0..sample.len()));
+        assert_eq!(dry.map(f32::to_bits), out.map(f32::to_bits));
+    }
+    #[test]
+    fn four_independent_layers_cross_feedback_and_pcm_trim_stay_bounded() {
+        let (mut engine, sample, mut settings) = setup(48000);
+        settings.count = 4;
+        for (i, o) in settings.oscillators.iter_mut().enumerate() {
+            o.waveform = [
+                Waveform::Saw,
+                Waveform::Pcm,
+                Waveform::Formant,
+                Waveform::Sine,
+            ][i];
+            o.mode = if o.waveform.analog() {
+                Mode::Cross
+            } else {
+                Mode::Wave
+            };
+            o.cross_source = ((i + 1) % 4 + 1) as u8;
+            o.control1 = 0.99;
+            o.control2 = 1.0;
+            o.transpose = i as f32 * 12.0 - 12.0;
+        }
+        engine.configure(settings, &sample, 60.0);
+        let mut energy = 0.0;
+        for n in 0..12000 {
+            let out = engine.process(
+                [0.0; 2],
+                tone(n, 440.0, 48000),
+                0.8,
+                1.0,
+                &sample,
+                &(17..19),
+            );
+            assert!(out.iter().all(|x| x.is_finite() && x.abs() < 16.0));
+            energy += out[0] * out[0];
+        }
+        assert!(energy > 0.001);
+    }
+
+    #[test]
+    fn shared_source_carriers_do_not_multiply_with_a_midi_chord() {
+        use crate::{dsp::Engine, midi::Message, preset::Preset};
+        use std::sync::Arc;
+        let sample = Arc::new(
+            SampleBuffer::new(
+                "Tone".into(),
+                8000,
+                (0..8000).map(|n| tone(n, 440.0, 8000)).collect(),
+            )
+            .unwrap(),
+        );
+        let render = |count: usize| {
+            let mut p = Preset::default();
+            p.color_chain.clear();
+            p.params.filter_env_depth = 0.0;
+            p.params.filter_resonance = 0.0;
+            p.envs[0].attack = 0.0;
+            p.envs[0].decay = 0.0;
+            p.envs[0].sustain = 1.0;
+            p.resynth.enabled = true;
+            p.resynth.mix = 1.0;
+            let mut e = Engine::new(8000, sample.clone(), p);
+            e.set_midi_gate(true);
+            e.set_playing(true);
+            for note in 0..count {
+                e.midi(Message::NoteOn {
+                    channel: 0,
+                    note: 48 + note as u8 * 3,
+                    velocity: 127,
+                });
+            }
+            let mut energy = 0.0;
+            for n in 0..6000 {
+                let x = e.process_frame();
+                if n > 2000 {
+                    energy += x[0] * x[0];
+                }
+            }
+            energy
+        };
+        let single = render(1);
+        let chord = render(8);
+        assert!(single > 0.01);
+        assert!(
+            (chord / single - 1.0).abs() < 0.02,
+            "one={single}, eight={chord}"
+        );
+    }
+    #[test]
+    fn pcm_overlap_has_a_continuous_seam_and_handles_large_steps_and_tiny_trims() {
+        // Deliberately different endpoints expose restarting the consumed head.
+        let sample = SampleBuffer::new(
+            "Ramp".into(),
+            48000,
+            (0..1024).map(|i| [i as f32 / 1024.0; 2]).collect(),
+        )
+        .unwrap();
+        let o = crate::resynth::Oscillator {
+            waveform: Waveform::Pcm,
+            control2: 1.0,
+            ..Default::default()
+        };
+        let pcm = PcmLoop::new(&sample, &(0..1024), o);
+        let mut carrier = Carrier {
+            pcm_phase: 1023.0,
+            ..Default::default()
+        };
+        let tail = pcm.read(&mut carrier, &sample, &(0..1024));
+        let head = pcm.read(&mut carrier, &sample, &(0..1024));
+        assert!(
+            (tail[0] - head[0]).abs() < 0.002,
+            "PCM overlap seam: {tail:?} -> {head:?}"
+        );
+        for rate in [0.1, 37.3, 10_000.75, 1_000_000.1] {
+            carrier.pcm_rate = rate;
+            for _ in 0..16 {
+                assert!(
+                    pcm.read(&mut carrier, &sample, &(0..1024))
+                        .iter()
+                        .all(|x| x.is_finite())
+                );
+                assert!((pcm.fade..pcm.length).contains(&carrier.pcm_phase));
+            }
+        }
+        let tiny = PcmLoop::new(&sample, &(17..18), o);
+        assert_eq!(tiny.fade, 0.0);
+        for _ in 0..16 {
+            assert!(
+                tiny.read(&mut carrier, &sample, &(17..18))
+                    .iter()
+                    .all(|x| x.is_finite())
+            );
+        }
+        let inactive = PcmLoop::new(
+            &sample,
+            &(0..1024),
+            crate::resynth::Oscillator {
+                control2: 0.001,
+                ..o
+            },
+        );
+        assert_eq!(inactive.fade, 0.0);
+        carrier.pcm_phase = 1023.0;
+        carrier.pcm_rate = 1.0;
+        inactive.read(&mut carrier, &sample, &(0..1024));
+        assert_eq!(
+            carrier.pcm_phase, 0.0,
+            "Sub-sample overlap changed the loop period"
+        );
     }
 }

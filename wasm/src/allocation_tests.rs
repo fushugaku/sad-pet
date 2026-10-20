@@ -61,6 +61,8 @@ fn resynth_render_scalar_edits_and_binary_meters_have_no_heap_operations() {
         o.control1 = 0.6;
         o.control2 = 0.4;
     }
+    audio.engine.preset.resynth.oscillators[3].waveform = sad_pet::resynth::Waveform::Pcm;
+    audio.engine.preset.resynth.oscillators[3].mode = sad_pet::resynth::Mode::Wave;
     audio.engine.refresh_parameters();
     let changes = sad_pet::parameters::parse(
         &json!({"resynth_osc4_control1":0.8,"resynth_osc2_transpose":12,"resynth_mix":0.7}),

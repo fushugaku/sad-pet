@@ -79,6 +79,14 @@ fn four_resynth_layers_automation_and_project_recall_are_realtime_safe() {
         .iter()
         .position(|s| s.id == "resynth_osc2_transpose")
         .unwrap();
+    let wave = parameters::specs()
+        .iter()
+        .position(|s| s.id == "resynth_osc4_waveform")
+        .unwrap();
+    let mode = parameters::specs()
+        .iter()
+        .position(|s| s.id == "resynth_osc4_mode")
+        .unwrap();
     call(
         &mut control,
         "/api/transport",
@@ -86,6 +94,10 @@ fn four_resynth_layers_automation_and_project_recall_are_realtime_safe() {
     );
     for block in 0..8 {
         values[spec] = block as f32;
+        if block == 4 {
+            values[wave] = 7.0;
+            values[mode] = 0.0;
+        }
         control.set_values(&values);
         no_heap(|| {
             audio.begin(&values, 120.0, None, false, 128);

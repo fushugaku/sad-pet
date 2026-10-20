@@ -29,6 +29,8 @@ impl Waveform {
         Self::Pcm,
     ];
     pub fn code(self) -> u8 {
+        // Original OSC1 selections: 4=Formant, 5=Noise. Rustias's historical
+        // PrimaryParameters enum names are reversed; its numeric contract is not.
         self as u8
     }
     pub fn analog(self) -> bool {
@@ -72,7 +74,8 @@ pub struct Oscillator {
     pub fine: f32,
     pub level: f32,
     pub pan: f32,
-    /// 0 = analysis input; 1..4 = another carrier (feedback uses its previous sample).
+    /// 0 = analysis input; 1..4 = carrier layer. Earlier layers use the current
+    /// internal sample; self/forward connections use the previous one.
     pub cross_source: u8,
 }
 impl Default for Oscillator {
