@@ -1442,6 +1442,9 @@ impl Engine {
         }
         let mut voice_frames = [[0.0; 2]; VOICES];
         let range = self.source_range();
+        let file_source = self.live_input.is_none();
+        let source_effects =
+            file_source && (self.processed_source.is_some() || self.source_fade_remaining != 0);
         let sample = self
             .live_input
             .as_ref()
@@ -1457,7 +1460,7 @@ impl Engine {
             } else {
                 0
             };
-            let mut frame = if self.live_input.is_none() {
+            let mut frame = if source_effects {
                 source_fx::read(
                     &self.sample,
                     &self.processed_source,
@@ -1470,7 +1473,7 @@ impl Engine {
             } else {
                 sample.read_region_level(grain.position, level, &range)
             };
-            if self.live_input.is_none() {
+            if file_source {
                 let gain = self.fades.gain(grain.position, sample.sample_rate, &range);
                 frame = frame.map(|v| v * gain);
             }

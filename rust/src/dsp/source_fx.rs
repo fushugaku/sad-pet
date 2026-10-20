@@ -19,9 +19,12 @@ impl Recipe {
             _ => false,
         });
         let pitched = slot.is_some_and(|s| {
+            use crate::dsp::radias_waveshaper::WaveshaperMode::*;
             s.kind == crate::preset::SaturatorType::Waveshaper
-                && s.settings.waveshaper_type
-                    == crate::dsp::radias_waveshaper::WaveshaperMode::Pickup
+                && matches!(
+                    s.settings.waveshaper_type,
+                    Pickup | SubSaw | SubSquare | SubTriangle | SubSine
+                )
         });
         Self {
             region,
@@ -93,6 +96,7 @@ pub fn prepare(
     })))
 }
 
+#[inline]
 pub(super) fn read(
     raw: &Arc<SampleBuffer>,
     current: &Option<Arc<ProcessedSource>>,
@@ -102,6 +106,9 @@ pub(super) fn read(
     level: usize,
     range: &std::ops::Range<usize>,
 ) -> Stereo {
+    if current.is_none() && remaining == 0 {
+        return raw.read_region_level(position, level, range);
+    }
     let sample = |cache: &Option<Arc<ProcessedSource>>| {
         if let Some(cache) = cache
             .as_ref()
@@ -144,6 +151,43 @@ mod tests {
             )
             .unwrap(),
         )
+    }
+    #[test]
+    fn source_recipe_tracks_pitch_for_pickup_and_every_sub_oscillator() {
+        use crate::dsp::radias_waveshaper::WaveshaperMode;
+        let raw = sample();
+        for mode in WaveshaperMode::ALL {
+            let mut slot = ColorSlot::legacy(SaturatorType::Waveshaper, 1.0);
+            slot.settings.waveshaper_type = mode;
+            let pitched = matches!(
+                mode,
+                WaveshaperMode::Pickup
+                    | WaveshaperMode::SubSaw
+                    | WaveshaperMode::SubSquare
+                    | WaveshaperMode::SubTriangle
+                    | WaveshaperMode::SubSine
+            );
+            let a = Recipe::new(Region::default(), Some(slot), 120.0, 48.0);
+            let b = Recipe::new(Region::default(), Some(slot), 120.0, 60.0);
+            assert_eq!(a != b, pitched, "{mode:?}");
+            if pitched {
+                let prepare_at = |root| {
+                    prepare(
+                        raw.clone(),
+                        Region::default(),
+                        Some(slot),
+                        120.0,
+                        root,
+                        || false,
+                    )
+                    .unwrap()
+                    .unwrap()
+                };
+                let low = prepare_at(48.0);
+                let high = prepare_at(60.0);
+                assert_ne!(low.sample.frames(), high.sample.frames(), "{mode:?}");
+            }
+        }
     }
     #[test]
     fn file_fx_process_selected_input_before_any_grain_or_pitch() {
