@@ -83,6 +83,14 @@ function editor() {
   assert.equal(e.snapshot().pending, 0);
 }
 {
+  const e = editor();
+  e.evaluate("setParam('loop_one_bar',true);setParam('sample_root_note',48)");
+  await e.next();
+  assert.deepEqual(e.calls, [{path:"/api/parameters",data:{loop_one_bar:1,sample_root_note:48}}]);
+  assert.equal(e.snapshot().preset.params.loop_one_bar, true);
+  assert.equal(e.clones(), 0, "Loop checkbox rebuilt the preset");
+}
+{
   const e = editor(), gate = e.hold();
   e.evaluate("setParam('position',0.1)");
   const first = e.next();

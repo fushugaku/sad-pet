@@ -90,7 +90,13 @@
       const duration =
         (this.region.end - this.region.start) *
         (this.state?.sample_seconds || 0);
-      $("region-duration").textContent = `${duration.toFixed(3)} s loop`;
+      const params = this.actions.params();
+      const barSeconds = (this.state?.plugin?.bar_beats || 4) * 60 / (params?.bpm || 120);
+      $("region-duration").textContent = params?.loop_one_bar
+        ? `1 bar · ${barSeconds.toFixed(3)} s`
+        : `${duration.toFixed(3)} s loop`;
+      $("loop-one-bar").disabled = !available;
+      $("sample-root-note").disabled = !available;
       const isFull = this.region.start === 0 && this.region.end === 1;
       $("region-reset").disabled = !available || isFull;
       const hasFades = this.fades.fade_in > 0 || this.fades.fade_out > 0;

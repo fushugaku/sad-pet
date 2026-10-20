@@ -40,6 +40,9 @@ The desktop version uses the system audio output and a local browser panel.
 - Dry/Wet blends the original source with grains before pre-filter FX, note
   filters and post-filter FX, so even fully dry audio receives the full chain.
 - Waveform loop selection, adjustable fade in/out and sample-exact trimming to new library files.
+- Optional **Loop 1 bar**: each MIDI note plays the selection in one bar while
+  pitch, tuning and pitch bend remain independent of its duration. **Root** sets
+  the original sample note. Plug-ins follow the DAW tempo and time signature.
 - Factory/User preset browser with named saving, overwrite, Save as new and
   portable `.sadpet` import/export, including the source sample and region/fades.
   Plug-ins share an on-disk User bank; the browser keeps its bank in IndexedDB.
@@ -150,7 +153,7 @@ See [the user guide](rust/README.txt) for controls, recording and CLI rendering.
 
 ## DAW plug-ins
 
-**[Download macOS and Windows installers](https://github.com/fushugaku/sad-pet/releases/tag/plugins-v0.3.1)**
+**[Download macOS and Windows installers](https://github.com/fushugaku/sad-pet/releases/latest)**
 
 The native plug-in build reuses this engine and embeds the existing editor.
 **SAD PET** is a MIDI instrument; **SAD PET FX** processes stereo host audio and

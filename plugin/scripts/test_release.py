@@ -5,9 +5,12 @@ import tempfile
 import unittest
 import zipfile
 import sys
+import tomllib
 
 from publish_release import PACKAGES, stage_assets, validate_tag
 from package_windows import build_exe
+
+VERSION = tomllib.loads((Path(__file__).resolve().parents[1] / "Cargo.toml").read_text())["package"]["version"]
 
 
 class ReleaseAssets(unittest.TestCase):
@@ -18,7 +21,7 @@ class ReleaseAssets(unittest.TestCase):
         self.artifacts = self.root / "artifacts"
         self.artifacts.mkdir()
         self.output = self.root / "output"
-        self.version = validate_tag("plugins-v0.3.1")
+        self.version = validate_tag(f"plugins-v{VERSION}")
         (self.artifacts / PACKAGES[0]).write_bytes(b"xar!package")
         (self.artifacts / PACKAGES[2]).write_bytes(b"MZinstaller")
         self.mac_archive()
@@ -56,7 +59,7 @@ class ReleaseAssets(unittest.TestCase):
     def test_mixed_plugin_versions_block_every_asset(self):
         self.windows_archive("0.3.0")
         self.checksums()
-        with self.assertRaisesRegex(ValueError, "Expected 0.3.1"):
+        with self.assertRaisesRegex(ValueError, f"Expected {self.version}"):
             stage_assets(self.artifacts, self.output, self.version)
         self.assertFalse(self.output.exists())
 
@@ -77,7 +80,7 @@ class WindowsInstaller(unittest.TestCase):
                 contents = source / "VST3" / f"{name}.vst3/Contents"
                 (contents / "Resources").mkdir(parents=True)
                 (contents / "x86_64-win").mkdir()
-                (contents / "Resources/moduleinfo.json").write_text('{"Version":"0.3.1",}')
+                (contents / "Resources/moduleinfo.json").write_text('{"Version":"' + VERSION + '",}')
                 (contents / "x86_64-win" / f"{name}.vst3").write_bytes(b"MZfixture")
             (source / "Licenses").mkdir()
             (source / "Licenses/notice.txt").write_text("Installer compilation fixture")

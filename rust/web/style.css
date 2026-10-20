@@ -2437,6 +2437,37 @@ input[type="range"] {
 .region-actions {
   margin-left: auto;
 }
+.region-loop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  font: 11px ui-monospace, monospace;
+  white-space: nowrap;
+}
+.bar-loop-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  cursor: pointer;
+}
+.bar-loop-toggle input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.sample-root-label {
+  color: var(--muted);
+  margin-left: 4px;
+}
+#sample-root-note {
+  width: 76px;
+  height: 32px;
+  padding: 0 8px;
+  font: inherit;
+}
 .region-actions button {
   height: 32px;
   padding: 0 12px;
@@ -2461,6 +2492,19 @@ input[type="range"] {
     height: 36px;
   }
   .region-actions button {
+    height: 36px;
+  }
+  .region-loop {
+    grid-column: 1 / -1;
+    min-height: 36px;
+  }
+  .bar-loop-toggle {
+    min-height: 36px;
+  }
+  .sample-root-label {
+    margin-left: auto;
+  }
+  #sample-root-note {
     height: 36px;
   }
 }

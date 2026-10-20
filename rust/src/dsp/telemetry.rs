@@ -12,6 +12,7 @@ pub struct RealtimeView {
     pub input_peak: [f32; 2],
     pub input_seconds: f64,
     pub center: f64,
+    pub bar_beats: f64,
     pub playing: bool,
     pub midi_gate: bool,
     pub frozen: bool,
@@ -48,6 +49,7 @@ impl Default for RealtimeView {
             input_peak: [0.0; 2],
             input_seconds: 0.0,
             center: 0.0,
+            bar_beats: 4.0,
             playing: false,
             midi_gate: true,
             frozen: false,
@@ -131,6 +133,7 @@ impl Engine {
         view.input_peak = self.live_input.as_ref().map_or([0.0; 2], |i| i.peak);
         view.input_seconds = self.live_input.as_ref().map_or(0.0, |i| i.seconds());
         view.center = self.center() / self.source_sample().len() as f64;
+        view.bar_beats = self.bar_beats();
         view.playing = self.playing;
         view.midi_gate = self.midi_gate;
         view.frozen = self.frozen;

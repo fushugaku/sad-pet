@@ -260,6 +260,8 @@ pub struct Params {
     pub midi_pitchbend_range: f32,
     pub min_grains: f32,
     pub bpm: f32,
+    pub loop_one_bar: bool,
+    pub sample_root_note: f32,
     pub antialiasing: bool,
     pub vcf_type: FilterType,
     pub vcf2_type: FilterType,
@@ -310,6 +312,8 @@ impl Default for Params {
             midi_pitchbend_range: 2.0,
             min_grains: 0.0,
             bpm: 120.0,
+            loop_one_bar: false,
+            sample_root_note: 60.0,
             antialiasing: true,
             vcf_type: FilterType::LowPass,
             vcf2_type: FilterType::LowPass,
@@ -369,6 +373,8 @@ impl Params {
         finite_clamp(&mut self.midi_pitchbend_range, 0.0, 48.0, 2.0);
         finite_clamp(&mut self.min_grains, 0.0, 1.0, 0.0);
         finite_clamp(&mut self.bpm, 20.0, 300.0, 120.0);
+        finite_clamp(&mut self.sample_root_note, 0.0, 127.0, 60.0);
+        self.sample_root_note = self.sample_root_note.round();
     }
 }
 

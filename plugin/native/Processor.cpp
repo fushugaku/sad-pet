@@ -150,14 +150,20 @@ void SadPetProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     float bpm = 0.0f;
     double beat = 0.0;
     bool hasBeat = false, playing = false;
+    std::uint32_t numerator = 4, denominator = 4;
     if (auto* playHead = getPlayHead()) {
         if (const auto position = playHead->getPosition()) {
             if (const auto tempo = position->getBpm()) bpm = static_cast<float>(*tempo);
             if (const auto ppq = position->getPpqPosition()) { beat = *ppq; hasBeat = true; }
             playing = position->getIsPlaying();
+            if (const auto signature = position->getTimeSignature()) {
+                numerator = static_cast<std::uint32_t>(signature->numerator);
+                denominator = static_cast<std::uint32_t>(signature->denominator);
+            }
         }
     }
     const auto frames = buffer.getNumSamples();
+    sad_audio_time_signature(audio, numerator, denominator);
     sad_audio_begin(audio, renderValues.data(), renderValues.size(), bpm, beat, hasBeat, playing, static_cast<std::size_t>(frames));
     auto* left = buffer.getWritePointer(0);
     auto* right = buffer.getWritePointer(1);

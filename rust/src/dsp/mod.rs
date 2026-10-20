@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod bar_loop_tests;
 pub mod color;
 pub mod compressor;
 pub mod delay;
@@ -51,9 +53,11 @@ struct Voice {
     sustained: bool,
     value: f32,
     env_values: [f32; 3],
+    loop_phase: f64,
 }
 impl Voice {
     fn on(&mut self) {
+        self.loop_phase = 0.0;
         self.env_values = [0.0; 3];
         self.value = 0.0;
         for env in &mut self.envelopes {
@@ -281,6 +285,7 @@ pub struct Engine {
     random: Random,
     frame: u64,
     cursor: f64,
+    bar_beats: f64,
     frozen_center: f64,
     last_position: f32,
     grain_clock: f64,
@@ -338,6 +343,7 @@ impl Engine {
             random: Random::default(),
             frame: 0,
             cursor: 0.0,
+            bar_beats: 4.0,
             frozen_center: 0.0,
             last_position: 0.0,
             grain_clock: 1.0,
@@ -431,11 +437,41 @@ impl Engine {
         self.fades = Fades::default();
         self.file_range = 0..self.sample.len();
         self.cursor = 0.0;
+        self.voices.iter_mut().for_each(|v| v.loop_phase = 0.0);
         self.frozen_center = 0.0;
         self.reset_grains();
         self.color_rack.clear();
         self.pre_color_rack.clear();
         self.filters.iter_mut().for_each(FilterBank::clear);
+    }
+
+    /// Tempo is measured in quarter notes; e.g. 6/8 is three quarter notes per bar.
+    pub fn set_time_signature(&mut self, numerator: u32, denominator: u32) {
+        self.bar_beats = if (1..=128).contains(&numerator)
+            && denominator.is_power_of_two()
+            && denominator <= 128
+        {
+            numerator as f64 * 4.0 / denominator as f64
+        } else {
+            4.0
+        };
+    }
+    pub fn bar_beats(&self) -> f64 {
+        self.bar_beats
+    }
+    fn bar_loop_active(&self) -> bool {
+        self.modulated.params.loop_one_bar && self.live_input.is_none()
+    }
+    fn voice_center(&self, voice: usize) -> f64 {
+        if self.bar_loop_active() && !self.frozen {
+            let range = &self.file_range;
+            range.start as f64
+                + (self.voices[voice].loop_phase + self.modulated.params.position as f64)
+                    .rem_euclid(1.0)
+                    * range.len() as f64
+        } else {
+            self.center()
+        }
     }
 
     pub fn host_transport(&mut self, bpm: f32, beat: Option<f64>, restart: bool) {
@@ -610,6 +646,15 @@ impl Engine {
                     .min(length * 0.9);
             (input.head() as f64 - margin - p.position as f64 * (length - margin))
                 .rem_euclid(length)
+        } else if self.bar_loop_active()
+            && let Some(voice) = self.voices.iter().enumerate().position(|(i, v)| {
+                (i != 0 || !self.midi_gate)
+                    && v.active()
+                    && v.note == self.source_note
+                    && v.channel == self.source_channel
+            })
+        {
+            self.voice_center(voice)
         } else {
             let range = &self.file_range;
             range.start as f64
@@ -1033,6 +1078,11 @@ impl Engine {
     }
     fn update_modulation(&mut self) {
         let mut m = Modulated::from_preset(&self.preset);
+        if m.params.loop_one_bar != self.modulated.params.loop_one_bar {
+            self.voices.iter_mut().for_each(|v| v.loop_phase = 0.0);
+            self.cursor = self.file_range.start as f64;
+            self.reset_grains();
+        }
         self.matrix_values.fill(0.0);
         let mut targets = [Destination::None; matrix::MAX_ROUTES];
         let mut amounts = [0.0; matrix::MAX_ROUTES];
@@ -1153,7 +1203,11 @@ impl Engine {
         let note = self.voices[voice];
         let bend = self.bend[note.channel as usize] * p.midi_pitchbend_range;
         let semis = (p.pitch * 2.0 - 1.0) * p.pitch_range
-            + (note.note as f32 - 60.0)
+            + if voice == 0 {
+                0.0
+            } else {
+                note.note as f32 - p.sample_root_note
+            }
             + p.sample_tune_semis
             + p.sample_tune_cents * 0.01
             + bend
@@ -1167,7 +1221,7 @@ impl Engine {
             .round()
             .max(4.0) as u32;
         let position = range.start as f64
-            + (self.center() - range.start as f64
+            + (self.voice_center(voice) - range.start as f64
                 + self.random.bipolar() as f64 * p.cloud as f64 * length * 0.5)
                 .rem_euclid(length);
         let pan =
@@ -1378,8 +1432,27 @@ impl Engine {
             self.peak[c] = self.peak[c].max(value.abs());
         }
         if self.playing {
+            let bar_loop = self.bar_loop_active();
+            let phase_step = self.modulated.params.bpm as f64
+                / (60.0 * self.sample_rate as f64 * self.bar_beats);
+            if bar_loop && !self.frozen {
+                for voice in &mut self.voices {
+                    if voice.active() {
+                        voice.loop_phase = (voice.loop_phase + phase_step).rem_euclid(1.0);
+                    }
+                }
+            }
+            let advance = if bar_loop {
+                if self.frozen {
+                    0.0
+                } else {
+                    self.file_range.len() as f64 * phase_step
+                }
+            } else {
+                source_rate
+            };
             self.cursor = self.file_range.start as f64
-                + (self.cursor + source_rate - self.file_range.start as f64)
+                + (self.cursor + advance - self.file_range.start as f64)
                     .rem_euclid(self.file_range.len() as f64);
         }
         self.frame += 1;

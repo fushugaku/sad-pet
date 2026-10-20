@@ -311,6 +311,14 @@
               /><span>ms</span></label
             >
           </div>
+          <div class="region-loop">
+            <label class="bar-loop-toggle" title="Play the selection in one bar at any MIDI note or pitch">
+              <input id="loop-one-bar" type="checkbox" disabled />
+              Loop 1 bar
+            </label>
+            <label class="sample-root-label" for="sample-root-note">Root</label>
+            <select id="sample-root-note" aria-label="Sample root note" title="Original pitch of the sample" disabled></select>
+          </div>
           <output id="region-duration">0.000 s loop</output>
           <div class="region-actions">
             <button id="region-reset" title="Play the full file" disabled>

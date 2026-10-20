@@ -378,6 +378,29 @@ pub fn specs() -> &'static [Spec] {
                 }
             }
         }
+        // Append controls: AU parameter indices and existing host IDs must not move.
+        result.push(Spec {
+            id: "sample_root_note".into(),
+            name: "Sample root note".into(),
+            min: 0.0,
+            max: 127.0,
+            default: 60.0,
+            target: Target::Core {
+                get: |p| p.params.sample_root_note,
+                set: |p, v| p.params.sample_root_note = v.round(),
+            },
+        });
+        result.push(Spec {
+            id: "loop_one_bar".into(),
+            name: "Loop one bar".into(),
+            min: 0.0,
+            max: 1.0,
+            default: 0.0,
+            target: Target::Core {
+                get: |p| f32::from(p.params.loop_one_bar),
+                set: |p, v| p.params.loop_one_bar = v >= 0.5,
+            },
+        });
         result
     })
 }
@@ -396,6 +419,30 @@ pub fn mirror(preset: &mut Preset) {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn old_presets_keep_original_playback_and_new_loop_settings_roundtrip() {
+        let mut old = serde_json::to_value(Preset::default()).unwrap();
+        old["params"]
+            .as_object_mut()
+            .unwrap()
+            .remove("loop_one_bar");
+        old["params"]
+            .as_object_mut()
+            .unwrap()
+            .remove("sample_root_note");
+        let mut preset: Preset = serde_json::from_value(old).unwrap();
+        assert!(!preset.params.loop_one_bar);
+        assert_eq!(preset.params.sample_root_note, 60.0);
+        apply(
+            &mut preset,
+            &parse(&json!({"loop_one_bar":1,"sample_root_note":48.4})).unwrap(),
+        );
+        let restored: Preset =
+            serde_json::from_slice(&serde_json::to_vec(&preset).unwrap()).unwrap();
+        assert!(restored.params.loop_one_bar);
+        assert_eq!(restored.params.sample_root_note, 48.0);
+    }
 
     #[test]
     fn numeric_batches_clamp_values_preserve_topology_and_mirror_legacy_fields() {

@@ -10,7 +10,7 @@ the plug-in window; it does not launch a separate browser, audio device or serve
 
 ## Install
 
-[Download the macOS and Windows installers](https://github.com/fushugaku/sad-pet/releases/tag/plugins-v0.3.1).
+[Download the macOS and Windows installers](https://github.com/fushugaku/sad-pet/releases/latest).
 
 Close your DAW before installing or replacing plug-ins.
 
@@ -89,6 +89,16 @@ with the host transport. Moving or looping the playhead repositions those modes.
 **Free tempo** enables the instrument's own tempo control. The MIDI keyboard
 continues to work while the host is stopped. Audio processing adds zero latency;
 grain position/history and individual effects can introduce audible delays.
+
+**Loop 1 bar**, beside the sample selection, scans the entire selection once per
+bar at any MIDI note or Pitch setting. Each note starts its own loop from the
+selection's start; playing another note does not restart held notes. **Root** is
+the original sample note (C4 by default). Pitch, semitone/cents tuning and pitch
+bend change the sound without changing loop duration. The plug-in uses the DAW's
+time signature, including 3/4 and 6/8, and follows tempo changes without restarting
+the loop. Without a host, the bar is four beats at the Tempo setting. Freeze pauses
+the scan; note releases still follow the envelope. Save a live recording as a file
+to select and loop it. The checkbox and Root are stored in presets and DAW projects.
 
 The signal path is grains/source blend → Pre-filter effects → note filters →
 Post-filter effects. Both racks have the same catalog and up to 12 independent

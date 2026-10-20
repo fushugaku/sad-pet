@@ -60,6 +60,43 @@ fn render(audio: &mut Audio, frames: usize, input: Stereo) -> f32 {
     peak
 }
 
+#[test]
+fn one_bar_loop_host_controls_and_meter_are_realtime_safe_and_saved() {
+    let mut control = Controller::new(false);
+    call(
+        &mut control,
+        "/api/parameters",
+        json!({"loop_one_bar":1,"sample_root_note":48}),
+    );
+    let mut audio = control.prepare(8000);
+    let values = control.values();
+    let ids = parameters::specs();
+    assert_eq!(ids[1475].id, "sample_root_note");
+    assert_eq!(ids[1476].id, "loop_one_bar");
+    let region = Region {
+        start: 0.25,
+        end: 0.75,
+    };
+    audio.engine.set_region(region).unwrap();
+    no_heap(|| {
+        unsafe { sad_audio_time_signature(&mut audio, 6, 8) };
+        audio.begin(&values, 120.0, None, true, 3000);
+        audio.engine.midi(Message::NoteOn {
+            channel: 0,
+            note: 48,
+            velocity: 100,
+        });
+        render(&mut audio, 3000, [0.0; 2]);
+    });
+    let frame = audio.engine.center() / audio.engine.sample.len() as f64;
+    assert!((frame - 0.375).abs() < 1e-6);
+    let saved = control.save().unwrap();
+    let mut restored = Controller::new(false);
+    restored.restore(&saved).unwrap();
+    assert!(restored.preset.params.loop_one_bar);
+    assert_eq!(restored.preset.params.sample_root_note, 48.0);
+}
+
 struct PresetDirectory(std::path::PathBuf);
 impl PresetDirectory {
     fn new() -> Self {

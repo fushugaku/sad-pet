@@ -21,6 +21,7 @@ SadBytes sad_control_save(SadController*);
 bool sad_control_restore(SadController*, const std::uint8_t*, std::size_t);
 void sad_audio_begin(SadAudio*, const float*, std::size_t, float bpm, double beat,
                      bool hasBeat, bool playing, std::size_t frames);
+void sad_audio_time_signature(SadAudio*, std::uint32_t numerator, std::uint32_t denominator);
 void sad_audio_midi(SadAudio*, const std::uint8_t*, std::size_t);
 void sad_audio_process(SadAudio*, const float* left, const float* right,
                       float* outputLeft, float* outputRight, std::size_t frames);

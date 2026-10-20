@@ -338,7 +338,7 @@ impl Controller {
             .collect();
         json!({
             "version": env!("CARGO_PKG_VERSION"), "instance_id": "plugin",
-            "plugin": {"effect":self.effect,"sync":self.sync,"host_bpm":self.host_bpm,"host_playing":self.host_playing},
+            "plugin": {"effect":self.effect,"sync":self.sync,"host_bpm":self.host_bpm,"host_playing":self.host_playing,"bar_beats":view.bar_beats},
             "sample_rate":self.rate,"audio_device":"DAW","audio_enabled":true,"audio_error":null,
             "playing":self.playing,"midi_gate":self.midi_gate,"frozen":self.frozen,"bypass":self.bypass,
             "preset":displayed_preset,"sample_name":if live { "DAW input" } else { &self.sample.name },
@@ -952,6 +952,18 @@ pub unsafe extern "C" fn sad_audio_begin(
         playing,
         frames,
     );
+}
+/// # Safety
+/// Audio must be exclusively held by the host render thread.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sad_audio_time_signature(
+    audio: *mut Audio,
+    numerator: u32,
+    denominator: u32,
+) {
+    if let Some(audio) = unsafe { audio.as_mut() } {
+        audio.engine.set_time_signature(numerator, denominator);
+    }
 }
 /// # Safety
 /// Audio must be exclusively held by the render thread; data must address len readable MIDI bytes.

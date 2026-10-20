@@ -106,6 +106,9 @@ int main() {
         auto* region = new juce::DynamicObject;
         region->setProperty("start", 0.25); region->setProperty("end", 0.75);
         command(processor, "/api/region", juce::var(region));
+        command(processor, "/api/parameters", juce::JSON::parse(R"({"loop_one_bar":1,"sample_root_note":48})"));
+        require(processor.parameters.getParameter("loop_one_bar")->getValue() == 1.0f,
+            "Loop checkbox did not publish host automation");
         const auto userPreset = command(processor, "/api/preset-library/save", juce::JSON::parse(R"({"name":"Native patch"})"));
         const auto patchId = userPreset["id"].toString();
         require(presetFolder.path.getChildFile(patchId + ".sadpet").existsAsFile(), "Preset was not saved to disk");
@@ -129,6 +132,8 @@ int main() {
         require(state["sample_name"].toString() == "Embedded test.wav", "Custom sample was not restored");
         require(std::abs(static_cast<float>(state["preset"]["params"]["position"]) - 0.37f) < 0.00001f, "Automation value was not restored");
         require(static_cast<double>(state["region"]["start"]) == 0.25, "Sample selection was not restored");
+        require(static_cast<bool>(state["preset"]["params"]["loop_one_bar"]), "One-bar loop mode was not restored");
+        require(static_cast<int>(state["preset"]["params"]["sample_root_note"]) == 48, "Sample root note was not restored");
         auto preState = state["preset"]["pre_color_chain"][0];
         require(preState["settings"]["waveshaper_type"].toString() == "multi_sine", "Pre-filter waveshaper type was not restored");
         require(std::abs(static_cast<float>(preState["settings"]["waveshaper_depth"]) - 0.33f) < 0.00001f, "Pre-filter FX automation was not restored");

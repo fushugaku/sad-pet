@@ -1,5 +1,12 @@
 SAD PET instrument and SAD PET FX, with native Rust DSP and an embedded editor.
 
+New **Loop 1 bar** checkbox beside the sample selection: each MIDI note scans the
+whole selection in one bar, with independent pitch and its own loop position.
+**Root** sets the original sample note. Pitch, tuning and pitch bend remain
+editable. Plug-ins follow the host tempo and time signature, including 3/4 and
+6/8. Loop settings are saved in User presets and DAW projects; existing presets
+keep this mode disabled.
+
 | System | Installer | Plug-in formats |
 | --- | --- | --- |
 | macOS 11+ · Apple silicon and Intel | [Download .pkg](https://github.com/fushugaku/sad-pet/releases/download/{tag}/SAD-PET-Plugins-macOS-universal.pkg) | AU + VST3 |
@@ -30,6 +37,9 @@ are supplied individually and in `SHA256SUMS.txt`.
 ---
 
 В обоих установщиках есть инструмент **SAD PET** и эффект **SAD PET FX**.
+Новая галочка **Loop 1 bar**: любая MIDI-нота проигрывает всё выделение за один
+такт. Pitch меняется независимо от длительности, **Root** задаёт исходную ноту
+сэмпла. Каждый голос имеет свой цикл; учитываются темп и размер проекта.
 macOS: AU и VST3 для Apple silicon и Intel. Windows: VST3 x64.
 Закройте DAW перед установкой, затем обновите список плагинов.
 Пользовательские пресеты сохраняются при обновлении и удалении.

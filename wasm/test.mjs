@@ -168,6 +168,25 @@ assert.ok(Math.abs(numericState.preset.params.position - 0.37) < 1e-6,
   "Invalid numeric messages must not apply partial changes");
 assert.throws(() => midi.json("sad_load", new Uint8Array([1, 2, 3])), /sample/);
 
+// One bar is a scan clock per note, independent of pitch and the source length.
+for (const note of [48, 60, 84]) {
+  const loop = new Core(module, 48000);
+  loop.json("sad_load", prepared);
+  loop.request("/api/region", {start:0.25,end:0.75});
+  loop.request("/api/parameters", {loop_one_bar:1,sample_root_note:60,bpm:120});
+  loop.request("/api/midi-bytes", [0x90,note,100]);
+  for (const pitch of [0.5,0.7]) {
+    loop.request("/api/parameters", {pitch});
+    for (let frame=0;frame<48000;frame+=128) loop.process(128);
+    const state = loop.request("/api/state");
+    assert.equal(state.preset.params.loop_one_bar, true);
+    const expected = pitch === 0.5 ? 0.5 : 0.25;
+    const distance = Math.abs(state.center - expected);
+    assert.ok(Math.min(distance,Math.abs(distance-0.5)) < 1e-6,
+      `One-bar WASM loop drifted at note ${note}, pitch ${pitch}: ${state.center}`);
+  }
+}
+
 // Region commands run on the audio instance; trim/render run on the separate
 // worker instance. Verify both use the same boundaries without altering a file.
 const regionAudio = new Core(module, 48000);

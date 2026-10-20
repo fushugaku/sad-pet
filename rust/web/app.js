@@ -304,6 +304,7 @@ function setParam(key, value) {
   preset.params[key] = value;
   syncControl(key);
   if (typeof value === "number") scheduleParameter(key, value);
+  else if (key === "loop_one_bar") scheduleParameter(key, Number(value));
   else schedulePreset();
 }
 const grainSchema = [
@@ -476,6 +477,7 @@ function syncControl(key) {
   if (key.startsWith("filter") || key.startsWith("vcf")) syncFilters();
   if (key === "mix" || key === "master_volume") syncSliders();
   if (key === "bpm") syncColors();
+  if (["loop_one_bar", "sample_root_note", "bpm"].includes(key)) syncLoopControls();
   $("reverse").setAttribute(
     "aria-pressed",
     String(preset.params.grain_size < 0.5),
@@ -552,6 +554,7 @@ function syncAll() {
   syncSliders();
   $("antialias").checked = preset.params.antialiasing;
   $("bpm").value = preset.params.bpm;
+  syncLoopControls();
   syncFilters();
   $("reverse").setAttribute(
     "aria-pressed",
@@ -561,6 +564,11 @@ function syncAll() {
   syncEnvs();
   syncMatrix();
   syncPerformance();
+}
+function syncLoopControls() {
+  $("loop-one-bar").checked = !!preset.params.loop_one_bar;
+  $("sample-root-note").value = String(preset.params.sample_root_note ?? 60);
+  sampleSelection?.render();
 }
 function option(value, label) {
   const o = document.createElement("option");
@@ -2087,6 +2095,10 @@ function bind() {
   $("volume").oninput = (e) =>
     setParam("master_volume", Number(e.target.value));
   $("antialias").onchange = (e) => setParam("antialiasing", e.target.checked);
+  $("loop-one-bar").onchange = (e) => setParam("loop_one_bar", e.target.checked);
+  for (let note = 0; note < 128; note++)
+    $("sample-root-note").append(option(note, noteName(note)));
+  $("sample-root-note").onchange = (e) => setParam("sample_root_note", Number(e.target.value));
   $("bpm").oninput = (e) =>
     setParam("bpm", Math.max(20, Math.min(300, Number(e.target.value) || 120)));
   $("load-wav").onclick = () => $("wav-file").click();
@@ -2481,6 +2493,7 @@ async function init() {
     buildKeyboard();
     bind();
     sampleSelection = new window.SadSampleSelection({
+      params: () => preset?.params,
       request,
       api,
       notify,
