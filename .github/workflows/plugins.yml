@@ -47,6 +47,7 @@ jobs:
           cargo test -p sad-pet-plugin --no-default-features --locked
           cargo test -p sad-pet --lib --no-default-features --features source-worker --locked
           cargo test -p sad-pet --no-default-features --test parameter_updates --locked
+          cargo test -p sad-pet --no-default-features --test neuropolis --locked
           node wasm/test-presets.mjs
           node wasm/test-parameters.mjs
           python -m unittest discover -s plugin/scripts -p 'test_*.py'

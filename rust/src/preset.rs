@@ -386,6 +386,7 @@ pub struct Preset {
     pub lfos: [Lfo; 3],
     pub envs: [Env; 3],
     pub performance: crate::performance::Settings,
+    pub sequencer: crate::sequence::Program,
     pub resynth: crate::resynth::Settings,
     pub pre_color_chain: Vec<crate::color::ColorSlot>,
     pub source_color_chain: Vec<crate::color::ColorSlot>,
@@ -403,6 +404,7 @@ impl Default for Preset {
             lfos: std::array::from_fn(|_| Lfo::default()),
             envs: default_envs(),
             performance: crate::performance::Settings::default(),
+            sequencer: crate::sequence::Program::default(),
             resynth: crate::resynth::Settings::default(),
             pre_color_chain: Vec::new(),
             source_color_chain: Vec::new(),
@@ -426,6 +428,7 @@ impl<'de> Deserialize<'de> for Preset {
             lfos: [Lfo; 3],
             envs: Option<[Env; 3]>,
             performance: crate::performance::Settings,
+            sequencer: Option<crate::sequence::Program>,
             resynth: crate::resynth::Settings,
             pre_color_chain: Vec<crate::color::ColorSlot>,
             source_color_chain: Vec<crate::color::ColorSlot>,
@@ -443,6 +446,7 @@ impl<'de> Deserialize<'de> for Preset {
                     lfos: p.lfos,
                     envs: None,
                     performance: p.performance,
+                    sequencer: None,
                     resynth: p.resynth,
                     pre_color_chain: Vec::new(),
                     source_color_chain: Vec::new(),
@@ -532,13 +536,18 @@ impl<'de> Deserialize<'de> for Preset {
                 migrate(&mut route.destination);
             }
         }
+        let mut performance = d.performance;
+        let sequencer = d
+            .sequencer
+            .unwrap_or_else(|| crate::sequence::Program::migrate(&mut performance));
         Ok(Self {
             format: d.format,
             name: d.name,
             params,
             lfos,
             envs,
-            performance: d.performance,
+            performance,
+            sequencer,
             resynth: d.resynth,
             pre_color_chain: d.pre_color_chain,
             source_color_chain: d.source_color_chain,
@@ -549,10 +558,17 @@ impl<'de> Deserialize<'de> for Preset {
     }
 }
 impl Preset {
+    /// Prepare the audio owner's copy on the control thread.
+    pub fn prepared_clone(&self) -> Self {
+        let mut preset = self.clone();
+        preset.sanitize();
+        preset
+    }
     pub fn sanitize(&mut self) {
         self.fx_chain_version = 1;
         self.params.sanitize();
         self.resynth.sanitize();
+        self.sequencer.sanitize();
         self.matrix.truncate(crate::matrix::MAX_ROUTES);
         self.color_chain.truncate(crate::color::MAX_COLOR_SLOTS);
         self.pre_color_chain.truncate(crate::color::MAX_COLOR_SLOTS);

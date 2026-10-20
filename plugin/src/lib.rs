@@ -52,6 +52,8 @@ struct Transport {
 enum Command {
     Preset(Box<Preset>),
     Parameters(Box<[parameters::Change]>),
+    Sequence(Box<[sad_pet::sequence::Edit]>),
+    SequenceView(usize),
     Source(Box<PreparedSource>),
     Restore(Box<Restore>),
     Transport(Transport),
@@ -397,6 +399,7 @@ impl Controller {
         });
         state["resynth"] =
             json!({"bands":view.resynth_bands,"frequencies":view.resynth_frequencies});
+        state["sequencer"] = json!(view.sequencer);
         state
     }
 
@@ -458,7 +461,7 @@ impl Controller {
             &saved.preset,
         );
         self.enqueue(Command::Restore(Box::new(Restore {
-            preset: saved.preset.clone(),
+            preset: saved.preset.prepared_clone(),
             source,
             sync: saved.sync,
             frozen: saved.frozen,
@@ -513,7 +516,7 @@ impl Controller {
                 let mut preset: Preset =
                     serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
                 preset.sanitize();
-                self.enqueue(Command::Preset(Box::new(preset.clone())))?;
+                self.enqueue(Command::Preset(Box::new(preset.prepared_clone())))?;
                 self.preset = preset;
                 Ok(json!(self.preset))
             }
@@ -532,6 +535,20 @@ impl Controller {
                 if parameters::apply(&mut self.preset, &changes) {
                     self.selection.dirty = true;
                 }
+                Ok(ok())
+            }
+            ("/api/sequencer/catalog", false) => Ok(sad_pet::sequence::catalog()),
+            ("/api/sequencer/edit", true) => {
+                let edits = sad_pet::sequence::parse_edits(data)?;
+                self.enqueue(Command::Sequence(edits.clone().into_boxed_slice()))?;
+                self.preset.sequencer.edit(&edits);
+                self.selection.dirty = true;
+                Ok(ok())
+            }
+            ("/api/sequencer/view", true) => {
+                self.enqueue(Command::SequenceView(
+                    data["offset"].as_u64().unwrap_or(0) as usize
+                ))?;
                 Ok(ok())
             }
             ("/api/transport", true) => {
@@ -704,6 +721,7 @@ impl Audio {
         self.engine.exchange_processed_source(&mut source.processed);
     }
     fn begin(&mut self, values: &[f32], bpm: f32, beat: Option<f64>, playing: bool, frames: usize) {
+        let sequence_was_enabled = self.engine.preset.sequencer.enabled;
         let mut preset_changed = false;
         let mut numeric_changed = false;
         while self.retired.slots() > 0 {
@@ -718,6 +736,8 @@ impl Audio {
                 Command::Parameters(changes) => {
                     numeric_changed |= parameters::apply(&mut self.engine.preset, changes);
                 }
+                Command::Sequence(edits) => self.engine.apply_sequence_edits(edits),
+                Command::SequenceView(offset) => self.engine.set_sequence_view(*offset),
                 Command::Source(source) => self.source(source),
                 Command::Restore(state) => {
                     self.engine.midi(Message::Reset);
@@ -801,15 +821,28 @@ impl Audio {
                     .zip(self.expected_beat)
                     .is_some_and(|(now, expected)| (now - expected).abs() > 0.02);
             let started = playing && !self.host_playing;
+            let sequence_started = self.engine.preset.sequencer.enabled && !sequence_was_enabled;
             let performance = self.engine.preset.performance.mode != Mode::Keys;
-            if performance && (playing != self.host_playing || preset_changed) {
+            if performance
+                && (playing != self.host_playing
+                    || preset_changed
+                    || sequence_started
+                    || self.engine.playing != playing)
+            {
                 self.engine.set_playing(playing);
+            }
+            self.engine.set_sequence_transport(playing);
+            if self.engine.preset.sequencer.enabled && playing && !self.engine.playing {
+                self.engine.set_playing(true);
             }
             self.engine.host_transport(
                 bpm,
                 beat,
-                performance && (started || jumped || preset_changed),
+                (performance || self.engine.preset.sequencer.enabled)
+                    && (started || jumped || preset_changed || sequence_started),
             );
+        } else {
+            self.engine.set_sequence_transport(true);
         }
         if numeric_changed || self.engine.preset.params.bpm != previous_bpm {
             self.engine.refresh_parameters();

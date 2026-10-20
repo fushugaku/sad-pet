@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 /// Fixed-size feedback for hosts. Publishing it does not allocate or lock.
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct RealtimeView {
+    pub sequencer: crate::sequence::View,
     pub peak: [f32; 2],
     pub input_peak: [f32; 2],
     pub input_seconds: f64,
@@ -55,6 +56,7 @@ pub struct RealtimeView {
 impl Default for RealtimeView {
     fn default() -> Self {
         Self {
+            sequencer: crate::sequence::View::default(),
             peak: [0.0; 2],
             input_peak: [0.0; 2],
             input_seconds: 0.0,
@@ -152,6 +154,12 @@ fn apply(low: &mut Modulated, high: &mut Modulated, destination: Destination, ra
 
 impl Engine {
     pub fn realtime_view(&mut self, view: &mut RealtimeView) {
+        view.sequencer = self
+            .preset
+            .sequencer
+            .runtime
+            .as_ref()
+            .map_or_else(crate::sequence::View::default, |r| r.view());
         view.peak = self.peak;
         self.peak = [0.0; 2];
         view.input_peak = self.live_input.as_ref().map_or([0.0; 2], |i| i.peak);

@@ -1,5 +1,15 @@
 # Third-party components
 
+- **Neuropolis / metropolix-core 0.2.2**, pinned to
+  [872a28c70de0cc6264dfab84aad8b78a2f224395](https://github.com/fushugaku/neuropolis/tree/872a28c70de0cc6264dfab84aad8b78a2f224395),
+  supplies the actual Rust track scheduler, all 21 play orders, gates, pulses,
+  ratchets, probability, scales and accumulation. SAD PET adds parameter/oscillator
+  destinations and its editor; Analog/Tempo/Acid glide timing follows Neuropolis's
+  `web/audio.js`. The crate is AGPL-3.0-only. Its unchanged license is included as
+  `Licenses/Neuropolis-AGPL-3.0.txt` in the plugin distributions and
+  `licenses/neuropolis-AGPL-3.0.txt` in the web distribution. Corresponding source
+  is linked above and pinned in `Cargo.lock`.
+
 - **JUCE 8.0.16-security**, pinned to commit
   `a74b024c188339fdfe07b73088e6f6961ff66709`, provides VST3/AU wrappers and the
   embedded WebKit/WebView2 editor. JUCE offers AGPLv3 or JUCE commercial licensing.

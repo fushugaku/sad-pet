@@ -541,7 +541,12 @@ export class BrowserBackend {
         await this.context.suspend();
         result = { ok: true };
       } else if (
-        ["/api/presets", "/api/samples", "/api/color-defaults"].includes(route)
+        [
+          "/api/presets",
+          "/api/samples",
+          "/api/color-defaults",
+          "/api/sequencer/catalog",
+        ].includes(route)
       ) {
         result = await this.worker.call("request", data, [], route);
       } else result = await this.audio.call("request", data, [], route);

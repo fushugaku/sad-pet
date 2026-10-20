@@ -19,6 +19,9 @@ let presetWrites = Promise.resolve();
 let presetWriteCount = 0;
 let structuralPending = false;
 const parameterEdits = new Map();
+const sequenceEdits = new Map();
+let neuroEditor = null;
+let sequenceCatalog = null;
 let sampleSelection = null;
 let recordingBusy = false,
   recordingAction = null,
@@ -81,6 +84,7 @@ async function request(path, data) {
     [
       "/api/preset",
       "/api/parameters",
+      "/api/sequencer/edit",
       "/api/input",
       "/api/region",
       "/api/fades",
@@ -102,6 +106,8 @@ function schedulePreset() {
   pending++;
   structuralPending = true;
   parameterEdits.clear();
+  for (const [key, edit] of sequenceEdits)
+    if (!sequenceCommand(edit)) sequenceEdits.delete(key);
   clearTimeout(commitTimer);
   armPresetWrite(50);
 }
@@ -112,6 +118,18 @@ function scheduleParameter(id, value) {
   parameterEdits.set(id, value);
   // Throttle while dragging; do not wait for the gesture to stop.
   if (commitTimer === null && !presetWriteCount) armPresetWrite(16);
+}
+function scheduleSequence(edit) {
+  presetLibrary?.markDirty();
+  pending++;
+  sequenceEdits.set(`${edit.track}:${edit.stage}:${edit.field}`, edit);
+  if (commitTimer === null && !presetWriteCount) armPresetWrite(16);
+}
+function sequenceCommand(edit) {
+  return (
+    edit.stage === null &&
+    ((edit.track === 0 && edit.field === 1) || edit.field >= 47)
+  );
 }
 function armPresetWrite(delay) {
   commitTimer = setTimeout(() => {
@@ -127,7 +145,7 @@ function enqueuePresetWrite(path, value) {
     if (
       !presetWriteCount &&
       commitTimer === null &&
-      (structuralPending || parameterEdits.size)
+      (structuralPending || parameterEdits.size || sequenceEdits.size)
     )
       armPresetWrite(16);
   });
@@ -137,25 +155,45 @@ function writePreset(value) {
   return enqueuePresetWrite("/api/preset", structuredClone(value));
 }
 function commitEdits() {
-  if (!structuralPending && (!parameterEdits.size || presetWriteCount))
+  if (
+    !structuralPending &&
+    ((!parameterEdits.size && !sequenceEdits.size) || presetWriteCount)
+  )
     return presetWrites;
   const version = pending;
   const full = structuralPending;
   const values = Object.fromEntries(parameterEdits);
+  const seqValues = [...sequenceEdits.values()];
   structuralPending = false;
   parameterEdits.clear();
-  const write = full
-    ? writePreset(preset)
-    : enqueuePresetWrite("/api/parameters", values);
+  sequenceEdits.clear();
+  const sequenceValues = full ? seqValues.filter(sequenceCommand) : seqValues;
+  const writes = [];
+  if (full) writes.push(writePreset(preset));
+  else if (Object.keys(values).length)
+    writes.push(enqueuePresetWrite("/api/parameters", values));
+  if (sequenceValues.length)
+    writes.push(enqueuePresetWrite("/api/sequencer/edit", sequenceValues));
+  const write = Promise.all(writes);
   return write.then(
     () => {
       if (version === pending) pending = 0;
     },
     (error) => {
       if (full) structuralPending = true;
-      else
+      else {
         for (const [id, value] of Object.entries(values))
           if (!parameterEdits.has(id)) parameterEdits.set(id, value);
+        for (const edit of seqValues) {
+          const key = `${edit.track}:${edit.stage}:${edit.field}`;
+          if (!sequenceEdits.has(key)) sequenceEdits.set(key, edit);
+        }
+      }
+      if (full)
+        for (const edit of sequenceValues) {
+          const key = `${edit.track}:${edit.stage}:${edit.field}`;
+          if (!sequenceEdits.has(key)) sequenceEdits.set(key, edit);
+        }
       throw error;
     },
   );
@@ -165,7 +203,12 @@ async function flushEdits() {
     clearTimeout(commitTimer);
     commitTimer = null;
     await commitEdits();
-  } while (structuralPending || parameterEdits.size || presetWriteCount);
+  } while (
+    structuralPending ||
+    parameterEdits.size ||
+    sequenceEdits.size ||
+    presetWriteCount
+  );
   clearTimeout(commitTimer);
   commitTimer = null;
 }
@@ -179,6 +222,7 @@ async function preparePresetRecall() {
   commitTimer = null;
   structuralPending = false;
   parameterEdits.clear();
+  sequenceEdits.clear();
   pending = 0;
   await presetWrites.catch(() => {});
   // A failed in-flight write may have restored its unsent changes.
@@ -186,6 +230,7 @@ async function preparePresetRecall() {
   commitTimer = null;
   structuralPending = false;
   parameterEdits.clear();
+  sequenceEdits.clear();
   await queueStepEntry(null, true);
 }
 async function refreshPresetState() {
@@ -582,6 +627,7 @@ function syncAll() {
   syncEnvs();
   syncMatrix();
   syncPerformance();
+  neuroEditor?.sync();
 }
 function syncLoopControls() {
   $("loop-one-bar").checked = !!preset.params.loop_one_bar;
@@ -2090,7 +2136,6 @@ const NOTE_NAMES = [
   "A#",
   "B",
 ];
-const sequenceCards = [];
 const noteName = (note) =>
   `${NOTE_NAMES[note % 12]}${Math.floor(note / 12) - 1}`;
 function parseNote(text) {
@@ -2111,53 +2156,28 @@ function parseNote(text) {
   return note >= 0 && note <= 127 ? note : null;
 }
 function buildSequence() {
-  for (let i = 0; i < 16; i++) {
-    const card = document.createElement("div");
-    card.className = "sequence-step";
-    const toggle = document.createElement("button");
-    toggle.className = "step-toggle";
-    toggle.textContent = String(i + 1).padStart(2, "0");
-    toggle.setAttribute("aria-label", `Step ${i + 1} enabled`);
-    toggle.onclick = () => {
-      preset.performance.steps[i].enabled =
-        !preset.performance.steps[i].enabled;
-      syncPerformance();
-      schedulePreset();
-    };
-    const note = document.createElement("button");
-    note.type = "button";
-    note.className = "step-note";
-    note.onclick = () => {
-      const step = state?.step_entry === i ? null : i;
-      queueStepEntry(step);
-      if (step !== null)
-        $("keyboard-section").scrollIntoView({ block: "nearest" });
-    };
-    card.append(toggle, note);
-    $("sequence-steps").append(card);
-    sequenceCards.push({ card, toggle, note });
-  }
+  neuroEditor = new window.SadNeuropolis($("neuropolis"), sequenceCatalog, {
+    read: () => preset,
+    edit: scheduleSequence,
+    structure: schedulePreset,
+    view: (offset) =>
+      flushEdits()
+        .then(() => request("/api/sequencer/view", { offset }))
+        .catch((e) => notify(e.message)),
+  });
 }
 function syncPerformance() {
   const p = preset.performance;
   const arp = ["arp", "sequencer_arp"].includes(p.mode);
-  const sequence = ["sequencer", "sequencer_arp"].includes(p.mode);
   $("performance-mode").value = p.mode;
   $("arp-controls").hidden = !arp;
   $("hold-controls").hidden = !["arp", "hold"].includes(p.mode);
   $("arp-hold-label").hidden = p.mode !== "arp";
-  $("sequence-controls").hidden = !sequence;
-  $("sequence-steps").hidden = !sequence;
-  $("sequence-gate-label").hidden = p.mode === "sequencer_arp";
-  $("sequence-arp-hint").hidden = p.mode !== "sequencer_arp";
   for (const [id, field] of [
     ["arp-direction", "direction"],
     ["arp-division", "arp_division"],
     ["arp-octaves", "octaves"],
     ["arp-gate", "arp_gate"],
-    ["sequence-division", "sequence_division"],
-    ["sequence-gate", "sequence_gate"],
-    ["sequence-length", "length"],
   ]) {
     const input = $(id);
     if (document.activeElement === input) continue;
@@ -2171,30 +2191,8 @@ function syncPerformance() {
   $("arp-hold").checked = p.hold;
   $("performance-chord").disabled = arp && !p.hold;
   $("arp-gate-value").textContent = percent(p.arp_gate);
-  $("sequence-gate-value").textContent = percent(p.sequence_gate);
   if (document.activeElement !== $("performance-chord"))
     $("performance-chord").value = p.chord.map(noteName).join(" ");
-  for (let i = 0; i < sequenceCards.length; i++) {
-    const { card, toggle, note } = sequenceCards[i],
-      step = p.steps[i];
-    card.classList.toggle("rest", !step.enabled);
-    card.classList.toggle("outside", i >= p.length);
-    toggle.setAttribute("aria-pressed", String(step.enabled));
-    const names = step.notes.map(noteName);
-    note.replaceChildren(
-      ...names.map((name) => {
-        const label = document.createElement("span");
-        label.textContent = name;
-        return label;
-      }),
-    );
-    if (!names.length) note.textContent = "—";
-    note.title = names.join(" · ") || "Rest";
-    note.setAttribute(
-      "aria-label",
-      `Step ${i + 1} notes, ${names.join(" ") || "rest"}`,
-    );
-  }
   syncStepEntry();
 }
 function queueStepEntry(step, reset = false, clear = false) {
@@ -2226,10 +2224,6 @@ function syncStepEntry() {
     if (active) key.setAttribute("aria-pressed", String(selected));
     else key.removeAttribute("aria-pressed");
   }
-  sequenceCards.forEach(({ card, note }, i) => {
-    card.classList.toggle("armed", active && entry === i);
-    note.setAttribute("aria-pressed", String(active && entry === i));
-  });
 }
 function bindPerformance() {
   $("performance-mode").onchange = (e) => {
@@ -2245,9 +2239,6 @@ function bindPerformance() {
     ["arp-division", "arp_division", true],
     ["arp-octaves", "octaves", true],
     ["arp-gate", "arp_gate", true],
-    ["sequence-division", "sequence_division", true],
-    ["sequence-gate", "sequence_gate", true],
-    ["sequence-length", "length", true],
   ])
     $(id).oninput = (e) => {
       let value = numeric ? Number(e.target.value) : e.target.value;
@@ -2294,19 +2285,6 @@ function bindPerformance() {
     schedulePreset();
     await flushPreset().catch((e) => notify(e.message));
     await transport({ clear_hold: true });
-  };
-  $("reset-sequence").onclick = async () => {
-    clearTimeout(commitTimer);
-    commitTimer = null;
-    parameterEdits.clear();
-    structuralPending = false;
-    pending = 0;
-    await queueStepEntry(null, true);
-    const defaults = presets[0].performance;
-    preset.performance.steps = structuredClone(defaults.steps);
-    preset.performance.length = defaults.length;
-    syncPerformance();
-    schedulePreset();
   };
 }
 async function transport(data) {
@@ -2916,6 +2894,7 @@ async function poll() {
     $("sample-info").textContent = `${next.sample_seconds.toFixed(2)} s`;
     syncInput(next.input);
     updateResynthMeter(next.resynth);
+    neuroEditor?.update(next.sequencer, next.playing);
     sampleSelection?.sync(next);
     $("sample-end").textContent = formatTime(next.sample_seconds);
     $("position-info").textContent = formatTime(
@@ -2964,11 +2943,6 @@ async function poll() {
         held.has(Number(key.dataset.note)) ||
           next.notes.includes(Number(key.dataset.note)),
       );
-    for (let i = 0; i < sequenceCards.length; i++)
-      sequenceCards[i].card.classList.toggle(
-        "current",
-        next.playing && next.performance.step === i,
-      );
     syncStepEntry();
     for (const [key, update] of modulationViews) update(next.knobs?.[key]);
     for (const [i, row] of matrixRows.entries())
@@ -2991,6 +2965,7 @@ async function init() {
   try {
     presets = await request("/api/presets");
     colorDefaults = await request("/api/color-defaults");
+    sequenceCatalog = await request("/api/sequencer/catalog");
     preset = structuredClone(presets[0]);
     for (const s of grainSchema) createKnob(s, "grain-controls");
     buildFilters();

@@ -342,7 +342,7 @@ impl Controller {
                     .filter(|n| *n < 5)
                     .ok_or("Unknown factory preset.")?;
                 let preset = Preset::builtin(index as usize);
-                self.enqueue(Command::Preset(Box::new(preset.clone())))?;
+                self.enqueue(Command::Preset(Box::new(preset.prepared_clone())))?;
                 self.preset = preset;
                 self.selection = Selection {
                     id: format!("factory:{index}"),

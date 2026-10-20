@@ -1,5 +1,19 @@
 SAD PET instrument and SAD PET FX, with native Rust DSP and an embedded editor.
 
+**Neuropolis replaces the old sequencer editor.** Add any number of independently
+clocked tracks and route each to the main sample pitch, any of the four Resynth
+oscillators, notes/envelopes or a realtime parameter. Each track offers all 21
+Neuropolis orders, 16 stages, clock multipliers/dividers, length, swing, quantizer,
+pulses, Rest/Single/Multi/Hold gates, ratchets, probability, slide, CV ramps and
+accumulation. Numeric edits preserve playheads and send only changed values;
+adding/removing tracks preserves the other lanes by ID. DAW transport stops only
+the sequencer's own notes, keeping live input and keyboard audition available.
+
+The actual pinned Neuropolis Rust core runs natively in AU/VST3 and as the same
+Rust DSP in the browser. Tracks, assignments and settings save in presets and
+projects. Old chord patterns migrate into note lanes. The track list pages its
+readouts without limiting processing; note tracks share eight audio voices.
+
 **OSC 4 in every Resynth slot:** select **Generator → Wavefolder · OSC 4**, then
 Triangle, Sine, Soft, Asymmetric or Rectify. Both CTRL 1 (Fold Depth) and CTRL 2
 (Bias) are visible, alongside tuning, level and pan. The f64 four-step fold,
@@ -58,6 +72,12 @@ are supplied individually and in `SHA256SUMS.txt`.
 ---
 
 В обоих установщиках есть инструмент **SAD PET** и эффект **SAD PET FX**.
+Старый редактор секвенсора заменён на **Neuropolis**: любое число дорожек,
+назначение на основной питч, OSC 1–4, ноты/ENV или параметр. У каждой дорожки
+независимые часы, длина, порядок, свинг, пульсы, Gate, ратчеты, вероятность,
+Slide и накопление. Всё сохраняется в пресетах и проектах. Числовые правки
+не пересобирают секвенсор; позиции остальных дорожек сохраняются при изменении
+их списка. Используется настоящий Rust-core Neuropolis в native и web.
 В каждом слоте Resynth доступен **Generator → Wavefolder · OSC 4**: Triangle,
 Sine, Soft, Asymmetric и Rectify, с CTRL 1 (Fold Depth) и CTRL 2 (Bias).
 Добавлены Ring, Sync и Ring + Sync с независимым источником Source, Grains

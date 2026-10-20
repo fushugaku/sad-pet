@@ -28,7 +28,11 @@ struct Host {
     audio_input: Box<[Stereo; BLOCK]>,
     status: u32,
     view: sad_pet::dsp::telemetry::RealtimeView,
-    snapshot_buffer: Box<[u8; 131072]>,
+    snapshot_buffer: Vec<u8>,
+    sequence_edits: Vec<(u64, sad_pet::sequence::Edit)>,
+    parameter_edits: Vec<(u64, String, f32)>,
+    edit_revision: u64,
+    sent_edit_revisions: [Option<(u32, u64)>; 3],
     config_revision: u64,
     sent_revision: Option<u64>,
     snapshot_state: Value,
@@ -55,7 +59,11 @@ impl Host {
             audio_input: Box::new([[0.0; 2]; BLOCK]),
             status: 200,
             view: sad_pet::dsp::telemetry::RealtimeView::default(),
-            snapshot_buffer: Box::new([0; 131072]),
+            snapshot_buffer: vec![0; 131072],
+            sequence_edits: Vec::new(),
+            parameter_edits: Vec::new(),
+            edit_revision: 0,
+            sent_edit_revisions: [None; 3],
             config_revision: 0,
             sent_revision: None,
             snapshot_state: Value::Null,
@@ -90,6 +98,7 @@ impl Host {
             "step_entry": e.step_entry, "step_edits": e.step_edits,
             "recording": {"active": false, "id": null, "seconds": 0, "available": false, "error": null},
             "performance": e.performance_view(), "lfos": e.lfo_values, "envs": e.env_values,
+            "sequencer": e.sequence_view(),
             "matrix_values": e.matrix_values, "knobs": e.knob_states(), "peak": e.peak,
             "gain_reduction": e.gain_reduction(),
             "resynth": e.resynth_meter(),
@@ -105,7 +114,15 @@ impl Host {
         let midi = matches!(path, "/api/note" | "/api/midi-bytes");
         if !data.is_null()
             && !midi
-            && !matches!(path, "/api/state" | "/api/transport" | "/api/step-entry")
+            && !matches!(
+                path,
+                "/api/state"
+                    | "/api/transport"
+                    | "/api/step-entry"
+                    | "/api/sequencer/edit"
+                    | "/api/sequencer/view"
+                    | "/api/parameters"
+            )
         {
             self.config_revision = self.config_revision.wrapping_add(1);
         }
@@ -127,11 +144,52 @@ impl Host {
                     serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
                 preset.sanitize();
                 self.engine.set_preset(preset);
+                let size = rmp_serde::to_vec_named(&self.engine.preset)
+                    .map_err(|e| e.to_string())?
+                    .len()
+                    + 131072;
+                if self.snapshot_buffer.len() < size {
+                    self.snapshot_buffer.resize(size, 0);
+                }
+                self.sequence_edits.clear();
+                self.parameter_edits.clear();
                 Ok(json!(self.engine.preset))
             }
             "/api/parameters" => {
                 let changes = sad_pet::parameters::parse(data)?;
                 self.engine.apply_parameters(&changes);
+                self.edit_revision = self.edit_revision.wrapping_add(1);
+                for (key, value) in data.as_object().unwrap() {
+                    let value = value.as_f64().unwrap() as f32;
+                    if let Some(entry) = self.parameter_edits.iter_mut().find(|(_, k, _)| k == key)
+                    {
+                        *entry = (self.edit_revision, key.clone(), value);
+                    } else {
+                        self.parameter_edits
+                            .push((self.edit_revision, key.clone(), value));
+                    }
+                }
+                Ok(json!({"ok":true}))
+            }
+            "/api/sequencer/catalog" => Ok(sad_pet::sequence::catalog()),
+            "/api/sequencer/view" => {
+                self.engine
+                    .set_sequence_view(data["offset"].as_u64().unwrap_or(0) as usize);
+                Ok(json!({"ok":true}))
+            }
+            "/api/sequencer/edit" => {
+                let edits = sad_pet::sequence::parse_edits(data)?;
+                self.engine.apply_sequence_edits(&edits);
+                self.edit_revision = self.edit_revision.wrapping_add(1);
+                for edit in edits {
+                    if let Some(entry) = self.sequence_edits.iter_mut().find(|(_, e)| {
+                        e.track == edit.track && e.stage == edit.stage && e.field == edit.field
+                    }) {
+                        *entry = (self.edit_revision, edit);
+                    } else {
+                        self.sequence_edits.push((self.edit_revision, edit));
+                    }
+                }
                 Ok(json!({"ok":true}))
             }
             "/api/presets" => Ok(json!((0..5).map(Preset::builtin).collect::<Vec<_>>())),
@@ -219,6 +277,18 @@ impl Host {
                 }))
         {
             self.config_revision = self.config_revision.wrapping_add(1);
+        }
+        if matches!(path, "/api/sequencer/edit" | "/api/parameters") {
+            let capacity = 131072
+                + self.sequence_edits.len() * 80
+                + self
+                    .parameter_edits
+                    .iter()
+                    .map(|(_, key, _)| key.len() + 32)
+                    .sum::<usize>();
+            if self.snapshot_buffer.len() < capacity {
+                self.snapshot_buffer.resize(capacity, 0);
+            }
         }
         result
     }

@@ -1,0 +1,361 @@
+use metropolix_core::sequencer::{Sequencer, field};
+use sad_pet::{
+    dsp::{Engine, SampleBuffer, telemetry::RealtimeView},
+    preset::Preset,
+    sequence::{Edit, Stage, Target, Track},
+};
+use std::{
+    alloc::{GlobalAlloc, Layout, System},
+    cell::Cell,
+    sync::Arc,
+};
+
+struct Allocator;
+thread_local! {static TRACK:Cell<bool>=const{Cell::new(false)};static COUNT:Cell<usize>=const{Cell::new(0)};}
+fn count() {
+    let _ = TRACK.try_with(|t| {
+        if t.get() {
+            let _ = COUNT.try_with(|n| n.set(n.get() + 1));
+        }
+    });
+}
+unsafe impl GlobalAlloc for Allocator {
+    unsafe fn alloc(&self, l: Layout) -> *mut u8 {
+        count();
+        unsafe { System.alloc(l) }
+    }
+    unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
+        count();
+        unsafe { System.dealloc(p, l) }
+    }
+    unsafe fn realloc(&self, p: *mut u8, l: Layout, n: usize) -> *mut u8 {
+        count();
+        unsafe { System.realloc(p, l, n) }
+    }
+}
+#[global_allocator]
+static ALLOCATOR: Allocator = Allocator;
+fn no_heap(f: impl FnOnce()) {
+    COUNT.with(|n| n.set(0));
+    TRACK.with(|t| t.set(true));
+    f();
+    TRACK.with(|t| t.set(false));
+    assert_eq!(COUNT.with(Cell::get), 0, "audio allocated or freed");
+}
+fn engine(p: Preset) -> Engine {
+    Engine::new(8000, Arc::new(SampleBuffer::demo(8000)), p)
+}
+fn frames(e: &mut Engine, n: usize) {
+    for _ in 0..n {
+        let s = e.process_frame();
+        assert!(s.into_iter().all(f32::is_finite));
+    }
+}
+fn view(e: &mut Engine) -> RealtimeView {
+    let mut v = RealtimeView::default();
+    e.realtime_view(&mut v);
+    v
+}
+fn track(id: u32, division: i32, target: Target) -> Track {
+    let mut t = Track {
+        id,
+        target,
+        ..Track::default()
+    };
+    t.config[field::DIVISION] = division;
+    for (i, s) in t.steps.iter_mut().enumerate() {
+        s.pitch = 60 + i as u8;
+        s.cv = (i as i32 - 8) * 500;
+    }
+    t
+}
+
+#[test]
+fn real_neuropolis_orders_pulses_probability_and_independent_clocks_match_upstream() {
+    for order in 0..21 {
+        let mut p = Preset::default();
+        p.sequencer.enabled = true;
+        p.sequencer.tracks = vec![
+            track(1, 1, Target::MainPitch),
+            track(2, 65, Target::Oscillator { index: 3 }),
+        ];
+        for t in &mut p.sequencer.tracks {
+            t.config[field::ORDER] = order;
+            t.config[field::SWING] = 62;
+            t.config[field::LENGTH] = 7;
+            for (i, s) in t.steps.iter_mut().enumerate() {
+                s.pulses = (i % 3 + 1) as u8;
+                s.probability = 73;
+                s.ratchet = (i % 2 + 1) as u8;
+                s.skip = i == 2;
+            }
+        }
+        let mut reference = Sequencer::default();
+        reference.resize_tracks(2);
+        // Disable unused upstream mod lanes, just as the integration does.
+        for m in &mut reference.mods {
+            m.config[9] = 1;
+        }
+        for (i, t) in p.sequencer.tracks.iter().enumerate() {
+            for (f, v) in t.config.iter().enumerate() {
+                reference.set_track(i, f as u32, *v);
+            }
+            for (s, step) in t.steps.iter().enumerate() {
+                for f in 0..15 {
+                    reference.set_step(i, s, f as u32, step.get(f) as i32);
+                }
+            }
+        }
+        reference.restart();
+        let mut e = engine(p);
+        e.set_playing(true);
+        let mut ticks = 0;
+        for sample in 0..16000 {
+            // The first tick starts at sample zero; all subsequent ticks have
+            // the same sample-clock boundary as the shared 96 PPQN transport.
+            let due = (sample as f64 * 120.0 * 96.0 / (60.0 * 8000.0) + 1e-9).floor() as u64 + 1;
+            while ticks < due {
+                reference.tick();
+                ticks += 1;
+            }
+            e.process_frame();
+            if sample % 317 == 0 {
+                let v = e.sequence_view();
+                for i in 0..2 {
+                    assert_eq!(
+                        v.tracks[i].step,
+                        reference.stage(i).unwrap(),
+                        "order {order}, sample {sample}, track {i}"
+                    );
+                    assert_eq!(v.tracks[i].pitch, reference.cents(i) as f32 / 100.0);
+                    assert_eq!(v.tracks[i].gate, reference.gate(i));
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn destinations_change_working_sound_parameters_without_overwriting_the_patch() {
+    let mut p = Preset::default();
+    p.sequencer.enabled = true;
+    p.resynth.enabled = true;
+    p.resynth.count = 4;
+    p.params.filter = 0.5;
+    let mut main = track(1, 1, Target::MainPitch);
+    main.steps.fill(Stage {
+        pitch: 72,
+        ..Stage::default()
+    });
+    let mut osc = track(2, 2, Target::Oscillator { index: 3 });
+    osc.steps.fill(Stage {
+        pitch: 67,
+        ..Stage::default()
+    });
+    let mut param = track(
+        3,
+        65,
+        Target::Parameter {
+            parameter: "filter".into(),
+        },
+    );
+    param.amount = 0.25;
+    param.steps.fill(Stage {
+        cv: -2500,
+        ..Stage::default()
+    });
+    p.sequencer.tracks = vec![main, osc, param];
+    let base = p.params.filter;
+    let mut e = engine(p);
+    e.set_playing(true);
+    frames(&mut e, 50);
+    let v = view(&mut e);
+    assert_eq!(v.params.sample_tune_semis, 12.0);
+    assert!((v.params.filter - (base - 0.125)).abs() < 1e-5);
+    assert_eq!(e.preset.params.sample_tune_semis, 0.0);
+    assert_eq!(e.preset.params.filter, base);
+    e.apply_sequence_edits(&[Edit {
+        track: 3,
+        stage: Some(0),
+        field: 12,
+        value: 5000.0,
+    }]);
+    frames(&mut e, 100);
+    assert!(view(&mut e).params.filter > base);
+    let ticks = e.sequence_view();
+    e.apply_sequence_edits(&[Edit {
+        track: 1,
+        stage: Some(7),
+        field: 0,
+        value: 48.0,
+    }]);
+    assert_eq!(ticks.tracks[0].step, e.sequence_view().tracks[0].step);
+    e.apply_sequence_edits(&[Edit {
+        track: 0,
+        stage: None,
+        field: 0,
+        value: 0.0,
+    }]);
+    assert_eq!(view(&mut e).params.sample_tune_semis, 0.0);
+}
+
+#[test]
+fn unlimited_tracks_recall_and_id_based_adoption_do_not_allocate_or_reset_other_lanes() {
+    let mut p = Preset::default();
+    p.sequencer.enabled = true;
+    p.sequencer.tracks = (1..=257)
+        .map(|id| track(id, if id % 2 == 0 { 2 } else { 1 }, Target::MainPitch))
+        .collect();
+    let mut e = engine(p);
+    e.set_playing(true);
+    frames(&mut e, 2101);
+    e.set_sequence_view(193);
+    let before = e.sequence_view();
+    assert_eq!(before.total, 257);
+    assert_eq!(before.count, 64);
+    let edits = [
+        Edit {
+            track: 220,
+            stage: Some(14),
+            field: 12,
+            value: 1700.0,
+        },
+        Edit {
+            track: 220,
+            stage: None,
+            field: 11,
+            value: 67.0,
+        },
+    ];
+    e.apply_sequence_edits(&edits);
+    let mut next = e.preset.clone();
+    next.sequencer.tracks.remove(0);
+    next.sequencer.tracks.reverse();
+    next.sanitize();
+    no_heap(|| {
+        e.apply_sequence_edits(&edits);
+        e.exchange_preset(&mut next);
+        frames(&mut e, 100);
+        e.realtime_view(&mut RealtimeView::default());
+    });
+    e.set_sequence_view(0);
+    let after = e.sequence_view();
+    assert_eq!(after.total, 256);
+    for old in before.tracks {
+        if old.id >= 194 {
+            let new = after.tracks.iter().find(|t| t.id == old.id).unwrap();
+            assert_eq!(old.step, new.step, "track {} lost phase", old.id);
+        }
+    }
+    let encoded = serde_json::to_vec(&e.preset).unwrap();
+    let mut restored: Preset = serde_json::from_slice(&encoded).unwrap();
+    restored.sanitize();
+    assert_eq!(restored.sequencer.tracks.len(), 256);
+    assert_eq!(
+        restored
+            .sequencer
+            .tracks
+            .iter()
+            .find(|t| t.id == 220)
+            .unwrap()
+            .config[11],
+        67
+    );
+}
+
+#[test]
+fn note_tracks_trigger_envelopes_and_do_not_release_an_external_note_with_the_same_pitch() {
+    let mut p = Preset::default();
+    p.sequencer.enabled = true;
+    p.sequencer.tracks = vec![Track {
+        target: Target::Notes,
+        ..Track::default()
+    }];
+    p.sequencer.tracks[0].config[field::GATE] = 10;
+    let mut e = engine(p);
+    e.set_midi_gate(true);
+    e.midi(sad_pet::midi::Message::NoteOn {
+        channel: 0,
+        note: 60,
+        velocity: 100,
+    });
+    frames(&mut e, 32);
+    let v = view(&mut e);
+    assert_eq!(v.note_count, 2);
+    assert!(v.envs[0] > 0.0);
+    frames(&mut e, 150);
+    let v = view(&mut e);
+    assert_eq!(&v.notes[..v.note_count], &[60]);
+    let mut next = e.preset.prepared_clone();
+    next.sequencer.tracks.clear();
+    e.exchange_preset(&mut next);
+    assert_eq!(e.held_notes(), vec![60]);
+}
+
+#[test]
+fn old_chord_patterns_migrate_into_neuropolis_note_lanes() {
+    let mut value = serde_json::to_value(Preset::default()).unwrap();
+    value.as_object_mut().unwrap().remove("sequencer");
+    value["performance"]["mode"] = serde_json::json!("sequencer");
+    value["performance"]["steps"][0]["notes"] = serde_json::json!([60, 64, 67]);
+    let p: Preset = serde_json::from_value(value).unwrap();
+    assert!(p.sequencer.enabled);
+    assert_eq!(p.sequencer.tracks.len(), 3);
+    assert_eq!(p.performance.mode, sad_pet::performance::Mode::Keys);
+    assert_eq!(p.sequencer.tracks[2].steps[0].pitch, 67);
+    assert_eq!(p.sequencer.tracks[2].steps[1].gate, 0);
+}
+
+#[test]
+fn opposite_tracks_cancel_before_clamping_and_unipolar_absolute_cv_uses_the_full_range() {
+    let mut p = Preset::default();
+    p.params.filter = 0.7;
+    p.sequencer.enabled = true;
+    let mut a = track(
+        1,
+        1,
+        Target::Parameter {
+            parameter: "filter".into(),
+        },
+    );
+    a.steps.fill(Stage {
+        cv: 5000,
+        ..Stage::default()
+    });
+    let mut b = a.clone();
+    b.id = 2;
+    b.amount = -1.0;
+    p.sequencer.tracks = vec![a, b];
+    let mut e = engine(p);
+    e.set_playing(true);
+    frames(&mut e, 10);
+    assert!((view(&mut e).params.filter - 0.7).abs() < 1e-6);
+    e.apply_sequence_edits(&[
+        Edit {
+            track: 2,
+            stage: None,
+            field: 8,
+            value: 1.0,
+        },
+        Edit {
+            track: 1,
+            stage: None,
+            field: 44,
+            value: 1.0,
+        },
+        Edit {
+            track: 1,
+            stage: None,
+            field: 32,
+            value: 1.0,
+        },
+        Edit {
+            track: 1,
+            stage: Some(0),
+            field: 12,
+            value: 0.0,
+        },
+    ]);
+    frames(&mut e, 100);
+    assert_eq!(view(&mut e).params.filter, 0.0);
+}

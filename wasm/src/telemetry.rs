@@ -1,6 +1,28 @@
 //! Fixed-buffer publication on the worklet; JSON and knob metadata on the worker.
 use super::*;
 use sad_pet::dsp::telemetry::RealtimeView;
+struct Edits<'a>(&'a [(u64, sad_pet::sequence::Edit)]);
+struct Parameters<'a>(&'a [(u64, String, f32)]);
+impl Serialize for Parameters<'_> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = s.serialize_map(Some(self.0.len()))?;
+        for (_, key, value) in self.0 {
+            map.serialize_entry(key, value)?;
+        }
+        map.end()
+    }
+}
+impl Serialize for Edits<'_> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut list = s.serialize_seq(Some(self.0.len()))?;
+        for (_, edit) in self.0 {
+            list.serialize_element(edit)?;
+        }
+        list.end()
+    }
+}
 
 #[derive(Serialize)]
 struct Configuration<'a> {
@@ -26,6 +48,8 @@ struct OwnedConfiguration {
 }
 #[derive(Serialize)]
 struct Packet<'a> {
+    parameter_edits: Parameters<'a>,
+    sequence_edits: Edits<'a>,
     revision: u64,
     view: &'a RealtimeView,
     waveform: &'a [[f32; 2]],
@@ -36,6 +60,8 @@ struct Packet<'a> {
 }
 #[derive(Deserialize)]
 struct OwnedPacket {
+    parameter_edits: Value,
+    sequence_edits: Vec<sad_pet::sequence::Edit>,
     revision: u64,
     view: RealtimeView,
     waveform: Vec<[f32; 2]>,
@@ -60,6 +86,8 @@ impl Host {
         let sample = self.engine.source_sample();
         let changed = self.sent_revision != Some(self.config_revision);
         let packet = Packet {
+            parameter_edits: Parameters(&self.parameter_edits),
+            sequence_edits: Edits(&self.sequence_edits),
             revision: self.config_revision,
             view: &self.view,
             grains: &self.view.grains[..self.view.grain_count],
@@ -88,6 +116,7 @@ impl Host {
                 self.snapshot_sequence = self.snapshot_sequence.wrapping_add(1).max(1);
                 self.unacked_peaks[slot] =
                     Some((self.snapshot_sequence, self.view.peak, self.view.input_peak));
+                self.sent_edit_revisions[slot] = Some((self.snapshot_sequence, self.edit_revision));
                 cursor.position() as usize
             }
             Err(_) => {
@@ -120,6 +149,9 @@ impl Host {
             });
         }
         let mut v = packet.view;
+        self.engine.preset.sequencer.edit(&packet.sequence_edits);
+        let parameters = sad_pet::parameters::parse(&packet.parameter_edits)?;
+        sad_pet::parameters::apply(&mut self.engine.preset, &parameters);
         if v.grain_count > sad_pet::dsp::MAX_GRAINS
             || v.color_len > sad_pet::color::MAX_COLOR_SLOTS
             || v.pre_color_len > sad_pet::color::MAX_COLOR_SLOTS
@@ -167,6 +199,7 @@ impl Host {
         state["step_entry"] = json!(v.step_entry);
         state["step_edits"] = json!(v.step_edits);
         state["performance"] = json!({"mode":self.engine.preset.performance.mode,"step":v.step,"arp_index":v.arp_index,"chord":&v.chord[..v.chord_len],"gate":v.gate,"beat":v.beat});
+        state["sequencer"] = json!(v.sequencer);
         state["lfos"] = json!(v.lfos);
         state["envs"] = json!(v.envs);
         state["matrix_values"] = json!(v.matrix);
@@ -199,6 +232,10 @@ pub extern "C" fn sad_snapshot_pointer() -> *const u8 {
     host(|h| h.snapshot_buffer.as_ptr())
 }
 #[unsafe(no_mangle)]
+pub extern "C" fn sad_snapshot_capacity() -> usize {
+    host(|h| h.snapshot_buffer.len())
+}
+#[unsafe(no_mangle)]
 pub extern "C" fn sad_snapshot_import() -> u32 {
     host(|h| {
         let result = h
@@ -221,6 +258,12 @@ pub extern "C" fn sad_snapshot_ack(sequence: u32, success: u32) {
             .position(|p| p.is_some_and(|p| p.0 == sequence))
         {
             let (_, peak, input_peak) = h.unacked_peaks[index].take().unwrap();
+            if let Some((_, revision)) = h.sent_edit_revisions[index].take()
+                && success != 0
+            {
+                h.sequence_edits.retain(|(r, _)| *r > revision);
+                h.parameter_edits.retain(|(r, _, _)| *r > revision);
+            }
             if success == 0 {
                 h.sent_revision = None;
                 for (c, value) in peak.iter().enumerate() {

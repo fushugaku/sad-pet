@@ -2902,3 +2902,348 @@ input[type="range"] {
     flex-wrap: wrap;
   }
 }
+/* Neuropolis: one editor, independently clocked dynamic tracks. */
+.neuro-bank {
+  min-width: 0;
+}
+.neuro-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.neuro-count {
+  color: var(--muted, #8b9b86);
+  font-size: 12px;
+  letter-spacing: 0;
+  margin-left: 8px;
+}
+.neuro-layout {
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr);
+  gap: 22px;
+  margin-top: 22px;
+}
+.neuro-layout > aside,
+.neuro-editor {
+  min-width: 0;
+}
+.neuro-tracks {
+  display: grid;
+  gap: 6px;
+  max-height: 460px;
+  overflow: auto;
+  padding-right: 4px;
+}
+.neuro-track {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+}
+.neuro-track-select {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  height: auto;
+  min-height: 61px;
+  gap: 5px 9px;
+  text-align: left;
+  flex: 1;
+  min-width: 0;
+  padding: 10px;
+}
+.neuro-track-select strong {
+  grid-column: 2;
+  grid-row: 1;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.neuro-track-select span {
+  grid-column: 2 / 4;
+  grid-row: 2;
+  font-size: 11px;
+  color: #92a18c;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.neuro-track-select small {
+  grid-column: 3;
+  grid-row: 1;
+  font-size: 10px;
+  color: #9db28d;
+  align-self: center;
+  white-space: nowrap;
+}
+.neuro-track-select[aria-selected="true"] {
+  border-color: #a4cd77;
+  background: #283623;
+}
+.neuro-track-led {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #46513e;
+  align-self: center;
+}
+.neuro-track.is-gated .neuro-track-led {
+  background: #c0f484;
+  box-shadow: 0 0 8px #a8d96877;
+}
+.neuro-mute {
+  padding: 0 8px;
+  font-size: 11px;
+}
+.neuro-mute[aria-pressed="true"] {
+  color: #d9aa78;
+  border-color: #9b7954;
+}
+.neuro-pages {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  gap: 8px;
+}
+.neuro-pages[hidden] {
+  display: none;
+}
+.neuro-pages output {
+  font-size: 11px;
+  color: #92a18c;
+}
+.neuro-edit-head {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(140px, 2fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+.neuro-edit-head input,
+.neuro-edit-head select,
+.neuro-edit-head button {
+  height: 35px;
+  min-width: 0;
+  padding: 5px 9px;
+  font-size: 12px;
+}
+.neuro-edit-head input,
+.neuro-control input:not([type="checkbox"]),
+.neuro-stage input[type="number"] {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.neuro-controls {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+.neuro-control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #91a087;
+}
+.neuro-control > span {
+  min-height: 13px;
+  white-space: nowrap;
+}
+.neuro-control input,
+.neuro-control select {
+  min-width: 0;
+  width: 100%;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 4px 7px;
+  font-size: 12px;
+  letter-spacing: 0;
+}
+.neuro-control input[type="checkbox"] {
+  width: 20px;
+  align-self: flex-start;
+  margin: 5px 0;
+}
+.neuro-stage-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 20px 0 12px;
+}
+.neuro-stage-tools select,
+.neuro-stage-tools button {
+  height: 32px;
+  padding: 4px 9px;
+  font-size: 11px;
+}
+.neuro-live {
+  margin-left: auto;
+  font:
+    11px ui-monospace,
+    monospace;
+  color: #a5bc90;
+}
+.neuro-stage-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  min-width: 0;
+  padding-bottom: 8px;
+  scrollbar-color: #526b42 #1b2119;
+}
+.neuro-stages {
+  display: grid;
+  grid-template-columns: repeat(16, minmax(45px, 1fr));
+  gap: 4px;
+  min-width: 820px;
+}
+.neuro-stage {
+  display: grid;
+  grid-template-rows: 26px 24px 124px 29px 29px;
+  gap: 5px;
+  align-items: center;
+  justify-items: stretch;
+  background: #181f17;
+  border: 1px solid #2c3828;
+  border-radius: 7px;
+  padding: 7px 3px;
+  min-width: 0;
+}
+.neuro-stage.is-current {
+  border-color: #bde783;
+  background: #2a3823;
+  box-shadow: inset 0 2px 0 #bde783;
+}
+.neuro-stage.outside {
+  opacity: 0.35;
+}
+.neuro-stage.rest .neuro-value {
+  color: #5f6f58;
+}
+.neuro-stage-number {
+  font:
+    11px ui-monospace,
+    monospace;
+  padding: 3px;
+  height: 26px;
+  border-color: transparent;
+  background: transparent;
+}
+.neuro-stage-number[aria-pressed="false"] {
+  text-decoration: line-through;
+  color: #7b8674;
+}
+.neuro-value {
+  text-align: center;
+  font:
+    11px ui-monospace,
+    monospace;
+  color: #bad891;
+  white-space: nowrap;
+}
+.neuro-fader {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 100%;
+  height: 120px;
+  padding: 0;
+  margin: 0;
+  accent-color: #bde783;
+  cursor: ns-resize;
+}
+.neuro-stage input[type="number"],
+.neuro-stage select {
+  width: 100%;
+  min-width: 0;
+  height: 29px;
+  padding: 2px;
+  font:
+    10px ui-monospace,
+    monospace;
+  text-align: center;
+  box-sizing: border-box;
+}
+.neuro-stage input[type="number"] {
+  appearance: textfield;
+}
+.neuro-stage input::-webkit-inner-spin-button {
+  appearance: none;
+}
+.neuro-stage select {
+  padding-right: 0;
+}
+.neuro-advanced {
+  margin-top: 15px;
+}
+.neuro-advanced summary {
+  cursor: pointer;
+  color: #9aae8d;
+  font-size: 12px;
+}
+@media (max-width: 1000px) {
+  .neuro-layout {
+    grid-template-columns: 170px minmax(0, 1fr);
+    gap: 14px;
+  }
+  .neuro-controls {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .neuro-edit-head {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 650px) {
+  .neuro-bank > .section-heading {
+    align-items: flex-start;
+    gap: 16px;
+    flex-direction: column;
+  }
+  .neuro-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+  .neuro-tracks {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-height: 190px;
+  }
+  .neuro-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .neuro-edit-head {
+    grid-template-columns: 1fr 1fr;
+  }
+  .neuro-edit-head > select {
+    grid-column: 1 / 3;
+    grid-row: 2;
+  }
+  .neuro-edit-head > input {
+    grid-column: 1 / 3;
+  }
+  .neuro-actions {
+    width: 100%;
+    gap: 8px;
+  }
+  .neuro-actions button {
+    height: 34px;
+    padding: 5px 10px;
+    font-size: 12px;
+  }
+  .neuro-stage-tools {
+    gap: 7px;
+  }
+  .neuro-stage-tools select {
+    flex: 1;
+    min-width: 0;
+  }
+  .neuro-live {
+    width: 100%;
+    text-align: right;
+  }
+}

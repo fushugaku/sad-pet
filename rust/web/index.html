@@ -8,6 +8,7 @@
     <script src="./library.js" defer></script>
     <script src="./selection.js" defer></script>
     <script src="./presets.js" defer></script>
+    <script src="./sequence.js" defer></script>
     <script src="./app.js" defer></script>
   </head>
   <body>
@@ -567,8 +568,6 @@
             <option value="keys">Keys</option>
             <option value="hold">Hold note</option>
             <option value="arp">Arpeggiator</option>
-            <option value="sequencer">Sequencer</option>
-            <option value="sequencer_arp">Sequencer + Arp</option>
           </select>
         </div>
         <div id="arp-controls" class="performance-controls" hidden>
@@ -624,51 +623,8 @@
           /></label>
           <button id="clear-hold">Clear hold</button>
         </div>
-        <div
-          id="sequence-controls"
-          class="performance-controls sequence-options"
-          hidden
-        >
-          <label
-            >STEP RATE<select
-              id="sequence-division"
-              aria-label="Sequencer step rate"
-            >
-              <option value="0.25">1/16</option>
-              <option value="0.5">1/8</option>
-              <option value="1">1/4</option>
-              <option value="2">1/2</option>
-              <option value="4">1 bar</option>
-            </select></label
-          >
-          <label
-            >LENGTH<input
-              id="sequence-length"
-              type="number"
-              min="1"
-              max="16"
-              step="1"
-              value="16"
-              aria-label="Sequencer length"
-          /></label>
-          <label id="sequence-gate-label"
-            >GATE<input
-              id="sequence-gate"
-              type="range"
-              min="0.05"
-              max="0.95"
-              step="0.01"
-              aria-label="Sequencer gate"
-            /><output id="sequence-gate-value">75%</output></label
-          >
-          <button id="reset-sequence">Reset pattern</button>
-        </div>
-        <p id="sequence-arp-hint" class="pattern-hint" hidden>
-          Arpeggiate the notes of each step. Each new step restarts the
-          arpeggio.
-        </p>
-        <div id="sequence-steps" class="sequence-grid" hidden></div>
       </section>
+      <section class="bank neuro-bank" id="neuropolis" aria-label="Neuropolis sequencer"></section>
       <section class="keyboard-section" id="keyboard-section">
         <div class="keyboard-head">
           <div>

@@ -172,6 +172,38 @@ the source or fades restored by the DAW.
 Use the DAW to record, bounce and export. The standalone application's recording,
 microphone selection, MIDI-device selection and Quit controls are hidden here.
 
+## Neuropolis sequencer
+
+Enable **Neuropolis**, then **+ Add track**. The destination selects **Main track
+pitch**, **OSC 1–4 pitch**, **Notes → grains + ENV**, or a named realtime parameter.
+Pitch tracks use **Root note** as zero transposition. Parameter tracks edit the
+**Parameter value** layer: Relative adds signed CV × Depth to the saved knob;
+Absolute blends the full parameter range according to Depth. Source FX for files
+is prepared ahead of playback and is not a realtime destination.
+
+Each track has its own Clock, Length, Order, Swing and Gate. Clock starts at 1/16;
+×2/×4 produce 1/32 and 1/64, and ÷2–÷64 slow that track independently. Each of the
+16 columns has a value fader, 1–8 pulses and a Rest/Single/Multi/Hold gate selector.
+The Stage layer menu switches to probability, ratchets, slide, velocity, skip,
+accumulation, CV ramp and overrides. Scale, slide & accumulation holds the other
+track settings and independent track/accumulator resets. Duplicate copies a
+track; M mutes only that lane. Adding, removing or retargeting a lane preserves
+the other playheads by stable track ID.
+
+There is no fixed track-count limit. The list pages its readouts in groups of 64;
+all tracks continue processing. Note tracks share SAD PET's existing eight-note
+audio polyphony. DAW sync follows host tempo and starts each pattern at the first
+96 PPQN grid tick after transport starts or seeks. Stopping the sequencer releases
+its own notes while input processing and keyboard audition remain available.
+Turn off DAW sync to use the editor's transport instead.
+
+The same pinned Neuropolis Rust core drives native AU/VST3 and the web version.
+Numeric edits update one field without rebuilding the sequencer or resetting its
+clock. Structural changes are prepared by the native Controller and adopted by
+Audio without allocation/freeing. Browser scalar telemetry carries changed values
+and readouts, with buffers sized for the program. Presets and projects store all
+lanes and assignments; legacy chord patterns migrate to separate note tracks.
+
 ## Build
 
 Install stable Rust, Python 3, CMake 3.22+ and the native C++ tools: Xcode Command

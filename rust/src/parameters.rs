@@ -102,6 +102,8 @@ enum Target {
     Core {
         get: fn(&Preset) -> f32,
         set: fn(&mut Preset, f32),
+        frame_get: fn(&crate::dsp::Modulated) -> f32,
+        frame_set: fn(&mut crate::dsp::Modulated, f32),
     },
     Lfo(usize, usize),
     Env(usize, usize),
@@ -123,6 +125,99 @@ pub struct Spec {
 }
 
 impl Spec {
+    pub(crate) fn can_sequence(&self) -> bool {
+        self.id != "bpm" && !matches!(self.target, Target::SourceFx(_) | Target::Performance(3..))
+    }
+    pub(crate) fn frame_get(&self, m: &crate::dsp::Modulated) -> Option<f32> {
+        Some(match self.target {
+            Target::Core { frame_get, .. } => frame_get(m),
+            Target::SourceFx(_) => return None,
+            Target::ResynthOsc(i, field) => oscillator_get(m.resynth.oscillators[i], field),
+            Target::Lfo(i, field) => match field {
+                0 => m.lfos[i].rate_hz,
+                1 => m.lfos[i].depth,
+                _ => m.lfos[i].division,
+            },
+            Target::Env(i, field) => {
+                let e = m.envs[i];
+                match field {
+                    0 => e.attack,
+                    1 => e.decay,
+                    2 => e.sustain,
+                    3 => e.release,
+                    4 => e.depth,
+                    _ => e.extra_depth,
+                }
+            }
+            Target::Fx(pre, i, field) => {
+                let slots = if pre {
+                    &m.pre_color_slots[..m.pre_color_len]
+                } else {
+                    &m.color_slots[..m.color_len]
+                };
+                *slots.get(i)?.to_owned().parameter_mut(field)
+            }
+            Target::Performance(field) => match field {
+                0 => m.performance.arp_rate,
+                1 => m.performance.arp_gate,
+                2 => m.performance.arp_octaves,
+                3 => m.performance.sequence_rate,
+                4 => m.performance.sequence_gate,
+                _ => m.performance.sequence_length,
+            },
+        })
+    }
+    pub(crate) fn frame_set(&self, m: &mut crate::dsp::Modulated, value: f32) {
+        if !value.is_finite() {
+            return;
+        }
+        let value = value.clamp(self.min, self.max);
+        match self.target {
+            Target::Core { frame_set, .. } => frame_set(m, value),
+            Target::SourceFx(_) => {}
+            Target::ResynthOsc(i, field) => {
+                oscillator_set(&mut m.resynth.oscillators[i], field, value)
+            }
+            Target::Lfo(i, field) => {
+                *match field {
+                    0 => &mut m.lfos[i].rate_hz,
+                    1 => &mut m.lfos[i].depth,
+                    _ => &mut m.lfos[i].division,
+                } = value
+            }
+            Target::Env(i, field) => {
+                let e = &mut m.envs[i];
+                *match field {
+                    0 => &mut e.attack,
+                    1 => &mut e.decay,
+                    2 => &mut e.sustain,
+                    3 => &mut e.release,
+                    4 => &mut e.depth,
+                    _ => &mut e.extra_depth,
+                } = value;
+            }
+            Target::Fx(pre, i, field) => {
+                let slots = if pre {
+                    &mut m.pre_color_slots[..m.pre_color_len]
+                } else {
+                    &mut m.color_slots[..m.color_len]
+                };
+                if let Some(slot) = slots.get_mut(i) {
+                    *slot.parameter_mut(field) = value;
+                }
+            }
+            Target::Performance(field) => {
+                *match field {
+                    0 => &mut m.performance.arp_rate,
+                    1 => &mut m.performance.arp_gate,
+                    2 => &mut m.performance.arp_octaves,
+                    3 => &mut m.performance.sequence_rate,
+                    4 => &mut m.performance.sequence_gate,
+                    _ => &mut m.performance.sequence_length,
+                } = value
+            }
+        }
+    }
     pub fn get(&self, preset: &Preset) -> f32 {
         match self.target {
             Target::SourceFx(field) => *preset
@@ -277,6 +372,52 @@ impl Spec {
     }
 }
 
+fn oscillator_get(o: crate::resynth::Oscillator, field: usize) -> f32 {
+    match field {
+        0 => f32::from(o.enabled),
+        1 => o.waveform.code() as f32,
+        2 => o.mode.code() as f32,
+        3 => o.control1,
+        4 => o.control2,
+        5 => o.transpose,
+        6 => o.fine,
+        7 => o.level,
+        8 => o.pan,
+        9 => o.cross_source as f32,
+        10 => o.model as u8 as f32,
+        11 => o.fold_shape as u8 as f32,
+        12 => o.interaction as u8 as f32,
+        13 => o.interaction_source as f32,
+        _ => o.cross_input as u8 as f32,
+    }
+}
+fn oscillator_set(o: &mut crate::resynth::Oscillator, field: usize, value: f32) {
+    use crate::resynth::*;
+    match field {
+        0 => o.enabled = value >= 0.5,
+        1 => o.waveform = Waveform::ALL[value.round() as usize],
+        2 => o.mode = Mode::ALL[value.round() as usize],
+        3 => o.control1 = value,
+        4 => o.control2 = value,
+        5 => o.transpose = value,
+        6 => o.fine = value,
+        7 => o.level = value,
+        8 => o.pan = value,
+        9 => o.cross_source = value.round() as u8,
+        10 => {
+            o.model = if value < 0.5 {
+                Model::Radias
+            } else {
+                Model::Wavefolder
+            }
+        }
+        11 => o.fold_shape = FoldShape::ALL[value.round() as usize],
+        12 => o.interaction = Interaction::ALL[value.round() as usize],
+        13 => o.interaction_source = value.round() as u8,
+        _ => o.cross_input = CrossInput::ALL[value.round() as usize],
+    }
+}
+
 pub fn specs() -> &'static [Spec] {
     static SPECS: OnceLock<Vec<Spec>> = OnceLock::new();
     SPECS.get_or_init(|| {
@@ -293,6 +434,8 @@ pub fn specs() -> &'static [Spec] {
                     target: Target::Core {
                         get: |p| p.params.$field,
                         set: |p, v| p.params.$field = v,
+                        frame_get: |m| m.params.$field,
+                        frame_set: |m, v| m.params.$field = v,
                     },
                 });
             };
@@ -447,6 +590,8 @@ pub fn specs() -> &'static [Spec] {
             target: Target::Core {
                 get: |p| p.params.sample_root_note,
                 set: |p, v| p.params.sample_root_note = v.round(),
+                frame_get: |m| m.params.sample_root_note,
+                frame_set: |m, v| m.params.sample_root_note = v.round(),
             },
         });
         result.push(Spec {
@@ -458,6 +603,8 @@ pub fn specs() -> &'static [Spec] {
             target: Target::Core {
                 get: |p| f32::from(p.params.loop_one_bar),
                 set: |p, v| p.params.loop_one_bar = v >= 0.5,
+                frame_get: |m| f32::from(m.params.loop_one_bar),
+                frame_set: |m, v| m.params.loop_one_bar = v >= 0.5,
             },
         });
         for &field in ColorParameter::ALL {
@@ -481,6 +628,8 @@ pub fn specs() -> &'static [Spec] {
                     target: Target::Core {
                         get: |p| p.resynth.$field,
                         set: |p, v| p.resynth.$field = v,
+                        frame_get: |m| m.resynth.$field,
+                        frame_set: |m, v| m.resynth.$field = v,
                     },
                 });
             };
@@ -499,6 +648,8 @@ pub fn specs() -> &'static [Spec] {
             target: Target::Core {
                 get: |p| f32::from(p.resynth.enabled),
                 set: |p, v| p.resynth.enabled = v >= 0.5,
+                frame_get: |m| f32::from(m.resynth.enabled),
+                frame_set: |m, v| m.resynth.enabled = v >= 0.5,
             },
         });
         result.push(Spec {
@@ -508,6 +659,20 @@ pub fn specs() -> &'static [Spec] {
             max: 1.0,
             default: 0.0,
             target: Target::Core {
+                frame_get: |m| {
+                    if m.resynth.input == crate::resynth::Input::Source {
+                        0.0
+                    } else {
+                        1.0
+                    }
+                },
+                frame_set: |m, v| {
+                    m.resynth.input = if v < 0.5 {
+                        crate::resynth::Input::Source
+                    } else {
+                        crate::resynth::Input::Grains
+                    }
+                },
                 get: |p| {
                     if p.resynth.input == crate::resynth::Input::Source {
                         0.0
@@ -533,6 +698,8 @@ pub fn specs() -> &'static [Spec] {
             target: Target::Core {
                 get: |p| p.resynth.count as f32,
                 set: |p, v| p.resynth.count = v.round() as u8,
+                frame_get: |m| m.resynth.count as f32,
+                frame_set: |m, v| m.resynth.count = v.round() as u8,
             },
         });
         for i in 0..crate::resynth::MAX_OSCILLATORS {

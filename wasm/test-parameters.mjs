@@ -175,3 +175,27 @@ function editor() {
   assert.equal(e.snapshot().pending, 0);
 }
 console.log("Parameter transport passed: sparse writes, coalesced dragging, structural ordering, save flush and recall/retry races.");
+
+{
+  const e=editor();
+  e.evaluate('for(let i=0;i<1000;i++) scheduleSequence({track:9,stage:3,field:12,value:i})');
+  await e.next();
+  assert.deepEqual(e.calls,[{path:"/api/sequencer/edit",data:[{track:9,stage:3,field:12,value:999}]}]);
+  assert.equal(e.clones(),0,"Dragging a stage rebuilt the full program");
+}
+{
+  const e=editor();
+  e.evaluate('scheduleSequence({track:0,stage:null,field:1,value:1});preset.sequencer={enabled:true,tracks:[]};schedulePreset()');
+  await e.next();
+  assert.deepEqual(e.calls.map(c=>c.path),["/api/preset","/api/sequencer/edit"]);
+  assert.equal(e.calls[1].data[0].field,1,"A structural edit swallowed the restart command");
+}
+{
+  const e=editor(),gate=e.hold(true);
+  e.evaluate('scheduleSequence({track:4,stage:1,field:0,value:48})');
+  const first=e.next();await gate.entered;
+  e.evaluate('scheduleSequence({track:4,stage:1,field:0,value:72})');
+  gate.release();await first;await e.next();
+  assert.equal(e.calls[1].data[0].value,72,"Retry overwrote the newest stage value");
+}
+console.log("Sequencer transport passed: stage drags coalesce, structural edits preserve commands, retries keep the latest value.");

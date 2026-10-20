@@ -41,6 +41,93 @@ fn no_heap(f: impl FnOnce()) {
 }
 
 #[test]
+fn neuropolis_large_patches_publish_sparse_edits_without_heap_or_full_configuration() {
+    use sad_pet::sequence::{Edit, Target, Track};
+    let mut audio = Host::new(8000);
+    audio.engine.set_sample(Arc::new(SampleBuffer::demo(8000)));
+    let mut preset = audio.engine.preset.clone();
+    preset.sequencer.enabled = true;
+    preset.sequencer.tracks = (1..=257)
+        .map(|id| Track {
+            id,
+            target: Target::MainPitch,
+            ..Track::default()
+        })
+        .collect();
+    audio
+        .command(json!({"path":"/api/preset","data":preset}))
+        .unwrap();
+    assert!(audio.snapshot_buffer.len() > 131072);
+    audio.engine.set_playing(true);
+    let mut length = 0;
+    no_heap(|| {
+        for _ in 0..512 {
+            audio.engine.process_frame();
+        }
+        length = audio.publish_snapshot();
+    });
+    assert!(length > 131072);
+    let mut worker = Host::new(8000);
+    worker
+        .input
+        .extend_from_slice(&audio.snapshot_buffer[..length]);
+    let state = worker.import_snapshot().unwrap();
+    assert_eq!(
+        state["state"]["preset"]["sequencer"]["tracks"]
+            .as_array()
+            .unwrap()
+            .len(),
+        257
+    );
+    // Acknowledgement is a control message, outside the process callback.
+    audio.unacked_peaks.fill(None);
+    audio.sent_edit_revisions.fill(None);
+    let revision = audio.config_revision;
+    audio.command(json!({"path":"/api/sequencer/edit","data":[{"track":256,"stage":3,"field":0,"value":77}]})).unwrap();
+    audio
+        .command(json!({"path":"/api/parameters","data":{"filter":0.41}}))
+        .unwrap();
+    assert_eq!(
+        revision, audio.config_revision,
+        "A scalar drag resent the full program"
+    );
+    let edits = [Edit {
+        track: 1,
+        stage: Some(9),
+        field: 0,
+        value: 67.0,
+    }];
+    no_heap(|| {
+        audio.engine.apply_sequence_edits(&edits);
+        for _ in 0..512 {
+            audio.engine.process_frame();
+        }
+        length = audio.publish_snapshot();
+    });
+    assert!(
+        length > 0 && length < 40000,
+        "Only feedback and sparse edits should cross back to the worker: {length}"
+    );
+    worker.input.clear();
+    worker
+        .input
+        .extend_from_slice(&audio.snapshot_buffer[..length]);
+    let state = worker.import_snapshot().unwrap();
+    assert_eq!(
+        state["state"]["preset"]["sequencer"]["tracks"][255]["steps"][3]["pitch"],
+        77
+    );
+    assert!(
+        (state["state"]["preset"]["params"]["filter"]
+            .as_f64()
+            .unwrap()
+            - 0.41)
+            .abs()
+            < 1e-6
+    );
+}
+
+#[test]
 fn resynth_render_scalar_edits_and_binary_meters_have_no_heap_operations() {
     let mut audio = Host::new(48000);
     audio.engine.set_sample(Arc::new(SampleBuffer::demo(48000)));

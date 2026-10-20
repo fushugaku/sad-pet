@@ -215,7 +215,7 @@ juce::var SadPetProcessor::request(const juce::var& requestValue) {
         const auto path = requestValue["path"].toString();
         if (path == "/api/preset" || path == "/api/parameters" || path == "/api/preset-library/load" || path == "/api/preset-library/factory")
             publishParameters(previous, true);
-        if (path == "/api/preset" || path == "/api/parameters" || path == "/api/wav" || path == "/api/region"
+        if (path == "/api/preset" || path == "/api/parameters" || path == "/api/sequencer/edit" || path == "/api/wav" || path == "/api/region"
             || path == "/api/fades" || path == "/api/input" || path == "/api/transport"
             || path == "/api/preset-library/load" || path == "/api/preset-library/factory"
             || path == "/api/preset-library/save" || path == "/api/preset-library/delete")

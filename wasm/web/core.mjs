@@ -20,7 +20,7 @@ function encode(text) {
 }
 function decode(bytes) {
   let text = "";
-  for (let i = 0; i < bytes.length; ) {
+  for (let i = 0; i < bytes.length;) {
     const a = bytes[i++];
     let c = a;
     if (a >= 240)
@@ -83,6 +83,7 @@ export class Core {
       memory = this.wasm.memory.buffer;
     if (
       this.snapshotView?.buffer !== memory ||
+      this.snapshotView?.length !== target.length ||
       this.snapshotView.byteOffset !== pointer
     )
       this.snapshotView = new Uint8Array(memory, pointer, target.length);

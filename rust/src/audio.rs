@@ -28,6 +28,8 @@ pub struct Transport {
 pub enum Command {
     Preset(Box<Preset>, SyncSender<()>),
     Parameters(Vec<crate::parameters::Change>, SyncSender<()>),
+    Sequence(Vec<crate::sequence::Edit>, SyncSender<()>),
+    SequenceView(usize),
     Sample(Arc<SampleBuffer>),
     Region(Region, SyncSender<Result<Region, String>>),
     Fades(Fades, SyncSender<Result<Fades, String>>),
@@ -72,6 +74,7 @@ pub struct State {
     pub step_edits: [Option<crate::performance::Step>; 16],
     pub recording: crate::recording::View,
     pub performance: crate::performance::View,
+    pub sequencer: crate::sequence::View,
     pub lfos: [f32; 3],
     pub envs: [f32; 3],
     pub matrix_values: [f32; crate::matrix::MAX_ROUTES],
@@ -233,6 +236,7 @@ impl Runtime {
             recording: Default::default(),
             recording_take: None,
             performance: crate::performance::Performance::new(preset.performance.clone()).view(),
+            sequencer: crate::sequence::View::default(),
             lfos: [0.0; 3],
             envs: [0.0; 3],
             matrix_values: [0.0; crate::matrix::MAX_ROUTES],
@@ -263,8 +267,8 @@ impl Runtime {
                 for _ in 0..64 {
                     let Ok(command)=receiver.try_recv() else {break;};
                     match command {
-                        Command::Preset(preset,reply)=> {
-                            engine.set_preset(*preset);
+                        Command::Preset(mut preset,reply)=> {
+                            engine.exchange_preset(&mut preset);
                             if let Ok(mut state)=worker_state.lock() {state.preset=engine.preset.clone();}
                             let _=reply.try_send(());
                         },
@@ -273,6 +277,12 @@ impl Runtime {
                             if let Ok(mut state)=worker_state.lock() {crate::parameters::apply(&mut state.preset,&changes);}
                             let _=reply.try_send(());
                         },
+                        Command::Sequence(edits,reply)=> {
+                            engine.apply_sequence_edits(&edits);
+                            if let Ok(mut state)=worker_state.lock() {state.preset.sequencer.edit(&edits);}
+                            let _=reply.try_send(());
+                        },
+                        Command::SequenceView(offset)=>engine.set_sequence_view(offset),
                         Command::Sample(sample)=>engine.set_sample(sample),
                         Command::Region(region,reply)=> {
                             let result=engine.set_region(region).map(|_|engine.region);
@@ -328,6 +338,7 @@ impl Runtime {
                         state.fades=engine.fades;
                         state.grains=engine.grain_views();state.active_grains=engine.active_grains();state.notes=engine.held_notes();
                         state.performance=engine.performance_view();
+                        state.sequencer=engine.sequence_view();
                         state.step_entry=engine.step_entry;
                         state.step_edits=engine.step_edits;
                         state.recording=recorder.view();state.recording_take=recorder.take();

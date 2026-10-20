@@ -61,6 +61,89 @@ fn render(audio: &mut Audio, frames: usize, input: Stereo) -> f32 {
 }
 
 #[test]
+fn neuropolis_tracks_follow_daw_transport_survive_project_recall_and_edit_without_heap_work() {
+    use sad_pet::sequence::{Target, Track};
+    let mut control = Controller::new(false);
+    let mut preset = control.preset.clone();
+    preset.sequencer.enabled = true;
+    preset.sequencer.tracks = (1..=129)
+        .map(|id| {
+            let mut t = Track {
+                id,
+                target: if id == 1 {
+                    Target::Notes
+                } else {
+                    Target::Oscillator { index: 3 }
+                },
+                ..Track::default()
+            };
+            t.config[3] = if id % 2 == 0 { 2 } else { 1 };
+            t.steps[1].pitch = 72;
+            t
+        })
+        .collect();
+    call(&mut control, "/api/preset", json!(preset));
+    let mut audio = control.prepare(48000);
+    let values = control.values();
+    no_heap(|| {
+        audio.begin(&values, 120.0, Some(0.0), false, 128);
+        render(&mut audio, 128, [0.0; 2]);
+        assert!(!audio.engine.playing);
+        audio.begin(&values, 120.0, Some(0.0), true, 8192);
+        assert!(render(&mut audio, 8192, [0.0; 2]) > 0.001);
+    });
+    assert_eq!(audio.engine.sequence_view().tracks[0].step, 1);
+    assert_eq!(audio.engine.sequence_view().tracks[1].step, 0);
+    call(
+        &mut control,
+        "/api/sequencer/edit",
+        json!([{"track":1,"stage":7,"field":0,"value":79},{"track":2,"field":3,"value":65}]),
+    );
+    no_heap(|| {
+        audio.begin(&values, 120.0, Some(8192.0 / 24000.0), true, 128);
+        render(&mut audio, 128, [0.0; 2]);
+    });
+    assert_eq!(audio.engine.sequence_view().tracks[0].step, 1);
+    let mut changed = control.preset.clone();
+    changed.sequencer.tracks.remove(4);
+    call(&mut control, "/api/preset", json!(changed));
+    no_heap(|| {
+        audio.begin(&values, 160.0, Some(3.137), true, 128);
+        render(&mut audio, 128, [0.0; 2]);
+    });
+    call(&mut control, "/api/sequencer/view", json!({"offset":80}));
+    no_heap(|| {
+        audio.begin(
+            &values,
+            160.0,
+            Some(3.137 + 128.0 * 160.0 / (60.0 * 48000.0)),
+            true,
+            2048,
+        );
+        render(&mut audio, 2048, [0.0; 2]);
+    });
+    control.drain();
+    let state = control.state();
+    assert_eq!(state["sequencer"]["total"], 128);
+    assert_eq!(state["sequencer"]["offset"], 80);
+    let saved = control.save().unwrap();
+    let mut restored = Controller::new(false);
+    restored.restore(&saved).unwrap();
+    assert_eq!(restored.preset.sequencer.tracks.len(), 128);
+    assert_eq!(restored.preset.sequencer.tracks[0].steps[7].pitch, 79);
+    let mut other = restored.prepare(48000);
+    let restored_values = restored.values();
+    no_heap(|| {
+        other.begin(&restored_values, 120.0, Some(0.0), true, 128);
+        render(&mut other, 128, [0.0; 2]);
+        audio.begin(&values, 120.0, Some(4.0), false, 128);
+        render(&mut audio, 128, [0.0; 2]);
+    });
+    assert!(audio.engine.held_notes().is_empty());
+    assert!(!audio.engine.sequence_view().tracks[0].gate);
+}
+
+#[test]
 fn four_resynth_layers_automation_and_project_recall_are_realtime_safe() {
     let mut control = Controller::new(true);
     let mut preset = control.preset.clone();

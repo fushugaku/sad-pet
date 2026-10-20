@@ -30,7 +30,7 @@ def main():
     ], cwd=ROOT, env=env, check=True)
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    for name in ("index.html", "app.js", "library.js", "selection.js", "presets.js", "style.css"):
+    for name in ("index.html", "app.js", "library.js", "selection.js", "presets.js", "sequence.js", "style.css"):
         shutil.copy2(ROOT / "rust" / "web" / name, output / name)
     index = (output / "index.html").read_text()
     index = index.replace('<script src="./library.js"', '<script src="./browser.js" defer></script>\n    <script src="./library.js"')
@@ -38,6 +38,8 @@ def main():
     (output / "index.html").write_text(index)
     shutil.copytree(ROOT / "wasm" / "web", output, dirs_exist_ok=True)
     shutil.copy2(target / "wasm32-unknown-unknown" / "release" / "sad_pet_wasm.wasm", output / "sad_pet.wasm")
+    (output / "licenses").mkdir(exist_ok=True)
+    shutil.copy2(ROOT / "rust/licenses/neuropolis-AGPL-3.0.txt", output / "licenses/neuropolis-AGPL-3.0.txt")
     # A cached worklet/bridge from another build can otherwise run alongside
     # the new HTML. Give every runtime dependency one consistent build version.
     runtime = sorted(p for p in output.rglob("*") if p.is_file() and p.suffix in (".js", ".mjs", ".css", ".wasm"))

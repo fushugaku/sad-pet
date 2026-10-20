@@ -11,6 +11,7 @@ mod radias_wavefolder;
 pub mod radias_waveshaper;
 pub mod resynth;
 pub mod sample;
+pub(crate) mod sequence;
 pub mod source_fx;
 #[cfg(all(feature = "source-worker", not(target_arch = "wasm32")))]
 pub mod source_fx_worker;
@@ -52,6 +53,7 @@ struct Grain {
 
 #[derive(Clone, Copy, Debug, Default)]
 struct Voice {
+    owner: u32,
     envelopes: [Envelope; 3],
     note: u8,
     channel: u8,
@@ -94,16 +96,17 @@ pub struct GrainView {
 }
 
 #[derive(Clone, Copy, Default)]
-struct Modulated {
-    params: Params,
-    pan: f32,
-    color_slots: [ColorSlot; MAX_COLOR_SLOTS],
-    color_len: usize,
-    pre_color_slots: [ColorSlot; MAX_COLOR_SLOTS],
-    pre_color_len: usize,
-    lfos: [Lfo; 3],
-    envs: [Env; 3],
-    performance: crate::performance::Modulation,
+pub(crate) struct Modulated {
+    pub(crate) params: Params,
+    pub(crate) pan: f32,
+    pub(crate) color_slots: [ColorSlot; MAX_COLOR_SLOTS],
+    pub(crate) color_len: usize,
+    pub(crate) pre_color_slots: [ColorSlot; MAX_COLOR_SLOTS],
+    pub(crate) pre_color_len: usize,
+    pub(crate) lfos: [Lfo; 3],
+    pub(crate) envs: [Env; 3],
+    pub(crate) performance: crate::performance::Modulation,
+    pub(crate) resynth: crate::resynth::Settings,
 }
 impl Modulated {
     fn from_preset(preset: &Preset) -> Self {
@@ -117,6 +120,7 @@ impl Modulated {
             lfos: preset.lfos,
             envs: preset.envs,
             performance: crate::performance::Modulation::from_settings(&preset.performance),
+            resynth: preset.resynth,
         };
         result.color_slots[..result.color_len].copy_from_slice(&preset.color_chain);
         result.pre_color_slots[..result.pre_color_len].copy_from_slice(&preset.pre_color_chain);
@@ -281,6 +285,7 @@ pub struct Engine {
     pub step_edits: [Option<crate::performance::Step>; 16],
     captured_keys: [u128; 16],
     performance: Performance,
+    sequence_running: bool,
     grains: [Grain; MAX_GRAINS],
     voices: [Voice; VOICES],
     oscillators: [Oscillator; 3],
@@ -348,6 +353,7 @@ impl Engine {
             step_edits: [None; 16],
             captured_keys: [0; 16],
             performance: Performance::default(),
+            sequence_running: true,
             grains: [Grain::default(); MAX_GRAINS],
             voices: [Voice::default(); VOICES],
             oscillators: std::array::from_fn(|i| {
@@ -417,6 +423,26 @@ impl Engine {
     /// Exchange a sanitized preset without allocating or destroying its buffers.
     /// The caller retires the previous preset away from the audio callback.
     pub fn exchange_preset(&mut self, preset: &mut Preset) {
+        if let (Some(next), Some(old)) = (
+            &mut preset.sequencer.runtime,
+            &mut self.preset.sequencer.runtime,
+        ) {
+            next.inherit(old);
+        }
+        for voice in &mut self.voices {
+            if voice.owner != 0
+                && (!preset.sequencer.enabled
+                    || !preset
+                        .sequencer
+                        .runtime
+                        .as_ref()
+                        .is_some_and(|r| r.retained_note(voice.owner)))
+            {
+                voice.held = false;
+                voice.sustained = false;
+                voice.off();
+            }
+        }
         if preset.performance.mode != self.performance.mode() {
             self.step_edits.fill(None);
         }
@@ -445,6 +471,7 @@ impl Engine {
                 self.set_playing(true);
             }
         }
+        self.refresh_sequence_free_voice();
     }
     pub fn set_sample(&mut self, sample: Arc<SampleBuffer>) {
         self.live_input = None;
@@ -568,7 +595,14 @@ impl Engine {
             self.preset.params.bpm = bpm;
         }
         if restart {
-            self.release_notes();
+            if self.performance.mode() != Mode::Keys {
+                self.release_notes();
+            } else {
+                self.release_sequence_notes();
+            }
+            if let Some(runtime) = &mut self.preset.sequencer.runtime {
+                runtime.seek(beat.filter(|b| b.is_finite()).unwrap_or(0.0));
+            }
             if let Some(beat) = beat.filter(|b| b.is_finite()) {
                 self.performance.seek(beat);
                 for (oscillator, lfo) in self.oscillators.iter_mut().zip(self.preset.lfos) {
@@ -585,10 +619,100 @@ impl Engine {
         self.performance.refresh_timing(&self.preset.performance);
         self.update_modulation();
     }
+    fn sequence_has_notes(&self) -> bool {
+        self.sequence_running
+            && self.preset.sequencer.enabled
+            && self
+                .preset
+                .sequencer
+                .tracks
+                .iter()
+                .any(|t| t.target == crate::sequence::Target::Notes && t.config[8] == 0)
+    }
+    fn refresh_sequence_free_voice(&mut self) {
+        if self.playing && !self.midi_gate && self.performance.mode() == Mode::Keys {
+            if self.sequence_has_notes() {
+                self.voices[0].held = false;
+                self.voices[0].off();
+            } else if !self.voices[0].held {
+                self.voices[0].velocity = 1.0;
+                self.voices[0].note = 60;
+                self.voices[0].held = true;
+                self.filters[0].clear();
+                self.voices[0].on();
+                self.mod_note_on(0, 60, 127);
+                self.configure_voice_filter(0);
+            }
+        }
+    }
     pub fn apply_parameters(&mut self, changes: &[crate::parameters::Change]) {
         if crate::parameters::apply(&mut self.preset, changes) {
             self.refresh_parameters();
         }
+    }
+    pub fn apply_sequence_edits(&mut self, edits: &[crate::sequence::Edit]) {
+        self.preset.sequencer.edit(edits);
+        for edit in edits
+            .iter()
+            .filter(|e| e.stage.is_none() && (e.field == 47 || (e.field == 8 && e.value >= 0.5)))
+        {
+            for voice in &mut self.voices {
+                if voice.owner == edit.track {
+                    voice.held = false;
+                    voice.sustained = false;
+                    voice.off();
+                }
+            }
+        }
+        if !self.preset.sequencer.enabled || edits.iter().any(|e| e.track == 0 && e.field == 1) {
+            for voice in &mut self.voices {
+                if voice.owner != 0 {
+                    voice.held = false;
+                    voice.sustained = false;
+                    voice.off();
+                }
+            }
+            if let Some(runtime) = &mut self.preset.sequencer.runtime {
+                runtime.restart();
+            }
+        }
+        self.update_modulation();
+        self.refresh_sequence_free_voice();
+    }
+    fn release_sequence_notes(&mut self) {
+        for voice in &mut self.voices {
+            if voice.owner != 0 {
+                voice.held = false;
+                voice.sustained = false;
+                voice.off();
+            }
+        }
+    }
+    /// DAW transport stops the sequencer while live input and keyboard audition
+    /// keep their normal audio path. Standalone playback owns this clock itself.
+    pub fn set_sequence_transport(&mut self, running: bool) {
+        if self.sequence_running == running {
+            return;
+        }
+        self.sequence_running = running;
+        self.release_sequence_notes();
+        if let Some(runtime) = &mut self.preset.sequencer.runtime {
+            runtime.start(running && self.preset.sequencer.enabled);
+        }
+        self.update_modulation();
+        self.refresh_sequence_free_voice();
+    }
+    pub fn set_sequence_view(&mut self, offset: usize) {
+        if let Some(runtime) = &mut self.preset.sequencer.runtime {
+            runtime.view_offset = offset.min(self.preset.sequencer.tracks.len().saturating_sub(1));
+        }
+    }
+    pub fn sequence_view(&self) -> crate::sequence::View {
+        self.preset
+            .sequencer
+            .runtime
+            .as_ref()
+            .map_or_else(crate::sequence::View::default, |r| r.view())
     }
     pub fn set_region(&mut self, region: Region) -> Result<(), String> {
         if self.live_input.is_some() {
@@ -664,6 +788,9 @@ impl Engine {
     }
     pub fn set_playing(&mut self, playing: bool) {
         self.playing = playing;
+        if let Some(runtime) = &mut self.preset.sequencer.runtime {
+            runtime.start(self.preset.sequencer.enabled && playing && self.sequence_running);
+        }
         if playing {
             if self.performance.mode() != Mode::Keys {
                 self.release_notes();
@@ -683,7 +810,10 @@ impl Engine {
                     });
                 }
                 self.sync_stored_chord();
-            } else if self.performance.mode() == Mode::Keys && !self.midi_gate {
+            } else if self.performance.mode() == Mode::Keys
+                && !self.midi_gate
+                && !self.sequence_has_notes()
+            {
                 self.voices[0].velocity = 1.0;
                 self.voices[0].note = 60;
                 self.voices[0].held = true;
@@ -712,7 +842,11 @@ impl Engine {
             voice.sustained = false;
             voice.off();
         }
-        if !enabled && self.playing && self.performance.mode() == Mode::Keys {
+        if !enabled
+            && self.playing
+            && self.performance.mode() == Mode::Keys
+            && !self.sequence_has_notes()
+        {
             self.voices[0].note = 60;
             self.voices[0].velocity = 1.0;
             self.voices[0].held = true;
@@ -926,6 +1060,9 @@ impl Engine {
     }
 
     fn apply_midi(&mut self, message: Message) {
+        self.apply_owned_midi(message, 0);
+    }
+    fn apply_owned_midi(&mut self, message: Message, owner: u32) {
         match message {
             Message::NoteOn {
                 channel,
@@ -936,20 +1073,29 @@ impl Engine {
                     return;
                 }
                 if velocity == 0 {
-                    self.apply_midi(Message::NoteOff {
-                        channel,
-                        note,
-                        velocity: 0,
-                    });
+                    self.apply_owned_midi(
+                        Message::NoteOff {
+                            channel,
+                            note,
+                            velocity: 0,
+                        },
+                        owner,
+                    );
                     return;
                 }
                 if !self.midi_gate {
-                    self.set_midi_gate(true);
+                    if owner == 0 {
+                        self.set_midi_gate(true);
+                    } else {
+                        self.voices[0].held = false;
+                        self.voices[0].off();
+                    }
                 }
                 self.playing = true;
                 let index = (1..VOICES)
                     .find(|&i| {
                         self.voices[i].held
+                            && self.voices[i].owner == owner
                             && self.voices[i].note == note
                             && self.voices[i].channel == channel
                     })
@@ -964,6 +1110,7 @@ impl Engine {
                 let v = &mut self.voices[index];
                 self.filters[index].clear();
                 v.note = note;
+                v.owner = owner;
                 v.channel = channel;
                 v.velocity = velocity as f32 / 127.0;
                 v.held = true;
@@ -978,9 +1125,9 @@ impl Engine {
                     return;
                 }
                 for v in &mut self.voices[1..] {
-                    if v.note == note && v.channel == channel {
+                    if v.note == note && v.channel == channel && v.owner == owner {
                         v.held = false;
-                        v.sustained = self.sustain[channel as usize];
+                        v.sustained = owner == 0 && self.sustain[channel as usize];
                         if !v.sustained {
                             v.off();
                         }
@@ -1171,6 +1318,12 @@ impl Engine {
     }
     fn update_modulation(&mut self) {
         let mut m = Modulated::from_preset(&self.preset);
+        if self.preset.sequencer.enabled
+            && self.sequence_running
+            && let Some(runtime) = &self.preset.sequencer.runtime
+        {
+            runtime.apply(&mut m);
+        }
         if m.params.loop_one_bar != self.modulated.params.loop_one_bar {
             self.voices.iter_mut().for_each(|v| v.loop_phase = 0.0);
             self.cursor = self.file_range.start as f64;
@@ -1232,7 +1385,7 @@ impl Engine {
             m.params.bpm,
         );
         self.resynth
-            .configure(self.preset.resynth, &self.sample, m.params.sample_root_note);
+            .configure(m.resynth, &self.sample, m.params.sample_root_note);
         let shaper_note = self.source_note as f32
             + self.bend[self.source_channel as usize] * m.params.midi_pitchbend_range
             + (m.params.pitch * 2.0 - 1.0) * m.params.pitch_range
@@ -1380,6 +1533,60 @@ impl Engine {
             live.push_with_meter(source_input, input, self.frozen);
         }
         if self.playing {
+            let tick = self.preset.sequencer.runtime.as_mut().is_some_and(|r| {
+                r.tick(
+                    self.sample_rate,
+                    self.preset.params.bpm,
+                    self.preset.sequencer.enabled && self.sequence_running,
+                )
+            });
+            if tick {
+                let count = self
+                    .preset
+                    .sequencer
+                    .runtime
+                    .as_ref()
+                    .map_or(0, |r| r.len());
+                for index in 0..count {
+                    let (id, actions) = self
+                        .preset
+                        .sequencer
+                        .runtime
+                        .as_mut()
+                        .unwrap()
+                        .actions(index);
+                    for action in actions.into_iter().flatten() {
+                        match action {
+                            sequence::Action::Midi(message) => self.apply_owned_midi(message, id),
+                            sequence::Action::Legato {
+                                channel,
+                                note,
+                                velocity,
+                            } => {
+                                if let Some(voice) =
+                                    self.voices.iter_mut().find(|v| v.owner == id && v.held)
+                                {
+                                    voice.note = note;
+                                    voice.channel = channel;
+                                    voice.velocity = velocity as f32 / 127.0;
+                                    self.source_note = note;
+                                    self.source_channel = channel;
+                                } else {
+                                    self.apply_owned_midi(
+                                        Message::NoteOn {
+                                            channel,
+                                            note,
+                                            velocity,
+                                        },
+                                        id,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                self.update_modulation();
+            }
             for action in self
                 .performance
                 .tick(self.sample_rate, self.modulated.params.bpm)

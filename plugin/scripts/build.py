@@ -100,6 +100,7 @@ def main():
     shutil.copy2(PLUGIN / "README.md", output / "README.md")
     licenses = output / "Licenses"
     licenses.mkdir(exist_ok=True)
+    shutil.copy2(ROOT / "rust/licenses/neuropolis-AGPL-3.0.txt", licenses / "Neuropolis-AGPL-3.0.txt")
     juce_source = args.juce or build / "_deps/juce-src"
     if (juce_source / "LICENSE.md").is_file():
         shutil.copy2(juce_source / "LICENSE.md", licenses / "JUCE-LICENSE.md")

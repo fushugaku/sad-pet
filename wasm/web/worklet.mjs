@@ -25,7 +25,12 @@ class SadPetProcessor extends AudioWorkletProcessor {
           message.sequence,
           message.success ? 1 : 0,
         );
-        this.snapshotPool.push(new Uint8Array(data));
+        const capacity = this.core.wasm.sad_snapshot_capacity();
+        this.snapshotPool.push(
+          data.byteLength >= capacity
+            ? new Uint8Array(data)
+            : new Uint8Array(capacity),
+        );
         return;
       }
       if (type === "record-return") {
@@ -89,14 +94,21 @@ class SadPetProcessor extends AudioWorkletProcessor {
           this.recording = false;
           result = { frames: this.recordedFrames };
         } else result = this.core.request(message.path, data);
+        const capacity = this.core.wasm.sad_snapshot_capacity();
+        this.snapshotPool = this.snapshotPool.map((buffer) =>
+          buffer.length >= capacity ? buffer : new Uint8Array(capacity),
+        );
         this.port.postMessage(
           { id, result },
           result instanceof ArrayBuffer ? [result] : [],
         );
         if (
-          !["/api/note", "/api/midi-bytes", "/api/parameters"].includes(
-            message.path,
-          )
+          ![
+            "/api/note",
+            "/api/midi-bytes",
+            "/api/parameters",
+            "/api/sequencer/edit",
+          ].includes(message.path)
         )
           this.snapshot();
       } catch (error) {

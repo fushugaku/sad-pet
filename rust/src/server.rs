@@ -143,6 +143,11 @@ fn handle(
                     include_bytes!("../web/presets.js").to_vec(),
                     "application/javascript",
                 )),
+                "/sequence.js" => Ok((
+                    include_bytes!("../web/sequence.js").to_vec(),
+                    "application/javascript",
+                )),
+                "/api/sequencer/catalog" => json(&crate::sequence::catalog()),
                 "/favicon.ico" => Ok((Vec::new(), "image/x-icon")),
                 "/api/state" => json(&*state.lock().map_err(|e| e.to_string())?),
                 "/api/preset" => json(&state.lock().map_err(|e| e.to_string())?.preset),
@@ -230,6 +235,26 @@ fn handle(
                     .map_err(|e| format!("Parameters: {e}"))?;
                 json(&serde_json::json!({"ok":true}))
             }
+            "/api/sequencer/edit" => {
+                let value =
+                    serde_json::from_slice(&bytes).map_err(|e| format!("Sequencer: {e}"))?;
+                let edits = crate::sequence::parse_edits(&value)?;
+                let (reply, result) = std::sync::mpsc::sync_channel(1);
+                send(&commands, Command::Sequence(edits, reply))?;
+                result
+                    .recv_timeout(Duration::from_secs(5))
+                    .map_err(|e| e.to_string())?;
+                json(&serde_json::json!({"ok":true}))
+            }
+            "/api/sequencer/view" => {
+                let value: serde_json::Value =
+                    serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+                send(
+                    &commands,
+                    Command::SequenceView(value["offset"].as_u64().unwrap_or(0) as usize),
+                )?;
+                json(&serde_json::json!({"ok":true}))
+            }
             "/api/preset" => {
                 let value: serde_json::Value =
                     serde_json::from_slice(&bytes).map_err(|e| format!("Preset: {e}"))?;
@@ -240,7 +265,10 @@ fn handle(
                     serde_json::from_value(value).map_err(|e| format!("Preset: {e}"))?;
                 preset.sanitize();
                 let (reply, result) = std::sync::mpsc::sync_channel(1);
-                send(&commands, Command::Preset(Box::new(preset.clone()), reply))?;
+                send(
+                    &commands,
+                    Command::Preset(Box::new(preset.prepared_clone()), reply),
+                )?;
                 result
                     .recv_timeout(Duration::from_secs(5))
                     .map_err(|e| format!("Preset: {e}"))?;

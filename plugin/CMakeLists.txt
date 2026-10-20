@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(SadPetPlugins VERSION 0.6.1 LANGUAGES C CXX)
+project(SadPetPlugins VERSION 0.7.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -55,7 +55,7 @@ set(web_dir "${CMAKE_BINARY_DIR}/web")
 file(MAKE_DIRECTORY "${web_dir}")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${SAD_PET_ROOT}/rust/web/index.html")
 file(READ "${SAD_PET_ROOT}/rust/web/index.html" editor_html)
-foreach(script library selection presets app)
+foreach(script library selection presets sequence app)
     string(REPLACE "    <script src=\"./${script}.js\" defer></script>\n" "" editor_html "${editor_html}")
 endforeach()
 string(REPLACE "</head>" "  <link rel=\"stylesheet\" href=\"./plugin.css\" />\n    <script type=\"module\" src=\"./plugin-backend.js\"></script>\n  </head>" editor_html "${editor_html}")
@@ -64,7 +64,7 @@ juce_add_binary_data(SadPetResources SOURCES
     "${web_dir}/index.html"
     "${SAD_PET_ROOT}/rust/web/style.css" "${SAD_PET_ROOT}/rust/web/app.js"
     "${SAD_PET_ROOT}/rust/web/library.js" "${SAD_PET_ROOT}/rust/web/selection.js"
-    "${SAD_PET_ROOT}/rust/web/presets.js"
+    "${SAD_PET_ROOT}/rust/web/presets.js" "${SAD_PET_ROOT}/rust/web/sequence.js"
     web/plugin-backend.js web/plugin.css
     "${JUCE_MODULES_DIR}/juce_gui_extra/native/javascript/index.js"
     "${JUCE_MODULES_DIR}/juce_gui_extra/native/javascript/check_native_interop.js")
