@@ -57,9 +57,34 @@ for (const wave of [
   }
 }
 preset.resynth.count = 4;
+for (const fold_shape of [
+  "triangle",
+  "sine",
+  "soft",
+  "asymmetric",
+  "rectify",
+]) {
+  preset.resynth.oscillators.forEach((o, i) =>
+    Object.assign(o, {
+      model: "wavefolder",
+      waveform: ["saw", "pulse", "triangle", "sine"][i],
+      fold_shape,
+      control1: 0.4,
+      control2: 0.5,
+    }),
+  );
+  assert.ok(
+    energy(render(preset, 48000, 128).result) > 1e-8,
+    `Silent OSC4 ${fold_shape}`,
+  );
+}
 preset.resynth.oscillators.forEach((o, i) =>
   Object.assign(o, {
-    waveform: ["saw", "formant", "noise", "pcm"][i],
+    model: i === 0 ? "radias" : "wavefolder",
+    waveform: ["saw", "pulse", "triangle", "sine"][i],
+    fold_shape: ["triangle", "sine", "soft", "rectify"][i],
+    interaction: ["off", "ring", "sync", "ring_sync"][i],
+    interaction_source: [0, 2, 3, 1][i],
     mode: i === 0 ? "cross" : "wave",
     control1: 0.4,
     control2: 0.3,
@@ -87,9 +112,17 @@ for (const rate of [44100, 48000, 96000]) {
     resynth_osc4_transpose: 12,
     resynth_osc2_control1: 0.8,
     resynth_attack: 0.3,
+    resynth_osc4_fold_shape: 3,
+    resynth_osc2_interaction: 3,
+    resynth_osc2_interaction_source: 1,
+    resynth_osc1_cross_input: 2,
   });
   const state = core.request("/api/state");
   assert.equal(state.preset.resynth.oscillators[3].transpose, 12);
+  assert.equal(state.preset.resynth.oscillators[3].fold_shape, "asymmetric");
+  assert.equal(state.preset.resynth.oscillators[1].interaction, "ring_sync");
+  assert.equal(state.preset.resynth.oscillators[1].interaction_source, 1);
+  assert.equal(state.preset.resynth.oscillators[0].cross_input, "grains");
   assert.equal(state.resynth.bands.length, 16);
   assert.ok(state.resynth.bands.some((x) => x > 0));
   times.sort((a, b) => a - b);
@@ -98,5 +131,5 @@ for (const rate of [44100, 48000, 96000]) {
   );
 }
 console.log(
-  "Resynth checks passed: all 8 types, all analog modes, 4 independent layers, PCM, Cross, 16 envelopes, host parameters and deterministic quanta.",
+  "Resynth checks passed: all 8 types, all analog modes, all 5 OSC4 Wavefolders in every slot, Ring/Sync, separate Source/Grains/oscillator taps, 16 envelopes, host parameters and deterministic quanta.",
 );

@@ -71,6 +71,12 @@ fn four_resynth_layers_automation_and_project_recall_are_realtime_safe() {
         o.mode = sad_pet::resynth::Mode::ALL[i];
         o.control1 = 0.7;
         o.control2 = 0.4;
+        if i == 1 {
+            o.model = sad_pet::resynth::Model::Wavefolder;
+            o.fold_shape = sad_pet::resynth::FoldShape::Sine;
+        }
+        o.interaction = sad_pet::resynth::Interaction::RingSync;
+        o.interaction_source = [1, 4, 0, 2][i];
     }
     call(&mut control, "/api/preset", json!(preset));
     let mut audio = control.prepare(48000);

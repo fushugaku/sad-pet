@@ -530,6 +530,8 @@ h2 {
 }
 .resynth-oscillator {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 .resynth-osc-title {
   display: flex;
@@ -550,17 +552,46 @@ h2 {
 .resynth-extra {
   min-height: 31px;
   margin-bottom: 8px;
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
   align-items: center;
   font-size: 11px;
 }
 .resynth-extra select {
+  width: 100%;
+  min-width: 0;
   height: 31px;
   font-size: 11px;
+}
+.resynth-choice {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.resynth-choice > span {
+  color: var(--muted);
+  font-size: 10px;
+}
+.resynth-choice-wide {
+  grid-column: 1 / -1;
+}
+.resynth-control-role {
+  display: block;
+  margin-top: 4px;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
 }
 .resynth-knobs {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px 6px;
+  margin-top: auto;
+  padding-top: 8px;
+}
+.resynth-knobs .knob-label {
+  min-height: 26px;
+  line-height: 11px;
 }
 .resynth-oscillator.is-bypassed .resynth-knobs {
   opacity: 0.55;

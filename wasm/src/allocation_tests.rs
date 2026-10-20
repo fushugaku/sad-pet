@@ -65,7 +65,7 @@ fn resynth_render_scalar_edits_and_binary_meters_have_no_heap_operations() {
     audio.engine.preset.resynth.oscillators[3].mode = sad_pet::resynth::Mode::Wave;
     audio.engine.refresh_parameters();
     let changes = sad_pet::parameters::parse(
-        &json!({"resynth_osc4_control1":0.8,"resynth_osc2_transpose":12,"resynth_mix":0.7}),
+        &json!({"resynth_osc4_control1":0.8,"resynth_osc2_transpose":12,"resynth_mix":0.7,"resynth_osc2_model":1,"resynth_osc2_fold_shape":4,"resynth_osc2_interaction":3,"resynth_osc2_interaction_source":3,"resynth_osc1_interaction":3,"resynth_osc1_interaction_source":1}),
     )
     .unwrap();
     let mut n = 0;

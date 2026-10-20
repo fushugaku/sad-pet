@@ -7,6 +7,7 @@ pub mod effects;
 pub mod filter;
 pub mod modulation;
 mod radias_oscillator;
+mod radias_wavefolder;
 pub mod radias_waveshaper;
 pub mod resynth;
 pub mod sample;
@@ -1519,6 +1520,7 @@ impl Engine {
         };
         let mut mixed_frames = [[0.0; 2]; VOICES];
         let mut before_fx = [0.0; 2];
+        let mut grain_tap = [0.0; 2];
         for (i, frame) in voice_frames.into_iter().enumerate() {
             if self.voices[i].value <= 0.0 {
                 continue;
@@ -1528,6 +1530,7 @@ impl Engine {
             });
             for (c, total) in before_fx.iter_mut().enumerate() {
                 *total += mixed_frames[i][c] * self.voices[i].value;
+                grain_tap[c] += frame[c] * norm * input_gain * self.voices[i].value;
             }
         }
         // One stereo pre-filter rack, with its own tails and delay clock. The
@@ -1536,11 +1539,13 @@ impl Engine {
         // dry voice/filter separation; an empty or bypassed rack is transparent.
         if voice_sum > 0.0 {
             before_fx.iter_mut().for_each(|v| *v /= voice_sum);
+            grain_tap.iter_mut().for_each(|v| *v /= voice_sum);
         }
         let resynth_active = self.resynth.active();
-        let resynth_output = self.resynth.process(
+        let resynth_output = self.resynth.process_with_grains(
             before_fx,
             source.map(|x| x * input_gain),
+            grain_tap,
             self.lfo_values[0],
             dry_scale,
             &self.sample,

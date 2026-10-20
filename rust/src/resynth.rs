@@ -56,6 +56,65 @@ impl Mode {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum Model {
+    #[default]
+    Radias,
+    Wavefolder,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FoldShape {
+    #[default]
+    Triangle,
+    Sine,
+    Soft,
+    Asymmetric,
+    Rectify,
+}
+impl FoldShape {
+    pub const ALL: [Self; 5] = [
+        Self::Triangle,
+        Self::Sine,
+        Self::Soft,
+        Self::Asymmetric,
+        Self::Rectify,
+    ];
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Interaction {
+    #[default]
+    Off,
+    Ring,
+    Sync,
+    RingSync,
+}
+impl Interaction {
+    pub const ALL: [Self; 4] = [Self::Off, Self::Ring, Self::Sync, Self::RingSync];
+    pub fn ring(self) -> bool {
+        matches!(self, Self::Ring | Self::RingSync)
+    }
+    pub fn sync(self) -> bool {
+        matches!(self, Self::Sync | Self::RingSync)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CrossInput {
+    #[default]
+    Analysis,
+    Source,
+    Grains,
+}
+impl CrossInput {
+    pub const ALL: [Self; 3] = [Self::Analysis, Self::Source, Self::Grains];
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Input {
     #[default]
     Source,
@@ -66,8 +125,13 @@ pub enum Input {
 #[serde(default)]
 pub struct Oscillator {
     pub enabled: bool,
+    pub model: Model,
     pub waveform: Waveform,
     pub mode: Mode,
+    pub fold_shape: FoldShape,
+    pub interaction: Interaction,
+    /// 0 = source, 1 = grains, 2..5 = oscillator 1..4, before level/pan.
+    pub interaction_source: u8,
     pub control1: f32,
     pub control2: f32,
     pub transpose: f32,
@@ -77,13 +141,20 @@ pub struct Oscillator {
     /// 0 = analysis input; 1..4 = carrier layer. Earlier layers use the current
     /// internal sample; self/forward connections use the previous one.
     pub cross_source: u8,
+    /// Select the external Cross tap without changing the released 0..4
+    /// cross_source automation range (0 previously meant analysis input).
+    pub cross_input: CrossInput,
 }
 impl Default for Oscillator {
     fn default() -> Self {
         Self {
             enabled: true,
+            model: Model::Radias,
             waveform: Waveform::Sine,
             mode: Mode::Wave,
+            fold_shape: FoldShape::Triangle,
+            interaction: Interaction::Off,
+            interaction_source: 0,
             control1: 0.0,
             control2: 0.0,
             transpose: 0.0,
@@ -91,6 +162,7 @@ impl Default for Oscillator {
             level: 0.7,
             pan: 0.5,
             cross_source: 0,
+            cross_input: CrossInput::Analysis,
         }
     }
 }
@@ -148,8 +220,17 @@ impl Settings {
             finite(&mut o.level, 0.0, 1.0, d.level);
             finite(&mut o.pan, 0.0, 1.0, d.pan);
             o.cross_source = o.cross_source.min(4);
+            o.interaction_source = o.interaction_source.min(5);
             if !o.waveform.analog() {
                 o.mode = Mode::Wave;
+                o.model = Model::Radias;
+            }
+            if o.waveform == Waveform::AudioIn {
+                o.interaction = if o.interaction.ring() {
+                    Interaction::Ring
+                } else {
+                    Interaction::Off
+                };
             }
         }
     }

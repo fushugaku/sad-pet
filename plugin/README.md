@@ -85,7 +85,20 @@ the detector input, and add layers with **+ Oscillator**. Each layer offers Saw,
 Pulse, Triangle, Sine, Formant, Noise, Audio In or PCM. Saw/Pulse/Triangle/Sine
 also have Wave, Cross, Unison and VPM modes. CTRL 1/2 retain the original Rustias
 control transfers; Wave/Cross LFO depth uses LFO 1, Unison uses detune/phase,
-and VPM uses depth/ratio. Cross can use the input or another layer; self/forward
+and VPM uses depth/ratio. **Generator → Wavefolder · OSC 4** is available in
+every slot, with Triangle, Sine, Soft, Asymmetric and Rectify shapers. Its CTRL 1
+sets Fold Depth and CTRL 2 sets Bias, using Rustias OSC 4's f64 four-step folding,
+smoothing and DC blocker.
+
+Each slot has independent **Ring / Sync** (Off, Ring, Sync, Ring + Sync) and
+**Ring / Sync source** (Source, Grains or another oscillator). Oscillator taps
+precede their level/pan and envelope, so a source at zero Level still drives the
+other layer. Audio In supports Ring; sampled PCM also supports Sync. Source and
+Grains use their individual band-filtered zero crossings with hysteresis; an
+oscillator reference uses its carrier phase wrap. Grains is tapped before the
+Dry/Wet blend. Cross separately selects Analysis input, Source, Grains or another
+oscillator. For oscillator connections, earlier slots use the current internal
+sample and self/forward
 connections use the previous internal sample. PCM reads and loops the selected
 sample region at the layer's tuning, using **Root** as its original pitch. Start
 and Loop Fade adjust that loop. Audio In passes the analyzed input through the

@@ -1,10 +1,10 @@
 //! Streaming 16-band excitation of four Rustias carrier layers.
 //! All histories and tables are allocated before rendering; scalar edits keep
 //! phases, envelope histories and the original OSC1 four-frame control slew.
-use super::{SampleBuffer, radias_oscillator};
+use super::{SampleBuffer, radias_oscillator, radias_wavefolder};
 use crate::{
     Stereo,
-    resynth::{BANDS, Input, MAX_OSCILLATORS, Mode, Settings, Waveform},
+    resynth::{BANDS, CrossInput, Input, MAX_OSCILLATORS, Mode, Model, Settings, Waveform},
 };
 use radias_synth_application::primary::PrimaryProgram;
 use radias_synth_domain::{
@@ -94,6 +94,8 @@ struct Carrier {
     pcm_rate: f64,
     pcm_level: usize,
     audible: bool,
+    folder: radias_wavefolder::Wavefolder,
+    phase_initialized: bool,
 }
 
 struct PcmLoop {
@@ -154,6 +156,8 @@ impl Default for Carrier {
             pcm_rate: 1.0,
             pcm_level: 0,
             audible: true,
+            folder: Default::default(),
+            phase_initialized: false,
         }
     }
 }
@@ -164,6 +168,7 @@ struct Layer {
     pan: Stereo,
     gain: f32,
     target_gain: f32,
+    fold_controls: [f64; 2],
 }
 impl Default for Layer {
     fn default() -> Self {
@@ -174,6 +179,7 @@ impl Default for Layer {
             pan: [1.0; 2],
             gain: 0.0,
             target_gain: 0.0,
+            fold_controls: [0.0; 2],
         }
     }
 }
@@ -183,11 +189,20 @@ pub struct Resynth {
     oversample: usize,
     frequencies: [f32; BANDS],
     bands: [Band; BANDS],
+    source_bands: [Band; BANDS],
+    grain_bands: [Band; BANDS],
+    source_signs: [i8; BANDS],
+    grain_signs: [i8; BANDS],
+    analysis_signs: [i8; BANDS],
     envelopes: BandEnvelopes,
     levels: [f32; BANDS],
     gates: [bool; BANDS],
     gains: [f32; BANDS],
     feedback: [[f32; BANDS]; MAX_OSCILLATORS],
+    taps: [[f32; BANDS]; MAX_OSCILLATORS],
+    wraps: [[bool; BANDS]; MAX_OSCILLATORS],
+    needed: [bool; MAX_OSCILLATORS],
+    external_taps: [bool; 2],
     layers: [Layer; MAX_OSCILLATORS],
     tables: Box<radias_oscillator::Tables>,
     waveform: Box<WaveformTable>,
@@ -214,11 +229,20 @@ impl Resynth {
             oversample: if sr < 96000 { 2 } else { 1 },
             frequencies,
             bands: frequencies.map(|hz| Band::new(hz, sr as f32)),
+            source_bands: frequencies.map(|hz| Band::new(hz, sr as f32)),
+            grain_bands: frequencies.map(|hz| Band::new(hz, sr as f32)),
+            source_signs: [0; BANDS],
+            grain_signs: [0; BANDS],
+            analysis_signs: [0; BANDS],
             envelopes: Default::default(),
             levels: [0.0; BANDS],
             gates: [false; BANDS],
             gains: [0.0; BANDS],
             feedback: [[0.0; BANDS]; MAX_OSCILLATORS],
+            taps: [[0.0; BANDS]; MAX_OSCILLATORS],
+            wraps: [[false; BANDS]; MAX_OSCILLATORS],
+            needed: [false; MAX_OSCILLATORS],
+            external_taps: [false; 2],
             layers: std::array::from_fn(|_| Layer::default()),
             tables: Box::new(radias_oscillator::Tables::new()),
             waveform: Box::new(radias_oscillator::waveform_table()),
@@ -237,7 +261,12 @@ impl Resynth {
         }
     }
     pub fn clear(&mut self) {
-        for band in &mut self.bands {
+        for band in self
+            .bands
+            .iter_mut()
+            .chain(&mut self.source_bands)
+            .chain(&mut self.grain_bands)
+        {
             band.z = [[0.0; 2]; 2];
         }
         self.envelopes.levels.fill(0);
@@ -245,12 +274,18 @@ impl Resynth {
         self.gains.fill(0.0);
         self.gates.fill(false);
         self.feedback.fill([0.0; BANDS]);
+        self.taps.fill([0.0; BANDS]);
+        self.wraps.fill([false; BANDS]);
+        self.source_signs.fill(0);
+        self.grain_signs.fill(0);
+        self.analysis_signs.fill(0);
         for filter in &mut self.lowpass {
             filter.z = [[0.0; 2]; 2];
         }
         for layer in &mut self.layers {
             for carrier in &mut layer.carriers {
                 carrier.pcm_phase = 0.0;
+                carrier.phase_initialized = false;
             }
         }
     }
@@ -284,6 +319,58 @@ impl Resynth {
             .filter(|o| o.enabled)
             .count()
             .max(1) as f32;
+        self.needed = std::array::from_fn(|i| {
+            i < settings.count as usize
+                && settings.oscillators[i].enabled
+                && (settings.oscillators[i].level > 0.0 || self.layers[i].gain > 0.0)
+        });
+        // Keep an unmixed source running when another oscillator uses its
+        // signal or phase. Fixed-size closure also handles forward links/cycles.
+        for _ in 0..MAX_OSCILLATORS {
+            for i in 0..MAX_OSCILLATORS {
+                if !self.needed[i] {
+                    continue;
+                }
+                let o = settings.oscillators[i];
+                let references = [
+                    if o.interaction_source >= 2
+                        && o.interaction != crate::resynth::Interaction::Off
+                    {
+                        Some(o.interaction_source as usize - 2)
+                    } else {
+                        None
+                    },
+                    if o.model == Model::Radias && o.mode == Mode::Cross && o.cross_source > 0 {
+                        Some(o.cross_source as usize - 1)
+                    } else {
+                        None
+                    },
+                ];
+                for reference in references.into_iter().flatten() {
+                    if reference < settings.count as usize
+                        && settings.oscillators[reference].enabled
+                    {
+                        self.needed[reference] = true;
+                    }
+                }
+            }
+        }
+        self.external_taps = [false; 2];
+        for (i, o) in settings.oscillators.iter().enumerate() {
+            if !self.needed[i] {
+                continue;
+            }
+            if o.interaction != crate::resynth::Interaction::Off && o.interaction_source < 2 {
+                self.external_taps[o.interaction_source as usize] = true;
+            }
+            if o.model == Model::Radias && o.mode == Mode::Cross && o.cross_source == 0 {
+                match o.cross_input {
+                    CrossInput::Source => self.external_taps[0] = true,
+                    CrossInput::Grains => self.external_taps[1] = true,
+                    _ => {}
+                }
+            }
+        }
         for (i, layer) in self.layers.iter_mut().enumerate() {
             let o = settings.oscillators[i];
             layer.target_gain = if i < settings.count as usize && o.enabled {
@@ -292,6 +379,14 @@ impl Resynth {
                 0.0
             };
             if !self.configured || layer.settings != o || source_changed {
+                if layer.settings.model != o.model
+                    || layer.settings.waveform != o.waveform
+                    || layer.settings.mode != o.mode
+                {
+                    for carrier in &mut layer.carriers {
+                        carrier.phase_initialized = false;
+                    }
+                }
                 let selection = if o.waveform.analog() {
                     o.waveform.code() + o.mode.code() * 16
                 } else {
@@ -305,6 +400,10 @@ impl Resynth {
                         ..Default::default()
                     },
                 };
+                layer.fold_controls = [
+                    (o.control1 as f64 * 127.0).round() / 127.0,
+                    (((o.control2 as f64 * 127.0).round() - 64.0) / 64.0).clamp(-1.0, 1.0),
+                ];
                 layer.pan = [
                     (o.pan * PI * 0.5).cos() * std::f32::consts::SQRT_2,
                     (o.pan * PI * 0.5).sin() * std::f32::consts::SQRT_2,
@@ -360,6 +459,20 @@ impl Resynth {
         sample: &SampleBuffer,
         range: &Range<usize>,
     ) -> Stereo {
+        self.process_with_grains(dry, source, dry, lfo, voice_scale, sample, range)
+    }
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub fn process_with_grains(
+        &mut self,
+        dry: Stereo,
+        source: Stereo,
+        grains: Stereo,
+        lfo: f32,
+        voice_scale: f32,
+        sample: &SampleBuffer,
+        range: &Range<usize>,
+    ) -> Stereo {
         if !self.active() {
             return dry;
         }
@@ -374,9 +487,26 @@ impl Resynth {
         let input = if self.settings.input == Input::Source {
             source
         } else {
-            dry
+            grains
         };
         let analyzed: [Stereo; BANDS] = std::array::from_fn(|i| self.bands[i].next(input));
+        let source_bands = if self.settings.input == Input::Source {
+            analyzed
+        } else if self.external_taps[0] {
+            std::array::from_fn(|i| self.source_bands[i].next(source))
+        } else {
+            [[0.0; 2]; BANDS]
+        };
+        let grain_bands = if self.settings.input == Input::Grains {
+            analyzed
+        } else if self.external_taps[1] {
+            std::array::from_fn(|i| self.grain_bands[i].next(grains))
+        } else {
+            [[0.0; 2]; BANDS]
+        };
+        let source_wraps = zero_crossings(&source_bands, &mut self.source_signs);
+        let grain_wraps = zero_crossings(&grain_bands, &mut self.grain_signs);
+        let analysis_wraps = zero_crossings(&analyzed, &mut self.analysis_signs);
         let excitation = analyzed.map(|x| {
             (x[0].abs().max(x[1].abs()) as f64 * self.sensitivity as f64 * i32::MAX as f64)
                 .clamp(0.0, i32::MAX as f64) as i32
@@ -411,8 +541,10 @@ impl Resynth {
             };
             for layer_id in 0..MAX_OSCILLATORS {
                 let layer = &mut self.layers[layer_id];
-                if layer.target_gain == 0.0 && layer.gain == 0.0 {
+                if !self.needed[layer_id] && layer.target_gain == 0.0 && layer.gain == 0.0 {
                     self.feedback[layer_id].fill(0.0);
+                    self.taps[layer_id].fill(0.0);
+                    self.wraps[layer_id].fill(false);
                     continue;
                 }
                 let o = layer.settings;
@@ -430,31 +562,62 @@ impl Resynth {
                     let carrier = &mut layer.carriers[band];
                     if !carrier.audible && o.waveform != Waveform::AudioIn {
                         self.feedback[layer_id][band] = 0.0;
+                        self.taps[layer_id][band] = 0.0;
+                        self.wraps[layer_id][band] = false;
                         continue;
                     }
+                    let (reference, wrap) = match o.interaction_source {
+                        0 => (mono(source_bands[band]), sub == 0 && source_wraps[band]),
+                        1 => (mono(grain_bands[band]), sub == 0 && grain_wraps[band]),
+                        id => (
+                            self.taps[id as usize - 2][band],
+                            self.wraps[id as usize - 2][band],
+                        ),
+                    };
+                    let sync = o.interaction.sync() && wrap;
                     let modulator = if o.cross_source == 0 {
-                        (analyzed_band[0] + analyzed_band[1]) * 0.5
+                        mono(match o.cross_input {
+                            CrossInput::Analysis => *analyzed_band,
+                            CrossInput::Source => source_bands[band],
+                            CrossInput::Grains => grain_bands[band],
+                        })
                     } else {
                         self.feedback[o.cross_source as usize - 1][band]
                     };
-                    let stereo = match o.waveform {
-                        Waveform::AudioIn => {
-                            analyzed_band.map(|x| x * self.sensitivity * self.gains[band])
+                    let (mut raw, wrapped) = match o.waveform {
+                        Waveform::AudioIn => (
+                            analyzed_band.map(|x| x * self.sensitivity),
+                            sub == 0 && analysis_wraps[band],
+                        ),
+                        Waveform::Pcm => {
+                            if sync {
+                                carrier.pcm_phase = 0.0;
+                            }
+                            let pcm_loop = pcm_loop.as_ref().unwrap();
+                            let wrapped = carrier.pcm_phase + carrier.pcm_rate >= pcm_loop.length;
+                            (pcm_loop.read(carrier, sample, range), wrapped)
                         }
-                        Waveform::Pcm => pcm_loop
-                            .as_ref()
-                            .unwrap()
-                            .read(carrier, sample, range)
-                            .map(|x| x * self.gains[band]),
+                        _ if o.model == Model::Wavefolder => {
+                            let phase = carrier.folder.phase;
+                            let x = carrier.folder.next(
+                                carrier.increment.0 as f64 / 4294967296.0,
+                                o.waveform,
+                                o.fold_shape,
+                                layer.fold_controls,
+                                sync,
+                            );
+                            ([x; 2], carrier.folder.phase < phase)
+                        }
                         _ => {
                             let modulator = Sample(
                                 (modulator as f64 * i32::MAX as f64)
                                     .clamp(i32::MIN as f64, i32::MAX as f64)
                                     as i32,
                             );
+                            let phase = carrier.oscillator.phase;
                             let x = carrier
                                 .controller
-                                .next(
+                                .next_with_sync(
                                     &mut carrier.oscillator,
                                     layer.program,
                                     carrier.increment,
@@ -466,12 +629,28 @@ impl Resynth {
                                     &self.waveform,
                                     frame,
                                     layer_id * BANDS + band,
+                                    sync,
                                 )
                                 .0 as f32
                                 / 1073741824.0;
-                            [x * self.gains[band]; 2]
+                            let wrapped =
+                                radias_synth_domain::secondary_control::SecondaryModulation {
+                                    ring: false,
+                                    sync: true,
+                                }
+                                .wraps(carrier.oscillator.phase, phase);
+                            ([x; 2], wrapped)
                         }
                     };
+                    self.wraps[layer_id][band] = carrier.phase_initialized && (sync || wrapped);
+                    carrier.phase_initialized = true;
+                    if o.interaction.ring() {
+                        raw = raw.map(|x| x * reference.clamp(-1.0, 1.0));
+                    }
+                    // Interaction taps precede envelope, oscillator level and
+                    // pan. Ordered current/previous taps permit feedback links.
+                    self.taps[layer_id][band] = mono(raw);
+                    let stereo = raw.map(|x| x * self.gains[band]);
                     self.feedback[layer_id][band] = (stereo[0] + stereo[1]) * 0.5;
                     for c in 0..2 {
                         wet[c] += stereo[c] * layer.gain * layer.pan[c] * 0.6;
@@ -499,6 +678,22 @@ impl Resynth {
     }
 }
 
+fn mono(x: Stereo) -> f32 {
+    (x[0] + x[1]) * 0.5
+}
+fn zero_crossings(input: &[Stereo; BANDS], signs: &mut [i8; BANDS]) -> [bool; BANDS] {
+    std::array::from_fn(|i| {
+        let sample = mono(input[i]);
+        let previous = signs[i];
+        if sample > 1e-5 {
+            signs[i] = 1;
+        } else if sample < -1e-5 {
+            signs[i] = -1;
+        }
+        previous == -1 && signs[i] == 1
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -520,6 +715,128 @@ mod tests {
         settings.oscillators[0].control1 = 0.37;
         settings.oscillators[0].control2 = 0.41;
         (Resynth::new(sr), sample, settings)
+    }
+    fn render_interaction(
+        sr: u32,
+        model: Model,
+        interaction: crate::resynth::Interaction,
+        reference: u8,
+    ) -> Vec<f32> {
+        let (mut engine, sample, mut settings) = setup(sr);
+        settings.count = 4;
+        for (i, o) in settings.oscillators.iter_mut().enumerate() {
+            o.model = model;
+            o.level = if i == 0 { 0.7 } else { 0.0 };
+            o.transpose = [0.0, 7.0, -12.0, 12.0][i];
+            o.control1 = 0.4;
+            o.control2 = 0.5;
+        }
+        settings.oscillators[0].interaction = interaction;
+        settings.oscillators[0].interaction_source = reference;
+        engine.configure(settings, &sample, 60.0);
+        (0..6000)
+            .map(|n| {
+                engine.process_with_grains(
+                    [0.0; 2],
+                    tone(n, 211.0, sr),
+                    tone(n, 733.0, sr),
+                    0.0,
+                    1.0,
+                    &sample,
+                    &(0..sample.len()),
+                )[0]
+            })
+            .collect()
+    }
+    #[test]
+    fn ring_and_sync_use_separate_source_grain_and_unmixed_oscillator_taps() {
+        use crate::resynth::Interaction;
+        let difference = |a: &[f32], b: &[f32]| {
+            a.iter()
+                .zip(b)
+                .skip(1000)
+                .map(|(a, b)| (a - b).powi(2))
+                .sum::<f32>()
+        };
+        for sr in [44100, 48000, 96000] {
+            for model in [Model::Radias, Model::Wavefolder] {
+                let plain = render_interaction(sr, model, Interaction::Off, 0);
+                for interaction in [Interaction::Ring, Interaction::Sync, Interaction::RingSync] {
+                    let source = render_interaction(sr, model, interaction, 0);
+                    let grains = render_interaction(sr, model, interaction, 1);
+                    assert!(source.iter().chain(&grains).all(|x| x.is_finite()));
+                    assert!(
+                        difference(&plain, &source) > 1e-6,
+                        "inactive {model:?}/{interaction:?}/{sr}"
+                    );
+                    assert!(
+                        difference(&source, &grains) > 1e-6,
+                        "identical external taps {model:?}/{interaction:?}/{sr}"
+                    );
+                }
+            }
+        }
+        for model in [Model::Radias, Model::Wavefolder] {
+            for interaction in [Interaction::Ring, Interaction::Sync, Interaction::RingSync] {
+                let plain = render_interaction(48000, model, Interaction::Off, 0);
+                let references: Vec<_> = (3..=5)
+                    .map(|reference| render_interaction(48000, model, interaction, reference))
+                    .collect();
+                for reference in &references {
+                    assert!(
+                        reference.iter().any(|x| x.abs() > 1e-5),
+                        "zero-level source stopped its carrier"
+                    );
+                    assert!(difference(&plain, reference) > 1e-6);
+                }
+                assert!(difference(&references[0], &references[1]) > 1e-6);
+                assert!(difference(&references[1], &references[2]) > 1e-6);
+            }
+        }
+    }
+    #[test]
+    fn all_osc4_shapes_and_both_controls_reach_every_layer() {
+        use crate::resynth::FoldShape;
+        for sr in [44100, 48000, 96000] {
+            for shape in FoldShape::ALL {
+                let (mut engine, sample, mut settings) = setup(sr);
+                settings.count = 4;
+                for (i, o) in settings.oscillators.iter_mut().enumerate() {
+                    o.model = Model::Wavefolder;
+                    o.waveform = Waveform::ALL[i];
+                    o.fold_shape = shape;
+                    o.control1 = 0.2;
+                    o.control2 = 0.5;
+                }
+                engine.configure(settings, &sample, 60.0);
+                let mut energy = 0.0;
+                for n in 0..4096 {
+                    let out = engine.process(
+                        [0.0; 2],
+                        tone(n, engine.frequencies[7], sr),
+                        0.0,
+                        1.0,
+                        &sample,
+                        &(0..sample.len()),
+                    );
+                    assert!(out.iter().all(|x| x.is_finite() && x.abs() < 8.0));
+                    energy += out[0] * out[0];
+                }
+                assert!(energy > 1e-7, "silent OSC4 {shape:?}/{sr}");
+                for i in 0..4 {
+                    let phase = engine.layers[i].carriers[7].folder.phase;
+                    settings.oscillators[i].control1 = 0.9;
+                    settings.oscillators[i].control2 = 0.1;
+                    engine.configure(settings, &sample, 60.0);
+                    assert_eq!(
+                        engine.layers[i].carriers[7].folder.phase, phase,
+                        "control edit reset OSC4"
+                    );
+                    assert!(engine.layers[i].fold_controls[0] > 0.89);
+                    assert!(engine.layers[i].fold_controls[1] < -0.7);
+                }
+            }
+        }
     }
     #[test]
     fn all_radias_types_and_modes_render_at_host_rates() {

@@ -43,6 +43,10 @@
   [91cae3f57a868a80d32a2e6ebb113938efd65025](https://github.com/fushugaku/Rustias/tree/91cae3f57a868a80d32a2e6ebb113938efd65025).
   The OSC1 adapter and analytic table formulas are adapted from
   `radias-synth-infrastructure/src/circuit/primary.rs` and `standalone_tables.rs`.
+  OSC 4's five Wavefolder transfers, f64 four-step render, smoothing and DC
+  blocker are adapted from `circuit/expanded.rs` into
+  `rust/src/dsp/radias_wavefolder.rs`. SAD PET supplies independent per-layer
+  Ring/Sync routing; this is not a measured multi/poly hardware parity claim.
   The shared fixed-point kernels, control transfers, phase initialization,
   feedback and four-frame coefficient slew are retained. SAD PET supplies its
   own host-rate 16-band analyzer, stereo adapter and oversampling/decimation.

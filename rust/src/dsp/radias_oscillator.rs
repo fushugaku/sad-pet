@@ -63,26 +63,6 @@ impl Default for Controller {
 }
 impl Controller {
     #[allow(clippy::too_many_arguments)]
-    pub fn next(
-        &mut self,
-        oscillator: &mut PrimaryOscillator,
-        program: PrimaryProgram,
-        increment: PhaseIncrement,
-        code: PitchCode,
-        lfo: i16,
-        modulation: [i16; 2],
-        modulator: Sample,
-        tables: &Tables,
-        waveform: &WaveformTable,
-        frame: u64,
-        id: usize,
-    ) -> Sample {
-        self.next_with_sync(
-            oscillator, program, increment, code, lfo, modulation, modulator, tables, waveform,
-            frame, id, false,
-        )
-    }
-    #[allow(clippy::too_many_arguments)]
     pub fn next_with_sync(
         &mut self,
         oscillator: &mut PrimaryOscillator,

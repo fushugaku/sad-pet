@@ -33,7 +33,11 @@ The desktop version uses the system audio output and a local browser panel.
   the background with the original FIR antialiasing and smooth source changes.
 - **Resynth**: 16 analysis bands drive up to four independent Rustias oscillator
   layers, with Saw, Pulse, Triangle, Sine, Formant, Noise, Audio In and sample-based
-  PCM. Analog waves support Wave, Cross, Unison and VPM. Each layer has its own
+  PCM. Each slot can also select Rustias OSC 4's Wavefolder, including Triangle,
+  Sine, Soft, Asymmetric and Rectify shapers with depth/bias controls. Analog
+  RADIAS waves support Wave, Cross, Unison and VPM. Ring, Sync and Ring+Sync
+  independently select Source, Grains or another oscillator, before level/pan.
+  Cross also has separate Source/Grains/oscillator routing. Each layer has its own
   controls, tuning, level and pan; the shared detector has sensitivity, attack,
   release and threshold. Choose Source or the Grain Engine output as excitation.
 - Two independent reorderable chains of up to 12 effects each, before and after
@@ -183,7 +187,10 @@ SAD PET began as a desktop reconstruction informed by analysis of EVIL PET 1.63.
 It adds its own performance modes, modulation, filters, effects and file workflows.
 Resynth uses the shared Rustias fixed-point OSC1 kernels and control compilers
 at [91cae3f](https://github.com/fushugaku/Rustias/tree/91cae3f57a868a80d32a2e6ebb113938efd65025), with analytic firmware-free tables. Its host-rate
-16-band analyzer is a SAD PET addition. PCM reads the selected SAD PET sample;
+16-band analyzer is a SAD PET addition. The independent OSC 4 Wavefolder uses
+Rustias's f64 four-step folding, smoothing and DC blocking from
+`circuit/expanded.rs`; its five models are available in every Resynth slot.
+PCM reads the selected SAD PET sample;
 Audio In uses the analyzed input bands. Hardware PCM ROM and firmware are not
 included. The same Rust implementation compiles natively and to WebAssembly.
 It does not claim bit-identical audio or full hardware firmware compatibility.

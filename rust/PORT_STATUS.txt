@@ -254,6 +254,13 @@
   как закреплённые зависимости: оригинальные fixed-point ядра Wave/Cross/
   Unison/VPM, Formant/Noise, их control transfers, feedback и four-frame slew.
   Адаптер и аналитические таблицы основаны на firmware-free Rustias profile.
+  В каждом слоте также доступен OSC 4 Wavefolder из circuit/expanded.rs:
+  Triangle/Sine/Soft/Asymmetric/Rectify, f64, четыре внутренних шага,
+  smoothing и DC blocker. CTRL 1/2 сохраняют функции Fold Depth и Bias.
+  Ring/Sync независимо выбирает Source, Grains или pre-level/pan oscillator
+  tap. Sync использует phase wrap осциллятора или гистерезисный zero crossing
+  отдельной полосы Source/Grains. Grains берётся до Dry/Wet; Cross отдельно
+  выбирает Source/Grains/осциллятор. Диапазоны прежних host ID сохранены.
   PCM читает выбранный сэмпл SAD PET, Audio In — полосы входного аудио.
   Никаких ROM-банков, firmware или записей аппаратного RADIAS не добавлено.
   Это собственный Resynth, а не полный перенос аппаратного вокодера/ROM.

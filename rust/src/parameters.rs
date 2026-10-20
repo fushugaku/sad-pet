@@ -143,7 +143,12 @@ impl Spec {
                     6 => o.fine,
                     7 => o.level,
                     8 => o.pan,
-                    _ => o.cross_source as f32,
+                    9 => o.cross_source as f32,
+                    10 => o.model as u8 as f32,
+                    11 => o.fold_shape as u8 as f32,
+                    12 => o.interaction as u8 as f32,
+                    13 => o.interaction_source as f32,
+                    _ => o.cross_input as u8 as f32,
                 }
             }
             Target::Core { get, .. } => get(preset),
@@ -207,7 +212,18 @@ impl Spec {
                     6 => o.fine = value,
                     7 => o.level = value,
                     8 => o.pan = value,
-                    _ => o.cross_source = value.round() as u8,
+                    9 => o.cross_source = value.round() as u8,
+                    10 => {
+                        o.model = if value < 0.5 {
+                            crate::resynth::Model::Radias
+                        } else {
+                            crate::resynth::Model::Wavefolder
+                        }
+                    }
+                    11 => o.fold_shape = crate::resynth::FoldShape::ALL[value.round() as usize],
+                    12 => o.interaction = crate::resynth::Interaction::ALL[value.round() as usize],
+                    13 => o.interaction_source = value.round() as u8,
+                    _ => o.cross_input = crate::resynth::CrossInput::ALL[value.round() as usize],
                 }
             }
             Target::Core { set, .. } => set(preset, value),
@@ -547,6 +563,30 @@ pub fn specs() -> &'static [Spec] {
                 result.push(spec);
             }
         }
+        // Never insert fields into the released per-oscillator stride above.
+        for i in 0..crate::resynth::MAX_OSCILLATORS {
+            for (offset, (key, name, max)) in [
+                ("model", "model", 1.0),
+                ("fold_shape", "fold shape", 4.0),
+                ("interaction", "Ring/Sync", 3.0),
+                ("interaction_source", "Ring/Sync source", 5.0),
+                ("cross_input", "Cross input", 2.0),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let mut spec = Spec {
+                    id: format!("resynth_osc{}_{}", i + 1, key),
+                    name: format!("Resynth OSC {} {name}", i + 1),
+                    min: 0.0,
+                    max,
+                    default: 0.0,
+                    target: Target::ResynthOsc(i, 10 + offset),
+                };
+                spec.default = spec.get(&preset);
+                result.push(spec);
+            }
+        }
         result
     })
 }
@@ -595,6 +635,60 @@ mod tests {
         assert_eq!(preset.resynth.count, 4);
         assert_eq!(preset.resynth.oscillators[3].cross_source, 4);
         assert_eq!(preset.resynth.oscillators[3].transpose, -48.0);
+    }
+    #[test]
+    fn osc4_interactions_append_after_all_released_resynth_ids() {
+        let start = 1477 + ColorParameter::ALL.len() + 8;
+        for i in 0..4 {
+            assert_eq!(
+                specs()[start + i * 10].id,
+                format!("resynth_osc{}_enabled", i + 1)
+            );
+            assert_eq!(
+                specs()[start + i * 10 + 9].id,
+                format!("resynth_osc{}_cross_source", i + 1)
+            );
+            assert_eq!(specs()[start + i * 10 + 9].max, 4.0);
+        }
+        let mut p = Preset::default();
+        let values = json!({"resynth_osc4_model":1,"resynth_osc4_fold_shape":4,"resynth_osc4_interaction":3,"resynth_osc4_interaction_source":5,"resynth_osc4_cross_input":2});
+        apply(&mut p, &parse(&values).unwrap());
+        p.sanitize();
+        let restored: Preset = serde_json::from_slice(&serde_json::to_vec(&p).unwrap()).unwrap();
+        assert_eq!(p.resynth, restored.resynth);
+        assert_eq!(
+            p.resynth.oscillators[3].model,
+            crate::resynth::Model::Wavefolder
+        );
+        assert_eq!(
+            p.resynth.oscillators[3].fold_shape,
+            crate::resynth::FoldShape::Rectify
+        );
+        assert_eq!(
+            p.resynth.oscillators[3].interaction,
+            crate::resynth::Interaction::RingSync
+        );
+        let mut old = serde_json::to_value(&p).unwrap();
+        for o in old["resynth"]["oscillators"].as_array_mut().unwrap() {
+            for key in [
+                "model",
+                "fold_shape",
+                "interaction",
+                "interaction_source",
+                "cross_input",
+            ] {
+                o.as_object_mut().unwrap().remove(key);
+            }
+        }
+        let old: Preset = serde_json::from_value(old).unwrap();
+        assert_eq!(
+            old.resynth.oscillators[3].model,
+            crate::resynth::Model::Radias
+        );
+        assert_eq!(
+            old.resynth.oscillators[3].interaction,
+            crate::resynth::Interaction::Off
+        );
     }
 
     #[test]

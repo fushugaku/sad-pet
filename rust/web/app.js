@@ -611,10 +611,32 @@ const RESYNTH_MODES = [
   ["unison", "Unison"],
   ["vpm", "VPM"],
 ];
+const RESYNTH_MODELS = [
+  ["radias", "RADIAS"],
+  ["wavefolder", "Wavefolder · OSC 4"],
+];
+const RESYNTH_FOLDS = [
+  ["triangle", "Triangle fold"],
+  ["sine", "Sine fold"],
+  ["soft", "Soft fold"],
+  ["asymmetric", "Asymmetric fold"],
+  ["rectify", "Rectify"],
+];
+const RESYNTH_INTERACTIONS = [
+  ["off", "Off"],
+  ["ring", "Ring"],
+  ["sync", "Sync"],
+  ["ring_sync", "Ring + Sync"],
+];
+const RESYNTH_CROSS_INPUTS = ["analysis", "source", "grains"];
 const resynthOscDefault = () => ({
   enabled: true,
+  model: "radias",
   waveform: "sine",
   mode: "wave",
+  fold_shape: "triangle",
+  interaction: "off",
+  interaction_source: 0,
   control1: 0,
   control2: 0,
   transpose: 0,
@@ -622,10 +644,11 @@ const resynthOscDefault = () => ({
   level: 0.7,
   pan: 0.5,
   cross_source: 0,
+  cross_input: "analysis",
 });
 let resynthSignature = "";
 function resynthSettings() {
-  return (preset.resynth ||= {
+  const r = (preset.resynth ||= {
     enabled: false,
     input: "source",
     mix: 0.8,
@@ -636,6 +659,10 @@ function resynthSettings() {
     count: 1,
     oscillators: Array.from({ length: 4 }, resynthOscDefault),
   });
+  for (let i = 0; i < 4; i++)
+    if (r.oscillators[i].model === undefined)
+      r.oscillators[i] = { ...resynthOscDefault(), ...r.oscillators[i] };
+  return r;
 }
 function editResynth(field, value, index = null) {
   const r = resynthSettings();
@@ -646,6 +673,13 @@ function editResynth(field, value, index = null) {
     numeric = RESYNTH_WAVES.findIndex(([key]) => key === value);
   if (field === "mode")
     numeric = RESYNTH_MODES.findIndex(([key]) => key === value);
+  if (field === "model")
+    numeric = RESYNTH_MODELS.findIndex(([key]) => key === value);
+  if (field === "fold_shape")
+    numeric = RESYNTH_FOLDS.findIndex(([key]) => key === value);
+  if (field === "interaction")
+    numeric = RESYNTH_INTERACTIONS.findIndex(([key]) => key === value);
+  if (field === "cross_input") numeric = RESYNTH_CROSS_INPUTS.indexOf(value);
   if (field === "input") numeric = value === "grains" ? 1 : 0;
   if (field === "enabled") numeric = Number(value);
   const key =
@@ -653,7 +687,15 @@ function editResynth(field, value, index = null) {
   controls.get(key)?.();
   scheduleParameter(key, numeric);
 }
-function resynthKnob(index, field, label, format = percent, min = 0, max = 1) {
+function resynthKnob(
+  index,
+  field,
+  label,
+  format = percent,
+  min = 0,
+  max = 1,
+  role = "",
+) {
   const key =
     index === null ? `resynth_${field}` : `resynth_osc${index + 1}_${field}`;
   const get = () =>
@@ -679,7 +721,7 @@ function resynthKnob(index, field, label, format = percent, min = 0, max = 1) {
       max,
       index === null
         ? `Resynth ${label.toLowerCase()}`
-        : `Resynth OSC ${index + 1} ${label.toLowerCase()}`,
+        : `Resynth OSC ${index + 1} ${label.toLowerCase()}${role ? " " + role.toLowerCase() : ""}`,
     ],
     index === null ? "resynth-controls" : `resynth-osc${index + 1}-knobs`,
     {
@@ -688,6 +730,14 @@ function resynthKnob(index, field, label, format = percent, min = 0, max = 1) {
       reset: () => defaults[field],
     },
   );
+  if (role) {
+    const hint = document.createElement("span");
+    hint.className = "resynth-control-role";
+    hint.textContent = role;
+    $(`resynth-osc${index + 1}-knobs`)
+      .lastElementChild.querySelector(".knob-label")
+      .append(hint);
+  }
 }
 function buildResynth() {
   resynthKnob(
@@ -742,7 +792,7 @@ function syncResynth() {
   $("resynth-spectrum").classList.toggle("inactive", !r.enabled);
   const signature = JSON.stringify([
     r.count,
-    r.oscillators.slice(0, r.count).map((o) => [o.waveform, o.mode]),
+    r.oscillators.slice(0, r.count).map((o) => [o.model, o.waveform, o.mode]),
   ]);
   if (signature !== resynthSignature) {
     resynthSignature = signature;
@@ -754,7 +804,8 @@ function syncResynth() {
     $("resynth-oscillators").replaceChildren();
     for (let i = 0; i < r.count; i++) {
       const o = r.oscillators[i],
-        analog = RESYNTH_WAVES.findIndex(([key]) => key === o.waveform) < 4;
+        analog = RESYNTH_WAVES.findIndex(([key]) => key === o.waveform) < 4,
+        folder = o.model === "wavefolder";
       const card = document.createElement("div");
       card.className = "color-card resynth-oscillator";
       card.dataset.oscillator = i + 1;
@@ -762,7 +813,9 @@ function syncResynth() {
       const wave = card.querySelector(".resynth-wave"),
         mode = card.querySelector(".resynth-mode");
       wave.replaceChildren(
-        ...RESYNTH_WAVES.map(([key, label]) => option(key, label)),
+        ...RESYNTH_WAVES.filter((_, index) => !folder || index < 4).map(
+          ([key, label]) => option(key, label),
+        ),
       );
       wave.value = o.waveform;
       wave.onchange = () => {
@@ -773,7 +826,7 @@ function syncResynth() {
         ...RESYNTH_MODES.map(([key, label]) => option(key, label)),
       );
       mode.value = o.mode;
-      mode.hidden = !analog;
+      mode.hidden = !analog || folder;
       mode.onchange = () => {
         editResynth("mode", mode.value, i);
         syncResynth();
@@ -788,7 +841,13 @@ function syncResynth() {
         const remaining = current.oscillators
           .slice(0, current.count)
           .filter((_, index) => index !== i);
-        remaining.push(resynthOscDefault());
+        for (const osc of remaining) {
+          if (osc.cross_source === i + 1) osc.cross_source = 0;
+          else if (osc.cross_source > i + 1) osc.cross_source--;
+          if (osc.interaction_source === i + 2) osc.interaction_source = 0;
+          else if (osc.interaction_source > i + 2) osc.interaction_source--;
+        }
+        while (remaining.length < 4) remaining.push(resynthOscDefault());
         remaining.forEach((osc, index) =>
           Object.entries(osc).forEach(([field, value]) =>
             editResynth(field, value, index),
@@ -797,30 +856,109 @@ function syncResynth() {
         editResynth("count", current.count - 1);
         syncResynth();
       };
-      if (analog && o.mode === "cross") {
-        const cross = document.createElement("select");
-        cross.setAttribute("aria-label", `Resynth OSC ${i + 1} cross source`);
-        cross.replaceChildren(
-          option(0, "Cross · Input"),
-          ...Array.from({ length: 4 }, (_, j) =>
-            option(j + 1, `Cross · OSC ${j + 1}`),
-          ),
+      const choice = (field, label, entries, value, change) => {
+        const wrapper = document.createElement("label");
+        wrapper.className = `resynth-choice resynth-choice-${field}`;
+        const caption = document.createElement("span");
+        caption.textContent = label;
+        const select = document.createElement("select");
+        select.className = `resynth-${field}`;
+        select.setAttribute(
+          "aria-label",
+          `Resynth OSC ${i + 1} ${label.toLowerCase()}`,
         );
-        cross.value = o.cross_source;
-        cross.onchange = () =>
-          editResynth("cross_source", Number(cross.value), i);
-        card.querySelector(".resynth-extra").append(cross);
-      }
-      if (o.waveform === "pcm") {
-        const source = document.createElement("span");
-        source.className = "muted";
-        source.textContent = "Selected sample";
-        card.querySelector(".resynth-extra").append(source);
+        select.replaceChildren(
+          ...entries.map(([key, name]) => option(key, name)),
+        );
+        select.value = String(value);
+        select.onchange = () => change(select.value);
+        wrapper.append(caption, select);
+        card.querySelector(".resynth-extra").append(wrapper);
+        return wrapper;
+      };
+      const model = choice(
+        "model",
+        "Generator",
+        RESYNTH_MODELS,
+        o.model,
+        (value) => {
+          editResynth("model", value, i);
+          if (value === "wavefolder") {
+            if (!analog) editResynth("waveform", "sine", i);
+            editResynth("control1", 32 / 127, i);
+            editResynth("control2", 64 / 127, i);
+          }
+          syncResynth();
+        },
+      );
+      model.classList.toggle("resynth-choice-wide", !folder);
+      if (folder)
+        choice("fold_shape", "Shaper", RESYNTH_FOLDS, o.fold_shape, (value) =>
+          editResynth("fold_shape", value, i),
+        );
+      choice(
+        "interaction",
+        "Ring / Sync",
+        RESYNTH_INTERACTIONS.filter(
+          ([key]) => o.waveform !== "audio_in" || ["off", "ring"].includes(key),
+        ),
+        o.interaction,
+        (value) => editResynth("interaction", value, i),
+      );
+      const references = [
+        [0, "Source"],
+        [1, "Grains"],
+        ...Array.from({ length: r.count }, (_, j) => [
+          j + 2,
+          `OSC ${j + 1}`,
+        ]).filter(([id]) => id !== i + 2),
+      ];
+      if (!references.some(([id]) => id === o.interaction_source))
+        references.push([
+          o.interaction_source,
+          `OSC ${o.interaction_source - 1} · inactive`,
+        ]);
+      choice(
+        "interaction_source",
+        "Ring / Sync source",
+        references,
+        o.interaction_source,
+        (value) => editResynth("interaction_source", Number(value), i),
+      );
+      if (analog && !folder && o.mode === "cross") {
+        const references = [
+          ["analysis", "Analysis input"],
+          ["source", "Source"],
+          ["grains", "Grains"],
+          ...Array.from({ length: r.count }, (_, j) => [
+            `osc${j + 1}`,
+            `OSC ${j + 1}`,
+          ]),
+        ];
+        choice(
+          "cross-source",
+          "Cross source",
+          references,
+          o.cross_source ? `osc${o.cross_source}` : o.cross_input,
+          (value) => {
+            editResynth(
+              "cross_source",
+              value.startsWith("osc") ? Number(value.slice(3)) : 0,
+              i,
+            );
+            editResynth(
+              "cross_input",
+              value.startsWith("osc") ? "analysis" : value,
+              i,
+            );
+          },
+        ).classList.add("resynth-choice-wide");
       }
       $("resynth-oscillators").append(card);
       if (o.waveform !== "audio_in") {
-        const labels =
-          o.waveform === "pcm"
+        const labels = folder
+          ? ["FOLD DEPTH", "BIAS"]
+          : o.waveform === "pcm"
             ? ["START", "LOOP FADE"]
             : analog
               ? {
@@ -830,14 +968,27 @@ function syncResynth() {
                   vpm: ["DEPTH", "RATIO"],
                 }[o.mode]
               : ["CTRL 1", "CTRL 2"];
-        resynthKnob(i, "control1", labels[0]);
+        resynthKnob(
+          i,
+          "control1",
+          "CTRL 1",
+          percent,
+          0,
+          1,
+          labels[0] === "CTRL 1" ? "" : labels[0],
+        );
         resynthKnob(
           i,
           "control2",
-          labels[1],
-          analog && o.mode === "vpm"
-            ? (v) => `${Math.floor(Math.round(v * 127) / 4) + 1}:1`
-            : percent,
+          "CTRL 2",
+          folder
+            ? (v) => `${Math.round(((Math.round(v * 127) - 64) / 64) * 100)}%`
+            : analog && o.mode === "vpm"
+              ? (v) => `${Math.floor(Math.round(v * 127) / 4) + 1}:1`
+              : percent,
+          0,
+          1,
+          labels[1] === "CTRL 2" ? "" : labels[1],
         );
         resynthKnob(
           i,
@@ -870,8 +1021,17 @@ function syncResynth() {
     card
       .querySelector(".color-bypass")
       .setAttribute("aria-pressed", String(!o.enabled));
-    const cross = card.querySelector(".resynth-extra select");
-    if (cross) cross.value = o.cross_source;
+    for (const field of [
+      "model",
+      "fold_shape",
+      "interaction",
+      "interaction_source",
+    ])
+      if (card.querySelector(`.resynth-${field}`))
+        card.querySelector(`.resynth-${field}`).value = String(o[field]);
+    const cross = card.querySelector(".resynth-cross-source");
+    if (cross)
+      cross.value = o.cross_source ? `osc${o.cross_source}` : o.cross_input;
   }
   for (const [key, update] of controls)
     if (key.startsWith("resynth_")) update();

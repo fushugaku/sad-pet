@@ -1,5 +1,18 @@
 SAD PET instrument and SAD PET FX, with native Rust DSP and an embedded editor.
 
+**OSC 4 in every Resynth slot:** select **Generator → Wavefolder · OSC 4**, then
+Triangle, Sine, Soft, Asymmetric or Rectify. Both CTRL 1 (Fold Depth) and CTRL 2
+(Bias) are visible, alongside tuning, level and pan. The f64 four-step fold,
+smoothing and DC blocker use the Rustias OSC 4 model.
+
+Every layer now has independent **Ring / Sync** (Off, Ring, Sync, Ring + Sync)
+and a selectable **Source**, **Grains** or **OSC 1–4** reference. Oscillator taps
+precede level/pan, so an unmixed oscillator can drive another one. Cross also
+selects Source and Grains independently of the envelope detector. Grains uses
+the actual grain output before Dry/Wet. Source/grain sync uses band zero
+crossings; oscillator sync uses phase wraps. Existing automation indices and
+ranges are retained, and the new controls are appended and saved in projects.
+
 **Resynth** adds a 16-band audio-excited oscillator bank with up to four
 independent Rustias layers (64 carriers). It supports Saw, Pulse, Triangle, Sine,
 Formant, Noise, Audio In and PCM, plus Wave, Cross, Unison and VPM modes for
@@ -45,6 +58,12 @@ are supplied individually and in `SHA256SUMS.txt`.
 ---
 
 В обоих установщиках есть инструмент **SAD PET** и эффект **SAD PET FX**.
+В каждом слоте Resynth доступен **Generator → Wavefolder · OSC 4**: Triangle,
+Sine, Soft, Asymmetric и Rectify, с CTRL 1 (Fold Depth) и CTRL 2 (Bias).
+Добавлены Ring, Sync и Ring + Sync с независимым источником Source, Grains
+или OSC 1–4. Осциллятор с нулевым Level продолжает работать как источник связи.
+Cross отдельно выбирает Source/Grains/осциллятор; Grains берётся до Dry/Wet.
+Новые настройки сохраняются; индексы и диапазоны старой автоматизации сохранены.
 **Resynth**: 16 полос входа управляют огибающими до четырёх слоёв Rustias.
 Saw, Pulse, Triangle, Sine, Formant, Noise, Audio In и PCM; аналоговые волны
 поддерживают Wave, Cross, Unison и VPM. Отдельные настройки и строй каждого
