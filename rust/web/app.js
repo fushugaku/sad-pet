@@ -633,11 +633,11 @@ function buildFilters() {
       [`${prefix}_resonance`, "RESONANCE", percent],
       [`${prefix}_env_depth`, "ENV DEPTH", signedPercent, -1, 1],
       [`${prefix}_keytrack`, "KEYTRACK", percent],
+      [`${prefix}_drive`, "DRIVE", percent],
+      [`${prefix}_morph`, "MORPH", percent],
     ]) {
       const [key, label, format, min = 0, max = 1] = schema;
       createKnob(
-      [`${prefix}_drive`, "DRIVE", percent],
-      [`${prefix}_morph`, "MORPH", percent],
         [
           key,
           label,
@@ -672,9 +672,6 @@ function syncFilters() {
       ? `${model}:${p[type]}`
       : model;
     $(`${prefix}-env`).value = p[`${prefix}_env`];
-    controls.get(prefix)?.();
-  }
-}
     for (const [field, active] of [
       ["drive", model !== "legacy"],
       ["morph", ["radias", "sem", "multi_filter"].includes(model)],
@@ -698,6 +695,9 @@ function syncFilters() {
           sem: "LP → Notch → HP",
           multi_filter: "LP → BP → HP → Notch",
         }[model] ?? "";
+    controls.get(prefix)?.();
+  }
+}
 function syncAll() {
   syncColors();
   syncResynth();
@@ -1812,6 +1812,10 @@ function modulationGroups() {
         parameter("filter_keytrack", "Filter 1 keytrack"),
         parameter("filter2_env_depth", "Filter 2 ENV depth"),
         parameter("filter2_keytrack", "Filter 2 keytrack"),
+        parameter("filter_drive", "Filter 1 drive"),
+        parameter("filter_morph", "Filter 1 morph"),
+        parameter("filter2_drive", "Filter 2 drive"),
+        parameter("filter2_morph", "Filter 2 morph"),
       ],
     ],
   ];
@@ -1873,10 +1877,6 @@ function modulationGroups() {
       parameter("sample_tune_cents", "Sample tune · cents"),
       parameter("pitch_bend_range", "Pitch bend range"),
       parameter("min_grains", "Minimum grains"),
-        parameter("filter_drive", "Filter 1 drive"),
-        parameter("filter_morph", "Filter 1 morph"),
-        parameter("filter2_drive", "Filter 2 drive"),
-        parameter("filter2_morph", "Filter 2 morph"),
     ],
   ]);
   return groups;

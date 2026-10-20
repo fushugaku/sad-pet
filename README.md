@@ -208,13 +208,13 @@ Rustias's f64 four-step folding, smoothing and DC blocking from
 PCM reads the selected SAD PET sample;
 Audio In uses the analyzed input bands. Hardware PCM ROM and firmware are not
 included. The same Rust implementation compiles natively and to WebAssembly.
-It does not claim bit-identical audio or full hardware firmware compatibility.
-[Reconstruction notes](rust/PORT_STATUS.txt) and the [table manifest](rust/assets/manifest.json)
 Both filter slots also use Rustias's original fixed-point resonant/Comb kernels
 and its `circuit/filters.rs` expanded models at the same pinned revision.
 The f64 nonlinear kernels retain two oversampling passes and their transfer
 functions; the adapter extends coefficient preparation to host sample rates.
 These are the Rustias software models, not measured hardware replicas.
+It does not claim bit-identical audio or full hardware firmware compatibility.
+[Reconstruction notes](rust/PORT_STATUS.txt) and the [table manifest](rust/assets/manifest.json)
 describe which formulas and lookup tables came from the supplied image.
 Original firmware images and decompiler output are excluded from this repository.
 
