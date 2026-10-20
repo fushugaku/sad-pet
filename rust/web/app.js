@@ -365,10 +365,46 @@ async function toggleRecording() {
     syncRecording();
   }
 }
+const filterModels = [
+  ["legacy", "SAD PET"],
+  ["radias", "RADIAS"],
+  ["ladder_lp24", "Ladder LP24"],
+  ["ms20_lp12", "MS-20 LP12"],
+  ["ms20_hp12", "MS-20 HP12"],
+  ["pro_lp24", "Pro LP24"],
+  ["sem", "SEM"],
+  ["multi_filter", "Multi Filter"],
+  ["ladder_hp24", "Ladder HP24"],
+  ["ladder_bp24", "Ladder BP24"],
+  ["m_poly_lp24", "M/Poly LP24"],
+  ["linear_lp12", "Linear LP12"],
+  ["linear_lp24", "Linear LP24"],
+  ["linear_hp12", "Linear HP12"],
+  ["linear_hp24", "Linear HP24"],
+  ["linear_bp12", "Linear BP12"],
+  ["linear_bp24", "Linear BP24"],
+  ["linear_notch12", "Linear Notch12"],
+  ["linear_notch24", "Linear Notch24"],
+  ["radias2", "RADIAS Filter 2"],
+];
+const filterResponses = [
+  ["low_pass", "Low pass"],
+  ["band_pass", "Band pass"],
+  ["high_pass", "High pass"],
+  ["comb", "Comb"],
+];
+const filterChoices = {
+  filter_model: filterModels.map(([id]) => id),
+  filter2_model: filterModels.map(([id]) => id),
+  vcf_type: filterResponses.map(([id]) => id),
+  vcf2_type: filterResponses.map(([id]) => id),
+};
 function setParam(key, value) {
   preset.params[key] = value;
   syncControl(key);
   if (typeof value === "number") scheduleParameter(key, value);
+  else if (filterChoices[key])
+    scheduleParameter(key, filterChoices[key].indexOf(value));
   else if (key === "loop_one_bar") scheduleParameter(key, Number(value));
   else schedulePreset();
 }
@@ -408,7 +444,10 @@ function createKnob(
   binding = null,
 ) {
   const get = () => (binding ? binding.get() : preset.params[key]);
-  const set = (v) => (binding ? binding.set(v) : setParam(key, v));
+  const set = (v) => {
+    if (dial.getAttribute("aria-disabled") === "true") return;
+    return binding ? binding.set(v) : setParam(key, v);
+  };
   const box = document.createElement("div");
   box.className = "knob";
   box.innerHTML = `<div class="dial" role="slider" tabindex="0" aria-label="${label}" aria-valuemin="0" aria-valuemax="100"><svg viewBox="0 0 77 77" aria-hidden="true"><defs><radialGradient id="knob-face"><stop offset="0" stop-color="#414c3b"/><stop offset=".8" stop-color="#2d3629"/><stop offset="1" stop-color="#20291e"/></radialGradient></defs><circle class="track" cx="38.5" cy="38.5" r="25"/><circle class="arc" cx="38.5" cy="38.5" r="25"/><path class="modulation-range"/><circle class="face" cx="38.5" cy="38.5" r="19.5"/><line class="pointer" x1="38.5" y1="38.5" x2="38.5" y2="23.5"/><g class="modulation-live"><circle cx="38.5" cy="7.5" r="3.2"/></g></svg></div><div class="knob-label">${label}</div><output class="knob-value"></output><span class="knob-mod-range" aria-hidden="true"></span>`;
@@ -487,7 +526,7 @@ function createKnob(
   dial.addEventListener("focus", update);
   dial.addEventListener("blur", update);
   dial.addEventListener("pointerdown", (e) => {
-    if (!preset) return;
+    if (!preset || dial.getAttribute("aria-disabled") === "true") return;
     dial.focus();
     dial.setPointerCapture(e.pointerId);
     drag = { x: e.clientX, y: e.clientY, value: get() };
@@ -562,14 +601,31 @@ function buildFilters() {
     const card = document.createElement("div");
     card.className = "filter-card";
     card.id = `${prefix}-card`;
-    card.innerHTML = `<div class="filter-title"><strong>Filter ${number}</strong><select id="${prefix}-type" aria-label="Filter ${number} type"><option value="low_pass">Low pass</option><option value="band_pass">Band pass</option><option value="high_pass">High pass</option><option value="comb">Comb</option></select><select id="${prefix}-env" aria-label="Filter ${number} envelope"><option value="env1">ENV 1</option><option value="env2">ENV 2</option><option value="env3">ENV 3</option></select></div><div id="${prefix}-controls" class="knob-grid filter-controls"></div>`;
+    const responses = (model) =>
+      filterResponses
+        .map(
+          ([id, label]) =>
+            `<option value="${model}:${id}">${model === "radias2" ? "RADIAS 2 · " : ""}${label}</option>`,
+        )
+        .join("");
+    const models = filterModels
+      .slice(1, -1)
+      .map(([id, label]) => `<option value="${id}">${label}</option>`)
+      .join("");
+    card.innerHTML = `<div class="filter-title"><strong>Filter ${number}</strong><select id="${prefix}-type" aria-label="Filter ${number} model"><optgroup label="SAD PET">${responses("legacy")}</optgroup><optgroup label="Rustias">${models}</optgroup><optgroup label="RADIAS Filter 2">${responses("radias2")}</optgroup></select><select id="${prefix}-env" aria-label="Filter ${number} envelope"><option value="env1">ENV 1</option><option value="env2">ENV 2</option><option value="env3">ENV 3</option></select></div><div id="${prefix}-controls" class="knob-grid filter-controls"></div>`;
     $("filters").append(card);
     const type = i === 0 ? "vcf_type" : "vcf2_type";
-    $(`${prefix}-type`).onchange = (e) => setParam(type, e.target.value);
+    $(`${prefix}-type`).onchange = (e) => {
+      const [model, response] = e.target.value.split(":");
+      setParam(`${prefix}_model`, model);
+      if (response) setParam(type, response);
+    };
     $(`${prefix}-env`).onchange = (e) =>
       setParam(`${prefix}_env`, e.target.value);
     const cutoff = (v) => {
-      const comb = preset.params[type] === "comb";
+      const comb =
+        preset.params[`${prefix}_model`] !== "legacy" ||
+        preset.params[type] === "comb";
       return `${Math.round((comb ? 30 : 20) * (comb ? 200 : 1000) ** v).toLocaleString()} Hz`;
     };
     for (const schema of [
@@ -580,6 +636,8 @@ function buildFilters() {
     ]) {
       const [key, label, format, min = 0, max = 1] = schema;
       createKnob(
+      [`${prefix}_drive`, "DRIVE", percent],
+      [`${prefix}_morph`, "MORPH", percent],
         [
           key,
           label,
@@ -609,11 +667,37 @@ function syncFilters() {
     ["filter", "vcf_type"],
     ["filter2", "vcf2_type"],
   ]) {
-    $(`${prefix}-type`).value = p[type];
+    const model = p[`${prefix}_model`] ?? "legacy";
+    $(`${prefix}-type`).value = ["legacy", "radias2"].includes(model)
+      ? `${model}:${p[type]}`
+      : model;
     $(`${prefix}-env`).value = p[`${prefix}_env`];
     controls.get(prefix)?.();
   }
 }
+    for (const [field, active] of [
+      ["drive", model !== "legacy"],
+      ["morph", ["radias", "sem", "multi_filter"].includes(model)],
+    ]) {
+      const dial = document.querySelector(
+        `[data-control-key="${prefix}_${field}"]`,
+      );
+      if (dial) {
+        dial.closest(".knob").classList.toggle("filter-unused", !active);
+        dial.setAttribute("aria-disabled", String(!active));
+        dial.tabIndex = active ? 0 : -1;
+      }
+    }
+    const morph = document.querySelector(
+      `[data-control-key="${prefix}_morph"]`,
+    );
+    if (morph)
+      morph.closest(".knob").querySelector(".knob-label").title =
+        {
+          radias: "LP24 → LP12 → BP → HP → Thru",
+          sem: "LP → Notch → HP",
+          multi_filter: "LP → BP → HP → Notch",
+        }[model] ?? "";
 function syncAll() {
   syncColors();
   syncResynth();
@@ -1789,6 +1873,10 @@ function modulationGroups() {
       parameter("sample_tune_cents", "Sample tune · cents"),
       parameter("pitch_bend_range", "Pitch bend range"),
       parameter("min_grains", "Minimum grains"),
+        parameter("filter_drive", "Filter 1 drive"),
+        parameter("filter_morph", "Filter 1 morph"),
+        parameter("filter2_drive", "Filter 2 drive"),
+        parameter("filter2_morph", "Filter 2 morph"),
     ],
   ]);
   return groups;

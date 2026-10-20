@@ -6,6 +6,7 @@ pub mod delay;
 pub mod effects;
 pub mod filter;
 pub mod modulation;
+mod radias_filter;
 mod radias_oscillator;
 mod radias_wavefolder;
 pub mod radias_waveshaper;
@@ -141,6 +142,10 @@ impl Modulated {
                     P::FilterKeytrack => (&mut p.filter_keytrack, 0.0, 1.0, false),
                     P::Filter2EnvDepth => (&mut p.filter2_env_depth, -1.0, 1.0, false),
                     P::Filter2Keytrack => (&mut p.filter2_keytrack, 0.0, 1.0, false),
+                    P::FilterDrive => (&mut p.filter_drive, 0.0, 1.0, false),
+                    P::FilterMorph => (&mut p.filter_morph, 0.0, 1.0, false),
+                    P::Filter2Drive => (&mut p.filter2_drive, 0.0, 1.0, false),
+                    P::Filter2Morph => (&mut p.filter2_morph, 0.0, 1.0, false),
                     P::Tempo => (&mut p.bpm, 20.0, 300.0, false),
                     P::InputGain => (&mut p.in_gain, -20.0, 20.0, false),
                     P::OutputGain => (&mut p.out_gain, -12.0, 12.0, false),

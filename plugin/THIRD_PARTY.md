@@ -68,5 +68,15 @@
 This document records the added dependencies; it does not replace their license
 texts or the repository's existing source and sample notices.
 
+- **Rustias filters**, at the same `91cae3f` revision above, use the unchanged
+  `radias-synth-domain` Filter 1, Filter 2 and Comb fixed-point kernels.
+  `circuit/filters.rs` is adapted in `rust/src/dsp/radias_filter/models.rs`:
+  f64 arithmetic, nonlinear feedback, two oversampling passes and output
+  smoothing are retained. Host-rate prewarping and rate-keyed pure-coefficient
+  caches extend the original 48 kHz models. The firmware-free analytic tables
+  follow `standalone_tables.rs`. Upstream-generated reference vectors are
+  documented in `rust/tests/fixtures/rustias-filters.txt`.
+  These software models are not measured hardware replicas.
+
 - **Web binary telemetry** uses rmp-serde/rmp (MIT), recorded in Cargo.lock.
   They run only in the web build and are not linked into native plug-ins.

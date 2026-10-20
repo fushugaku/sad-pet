@@ -754,6 +754,34 @@ pub fn specs() -> &'static [Spec] {
                 result.push(spec);
             }
         }
+        // New filter controls append after every released host index.
+        core!(filter_drive, "Filter 1 drive", 0.0, 1.0);
+        core!(filter_morph, "Filter 1 morph", 0.0, 1.0);
+        core!(filter2_drive, "Filter 2 drive", 0.0, 1.0);
+        core!(filter2_morph, "Filter 2 morph", 0.0, 1.0);
+        macro_rules! choice {
+            ($field:ident, $name:literal, $kind:ident, $max:expr) => {
+                result.push(Spec {
+                    id: stringify!($field).into(),
+                    name: $name.into(),
+                    min: 0.0,
+                    max: $max,
+                    default: preset.params.$field as u8 as f32,
+                    target: Target::Core {
+                        get: |p| p.params.$field as u8 as f32,
+                        set: |p, v| p.params.$field = crate::preset::$kind::ALL[v.round() as usize],
+                        frame_get: |m| m.params.$field as u8 as f32,
+                        frame_set: |m, v| {
+                            m.params.$field = crate::preset::$kind::ALL[v.round() as usize]
+                        },
+                    },
+                });
+            };
+        }
+        choice!(filter_model, "Filter 1 model", FilterModel, 19.0);
+        choice!(filter2_model, "Filter 2 model", FilterModel, 19.0);
+        choice!(vcf_type, "Filter 1 response", FilterType, 3.0);
+        choice!(vcf2_type, "Filter 2 response", FilterType, 3.0);
         result
     })
 }

@@ -451,8 +451,21 @@ h2 {
   min-width: 108px;
   font-size: 11px;
 }
-.filter-controls {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+.filter-card .filter-controls {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+.filter-unused {
+  opacity: 0.35;
+}
+.filter-unused .dial {
+  cursor: default;
+  pointer-events: none;
+}
+@media (max-width: 1100px) {
+  .filter-card .filter-controls {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    row-gap: 14px;
+  }
 }
 #effect-controls {
   grid-template-columns: repeat(6, minmax(0, 1fr));

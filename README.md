@@ -36,6 +36,12 @@ The desktop version uses the system audio output and a local browser panel.
   no fixed cap; the instrument retains its eight-note audio polyphony.
 - Three LFOs with tempo sync up to 8 bars, three ADSR envelopes and eight modulation routes.
 - Two filters with single, serial and parallel routing, envelope depth and key tracking.
+- All **18 Rustias filter models** in either slot: RADIAS, Ladder LP/HP/BP24,
+  MS-20 LP/HP12, Pro LP24, SEM, Multi Filter, M/Poly LP24 and Linear LP/HP/BP/Notch
+  at 12/24 dB. Original RADIAS Filter 2 LP/BP/HP and Comb are also available.
+  Drive and model Morph support LFO/ENV/matrix, sequencer and DAW automation.
+  RADIAS Morph sweeps LP24 → LP12 → BP → HP → Thru; SEM and Multi have their
+  own response morphs. Existing SAD PET filters preserve old preset sounds.
 - A **Source FX** slot before the Grain Engine, with all existing effect types.
   Live audio is processed before grain capture; file selections are prepared in
   the background with the original FIR antialiasing and smooth source changes.
@@ -204,6 +210,11 @@ Audio In uses the analyzed input bands. Hardware PCM ROM and firmware are not
 included. The same Rust implementation compiles natively and to WebAssembly.
 It does not claim bit-identical audio or full hardware firmware compatibility.
 [Reconstruction notes](rust/PORT_STATUS.txt) and the [table manifest](rust/assets/manifest.json)
+Both filter slots also use Rustias's original fixed-point resonant/Comb kernels
+and its `circuit/filters.rs` expanded models at the same pinned revision.
+The f64 nonlinear kernels retain two oversampling passes and their transfer
+functions; the adapter extends coefficient preparation to host sample rates.
+These are the Rustias software models, not measured hardware replicas.
 describe which formulas and lookup tables came from the supplied image.
 Original firmware images and decompiler output are excluded from this repository.
 

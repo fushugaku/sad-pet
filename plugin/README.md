@@ -90,6 +90,18 @@ every slot, with Triangle, Sine, Soft, Asymmetric and Rectify shapers. Its CTRL 
 sets Fold Depth and CTRL 2 sets Bias, using Rustias OSC 4's f64 four-step folding,
 smoothing and DC blocker.
 
+Each **Filter 1 / Filter 2** model selector includes all 18 Rustias models:
+RADIAS, Ladder LP/HP/BP24, MS-20 LP/HP12, Pro LP24, SEM, Multi Filter,
+M/Poly LP24 and Linear LP/HP/BP/Notch at 12/24 dB. RADIAS Filter 2's LP/BP/HP
+and Comb are available in either slot too. **Drive** shapes the input;
+**Morph** selects RADIAS's LP24 → LP12 → BP → HP → Thru, SEM's LP → Notch → HP,
+or Multi Filter's LP → BP → HP → Notch. Controls unused by the selected model
+are dimmed. These are the actual Rustias software kernels, with host-rate
+coefficient preparation. Existing SAD PET filter choices retain their sound.
+Both slots retain ENV 1–3, signed depth, key tracking and Single/Serial/Parallel
+routing. Drive and Morph accept modulation, Neuropolis tracks and DAW automation.
+Numeric edits preserve filter history and existing host parameter indices.
+
 Each slot has independent **Ring / Sync** (Off, Ring, Sync, Ring + Sync) and
 **Ring / Sync source** (Source, Grains or another oscillator). Oscillator taps
 precede their level/pan and envelope, so a source at zero Level still drives the

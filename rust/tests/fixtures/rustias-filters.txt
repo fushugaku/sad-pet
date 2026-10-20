@@ -1,0 +1,18 @@
+Reference: fushugaku/Rustias 91cae3f57a868a80d32a2e6ebb113938efd65025
+File: crates/radias-synth-infrastructure/src/circuit/filters.rs
+
+rustias-filters-91cae3f.json was captured from the unmodified upstream Model,
+compiled directly with rustc --edition=2024 -O. Rows are model IDs 0..17.
+Each row contains output frames 127,255,...,4095 of the following run:
+
+Model::default(); seed = 0x51a3beef_u32
+Each frame i: seed = seed.wrapping_mul(1664525).wrapping_add(1013904223)
+input = seed as i32 as f64 / 2147483648.0 * (if i%37==0 {3.0} else {0.35})
+step = (i/256)%4
+Model::sample(input, model, [120.0,1800.0,9900.0,18000.0][step],
+    [0.0,0.25,0.99,1.0][step], [0.0,0.23,1.0,0.7][step],
+    [0.0,0.33,0.67,1.0][step])
+
+This exercises persistent history, nonlinear feedback, oversampling and live
+cutoff/resonance/drive/morph changes. Comparison uses a small f64 tolerance
+for platform libm differences. No firmware or measured hardware data included.

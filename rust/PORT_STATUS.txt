@@ -281,3 +281,19 @@
   Стабильные ID сохраняют playhead других дорожек. Все дорожки обрабатываются;
   окно телеметрии — 64 дорожки. Звуковая полифония остаётся 8 нот.
   Старые аккордовые паттерны мигрируют в независимые note-дорожки.
+
+Добавлено в движке 0.26 / плагинах 0.8
+  В обоих фильтрах доступны все 18 моделей Rustias at 91cae3f:
+  RADIAS, Ladder LP/HP/BP24, MS-20 LP/HP12, Pro LP24, SEM, Multi Filter,
+  M/Poly LP24 и Linear LP/HP/BP/Notch 12/24. Отдельно — RADIAS Filter 2
+  LP/BP/HP/Comb в любом слоте. Исходные fixed-point ядра Filter 1/2/Comb
+  подключены из pinned radias-synth-domain; f64-модели из circuit/filters.rs
+  сохраняют две oversampling-итерации и nonlinear feedback. Частотные
+  коэффициенты и сглаживание адаптированы к частоте хоста; при 48 kHz
+  expanded kernels совпадают с исходными в пределах f64 libm tolerance.
+  Drive/Morph, ENV, keytrack, LFO/матрица, Neuropolis и DAW automation.
+  Числовые правки сохраняют историю и не выделяют/освобождают память в DSP.
+  Индексы старых host-параметров и звучание старых SAD PET фильтров сохранены.
+  Это модели программного Rustias, а не утверждение о точной модели железа.
+  Прилагаются golden vectors, снятые с неизменённого Rustias; проверены
+  8/44.1/48/96/192 kHz, крайние режимы, stereo isolation, маршруты и WASM.

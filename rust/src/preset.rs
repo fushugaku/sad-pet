@@ -9,6 +9,61 @@ pub enum FilterType {
     HighPass,
     Comb,
 }
+impl FilterType {
+    pub const ALL: [Self; 4] = [Self::LowPass, Self::BandPass, Self::HighPass, Self::Comb];
+}
+
+/// Separate from the released four-value FilterType so old automation and
+/// presets keep their original SVF/Comb sound. Rustias model order is stable.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FilterModel {
+    #[default]
+    Legacy,
+    Radias,
+    LadderLp24,
+    Ms20Lp12,
+    Ms20Hp12,
+    ProLp24,
+    Sem,
+    MultiFilter,
+    LadderHp24,
+    LadderBp24,
+    MPolyLp24,
+    LinearLp12,
+    LinearLp24,
+    LinearHp12,
+    LinearHp24,
+    LinearBp12,
+    LinearBp24,
+    LinearNotch12,
+    LinearNotch24,
+    Radias2,
+}
+impl FilterModel {
+    pub const ALL: [Self; 20] = [
+        Self::Legacy,
+        Self::Radias,
+        Self::LadderLp24,
+        Self::Ms20Lp12,
+        Self::Ms20Hp12,
+        Self::ProLp24,
+        Self::Sem,
+        Self::MultiFilter,
+        Self::LadderHp24,
+        Self::LadderBp24,
+        Self::MPolyLp24,
+        Self::LinearLp12,
+        Self::LinearLp24,
+        Self::LinearHp12,
+        Self::LinearHp24,
+        Self::LinearBp12,
+        Self::LinearBp24,
+        Self::LinearNotch12,
+        Self::LinearNotch24,
+        Self::Radias2,
+    ];
+}
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -231,11 +286,17 @@ pub struct Params {
     pub mix: f32,
     pub filter: f32,
     pub filter_resonance: f32,
+    pub filter_model: FilterModel,
+    pub filter_drive: f32,
+    pub filter_morph: f32,
     pub filter_env_depth: f32,
     pub filter_keytrack: f32,
     pub filter_env: EnvSource,
     pub filter2: f32,
     pub filter2_resonance: f32,
+    pub filter2_model: FilterModel,
+    pub filter2_drive: f32,
+    pub filter2_morph: f32,
     pub filter2_env_depth: f32,
     pub filter2_keytrack: f32,
     pub filter2_env: EnvSource,
@@ -283,11 +344,17 @@ impl Default for Params {
             mix: 1.0,
             filter: 1.0,
             filter_resonance: 0.12,
+            filter_model: FilterModel::Legacy,
+            filter_drive: 0.0,
+            filter_morph: 0.0,
             filter_env_depth: 0.35,
             filter_keytrack: 0.0,
             filter_env: EnvSource::Env2,
             filter2: 1.0,
             filter2_resonance: 0.12,
+            filter2_model: FilterModel::Legacy,
+            filter2_drive: 0.0,
+            filter2_morph: 0.0,
             filter2_env_depth: 0.35,
             filter2_keytrack: 0.0,
             filter2_env: EnvSource::Env2,
@@ -346,9 +413,13 @@ impl Params {
             mix,
             filter,
             filter_resonance,
+            filter_drive,
+            filter_morph,
             filter_keytrack,
             filter2,
             filter2_resonance,
+            filter2_drive,
+            filter2_morph,
             filter2_keytrack,
             saturation,
             reverb,

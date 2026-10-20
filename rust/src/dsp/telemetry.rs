@@ -354,9 +354,13 @@ impl Engine {
             filter_resonance,
             filter_env_depth,
             filter_keytrack,
+            filter_drive,
+            filter_morph,
             filter2_resonance,
             filter2_env_depth,
             filter2_keytrack,
+            filter2_drive,
+            filter2_morph,
             mix,
             master_volume
         );

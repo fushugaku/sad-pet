@@ -65,6 +65,10 @@ pub enum Parameter {
     SampleTuneCents,
     PitchBendRange,
     MinGrains,
+    FilterDrive,
+    FilterMorph,
+    Filter2Drive,
+    Filter2Morph,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

@@ -759,7 +759,7 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "sad-pet"
-version = "0.25.1"
+version = "0.26.0"
 dependencies = [
  "cpal",
  "ctrlc",
@@ -777,7 +777,7 @@ dependencies = [
 
 [[package]]
 name = "sad-pet-plugin"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "base64",
  "flate2",
@@ -789,7 +789,7 @@ dependencies = [
 
 [[package]]
 name = "sad-pet-wasm"
-version = "0.25.1"
+version = "0.26.0"
 dependencies = [
  "rmp-serde",
  "sad-pet",
