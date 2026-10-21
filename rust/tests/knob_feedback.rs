@@ -303,3 +303,68 @@ fn reading_feedback_does_not_change_audio_presets_or_random_generators() {
         serde_json::to_value(&b.preset).unwrap()
     );
 }
+
+#[test]
+fn eight_modulator_feedback_is_current_for_imported_effects_in_both_racks() {
+    let mut p = Preset {
+        lfo_count: 8,
+        env_count: 8,
+        color_chain: vec![ColorSlot {
+            id: 41,
+            kind: Type::AlphaVerb,
+            ..ColorSlot::default()
+        }],
+        pre_color_chain: vec![ColorSlot {
+            id: 42,
+            kind: Type::SuperEcho,
+            ..ColorSlot::default()
+        }],
+        ..Preset::default()
+    };
+    p.color_chain[0].settings.alpha_verb_size = 0.5;
+    p.pre_color_chain[0].settings.super_echo_cutoff = 0.4;
+    p.lfos[7].destination = D::Color {
+        slot: 41,
+        parameter: C::AlphaVerbSize,
+    };
+    p.lfos[7].depth = 0.4;
+    p.envs[7] = Env {
+        attack: 0.0,
+        decay: 0.0,
+        sustain: 1.0,
+        destination: D::Color {
+            slot: 42,
+            parameter: C::SuperEchoCutoff,
+        },
+        depth: 0.3,
+        ..Env::default()
+    };
+    let mut e = Engine::new(8000, sample(), p);
+    e.midi(Message::NoteOn {
+        channel: 0,
+        note: 60,
+        velocity: 127,
+    });
+    let mut view = sad_pet::dsp::telemetry::RealtimeView::default();
+    let mut previous = f32::NAN;
+    for _ in 0..4 {
+        advance(&mut e, 1024);
+        e.realtime_view(&mut view);
+        let direct = e.knob_states();
+        let published = e.knob_states_from_view(&view);
+        for key in ["color:41:alpha_verb_size", "color:42:super_echo_cutoff"] {
+            let a = direct[key];
+            let b = published[key];
+            assert!(a.modulated && b.modulated);
+            close(a.current, b.current);
+            close(a.min, b.min);
+            close(a.max, b.max);
+        }
+        let size = published["color:41:alpha_verb_size"];
+        close(size.min, 0.3);
+        close(size.max, 0.7);
+        assert_ne!(size.current, previous);
+        previous = size.current;
+        close(published["color:42:super_echo_cutoff"].current, 0.7);
+    }
+}

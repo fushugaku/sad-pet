@@ -99,6 +99,9 @@ window.SadNeuropolis = class {
       "cv_ramp",
       "cv_gate",
       "velocity",
+      "destination1",
+      "destination2",
+      "destination3",
     ];
   }
   get boolFields() {
@@ -171,7 +174,7 @@ window.SadNeuropolis = class {
     const key = JSON.stringify([
       p.tracks
         .slice(this.page * 64, this.page * 64 + 64)
-        .map((t) => [t.id, t.name, t.target, t.config[3], t.config[8]]),
+        .map((t) => [t.id, t.name, t.target, t.destinations, t.config[3], t.config[8]]),
       this.selected,
       this.hooks.read().color_chain.map((s) => [s.id, s.kind]),
       this.hooks.read().pre_color_chain.map((s) => [s.id, s.kind]),
@@ -380,6 +383,32 @@ window.SadNeuropolis = class {
     }
     grid.append(labels);
   }
+  parameterOptions(select, prefix = "") {
+    const preset = this.hooks.read(), groups = new Map();
+    for (const spec of this.catalog.parameters) {
+      const fx = /^(pre_)?fx(\d+)_/.exec(spec.id);
+      if (fx) {
+        const slot = (fx[1] ? preset.pre_color_chain : preset.color_chain)[Number(fx[2]) - 1];
+        if (!slot || (this.hooks.fxParameters && !this.hooks.fxParameters(slot).includes(spec.id.slice(fx[0].length))))
+          continue;
+      }
+      if (spec.id.startsWith("drum") && !preset.drums) continue;
+      const family = fx
+        ? `${fx[1] ? "Pre-filter" : "Post-filter"} FX ${fx[2]}`
+        : spec.id.startsWith("resynth_") ? "Resynth"
+        : spec.id.startsWith("drum") ? "Drums"
+        : spec.id.startsWith("env") ? "Envelopes"
+        : spec.id.startsWith("lfo") ? "LFO"
+        : spec.id.startsWith("arp_") ? "Arpeggiator" : "Main & filters";
+      if (!groups.has(family)) {
+        const group = document.createElement("optgroup");
+        group.label = family;
+        groups.set(family, group);
+        select.append(group);
+      }
+      groups.get(family).append(this.option(`${prefix}${spec.id}`, spec.name));
+    }
+  }
   buildStages(editor, track) {
     const parameter = track.target.kind === "parameter",
       relative = track.target.kind === "oscillator",
@@ -426,6 +455,9 @@ window.SadNeuropolis = class {
       "Slide",
       "Chance %",
       "Velocity",
+      "Dest 1",
+      "Dest 2",
+      "Dest 3",
     ]);
     for (let i = 0; i < 16; i++) {
       const card = document.createElement("div");
@@ -526,6 +558,25 @@ window.SadNeuropolis = class {
       this.stepToggle(card, track, i, 5, "Slide");
       this.stepInput(card, track, i, 4, 0, 100, "probability");
       this.stepInput(card, track, i, 15, 1, 127, "velocity");
+      for (let destination = 0; destination < 3; destination++) {
+        const key = `destination${destination + 1}`;
+        const slot = document.createElement("div");
+        slot.className = "neuro-step-knob neuro-destination-knob";
+        this.knobs.push(this.hooks.knob(
+          [
+            `sequence_${track.id}_${i}_${key}`, "",
+            (v) => `${v > 0 ? "+" : ""}${Math.round(v * 100)}%`,
+            -1, 1, `Stage ${i + 1} destination ${destination + 1} amount`,
+          ], slot, {
+            register: false,
+            step: 0.01,
+            get: () => this.track(track.id).steps[i][key] ?? 0,
+            set: (v) => this.edit(track.id, i, 16 + destination, v),
+            reset: () => 0,
+          },
+        ));
+        card.append(slot);
+      }
       grid.append(card);
     }
     scroll.append(grid);
@@ -629,35 +680,7 @@ window.SadNeuropolis = class {
     ])
       group.append(this.option(value, label));
     target.append(group);
-    const preset = this.hooks.read(),
-      groups = new Map();
-    for (const spec of this.catalog.parameters) {
-      const fx = /^(pre_)?fx(\d+)_/.exec(spec.id);
-      if (fx) {
-        const slot = (fx[1] ? preset.pre_color_chain : preset.color_chain)[
-          Number(fx[2]) - 1
-        ];
-        if (!slot) continue;
-      }
-      const family = fx
-        ? `${fx[1] ? "Pre-filter" : "Post-filter"} FX ${fx[2]}`
-        : spec.id.startsWith("resynth_")
-          ? "Resynth"
-          : spec.id.startsWith("env")
-            ? "Envelopes"
-            : spec.id.startsWith("lfo")
-              ? "LFO"
-              : spec.id.startsWith("arp_")
-                ? "Arpeggiator"
-                : "Main & filters";
-      if (!groups.has(family)) {
-        const g = document.createElement("optgroup");
-        g.label = family;
-        groups.set(family, g);
-        target.append(g);
-      }
-      groups.get(family).append(this.option(`param:${spec.id}`, spec.name));
-    }
+    this.parameterOptions(target, "param:");
     target.value =
       track.target.kind === "oscillator"
         ? `osc:${track.target.index}`
@@ -775,6 +798,34 @@ window.SadNeuropolis = class {
         "checkbox",
       );
     editor.append(controls);
+    const destinations = document.createElement("div");
+    destinations.className = "neuro-destinations";
+    for (let i = 0; i < 3; i++) {
+      const label = document.createElement("label");
+      label.className = "neuro-control";
+      const title = document.createElement("span");
+      title.textContent = `DESTINATION ${i + 1}`;
+      const select = document.createElement("select");
+      select.setAttribute("aria-label", `Track destination ${i + 1}`);
+      select.append(this.option("", "Unassigned"));
+      this.parameterOptions(select);
+      const value = track.destinations?.[i] || "";
+      if (value && !Array.from(select.children).some((group) =>
+        Array.from(group.children).some((option) => option.value === value)))
+        select.append(this.option(value, `${value} · unavailable`));
+      select.value = value;
+      select.onchange = () => {
+        const current = this.track(track.id);
+        current.destinations ??= [null, null, null];
+        current.destinations[i] = select.value || null;
+        this.signature = "";
+        this.hooks.structure();
+        this.sync();
+      };
+      label.append(title, select);
+      destinations.append(label);
+    }
+    editor.append(destinations);
     this.buildStages(editor, track);
     const advanced = document.createElement("details");
     advanced.className = "neuro-advanced";

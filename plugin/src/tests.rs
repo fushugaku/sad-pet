@@ -79,6 +79,12 @@ fn neuropolis_tracks_follow_daw_transport_survive_project_recall_and_edit_withou
             };
             t.config[3] = if id % 2 == 0 { 2 } else { 1 };
             t.steps[1].pitch = 72;
+            t.destinations = [
+                Some("filter".into()),
+                Some("resynth_osc4_control1".into()),
+                Some("fx1_mix".into()),
+            ];
+            t.steps[7].destination2 = 0.13;
             t
         })
         .collect();
@@ -97,7 +103,8 @@ fn neuropolis_tracks_follow_daw_transport_survive_project_recall_and_edit_withou
     call(
         &mut control,
         "/api/sequencer/edit",
-        json!([{"track":1,"stage":7,"field":0,"value":79},{"track":2,"field":3,"value":65}]),
+        json!([{"track":1,"stage":7,"field":0,"value":79},{"track":2,"field":3,"value":65},
+            {"track":1,"stage":7,"field":16,"value":-0.23},{"track":2,"stage":7,"field":18,"value":0.14}]),
     );
     no_heap(|| {
         audio.begin(&values, 120.0, Some(8192.0 / 24000.0), true, 128);
@@ -131,6 +138,22 @@ fn neuropolis_tracks_follow_daw_transport_survive_project_recall_and_edit_withou
     restored.restore(&saved).unwrap();
     assert_eq!(restored.preset.sequencer.tracks.len(), 128);
     assert_eq!(restored.preset.sequencer.tracks[0].steps[7].pitch, 79);
+    assert_eq!(
+        restored.preset.sequencer.tracks[0].steps[7].destination1,
+        -0.23
+    );
+    assert_eq!(
+        restored.preset.sequencer.tracks[0].steps[7].destination2,
+        0.13
+    );
+    assert_eq!(
+        restored.preset.sequencer.tracks[1].steps[7].destination3,
+        0.14
+    );
+    assert_eq!(
+        restored.preset.sequencer.tracks[0].destinations[2].as_deref(),
+        Some("fx1_mix")
+    );
     let mut other = restored.prepare(48000);
     let restored_values = restored.values();
     no_heap(|| {

@@ -19,6 +19,7 @@ pub struct RadiasDelay {
     time_alpha: f64,
     initialized: bool,
     smooth: bool,
+    ratio_glide: bool,
     phase: f64,
     phase_step: f64,
     feedback: f32,
@@ -41,6 +42,7 @@ impl RadiasDelay {
             time_alpha: 1.0 - (-1.0 / (sample_rate as f64 * 0.01)).exp(),
             initialized: false,
             smooth: false,
+            ratio_glide: false,
             phase: 0.0,
             phase_step: 0.0,
             feedback: 0.0,
@@ -57,12 +59,18 @@ impl RadiasDelay {
         self.low_state = [0.0; 2];
         self.times = self.target_times;
         self.initialized = false;
+        self.ratio_glide = false;
     }
     pub fn configure(&mut self, slot: ColorSlot, bpm: f32) {
+        let lcr = slot.kind == SaturatorType::LcrDelay;
+        if lcr && self.settings.lcr_ratio != slot.settings.lcr_ratio {
+            self.ratio_glide = true;
+        } else if !lcr {
+            self.ratio_glide = false;
+        }
         self.kind = slot.kind;
         self.settings = slot.settings;
         let s = slot.settings;
-        let lcr = slot.kind == SaturatorType::LcrDelay;
         self.smooth = if lcr {
             s.lcr_smooth
         } else {
@@ -91,7 +99,7 @@ impl RadiasDelay {
         self.target_times = std::array::from_fn(|i| {
             (seconds(sync, ratio, free[i], notes[i], bpm, !lcr) * self.sample_rate).max(1.0) as f64
         });
-        if !self.initialized || !self.smooth {
+        if !self.initialized || (!self.smooth && !self.ratio_glide) {
             self.times = self.target_times;
         }
         self.initialized = true;
@@ -118,10 +126,20 @@ impl RadiasDelay {
         high - self.low_state[channel] * low_amount
     }
     pub fn process(&mut self, input: Stereo) -> Stereo {
-        if self.smooth {
+        if self.smooth || self.ratio_glide {
             // Audio-rate glide removes control-block steps without resetting the tail.
             for (time, target) in self.times.iter_mut().zip(self.target_times) {
                 *time += self.time_alpha * (target - *time);
+            }
+            if self.ratio_glide
+                && self
+                    .times
+                    .iter()
+                    .zip(self.target_times)
+                    .all(|(t, target)| (*t - target).abs() < 0.0001)
+            {
+                self.times = self.target_times;
+                self.ratio_glide = false;
             }
         }
         let mono = (input[0] + input[1]) * 0.5;

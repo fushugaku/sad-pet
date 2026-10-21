@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 
 pub const STAGES: usize = 16;
 pub const VIEW_TRACKS: usize = 64;
+pub const STAGE_FIELDS: u8 = 19;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -40,6 +41,10 @@ pub struct Stage {
     pub cv_ramp: u8,
     pub cv_gate: bool,
     pub velocity: u8,
+    /// Independent bipolar modulation values for the track's extra routes.
+    pub destination1: f32,
+    pub destination2: f32,
+    pub destination3: f32,
 }
 impl Default for Stage {
     fn default() -> Self {
@@ -60,6 +65,9 @@ impl Default for Stage {
             cv_ramp: 0,
             cv_gate: false,
             velocity: 100,
+            destination1: 0.0,
+            destination2: 0.0,
+            destination3: 0.0,
         }
     }
 }
@@ -83,6 +91,18 @@ impl Stage {
             13 => self.cv_ramp = n.clamp(0, 2) as u8,
             14 => self.cv_gate = value >= 0.5,
             15 => self.velocity = n.clamp(0, 127) as u8,
+            16..=18 => {
+                let target = match field {
+                    16 => &mut self.destination1,
+                    17 => &mut self.destination2,
+                    _ => &mut self.destination3,
+                };
+                *target = if value.is_finite() {
+                    value.clamp(-1.0, 1.0)
+                } else {
+                    0.0
+                };
+            }
             _ => {}
         }
     }
@@ -103,7 +123,11 @@ impl Stage {
             12 => self.cv as f32,
             13 => self.cv_ramp as f32,
             14 => u8::from(self.cv_gate) as f32,
-            _ => self.velocity as f32,
+            15 => self.velocity as f32,
+            16 => self.destination1,
+            17 => self.destination2,
+            18 => self.destination3,
+            _ => 0.0,
         }
     }
 }
@@ -147,6 +171,7 @@ pub struct Track {
     /// Main pitch also transposes the selected Resynth layers. Oscillator
     /// lanes add their own -24..24 semitone offset to that shared pitch.
     pub pitch_oscillators: [bool; 4],
+    pub destinations: [Option<String>; 3],
     #[serde(with = "config_words")]
     pub config: [i32; field::COUNT],
     pub steps: [Stage; STAGES],
@@ -162,6 +187,7 @@ impl Default for Track {
             gate_output: false,
             root_note: 60,
             pitch_oscillators: [false; 4],
+            destinations: Default::default(),
             config: default_config(),
             steps: [Stage::default(); STAGES],
         }
@@ -338,7 +364,7 @@ impl Program {
                 *value = (*value).clamp(lo, hi);
             }
             for step in &mut track.steps {
-                for field in 0..16 {
+                for field in 0..STAGE_FIELDS {
                     step.set(field, step.get(field));
                 }
             }
@@ -377,7 +403,12 @@ pub fn parse_edits(value: &serde_json::Value) -> Result<Vec<Edit>, String> {
     if edits.iter().any(|e| {
         !e.value.is_finite()
             || e.stage.is_some_and(|s| s >= 16)
-            || e.field > if e.stage.is_some() { 15 } else { 52 }
+            || e.field
+                > if e.stage.is_some() {
+                    STAGE_FIELDS - 1
+                } else {
+                    52
+                }
             || (e.track == 0 && (e.stage.is_some() || e.field > 1))
     }) {
         return Err("Invalid sequencer control".into());

@@ -116,8 +116,8 @@ const control = (label) => {
 ui.buildEditor();
 assert.equal(
   knobs.length,
-  48,
-  "Every step needs Gate, Pulses and Ratchet knobs",
+  96,
+  "Every step needs Gate, Pulses, Ratchet and three destination knobs",
 );
 for (let n = 1; n <= 16; n++)
   for (const field of ["pitch", "slide", "probability", "velocity"])
@@ -181,6 +181,27 @@ for (const [key, index] of [
   knob.binding.set(knob.binding.reset());
   assert.equal(ui.track().steps[0][key], 1);
 }
+for (let i = 0; i < 3; i++) {
+  const k = knobs[3 + i];
+  assert.equal(k.schema[5], `Stage 1 destination ${i + 1} amount`);
+  k.binding.set(0.2 * (i + 1));
+  preset = structuredClone(preset);
+  k.binding.set(-0.1 * (i + 1));
+  assert.equal(ui.track().steps[0][`destination${i + 1}`], -0.1 * (i + 1));
+  assert.equal(edits.at(-1).field, 16 + i);
+  assert.equal(edits.at(-1).stage, 0);
+}
+assert.equal(structures, 0, "Destination amount rebuilt the track");
+for (let i = 0; i < 3; i++) {
+  const destination = control(`Track destination ${i + 1}`);
+  destination.value = ["filter", "resynth_osc4_control1", "pre_fx1_lcr_ratio"][i];
+  destination.onchange();
+  preset = structuredClone(preset);
+}
+assert.deepEqual(ui.track().destinations, ["filter", "resynth_osc4_control1", "pre_fx1_lcr_ratio"]);
+assert.equal(structures, 3);
+structures = 0;
+
 control("Stage 1 slide").onclick();
 control("Stage 1 slide").onclick();
 assert.equal(
@@ -239,5 +260,5 @@ ui.edit(old, 0, 0, 77);
 assert.equal(edits.length, before, "A removed track received a stale edit");
 assert.ok(refreshes > 0);
 console.log(
-  "Sequencer editor: snapshot/reorder-safe pitch, 48 step knobs, integer Pulses/Ratchet, scalar OSC routing and ±24 st offsets passed.",
+  "Sequencer editor: snapshot/reorder-safe pitch, 96 step knobs, integer Pulses/Ratchet, scalar OSC routing and ±24 st offsets passed.",
 );

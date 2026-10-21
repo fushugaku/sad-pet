@@ -1073,6 +1073,20 @@ h2 {
   stroke-linecap: round;
   transform-origin: 38.5px 38.5px;
 }
+.dial .base-pointer {
+  stroke: var(--text);
+  stroke-width: 2;
+  stroke-linecap: round;
+  transform-origin: 38.5px 38.5px;
+  opacity: 0;
+}
+.knob.is-modulated .base-pointer {
+  opacity: 0.8;
+}
+.knob.is-modulated .pointer {
+  stroke: var(--modulation);
+  transition: transform 70ms linear;
+}
 .dial .modulation-range {
   fill: none;
   stroke: var(--modulation);
@@ -1119,7 +1133,8 @@ h2 {
   text-overflow: ellipsis;
 }
 @media (prefers-reduced-motion: reduce) {
-  .dial .modulation-live {
+  .dial .modulation-live,
+  .knob.is-modulated .pointer {
     transition: none;
   }
 }
@@ -1257,6 +1272,22 @@ h2 {
   height: 4px;
   accent-color: var(--accent);
   margin: 0;
+}
+.lfo-row .lfo-depth {
+  min-width: 0;
+}
+.lfo-row .lfo-depth input[type="range"] {
+  flex: 1;
+  width: 0;
+  min-width: 30px;
+}
+.lfo-depth output {
+  flex: 0 0 5ch;
+  min-width: 5ch;
+  color: var(--accent);
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .lfo-card .check {
   font-size: 10px;
@@ -3174,6 +3205,17 @@ input[type="range"] {
   gap: 12px;
   margin-top: 16px;
 }
+.neuro-destinations {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+@media (max-width: 640px) {
+  .neuro-destinations {
+    grid-template-columns: 1fr;
+  }
+}
 .neuro-control {
   display: flex;
   flex-direction: column;
@@ -3262,7 +3304,7 @@ input[type="range"] {
 .neuro-stage,
 .neuro-row-labels {
   display: grid;
-  grid-template-rows: 26px 24px 96px 76px 30px 64px 64px repeat(3, 30px);
+  grid-template-rows: 26px 24px 96px 76px 30px 64px 64px repeat(3, 30px) repeat(3, 64px);
   gap: 4px;
   align-items: center;
   justify-items: stretch;

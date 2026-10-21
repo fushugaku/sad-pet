@@ -49,6 +49,7 @@ struct Lane {
     root: u8,
     pitch_oscillators: [bool; 4],
     velocity: [u8; 16],
+    destinations: [[f32; 3]; 16],
     held: Option<(u8, u8)>,
     pitch: Glide,
 }
@@ -57,6 +58,7 @@ struct Route {
     parameter: usize,
     lane: Option<usize>,
     oscillator: Option<usize>,
+    destination: Option<usize>,
 }
 pub(crate) struct Runtime {
     core: Sequencer,
@@ -129,6 +131,9 @@ impl Runtime {
                     root: t.root_note,
                     pitch_oscillators: t.pitch_oscillators,
                     velocity: t.steps.map(|s| s.velocity),
+                    destinations: t
+                        .steps
+                        .map(|s| [s.destination1, s.destination2, s.destination3]),
                     held: None,
                     pitch: Glide::default(),
                 }
@@ -147,7 +152,22 @@ impl Runtime {
                     parameter,
                     lane: Some(i),
                     oscillator: oscillator_parameters.iter().position(|&id| id == parameter),
+                    destination: None,
                 });
+            }
+            for (destination, target) in tracks[i].destinations.iter().enumerate() {
+                if let Some(parameter) = target.as_ref().and_then(|id| {
+                    parameters::specs()
+                        .iter()
+                        .position(|s| s.id == *id && s.can_sequence())
+                }) {
+                    routes.push(Route {
+                        parameter,
+                        lane: Some(i),
+                        oscillator: oscillator_parameters.iter().position(|&id| id == parameter),
+                        destination: Some(destination),
+                    });
+                }
             }
         }
         // Include each carrier once even when it has no lane of its own. Main
@@ -157,6 +177,7 @@ impl Runtime {
                 parameter,
                 lane: None,
                 oscillator: Some(oscillator),
+                destination: None,
             });
         }
         routes.sort_unstable_by_key(|route| route.parameter);
@@ -235,8 +256,11 @@ impl Runtime {
                     edit.field as u32,
                     track.steps[stage as usize].get(edit.field) as i32,
                 );
-            } else {
+            } else if edit.field == 15 {
                 self.lanes[index].velocity[stage as usize] = track.steps[stage as usize].velocity;
+            } else if (16..=18).contains(&edit.field) {
+                self.lanes[index].destinations[stage as usize][(edit.field - 16) as usize] =
+                    track.steps[stage as usize].get(edit.field);
             }
         } else if (edit.field as usize) < field::COUNT {
             self.core
@@ -434,7 +458,11 @@ impl Runtime {
                 if self.core.tracks[i].config[field::MUTE] != 0 {
                     continue;
                 }
-                delta += if matches!(l.binding, Binding::MainPitch | Binding::Oscillator(_)) {
+                delta += if let Some(destination) = route.destination {
+                    self.core.stage(i).map_or(0.0, |stage| {
+                        l.destinations[stage as usize][destination] * (spec.max - spec.min)
+                    })
+                } else if matches!(l.binding, Binding::MainPitch | Binding::Oscillator(_)) {
                     (l.pitch.value(now) - l.root as f32) * l.amount
                 } else {
                     let cv = self.core.cv(i) as f32 / 5000.0;

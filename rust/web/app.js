@@ -482,10 +482,11 @@ function createKnob(
   };
   const box = document.createElement("div");
   box.className = "knob";
-  box.innerHTML = `<div class="dial" role="slider" tabindex="0" aria-label="${label}" aria-valuemin="0" aria-valuemax="100"><svg viewBox="0 0 77 77" aria-hidden="true"><defs><radialGradient id="knob-face"><stop offset="0" stop-color="#414c3b"/><stop offset=".8" stop-color="#2d3629"/><stop offset="1" stop-color="#20291e"/></radialGradient></defs><circle class="track" cx="38.5" cy="38.5" r="25"/><circle class="arc" cx="38.5" cy="38.5" r="25"/><path class="modulation-range"/><circle class="face" cx="38.5" cy="38.5" r="19.5"/><line class="pointer" x1="38.5" y1="38.5" x2="38.5" y2="23.5"/><g class="modulation-live"><circle cx="38.5" cy="7.5" r="3.2"/></g></svg></div><div class="knob-label">${label}</div><output class="knob-value"></output><span class="knob-mod-range" aria-hidden="true"></span>`;
+  box.innerHTML = `<div class="dial" role="slider" tabindex="0" aria-label="${label}" aria-valuemin="0" aria-valuemax="100"><svg viewBox="0 0 77 77" aria-hidden="true"><defs><radialGradient id="knob-face"><stop offset="0" stop-color="#414c3b"/><stop offset=".8" stop-color="#2d3629"/><stop offset="1" stop-color="#20291e"/></radialGradient></defs><circle class="track" cx="38.5" cy="38.5" r="25"/><circle class="arc" cx="38.5" cy="38.5" r="25"/><path class="modulation-range"/><circle class="face" cx="38.5" cy="38.5" r="19.5"/><line class="base-pointer" x1="38.5" y1="14" x2="38.5" y2="20"/><line class="pointer" x1="38.5" y1="38.5" x2="38.5" y2="23.5"/><g class="modulation-live"><circle cx="38.5" cy="7.5" r="3.2"/></g></svg></div><div class="knob-label">${label}</div><output class="knob-value"></output><span class="knob-mod-range" aria-hidden="true"></span>`;
   const dial = box.querySelector(".dial"),
     value = box.querySelector("output"),
     pointer = box.querySelector(".pointer"),
+    basePointer = box.querySelector(".base-pointer"),
     arc = box.querySelector(".arc"),
     modRange = box.querySelector(".modulation-range"),
     modLive = box.querySelector(".modulation-live"),
@@ -503,6 +504,8 @@ function createKnob(
     const base = get();
     const active = Boolean(feedback?.modulated);
     box.classList.toggle("is-modulated", active);
+    basePointer.style.transform = `rotate(${-135 + 270 * toUnit(base)}deg)`;
+    pointer.style.transform = `rotate(${-135 + 270 * toUnit(active ? clamp(feedback.current) : base)}deg)`;
     if (!active) {
       value.textContent = format(base);
       modText.textContent = "";
@@ -575,7 +578,8 @@ function createKnob(
   dial.addEventListener("pointermove", (e) => {
     if (!drag) return;
     const delta = (drag.y - e.clientY + (e.clientX - drag.x) * 0.45) / 180;
-    set(clamp(fromUnit(toUnit(drag.value) + delta)));
+    const v = clamp(fromUnit(toUnit(drag.value) + delta));
+    set(binding?.quantize ? binding.quantize(v, drag.value) : v);
   });
   const release = () => {
     if (drag) {
@@ -591,7 +595,7 @@ function createKnob(
     let v = get();
     const step = binding?.step ?? null;
     const change = (direction) =>
-      step === null
+      binding?.increment ? binding.increment(v, direction) : step === null
         ? fromUnit(toUnit(v) + direction * (e.shiftKey ? 0.05 : 0.005))
         : v + direction * step;
     if (e.key === "ArrowUp" || e.key === "ArrowRight") v = change(1);
@@ -614,7 +618,7 @@ function createKnob(
       const direction = -Math.sign(e.deltaY);
       set(
         clamp(
-          step === undefined
+          binding?.increment ? binding.increment(get(), direction) : step === undefined
             ? fromUnit(toUnit(get()) + direction * 0.005)
             : get() + direction * step,
         ),
@@ -1401,7 +1405,31 @@ function delayRatio(v, slot, prefix) {
   const tables = colorDefaults.delay_tables;
   const table =
     tables[slot.settings[`${prefix}_sync`] ? "sync_ratio" : "free_ratio"];
-  return `${(delayLookup(table, v, slot.settings[`${prefix}_smooth`]) / 10).toFixed(1)}%`;
+  return `${(delayLookup(table, v, prefix === "lcr" || slot.settings[`${prefix}_smooth`]) / 10).toFixed(prefix === "lcr" ? 2 : 1)}%`;
+}
+// Keep existing preset/automation coordinates; gestures use physical percent,
+// avoiding the long repeated entries in the original RADIAS sync table.
+function lcrRatioBinding(getSlot) {
+  const table = () => colorDefaults.delay_tables[getSlot().settings.lcr_sync ? "sync_ratio" : "free_ratio"];
+  const ratio = (v) => delayLookup(table(), v, true);
+  const position = (value) => delayRatioPosition(table(), value);
+  return {
+    normalize: (v) => (ratio(v) - table()[0]) / (table().at(-1) - table()[0]),
+    denormalize: (v) => position(table()[0] + v * (table().at(-1) - table()[0])),
+    quantize: (v, origin = 0) => {
+      if (v <= 0 || v >= 1) return v;
+      const base = Math.round(ratio(origin) * 10) / 10;
+      return position(base + Math.round((ratio(v) - base) / 2.5) * 2.5);
+    },
+    increment: (v, direction) => position(Math.round(ratio(v) * 10) / 10 + direction * 2.5),
+  };
+}
+function delayRatioPosition(table, value) {
+  if (value <= table[0]) return 0;
+  const right = table.findIndex((ratio) => ratio >= value);
+  if (right < 0) return 1;
+  const left = right - 1;
+  return (left + (value - table[left]) / (table[right] - table[left])) / (table.length - 1);
 }
 function delayTime(v, slot, prefix, sync) {
   const tables = colorDefaults.delay_tables;
@@ -1410,7 +1438,7 @@ function delayTime(v, slot, prefix, sync) {
     delayLookup(
       tables[sync ? "sync_ratio" : "free_ratio"],
       slot.settings[`${prefix}_ratio`],
-      smooth,
+      prefix === "lcr" || smooth,
     ) / 1000;
   const seconds = sync
     ? ((60 / preset.params.bpm) *
@@ -1902,7 +1930,15 @@ function syncColors() {
         );
         clock.value = slot.settings[`${prefix}_sync`] ? "sync" : "free";
         clock.onchange = () => {
-          findColor(id).settings[`${prefix}_sync`] = clock.value === "sync";
+          const settings = findColor(id).settings;
+          const tables = colorDefaults.delay_tables;
+          const ratio = prefix === "lcr" ? delayLookup(
+            tables[settings.lcr_sync ? "sync_ratio" : "free_ratio"], settings.lcr_ratio, true,
+          ) : null;
+          settings[`${prefix}_sync`] = clock.value === "sync";
+          if (prefix === "lcr") settings.lcr_ratio = delayRatioPosition(
+            tables[settings.lcr_sync ? "sync_ratio" : "free_ratio"], ratio,
+          );
           editColorChain();
         };
         const smooth = document.createElement("label");
@@ -1969,6 +2005,7 @@ function syncColors() {
           ],
           `color-${id}-knobs`,
           {
+            ...(parameter === "lcr_ratio" ? lcrRatioBinding(getSlot) : {}),
             get,
             set: (value) => {
               const s = getSlot();
@@ -2422,7 +2459,7 @@ function buildLfos() {
   for (let i = 0; i < 8; i++) {
     const card = document.createElement("div");
     card.className = "lfo-card";
-    card.innerHTML = `<div class="lfo-title"><strong>LFO ${i + 1}</strong><canvas class="lfo-scope" width="144" height="40"></canvas></div><div class="lfo-row"><select aria-label="LFO ${i + 1} waveform" class="waveform"></select><select aria-label="LFO ${i + 1} destination" class="destination"></select></div><div class="lfo-row"><label>RATE<input aria-label="LFO ${i + 1} rate" class="rate" type="number" min="0.01" max="40" step="0.01"></label><label>DEPTH<input aria-label="LFO ${i + 1} depth" class="depth" type="range" min="-1" max="1" step="0.01"></label></div><div class="lfo-row"><label class="check"><input type="checkbox" class="sync">Tempo sync</label><select class="division" aria-label="LFO ${i + 1} tempo division"><option value="0.25">1/16</option><option value="0.5">1/8</option><option value="1">1/4</option><option value="2">1/2</option><option value="4">1 bar</option><option value="8">2 bars</option><option value="16">4 bars</option><option value="32">8 bars</option></select></div>`;
+    card.innerHTML = `<div class="lfo-title"><strong>LFO ${i + 1}</strong><canvas class="lfo-scope" width="144" height="40"></canvas></div><div class="lfo-row"><select aria-label="LFO ${i + 1} waveform" class="waveform"></select><select aria-label="LFO ${i + 1} destination" class="destination"></select></div><div class="lfo-row"><label>RATE<input aria-label="LFO ${i + 1} rate" class="rate" type="number" min="0.01" max="40" step="0.01"></label><label class="lfo-depth">DEPTH<input aria-label="LFO ${i + 1} depth" class="depth" type="range" min="-1" max="1" step="0.01"><output class="depth-value" aria-label="LFO ${i + 1} depth value"></output></label></div><div class="lfo-row"><label class="check"><input type="checkbox" class="sync">Tempo sync</label><select class="division" aria-label="LFO ${i + 1} tempo division"><option value="0.25">1/16</option><option value="0.5">1/8</option><option value="1">1/4</option><option value="2">1/2</option><option value="4">1 bar</option><option value="8">2 bars</option><option value="16">4 bars</option><option value="32">8 bars</option></select></div>`;
     for (const [value, label] of WAVEFORMS)
       card.querySelector(".waveform").append(option(value, label));
     for (const [value, label] of DESTINATIONS)
@@ -2444,7 +2481,7 @@ function buildLfos() {
           if (!Number.isFinite(value)) return;
         }
         preset.lfos[i][field] = value;
-        if (field === "sync") syncLfos();
+        if (field === "sync" || field === "depth") syncLfos();
         if (typeof value === "number")
           scheduleParameter(
             `lfo${i + 1}_${field === "rate_hz" ? "rate" : field}`,
@@ -2478,6 +2515,7 @@ function syncLfos() {
         input.value =
           field === "destination" ? destinationValue(l[field]) : l[field];
     }
+    card.querySelector(".depth-value").textContent = signedPercent(l.depth);
     card.querySelector(".sync").checked = l.sync;
     card.querySelector(".rate").disabled = l.sync;
     card.querySelector(".division").disabled = !l.sync;
@@ -2676,6 +2714,7 @@ function buildSequence() {
     read: () => preset,
     edit: scheduleSequence,
     structure: schedulePreset,
+    fxParameters: (slot) => colorDestinationSchema(slot.kind).map(([key]) => key),
     knob: (schema, container, binding) =>
       createKnob(schema, container, binding),
     view: (offset) =>

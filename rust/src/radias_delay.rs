@@ -13,14 +13,19 @@ pub fn index(value: f32, count: usize) -> usize {
 }
 
 pub fn seconds(sync: bool, ratio: f32, time: f32, note: f32, bpm: f32, mod_delay: bool) -> f32 {
-    let ratio_index = index(ratio, 128);
+    // L/C/R ratio is continuous even with musical tap divisions selected.
+    // Mod Delay retains the original stepped mode when Smooth is off.
+    let ratios = if sync { &SYNC_RATIO } else { &FREE_RATIO };
+    let ratio = if mod_delay {
+        ratios[index(ratio, 128)] as f32
+    } else {
+        interpolate(ratios, ratio)
+    };
     let seconds = if sync {
-        60.0 / bpm.max(1.0) * SYNC_RATIO[ratio_index] as f32 / 1000.0
-            * NOTES[index(note, 14)] as f32
-            / 192.0
+        60.0 / bpm.max(1.0) * ratio / 1000.0 * NOTES[index(note, 14)] as f32 / 192.0
     } else {
         let milliseconds = if mod_delay { &MOD_MS } else { &LCR_MS };
-        FREE_RATIO[ratio_index] as f32 * milliseconds[index(time, 128)] as f32 / 1_000_000.0
+        ratio * milliseconds[index(time, 128)] as f32 / 1_000_000.0
     };
     seconds.min(MAX_SECONDS)
 }

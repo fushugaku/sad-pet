@@ -106,6 +106,66 @@ fn smooth_clock_keeps_note_anchors_and_fills_the_spaces_between_them() {
 }
 
 #[test]
+fn lcr_ratio_is_continuous_without_smooth_and_retains_original_table_anchors() {
+    for (sync, table) in [
+        (false, &radias_delay::FREE_RATIO),
+        (true, &radias_delay::SYNC_RATIO),
+    ] {
+        let time = 50.0 / 127.0; // 150 ms; short enough to avoid buffer capping.
+        let note = 8.0 / 13.0; // quarter note
+        for (i, &ratio) in table.iter().enumerate() {
+            let expected = if sync { 0.5 } else { 0.15 } * ratio as f32 / 1000.0;
+            let actual = radias_delay::seconds(sync, i as f32 / 127.0, time, note, 120.0, false);
+            assert!((actual - expected).abs() < 1e-6);
+        }
+        let left = if sync { 67 } else { 65 };
+        let before = radias_delay::seconds(sync, left as f32 / 127.0, time, note, 120.0, false);
+        let after =
+            radias_delay::seconds(sync, (left + 1) as f32 / 127.0, time, note, 120.0, false);
+        let mut previous = before;
+        for step in 1..=100 {
+            let ratio = (left as f32 + step as f32 / 100.0) / 127.0;
+            let current = radias_delay::seconds(sync, ratio, time, note, 120.0, false);
+            assert!(current > previous, "L/C/R ratio has a quantized dead zone");
+            assert!((current - (before + (after - before) * step as f32 / 100.0)).abs() < 1e-6);
+            previous = current;
+        }
+    }
+}
+
+#[test]
+fn lcr_ratio_glides_without_smooth_and_does_not_clear_the_existing_tail() {
+    for sr in [8000, 48000] {
+        let mut s = slot(1, Type::LcrDelay);
+        s.settings.lcr_smooth = false;
+        s.settings.lcr_left_note = 5.0 / 13.0;
+        s.settings.lcr_left_level = 1.0;
+        s.settings.lcr_center_level = 0.0;
+        s.settings.lcr_right_level = 0.0;
+        s.settings.lcr_spread = 1.0;
+        s.settings.lcr_feedback = 0.0;
+        let mut p = ColorProcessor::new(sr);
+        p.configure_tempo(s, 120.0);
+        let input = |i: u32| [(i as f32 / sr as f32 * std::f32::consts::TAU * 5.0).sin() * 0.25; 2];
+        let mut last = 0.0;
+        for i in 0..sr * 2 {
+            last = p.process(input(i))[0];
+        }
+        // 100% -> 200%; the previous tail must move gradually, even with Smooth off.
+        s.settings.lcr_ratio = 97.0 / 127.0;
+        p.configure_tempo(s, 120.0);
+        let next = p.process(input(sr * 2))[0];
+        assert!((next - last).abs() < 0.005);
+        assert!(next.abs() > 0.2);
+        let mut settled = next;
+        for i in sr * 2 + 1..sr * 3 {
+            settled = p.process(input(i))[0];
+        }
+        assert!((settled - input(sr * 3 - 1 - sr / 2)[0]).abs() < 1e-4);
+    }
+}
+
+#[test]
 fn smooth_delay_emits_an_echo_halfway_between_two_note_divisions() {
     for kind in [Type::LcrDelay, Type::ModDelay] {
         let mut s = slot(1, kind);

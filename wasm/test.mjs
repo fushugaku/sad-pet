@@ -176,6 +176,38 @@ assert.notDeepEqual(
   "filters, chords and the effect stack must reach WASM audio",
 );
 
+// FX animation must use the audio owner's values after the worker imports a
+// snapshot, including LFO 8 / ENV 8 and the pre-filter rack.
+const fxAudio = new Core(module, 48000), fxWorker = new Core(module, 48000);
+fxAudio.json("sad_load", prepared);
+const fxPreset = fxAudio.request("/api/preset");
+fxPreset.lfo_count = fxPreset.env_count = 8;
+fxPreset.color_chain = [{ ...structuredClone(defaults.slot), id: 41, kind: "alpha_verb" }];
+fxPreset.pre_color_chain = [{ ...structuredClone(defaults.slot), id: 42, kind: "super_echo" }];
+fxPreset.color_chain[0].settings.alpha_verb_size = 0.5;
+fxPreset.pre_color_chain[0].settings.super_echo_cutoff = 0.4;
+Object.assign(fxPreset.lfos[7], {destination:{color:{slot:41,parameter:"alpha_verb_size"}},depth:0.4});
+Object.assign(fxPreset.envs[7], {attack:0,decay:0,sustain:1,destination:{color:{slot:42,parameter:"super_echo_cutoff"}},depth:0.3});
+fxAudio.request("/api/preset", fxPreset);
+fxAudio.request("/api/midi-bytes", [0x90,60,127]);
+const fxSnapshot = new Uint8Array(fxAudio.wasm.sad_snapshot_capacity());
+let previousSize = NaN;
+for (let i=0;i<4;i++) {
+  fxAudio.process(2048);
+  const length = fxAudio.snapshot(fxSnapshot);
+  assert.ok(length > 0);
+  const imported = fxWorker.json("sad_snapshot_import",fxSnapshot.slice(0,length)).state;
+  const actual = fxAudio.request("/api/state");
+  for (const key of ["color:41:alpha_verb_size","color:42:super_echo_cutoff"]) {
+    assert.ok(imported.knobs[key].modulated, key);
+    assert.deepEqual(imported.knobs[key],actual.knobs[key], `Stale worker FX feedback: ${key}`);
+  }
+  const size = imported.knobs["color:41:alpha_verb_size"].current;
+  assert.notEqual(size, previousSize);
+  previousSize = size;
+  fxAudio.wasm.sad_snapshot_ack(fxAudio.wasm.sad_snapshot_sequence(),1);
+}
+
 const midi = new Core(module);
 midi.json("sad_load", prepared);
 midi.request("/api/midi-bytes", [0x90, 60, 100]);

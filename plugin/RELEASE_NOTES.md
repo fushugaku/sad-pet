@@ -1,5 +1,13 @@
 SAD PET instrument and SAD PET FX, with native Rust DSP and an embedded editor.
 
+**Three extra destinations per sequencer track.** Assign Destination 1–3 to
+realtime controls; every step has independent −100…+100% amount knobs. They
+follow the track's own clock and order, save with presets and DAW projects, and
+use sparse realtime edits. Modulated FX knobs now move their cyan pointer to
+the current value while marking the saved base setting separately. LFO Depth
+shows a signed numeric percentage. L/C/R Delay Time Ratio changes continuously
+in 0.25 percentage point gesture steps and glides even with Smooth disabled.
+
 **Presets for every effect.** Each Source FX, pre-filter and post-filter slot has
 its own named preset selector and Save button. Presets are shared across slots
 and timbres of the same effect type, including all modes, tempo sync, Smooth and
@@ -64,6 +72,10 @@ are supplied individually and in `SHA256SUMS.txt`.
 ---
 
 В обоих установщиках есть инструмент **SAD PET** и эффект **SAD PET FX**.
+У каждой дорожки секвенсора есть три дополнительных назначения и три ручки
+силы воздействия на каждом шаге. Ручки эффектов показывают модулированное
+значение движущимся указателем, Depth у LFO — числом. Time Ratio у L/C/R Delay
+меняется с шагом 0,25% и сглаживается независимо от переключателя Smooth.
 Добавлены вкладки независимых тембров, драм-машина DXM-088 с дорожками до 128
 шагов, отдельным mod sequencer и переключателем Granular. В каждом тембре можно
 добавить до 8 LFO и 8 ENV; доступны параметры осцилляторов и барабанных голосов.

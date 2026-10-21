@@ -71,6 +71,80 @@ fn track(id: u32, division: i32, target: Target) -> Track {
 }
 
 #[test]
+fn three_step_destinations_reach_filters_oscillators_and_fx_with_sparse_realtime_edits() {
+    use sad_pet::{color::ColorSlot, preset::SaturatorType};
+    let mut p = Preset::default();
+    p.params.filter = 0.5;
+    p.resynth.oscillators[3].control1 = 0.5;
+    p.pre_color_chain = vec![ColorSlot {
+        id: 71,
+        kind: SaturatorType::LcrDelay,
+        ..ColorSlot::default()
+    }];
+    p.sequencer.enabled = true;
+    let t = &mut p.sequencer.tracks[0];
+    t.target = Target::Notes;
+    t.destinations = [
+        Some("filter".into()),
+        Some("resynth_osc4_control1".into()),
+        Some("pre_fx1_lcr_ratio".into()),
+    ];
+    for s in &mut t.steps {
+        s.destination1 = 0.2;
+        s.destination2 = -0.3;
+        s.destination3 = 0.1;
+    }
+    let saved = serde_json::to_value(&p).unwrap();
+    let mut e = engine(serde_json::from_value(saved.clone()).unwrap());
+    let mut feedback = RealtimeView::default();
+    no_heap(|| {
+        e.set_playing(true);
+        frames(&mut e, 64);
+        e.realtime_view(&mut feedback);
+    });
+    assert!((feedback.params.filter - 0.7).abs() < 1e-5);
+    assert!((feedback.modulated_resynth.oscillators[3].control1 - 0.2).abs() < 1e-5);
+    assert!((feedback.pre_color[0].settings.lcr_ratio - (64.0 / 127.0 + 0.1)).abs() < 1e-5);
+    let stage = e.sequence_view().tracks[0].step;
+    let edits = sad_pet::sequence::parse_edits(&serde_json::json!([
+        {"track":1,"stage":0,"field":16,"value":-0.15},
+        {"track":1,"stage":0,"field":17,"value":0.25},
+        {"track":1,"stage":0,"field":18,"value":-0.2},
+    ]))
+    .unwrap();
+    no_heap(|| {
+        e.apply_sequence_edits(&edits);
+        frames(&mut e, 64);
+        e.realtime_view(&mut feedback);
+    });
+    assert_eq!(e.sequence_view().tracks[0].step, stage);
+    assert!((feedback.params.filter - 0.35).abs() < 1e-5);
+    assert!((feedback.modulated_resynth.oscillators[3].control1 - 0.75).abs() < 1e-5);
+    assert!((feedback.pre_color[0].settings.lcr_ratio - (64.0 / 127.0 - 0.2)).abs() < 1e-5);
+    assert_eq!(
+        e.preset.params.filter, 0.5,
+        "The route changed the saved base value"
+    );
+    let mut muted = e.preset.clone();
+    muted.sequencer.tracks[0].config[field::MUTE] = 1;
+    e.set_preset(muted);
+    frames(&mut e, 64);
+    assert_eq!(e.modulated_params().filter, 0.5);
+
+    let mut old = saved;
+    let t = old["sequencer"]["tracks"][0].as_object_mut().unwrap();
+    t.remove("destinations");
+    for s in t["steps"].as_array_mut().unwrap() {
+        for key in ["destination1", "destination2", "destination3"] {
+            s.as_object_mut().unwrap().remove(key);
+        }
+    }
+    let old: Preset = serde_json::from_value(old).unwrap();
+    assert_eq!(old.sequencer.tracks[0].destinations, [None, None, None]);
+    assert_eq!(old.sequencer.tracks[0].steps[0].destination1, 0.0);
+}
+
+#[test]
 fn real_neuropolis_orders_pulses_probability_and_independent_clocks_match_upstream() {
     for order in 0..21 {
         let mut p = Preset::default();

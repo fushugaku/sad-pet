@@ -58,6 +58,21 @@ below its destination selector. An oscillator's own pitch lane uses signed
 have integer 1–8 knobs: drag, focus and scroll, or use arrow keys; double-click
 resets to 1. Gate remains a separate percent knob.
 
+Each Neuropolis track also has **Destination 1–3**. Assign them to any available
+realtime parameter: filters, FX, OSC controls, drum voices or modulators. Every
+step has three corresponding bipolar amount knobs (−100…+100% of the target's
+range). Values follow that track's own clock and play order, remain active for
+the whole step and are added to the saved base value. Muting the track removes
+all its contributions. Step edits use sparse commands and preserve playback.
+
+Modulated knobs show the actual value with a moving cyan pointer and range;
+the small pale tick and green arc retain the saved base setting. This includes
+pre-filter and post-filter effects. LFO Depth displays its signed percentage.
+L/C/R Delay **Time Ratio** always uses continuous values and a 0.25 percentage
+point gesture step. Ratio changes glide in audio even with Smooth off; Smooth
+still enables the intermediate tap times between musical divisions. Existing
+RADIAS ratio positions in saved presets and host automation retain their mapping.
+
 ## Install
 
 [Download the macOS and Windows installers](https://github.com/fushugaku/sad-pet/releases/latest).
