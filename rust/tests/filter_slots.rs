@@ -174,7 +174,8 @@ fn host_parameters_address_added_filters_by_position() {
     // Appended after every existing control, so host indices do not move.
     assert_eq!(specs[buffer + 1].id, "filter3_cutoff");
     assert_eq!(specs[buffer + 8 * MAX_FILTER_SLOTS].id, "filter18_response");
-    assert_eq!(specs.len(), buffer + 1 + 8 * MAX_FILTER_SLOTS);
+    // ENV types follow the added filters.
+    assert_eq!(specs[buffer + 1 + 8 * MAX_FILTER_SLOTS].id, "env1_mode");
 
     let mut preset = Preset {
         filter_slots: vec![

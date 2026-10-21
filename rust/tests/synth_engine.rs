@@ -216,6 +216,18 @@ fn parameters_edit_the_synth_and_presets_round_trip() {
 }
 
 #[test]
+fn synth_controls_append_after_every_other_host_parameter() {
+    let specs = parameters::specs();
+    let start = specs.iter().position(|s| s.id == "synth_count").unwrap();
+    assert_eq!(specs[start - 1].id, "env8_curve");
+    assert_eq!(specs[start + 1].id, "synth_granular");
+    assert_eq!(specs[start + 2].id, "synth_buffer_seconds");
+    assert_eq!(specs[start + 3].id, "synth_osc1_enabled");
+    assert_eq!(specs.len(), start + 3 + 4 * 14);
+    assert_eq!(specs.last().unwrap().id, "synth_osc4_interaction_source");
+}
+
+#[test]
 fn switching_engines_keeps_the_input_each_one_replaced() {
     let mut engine = Engine::new(
         48_000,

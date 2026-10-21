@@ -127,9 +127,10 @@ fn every_rustias_mode_has_a_stable_name() {
 #[test]
 fn type_controls_append_after_every_released_host_parameter() {
     let specs = parameters::specs();
+    // ENV types follow the added filters, which follow drum_buffer_seconds.
     let start = specs
         .iter()
-        .position(|s| s.id == "drum_buffer_seconds")
+        .position(|s| s.id == "filter18_response")
         .unwrap()
         + 1;
     for i in 0..8 {
@@ -149,7 +150,7 @@ fn type_controls_append_after_every_released_host_parameter() {
             ]
         );
     }
-    assert_eq!(specs.len(), start + 40);
+    assert_eq!(specs[start + 40].id, "synth_count");
     assert_eq!(specs[start].max, 6.0);
     assert_eq!(specs[start].default, 0.0);
     assert_eq!(specs[start + 4].default, 1.0);
