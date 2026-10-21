@@ -92,18 +92,9 @@ export class BrowserBackend {
     const module = await WebAssembly.compile(await response.arrayBuffer());
     await this.worker.call("init", { module, rate: this.rate });
     await this.telemetry.call("init", { module, rate: this.rate });
-    const catalog = await this.worker.call("request", null, [], "/api/samples");
-    const wav = await this.worker.call("factory", 0);
-    const { prepared } = await this.worker.call(
-      "prepare",
-      {
-        wav,
-        name: catalog[0].name,
-        libraryId: `factory:${catalog[0].id}:v1`,
-        generation: this.sourceGeneration,
-      },
-      [wav],
-    );
+    const prepared = await this.worker.call("startup", {
+      generation: this.sourceGeneration,
+    });
     await this.context.audioWorklet.addModule(
       new URL("./worklet.mjs", import.meta.url),
     );
@@ -130,11 +121,7 @@ export class BrowserBackend {
     };
     this.monitor = this.context.createGain();
     this.node.connect(this.monitor).connect(this.context.destination);
-    await this.audio.call(
-      "load",
-      { prepared, generation: this.sourceGeneration },
-      [prepared],
-    );
+    await this.audio.call("scene-load", prepared, [prepared]);
     this.state = await this.audio.call("request", null, [], "/api/state");
     this.viewStamp = this.audio.stamp || 0;
     const quit = document.getElementById("quit");
@@ -453,9 +440,15 @@ export class BrowserBackend {
       if (route === "/api/state") {
         await this.freshState();
         result = this.snapshot();
-      } else if (route === "/api/scene") {
+      } else if (route === "/api/scene" || (route === "/api/startup" && data)) {
         if (data) {
-          const prepared = await this.worker.call("scene-prepare", data);
+          await this.sourceLoadTail;
+          const prepared =
+            route === "/api/startup"
+              ? await this.worker.call("startup", {
+                  generation: this.sourceGeneration + 1,
+                })
+              : await this.worker.call("scene-prepare", data);
           result = await this.audio.call("scene-load", prepared, [prepared]);
           this.sourceRecipeKey = null;
           this.state = await this.audio.call("request", null, [], "/api/state");

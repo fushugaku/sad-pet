@@ -173,7 +173,7 @@
         await this.activate(previous);
       } else {
         await this.rememberNative(native);
-        if (!native.plugin && native.fades && !native.playing && !native.input?.active)
+        if (!native.plugin && !native.timbres?.timbres && native.fades && !native.playing && !native.input?.active)
           await this.actions.loadFades(await this.fades(this.currentId));
       }
       this.status = "";

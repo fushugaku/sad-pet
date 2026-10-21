@@ -164,6 +164,7 @@ impl Host {
             self.engine.region = config.region;
             self.snapshot_state = json!({
                 "version":env!("CARGO_PKG_VERSION"),"instance_id":"browser",
+                "startup_preset_index":sad_pet::startup::INDEX,
                 "sample_rate":self.rate,"audio_device":"Web Audio","audio_error":null,"audio_enabled":false,
                 "sample_name":config.name,"sample_id":config.id,"sample_seconds":config.seconds,"sample_frames":config.frames,
                 "region":config.region,"fades":config.fades,"input":{"active":config.live},

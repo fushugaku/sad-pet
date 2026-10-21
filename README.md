@@ -11,6 +11,11 @@ recording buffers are reused. No backend
 or installation is required. Click Play or a keyboard key to enable sound.
 The desktop version uses the system audio output and a local browser panel.
 
+New browser sessions and DAW instances start with **glasses5**: its Dusty keys
+source, selection/fades, four-oscillator Resynth, sequencer and both FX racks.
+It is also the first Factory choice; Init remains available. Saved DAW projects
+and remembered browser User presets take priority over this initial sound.
+
 Each effect has its own named preset selector and Save button. Effect presets
 are shared across the three FX racks and all timbres of the same effect type.
 Portable `.sadfx` import/export moves settings between the web and native

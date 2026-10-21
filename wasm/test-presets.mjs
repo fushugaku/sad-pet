@@ -41,6 +41,33 @@ const { encode, decode } = window.SadPresetFile;
   await bank.initialize({}, []);
   assert.equal(loads, 1);
 }
+// Fresh browsers select the startup factory sound; remembered choices take priority.
+{
+  const factory = Array.from({ length: 6 }, (_, i) => ({ name: i === 5 ? "glasses5" : `Factory ${i}` }));
+  const bank = Object.create(window.SadPresetLibrary.prototype);
+  let last = null;
+  const loads = [];
+  bank.actions = { edited: () => false };
+  bank.files = { store: { setting: async () => last } };
+  bank.users = [{ id: "saved-user" }];
+  bank.refresh = async () => {};
+  bank.render = () => {};
+  bank.load = async (id) => loads.push(id);
+  const state = { preset: factory[5], startup_preset_index: 5 };
+  await bank.initialize(state, factory);
+  assert.equal(bank.selection.id, "factory:5");
+  assert.equal(bank.selection.dirty, false);
+  assert.equal(loads.length, 0);
+  last = { id: "saved-user" };
+  await bank.initialize(state, factory);
+  assert.deepEqual(loads, ["saved-user"]);
+  last = { id: "factory:0" };
+  await bank.initialize(state, factory);
+  assert.deepEqual(loads, ["saved-user", "factory:0"]);
+  last = { id: "deleted-user" };
+  await bank.initialize(state, factory);
+  assert.equal(loads.length, 2);
+}
 const record = {
   id: "1234567890abcdef1234567890abcdef",
   name: "Тихая комната 🎹",

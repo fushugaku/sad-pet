@@ -110,8 +110,10 @@ SadPetProcessor::SadPetProcessor()
     }
     renderValues.resize(rawParameters.size());
     controlValues.resize(rawParameters.size());
-    readParameters(controlValues);
-    sad_control_set_parameters(control, controlValues.data(), controlValues.size());
+    // Publish the initial scene to the host before it can send parameter values
+    // back. Descriptor defaults describe Init and must not replace the scene.
+    readParameters(renderValues);
+    publishParameters(renderValues, false);
 }
 
 SadPetProcessor::~SadPetProcessor() {

@@ -214,8 +214,14 @@
     async initialize(state, factory) {
       this.native = Boolean(state.plugin);
       this.factory = factory;
+      this.startupIndex = state.startup_preset_index ?? -1;
       if (this.native) {
         this.observe(state);
+      } else if (
+        !this.actions.edited?.() &&
+        state.preset?.name === factory[this.startupIndex]?.name
+      ) {
+        this.selection = { id: `factory:${this.startupIndex}`, dirty: false };
       }
       await this.refresh();
       if (!this.native) {
@@ -223,7 +229,8 @@
         if (
           !this.actions.edited?.() &&
           last &&
-          this.users.some((r) => r.id === last.id)
+          (this.users.some((r) => r.id === last.id) ||
+            this.factory.some((_, i) => last.id === `factory:${i}`))
         )
           await this.load(last.id);
       }
@@ -299,7 +306,13 @@
       const query = $("preset-search").value.toLocaleLowerCase().trim();
       const choices =
         this.bank === "factory"
-          ? this.factory.map((p, i) => ({ id: `factory:${i}`, name: p.name }))
+          ? this.factory
+              .map((p, i) => ({ id: `factory:${i}`, name: p.name }))
+              .sort(
+                (a, b) =>
+                  Number(b.id === `factory:${this.startupIndex}`) -
+                  Number(a.id === `factory:${this.startupIndex}`),
+              )
           : this.users;
       const shown = choices.filter((p) =>
         p.name.toLocaleLowerCase().includes(query),
@@ -513,11 +526,14 @@
           id.startsWith("factory:") ? { index: Number(id.slice(8)) } : { id },
         );
       } else if (id.startsWith("factory:")) {
-        if (this.actions.read().state?.timbres?.timbres)
-          await this.actions.request("/api/timbres/reset", {});
-        await this.actions.applyPreset(
-          structuredClone(this.factory[Number(id.slice(8))]),
-        );
+        const index = Number(id.slice(8));
+        if (index === this.startupIndex) {
+          await this.actions.request("/api/startup", { load: true });
+        } else {
+          if (this.actions.read().state?.timbres?.timbres)
+            await this.actions.request("/api/timbres/reset", {});
+          await this.actions.applyPreset(structuredClone(this.factory[index]));
+        }
       } else {
         const record = await this.files.store.read("files", id);
         if (!record || record.trashedAt)

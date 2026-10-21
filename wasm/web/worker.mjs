@@ -106,6 +106,32 @@ async function handle(message) {
       case "scene-render":
         result = core.call("sad_scene_render_document", data);
         break;
+      case "startup": {
+        const scene = core.request("/api/startup");
+        core.request("/api/timbres/reset", {});
+        core.request("/api/input", { active: false });
+        core.call(
+          "sad_prepare",
+          core.call("sad_factory", undefined, scene.sample_index),
+        );
+        core.call("sad_sample_name", {
+          name: scene.sample_name,
+          id: scene.sample_id,
+        });
+        sourceGeneration = data.generation ?? sourceGeneration + 1;
+        core.wasm.sad_source_generation(sourceGeneration);
+        core.request("/api/preset", scene.preset);
+        core.request("/api/region", scene.region);
+        core.request("/api/fades", scene.fades);
+        core.request("/api/transport", {
+          playing: false,
+          midi_gate: true,
+          frozen: false,
+          bypass: false,
+        });
+        result = core.call("sad_scene_pack");
+        break;
+      }
       case "request":
         result = core.request(message.path, data);
         break;

@@ -1,5 +1,11 @@
 SAD PET instrument and SAD PET FX, with native Rust DSP and an embedded editor.
 
+**glasses5 on first open.** New instances and fresh browser sessions load the
+supplied complete sound: Dusty keys, its selection/fades, four-oscillator Resynth,
+Neuropolis tracks and both FX racks. It appears first in Factory presets, with
+Init still available. Existing project state and remembered browser User presets
+take priority. Host parameter initialization preserves the startup sound.
+
 **Three extra destinations per sequencer track.** Assign Destination 1–3 to
 realtime controls; every step has independent −100…+100% amount knobs. They
 follow the track's own clock and order, save with presets and DAW projects, and
@@ -72,6 +78,9 @@ are supplied individually and in `SHA256SUMS.txt`.
 ---
 
 В обоих установщиках есть инструмент **SAD PET** и эффект **SAD PET FX**.
+При первом открытии загружается **glasses5** со своим сэмплом, фейдами, Resynth,
+секвенсором и эффектами. Он стоит первым в Factory; Init остаётся доступен.
+Сохранённые проекты DAW и последний выбранный User-пресет в web сохраняют приоритет.
 У каждой дорожки секвенсора есть три дополнительных назначения и три ручки
 силы воздействия на каждом шаге. Ручки эффектов показывают модулированное
 значение движущимся указателем, Depth у LFO — числом. Time Ratio у L/C/R Delay

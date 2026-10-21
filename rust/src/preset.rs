@@ -791,6 +791,9 @@ impl Preset {
     }
 
     pub fn builtin(index: usize) -> Self {
+        if index == crate::startup::INDEX {
+            return crate::startup::preset();
+        }
         let mut p = Self::default();
         match index {
             1 => {
