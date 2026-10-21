@@ -144,6 +144,9 @@ pub struct Track {
     pub absolute: bool,
     pub gate_output: bool,
     pub root_note: u8,
+    /// Main pitch also transposes the selected Resynth layers. Oscillator
+    /// lanes add their own -24..24 semitone offset to that shared pitch.
+    pub pitch_oscillators: [bool; 4],
     #[serde(with = "config_words")]
     pub config: [i32; field::COUNT],
     pub steps: [Stage; STAGES],
@@ -158,6 +161,7 @@ impl Default for Track {
             absolute: false,
             gate_output: false,
             root_note: 60,
+            pitch_oscillators: [false; 4],
             config: default_config(),
             steps: [Stage::default(); STAGES],
         }
@@ -168,6 +172,12 @@ impl Track {
         if let Some(stage) = edit.stage {
             if let Some(s) = self.steps.get_mut(stage as usize) {
                 s.set(edit.field, edit.value);
+                if matches!(self.target, Target::Oscillator { .. }) {
+                    s.pitch = s.pitch.clamp(36, 84);
+                    if s.pitch_override >= 0 {
+                        s.pitch_override = s.pitch_override.clamp(36, 84);
+                    }
+                }
             }
         } else if let Some((lo, hi)) = TRACK_RANGES.get(edit.field as usize) {
             self.config[edit.field as usize] = (edit.value.round() as i32).clamp(*lo, *hi);
@@ -176,7 +186,10 @@ impl Track {
                 43 => self.amount = edit.value.clamp(-1.0, 1.0),
                 44 => self.absolute = edit.value >= 0.5,
                 45 => self.gate_output = edit.value >= 0.5,
-                46 => self.root_note = edit.value.round().clamp(0.0, 127.0) as u8,
+                46 if !matches!(self.target, Target::Oscillator { .. }) => {
+                    self.root_note = edit.value.round().clamp(0.0, 127.0) as u8;
+                }
+                49..=52 => self.pitch_oscillators[(edit.field - 49) as usize] = edit.value >= 0.5,
                 _ => {}
             }
         }
@@ -308,6 +321,18 @@ impl Program {
             track.root_note = track.root_note.min(127);
             if let Target::Oscillator { index } = &mut track.target {
                 *index = (*index).min(3);
+                // Keep older root-relative patterns at the same offset while
+                // giving every oscillator lane a consistent signed editor.
+                let shift = 60 - i16::from(track.root_note);
+                track.config[field::ROOT] =
+                    (track.config[field::ROOT] + i32::from(shift)).rem_euclid(12);
+                for step in &mut track.steps {
+                    step.pitch = (i16::from(step.pitch) + shift).clamp(36, 84) as u8;
+                    if step.pitch_override >= 0 {
+                        step.pitch_override = (step.pitch_override + shift).clamp(36, 84);
+                    }
+                }
+                track.root_note = 60;
             }
             for (value, (lo, hi)) in track.config.iter_mut().zip(TRACK_RANGES) {
                 *value = (*value).clamp(lo, hi);
@@ -351,7 +376,7 @@ pub fn parse_edits(value: &serde_json::Value) -> Result<Vec<Edit>, String> {
     if edits.iter().any(|e| {
         !e.value.is_finite()
             || e.stage.is_some_and(|s| s >= 16)
-            || e.field > if e.stage.is_some() { 15 } else { 48 }
+            || e.field > if e.stage.is_some() { 15 } else { 52 }
             || (e.track == 0 && (e.stage.is_some() || e.field > 1))
     }) {
         return Err("Invalid sequencer control".into());

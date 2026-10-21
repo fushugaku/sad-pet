@@ -27,13 +27,17 @@ The desktop version uses the system audio output and a local browser panel.
   direct filters/effects or granular processing of an eight-second live buffer.
 - Polyphonic keyboard, note/chord hold and arpeggiator.
 - **Neuropolis sequencer**, using its actual Rust core: add any number of independently
-  clocked 16-stage tracks. Route a track to main sample pitch, OSC 1–4 pitch, notes
+  clocked 16-stage tracks. Route a track to main sample pitch, OSC 1–4 pitch offsets, notes
   and envelopes, or a realtime parameter (including oscillator controls and FX).
   Each track has 21 play orders, length, clock multiplier/divider, swing, quantizer,
   pulses, Rest/Single/Multi/Hold gates, ratchets, probability, Analog/Tempo/Acid
   slide, CV ramps and pitch accumulation. Tracks and assignments save with presets
   and DAW projects; old chord patterns migrate into note tracks. Track count has
   no fixed cap; the instrument retains its eight-note audio polyphony.
+  Pitch, a per-step Gate length knob, Pulses, Ratchet, Slide, Probability and
+  Velocity are available together. Main pitch can also target any combination
+  of OSC 1–4; their own tracks add −24…+24 semitones to that pitch, at independent
+  clocks. Double-click a step's Gate knob to inherit the track's Gate setting.
 - Three LFOs with tempo sync up to 8 bars, three ADSR envelopes and eight modulation routes.
 - Two filters with single, serial and parallel routing, envelope depth and key tracking.
 - All **18 Rustias filter models** in either slot: RADIAS, Ladder LP/HP/BP24,
@@ -117,6 +121,7 @@ node wasm/test.mjs
 node wasm/test-realtime.mjs
 node wasm/test-resynth.mjs
 node wasm/test-neuropolis.mjs
+node wasm/test-sequencer-ui.mjs
 node wasm/test-microphone.mjs
 node wasm/test-library.mjs
 node wasm/test-presets.mjs

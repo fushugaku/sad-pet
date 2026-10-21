@@ -132,7 +132,9 @@ function scheduleSequence(edit) {
 function sequenceCommand(edit) {
   return (
     edit.stage === null &&
-    ((edit.track === 0 && edit.field === 1) || edit.field >= 47)
+    ((edit.track === 0 && edit.field === 1) ||
+      edit.field === 47 ||
+      edit.field === 48)
   );
 }
 function armPresetWrite(delay) {
@@ -575,9 +577,12 @@ function createKnob(
     },
     { passive: false },
   );
-  controls.set(key, update);
-  modulationViews.set(key, modulation);
-  $(bank).append(box);
+  if (binding?.register !== false) {
+    controls.set(key, update);
+    modulationViews.set(key, modulation);
+  }
+  (typeof bank === "string" ? $(bank) : bank).append(box);
+  return update;
 }
 function syncControl(key) {
   controls.get(key)?.();
@@ -2476,6 +2481,8 @@ function buildSequence() {
     read: () => preset,
     edit: scheduleSequence,
     structure: schedulePreset,
+    knob: (schema, container, binding) =>
+      createKnob(schema, container, binding),
     view: (offset) =>
       flushEdits()
         .then(() => request("/api/sequencer/view", { offset }))

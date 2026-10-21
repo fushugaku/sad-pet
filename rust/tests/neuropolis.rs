@@ -226,6 +226,18 @@ fn unlimited_tracks_recall_and_id_based_adoption_do_not_allocate_or_reset_other_
             field: 11,
             value: 67.0,
         },
+        Edit {
+            track: 220,
+            stage: None,
+            field: 49,
+            value: 1.0,
+        },
+        Edit {
+            track: 220,
+            stage: Some(0),
+            field: 9,
+            value: 28.0,
+        },
     ];
     e.apply_sequence_edits(&edits);
     let mut next = e.preset.clone();
@@ -260,6 +272,74 @@ fn unlimited_tracks_recall_and_id_based_adoption_do_not_allocate_or_reset_other_
             .unwrap()
             .config[11],
         67
+    );
+    let restored_track = restored
+        .sequencer
+        .tracks
+        .iter()
+        .find(|t| t.id == 220)
+        .unwrap();
+    assert!(restored_track.pitch_oscillators[0]);
+    assert_eq!(restored_track.steps[0].gate_override, 28);
+}
+
+#[test]
+fn step_gate_length_uses_the_original_core_and_oscillator_presets_use_signed_offsets() {
+    let mut p = Preset::default();
+    p.sequencer.enabled = true;
+    let mut t = Track {
+        target: Target::Notes,
+        ..Track::default()
+    };
+    t.steps[0].gate_override = 20;
+    t.steps[1].gate_override = 80;
+    p.sequencer.tracks = vec![t];
+    let mut e = engine(p);
+    e.set_playing(true);
+    let mut gates = [0; 2];
+    for sample in 0..2000 {
+        e.process_frame();
+        gates[sample / 1000] += usize::from(e.sequence_view().tracks[0].gate);
+    }
+    assert!(gates[0] > 150 && gates[0] < 260, "20% gate: {}", gates[0]);
+    assert!(gates[1] > 750 && gates[1] < 860, "80% gate: {}", gates[1]);
+
+    let mut value = serde_json::to_value(Preset::default()).unwrap();
+    value["sequencer"]["tracks"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("pitch_oscillators");
+    value["sequencer"]["tracks"][0]["target"] = serde_json::json!({"kind":"oscillator","index":3});
+    value["sequencer"]["tracks"][0]["root_note"] = serde_json::json!(48);
+    value["sequencer"]["tracks"][0]["steps"][0]["pitch"] = serde_json::json!(55);
+    let mut p: Preset = serde_json::from_value(value).unwrap();
+    p.sanitize();
+    let t = &p.sequencer.tracks[0];
+    assert_eq!(t.pitch_oscillators, [false; 4]);
+    assert_eq!(t.root_note, 60);
+    assert_eq!(
+        t.steps[0].pitch, 67,
+        "An old +7 st offset changed on recall"
+    );
+    let encoded = serde_json::to_vec(&p).unwrap();
+    let mut recalled: Preset = serde_json::from_slice(&encoded).unwrap();
+    recalled.sanitize();
+    assert_eq!(recalled.sequencer.tracks[0].steps[0].pitch, 67);
+    let mut old = serde_json::to_value(Preset::default()).unwrap();
+    old["sequencer"]["enabled"] = serde_json::json!(true);
+    old["sequencer"]["tracks"][0]["target"] = serde_json::json!({"kind":"oscillator","index":0});
+    old["sequencer"]["tracks"][0]["root_note"] = serde_json::json!(54);
+    old["sequencer"]["tracks"][0]["steps"][0]["pitch"] = serde_json::json!(55);
+    let mut p: Preset = serde_json::from_value(old).unwrap();
+    p.sanitize();
+    assert_eq!(p.sequencer.tracks[0].config[field::ROOT], 6);
+    let mut e = engine(p);
+    e.set_playing(true);
+    frames(&mut e, 1);
+    assert_eq!(
+        e.sequence_view().tracks[0].value,
+        1.0,
+        "A non-C root changed the quantized oscillator offset"
     );
 }
 

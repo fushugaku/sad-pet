@@ -7,7 +7,7 @@ window.SadNeuropolis = class {
     this.hooks = hooks;
     this.selected = null;
     this.page = 0;
-    this.layer = "pitch";
+    this.knobs = [];
     this.signature = "";
     root.innerHTML = `<div class="section-heading"><h2>Neuropolis <span class="neuro-count"></span></h2><div class="neuro-actions"><label class="check"><input class="neuro-enabled" type="checkbox">Enabled</label><button class="neuro-restart" title="Restart all sequencer tracks">Restart</button><button class="neuro-add">+ Add track</button></div></div><div class="neuro-layout"><aside><div class="neuro-tracks" role="tablist" aria-label="Sequencer tracks"></div><div class="neuro-pages"><button class="neuro-prev" aria-label="Previous tracks">←</button><output></output><button class="neuro-next" aria-label="Next tracks">→</button></div></aside><div class="neuro-editor"></div></div>`;
     root.querySelector(".neuro-enabled").onchange = (e) =>
@@ -23,8 +23,8 @@ window.SadNeuropolis = class {
   program() {
     return this.hooks.read().sequencer;
   }
-  track() {
-    return this.program().tracks.find((t) => t.id === this.selected);
+  track(id = this.selected) {
+    return this.program().tracks.find((t) => t.id === id);
   }
   setPage(page) {
     this.page = Math.max(
@@ -54,8 +54,14 @@ window.SadNeuropolis = class {
     this.sync();
     this.hooks.view(this.page * 64);
   }
-  edit(track, stage, field, value) {
+  edit(track, stage, field, value, refresh = true) {
     if (!Number.isFinite(value)) return;
+    // Polling replaces the preset object without rebuilding unchanged controls.
+    // Event handlers must resolve the current lane, never mutate their captured
+    // snapshot (which used to make a previous pitch slider jump back).
+    const id = typeof track === "object" ? track?.id : track;
+    track = id ? this.track(id) : null;
+    if (id && !track) return;
     if (!track) {
       if (field === 0) this.program().enabled = !!value;
     } else if (stage !== null)
@@ -63,14 +69,17 @@ window.SadNeuropolis = class {
         ? !!value
         : value;
     else if (field < 43) track.config[field] = Math.round(value);
-    else
+    else if (field >= 49 && field <= 52) {
+      track.pitch_oscillators ??= [false, false, false, false];
+      track.pitch_oscillators[field - 49] = !!value;
+    } else if (field < 47)
       track[
         { 43: "amount", 44: "absolute", 45: "gate_output", 46: "root_note" }[
           field
         ]
       ] = field === 44 || field === 45 ? !!value : value;
     this.hooks.edit({ track: track?.id || 0, stage, field, value });
-    this.sync();
+    if (refresh) this.sync();
   }
   get stepFields() {
     return [
@@ -103,13 +112,32 @@ window.SadNeuropolis = class {
       (Math.floor(n / 12) - 1)
     );
   }
+  pitchText(track, value) {
+    return track.target.kind === "oscillator"
+      ? `${value >= 60 ? "+" : ""}${Math.round(value - 60)} st`
+      : this.note(value);
+  }
+  configValue(track, field) {
+    return field < 43
+      ? track.config[field]
+      : field >= 49
+        ? !!track.pitch_oscillators?.[field - 49]
+        : track[
+            {
+              43: "amount",
+              44: "absolute",
+              45: "gate_output",
+              46: "root_note",
+            }[field]
+          ];
+  }
   targetName(t) {
     return t.target.kind === "main_pitch"
       ? "Main pitch"
       : t.target.kind === "notes"
         ? "Notes → grains + ENV"
         : t.target.kind === "oscillator"
-          ? `OSC ${t.target.index + 1} pitch`
+          ? `OSC ${t.target.index + 1} offset`
           : this.catalog.parameters.find((p) => p.id === t.target.parameter)
               ?.name || t.target.parameter;
   }
@@ -145,7 +173,6 @@ window.SadNeuropolis = class {
         .slice(this.page * 64, this.page * 64 + 64)
         .map((t) => [t.id, t.name, t.target, t.config[3], t.config[8]]),
       this.selected,
-      this.layer,
       this.hooks.read().color_chain.map((s) => [s.id, s.kind]),
       this.hooks.read().pre_color_chain.map((s) => [s.id, s.kind]),
       this.hooks.read().resynth.count,
@@ -159,17 +186,7 @@ window.SadNeuropolis = class {
     if (!track) return;
     for (const input of this.root.querySelectorAll("[data-config]")) {
       const f = Number(input.dataset.config),
-        value =
-          f < 43
-            ? track.config[f]
-            : track[
-                {
-                  43: "amount",
-                  44: "absolute",
-                  45: "gate_output",
-                  46: "root_note",
-                }[f]
-              ];
+        value = this.configValue(track, f);
       if (document.activeElement !== input) {
         if (input.type === "checkbox") input.checked = !!value;
         else input.value = Number(value);
@@ -178,15 +195,21 @@ window.SadNeuropolis = class {
     for (const input of this.root.querySelectorAll("[data-stage]")) {
       const stage = track.steps[Number(input.dataset.stage)],
         field = Number(input.dataset.field),
-        value = stage[this.stepFields[field]];
-      if (document.activeElement !== input) {
+        raw = stage[this.stepFields[field]],
+        value = input.dataset.relative === "true" && raw >= 0 ? raw - 60 : raw;
+      if (input.tagName === "BUTTON") {
+        if (field === 2) {
+          input.textContent = ["Rest", "Single", "Multi", "Hold"][raw];
+          input.dataset.mode = raw;
+        } else input.setAttribute("aria-pressed", String(!!raw));
+      } else if (document.activeElement !== input) {
         if (input.type === "checkbox") input.checked = !!value;
-        else input.value = Number(value);
+        else
+          input.value = input.dataset.optional && raw < 0 ? "" : Number(value);
       }
     }
-    const kind = track.target.kind,
-      valueLayer =
-        kind === "parameter" && this.layer === "pitch" ? "cv" : this.layer;
+    for (const update of this.knobs) update();
+    const valueLayer = track.target.kind === "parameter" ? "cv" : "pitch";
     this.root.querySelectorAll(".neuro-stage").forEach((card, i) => {
       const step = track.steps[i],
         value = step[valueLayer];
@@ -194,7 +217,7 @@ window.SadNeuropolis = class {
       card.classList.toggle("rest", step.gate === 0 || step.skip);
       card.querySelector(".neuro-value").textContent =
         valueLayer === "pitch"
-          ? this.note(value)
+          ? this.pitchText(track, value)
           : valueLayer === "cv"
             ? `${value > 0 ? "+" : ""}${(value / 50).toFixed(0)}%`
             : typeof value === "boolean"
@@ -202,6 +225,12 @@ window.SadNeuropolis = class {
                 ? "On"
                 : "Off"
               : value;
+      card
+        .querySelector(".neuro-fader")
+        .setAttribute(
+          "aria-valuetext",
+          card.querySelector(".neuro-value").textContent,
+        );
       card
         .querySelector(".neuro-stage-number")
         .setAttribute("aria-pressed", String(!step.skip));
@@ -240,7 +269,8 @@ window.SadNeuropolis = class {
       mute.textContent = "M";
       mute.setAttribute("aria-label", `Mute ${t.name}`);
       mute.setAttribute("aria-pressed", String(!!t.config[8]));
-      mute.onclick = () => this.edit(t, null, 8, 1 - t.config[8]);
+      mute.onclick = () =>
+        this.edit(t.id, null, 8, 1 - this.track(t.id).config[8]);
       row.append(tab, mute);
       list.append(row);
     }
@@ -293,10 +323,255 @@ window.SadNeuropolis = class {
     container.append(label);
     return input;
   }
+  stepInput(container, track, stage, field, min, max, label, options = {}) {
+    const input = document.createElement("input");
+    input.type = "number";
+    input.min = min;
+    input.max = max;
+    input.step = 1;
+    input.dataset.stage = stage;
+    input.dataset.field = field;
+    input.dataset.relative = String(!!options.relative);
+    if (options.optional) {
+      input.dataset.optional = "true";
+      input.placeholder = "—";
+    }
+    input.setAttribute("aria-label", `Stage ${stage + 1} ${label}`);
+    input.oninput = () => {
+      if (input.value === "" && !options.optional) return;
+      let value =
+        input.value === ""
+          ? -1
+          : Math.round(Math.max(min, Math.min(max, Number(input.value))));
+      if (options.relative && input.value !== "") value += 60;
+      this.edit(track.id, stage, field, value);
+    };
+    container.append(input);
+    return input;
+  }
+  stepToggle(container, track, stage, field, text) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = text;
+    button.dataset.stage = stage;
+    button.dataset.field = field;
+    button.setAttribute(
+      "aria-label",
+      `Stage ${stage + 1} ${text.toLowerCase()}`,
+    );
+    button.onclick = () =>
+      this.edit(
+        track.id,
+        stage,
+        field,
+        Number(!this.track(track.id).steps[stage][this.stepFields[field]]),
+      );
+    container.append(button);
+    return button;
+  }
+  rowLabels(grid, names, className = "") {
+    const labels = document.createElement("div");
+    labels.className = `neuro-row-labels ${className}`;
+    labels.setAttribute("aria-hidden", "true");
+    for (const name of names) {
+      const label = document.createElement("span");
+      label.textContent = name;
+      labels.append(label);
+    }
+    grid.append(labels);
+  }
+  buildStages(editor, track) {
+    const parameter = track.target.kind === "parameter",
+      relative = track.target.kind === "oscillator",
+      field = parameter ? 12 : 0,
+      min = parameter ? -5000 : relative ? -24 : 0,
+      max = parameter ? 5000 : relative ? 24 : 127;
+    const toolbar = document.createElement("div");
+    toolbar.className = "neuro-stage-tools";
+    const title = document.createElement("strong");
+    title.textContent = relative
+      ? "Pitch offset · −24…+24 st"
+      : parameter
+        ? "Parameter value"
+        : "Pitch";
+    const fill = document.createElement("button");
+    fill.textContent = "Copy step 1 → all";
+    fill.onclick = () => {
+      const current = this.track(track.id),
+        first = { ...current.steps[0] };
+      for (let i = 1; i < 16; i++)
+        this.stepFields.forEach((key, f) =>
+          this.edit(track.id, i, f, Number(first[key]), false),
+        );
+      this.sync();
+    };
+    const live = document.createElement("output");
+    live.className = "neuro-live";
+    live.textContent = "—";
+    toolbar.append(title, fill, live);
+    editor.append(toolbar);
+    const scroll = document.createElement("div");
+    scroll.className = "neuro-stage-scroll";
+    const grid = document.createElement("div");
+    grid.className = "neuro-stages";
+    grid.setAttribute("aria-label", "Neuropolis stages");
+    this.rowLabels(grid, [
+      "Step",
+      parameter ? "Value" : relative ? "Offset" : "Note",
+      "",
+      "Gate",
+      "Gate type",
+      "Pulses",
+      "Ratchet",
+      "Slide",
+      "Chance %",
+      "Velocity",
+    ]);
+    for (let i = 0; i < 16; i++) {
+      const card = document.createElement("div");
+      card.className = "neuro-stage";
+      const number = document.createElement("button");
+      number.className = "neuro-stage-number";
+      number.textContent = String(i + 1).padStart(2, "0");
+      number.setAttribute("aria-label", `Stage ${i + 1} enabled`);
+      number.onclick = () =>
+        this.edit(track.id, i, 6, Number(!this.track(track.id).steps[i].skip));
+      const value = document.createElement("output");
+      value.className = "neuro-value";
+      const fader = document.createElement("input");
+      fader.type = "range";
+      fader.className = "neuro-fader";
+      fader.min = min;
+      fader.max = max;
+      fader.step = 1;
+      fader.dataset.stage = i;
+      fader.dataset.field = field;
+      fader.dataset.relative = String(relative);
+      fader.setAttribute(
+        "aria-label",
+        `Stage ${i + 1} ${parameter ? "parameter value" : relative ? "pitch offset" : "pitch"}`,
+      );
+      fader.oninput = () =>
+        this.edit(
+          track.id,
+          i,
+          field,
+          Number(fader.value) + (relative ? 60 : 0),
+        );
+      card.append(number, value, fader);
+      const gate = document.createElement("div");
+      gate.className = "neuro-gate";
+      this.knobs.push(
+        this.hooks.knob(
+          [
+            `sequence_${track.id}_${i}_gate`,
+            "",
+            (v) => `${Math.round(v * 100)}%`,
+            0,
+            1,
+            `Stage ${i + 1} gate length`,
+          ],
+          gate,
+          {
+            register: false,
+            get: () => {
+              const t = this.track(track.id),
+                n = t.steps[i].gate_override;
+              return (n < 0 ? t.config[7] : n) / 100;
+            },
+            set: (v) => this.edit(track.id, i, 9, Math.round(v * 100)),
+            reset: () => -0.01,
+          },
+        ),
+      );
+      card.append(gate);
+      const mode = document.createElement("button");
+      mode.className = "neuro-gate-mode";
+      mode.dataset.stage = i;
+      mode.dataset.field = 2;
+      mode.setAttribute("aria-label", `Stage ${i + 1} gate type`);
+      mode.title = "Rest / Single / Multi / Hold";
+      mode.onclick = () =>
+        this.edit(track.id, i, 2, (this.track(track.id).steps[i].gate + 1) % 4);
+      card.append(mode);
+      this.stepInput(card, track, i, 1, 1, 8, "pulses");
+      this.stepInput(card, track, i, 3, 1, 8, "ratchet");
+      this.stepToggle(card, track, i, 5, "Slide");
+      this.stepInput(card, track, i, 4, 0, 100, "probability");
+      this.stepInput(card, track, i, 15, 1, 127, "velocity");
+      grid.append(card);
+    }
+    scroll.append(grid);
+    editor.append(scroll);
+
+    const details = document.createElement("details");
+    details.className = "neuro-advanced";
+    details.innerHTML = "<summary>Step overrides & accumulation</summary>";
+    const advancedScroll = document.createElement("div");
+    advancedScroll.className = "neuro-stage-scroll neuro-detail-scroll";
+    const advanced = document.createElement("div");
+    advanced.className = "neuro-stages neuro-detail-stages";
+    this.rowLabels(
+      advanced,
+      [
+        "Step",
+        "Accumulate",
+        "Pitch override",
+        "Chance to",
+        "Acc. trigger",
+        "CV",
+        "CV ramp",
+        "CV gate",
+      ],
+      "neuro-detail-labels",
+    );
+    for (let i = 0; i < 16; i++) {
+      const card = document.createElement("div");
+      card.className = "neuro-detail-stage";
+      const number = document.createElement("span");
+      number.textContent = String(i + 1).padStart(2, "0");
+      card.append(number);
+      this.stepInput(card, track, i, 7, -28, 28, "accumulate");
+      this.stepInput(
+        card,
+        track,
+        i,
+        8,
+        relative ? -24 : 0,
+        relative ? 24 : 127,
+        "pitch override",
+        { relative, optional: true },
+      );
+      for (const [f, label, options] of [
+        [10, "probability target", ["Gate", "Ratchet"]],
+        [11, "accumulate trigger", ["Stage", "Pulse", "Ratchet"]],
+        [12, "cv", null],
+        [13, "cv ramp", ["Off", "Stage", "Pulse"]],
+      ]) {
+        if (!options) {
+          this.stepInput(card, track, i, f, -5000, 5000, label);
+          continue;
+        }
+        const select = document.createElement("select");
+        select.dataset.stage = i;
+        select.dataset.field = f;
+        select.setAttribute("aria-label", `Stage ${i + 1} ${label}`);
+        options.forEach((text, n) => select.append(this.option(n, text)));
+        select.onchange = () => this.edit(track.id, i, f, Number(select.value));
+        card.append(select);
+      }
+      this.stepToggle(card, track, i, 14, "Gate");
+      advanced.append(card);
+    }
+    advancedScroll.append(advanced);
+    details.append(advancedScroll);
+    editor.append(details);
+  }
   buildEditor() {
     const editor = this.root.querySelector(".neuro-editor"),
       track = this.track();
     editor.replaceChildren();
+    this.knobs = [];
     if (!track) {
       const empty = document.createElement("p");
       empty.className = "muted";
@@ -311,7 +586,7 @@ window.SadNeuropolis = class {
     name.value = track.name;
     name.setAttribute("aria-label", "Track name");
     name.onchange = () => {
-      track.name = name.value.trim() || `Track ${track.id}`;
+      this.track(track.id).name = name.value.trim() || `Track ${track.id}`;
       this.signature = "";
       this.hooks.structure();
       this.sync();
@@ -323,7 +598,7 @@ window.SadNeuropolis = class {
     for (const [value, label] of [
       ["main_pitch", "Main track pitch"],
       ["notes", "Notes → grains + ENV"],
-      ...[0, 1, 2, 3].map((i) => [`osc:${i}`, `OSC ${i + 1} pitch`]),
+      ...[0, 1, 2, 3].map((i) => [`osc:${i}`, `OSC ${i + 1} pitch offset`]),
     ])
       group.append(this.option(value, label));
     target.append(group);
@@ -371,11 +646,25 @@ window.SadNeuropolis = class {
       ),
         (target.value = `param:${track.target.parameter}`));
     target.onchange = () => {
-      track.target = target.value.startsWith("osc:")
+      const current = this.track(track.id);
+      current.target = target.value.startsWith("osc:")
         ? { kind: "oscillator", index: Number(target.value.slice(4)) }
         : target.value.startsWith("param:")
           ? { kind: "parameter", parameter: target.value.slice(6) }
           : { kind: target.value };
+      if (current.target.kind === "oscillator") {
+        const shift = 60 - current.root_note;
+        current.config[5] = (((current.config[5] + shift) % 12) + 12) % 12;
+        current.steps.forEach((step) => {
+          step.pitch = Math.max(36, Math.min(84, step.pitch + shift));
+          if (step.pitch_override >= 0)
+            step.pitch_override = Math.max(
+              36,
+              Math.min(84, step.pitch_override + shift),
+            );
+        });
+        current.root_note = 60;
+      }
       this.signature = "";
       this.hooks.structure();
       this.sync();
@@ -418,7 +707,7 @@ window.SadNeuropolis = class {
         [0, "Relative"],
         [1, "Absolute"],
       ]);
-    } else {
+    } else if (track.target.kind !== "oscillator") {
       this.configControl(
         controls,
         "Root note",
@@ -426,7 +715,7 @@ window.SadNeuropolis = class {
         Array.from({ length: 128 }, (_, i) => [i, this.note(i)]),
       );
       this.configControl(controls, "Depth", 43, null, -1, 1, 0.01);
-    }
+    } else this.configControl(controls, "Depth", 43, null, -1, 1, 0.01);
     if (track.target.kind === "oscillator")
       this.configControl(
         controls,
@@ -439,130 +728,27 @@ window.SadNeuropolis = class {
         "checkbox",
       );
     editor.append(controls);
-    const toolbar = document.createElement("div");
-    toolbar.className = "neuro-stage-tools";
-    const layer = document.createElement("select");
-    layer.setAttribute("aria-label", "Stage layer");
-    const layers = [
-      ["pitch", "Pitch"],
-      ["cv", "Parameter value"],
-      ["ratchet", "Ratchet"],
-      ["probability", "Probability"],
-      ["velocity", "Velocity"],
-      ["slide", "Slide"],
-      ["skip", "Skip"],
-      ["accumulate", "Accumulate"],
-      ["pitch_override", "Pitch override"],
-      ["gate_override", "Gate override"],
-      ["probability_target", "Probability target"],
-      ["accumulate_trigger", "Accumulate trigger"],
-      ["cv_ramp", "CV ramp"],
-      ["cv_gate", "CV gate"],
-    ];
-    for (const [v, n] of layers) layer.append(this.option(v, n));
-    layer.value =
-      track.target.kind === "parameter" && this.layer === "pitch"
-        ? "cv"
-        : this.layer;
-    layer.onchange = () => {
-      this.layer = layer.value;
-      this.signature = "";
-      this.sync();
-    };
-    const fill = document.createElement("button");
-    fill.textContent = "Copy first → all";
-    fill.onclick = () => {
-      const f = this.stepFields.indexOf(layer.value);
-      for (let i = 1; i < 16; i++)
-        this.edit(track, i, f, Number(track.steps[0][layer.value]));
-    };
-    const live = document.createElement("output");
-    live.className = "neuro-live";
-    live.textContent = "—";
-    toolbar.append(layer, fill, live);
-    editor.append(toolbar);
-    const scroll = document.createElement("div");
-    scroll.className = "neuro-stage-scroll";
-    const grid = document.createElement("div");
-    grid.className = "neuro-stages";
-    grid.setAttribute("aria-label", "Neuropolis stages");
-    const ranges = {
-      pitch: [0, 127],
-      cv: [-5000, 5000],
-      ratchet: [1, 8],
-      probability: [0, 100],
-      velocity: [1, 127],
-      slide: [0, 1],
-      skip: [0, 1],
-      accumulate: [-28, 28],
-      pitch_override: [-1, 127],
-      gate_override: [-1, 100],
-      probability_target: [0, 1],
-      accumulate_trigger: [0, 2],
-      cv_ramp: [0, 2],
-      cv_gate: [0, 1],
-    };
-    const selected = layer.value,
-      field = this.stepFields.indexOf(selected),
-      [min, max] = ranges[selected];
-    for (let i = 0; i < 16; i++) {
-      const card = document.createElement("div");
-      card.className = "neuro-stage";
-      const number = document.createElement("button");
-      number.className = "neuro-stage-number";
-      number.textContent = String(i + 1).padStart(2, "0");
-      number.setAttribute("aria-label", `Stage ${i + 1} enabled`);
-      number.onclick = () =>
-        this.edit(track, i, 6, Number(!track.steps[i].skip));
-      const value = document.createElement("output");
-      value.className = "neuro-value";
-      const fader = document.createElement("input");
-      fader.type = "range";
-      fader.className = "neuro-fader";
-      fader.min = min;
-      fader.max = max;
-      fader.step = 1;
-      fader.dataset.stage = i;
-      fader.dataset.field = field;
-      fader.setAttribute(
-        "aria-label",
-        `Stage ${i + 1} ${selected.replaceAll("_", " ")}`,
-      );
-      fader.oninput = () => this.edit(track, i, field, Number(fader.value));
-      const pulses = document.createElement("input");
-      pulses.type = "number";
-      pulses.min = 1;
-      pulses.max = 8;
-      pulses.dataset.stage = i;
-      pulses.dataset.field = 1;
-      pulses.setAttribute("aria-label", `Stage ${i + 1} pulses`);
-      pulses.title = "Pulses";
-      pulses.oninput = () => {
-        if (pulses.value != "")
-          this.edit(
-            track,
-            i,
-            1,
-            Math.max(1, Math.min(8, Number(pulses.value))),
-          );
-      };
-      const gate = document.createElement("select");
-      gate.dataset.stage = i;
-      gate.dataset.field = 2;
-      gate.setAttribute("aria-label", `Stage ${i + 1} gate`);
-      for (const [v, n] of [
-        [0, "Rest"],
-        [1, "Single"],
-        [2, "Multi"],
-        [3, "Hold"],
-      ])
-        gate.append(this.option(v, n));
-      gate.onchange = () => this.edit(track, i, 2, Number(gate.value));
-      card.append(number, value, fader, pulses, gate);
-      grid.append(card);
+    if (track.target.kind === "main_pitch") {
+      const routing = document.createElement("div");
+      routing.className = "neuro-pitch-routing";
+      const label = document.createElement("span");
+      label.textContent = "Pitch →";
+      routing.append(label);
+      for (let i = 0; i < 4; i++) {
+        const check = document.createElement("label");
+        check.className = "check";
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.dataset.config = 49 + i;
+        input.setAttribute("aria-label", `Main pitch affects OSC ${i + 1}`);
+        input.onchange = () =>
+          this.edit(track.id, null, 49 + i, Number(input.checked));
+        check.append(input, `OSC ${i + 1}`);
+        routing.append(check);
+      }
+      editor.append(routing);
     }
-    scroll.append(grid);
-    editor.append(scroll);
+    this.buildStages(editor, track);
     const advanced = document.createElement("details");
     advanced.className = "neuro-advanced";
     advanced.innerHTML = "<summary>Scale, slide & accumulation</summary>";
@@ -663,7 +849,9 @@ window.SadNeuropolis = class {
     const out = this.root.querySelector(".neuro-live");
     if (out && selected)
       out.textContent = active
-        ? `${this.note(selected.pitch)} · ${selected.value > 0 ? "+" : ""}${selected.value.toFixed(2)}${this.track()?.target.kind === "parameter" ? "" : " st"}`
+        ? this.track()?.target.kind === "oscillator"
+          ? `${selected.value >= 0 ? "+" : ""}${selected.value.toFixed(2)} st`
+          : `${this.note(selected.pitch)} · ${selected.value > 0 ? "+" : ""}${selected.value.toFixed(2)}${this.track()?.target.kind === "parameter" ? "" : " st"}`
         : "—";
   }
 };

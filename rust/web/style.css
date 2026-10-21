@@ -2969,9 +2969,9 @@ input[type="range"] {
 }
 .neuro-layout {
   display: grid;
-  grid-template-columns: 210px minmax(0, 1fr);
-  gap: 22px;
-  margin-top: 22px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  margin-top: 20px;
 }
 .neuro-layout > aside,
 .neuro-editor {
@@ -2979,8 +2979,9 @@ input[type="range"] {
 }
 .neuro-tracks {
   display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: 6px;
-  max-height: 460px;
+  max-height: 150px;
   overflow: auto;
   padding-right: 4px;
 }
@@ -3080,7 +3081,8 @@ input[type="range"] {
 }
 .neuro-edit-head input,
 .neuro-control input:not([type="checkbox"]),
-.neuro-stage input[type="number"] {
+.neuro-stage input[type="number"],
+.neuro-detail-stage input[type="number"] {
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--line);
@@ -3133,6 +3135,28 @@ input[type="range"] {
   padding: 4px 9px;
   font-size: 11px;
 }
+.neuro-stage-tools > strong {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.neuro-pitch-routing {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  margin-top: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.neuro-pitch-routing > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.neuro-pitch-routing .check {
+  margin: 0;
+  min-height: 24px;
+}
 .neuro-live {
   margin-left: auto;
   font:
@@ -3149,21 +3173,35 @@ input[type="range"] {
 }
 .neuro-stages {
   display: grid;
-  grid-template-columns: repeat(16, minmax(45px, 1fr));
+  grid-template-columns: 84px repeat(16, minmax(54px, 1fr));
   gap: 4px;
-  min-width: 820px;
+  min-width: 1012px;
 }
-.neuro-stage {
+.neuro-stage,
+.neuro-row-labels {
   display: grid;
-  grid-template-rows: 26px 24px 124px 29px 29px;
-  gap: 5px;
+  grid-template-rows: 26px 24px 96px 76px repeat(6, 30px);
+  gap: 4px;
   align-items: center;
   justify-items: stretch;
-  background: #181f17;
-  border: 1px solid #2c3828;
+  background: var(--panel);
+  border: 1px solid var(--line);
   border-radius: 7px;
-  padding: 7px 3px;
+  padding: 8px 4px;
   min-width: 0;
+}
+.neuro-row-labels {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg);
+  border-color: transparent;
+  border-radius: 0;
+  padding-left: 0;
+  padding-right: 8px;
+  color: var(--muted);
+  font-size: 10px;
+  text-align: right;
 }
 .neuro-stage.is-current {
   border-color: #bde783;
@@ -3201,17 +3239,21 @@ input[type="range"] {
   writing-mode: vertical-lr;
   direction: rtl;
   width: 100%;
-  height: 120px;
+  height: 92px;
   padding: 0;
   margin: 0;
   accent-color: #bde783;
   cursor: ns-resize;
 }
 .neuro-stage input[type="number"],
-.neuro-stage select {
+.neuro-stage select,
+.neuro-detail-stage input,
+.neuro-detail-stage select,
+.neuro-detail-stage button,
+.neuro-stage button:not(.neuro-stage-number) {
   width: 100%;
   min-width: 0;
-  height: 29px;
+  height: 30px;
   padding: 2px;
   font:
     10px ui-monospace,
@@ -3222,11 +3264,59 @@ input[type="range"] {
 .neuro-stage input[type="number"] {
   appearance: textfield;
 }
-.neuro-stage input::-webkit-inner-spin-button {
+.neuro-stage input::-webkit-inner-spin-button,
+.neuro-detail-stage input::-webkit-inner-spin-button {
   appearance: none;
 }
 .neuro-stage select {
   padding-right: 0;
+}
+.neuro-stage button:not(.neuro-stage-number) {
+  padding: 0 2px;
+}
+.neuro-gate .knob {
+  gap: 0;
+  padding: 0;
+}
+.neuro-gate .dial {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto;
+}
+.neuro-gate .knob-label,
+.neuro-gate .knob-mod-range {
+  display: none;
+}
+.neuro-gate .knob-value {
+  font-size: 10px;
+  min-height: 18px;
+  line-height: 18px;
+}
+.neuro-gate-mode[data-mode="0"] {
+  color: var(--muted);
+}
+.neuro-gate-mode[data-mode="3"] {
+  color: var(--accent);
+}
+.neuro-detail-scroll {
+  margin-top: 12px;
+}
+.neuro-detail-stage,
+.neuro-detail-labels {
+  display: grid;
+  grid-template-rows: 26px repeat(7, 30px);
+  gap: 4px;
+  align-items: center;
+  padding: 8px 4px;
+  min-width: 0;
+}
+.neuro-detail-stage {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  text-align: center;
+  font:
+    11px ui-monospace,
+    monospace;
 }
 .neuro-advanced {
   margin-top: 15px;
@@ -3238,7 +3328,6 @@ input[type="range"] {
 }
 @media (max-width: 1000px) {
   .neuro-layout {
-    grid-template-columns: 170px minmax(0, 1fr);
     gap: 14px;
   }
   .neuro-controls {

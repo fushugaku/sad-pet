@@ -199,3 +199,11 @@ console.log("Parameter transport passed: sparse writes, coalesced dragging, stru
   assert.equal(e.calls[1].data[0].value,72,"Retry overwrote the newest stage value");
 }
 console.log("Sequencer transport passed: stage drags coalesce, structural edits preserve commands, retries keep the latest value.");
+
+{
+  const e=editor();
+  e.evaluate('scheduleSequence({track:1,stage:null,field:49,value:1});preset.sequencer={enabled:true,tracks:[{id:1,pitch_oscillators:[true,false,false,false]}]};schedulePreset()');
+  await e.next();
+  assert.deepEqual(e.calls.map(c=>c.path),["/api/preset"],"A pitch routing checkbox was mistaken for a restart command");
+  assert.equal(e.calls[0].data.sequencer.tracks[0].pitch_oscillators[0],true);
+}

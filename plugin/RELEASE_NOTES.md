@@ -1,21 +1,21 @@
 SAD PET instrument and SAD PET FX, with native Rust DSP and an embedded editor.
 
-**SuperEcho and AlphaVerb in all three FX stages.** SuperEcho ports KekLocator's
-native Rust Tape/BBD delay with orbit, filters, pitch/frequency shimmer, dub,
-compression, freeze and tempo sync. AlphaVerb ports Dayverb's native Rust reverb,
-including damping, EQ, early/late balance, spin, stereo, shimmer, compressor,
-gate and freeze. Their controls use the SAD PET editor and save in presets and
-DAW projects. Pre/post-filter controls support host automation and Neuropolis.
+**Neuropolis step controls and oscillator pitch routing.** Each step now shows
+Pitch/value, a Gate length knob, gate type, Pulses, Ratchet, Slide, Chance and
+Velocity together. Double-click Gate to inherit the track's Gate setting.
+Advanced overrides and accumulation remain available in their own disclosure.
 
-The same original DSP cores run natively in AU/VST3 and in the web version.
-They retain their 48 kHz processing, with bandlimited conversion at other host
-rates. Instances are prepared outside the native audio callback; knob updates
-preserve their running tails without allocating audio storage. Existing host
-parameter indices remain stable.
+Pitch handlers resolve the current track by stable ID after telemetry updates.
+Editing another step no longer restores an earlier slider's old value. Numeric
+edits remain sparse and preserve running clocks, notes and audio histories.
 
-**Delay Smooth** is now beside the clock selector in L/C/R Delay and Mod Delay.
-It allows intermediate note divisions and smoothly glides the delay time under
-manual, LFO and ENV control. The display shows the division and milliseconds.
+**Main pitch → OSC 1–4** checkboxes select which Resynth layers follow the main
+sample-pitch sequence. Each oscillator's own track adds a −24…+24 semitone offset
+at an independent speed, length and play order. Contributions are summed before
+clamping; tuning, routing, step gates and assignments save in presets and DAW
+projects. All processing uses the same native Rust / WASM implementation.
+
+SuperEcho, AlphaVerb and Delay Smooth from 0.9.0 remain included.
 
 | System | Installer | Plug-in formats |
 | --- | --- | --- |
@@ -47,11 +47,11 @@ are supplied individually and in `SHA256SUMS.txt`.
 ---
 
 В обоих установщиках есть инструмент **SAD PET** и эффект **SAD PET FX**.
-Добавлены **SuperEcho** (KekLocator) и **AlphaVerb** (Dayverb) во все три стойки.
-Исходный Rust DSP работает нативно в AU/VST3 и тем же движком в web. Доступны
-оригинальные звуковые параметры, сохранение пресетов и автоматизация. Поворот
-ручек сохраняет хвосты и не выделяет память в аудиопотоке.
-**Smooth** появился рядом с Tempo sync в L/C/R Delay и Mod Delay.
+В секвенсоре Pitch, ручка Gate, Pulses, Ratchet, Slide, Chance и Velocity видны
+одновременно. Исправлен откат ранее изменённых ползунков после обновления
+состояния. У Main Pitch добавлен выбор OSC 1–4; отдельные дорожки осцилляторов
+задают смещение −24…+24 полутона с независимой скоростью. Настройки сохраняются
+в пресетах и проектах DAW. SuperEcho, AlphaVerb и Smooth также входят в выпуск.
 macOS: AU и VST3 для Apple silicon и Intel. Windows: VST3 x64.
 Закройте DAW перед установкой, затем обновите список плагинов.
 Пользовательские пресеты сохраняются при обновлении и удалении.

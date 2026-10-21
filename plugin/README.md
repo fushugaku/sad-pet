@@ -187,17 +187,24 @@ microphone selection, MIDI-device selection and Quit controls are hidden here.
 ## Neuropolis sequencer
 
 Enable **Neuropolis**, then **+ Add track**. The destination selects **Main track
-pitch**, **OSC 1–4 pitch**, **Notes → grains + ENV**, or a named realtime parameter.
-Pitch tracks use **Root note** as zero transposition. Parameter tracks edit the
-**Parameter value** layer: Relative adds signed CV × Depth to the saved knob;
+pitch**, **OSC 1–4 pitch offset**, **Notes → grains + ENV**, or a named realtime parameter.
+Main pitch uses **Root note** as zero transposition. Its **Pitch → OSC 1–4**
+checkboxes also transpose the selected oscillators. A separate oscillator track
+adds its own **−24…+24 st** offset to that main pitch, with its own clock, length,
+gate and slide. The oscillator's saved Transpose and Fine settings remain additive.
+Unchecked oscillators keep their own tuning and oscillator-track offsets.
+Parameter tracks edit signed values: Relative adds CV × Depth to the saved knob;
 Absolute blends the full parameter range according to Depth. Source FX for files
 is prepared ahead of playback and is not a realtime destination.
 
 Each track has its own Clock, Length, Order, Swing and Gate. Clock starts at 1/16;
 ×2/×4 produce 1/32 and 1/64, and ÷2–÷64 slow that track independently. Each of the
-16 columns has a value fader, 1–8 pulses and a Rest/Single/Multi/Hold gate selector.
-The Stage layer menu switches to probability, ratchets, slide, velocity, skip,
-accumulation, CV ramp and overrides. Scale, slide & accumulation holds the other
+16 columns shows its Pitch/value fader, **Gate length knob**, gate type, 1–8
+pulses, Ratchet, Slide, Chance and Velocity together. Gate is 0–100% of the pulse;
+double-click its knob to inherit the track's Gate %. Click the gate type to cycle
+Rest/Single/Multi/Hold; click a step number to skip it. **Step overrides &
+accumulation** contains pitch overrides, accumulation and CV ramps.
+Scale, slide & accumulation holds the other
 track settings and independent track/accumulator resets. Duplicate copies a
 track; M mutes only that lane. Adding, removing or retargeting a lane preserves
 the other playheads by stable track ID.
