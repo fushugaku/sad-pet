@@ -1,5 +1,35 @@
 SAD PET instrument and SAD PET FX, with native Rust DSP and an embedded editor.
 
+**Synth engine timbre.** A third timbre type next to Granular and Drum machine
+plays up to four Rustias oscillators per note (Saw, Pulse, Triangle and Sine in
+Wave/Cross/Unison/VPM, Formant, Noise, or PCM of the loaded file) with Ring/Sync
+and Cross links, then each note's filters, ENV/VCA, LFOs and matrix routes. With
+Granular on, the voices are captured after the VCA into a 125 ms–32 s history
+that Grain Engine reads, so grains keep the tails of released notes.
+
+**Filters anywhere in the signal path.** Filter 1 and 2 stay where they were;
+**+ Add filter** adds Filters 3–18 with the same models and responses and a
+position: after grains, before or after Filter 1/2 (one filter per voice, with
+its own ENV and key tracking), or after OSC 1–4, after Resynth or after FX (one
+shared stereo filter). An oscillator's filter shapes only its own output, never
+Ring/Sync. Cutoff, resonance, drive, morph, ENV depth and keytrack are mod matrix
+destinations and DAW parameters.
+
+**Rustias envelope types.** Every ENV 1–8 has a Type: SAD PET (the original
+ADSR and the default), RADIAS with eight decay/release curves, and Q ADSR,
+Q ADS1DS2R, Q One Shot, Q Loop S1S2 and Q Loop All. Presets without a type load
+unchanged.
+
+**Gate ENV for Main pitch tracks.** A track checkbox lets each Main pitch step
+restart ENV 1–3 on its gate and release them when the gate ends; tied steps stay
+legato. It is off by default.
+
+**Lighter CPU load, same sound.** Dense granular scenes, effect chains, Resynth
+and the imported SuperEcho/AlphaVerb render faster in the plug-ins and in the
+browser. A stopped scene no longer computes silent Resynth oscillators, so the
+first-open glasses5 idles at about a tenth of its previous load in the browser.
+Existing presets sound the same.
+
 **Selectable drum granular buffer.** The drum heading's **Buffer** selector sets
 125 ms–32 s of captured history per timbre, with 8 s as the compatible default.
 The waveform, Position and Cloud use that duration; Size scales its full range
@@ -101,6 +131,22 @@ are supplied individually and in `SHA256SUMS.txt`.
 ---
 
 В обоих установщиках есть инструмент **SAD PET** и эффект **SAD PET FX**.
+Новый тип тембра **Synth engine**: до четырёх осцилляторов Rustias на каждую ноту
+(Saw, Pulse, Triangle и Sine в режимах Wave/Cross/Unison/VPM, Formant, Noise или
+PCM загруженного файла) со связями Ring/Sync и Cross, затем фильтры, ENV/VCA, LFO
+и матрица каждой ноты. С включённым Granular голоса после VCA пишутся в историю
+от 125 мс до 32 с, и гранулы сохраняют хвосты отпущенных нот.
+Кнопка **+ Add filter** добавляет фильтры 3–18 с теми же моделями и выбором места:
+после гранул, до или после Filter 1/2 (свой фильтр на каждый голос с ENV и
+keytrack), после OSC 1–4, после Resynth или после FX (один общий стерео-фильтр).
+Фильтр осциллятора меняет только его выход и не влияет на Ring/Sync. Cutoff,
+resonance, drive, morph, ENV depth и keytrack доступны в матрице и в DAW.
+У каждого ENV 1–8 есть тип: SAD PET (исходный ADSR, по умолчанию), RADIAS с восемью
+кривыми спада и Q ADSR, Q ADS1DS2R, Q One Shot, Q Loop S1S2, Q Loop All.
+Галочка **Gate ENV** у дорожки Main pitch перезапускает ENV 1–3 на каждом шаге.
+Плотные гранулы, цепочки эффектов, Resynth, SuperEcho и AlphaVerb считаются
+быстрее; остановленная сцена больше не нагружает процессор осцилляторами Resynth.
+Звук существующих пресетов не изменился.
 **Buffer** на странице драм-машины выбирает от 125 мс до 32 с истории звука.
 Волна, Position и Cloud масштабируются под буфер, а Size использует весь ход
 ручки и на коротких буферах. При смене длительности захваченный звук и Freeze
