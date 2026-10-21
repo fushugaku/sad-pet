@@ -161,11 +161,13 @@
       byId("library-import").disabled = false;
       const last = await this.store.setting("last-audio");
       const previous = await this.previousAudio(last);
+      const startup = native.startup_preset_index !== undefined &&
+        native.preset?.name === presets[native.startup_preset_index]?.name;
       if (
         !native.plugin &&
         previous &&
         !previous.trashedAt &&
-        native.sample_id === factoryId(this.catalog[0]) &&
+        (startup || native.sample_id === factoryId(this.catalog[0])) &&
         !native.playing &&
         last.instance !== native.instance_id &&
         last.id !== native.sample_id

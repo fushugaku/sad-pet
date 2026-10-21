@@ -59,4 +59,18 @@ console.log("Library upgrade passed: soundtrack and short-cover selections move 
   assert.equal(restoredFades, 0, "Library initialization replaced the scene fades");
   await sceneLibrary.initialize({ ...native, timbres: undefined }, []);
   assert.equal(restoredFades, 1, "Legacy desktop sample fades no longer restore");
+
+  const last = { id: "audio:previous", instance: "previous-session" };
+  const audio = { id: last.id, kind: "audio" };
+  sceneLibrary.store.setting = async () => last;
+  sceneLibrary.previousAudio = async () => audio;
+  let activated;
+  sceneLibrary.activate = async (record) => { activated = record; };
+  await sceneLibrary.initialize({
+    ...native,
+    sample_id: "factory:dusty-keys:v1",
+    startup_preset_index: 5,
+    preset: { name: "glasses5" },
+  }, Array.from({ length: 6 }, (_, i) => ({ name: i === 5 ? "glasses5" : "Init" })));
+  assert.equal(activated, audio, "The new initial scene prevented the remembered audio from restoring");
 }

@@ -219,9 +219,13 @@
         this.observe(state);
       } else if (
         !this.actions.edited?.() &&
+        factory[this.startupIndex] &&
         state.preset?.name === factory[this.startupIndex]?.name
       ) {
-        this.selection = { id: `factory:${this.startupIndex}`, dirty: false };
+        this.selection = {
+          id: `factory:${this.startupIndex}`,
+          dirty: Boolean(this.selection?.dirty),
+        };
       }
       await this.refresh();
       if (!this.native) {
@@ -230,7 +234,7 @@
           !this.actions.edited?.() &&
           last &&
           (this.users.some((r) => r.id === last.id) ||
-            this.factory.some((_, i) => last.id === `factory:${i}`))
+            this.factory.some((_, i) => i !== this.startupIndex && last.id === `factory:${i}`))
         )
           await this.load(last.id);
       }

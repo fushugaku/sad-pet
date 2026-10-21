@@ -67,6 +67,11 @@ const { encode, decode } = window.SadPresetFile;
   last = { id: "deleted-user" };
   await bank.initialize(state, factory);
   assert.equal(loads.length, 2);
+  last = { id: "factory:5" };
+  bank.selection.dirty = true; // The sample library restored the user's last audio.
+  await bank.initialize(state, factory);
+  assert.equal(loads.length, 2, "The startup scene was needlessly loaded again");
+  assert.equal(bank.selection.dirty, true);
 }
 const record = {
   id: "1234567890abcdef1234567890abcdef",
