@@ -494,8 +494,35 @@ window.SadNeuropolis = class {
       mode.onclick = () =>
         this.edit(track.id, i, 2, (this.track(track.id).steps[i].gate + 1) % 4);
       card.append(mode);
-      this.stepInput(card, track, i, 1, 1, 8, "pulses");
-      this.stepInput(card, track, i, 3, 1, 8, "ratchet");
+      for (const [f, key] of [
+        [1, "pulses"],
+        [3, "ratchet"],
+      ]) {
+        const slot = document.createElement("div");
+        slot.className = "neuro-step-knob";
+        this.knobs.push(
+          this.hooks.knob(
+            [
+              `sequence_${track.id}_${i}_${key}`,
+              "",
+              (v) => String(Math.round(v)),
+              1,
+              8,
+              `Stage ${i + 1} ${key}`,
+            ],
+            slot,
+            {
+              register: false,
+              step: 1,
+              ariaScale: 1,
+              get: () => this.track(track.id).steps[i][key],
+              set: (v) => this.edit(track.id, i, f, Math.round(v)),
+              reset: () => 1,
+            },
+          ),
+        );
+        card.append(slot);
+      }
       this.stepToggle(card, track, i, 5, "Slide");
       this.stepInput(card, track, i, 4, 0, 100, "probability");
       this.stepInput(card, track, i, 15, 1, 127, "velocity");

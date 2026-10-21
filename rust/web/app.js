@@ -462,8 +462,9 @@ function createKnob(
     modText = box.querySelector(".knob-mod-range");
   dial.dataset.controlKey = key;
   dial.setAttribute("aria-label", aria);
-  dial.setAttribute("aria-valuemin", String(min * 100));
-  dial.setAttribute("aria-valuemax", String(max * 100));
+  const ariaScale = binding?.ariaScale ?? 100;
+  dial.setAttribute("aria-valuemin", String(min * ariaScale));
+  dial.setAttribute("aria-valuemax", String(max * ariaScale));
   const clamp = (v) => Math.max(min, Math.min(max, v));
   let drag = null;
   const modulation = (feedback) => {
@@ -524,7 +525,7 @@ function createKnob(
     value.textContent = format(v);
     pointer.style.transform = `rotate(${-135 + 270 * unit}deg)`;
     arc.style.strokeDasharray = `${Math.max(0.01, 117.81 * unit)} 157.08`;
-    dial.setAttribute("aria-valuenow", String(Math.round(v * 100)));
+    dial.setAttribute("aria-valuenow", String(Math.round(v * ariaScale)));
     dial.setAttribute("aria-valuetext", format(v));
     modulation(state?.knobs?.[key]);
   };
@@ -556,7 +557,7 @@ function createKnob(
   dial.addEventListener("lostpointercapture", release);
   dial.addEventListener("keydown", (e) => {
     let v = get();
-    const step = (e.shiftKey ? 0.05 : 0.005) * (max - min);
+    const step = binding?.step ?? (e.shiftKey ? 0.05 : 0.005) * (max - min);
     if (e.key === "ArrowUp" || e.key === "ArrowRight") v += step;
     else if (e.key === "ArrowDown" || e.key === "ArrowLeft") v -= step;
     else if (e.key === "Home") v = min;
@@ -573,7 +574,8 @@ function createKnob(
     (e) => {
       if (document.activeElement !== dial) return;
       e.preventDefault();
-      set(clamp(get() - Math.sign(e.deltaY) * 0.005 * (max - min)));
+      const step = binding?.step ?? 0.005 * (max - min);
+      set(clamp(get() - Math.sign(e.deltaY) * step));
     },
     { passive: false },
   );

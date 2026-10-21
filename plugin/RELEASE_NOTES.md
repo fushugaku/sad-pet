@@ -1,5 +1,10 @@
 SAD PET instrument and SAD PET FX, with native Rust DSP and an embedded editor.
 
+**Pulses and Ratchet rotary controls.** Each step now has dedicated integer
+knobs from 1 to 8. Drag to turn; focus a knob and use the mouse wheel or arrow
+keys to change one value at a time. Double-click resets to 1. Edits retain
+running clocks and other step values.
+
 **Neuropolis step controls and oscillator pitch routing.** Each step now shows
 Pitch/value, a Gate length knob, gate type, Pulses, Ratchet, Slide, Chance and
 Velocity together. Double-click Gate to inherit the track's Gate setting.
@@ -47,6 +52,8 @@ are supplied individually and in `SHA256SUMS.txt`.
 ---
 
 В обоих установщиках есть инструмент **SAD PET** и эффект **SAD PET FX**.
+Pulses и Ratchet теперь управляются ручками от 1 до 8: перетаскиванием,
+колесом мыши после фокуса или стрелками. Двойной щелчок сбрасывает в 1.
 В секвенсоре Pitch, ручка Gate, Pulses, Ratchet, Slide, Chance и Velocity видны
 одновременно. Исправлен откат ранее изменённых ползунков после обновления
 состояния. У Main Pitch добавлен выбор OSC 1–4; отдельные дорожки осцилляторов

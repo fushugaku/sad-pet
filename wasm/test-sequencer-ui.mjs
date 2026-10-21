@@ -114,16 +114,13 @@ const control = (label) => {
   return found[0];
 };
 ui.buildEditor();
-assert.equal(knobs.length, 16, "Every step needs its own gate knob");
+assert.equal(
+  knobs.length,
+  48,
+  "Every step needs Gate, Pulses and Ratchet knobs",
+);
 for (let n = 1; n <= 16; n++)
-  for (const field of [
-    "pitch",
-    "pulses",
-    "ratchet",
-    "slide",
-    "probability",
-    "velocity",
-  ])
+  for (const field of ["pitch", "slide", "probability", "velocity"])
     control(`Stage ${n} ${field}`);
 assert.ok(
   !editor.all().some((e) => e.getAttribute("aria-label") === "Stage layer"),
@@ -168,6 +165,22 @@ assert.equal(
   0.63,
   "Reset gate should follow the current track length",
 );
+for (const [key, index] of [
+  ["pulses", 1],
+  ["ratchet", 2],
+]) {
+  const knob = knobs[index];
+  assert.equal(knob.schema[5], `Stage 1 ${key}`);
+  assert.equal(knob.binding.step, 1);
+  assert.equal(knob.binding.ariaScale, 1);
+  knob.binding.set(4.2);
+  assert.equal(ui.track().steps[0][key], 4);
+  preset = structuredClone(preset);
+  knob.binding.set(knob.binding.get() + 1);
+  assert.equal(ui.track().steps[0][key], 5);
+  knob.binding.set(knob.binding.reset());
+  assert.equal(ui.track().steps[0][key], 1);
+}
 control("Stage 1 slide").onclick();
 control("Stage 1 slide").onclick();
 assert.equal(
@@ -226,5 +239,5 @@ ui.edit(old, 0, 0, 77);
 assert.equal(edits.length, before, "A removed track received a stale edit");
 assert.ok(refreshes > 0);
 console.log(
-  "Sequencer editor: snapshot/reorder-safe pitch, sixteen gate knobs, direct step controls, scalar OSC routing and ±24 st offsets passed.",
+  "Sequencer editor: snapshot/reorder-safe pitch, 48 step knobs, integer Pulses/Ratchet, scalar OSC routing and ±24 st offsets passed.",
 );
