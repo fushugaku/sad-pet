@@ -1,22 +1,21 @@
 SAD PET instrument and SAD PET FX, with native Rust DSP and an embedded editor.
 
-**All Rustias filters in both slots.** Choose RADIAS, Ladder LP/HP/BP24,
-MS-20 LP/HP12, Pro LP24, SEM, Multi Filter, M/Poly LP24 or Linear LP/HP/BP/Notch
-at 12/24 dB. RADIAS Filter 2 LP/BP/HP and Comb are also selectable in either slot.
+**SuperEcho and AlphaVerb in all three FX stages.** SuperEcho ports KekLocator's
+native Rust Tape/BBD delay with orbit, filters, pitch/frequency shimmer, dub,
+compression, freeze and tempo sync. AlphaVerb ports Dayverb's native Rust reverb,
+including damping, EQ, early/late balance, spin, stereo, shimmer, compressor,
+gate and freeze. Their controls use the SAD PET editor and save in presets and
+DAW projects. Pre/post-filter controls support host automation and Neuropolis.
 
-Drive and Morph are visible with the other filter controls. RADIAS Morph sweeps
-LP24 → LP12 → BP → HP → Thru; SEM morphs LP → Notch → HP, and Multi Filter
-morphs LP → BP → HP → Notch. Both slots retain their envelope, key tracking and
-Single/Serial/Parallel routing. Drive/Morph accept LFO, ENV, matrix, Neuropolis
-tracks and DAW automation. Numeric edits preserve filter history without audio
-allocations; new automation controls append after the existing indices.
+The same original DSP cores run natively in AU/VST3 and in the web version.
+They retain their 48 kHz processing, with bandlimited conversion at other host
+rates. Instances are prepared outside the native audio callback; knob updates
+preserve their running tails without allocating audio storage. Existing host
+parameter indices remain stable.
 
-Original fixed-point and f64 Rustias kernels run in the shared Rust engine,
-natively in AU/VST3 and as WASM on the web, with host-rate coefficient preparation.
-These are the Rustias software models, not measured hardware replicas. Old
-presets keep their original SAD PET filter sound. All settings save in presets
-and DAW projects. Resynth, Neuropolis, the three FX stages and Loop 1 bar remain
-available.
+**Delay Smooth** is now beside the clock selector in L/C/R Delay and Mod Delay.
+It allows intermediate note divisions and smoothly glides the delay time under
+manual, LFO and ENV control. The display shows the division and milliseconds.
 
 | System | Installer | Plug-in formats |
 | --- | --- | --- |
@@ -48,11 +47,11 @@ are supplied individually and in `SHA256SUMS.txt`.
 ---
 
 В обоих установщиках есть инструмент **SAD PET** и эффект **SAD PET FX**.
-Все 18 моделей фильтров Rustias доступны в каждом из двух слотов, включая
-M/Poly и Linear LP/HP/BP/Notch 12/24; также доступны RADIAS Filter 2 и Comb.
-Drive и Morph принимают модуляцию, Neuropolis и автоматизацию DAW.
-Исходные Rust-алгоритмы работают нативно в AU/VST3 и тем же движком в web.
-Старые пресеты сохраняют звучание; новые параметры сохраняются в проектах.
+Добавлены **SuperEcho** (KekLocator) и **AlphaVerb** (Dayverb) во все три стойки.
+Исходный Rust DSP работает нативно в AU/VST3 и тем же движком в web. Доступны
+оригинальные звуковые параметры, сохранение пресетов и автоматизация. Поворот
+ручек сохраняет хвосты и не выделяет память в аудиопотоке.
+**Smooth** появился рядом с Tempo sync в L/C/R Delay и Mod Delay.
 macOS: AU и VST3 для Apple silicon и Intel. Windows: VST3 x64.
 Закройте DAW перед установкой, затем обновите список плагинов.
 Пользовательские пресеты сохраняются при обновлении и удалении.

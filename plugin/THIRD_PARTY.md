@@ -80,3 +80,19 @@ texts or the repository's existing source and sample notices.
 
 - **Web binary telemetry** uses rmp-serde/rmp (MIT), recorded in Cargo.lock.
   They run only in the web build and are not linked into native plug-ins.
+
+- **SuperEcho** embeds the native Rust DSP subset of
+  [KekLocator at d7901c9](https://github.com/fushugaku/KekLocator/tree/d7901c9dc5b9720819ccd8a2fa14c67a73864586),
+  an unofficial port of Erica Synths Echolocator firmware 1.05. The static Rust
+  translation and pinned source ROM are in `vendor/superecho`; resets reuse their
+  allocations. The standalone UI, sequencer and plug-in wrapper are excluded.
+  The original source attribution is retained in `superecho-NOTICE.md`.
+- **AlphaVerb** embeds the native Rust DSP subset of
+  [Dayverb at c8b27d3](https://github.com/fushugaku/dayverb/tree/c8b27d3cf2c981b8efeadbee4d4cb21d5af1820d),
+  an unofficial port of Erica Synths / 112dB Nightverb firmware 1.02. The static
+  Rust translation, parameter callbacks and pinned source images are retained in
+  `vendor/alphaverb`; the standalone UI, sequencer and plug-in wrapper are excluded.
+  Attribution and original ownership are recorded in `alphaverb-NOTICE.md`.
+  These firmware-derived components do not assert a blanket open-source license
+  over manufacturer material. Renaming does not grant additional rights or imply
+  manufacturer affiliation. Both notices are included in native and web packages.

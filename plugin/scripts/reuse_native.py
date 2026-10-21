@@ -15,7 +15,7 @@ VALIDATED = {
     "macOS-universal": (38980814940, "562db49057171eee7c4078a6f1903b8a0aab57b5"),
     "Windows-x64": (39474031573, "fa470c61288f8b87ef42c1bf046b8340813156bf"),
 }
-NATIVE_SOURCES = ["Cargo.toml", "Cargo.lock", "rust", "plugin/Cargo.toml",
+NATIVE_SOURCES = ["Cargo.toml", "Cargo.lock", "rust", "vendor", "plugin/Cargo.toml",
                   "plugin/CMakeLists.txt", "plugin/src", "plugin/native", "plugin/web"]
 
 

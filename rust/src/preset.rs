@@ -107,6 +107,8 @@ pub enum SaturatorType {
     ModDelay,
     Compressor,
     Waveshaper,
+    SuperEcho,
+    AlphaVerb,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -463,6 +465,8 @@ pub struct Preset {
     pub source_color_chain: Vec<crate::color::ColorSlot>,
     pub color_chain: Vec<crate::color::ColorSlot>,
     pub fx_chain_version: u8,
+    #[serde(skip)]
+    pub imported_effects: crate::imported_fx::PreparedEffects,
     pub matrix: Vec<crate::matrix::Route>,
 }
 impl Default for Preset {
@@ -484,6 +488,7 @@ impl Default for Preset {
                 crate::color::ColorSlot::legacy_reverb(2, &Params::default()),
             ],
             fx_chain_version: 1,
+            imported_effects: Default::default(),
             matrix: Vec::new(),
         }
     }
@@ -624,6 +629,7 @@ impl<'de> Deserialize<'de> for Preset {
             source_color_chain: d.source_color_chain,
             color_chain,
             fx_chain_version: 1,
+            imported_effects: Default::default(),
             matrix,
         })
     }
@@ -633,7 +639,16 @@ impl Preset {
     pub fn prepared_clone(&self) -> Self {
         let mut preset = self.clone();
         preset.sanitize();
+        preset.prepare_imported_effects();
         preset
+    }
+    pub fn prepare_imported_effects(&mut self) {
+        self.imported_effects.prepare(
+            self.color_chain
+                .iter()
+                .chain(&self.pre_color_chain)
+                .chain(&self.source_color_chain),
+        );
     }
     pub fn sanitize(&mut self) {
         self.fx_chain_version = 1;

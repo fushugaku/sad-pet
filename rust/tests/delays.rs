@@ -78,6 +78,116 @@ fn radias_tables_and_tempo_place_three_impulses_at_the_expected_times() {
 }
 
 #[test]
+fn smooth_clock_keeps_note_anchors_and_fills_the_spaces_between_them() {
+    for mod_delay in [false, true] {
+        for bpm in [60.0, 120.0, 240.0] {
+            for note in 0..14 {
+                let value = note as f32 / 13.0;
+                let stepped = radias_delay::seconds(true, 64.0 / 127.0, 0.0, value, bpm, mod_delay);
+                let smooth =
+                    radias_delay::smooth_seconds(true, 64.0 / 127.0, 0.0, value, bpm, mod_delay);
+                assert!((stepped - smooth).abs() < 1e-6);
+            }
+        }
+        let mut previous = 0.375;
+        for step in 1..=100 {
+            let note = (7.0 + step as f32 / 100.0) / 13.0;
+            let time =
+                radias_delay::smooth_seconds(true, 64.0 / 127.0, 0.0, note, 120.0, mod_delay);
+            assert!(time > previous && time - previous < 0.0013);
+            previous = time;
+        }
+        assert!((previous - 0.5).abs() < 1e-6);
+        assert_eq!(
+            radias_delay::smooth_seconds(false, 1.0, 1.0, 0.0, 120.0, mod_delay),
+            radias_delay::MAX_SECONDS
+        );
+    }
+}
+
+#[test]
+fn smooth_delay_emits_an_echo_halfway_between_two_note_divisions() {
+    for kind in [Type::LcrDelay, Type::ModDelay] {
+        let mut s = slot(1, kind);
+        s.settings.lcr_smooth = true;
+        s.settings.mod_delay_smooth = true;
+        s.settings.lcr_left_note = 7.5 / 13.0;
+        s.settings.lcr_left_level = 1.0;
+        s.settings.lcr_center_level = 0.0;
+        s.settings.lcr_right_level = 0.0;
+        s.settings.lcr_spread = 1.0;
+        s.settings.lcr_feedback = 0.0;
+        s.settings.mod_delay_left_note = 7.5 / 13.0;
+        s.settings.mod_delay_depth = 0.0;
+        s.settings.mod_delay_feedback = 0.0;
+        for sr in [8000, 48000] {
+            let mut p = ColorProcessor::new(sr);
+            p.configure_tempo(s, 120.0);
+            let at = (sr as f32 * 0.4375) as usize;
+            for i in 0..=at + 2 {
+                let frame = p.process(if i == 0 { [1.0; 2] } else { [0.0; 2] });
+                assert!(
+                    (frame[0] - if i == at { 1.0 } else { 0.0 }).abs() < 0.005,
+                    "{kind:?} at {sr} Hz, frame {i}: {frame:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn smooth_delay_glides_on_time_changes_without_clearing_the_tail() {
+    for kind in [Type::LcrDelay, Type::ModDelay] {
+        for sr in [8000, 48000] {
+            let mut first_jumps = Vec::new();
+            for smooth in [false, true] {
+                let mut s = slot(1, kind);
+                s.settings.lcr_smooth = smooth;
+                s.settings.mod_delay_smooth = smooth;
+                s.settings.lcr_left_note = 5.0 / 13.0;
+                s.settings.mod_delay_left_note = 5.0 / 13.0;
+                s.settings.lcr_left_level = 1.0;
+                s.settings.lcr_center_level = 0.0;
+                s.settings.lcr_right_level = 0.0;
+                s.settings.lcr_spread = 1.0;
+                s.settings.lcr_feedback = 0.0;
+                s.settings.mod_delay_depth = 0.0;
+                s.settings.mod_delay_feedback = 0.0;
+                let mut p = ColorProcessor::new(sr);
+                p.configure_tempo(s, 120.0);
+                let input =
+                    |i: u32| [(i as f32 / sr as f32 * std::f32::consts::TAU * 5.0).sin() * 0.25; 2];
+                let mut last = 0.0;
+                for i in 0..sr * 2 {
+                    last = p.process(input(i))[0];
+                }
+                s.settings.lcr_left_note = 8.0 / 13.0;
+                s.settings.mod_delay_left_note = 8.0 / 13.0;
+                p.configure_tempo(s, 120.0);
+                let next = p.process(input(sr * 2))[0];
+                first_jumps.push((next - last).abs());
+                if smooth {
+                    assert!(
+                        next.abs() > 0.2,
+                        "The previous delay tail must survive reconfiguration"
+                    );
+                }
+                let mut settled = next;
+                for i in sr * 2 + 1..sr * 3 {
+                    settled = p.process(input(i))[0];
+                }
+                let expected = input(sr * 3 - 1 - sr / 2)[0];
+                assert!((settled - expected).abs() < 1e-4);
+            }
+            assert!(
+                first_jumps[1] < first_jumps[0] * 0.1,
+                "{kind:?} at {sr} Hz: {first_jumps:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn mod_delay_uses_mono_input_independent_times_and_audible_modulation() {
     let mut s = slot(1, Type::ModDelay);
     s.settings.mod_delay_sync = false;
@@ -262,9 +372,11 @@ fn clocks_settings_and_modulation_targets_roundtrip_without_changing_old_presets
         ..Preset::default()
     };
     p.color_chain[0].settings.lcr_sync = false;
+    p.color_chain[0].settings.lcr_smooth = true;
     p.color_chain[0].settings.lcr_left_delay = 0.2;
     p.color_chain[0].settings.lcr_left_note = 0.7;
     p.color_chain[1].settings.mod_delay_rate = 0.5;
+    p.color_chain[1].settings.mod_delay_smooth = true;
     p.lfos[0].destination = Destination::Color {
         slot: 22,
         parameter: P::ModDelayDepth,
@@ -284,7 +396,7 @@ fn clocks_settings_and_modulation_targets_roundtrip_without_changing_old_presets
 
 #[test]
 fn stacked_delays_and_reverb_render_identically_across_audio_blocks() {
-    let p = Preset {
+    let mut p = Preset {
         color_chain: vec![
             slot(11, Type::LcrDelay),
             slot(22, Type::Reverb),
@@ -292,6 +404,18 @@ fn stacked_delays_and_reverb_render_identically_across_audio_blocks() {
         ],
         ..Preset::default()
     };
+    p.color_chain[0].settings.lcr_smooth = true;
+    p.color_chain[2].settings.mod_delay_smooth = true;
+    p.lfos[0].destination = Destination::Color {
+        slot: 11,
+        parameter: P::LcrLeftNote,
+    };
+    p.lfos[0].depth = 0.12;
+    p.envs[0].extra_destination = Destination::Color {
+        slot: 33,
+        parameter: P::ModDelayRightNote,
+    };
+    p.envs[0].extra_depth = 0.15;
     let sample = Arc::new(
         SampleBuffer::new(
             "tone".into(),

@@ -5,6 +5,7 @@ pub mod compressor;
 pub mod delay;
 pub mod effects;
 pub mod filter;
+mod imported_rate;
 pub mod modulation;
 mod radias_filter;
 mod radias_oscillator;
@@ -422,6 +423,7 @@ impl Engine {
 
     pub fn set_preset(&mut self, mut preset: Preset) {
         preset.sanitize();
+        preset.prepare_imported_effects();
         self.exchange_preset(&mut preset);
     }
 
@@ -465,6 +467,23 @@ impl Engine {
         let mode_changed = self.performance.configure_prepared(&preset.performance);
         if mode_changed {
             self.step_entry = None;
+        }
+        self.color_rack
+            .detach_imported(&mut self.preset.imported_effects);
+        self.pre_color_rack
+            .detach_imported(&mut self.preset.imported_effects);
+        self.source_color
+            .detach_imported(&mut self.preset.imported_effects);
+        preset
+            .imported_effects
+            .inherit(&mut self.preset.imported_effects);
+        self.color_rack
+            .attach_imported(&preset.color_chain, &mut preset.imported_effects);
+        self.pre_color_rack
+            .attach_imported(&preset.pre_color_chain, &mut preset.imported_effects);
+        if let Some(slot) = preset.source_color_chain.first() {
+            self.source_color
+                .attach_imported(*slot, &mut preset.imported_effects);
         }
         std::mem::swap(&mut self.preset, preset);
         self.sync_stored_chord();

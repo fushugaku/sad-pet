@@ -16,6 +16,7 @@ impl Recipe {
         let tempo = slot.is_some_and(|s| match s.kind {
             crate::preset::SaturatorType::LcrDelay => s.settings.lcr_sync,
             crate::preset::SaturatorType::ModDelay => s.settings.mod_delay_sync,
+            crate::preset::SaturatorType::SuperEcho => s.settings.super_echo_sync >= 0.5,
             _ => false,
         });
         let pitched = slot.is_some_and(|s| {
@@ -68,6 +69,7 @@ pub fn prepare(
     };
     let range = region.bounds(original.len())?;
     let mut processor = super::color::ColorProcessor::new(original.sample_rate);
+    processor.prepare_imported(slot);
     processor.set_pitch(root);
     processor.configure_tempo(slot, bpm);
     let mut frames = Vec::with_capacity(range.len());

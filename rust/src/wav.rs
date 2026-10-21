@@ -67,7 +67,9 @@ pub fn encode<W: Write + Seek>(
     wav.finalize().map_err(|e| e.to_string())
 }
 pub fn bytes(sample_rate: u32, frames: &[Stereo]) -> Result<Vec<u8>, String> {
-    let mut buffer = Cursor::new(Vec::new());
+    // Float WAV payload plus the RIFF/fmt/fact headers. Reserve once so large
+    // browser exports do not transiently retain both sides of a growing buffer.
+    let mut buffer = Cursor::new(Vec::with_capacity(frames.len() * 8 + 80));
     encode(&mut buffer, sample_rate, frames)?;
     Ok(buffer.into_inner())
 }

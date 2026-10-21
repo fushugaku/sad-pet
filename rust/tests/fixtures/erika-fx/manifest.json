@@ -1,0 +1,69 @@
+{
+  "frames": 12288,
+  "super_echo": [
+    {
+      "name": "tape",
+      "values": [
+        0.0,
+        0.608547031879425,
+        0.0,
+        0.4039072096347809,
+        0.5684981942176819,
+        0.6261294484138489,
+        0.3518925607204437,
+        0.0,
+        0.0,
+        0.5128205418586731,
+        0.7807081937789917,
+        0.48278388381004333,
+        0.4998778998851776,
+        0.0,
+        0.0,
+        0,
+        0.4998778998851776,
+        0.0,
+        1.0,
+        0
+      ]
+    },
+    {
+      "name": "bbd",
+      "values": [
+        1.0,
+        0.608547031879425,
+        0.550000011920929,
+        0.4039072096347809,
+        0.5684981942176819,
+        0.6261294484138489,
+        0.3518925607204437,
+        0.7300000190734863,
+        0.800000011920929,
+        0.6499999761581421,
+        0.7807081937789917,
+        0.48278388381004333,
+        0.4998778998851776,
+        1.0,
+        1.0,
+        1.0,
+        0.4998778998851776,
+        1.0,
+        1.0,
+        0
+      ]
+    }
+  ],
+  "oracle": "Unchanged manufacturer Thumb-2 / FPv5 binary executed in Unicorn ARM MAX via upstream reference_arm.py. Not a hardware measurement.",
+  "alpha_verb": {
+    "source": "dayverb/tests/fixtures/audio-{input,output}-q31.bin at c8b27d3cf2c981b8efeadbee4d4cb21d5af1820d",
+    "warmup_frames": 48000,
+    "mix": 1,
+    "parameters": "original defaults"
+  },
+  "sha256": {
+    "super-echo-input.q31": "2f5b958ce3b919331d430d9ac26dfc2df36108904de6f864a0b7862f5f71a2b8",
+    "alpha-verb-output.q31": "7f00f017612182dec1f604d45b53574fb7262d123ba47c342682eeb0a634e876",
+    "alpha-verb-input.q31": "c61df2d6abb409221ff6402a360b30426a67dce68b6b30360476b1526a2c9fa3",
+    "super-echo-bbd.q31": "46b68628fd669d18641c00bb40c9020089f37f6d739fa0ad7dda1b55058e4c07",
+    "super-echo-tape.q31": "1b5a31567023eaf30aad5a1ffa15755a2ba3e860f083be09e89663d2de887714"
+  }
+}

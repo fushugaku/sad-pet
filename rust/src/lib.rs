@@ -4,6 +4,7 @@ pub mod audio;
 pub mod color;
 pub mod dsp;
 pub mod firmware;
+pub mod imported_fx;
 pub mod matrix;
 pub mod midi;
 pub mod parameters;

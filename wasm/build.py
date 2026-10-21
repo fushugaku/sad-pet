@@ -40,6 +40,8 @@ def main():
     shutil.copy2(target / "wasm32-unknown-unknown" / "release" / "sad_pet_wasm.wasm", output / "sad_pet.wasm")
     (output / "licenses").mkdir(exist_ok=True)
     shutil.copy2(ROOT / "rust/licenses/neuropolis-AGPL-3.0.txt", output / "licenses/neuropolis-AGPL-3.0.txt")
+    for name in ("superecho", "alphaverb"):
+        shutil.copy2(ROOT / "vendor" / name / "NOTICE.md", output / "licenses" / f"{name}-NOTICE.md")
     # A cached worklet/bridge from another build can otherwise run alongside
     # the new HTML. Give every runtime dependency one consistent build version.
     runtime = sorted(p for p in output.rglob("*") if p.is_file() and p.suffix in (".js", ".mjs", ".css", ".wasm"))

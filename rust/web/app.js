@@ -500,7 +500,10 @@ function createKnob(
       from = format(low),
       to = format(high);
     const compact = (text) =>
-      text.replace(/\s*·.*$/, "").replace(/\s+(Hz|ms|st|s)\b/g, "$1");
+      text
+        .replace(/\n.*$/s, "")
+        .replace(/\s*·.*$/, "")
+        .replace(/\s+(Hz|ms|st|s)\b/g, "$1");
     value.textContent =
       drag || document.activeElement === dial ? format(base) : now;
     modText.textContent =
@@ -1197,6 +1200,8 @@ const COLOR_TYPES = [
   ["mod_delay", "Mod Delay"],
   ["compressor", "Compressor"],
   ["waveshaper", "Waveshaper"],
+  ["super_echo", "SuperEcho"],
+  ["alpha_verb", "AlphaVerb"],
 ];
 const COLOR_RACKS = [
   {
@@ -1266,26 +1271,153 @@ const DELAY_NOTES = [
 ];
 const delayPrefix = (kind) =>
   kind === "lcr_delay" ? "lcr" : kind === "mod_delay" ? "mod_delay" : null;
-const delayIndex = (v, count = 128) =>
-  Math.round(Math.max(0, Math.min(1, v)) * (count - 1));
+// Match the engine's f32 control positions, including exact halfway values.
+const delayPosition = (v, count) =>
+  Math.fround(Math.fround(Math.max(0, Math.min(1, v))) * (count - 1));
+const delayIndex = (v, count = 128) => Math.round(delayPosition(v, count));
+function delayLookup(table, v, smooth) {
+  if (!smooth) return table[delayIndex(v, table.length)];
+  const position = delayPosition(v, table.length);
+  const left = Math.floor(position),
+    right = Math.min(left + 1, table.length - 1);
+  return table[left] + (table[right] - table[left]) * (position - left);
+}
 function delayRatio(v, slot, prefix) {
   const tables = colorDefaults.delay_tables;
-  return `${(tables[slot.settings[`${prefix}_sync`] ? "sync_ratio" : "free_ratio"][delayIndex(v)] / 10).toFixed(1)}%`;
+  const table =
+    tables[slot.settings[`${prefix}_sync`] ? "sync_ratio" : "free_ratio"];
+  return `${(delayLookup(table, v, slot.settings[`${prefix}_smooth`]) / 10).toFixed(1)}%`;
 }
 function delayTime(v, slot, prefix, sync) {
   const tables = colorDefaults.delay_tables;
+  const smooth = slot.settings[`${prefix}_smooth`];
   const ratio =
-    tables[sync ? "sync_ratio" : "free_ratio"][
-      delayIndex(slot.settings[`${prefix}_ratio`])
-    ] / 1000;
+    delayLookup(
+      tables[sync ? "sync_ratio" : "free_ratio"],
+      slot.settings[`${prefix}_ratio`],
+      smooth,
+    ) / 1000;
   const seconds = sync
-    ? ((60 / preset.params.bpm) * ratio * tables.notes[delayIndex(v, 14)]) / 192
-    : (ratio * tables[prefix === "lcr" ? "lcr_ms" : "mod_ms"][delayIndex(v)]) /
+    ? ((60 / preset.params.bpm) *
+        ratio *
+        delayLookup(tables.notes, v, smooth)) /
+      192
+    : (ratio *
+        delayLookup(
+          tables[prefix === "lcr" ? "lcr_ms" : "mod_ms"],
+          v,
+          smooth,
+        )) /
       1000;
   const ms = Math.round(Math.min(tables.max_seconds, seconds) * 1000);
+  if (sync && smooth) {
+    const position = delayPosition(v, DELAY_NOTES.length),
+      nearest = Math.round(position);
+    if (Math.abs(position - nearest) < 0.005)
+      return `${DELAY_NOTES[nearest]}\n${ms} ms`;
+    const left = Math.floor(position),
+      fraction = Math.max(1, Math.min(99, Math.round((position - left) * 100)));
+    return `${DELAY_NOTES[left]}→${DELAY_NOTES[left + 1]}\n${fraction}% · ${ms} ms`;
+  }
   return sync ? `${DELAY_NOTES[delayIndex(v, 14)]} · ${ms} ms` : `${ms} ms`;
 }
+const SUPER_ECHO_NOTES = [
+  "1/32",
+  "1/16T",
+  "1/16",
+  "1/8T",
+  "1/16D",
+  "1/8",
+  "1/4T",
+  "1/8D",
+  "1/4",
+  "1/2T",
+  "1/4D",
+  "1/2",
+  "1/1T",
+  "1/2D",
+  "1/1",
+  "1/1D",
+  "2/1",
+];
+const IMPORTED_FX_CHOICES = {
+  super_echo: [
+    ["super_echo_sync", "CLOCK", ["Free", "Tempo sync"]],
+    ["super_echo_dirty", "DELAY", ["Tape", "BBD"]],
+    ["super_echo_shimmer_style", "SHIMMER", ["Pitch", "Frequency"]],
+    ["super_echo_shimmer_mode", "SHIMMER MODE", ["A", "B"]],
+    ["super_echo_filter_mode", "FILTER", ["Feedback", "Series"]],
+    ["super_echo_dub", "DUB", ["Off", "On"]],
+    ["super_echo_freeze", "FREEZE", ["Off", "On"]],
+  ],
+  alpha_verb: [
+    ["alpha_verb_dirty", "CHARACTER", ["Clean", "Dirty"]],
+    [
+      "alpha_verb_dynamics",
+      "DYNAMICS",
+      ["Off", "Compressor", "Gate", "Comp + Gate"],
+    ],
+    ["alpha_verb_freeze", "FREEZE", ["Off", "On"]],
+  ],
+};
+const importedDb = (v) => `${(-96 + 96 * v).toFixed(1)} dB`;
+const importedRelease = (v) => `${Math.round(50 + 950 * v)} ms`;
 const COLOR_SCHEMAS = {
+  super_echo: [
+    [
+      "super_echo_time",
+      "TIME",
+      (v) => `${(1000 * 2 ** ((-96 + 120 * v) / 12)).toFixed(1)} ms`,
+    ],
+    ["super_echo_feedback", "FEEDBACK", (v) => percent(v * 1.27)],
+    [
+      "super_echo_cutoff",
+      "CUTOFF",
+      (v) => {
+        const hz = 440 * 2 ** ((10 + 127 * v - 69) / 12);
+        return hz >= 1000
+          ? `${(hz / 1000).toFixed(2)} kHz`
+          : `${Math.round(hz)} Hz`;
+      },
+    ],
+    ["super_echo_resonance", "RESONANCE", percent],
+    ["super_echo_orbit", "ORBIT", percent],
+    [
+      "super_echo_ping_pong",
+      "PING PONG",
+      (v) =>
+        Math.abs(v - 0.5) < 0.01
+          ? "Centre"
+          : `${Math.round(Math.abs(v * 2 - 1) * 100)}% ${v < 0.5 ? "L" : "R"}`,
+    ],
+    ["super_echo_mod_speed", "MOD RATE", (v) => `${(v * 2).toFixed(2)} Hz`],
+    ["super_echo_mod_depth", "MOD DEPTH", percent],
+    ["super_echo_pitch", "PITCH", (v) => `${(v * 24 - 12).toFixed(1)} st`],
+    ["super_echo_shimmer", "SHIMMER", percent],
+    ["super_echo_reverb", "REVERB", percent],
+    ["super_echo_compression", "COMPRESS", percent],
+    ["super_echo_dub_mix", "DUB MIX", percent],
+  ],
+  alpha_verb: [
+    ["alpha_verb_predelay", "PREDELAY", (v) => `${Math.round(4 + 196 * v)} ms`],
+    ["alpha_verb_early_late", "EARLY / LATE", percent],
+    ["alpha_verb_size", "SIZE", percent],
+    ["alpha_verb_shape", "SHAPE", percent],
+    ["alpha_verb_feedback", "FEEDBACK", percent],
+    ["alpha_verb_low_damp", "LOW DAMP", percent],
+    ["alpha_verb_high_damp", "HIGH DAMP", percent],
+    ["alpha_verb_bass", "BASS", percent],
+    ["alpha_verb_treble", "TREBLE", percent],
+    ["alpha_verb_spin", "SPIN", percent],
+    ["alpha_verb_stereo", "STEREO", (v) => percent(v * 2)],
+    ["alpha_verb_shimmer", "SHIMMER", percent],
+    ["alpha_verb_comp_threshold", "COMP THRESH", importedDb],
+    ["alpha_verb_comp_ratio", "COMP RATIO", percent],
+    ["alpha_verb_comp_release", "COMP RELEASE", importedRelease],
+    ["alpha_verb_gate_threshold", "GATE THRESH", importedDb],
+    ["alpha_verb_gate_hold", "GATE HOLD", importedRelease],
+    ["alpha_verb_gate_release", "GATE RELEASE", importedRelease],
+  ],
   waveshaper: [
     ["waveshaper_depth", "DEPTH", (v) => String(Math.round(v * 127))],
   ],
@@ -1400,6 +1532,16 @@ function colorSchema(kind, slot = null) {
   const prefix = delayPrefix(kind);
   const sync = prefix && slot?.settings[`${prefix}_sync`];
   const schema = COLOR_SCHEMAS[kind].map(([parameter, label, format]) => {
+    if (
+      kind === "super_echo" &&
+      parameter === "super_echo_time" &&
+      slot?.settings.super_echo_sync >= 0.5
+    )
+      return [
+        "super_echo_note",
+        "TIME",
+        (v) => SUPER_ECHO_NOTES[Math.round(v * 16)],
+      ];
     if (sync && /_(left|center|right)_delay$/.test(parameter))
       return [
         parameter.replace(/_delay$/, "_note"),
@@ -1423,6 +1565,18 @@ function colorDestinationSchema(kind) {
           format,
         ]),
     );
+  if (kind === "super_echo")
+    schema.push([
+      "super_echo_note",
+      "TIME SYNC",
+      (v) => SUPER_ECHO_NOTES[Math.round(v * 16)],
+    ]);
+  for (const [parameter, label, values] of IMPORTED_FX_CHOICES[kind] || [])
+    schema.push([
+      parameter,
+      label,
+      (v) => values[Math.round(v * (values.length - 1))],
+    ]);
   return schema;
 }
 const destinationValue = (value) =>
@@ -1515,7 +1669,7 @@ function syncColors() {
   const signature = colorEntries()
     .map(
       ({ rack, slot: s }) =>
-        `${rack.key}:${s.id}:${s.kind}:${s.settings[`${delayPrefix(s.kind)}_sync`] ?? ""}`,
+        `${rack.key}:${s.id}:${s.kind}:${s.settings[`${delayPrefix(s.kind)}_sync`] ?? ""}:${s.kind === "super_echo" ? s.settings.super_echo_sync >= 0.5 : ""}`,
     )
     .join(",");
   if (
@@ -1582,10 +1736,48 @@ function syncColors() {
         };
         title.insertBefore(mode, card.querySelector(".color-actions"));
       }
+      if (IMPORTED_FX_CHOICES[slot.kind]) {
+        card.classList.add("color-imported");
+        const options = document.createElement("div");
+        options.className = "color-import-options";
+        for (const [parameter, label, values] of IMPORTED_FX_CHOICES[
+          slot.kind
+        ]) {
+          const field = document.createElement("label");
+          const caption = document.createElement("span");
+          caption.textContent = label;
+          const choice = document.createElement("select");
+          choice.dataset.parameter = parameter;
+          choice.setAttribute(
+            "aria-label",
+            `${rack.label} ${number} ${label.toLowerCase()}`,
+          );
+          choice.replaceChildren(
+            ...values.map((label, i) => option(String(i), label)),
+          );
+          choice.value = String(
+            Math.round(slot.settings[parameter] * (values.length - 1)),
+          );
+          choice.onchange = () => {
+            const value = Number(choice.value) / (values.length - 1);
+            findColor(id).settings[parameter] = value;
+            scheduleParameter(
+              `${rack.prefix || ""}fx${index + 1}_${parameter}`,
+              value,
+            );
+            if (parameter === "super_echo_sync") syncColors();
+          };
+          field.append(caption, choice);
+          options.append(field);
+        }
+        card.insertBefore(options, card.querySelector(".color-knobs"));
+      }
       const prefix = delayPrefix(slot.kind);
       if (prefix) {
         const title = card.querySelector(".color-title");
-        title.classList.add("has-options");
+        title.classList.add("has-options", "has-delay-options");
+        const options = document.createElement("div");
+        options.className = "color-delay-options";
         const clock = document.createElement("select");
         clock.className = "color-option color-delay-clock";
         clock.setAttribute("aria-label", `${rack.label} ${number} delay clock`);
@@ -1598,7 +1790,23 @@ function syncColors() {
           findColor(id).settings[`${prefix}_sync`] = clock.value === "sync";
           editColorChain();
         };
-        title.insertBefore(clock, card.querySelector(".color-actions"));
+        const smooth = document.createElement("label");
+        smooth.className = "check color-delay-smooth";
+        smooth.title =
+          "Continuous delay times between note divisions, with a smooth pitch glide";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.setAttribute(
+          "aria-label",
+          `${rack.label} ${number} smooth delay`,
+        );
+        checkbox.onchange = () => {
+          findColor(id).settings[`${prefix}_smooth`] = checkbox.checked;
+          editColorChain();
+        };
+        smooth.append(checkbox, "Smooth");
+        options.append(clock, smooth);
+        title.insertBefore(options, card.querySelector(".color-actions"));
       }
       card.querySelector(".color-bypass").onclick = () => {
         const s = findColor(id);
@@ -1699,6 +1907,22 @@ function syncColors() {
     const shaper = card.querySelector(".color-waveshaper-type");
     if (shaper && document.activeElement !== shaper)
       shaper.value = slot.settings.waveshaper_type;
+    for (const [parameter, , values] of IMPORTED_FX_CHOICES[slot.kind] || []) {
+      const choice = card.querySelector(`[data-parameter="${parameter}"]`);
+      if (choice && document.activeElement !== choice)
+        choice.value = String(
+          Math.round(slot.settings[parameter] * (values.length - 1)),
+        );
+    }
+    const prefix = delayPrefix(slot.kind);
+    if (prefix) {
+      const smooth = Boolean(slot.settings[`${prefix}_smooth`]);
+      card.querySelector(".color-delay-smooth input").checked = smooth;
+      card.classList.toggle(
+        "has-smooth-delay",
+        smooth && slot.settings[`${prefix}_sync`],
+      );
+    }
     card.classList.toggle("is-bypassed", !slot.enabled);
     card
       .querySelector(".color-bypass")

@@ -101,6 +101,8 @@ def main():
     licenses = output / "Licenses"
     licenses.mkdir(exist_ok=True)
     shutil.copy2(ROOT / "rust/licenses/neuropolis-AGPL-3.0.txt", licenses / "Neuropolis-AGPL-3.0.txt")
+    for name in ("superecho", "alphaverb"):
+        shutil.copy2(ROOT / "vendor" / name / "NOTICE.md", licenses / f"{name}-NOTICE.md")
     juce_source = args.juce or build / "_deps/juce-src"
     if (juce_source / "LICENSE.md").is_file():
         shutil.copy2(juce_source / "LICENSE.md", licenses / "JUCE-LICENSE.md")

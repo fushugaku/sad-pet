@@ -44,6 +44,9 @@ pub struct ColorProcessor {
     radias_delay: RadiasDelay,
     compressor: Compressor,
     waveshaper: RadiasWaveshaper,
+    imported: Option<Box<crate::imported_fx::Core>>,
+    imported_fresh: bool,
+    imported_rate: super::imported_rate::RateBridge,
 }
 impl ColorProcessor {
     pub fn new(sample_rate: u32) -> Self {
@@ -83,10 +86,19 @@ impl ColorProcessor {
             radias_delay: RadiasDelay::new(sample_rate),
             compressor: Compressor::new(sample_rate),
             waveshaper: RadiasWaveshaper::new(sample_rate),
+            imported: None,
+            imported_fresh: false,
+            imported_rate: super::imported_rate::RateBridge::new(sample_rate),
         }
     }
     pub fn clear(&mut self) {
         self.configured = false;
+        if !self.imported_fresh {
+            if let Some(core) = &mut self.imported {
+                core.clear();
+            }
+            self.imported_rate.clear();
+        }
         if self.slot.kind == SaturatorType::Reverb {
             self.reverb.clear();
         }
@@ -108,6 +120,26 @@ impl ColorProcessor {
         self.compressor.clear();
         self.waveshaper.clear();
     }
+    /// Standalone offline processors also prepare on their creating thread.
+    pub fn prepare_imported(&mut self, slot: ColorSlot) {
+        self.imported = crate::imported_fx::Core::new(slot.kind);
+        self.imported_fresh = self.imported.is_some();
+    }
+    pub(super) fn detach_imported(&mut self, pool: &mut crate::imported_fx::PreparedEffects) {
+        pool.store(self.id, &mut self.imported);
+    }
+    pub(super) fn attach_imported(
+        &mut self,
+        slot: ColorSlot,
+        pool: &mut crate::imported_fx::PreparedEffects,
+    ) {
+        debug_assert!(self.imported.is_none());
+        self.imported = pool.take(slot.id);
+        self.imported_fresh = self.id != slot.id || self.slot.kind != slot.kind;
+        if self.imported_fresh {
+            self.imported_rate.clear();
+        }
+    }
     pub fn configure(&mut self, slot: ColorSlot) {
         self.configure_tempo(slot, 120.0);
     }
@@ -115,7 +147,10 @@ impl ColorProcessor {
         self.waveshaper.set_pitch(note);
     }
     pub fn configure_tempo(&mut self, slot: ColorSlot, bpm: f32) {
-        let tempo = if matches!(slot.kind, SaturatorType::LcrDelay | SaturatorType::ModDelay) {
+        let tempo = if matches!(
+            slot.kind,
+            SaturatorType::LcrDelay | SaturatorType::ModDelay | SaturatorType::SuperEcho
+        ) {
             bpm
         } else {
             120.0
@@ -137,13 +172,18 @@ impl ColorProcessor {
         }
         let reset = self.id != slot.id
             || self.slot.kind != slot.kind
-            || self.slot.enabled != slot.enabled
+            || (self.slot.enabled != slot.enabled
+                && !matches!(
+                    slot.kind,
+                    SaturatorType::SuperEcho | SaturatorType::AlphaVerb
+                ))
             || (slot.kind == SaturatorType::Reverb
                 && self.slot.settings.reverb_type != slot.settings.reverb_type);
         self.id = slot.id;
         if reset {
             self.clear();
         }
+        self.imported_fresh = false;
         self.slot = slot;
         self.configured = true;
         self.configured_bpm = tempo;
@@ -212,6 +252,11 @@ impl ColorProcessor {
             }
             SaturatorType::LcrDelay | SaturatorType::ModDelay => {
                 self.radias_delay.configure(slot, bpm)
+            }
+            SaturatorType::SuperEcho | SaturatorType::AlphaVerb => {
+                if let Some(core) = &mut self.imported {
+                    core.configure(slot, bpm);
+                }
             }
             SaturatorType::Compressor => self.compressor.configure(&s),
             SaturatorType::Waveshaper => self
@@ -298,6 +343,13 @@ impl ColorProcessor {
             // The outer Mix reproduces the previous reverb's dry/tail balance.
             SaturatorType::Reverb => self.reverb.reverb(frame, &self.reverb_params, 1.0),
             SaturatorType::LcrDelay | SaturatorType::ModDelay => self.radias_delay.process(frame),
+            SaturatorType::SuperEcho | SaturatorType::AlphaVerb => {
+                if let Some(core) = &mut self.imported {
+                    self.imported_rate.process(core, frame)
+                } else {
+                    frame
+                }
+            }
             SaturatorType::Compressor => self.compressor.process(frame),
             SaturatorType::Waveshaper => self.waveshaper.process_with_voice_gain(frame, voice_gain),
         };
@@ -355,6 +407,30 @@ impl ColorRack {
         }
         self.len = slots.len();
         self.active = slots.iter().any(|s| s.enabled && s.mix > 0.0);
+    }
+    pub(super) fn detach_imported(&mut self, pool: &mut crate::imported_fx::PreparedEffects) {
+        for processor in &mut self.processors {
+            processor.detach_imported(pool);
+        }
+    }
+    pub(super) fn attach_imported(
+        &mut self,
+        slots: &[ColorSlot],
+        pool: &mut crate::imported_fx::PreparedEffects,
+    ) {
+        for (i, slot) in slots.iter().take(MAX_COLOR_SLOTS).enumerate() {
+            if self.processors[i].id != slot.id {
+                let found = (i..MAX_COLOR_SLOTS)
+                    .find(|&j| self.processors[j].id == slot.id)
+                    .or_else(|| {
+                        (i..MAX_COLOR_SLOTS)
+                            .find(|&j| !slots.iter().any(|s| s.id == self.processors[j].id))
+                    })
+                    .unwrap_or(i);
+                self.processors.swap(i, found);
+            }
+            self.processors[i].attach_imported(*slot, pool);
+        }
     }
     pub fn is_active(&self) -> bool {
         self.active

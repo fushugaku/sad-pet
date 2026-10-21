@@ -25,6 +25,33 @@ pub fn seconds(sync: bool, ratio: f32, time: f32, note: f32, bpm: f32, mod_delay
     seconds.min(MAX_SECONDS)
 }
 
+fn interpolate(table: &[u16], value: f32) -> f32 {
+    let position = value.clamp(0.0, 1.0) * (table.len() - 1) as f32;
+    let left = position as usize;
+    let right = (left + 1).min(table.len() - 1);
+    let fraction = position - left as f32;
+    table[left] as f32 + (table[right] as f32 - table[left] as f32) * fraction
+}
+
+/// Keep the musical divisions as anchors, allowing all times between them.
+pub fn smooth_seconds(
+    sync: bool,
+    ratio: f32,
+    time: f32,
+    note: f32,
+    bpm: f32,
+    mod_delay: bool,
+) -> f32 {
+    let seconds = if sync {
+        60.0 / bpm.max(1.0) * interpolate(&SYNC_RATIO, ratio) / 1000.0 * interpolate(&NOTES, note)
+            / 192.0
+    } else {
+        let milliseconds = if mod_delay { &MOD_MS } else { &LCR_MS };
+        interpolate(&FREE_RATIO, ratio) * interpolate(milliseconds, time) / 1_000_000.0
+    };
+    seconds.min(MAX_SECONDS)
+}
+
 pub fn lfo_hz(value: f32) -> f32 {
     LFO_FREQUENCY[index(value, 128)] as f32 * (1000.0 / 4_294_967_296.0)
 }

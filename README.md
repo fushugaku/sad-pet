@@ -58,6 +58,8 @@ The desktop version uses the system audio output and a local browser panel.
   the filters: distortion, rate reducer, bit crusher,
   flanger, chorus, binaural processing, reverb, L/C/R delay, modulated delay and
   a stereo-linked compressor (threshold, ratio, attack, release, knee, makeup and mix).
+  Delay **Smooth** allows intermediate note divisions and glides the echo time
+  under manual, LFO and envelope control; the readout shows both divisions and milliseconds.
   All compressor controls accept LFO, envelope and matrix modulation.
   Each compressor has a live gain reduction meter with a dB readout.
 - RADIAS Waveshaper in either chain: Drive, Hard Clip, Decimator, OctSaw,
@@ -225,3 +227,18 @@ Desktop MP3 support uses LAME and `mp3lame-encoder`; their source references and
 license texts are preserved in [rust/licenses](rust/licenses/README.txt) and in the
 application bundle. Browser MP3 support uses the unmodified, locally bundled
 [`@breezystack/lamejs`](wasm/web/vendor/README.txt) module.
+
+SuperEcho and AlphaVerb are available in Source FX, Pre FX and FX. SuperEcho uses
+KekLocator's original Rust Tape/BBD delay, orbit, filters, pitch/frequency shimmer,
+dub, compressor, freeze and 17 tempo divisions. AlphaVerb uses Dayverb's original
+Rust reverb, early/late balance, damping, EQ, spin, stereo, shimmer, compressor,
+gate and freeze. All controls save in presets; Pre FX/FX controls support DAW
+automation, LFO/ENV, matrix and Neuropolis. Source FX is prepared before grain reads.
+The same Rust cores run natively and in WASM. Both process at their original
+48 kHz with 96-tap bandlimited conversion at other host rates. The wet paths have
+23 frames of streaming latency at 48 kHz (plus conversion at other rates);
+SAD PET's dry path remains immediate. Original DSP instances are allocated only
+for selected slots, prepared on the control thread in native builds. Numeric
+updates retain tails and do not allocate; removed instances retire off the audio
+callback. See `vendor/superecho/NOTICE.md` and `vendor/alphaverb/NOTICE.md` for source
+revisions, firmware ownership and provenance.

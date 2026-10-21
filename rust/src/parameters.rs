@@ -534,7 +534,7 @@ pub fn specs() -> &'static [Spec] {
         for i in 0..MAX_COLOR_SLOTS {
             for &field in ColorParameter::ALL {
                 // Existing AU parameter order stays stable; append new controls below.
-                if field == ColorParameter::WaveshaperDepth {
+                if field == ColorParameter::WaveshaperDepth || field.is_imported() {
                     continue;
                 }
                 let default = *ColorSlot::default().parameter_mut(field);
@@ -554,7 +554,7 @@ pub fn specs() -> &'static [Spec] {
         for pre in [false, true] {
             for i in 0..MAX_COLOR_SLOTS {
                 for &field in ColorParameter::ALL {
-                    if !pre && field != ColorParameter::WaveshaperDepth {
+                    if field.is_imported() || (!pre && field != ColorParameter::WaveshaperDepth) {
                         continue;
                     }
                     let mut spec = Spec {
@@ -608,6 +608,9 @@ pub fn specs() -> &'static [Spec] {
             },
         });
         for &field in ColorParameter::ALL {
+            if field.is_imported() {
+                continue;
+            }
             result.push(Spec {
                 id: format!("source_fx1_{}", field.key()),
                 name: format!("Source FX {}", field.key().replace('_', " ")),
@@ -782,6 +785,34 @@ pub fn specs() -> &'static [Spec] {
         choice!(filter2_model, "Filter 2 model", FilterModel, 19.0);
         choice!(vcf_type, "Filter 1 response", FilterType, 3.0);
         choice!(vcf2_type, "Filter 2 response", FilterType, 3.0);
+        // Imported effects append after all 0.8 IDs, including Source FX.
+        for rack in 0..3 {
+            let count = if rack == 2 { 1 } else { MAX_COLOR_SLOTS };
+            for i in 0..count {
+                for &field in &ColorParameter::ALL[ColorParameter::LEGACY_COUNT..] {
+                    let prefix = ["", "pre_", "source_"][rack];
+                    let mut spec = Spec {
+                        id: format!("{prefix}fx{}_{}", i + 1, field.key()),
+                        name: format!(
+                            "{}FX {} {}",
+                            ["", "Pre ", "Source "][rack],
+                            i + 1,
+                            field.key().replace('_', " ")
+                        ),
+                        min: 0.0,
+                        max: 1.0,
+                        default: 0.0,
+                        target: if rack == 2 {
+                            Target::SourceFx(field)
+                        } else {
+                            Target::Fx(rack == 1, i, field)
+                        },
+                    };
+                    spec.default = spec.get(&preset);
+                    result.push(spec);
+                }
+            }
+        }
         result
     })
 }
@@ -809,7 +840,10 @@ mod tests {
         assert_eq!(preset.resynth, crate::resynth::Settings::default());
         assert_eq!(specs()[1475].id, "sample_root_note");
         assert_eq!(specs()[1476].id, "loop_one_bar");
-        assert_eq!(specs()[1477 + ColorParameter::ALL.len()].id, "resynth_mix");
+        assert_eq!(
+            specs()[1477 + ColorParameter::LEGACY_COUNT].id,
+            "resynth_mix"
+        );
         let changes=parse(&json!({"resynth_enabled":1,"resynth_count":4,"resynth_input":1,"resynth_attack":0.31,"resynth_osc4_waveform":7,"resynth_osc4_transpose":-12,"resynth_osc4_control1":0.7,"resynth_osc3_mode":3,"resynth_osc3_cross_source":4})).unwrap();
         apply(&mut preset, &changes);
         preset.sanitize();
@@ -833,7 +867,7 @@ mod tests {
     }
     #[test]
     fn osc4_interactions_append_after_all_released_resynth_ids() {
-        let start = 1477 + ColorParameter::ALL.len() + 8;
+        let start = 1477 + ColorParameter::LEGACY_COUNT + 8;
         for i in 0..4 {
             assert_eq!(
                 specs()[start + i * 10].id,

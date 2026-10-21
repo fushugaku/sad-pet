@@ -36,6 +36,8 @@ jobs:
           node wasm/test-realtime.mjs
           node wasm/test-resynth.mjs
           node wasm/test-filters.mjs
+          node wasm/test-imported.mjs
+          node wasm/test-imported-ui.mjs
           node wasm/test-filters-ui.mjs
           node wasm/test-neuropolis.mjs
           node wasm/test-microphone.mjs

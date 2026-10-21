@@ -759,7 +759,7 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "sad-pet"
-version = "0.26.0"
+version = "0.27.0"
 dependencies = [
  "cpal",
  "ctrlc",
@@ -770,14 +770,20 @@ dependencies = [
  "radias-synth-application",
  "radias-synth-domain",
  "rtrb",
+ "sad-pet-alphaverb",
+ "sad-pet-superecho",
  "serde",
  "serde_json",
  "tiny_http",
 ]
 
 [[package]]
+name = "sad-pet-alphaverb"
+version = "0.4.0"
+
+[[package]]
 name = "sad-pet-plugin"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "base64",
  "flate2",
@@ -788,8 +794,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sad-pet-superecho"
+version = "1.2.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "sad-pet-wasm"
-version = "0.26.0"
+version = "0.27.0"
 dependencies = [
  "rmp-serde",
  "sad-pet",

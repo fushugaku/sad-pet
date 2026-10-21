@@ -14,7 +14,11 @@ pub struct RadiasDelay {
     sample_rate: f32,
     kind: SaturatorType,
     settings: ColorSettings,
-    times: [f32; 3],
+    times: [f64; 3],
+    target_times: [f64; 3],
+    time_alpha: f64,
+    initialized: bool,
+    smooth: bool,
     phase: f64,
     phase_step: f64,
     feedback: f32,
@@ -33,6 +37,10 @@ impl RadiasDelay {
             kind: SaturatorType::LcrDelay,
             settings: ColorSettings::default(),
             times: [1.0; 3],
+            target_times: [1.0; 3],
+            time_alpha: 1.0 - (-1.0 / (sample_rate as f64 * 0.01)).exp(),
+            initialized: false,
+            smooth: false,
             phase: 0.0,
             phase_step: 0.0,
             feedback: 0.0,
@@ -47,12 +55,19 @@ impl RadiasDelay {
         self.phase = 0.0;
         self.high_state = [0.0; 2];
         self.low_state = [0.0; 2];
+        self.times = self.target_times;
+        self.initialized = false;
     }
     pub fn configure(&mut self, slot: ColorSlot, bpm: f32) {
         self.kind = slot.kind;
         self.settings = slot.settings;
         let s = slot.settings;
         let lcr = slot.kind == SaturatorType::LcrDelay;
+        self.smooth = if lcr {
+            s.lcr_smooth
+        } else {
+            s.mod_delay_smooth
+        };
         let (sync, ratio, free, notes) = if lcr {
             (
                 s.lcr_sync,
@@ -68,10 +83,18 @@ impl RadiasDelay {
                 [s.mod_delay_left_note, s.mod_delay_right_note, 0.0],
             )
         };
-        self.times = std::array::from_fn(|i| {
-            (radias_delay::seconds(sync, ratio, free[i], notes[i], bpm, !lcr) * self.sample_rate)
-                .max(1.0)
+        let seconds = if self.smooth {
+            radias_delay::smooth_seconds
+        } else {
+            radias_delay::seconds
+        };
+        self.target_times = std::array::from_fn(|i| {
+            (seconds(sync, ratio, free[i], notes[i], bpm, !lcr) * self.sample_rate).max(1.0) as f64
         });
+        if !self.initialized || !self.smooth {
+            self.times = self.target_times;
+        }
+        self.initialized = true;
         self.feedback = if lcr {
             s.lcr_feedback
         } else {
@@ -95,10 +118,16 @@ impl RadiasDelay {
         high - self.low_state[channel] * low_amount
     }
     pub fn process(&mut self, input: Stereo) -> Stereo {
+        if self.smooth {
+            // Audio-rate glide removes control-block steps without resetting the tail.
+            for (time, target) in self.times.iter_mut().zip(self.target_times) {
+                *time += self.time_alpha * (target - *time);
+            }
+        }
         let mono = (input[0] + input[1]) * 0.5;
         let s = self.settings;
         if self.kind == SaturatorType::LcrDelay {
-            let taps: [f32; 3] = std::array::from_fn(|i| self.buffer.read(self.times[i])[0]);
+            let taps: [f32; 3] = std::array::from_fn(|i| self.buffer.read(self.times[i] as f32)[0]);
             let tail = self.damp(0, taps[1], s.lcr_low_damp);
             let write = (mono * s.lcr_trim + tail * self.feedback).clamp(-8.0, 8.0);
             self.buffer.push([write; 2]);
@@ -113,7 +142,7 @@ impl RadiasDelay {
             let spread = s.mod_delay_spread as f64 - 0.5;
             let delayed: Stereo = std::array::from_fn(|c| {
                 let modulation = tables::sine(self.phase + c as f64 * spread);
-                self.buffer.read(self.times[c] + modulation * depth)[c]
+                self.buffer.read(self.times[c] as f32 + modulation * depth)[c]
             });
             let write = std::array::from_fn(|c| {
                 (mono + self.damp(c, delayed[c], 0.0) * self.feedback).clamp(-8.0, 8.0)

@@ -1,6 +1,7 @@
 // Exercise the compiled WASM, including the exact core/worklet used by the site.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import vm from "node:vm";
 import { Core } from "../dist/web/core.mjs";
 
 const module = await WebAssembly.compile(
@@ -72,6 +73,24 @@ entry.process(128);
 assert.deepEqual(entry.request("/api/state").notes, [60, 64, 67, 72]);
 
 const defaults = utility.request("/api/color-defaults");
+// The editor must display the same fractional note times that reach the DSP.
+const editorSource = await readFile(new URL("../rust/web/app.js", import.meta.url), "utf8");
+const delayStart = editorSource.indexOf("const DELAY_NOTES = [");
+const delayEnd = editorSource.indexOf("\nconst COLOR_SCHEMAS = {", delayStart);
+assert.ok(delayStart > 0 && delayEnd > delayStart);
+const delayView = vm.createContext({ colorDefaults: defaults, preset: { params: { bpm: 120 } } });
+vm.runInContext(editorSource.slice(delayStart, delayEnd), delayView);
+for (const prefix of ["lcr", "mod_delay"]) {
+  const settings = structuredClone(defaults.slot.settings);
+  const display = (note) => vm.runInContext(`delayTime(${note}, ${JSON.stringify({ settings })}, "${prefix}", true)`, delayView);
+  assert.equal(settings[`${prefix}_smooth`], false, "Old presets must retain stepped delay times");
+  assert.equal(display(7.75 / 13), "1/4 · 500 ms");
+  settings[`${prefix}_smooth`] = true;
+  assert.equal(display(7.5 / 13), "1/8.→1/4\n50% · 438 ms");
+  assert.equal(display(8 / 13), "1/4\n500 ms");
+  assert.equal(display(-1), "1/64\n31 ms");
+  assert.equal(display(2), "1/1\n2000 ms");
+}
 // Dry/wet blends the source and grains upstream of all filters and FX.
 const dryPreset = utility.request("/api/preset");
 dryPreset.params.mix = 0;
@@ -137,6 +156,16 @@ assert.deepEqual(dryOutput(dryPreset), dryOpen, "1:1 ratio must preserve audio")
 preset.color_chain = [
   "distortion", "reverb", "lcr_delay", "mod_delay", "compressor",
 ].map((kind, i) => ({ ...structuredClone(defaults.slot), id: i + 1, kind }));
+preset.color_chain[2].settings.lcr_smooth = true;
+preset.color_chain[3].settings.mod_delay_smooth = true;
+preset.lfos[0].destination = { color: { slot: 3, parameter: "lcr_left_note" } };
+preset.lfos[0].depth = 0.12;
+preset.envs[0].extra_destination = { color: { slot: 4, parameter: "mod_delay_right_note" } };
+preset.envs[0].extra_depth = 0.15;
+utility.request("/api/preset", preset);
+const savedDelays = utility.request("/api/preset").color_chain;
+assert.equal(savedDelays[2].settings.lcr_smooth, true);
+assert.equal(savedDelays[3].settings.mod_delay_smooth, true);
 const effected = audio(48000, 128, preset);
 assert.deepEqual(
   effected, audio(48000, 511, preset), "FX must preserve block-size independence",

@@ -1,6 +1,6 @@
 [package]
 name = "sad-pet"
-version = "0.26.0"
+version = "0.27.0"
 edition = "2024"
 description = "SAD PET desktop granular instrument"
 publish = false
@@ -19,6 +19,8 @@ source-worker = ["dep:rtrb"]
 desktop = ["source-worker", "dep:cpal", "dep:ctrlc", "dep:midir", "dep:mp3lame-encoder", "dep:rtrb", "dep:tiny_http"]
 
 [dependencies]
+sad-pet-superecho = { path = "../vendor/superecho" }
+sad-pet-alphaverb = { path = "../vendor/alphaverb" }
 hound = "3.5"
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = "1"
