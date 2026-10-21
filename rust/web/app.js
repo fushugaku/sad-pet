@@ -2622,10 +2622,31 @@ function modulationGroups() {
           ["release", "Release"],
           ["depth", "Route 1 depth"],
           ["extra_depth", "Route 2 depth"],
-        ].map(([key, label]) => [
-          { env: { index, parameter: key } },
-          `ENV ${index + 1} · ${label}`,
-        ]),
+        ]
+          .map(([key, label]) => [
+            { env: { index, parameter: key } },
+            `ENV ${index + 1} · ${label}`,
+          ])
+          .concat(
+            // Rustias type controls are numeric host parameters.
+            [
+              ["attack_level", "Attack level"],
+              ["decay2", "Decay 2"],
+              ["sustain2", "Sustain 2"],
+            ].flatMap(([key, label]) => {
+              const spec = sequenceCatalog?.modulation?.find(
+                (s) => s.id === `env${index + 1}_${key}`,
+              );
+              return spec
+                ? [
+                    [
+                      { control: { index: spec.index } },
+                      `ENV ${index + 1} · ${label}`,
+                    ],
+                  ]
+                : [];
+            }),
+          ),
       ]);
   }
   groups.push([
@@ -2947,10 +2968,61 @@ function syncLfos() {
   }
 }
 const envCards = [];
-const ENV_FIELDS = ["attack", "decay", "sustain", "release"];
-const envSeconds = (env, field) =>
-  (field === "attack" ? 0.002 : 0.005) +
-  env[field] ** 3 * (field === "release" ? 12 : 8);
+const ENV_FIELDS = [
+  "attack",
+  "decay",
+  "sustain",
+  "release",
+  "attack_level",
+  "decay2",
+  "sustain2",
+];
+const ENV_LEVELS = ["sustain", "attack_level", "sustain2"];
+const ENV_EXTENDED = ["attack_level", "decay2", "sustain2"];
+// Host values index these; the order matches preset::EnvMode::ALL.
+const ENV_MODES = [
+  ["legacy", "SAD PET"],
+  ["radias", "RADIAS"],
+  ["q_adsr", "Q · ADSR"],
+  ["q_ads1ds2r", "Q · ADS1DS2R"],
+  ["q_one_shot", "Q · One Shot"],
+  ["q_loop_s1s2", "Q · Loop S1S2"],
+  ["q_loop_all", "Q · Loop All"],
+];
+// Rustias firmware-free RADIAS decay/release curves 0..7.
+const ENV_CURVES = [
+  "Cubic",
+  "Square",
+  "S-curve",
+  "Linear",
+  "Root",
+  "Linear 2",
+  "Inverse cubic",
+  "Power 1.5",
+];
+const envCurve = (curve, t) =>
+  [t ** 3, t * t, t * t * (3 - 2 * t), t, Math.sqrt(t), t, 1 - (1 - t) ** 3, t ** 1.5][curve] ?? t * t;
+const envMode = (env) => env.mode ?? "legacy";
+const envExtended = (env) =>
+  ["q_ads1ds2r", "q_loop_s1s2", "q_loop_all"].includes(envMode(env));
+// Rustias EG types read 0..127 controls.
+const envControl = (value) => Math.round(Math.min(1, Math.max(0, value)) * 127);
+function envSeconds(env, field) {
+  const mode = envMode(env);
+  if (mode === "legacy")
+    return (
+      (field === "attack" ? 0.002 : 0.005) +
+      env[field] ** 3 * (field === "release" ? 12 : 8)
+    );
+  const value = envControl(env[field]);
+  if (mode === "radias") return 0.003 * 2000 ** (value / 127);
+  // Rustias q_envelope TIME_TICKS at 2 kHz: zero is instant, 127 is 60 s.
+  return value === 0
+    ? 0
+    : Math.max(1, Math.round(120000 ** ((value - 1) / 126))) / 2000;
+}
+const envLevel = (env, field) =>
+  envMode(env) === "legacy" ? env[field] : envControl(env[field]) / 127;
 const envTime = (seconds) =>
   seconds < 1 ? `${Math.round(seconds * 1000)} ms` : `${seconds.toFixed(2)} s`;
 const signedPercent = (value) =>
@@ -2967,11 +3039,32 @@ function buildEnvs() {
   for (let i = 0; i < 8; i++) {
     const card = document.createElement("div");
     card.className = "env-card";
-    card.innerHTML = `<div class="env-title"><strong>ENV ${i + 1}</strong>${i === 0 ? '<span class="env-role">AMP</span>' : ""}<output class="env-level">0%</output></div><canvas class="env-scope" width="288" height="64" aria-label="ENV ${i + 1} envelope"></canvas><div class="env-controls"></div>`;
+    card.innerHTML = `<div class="env-title"><strong>ENV ${i + 1}</strong>${i === 0 ? '<span class="env-role">AMP</span>' : ""}<output class="env-level">0%</output></div><div class="env-type"><select class="env-mode" aria-label="ENV ${i + 1} type"><option value="legacy">SAD PET</option><optgroup label="Rustias"></optgroup></select><select class="env-curve" aria-label="ENV ${i + 1} RADIAS curve"></select></div><canvas class="env-scope" width="288" height="64" aria-label="ENV ${i + 1} envelope"></canvas><div class="env-controls"></div>`;
+    const mode = card.querySelector(".env-mode"),
+      curve = card.querySelector(".env-curve");
+    for (const [value, label] of ENV_MODES.slice(1))
+      mode.querySelector("optgroup").append(option(value, label));
+    ENV_CURVES.forEach((label, value) =>
+      curve.append(option(String(value), `Curve ${value} · ${label}`)),
+    );
+    mode.onchange = () => {
+      preset.envs[i].mode = mode.value;
+      syncEnvs();
+      scheduleParameter(
+        `env${i + 1}_mode`,
+        ENV_MODES.findIndex(([value]) => value === mode.value),
+      );
+    };
+    curve.onchange = () => {
+      preset.envs[i].curve = Number(curve.value);
+      syncEnvs();
+      scheduleParameter(`env${i + 1}_curve`, preset.envs[i].curve);
+    };
     for (const field of ENV_FIELDS) {
       const label = document.createElement("label");
       label.className = "env-parameter";
-      label.innerHTML = `<span>${field.toUpperCase()}<output></output></span><input type="range" min="0" max="1" step="0.001" aria-label="ENV ${i + 1} ${field}">`;
+      label.dataset.field = field;
+      label.innerHTML = `<span><span class="env-name">${field.replace("_", " ").replace(/(\d)$/, " $1").toUpperCase()}</span><output></output></span><input type="range" min="0" max="1" step="0.001" aria-label="ENV ${i + 1} ${field.replace("_", " ")}">`;
       const input = label.querySelector("input");
       input.oninput = () => {
         preset.envs[i][field] = Number(input.value);
@@ -3011,7 +3104,14 @@ function buildEnvs() {
       card.append(row);
     }
     $("envs").append(card);
-    envCards.push({ card, canvas: card.querySelector("canvas"), routes });
+    envCards.push({
+      card,
+      canvas: card.querySelector("canvas"),
+      routes,
+      mode,
+      curve,
+      parameters: [...card.querySelectorAll(".env-parameter")],
+    });
   }
 }
 function syncEnvs() {
@@ -3022,19 +3122,27 @@ function syncEnvs() {
   $("env-remove").hidden = count <= 3;
   $("env-remove").setAttribute("aria-label", `Remove ENV ${count}`);
   for (let i = 0; i < envCards.length; i++) {
-    const { card, routes } = envCards[i],
+    const { card, routes, mode, curve, parameters } = envCards[i],
       env = preset.envs[i];
     card.hidden = i >= count;
     if (!env) continue;
+    const extended = envExtended(env);
+    if (document.activeElement !== mode) mode.value = envMode(env);
+    if (document.activeElement !== curve) curve.value = String(env.curve ?? 1);
+    curve.hidden = envMode(env) !== "radias";
     for (let j = 0; j < ENV_FIELDS.length; j++) {
       const field = ENV_FIELDS[j],
-        label = card.querySelectorAll(".env-parameter")[j],
+        label = parameters[j],
         input = label.querySelector("input");
+      label.hidden = ENV_EXTENDED.includes(field) && !extended;
+      if (label.hidden) continue;
+      if (field === "decay" || field === "sustain")
+        label.querySelector(".env-name").textContent =
+          `${field.toUpperCase()}${extended ? " 1" : ""}`;
       if (document.activeElement !== input) input.value = env[field];
-      label.querySelector("output").textContent =
-        field === "sustain"
-          ? percent(env[field])
-          : envTime(envSeconds(env, field));
+      label.querySelector("output").textContent = ENV_LEVELS.includes(field)
+        ? percent(envLevel(env, field))
+        : envTime(envSeconds(env, field));
     }
     for (const route of routes) {
       if (document.activeElement !== route.select)
@@ -3050,13 +3158,18 @@ function drawEnvs() {
     const { canvas } = envCards[i];
     if (!visibleCanvas(canvas)) continue;
     const env = preset.envs[i], [c, w, h] = resizeCanvas(canvas);
-    const drawKey = [w, h, devicePixelRatio, env.attack, env.decay, env.sustain, env.release, state?.envs?.[i] || 0].join(":");
+    const drawKey = [w, h, devicePixelRatio, ...ENV_FIELDS.map((field) => env[field]), envMode(env), env.curve, state?.envs?.[i] || 0].join(":");
     if (envCards[i].drawKey === drawKey) continue;
     envCards[i].drawKey = drawKey;
     c.clearRect(0, 0, w, h);
     const top = 7,
       bottom = h - 7,
       level = bottom - (bottom - top) * env.sustain;
+    if (envMode(env) !== "legacy") {
+      drawRustiasEnv(c, env, w, top, bottom);
+      drawEnvMeter(c, w, top, bottom, state?.envs?.[i] || 0);
+      continue;
+    }
     const durations = [
         12 + env.attack * 38,
         12 + env.decay * 38,
@@ -3100,12 +3213,73 @@ function drawEnvs() {
     c.lineTo(3, bottom);
     c.fillStyle = "#a9cf8114";
     c.fill();
-    const live = state?.envs?.[i] || 0;
-    c.fillStyle = "#2b392a";
-    c.fillRect(w - 6, top, 3, bottom - top);
-    c.fillStyle = "#d5f6a8";
-    c.fillRect(w - 6, bottom - (bottom - top) * live, 3, (bottom - top) * live);
+    drawEnvMeter(c, w, top, bottom, state?.envs?.[i] || 0);
   }
+}
+function drawEnvMeter(c, w, top, bottom, live) {
+  c.fillStyle = "#2b392a";
+  c.fillRect(w - 6, top, 3, bottom - top);
+  c.fillStyle = "#d5f6a8";
+  c.fillRect(w - 6, bottom - (bottom - top) * live, 3, (bottom - top) * live);
+}
+// Stage outline of a Rustias EG type, as its Q manual / RADIAS lifecycle runs.
+function drawRustiasEnv(c, env, w, top, bottom) {
+  const mode = envMode(env),
+    radias = mode === "radias",
+    extended = envExtended(env),
+    span = (field) =>
+      !radias && envControl(env[field]) === 0 ? 0 : 12 + env[field] * 38,
+    shape = radias
+      ? (t) => envCurve(env.curve ?? 1, t)
+      : (t) => 1 - (1 - t) ** 3,
+    linear = (t) => t,
+    attack = {
+      width: span("attack"),
+      level: extended ? envLevel(env, "attack_level") : 1,
+      shape: linear,
+    },
+    decay = { width: span("decay"), level: envLevel(env, "sustain"), shape },
+    decay2 = {
+      width: span("decay2"),
+      level: envLevel(env, "sustain2"),
+      shape,
+    },
+    stages = [attack, decay];
+  if (extended) stages.push(decay2);
+  if (mode === "q_loop_s1s2") stages.push(decay, decay2);
+  if (["radias", "q_adsr", "q_ads1ds2r"].includes(mode))
+    stages.push({ width: 24, level: stages.at(-1).level, shape: linear });
+  stages.push({ width: span("release"), level: 0, shape });
+  const total = stages.reduce((sum, stage) => sum + stage.width, 0) || 1,
+    scale = (w - 22) / total,
+    y = (value) => bottom - (bottom - top) * value;
+  let x = 3,
+    from = 0;
+  c.strokeStyle = "#354832";
+  c.lineWidth = 1;
+  c.beginPath();
+  c.moveTo(3, bottom);
+  c.lineTo(w - 15, bottom);
+  c.stroke();
+  c.beginPath();
+  c.moveTo(3, bottom);
+  for (const stage of stages) {
+    for (let k = 1; k <= 16; k++) {
+      const t = k / 16;
+      c.lineTo(
+        x + stage.width * scale * t,
+        y(from + (stage.level - from) * stage.shape(t)),
+      );
+    }
+    x += stage.width * scale;
+    from = stage.level;
+  }
+  c.strokeStyle = "#b4d58e";
+  c.lineWidth = 1.5;
+  c.stroke();
+  c.lineTo(3, bottom);
+  c.fillStyle = "#a9cf8114";
+  c.fill();
 }
 const NOTE_NAMES = [
   "C",

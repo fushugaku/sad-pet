@@ -195,17 +195,7 @@ impl Spec {
                 1 => m.lfos[i].depth,
                 _ => m.lfos[i].division,
             },
-            Target::Env(i, field) => {
-                let e = m.envs[i];
-                match field {
-                    0 => e.attack,
-                    1 => e.decay,
-                    2 => e.sustain,
-                    3 => e.release,
-                    4 => e.depth,
-                    _ => e.extra_depth,
-                }
-            }
+            Target::Env(i, field) => env_get(&m.envs[i], field),
             Target::Fx(pre, i, field) => {
                 let slots = if pre {
                     &m.pre_color_slots[..m.pre_color_len]
@@ -274,17 +264,7 @@ impl Spec {
                     _ => &mut m.lfos[i].division,
                 } = value
             }
-            Target::Env(i, field) => {
-                let e = &mut m.envs[i];
-                *match field {
-                    0 => &mut e.attack,
-                    1 => &mut e.decay,
-                    2 => &mut e.sustain,
-                    3 => &mut e.release,
-                    4 => &mut e.depth,
-                    _ => &mut e.extra_depth,
-                } = value;
-            }
+            Target::Env(i, field) => env_set(&mut m.envs[i], field, value),
             Target::Fx(pre, i, field) => {
                 let slots = if pre {
                     &mut m.pre_color_slots[..m.pre_color_len]
@@ -361,17 +341,7 @@ impl Spec {
                     _ => l.division,
                 }
             }
-            Target::Env(i, field) => {
-                let e = preset.envs[i];
-                match field {
-                    0 => e.attack,
-                    1 => e.decay,
-                    2 => e.sustain,
-                    3 => e.release,
-                    4 => e.depth,
-                    _ => e.extra_depth,
-                }
-            }
+            Target::Env(i, field) => env_get(&preset.envs[i], field),
             Target::Fx(pre, i, field) => *(if pre {
                 &preset.pre_color_chain
             } else {
@@ -472,17 +442,7 @@ impl Spec {
                     _ => &mut l.division,
                 } = value;
             }
-            Target::Env(i, field) => {
-                let e = &mut preset.envs[i];
-                *match field {
-                    0 => &mut e.attack,
-                    1 => &mut e.decay,
-                    2 => &mut e.sustain,
-                    3 => &mut e.release,
-                    4 => &mut e.depth,
-                    _ => &mut e.extra_depth,
-                } = value;
-            }
+            Target::Env(i, field) => env_set(&mut preset.envs[i], field, value),
             Target::Fx(pre, i, field) => {
                 if let Some(slot) = (if pre {
                     &mut preset.pre_color_chain
@@ -557,6 +517,37 @@ fn oscillator_set(o: &mut crate::resynth::Oscillator, field: usize, value: f32) 
         12 => o.interaction = Interaction::ALL[value.round() as usize],
         13 => o.interaction_source = value.round() as u8,
         _ => o.cross_input = CrossInput::ALL[value.round() as usize],
+    }
+}
+
+fn env_get(e: &crate::preset::Env, field: usize) -> f32 {
+    match field {
+        0 => e.attack,
+        1 => e.decay,
+        2 => e.sustain,
+        3 => e.release,
+        4 => e.depth,
+        5 => e.extra_depth,
+        6 => e.mode as u8 as f32,
+        7 => e.attack_level,
+        8 => e.decay2,
+        9 => e.sustain2,
+        _ => f32::from(e.curve),
+    }
+}
+fn env_set(e: &mut crate::preset::Env, field: usize, value: f32) {
+    match field {
+        0 => e.attack = value,
+        1 => e.decay = value,
+        2 => e.sustain = value,
+        3 => e.release = value,
+        4 => e.depth = value,
+        5 => e.extra_depth = value,
+        6 => e.mode = crate::preset::EnvMode::ALL[value.round() as usize],
+        7 => e.attack_level = value,
+        8 => e.decay2 = value,
+        9 => e.sustain2 = value,
+        _ => e.curve = value.round() as u8,
     }
 }
 
@@ -1007,6 +998,34 @@ pub fn specs() -> &'static [Spec] {
                     default: filter_slot_get(&slot, field),
                     target: Target::FilterSlot(i, field),
                 });
+            }
+        }
+        // Envelope types append after every released host index.
+        for i in 0..crate::preset::MODULATORS {
+            for (offset, (key, name, max)) in [
+                (
+                    "mode",
+                    "type",
+                    (crate::preset::EnvMode::ALL.len() - 1) as f32,
+                ),
+                ("attack_level", "attack level", 1.0),
+                ("decay2", "decay 2", 1.0),
+                ("sustain2", "sustain 2", 1.0),
+                ("curve", "curve", 7.0),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let mut spec = Spec {
+                    id: format!("env{}_{key}", i + 1),
+                    name: format!("ENV {} {name}", i + 1),
+                    min: 0.0,
+                    max,
+                    default: 0.0,
+                    target: Target::Env(i, 6 + offset),
+                };
+                spec.default = spec.get(&preset);
+                result.push(spec);
             }
         }
         let synth = crate::synth::Settings::default();

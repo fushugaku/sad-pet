@@ -74,6 +74,10 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   plus eight modulation-matrix routes. OSC 1–4 shape, mode, tuning, level, pan,
   Ring/Sync and other realtime numeric controls are available as destinations.
   Existing three-modulator patches retain their sound and routing.
+  Each envelope has a **Type**: SAD PET (the original ADSR, default) or a Rustias
+  EG type — RADIAS (ADSR with a selectable decay/release curve), Q ADSR, Q ADS1DS2R
+  (Attack level, Decay 2, Sustain 2), Q One Shot, Q Loop S1S2 and Q Loop All.
+  Older presets keep the original envelope.
   **− LFO** / **− ENV** removes the last added modulator while keeping the first
   three and the remaining assignments intact.
 - **DXM-088 / LXR-02 drum timbres**, using the original Rust synthesis engine:
