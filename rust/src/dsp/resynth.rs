@@ -50,13 +50,15 @@ impl Band {
 }
 
 #[derive(Clone, Copy, Default)]
-struct Lowpass {
+pub(super) struct Lowpass {
     b: [f32; 3],
     a: [f32; 2],
     z: [[f32; 2]; 2],
 }
 impl Lowpass {
-    fn new(q: f32) -> Self {
+    /// The four sections of the 2x decimator, in order.
+    pub(super) const QS: [f32; 4] = [0.5097956, 0.6013449, 0.8999762, 2.5629154];
+    pub(super) fn new(q: f32) -> Self {
         // Eighth-order minimum-phase anti-alias filter at 0.45 * host rate.
         let w = 2.0 * PI * 0.225;
         let alpha = w.sin() / (2.0 * q);
@@ -68,7 +70,7 @@ impl Lowpass {
             ..Self::default()
         }
     }
-    fn next(&mut self, input: Stereo) -> Stereo {
+    pub(super) fn next(&mut self, input: Stereo) -> Stereo {
         std::array::from_fn(|c| {
             let y = self.b[0] * input[c] + self.z[c][0];
             self.z[c] = [
@@ -98,13 +100,17 @@ struct Carrier {
     phase_initialized: bool,
 }
 
-struct PcmLoop {
+pub(super) struct PcmLoop {
     start: f64,
-    length: f64,
+    pub(super) length: f64,
     fade: f64,
 }
 impl PcmLoop {
-    fn new(sample: &SampleBuffer, range: &Range<usize>, o: crate::resynth::Oscillator) -> Self {
+    pub(super) fn new(
+        sample: &SampleBuffer,
+        range: &Range<usize>,
+        o: crate::resynth::Oscillator,
+    ) -> Self {
         let length = range.len().max(1) as f64;
         let offset = o.control1 as f64 * (length - 1.0);
         let length = (length - offset).max(1.0);
@@ -116,24 +122,37 @@ impl PcmLoop {
         }
     }
     fn read(&self, carrier: &mut Carrier, sample: &SampleBuffer, range: &Range<usize>) -> Stereo {
-        let p = if carrier.pcm_phase < self.length {
-            carrier.pcm_phase
+        self.read_at(
+            &mut carrier.pcm_phase,
+            carrier.pcm_rate,
+            carrier.pcm_level,
+            sample,
+            range,
+        )
+    }
+    pub(super) fn read_at(
+        &self,
+        phase: &mut f64,
+        rate: f64,
+        level: usize,
+        sample: &SampleBuffer,
+        range: &Range<usize>,
+    ) -> Stereo {
+        let p = if *phase < self.length {
+            *phase
         } else {
-            carrier.pcm_phase.rem_euclid(self.length)
+            phase.rem_euclid(self.length)
         };
-        let mut x = sample.read_region_level(self.start + p, carrier.pcm_level, range);
+        let mut x = sample.read_region_level(self.start + p, level, range);
         if self.fade > 0.0 && p > self.length - self.fade {
-            let y = sample.read_region_level(
-                self.start + p - self.length + self.fade,
-                carrier.pcm_level,
-                range,
-            );
+            let y =
+                sample.read_region_level(self.start + p - self.length + self.fade, level, range);
             let t = ((p - self.length + self.fade) / self.fade) as f32;
             let mix = t * t * (3.0 - 2.0 * t);
             x = std::array::from_fn(|c| x[c] + (y[c] - x[c]) * mix);
         }
-        let next = p + carrier.pcm_rate;
-        carrier.pcm_phase = if next < self.length {
+        let next = p + rate;
+        *phase = if next < self.length {
             next
         } else if self.fade > 0.0 {
             // The head overlap was already played during the crossfade. Resume
@@ -248,7 +267,7 @@ impl Resynth {
             layers: std::array::from_fn(|_| Layer::default()),
             tables: Box::new(radias_oscillator::Tables::new()),
             waveform: Box::new(radias_oscillator::waveform_table()),
-            lowpass: [0.5097956, 0.6013449, 0.8999762, 2.5629154].map(Lowpass::new),
+            lowpass: Lowpass::QS.map(Lowpass::new),
             settings: Settings::default(),
             configured: false,
             pcm_source: (0, 0, 0, 0),

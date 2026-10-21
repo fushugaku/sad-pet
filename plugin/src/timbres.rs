@@ -95,24 +95,18 @@ impl Controller {
                     part.meta = Meta {
                         id,
                         kind,
-                        name: format!(
-                            "{} {count}",
-                            if kind == Kind::Drums {
-                                "Drums"
-                            } else {
-                                "Granular"
-                            }
-                        ),
+                        name: format!("{} {count}", kind.label()),
                         mix: Mix::default(),
                     };
                     part.source = Source::File;
                     part.playing = self.playing;
                     part.midi_gate = self.midi_gate;
                     part.sync = self.sync;
-                    if kind == Kind::Drums {
-                        part.preset.drums = Some(Box::default());
-                        part.preset.name = "Drums".into();
-                        part.midi_gate = false;
+                    if let Some(preset) = kind.preset() {
+                        part.preset = preset;
+                        part.preset.sanitize();
+                        // Drums run free with the transport; a synth waits for notes.
+                        part.midi_gate = kind == Kind::Synth;
                     }
                     let audio = part.prepare(self.rate);
                     self.enqueue(Command::AddPart(Some(Box::new(PartAudio {

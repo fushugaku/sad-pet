@@ -27,6 +27,8 @@ pub struct RealtimeView {
     #[serde(default)]
     pub modulated_resynth: crate::resynth::Settings,
     #[serde(default)]
+    pub modulated_synth: crate::synth::Settings,
+    #[serde(default)]
     pub modulated_lfos: [crate::preset::Lfo; crate::preset::MODULATORS],
     #[serde(default)]
     pub modulated_envs: [crate::preset::Env; crate::preset::MODULATORS],
@@ -81,6 +83,7 @@ impl Default for RealtimeView {
             lfos: [0.0; crate::preset::MODULATORS],
             envs: [0.0; crate::preset::MODULATORS],
             modulated_resynth: Default::default(),
+            modulated_synth: Default::default(),
             modulated_lfos: [crate::preset::Lfo::default(); crate::preset::MODULATORS],
             modulated_envs: [crate::preset::Env::default(); crate::preset::MODULATORS],
             matrix: [0.0; crate::matrix::MAX_ROUTES],
@@ -197,6 +200,7 @@ impl Engine {
         view.matrix = self.matrix_values;
         view.params = self.modulated.params;
         view.modulated_resynth = self.modulated.resynth;
+        view.modulated_synth = self.modulated.synth;
         view.modulated_lfos = self.modulated.lfos;
         view.modulated_envs = self.modulated.envs;
         view.filter_cutoffs = self.current_filter_cutoffs();
@@ -473,6 +477,7 @@ impl ControlFeedback<'_> {
                 || s.id.starts_with("lfo")
                 || s.id.starts_with("env")
                 || (self.preset.drums.is_some() && s.id.starts_with("drum"))
+                || (self.preset.synth.is_some() && s.id.starts_with("synth_"))
         }) {
             if let (Some(base), Some(current), Some(min), Some(max)) = (
                 spec.frame_get(&base_frame),
@@ -497,6 +502,7 @@ pub fn knob_states_from_view(
     m.color_slots = view.color;
     m.pre_color_slots = view.pre_color;
     m.resynth = view.modulated_resynth;
+    m.synth = view.modulated_synth;
     m.lfos = view.modulated_lfos;
     m.envs = view.modulated_envs;
     m.drums = view.drum_controls;

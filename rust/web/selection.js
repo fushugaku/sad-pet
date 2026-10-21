@@ -18,7 +18,11 @@
       this.bind();
     }
     live(state = this.state) {
-      return !!(state?.input?.active || state?.preset?.drums);
+      return !!(
+        state?.input?.active ||
+        state?.preset?.drums ||
+        state?.preset?.synth
+      );
     }
     available() {
       return (

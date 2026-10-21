@@ -114,6 +114,9 @@ enum Target {
     Drum(usize, usize),
     DrumGrain,
     DrumBuffer,
+    SynthOsc(usize, usize),
+    SynthGrain,
+    SynthBuffer,
 }
 
 #[derive(Serialize)]
@@ -129,16 +132,23 @@ pub struct Spec {
 
 impl Spec {
     pub(crate) fn can_sequence(&self) -> bool {
-        !matches!(self.target, Target::DrumGrain | Target::DrumBuffer)
-            && self.id != "bpm"
+        !matches!(
+            self.target,
+            Target::DrumGrain | Target::DrumBuffer | Target::SynthGrain | Target::SynthBuffer
+        ) && self.id != "bpm"
             && !matches!(self.target, Target::SourceFx(_) | Target::Performance(3..))
     }
     pub(crate) fn frame_get(&self, m: &crate::dsp::Modulated) -> Option<f32> {
         Some(match self.target {
             Target::Core { frame_get, .. } => frame_get(m),
             Target::Drum(i, field) => m.drums.0[i][field],
-            Target::SourceFx(_) | Target::DrumGrain | Target::DrumBuffer => return None,
+            Target::SourceFx(_)
+            | Target::DrumGrain
+            | Target::DrumBuffer
+            | Target::SynthGrain
+            | Target::SynthBuffer => return None,
             Target::ResynthOsc(i, field) => oscillator_get(m.resynth.oscillators[i], field),
+            Target::SynthOsc(i, field) => oscillator_get(m.synth.oscillators[i], field),
             Target::Lfo(i, field) => match field {
                 0 => m.lfos[i].rate_hz,
                 1 => m.lfos[i].depth,
@@ -202,10 +212,15 @@ impl Spec {
                 m.drums.0[i][field] =
                     sad_pet_dxm088::params::constrain(field, value).unwrap_or(self.default);
             }
-            Target::SourceFx(_) | Target::DrumGrain | Target::DrumBuffer => {}
+            Target::SourceFx(_)
+            | Target::DrumGrain
+            | Target::DrumBuffer
+            | Target::SynthGrain
+            | Target::SynthBuffer => {}
             Target::ResynthOsc(i, field) => {
                 oscillator_set(&mut m.resynth.oscillators[i], field, value)
             }
+            Target::SynthOsc(i, field) => oscillator_set(&mut m.synth.oscillators[i], field, value),
             Target::Lfo(i, field) => {
                 *match field {
                     0 => &mut m.lfos[i].rate_hz,
@@ -251,6 +266,12 @@ impl Spec {
         match self.target {
             Target::DrumGrain => f32::from(preset.drums.as_ref().is_some_and(|d| d.granular)),
             Target::DrumBuffer => preset.drums.as_ref().map_or(8., |d| d.buffer_seconds),
+            Target::SynthGrain => f32::from(preset.synth.as_ref().is_some_and(|s| s.granular)),
+            Target::SynthBuffer => preset.synth.as_ref().map_or(8., |s| s.buffer_seconds),
+            Target::SynthOsc(i, field) => preset
+                .synth
+                .as_ref()
+                .map_or(self.default, |s| oscillator_get(s.oscillators[i], field)),
             Target::Drum(i, field) => preset
                 .drums
                 .as_ref()
@@ -338,6 +359,21 @@ impl Spec {
             Target::DrumGrain => {
                 if let Some(d) = &mut preset.drums {
                     d.granular = value >= 0.5;
+                }
+            }
+            Target::SynthBuffer => {
+                if let Some(s) = &mut preset.synth {
+                    s.buffer_seconds = value;
+                }
+            }
+            Target::SynthGrain => {
+                if let Some(s) = &mut preset.synth {
+                    s.granular = value >= 0.5;
+                }
+            }
+            Target::SynthOsc(i, field) => {
+                if let Some(s) = &mut preset.synth {
+                    oscillator_set(&mut s.oscillators[i], field, value);
                 }
             }
             Target::Drum(i, field) => {
@@ -904,6 +940,70 @@ pub fn specs() -> &'static [Spec] {
             default: 8.,
             target: Target::DrumBuffer,
         });
+        let synth = crate::synth::Settings::default();
+        result.push(Spec {
+            id: "synth_count".into(),
+            name: "Synth oscillator count".into(),
+            min: 1.0,
+            max: crate::synth::MAX_OSCILLATORS as f32,
+            default: synth.count as f32,
+            target: Target::Core {
+                get: |p| p.synth.as_ref().map_or(1.0, |s| s.count as f32),
+                set: |p, v| {
+                    if let Some(s) = &mut p.synth {
+                        s.count = v.round() as u8;
+                    }
+                },
+                frame_get: |m| m.synth.count as f32,
+                frame_set: |m, v| m.synth.count = v.round() as u8,
+            },
+        });
+        result.push(Spec {
+            id: "synth_granular".into(),
+            name: "Synth granular processing".into(),
+            min: 0.,
+            max: 1.,
+            default: 0.,
+            target: Target::SynthGrain,
+        });
+        result.push(Spec {
+            id: "synth_buffer_seconds".into(),
+            name: "Synth granular buffer seconds".into(),
+            min: 0.125,
+            max: 32.,
+            default: synth.buffer_seconds,
+            target: Target::SynthBuffer,
+        });
+        for (i, o) in synth.oscillators.iter().enumerate() {
+            for (field, (key, name, min, max)) in [
+                ("enabled", "enabled", 0.0, 1.0),
+                ("waveform", "waveform", 0.0, 7.0),
+                ("mode", "mode", 0.0, 3.0),
+                ("control1", "control 1", 0.0, 1.0),
+                ("control2", "control 2", 0.0, 1.0),
+                ("transpose", "transpose", -48.0, 48.0),
+                ("fine", "fine tune", -100.0, 100.0),
+                ("level", "level", 0.0, 1.0),
+                ("pan", "pan", 0.0, 1.0),
+                ("cross_source", "cross source", 0.0, 4.0),
+                ("model", "model", 0.0, 1.0),
+                ("fold_shape", "fold shape", 0.0, 4.0),
+                ("interaction", "Ring/Sync", 0.0, 3.0),
+                ("interaction_source", "Ring/Sync source", 2.0, 5.0),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                result.push(Spec {
+                    id: format!("synth_osc{}_{}", i + 1, key),
+                    name: format!("Synth OSC {} {name}", i + 1),
+                    min,
+                    max,
+                    default: oscillator_get(*o, field),
+                    target: Target::SynthOsc(i, field),
+                });
+            }
+        }
         result
     })
 }

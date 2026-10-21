@@ -66,8 +66,8 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   Velocity are available together. Main pitch can also target any combination
   of OSC 1–4; their own tracks add −24…+24 semitones to that pitch, at independent
   clocks. Double-click a step's Gate knob to inherit the track's Gate setting.
-- In the browser and DAW plug-ins, add independent **Granular** and **Drum machine**
-  timbres as tabs across the top. They run together, with per-timbre level, mute,
+- In the browser and DAW plug-ins, add independent **Granular**, **Drum machine**
+  and **Synth engine** timbres as tabs across the top. They run together, with per-timbre level, mute,
   solo and MIDI channel. Each owns its source, effects, Resynth, envelopes, LFOs
   and Neuropolis program. Save/recall includes the entire scene and all sources.
 - Up to **8 LFOs** with tempo sync up to 8 bars and **8 ADSR envelopes** per timbre,
@@ -94,6 +94,18 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   Selecting a sequencer track or step also selects that drum's sound;
   voice knobs repaint immediately while dragging.
   The firmware clock, original stereo DSP and host-rate resampler are preserved.
+- **Synth engine timbres** run the granular engine in reverse order: up to four
+  Rustias OSC1 / Wavefolder oscillators per note (Saw, Pulse, Triangle, Sine in
+  Wave/Cross/Unison/VPM, Formant, Noise and PCM of the loaded file) play the eight
+  note voices first, with Ring/Sync and Cross links between oscillators. Each note
+  then passes its own filters, ENV/VCA, LFOs, matrix and Pre-filter FX, from MIDI,
+  arpeggiator or Neuropolis tracks. **Granular** sends the mixed voices after the
+  VCA into a 125 ms–32 s live history read by the Grain Engine, so grains keep the
+  tails of released notes; Pitch then transposes the grains instead of the
+  oscillators. Oscillator controls are host parameters and modulation
+  destinations (`synth_osc1_waveform`…, `synth_granular`, `synth_buffer_seconds`).
+  The desktop app, which has one engine, switches it with **Engine: Granular /
+  Synth engine**. Presets of the other timbres serialize unchanged.
 - Two filters with single, serial and parallel routing, envelope depth and key tracking.
 - All **18 Rustias filter models** in either slot: RADIAS, Ladder LP/HP/BP24,
   MS-20 LP/HP12, Pro LP24, SEM, Multi Filter, M/Poly LP24 and Linear LP/HP/BP/Notch

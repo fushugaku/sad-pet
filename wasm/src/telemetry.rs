@@ -230,6 +230,8 @@ impl Host {
                 preset: &self.engine.preset,
                 name: if self.engine.preset.drums.is_some() {
                     "Drum machine"
+                } else if self.engine.preset.synth.is_some() {
+                    sad_pet::dsp::synth::NAME
                 } else {
                     &sample.name
                 },
@@ -397,6 +399,11 @@ fn decode_snapshot(
         state["playing"] = json!(v.drums.playing);
         // The drum history length follows its Buffer setting, not the file.
         let frames = drums.buffer_frames(rate);
+        state["sample_frames"] = json!(frames);
+        state["sample_seconds"] = json!(frames as f64 / rate as f64);
+    }
+    if let Some(synth) = &preset.synth {
+        let frames = synth.history().buffer_frames(rate);
         state["sample_frames"] = json!(frames);
         state["sample_seconds"] = json!(frames as f64 / rate as f64);
     }

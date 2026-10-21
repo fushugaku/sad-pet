@@ -143,6 +143,15 @@
       </div>
       <div id="notice" role="status" hidden></div>
       <section id="timbres" aria-label="Timbres" hidden></section>
+      <div id="engine-type" class="engine-type" hidden>
+        <label
+          >ENGINE<select id="engine-kind" aria-label="Engine type">
+            <option value="granular">Granular</option>
+            <option value="synth">Synth engine</option>
+            <option value="drums" disabled hidden>Drum machine</option>
+          </select></label
+        >
+      </div>
       <section
         id="drum-machine"
         class="bank drum-bank"
@@ -458,6 +467,33 @@
           </div>
         </section>
       </div>
+      <section
+        id="synth-engine"
+        class="bank resynth-bank synth-bank"
+        aria-label="Synth engine"
+        hidden
+      >
+        <div class="section-heading">
+          <h2>Synth engine <span>Rustias OSC</span></h2>
+          <div class="resynth-actions">
+            <label class="drum-buffer"
+              >Buffer<select
+                id="synth-buffer"
+                aria-label="Synth granular buffer duration"
+              ></select
+            ></label>
+            <button id="synth-add">+ Oscillator</button>
+            <label class="check"
+              ><input
+                id="synth-granular"
+                type="checkbox"
+                aria-label="Synth granular processing"
+              />Granular</label
+            >
+          </div>
+        </div>
+        <div id="synth-oscillators" class="resynth-oscillators"></div>
+      </section>
       <section class="bank color-bank" aria-label="Source effects">
         <div class="section-heading">
           <h2>

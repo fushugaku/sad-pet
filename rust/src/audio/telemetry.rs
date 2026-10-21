@@ -94,6 +94,8 @@ struct Snapshot {
     region: Region,
     fades: Fades,
     center: f32,
+    /// Drum and Synth engines show their live history, not the loaded file.
+    history: Option<(f64, usize)>,
     cpu: f32,
     underruns: u64,
     device_failed: bool,
@@ -125,6 +127,13 @@ impl Snapshot {
         self.underruns = underruns;
         self.device_failed = failed;
         engine.realtime_view(&mut self.view);
+        self.history = engine
+            .preset
+            .history()
+            .map(|_| (engine.source_duration(), engine.source_frames()));
+        if self.history.is_some() {
+            self.center = self.view.center as f32;
+        }
     }
     fn publish(&mut self, state: &Mutex<State>) {
         let mut state = state.lock().unwrap();
@@ -191,6 +200,22 @@ impl Snapshot {
             state.sample_frames = sample.len();
             state.waveform.clone_from(&sample.waveform);
             state.sample = sample;
+        }
+        if let Some((seconds, frames)) = self.history {
+            state.sample_seconds = seconds;
+            state.sample_frames = frames;
+            state.waveform.clear();
+            state
+                .waveform
+                .extend_from_slice(&v.waveform[..v.waveform_len]);
+            state.showing_history = true;
+        } else if state.showing_history {
+            // Leaving a live history restores the file's own display.
+            let file = state.sample.clone();
+            state.sample_seconds = file.duration();
+            state.sample_frames = file.len();
+            state.waveform.clone_from(&file.waveform);
+            state.showing_history = false;
         }
         if self.device_failed {
             state.audio_error = Some(

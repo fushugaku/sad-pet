@@ -3886,3 +3886,31 @@ input[type="range"] {
     min-width: 140px;
   }
 }
+/* Synth engine timbres reuse the Resynth oscillator cards; hosts without
+   timbres switch their single engine from the Engine selector. */
+.synth-bank[hidden],
+.engine-type[hidden] {
+  display: none;
+}
+.synth-bank h2 span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+  margin-left: 6px;
+}
+.engine-type {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 12px;
+}
+.engine-type label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.engine-type select {
+  min-height: 36px;
+  padding-block: 6px;
+}

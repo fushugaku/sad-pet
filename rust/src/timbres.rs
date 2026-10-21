@@ -7,6 +7,39 @@ pub enum Kind {
     #[default]
     Granular,
     Drums,
+    Synth,
+}
+impl Kind {
+    pub fn label(self) -> &'static str {
+        match self {
+            Kind::Granular => "Granular",
+            Kind::Drums => "Drums",
+            Kind::Synth => "Synth",
+        }
+    }
+    pub fn of(preset: &crate::preset::Preset) -> Self {
+        if preset.drums.is_some() {
+            Kind::Drums
+        } else if preset.synth.is_some() {
+            Kind::Synth
+        } else {
+            Kind::Granular
+        }
+    }
+    /// Drum and Synth parts start from their own engine; a Granular part
+    /// keeps its host's preset.
+    pub fn preset(self) -> Option<crate::preset::Preset> {
+        let mut preset = crate::preset::Preset {
+            name: self.label().into(),
+            ..Default::default()
+        };
+        match self {
+            Kind::Granular => return None,
+            Kind::Drums => preset.drums = Some(Box::default()),
+            Kind::Synth => preset.synth = Some(Box::default()),
+        }
+        Some(preset)
+    }
 }
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(default)]
@@ -81,11 +114,7 @@ impl Meta {
             .take(80)
             .collect();
         if self.name.is_empty() {
-            self.name = match self.kind {
-                Kind::Granular => "Granular",
-                Kind::Drums => "Drums",
-            }
-            .into();
+            self.name = self.kind.label().into();
         }
     }
 }

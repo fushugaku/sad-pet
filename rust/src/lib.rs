@@ -21,6 +21,7 @@ pub mod sequence;
 #[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
 pub mod server;
 pub mod startup;
+pub mod synth;
 pub mod tables;
 pub mod timbres;
 pub mod wav;

@@ -202,6 +202,30 @@ fn finite(value: &mut f32, low: f32, high: f32, fallback: f32) {
         fallback
     };
 }
+impl Oscillator {
+    pub fn sanitize(&mut self) {
+        let d = Self::default();
+        finite(&mut self.control1, 0.0, 1.0, d.control1);
+        finite(&mut self.control2, 0.0, 1.0, d.control2);
+        finite(&mut self.transpose, -48.0, 48.0, d.transpose);
+        finite(&mut self.fine, -100.0, 100.0, d.fine);
+        finite(&mut self.level, 0.0, 1.0, d.level);
+        finite(&mut self.pan, 0.0, 1.0, d.pan);
+        self.cross_source = self.cross_source.min(4);
+        self.interaction_source = self.interaction_source.min(5);
+        if !self.waveform.analog() {
+            self.mode = Mode::Wave;
+            self.model = Model::Radias;
+        }
+        if self.waveform == Waveform::AudioIn {
+            self.interaction = if self.interaction.ring() {
+                Interaction::Ring
+            } else {
+                Interaction::Off
+            };
+        }
+    }
+}
 impl Settings {
     pub fn sanitize(&mut self) {
         let d = Self::default();
@@ -212,26 +236,7 @@ impl Settings {
         finite(&mut self.threshold, 0.0, 1.0, d.threshold);
         self.count = self.count.clamp(1, MAX_OSCILLATORS as u8);
         for o in &mut self.oscillators {
-            let d = Oscillator::default();
-            finite(&mut o.control1, 0.0, 1.0, d.control1);
-            finite(&mut o.control2, 0.0, 1.0, d.control2);
-            finite(&mut o.transpose, -48.0, 48.0, d.transpose);
-            finite(&mut o.fine, -100.0, 100.0, d.fine);
-            finite(&mut o.level, 0.0, 1.0, d.level);
-            finite(&mut o.pan, 0.0, 1.0, d.pan);
-            o.cross_source = o.cross_source.min(4);
-            o.interaction_source = o.interaction_source.min(5);
-            if !o.waveform.analog() {
-                o.mode = Mode::Wave;
-                o.model = Model::Radias;
-            }
-            if o.waveform == Waveform::AudioIn {
-                o.interaction = if o.interaction.ring() {
-                    Interaction::Ring
-                } else {
-                    Interaction::Off
-                };
-            }
+            o.sanitize();
         }
     }
     pub fn sensitivity_gain(self) -> f32 {

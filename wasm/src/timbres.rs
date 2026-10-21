@@ -129,39 +129,41 @@ impl Registry {
         let rate = self.parts[0].host.rate;
         match pending.stage {
             0 => pending.host = Some(Host::new(rate)),
-            1 if pending.kind == Kind::Drums => {
-                let mut preset = Preset {
-                    name: "Drums".into(),
-                    drums: Some(Box::default()),
-                    ..Preset::default()
-                };
+            1 if pending.kind != Kind::Granular => {
+                let mut preset = pending.kind.preset().unwrap();
                 preset.sanitize();
                 preset.prepare_effects_reusing(rate, &pending.host.as_ref().unwrap().engine.preset);
                 pending.preset = Some(preset);
             }
-            2 if pending.kind == Kind::Drums => {
+            2 if pending.kind != Kind::Granular => {
                 let preset = pending.preset.as_mut().unwrap();
                 preset
                     .drum_runtime
                     .prepare_engine(preset.drums.as_deref(), rate);
+                preset
+                    .synth_runtime
+                    .prepare_engine(preset.synth.as_deref(), rate);
             }
-            3 if pending.kind == Kind::Drums => {
+            3 if pending.kind != Kind::Granular => {
                 let preset = pending.preset.as_mut().unwrap();
+                let history = preset.history().unwrap();
                 let input = pending.live.get_or_insert_with(|| {
-                    sad_pet::dsp::sample::LiveInputPreparation::new(
-                        rate,
-                        !preset.drums.as_ref().unwrap().granular,
-                    )
+                    sad_pet::dsp::sample::LiveInputPreparation::new(rate, !history.granular)
                 });
                 if !input.step() {
                     self.preparing = Some(pending);
                     return Ok(false);
                 }
                 let mut input = pending.live.take().unwrap().finish().unwrap();
-                input.sample.name = "Drum machine".into();
-                preset.drum_runtime.0.as_mut().unwrap().live = Some(input);
+                if let Some(drums) = &mut preset.drum_runtime.0 {
+                    input.sample.name = "Drum machine".into();
+                    drums.live = Some(input);
+                } else if let Some(synth) = &mut preset.synth_runtime.0 {
+                    input.sample.name = sad_pet::dsp::synth::NAME.into();
+                    synth.live = Some(input);
+                }
             }
-            4 if pending.kind == Kind::Drums => {
+            4 if pending.kind != Kind::Granular => {
                 let size = rmp_serde::to_vec_named(pending.preset.as_ref().unwrap())
                     .map_or(0, |bytes| bytes.len())
                     + 131072;
@@ -180,7 +182,8 @@ impl Registry {
                 host.file_generation = primary.file_generation;
                 if let Some(mut preset) = pending.preset.take() {
                     host.engine.exchange_preset(&mut preset);
-                    host.engine.set_midi_gate(false);
+                    // Drums run free with the transport; a synth waits for notes.
+                    host.engine.set_midi_gate(pending.kind == Kind::Synth);
                 }
                 host.engine.set_playing(primary.engine.playing);
                 let kind = pending.kind;
@@ -191,14 +194,7 @@ impl Registry {
                     meta: Meta {
                         id,
                         kind,
-                        name: format!(
-                            "{} {count}",
-                            if kind == Kind::Drums {
-                                "Drums"
-                            } else {
-                                "Granular"
-                            }
-                        ),
+                        name: format!("{} {count}", kind.label()),
                         ..Meta::default()
                     },
                     host,
@@ -349,6 +345,9 @@ impl Registry {
         let preset_changed = path == "/api/preset" && !data.is_null();
         let mut result = self.parts[index].host.command(request)?;
         if preset_changed {
+            // A loaded preset can change the part's engine type.
+            let part = &mut self.parts[index];
+            part.meta.kind = Kind::of(&part.host.engine.preset);
             self.refresh_context();
         }
         if state {
@@ -482,7 +481,7 @@ impl Registry {
             let mut host = Host::new(rate);
             host.engine.set_sample(Arc::new(sample));
             host.engine.set_preset(state.preset);
-            if host.engine.preset.drums.is_none() {
+            if host.engine.preset.history().is_none() {
                 host.engine.set_live_input(state.live, state.effects_only);
             }
             if host.engine.live_input.is_none() {
@@ -593,7 +592,7 @@ impl Registry {
         let mut states = Vec::new();
         for p in &self.parts {
             let e = &p.host.engine;
-            states.push(json!({"version":1,"meta":p.meta,"preset":e.preset,"sample_name":e.sample.name,"sample_id":e.sample.library_id,"sample_wav":base64::engine::general_purpose::STANDARD.encode(wav::bytes(e.sample.sample_rate,e.sample.frames())?),"source":if e.preset.drums.is_some() || e.live_input.is_none() {"file"} else if e.live_input.as_ref().is_some_and(|i|i.effects_only) {"effects"} else {"grains"},"region":e.region,"fades":e.fades,"sync":true,"frozen":false,"bypass":e.bypass,"midi_gate":e.midi_gate,"playing":false,"timbres":[],"active_timbre":0}));
+            states.push(json!({"version":1,"meta":p.meta,"preset":e.preset,"sample_name":e.sample.name,"sample_id":e.sample.library_id,"sample_wav":base64::engine::general_purpose::STANDARD.encode(wav::bytes(e.sample.sample_rate,e.sample.frames())?),"source":if e.preset.history().is_some() || e.live_input.is_none() {"file"} else if e.live_input.as_ref().is_some_and(|i|i.effects_only) {"effects"} else {"grains"},"region":e.region,"fades":e.fades,"sync":true,"frozen":false,"bypass":e.bypass,"midi_gate":e.midi_gate,"playing":false,"timbres":[],"active_timbre":0}));
         }
         let mut root = states.remove(0);
         root["timbres"] = json!(states);
@@ -642,14 +641,10 @@ impl Registry {
             sample.library_id = state["sample_id"].as_str().map(str::to_string);
             let preset: Preset =
                 serde_json::from_value(state["preset"].clone()).map_err(|e| e.to_string())?;
-            meta.kind = if preset.drums.is_some() {
-                Kind::Drums
-            } else {
-                Kind::Granular
-            };
+            meta.kind = Kind::of(&preset);
             let mut host = Host::new(rate);
             host.engine = Box::new(Engine::new(rate, Arc::new(sample), preset));
-            if host.engine.preset.drums.is_none() {
+            if host.engine.preset.history().is_none() {
                 {
                     host.engine.set_region(
                         serde_json::from_value(state["region"].clone())

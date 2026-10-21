@@ -18,6 +18,7 @@ pub(crate) mod sequence;
 pub mod source_fx;
 #[cfg(all(feature = "source-worker", not(target_arch = "wasm32")))]
 pub mod source_fx_worker;
+pub mod synth;
 pub mod telemetry;
 
 use crate::{
@@ -69,9 +70,12 @@ struct Voice {
     value: f32,
     env_values: [f32; crate::preset::MODULATORS],
     loop_phase: f64,
+    /// Counts note-ons, so Synth engine carriers restart with each note.
+    generation: u32,
 }
 impl Voice {
     fn on(&mut self, count: usize) {
+        self.generation = self.generation.wrapping_add(1);
         self.loop_phase = 0.0;
         self.env_values = [0.0; crate::preset::MODULATORS];
         self.value = 0.0;
@@ -120,6 +124,7 @@ pub(crate) struct Modulated {
     pub(crate) performance: crate::performance::Modulation,
     pub(crate) resynth: crate::resynth::Settings,
     pub(crate) drums: crate::drums::Controls,
+    pub(crate) synth: crate::synth::Settings,
     /// A modulation route wrote into a color slot of this frame. Clean frames
     /// carry the preset's own slots, so the racks need no reconfiguration.
     pub(crate) color_dirty: bool,
@@ -150,6 +155,7 @@ impl Modulated {
             .drums
             .as_ref()
             .map_or_else(Default::default, |d| d.params);
+        self.synth = preset.synth.as_deref().copied().unwrap_or_default();
         self.color_dirty = false;
     }
     fn route(&mut self, destination: Destination, value: f32) {
@@ -352,6 +358,7 @@ pub struct Engine {
     source_color: color::ColorProcessor,
     resynth: resynth::Resynth,
     drums: Option<Box<crate::drums::Runtime>>,
+    synth: Option<Box<synth::Runtime>>,
     pub processed_source: Option<Arc<source_fx::ProcessedSource>>,
     previous_source: Option<Arc<source_fx::ProcessedSource>>,
     source_fade_remaining: u32,
@@ -436,6 +443,7 @@ impl Engine {
             source_color: color::ColorProcessor::new(sr),
             resynth: resynth::Resynth::new(sr),
             drums: None,
+            synth: None,
             processed_source: None,
             previous_source: None,
             source_fade_remaining: 0,
@@ -499,6 +507,9 @@ impl Engine {
         preset
             .drum_runtime
             .prepare(preset.drums.as_deref(), self.sample_rate);
+        preset
+            .synth_runtime
+            .prepare(preset.synth.as_deref(), self.sample_rate);
         self.exchange_preset(&mut preset);
     }
 
@@ -506,6 +517,12 @@ impl Engine {
     /// Structural FX/drum edits must use `prepared_clone_for(sample_rate)`.
     /// The caller retires the previous preset away from the audio callback.
     pub fn exchange_preset(&mut self, preset: &mut Preset) {
+        // A retiring synth restores the input it replaced before drums install.
+        if preset.synth_runtime.0.is_none()
+            && let Some(old) = &mut self.synth
+        {
+            std::mem::swap(&mut self.live_input, &mut old.live);
+        }
         if let Some(next) = &mut preset.drum_runtime.0 {
             if let Some(old) = &mut self.drums {
                 next.engine.take_audio(&mut old.engine);
@@ -518,6 +535,14 @@ impl Engine {
             std::mem::swap(&mut self.live_input, &mut old.live);
         }
         std::mem::swap(&mut self.drums, &mut preset.drum_runtime.0);
+        if let Some(next) = &mut preset.synth_runtime.0 {
+            if let Some(old) = &mut self.synth {
+                next.inherit(old);
+            } else {
+                std::mem::swap(&mut self.live_input, &mut next.live);
+            }
+        }
+        std::mem::swap(&mut self.synth, &mut preset.synth_runtime.0);
         if let (Some(next), Some(old)) = (
             &mut preset.sequencer.runtime,
             &mut self.preset.sequencer.runtime,
@@ -884,7 +909,7 @@ impl Engine {
         self.live_input.as_ref().map_or_else(
             || self.file_range.clone(),
             |input| {
-                if self.preset.drums.is_some() {
+                if self.preset.history().is_some() {
                     input.range()
                 } else {
                     0..input.sample.len()
@@ -900,6 +925,10 @@ impl Engine {
         Ok(())
     }
     pub fn set_live_input(&mut self, enabled: bool, effects_only: bool) {
+        if self.preset.history().is_some() {
+            // Drum and Synth timbres record their own output.
+            return;
+        }
         if enabled {
             if let Some(input) = &mut self.live_input {
                 input.effects_only = effects_only;
@@ -931,20 +960,20 @@ impl Engine {
             .map_or(&self.sample, |input| &input.sample)
     }
     pub fn source_frames(&self) -> usize {
-        self.preset.drums.as_ref().map_or_else(
+        self.preset.history().map_or_else(
             || self.source_sample().len(),
-            |settings| settings.buffer_frames(self.sample_rate),
+            |history| history.buffer_frames(self.sample_rate),
         )
     }
     pub fn source_duration(&self) -> f64 {
-        if self.preset.drums.is_some() {
+        if self.preset.history().is_some() {
             self.source_frames() as f64 / self.sample_rate as f64
         } else {
             self.source_sample().duration()
         }
     }
     pub fn source_position(&self, position: f64) -> f64 {
-        if self.preset.drums.is_some()
+        if self.preset.history().is_some()
             && let Some(input) = &self.live_input
         {
             input.display_position(position)
@@ -954,9 +983,9 @@ impl Engine {
         }
     }
     fn grain_seconds(&self, size: f32) -> f32 {
-        self.preset.drums.as_ref().map_or_else(
+        self.preset.history().map_or_else(
             || tables::grain_duration(size),
-            |settings| settings.grain_seconds(size),
+            |history| history.grain_seconds(size),
         )
     }
     pub fn reset_grains(&mut self) {
@@ -1053,7 +1082,7 @@ impl Engine {
                 + p.cloud as f64 * length * 0.5
                 + 4.0)
                 .min(length * 0.9);
-            let head = if self.preset.drums.is_some() {
+            let head = if self.preset.history().is_some() {
                 range.end as f64
             } else {
                 input.head() as f64
@@ -1203,6 +1232,10 @@ impl Engine {
     }
 
     pub fn midi(&mut self, message: Message) {
+        if self.preset.synth.is_some() && matches!(message, Message::Program { .. }) {
+            // Synth patches are recalled by the host, as scenes and drums are.
+            return;
+        }
         if self.preset.drums.is_some() {
             // Scene and drum patches are recalled by the host, not the legacy sample-preset bank.
             if matches!(message, Message::Program { .. }) {
@@ -1682,6 +1715,17 @@ impl Engine {
             };
             drums.configure(settings, m.drums, m.params.bpm, transpose);
         }
+        if let Some(synth) = &mut self.synth {
+            // As with drums, Pitch transposes the grains while they are on.
+            let transpose = if m.synth.granular {
+                0.
+            } else {
+                (m.params.pitch * 2. - 1.) * m.params.pitch_range
+                    + m.params.sample_tune_semis
+                    + m.params.sample_tune_cents * 0.01
+            };
+            synth.configure(&m.synth, transpose, &self.sample, m.params.sample_root_note);
+        }
         for (i, env) in m.envs.iter().enumerate() {
             if i >= m.env_count {
                 if i < self.modulated.env_count {
@@ -1774,16 +1818,31 @@ impl Engine {
         if slot == MAX_GRAINS {
             return;
         }
-        let Some(voice) = (0..VOICES)
-            .map(|i| (i + self.next_voice) % VOICES)
-            .find(|&i| self.voices[i].envelopes[0].active())
-        else {
-            return;
+        let synth = self.synth.is_some();
+        let voice = if synth {
+            // Synth grains read the mixed history after every voice's VCA:
+            // they belong to no note and keep its tails while playing.
+            if !self.playing {
+                return;
+            }
+            0
+        } else {
+            let Some(voice) = (0..VOICES)
+                .map(|i| (i + self.next_voice) % VOICES)
+                .find(|&i| self.voices[i].envelopes[0].active())
+            else {
+                return;
+            };
+            self.next_voice = (voice + 1) % VOICES;
+            voice
         };
-        self.next_voice = (voice + 1) % VOICES;
         let p = &self.modulated.params;
         let note = self.voices[voice];
-        let bend = self.bend[note.channel as usize] * p.midi_pitchbend_range;
+        let bend = if synth {
+            0.0
+        } else {
+            self.bend[note.channel as usize] * p.midi_pitchbend_range
+        };
         let semis = (p.pitch * 2.0 - 1.0) * p.pitch_range
             + if voice == 0 {
                 0.0
@@ -1860,12 +1919,14 @@ impl Engine {
     pub fn process_input_frame(&mut self, input: Stereo) -> Stereo {
         let input = if let Some(drums) = &mut self.drums {
             drums.frame()
+        } else if let Some(synth) = &self.synth {
+            synth.output()
         } else {
             input
         };
-        if let (Some(settings), Some(live)) = (&self.preset.drums, &mut self.live_input) {
-            live.effects_only = !settings.granular;
-            if live.set_window_seconds(settings.buffer_seconds) {
+        if let (Some(history), Some(live)) = (self.preset.history(), &mut self.live_input) {
+            live.effects_only = !history.granular;
+            if live.set_window_seconds(history.buffer_seconds) {
                 let range = live.range();
                 let capacity = live.sample.len() as f64;
                 let remap = |position: f64| {
@@ -1896,10 +1957,10 @@ impl Engine {
             input
         };
         if let Some(live) = &mut self.live_input {
-            let drums = self.preset.drums.is_some();
-            let epoch = if drums { live.range_epoch() } else { 0 };
+            let windowed = self.preset.history().is_some();
+            let epoch = if windowed { live.range_epoch() } else { 0 };
             live.push_with_meter(source_input, input, self.frozen);
-            if drums {
+            if windowed {
                 let shift = (live.range_epoch() - epoch) as f64;
                 if shift != 0.0 {
                     self.frozen_center -= shift;
@@ -2121,8 +2182,27 @@ impl Engine {
         let mut mixed_frames = [[0.0; 2]; VOICES];
         let mut before_fx = [0.0; 2];
         let mut grain_tap = [0.0; 2];
+        if let Some(synth) = &mut self.synth {
+            // Oscillators replace each voice's source and grains before its
+            // filter; the grains of voice slot 0 follow the VCA instead.
+            synth.begin_frame(self.lfo_values[0]);
+            for (i, voice) in self.voices.iter().enumerate() {
+                if voice.value <= 0.0 {
+                    continue;
+                }
+                let note = voice.note as f32
+                    + self.bend[voice.channel as usize]
+                        * self.modulated.params.midi_pitchbend_range;
+                let frame = synth.render(i, voice.generation, note, &self.sample, &self.file_range);
+                mixed_frames[i] = frame.map(|x| x * input_gain);
+                for (c, total) in before_fx.iter_mut().enumerate() {
+                    *total += mixed_frames[i][c] * voice.value;
+                }
+            }
+            grain_tap = before_fx;
+        }
         for (i, frame) in voice_frames.into_iter().enumerate() {
-            if self.voices[i].value <= 0.0 {
+            if self.voices[i].value <= 0.0 || self.synth.is_some() {
                 continue;
             }
             mixed_frames[i] = std::array::from_fn(|c| {
@@ -2167,6 +2247,22 @@ impl Engine {
             for c in 0..2 {
                 filtered[c] += voice[c] * self.voices[i].value;
             }
+        }
+        if let Some(synth) = &mut self.synth {
+            synth.set_output(filtered);
+            // The history's source path, one frame later, is the dry signal.
+            let dry = if self.live_input.is_some() {
+                source
+            } else {
+                filtered
+            };
+            filtered = if effects_only {
+                dry
+            } else {
+                std::array::from_fn(|c| {
+                    dry[c] * (1.0 - self.smooth_mix) + voice_frames[0][c] * norm * self.smooth_mix
+                })
+            };
         }
         let processed = self
             .color_rack

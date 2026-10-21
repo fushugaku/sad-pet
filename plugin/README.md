@@ -34,7 +34,8 @@ to transfer an effect preset between browsers, macOS and Windows.
 
 ## Timbres and drum machine
 
-Use the top **Timbres** bank: choose Granular or Drum machine, then **+ Timbre**.
+Use the top **Timbres** bank: choose Granular, Drum machine or Synth engine, then
+**+ Timbre**.
 Tabs select the editor; every timbre continues running. Each has independent
 level, mute, solo and MIDI-channel selection (All, or 1–16). Existing host parameter
 IDs continue to automate the first timbre; every timbre supports its own numeric
@@ -64,6 +65,14 @@ Source FX processes the drum audio before capture; pre-filter FX, filters, Resyn
 and post-filter FX remain available on the selected timbre. Main pitch transposes
 the drum voices in direct mode and the grains in granular mode. The drum page's
 Neuropolis editor is independent of every other timbre's program.
+
+The Synth engine timbre reverses the granular order: up to four Rustias OSC1 /
+Wavefolder oscillators (the Resynth card set without Audio In) play each of the
+eight note voices from DAW MIDI, the arpeggiator or Neuropolis, then that note's
+filters, ENV/VCA and Pre-filter FX. **Granular** in its heading sends the mixed
+voices after the VCA into a 125 ms–32 s **Buffer** read by Grain Engine; Source FX
+processes that mix before capture, and Main pitch transposes the grains. A new
+synth timbre waits for notes (MIDI gate on) instead of droning with the transport.
 
 Use **+ LFO** / **+ ENV** to add up to eight of each per timbre, and **− LFO** /
 **− ENV** to remove the last added modulator down to three. Destination menus

@@ -296,13 +296,15 @@ impl Controller {
                 None
             },
             sample,
-            live: (source != Source::File || preset.drums.is_some()).then(|| {
-                let mut input = preset.drums.as_ref().map_or_else(
+            live: (source != Source::File || preset.history().is_some()).then(|| {
+                let mut input = preset.history().map_or_else(
                     || LiveInput::new(self.rate, source == Source::Effects),
-                    |d| LiveInput::for_drums(self.rate, !d.granular, d.buffer_seconds),
+                    |h| LiveInput::for_drums(self.rate, !h.granular, h.buffer_seconds),
                 );
                 input.sample.name = if preset.drums.is_some() {
                     "Drum machine"
+                } else if preset.synth.is_some() {
+                    sad_pet::dsp::synth::NAME
                 } else {
                     "DAW input"
                 }
@@ -401,12 +403,12 @@ impl Controller {
         let view = &self.view;
         let live = self.source != Source::File;
         let drums = self.preset.drums.is_some();
-        let buffered = live || drums;
+        let synth = self.preset.synth.is_some();
+        let buffered = live || drums || synth;
         let buffer_frames = self
             .preset
-            .drums
-            .as_ref()
-            .map_or(self.rate as usize * 8, |d| d.buffer_frames(self.rate));
+            .history()
+            .map_or(self.rate as usize * 8, |h| h.buffer_frames(self.rate));
         let knobs = sad_pet::dsp::telemetry::knob_states_from_view(&self.preset, view);
         let mut reduction: std::collections::BTreeMap<_, _> = view
             .gain_reduction
@@ -425,7 +427,7 @@ impl Controller {
             "plugin": {"effect":self.effect,"sync":self.sync,"host_bpm":self.host_bpm,"host_playing":self.host_playing,"bar_beats":view.bar_beats},
             "sample_rate":self.rate,"audio_device":"DAW","audio_enabled":true,"audio_error":null,
             "playing":self.playing,"midi_gate":self.midi_gate,"frozen":self.frozen,"bypass":self.bypass,
-            "preset":displayed_preset,"sample_name":if drums { "Drum machine" } else if live { "DAW input" } else { &self.sample.name },
+            "preset":displayed_preset,"sample_name":if drums { "Drum machine" } else if synth { sad_pet::dsp::synth::NAME } else if live { "DAW input" } else { &self.sample.name },
             "preset_selection":self.selection,
             "sample_id":if buffered { None } else { self.sample.library_id.as_ref() },
             "sample_seconds":if buffered { buffer_frames as f64 / self.rate as f64 } else { self.sample.duration() },
@@ -502,11 +504,7 @@ impl Controller {
             return Err("Invalid timbre identity".into());
         }
         saved.meta.sanitize();
-        saved.meta.kind = if saved.preset.drums.is_some() {
-            sad_pet::timbres::Kind::Drums
-        } else {
-            sad_pet::timbres::Kind::Granular
-        };
+        saved.meta.kind = sad_pet::timbres::Kind::of(&saved.preset);
         saved.preset.sanitize();
         let decoded = BASE64
             .decode(&saved.sample_wav)
@@ -614,6 +612,8 @@ impl Controller {
                 self.enqueue(Command::Preset(Box::new(
                     preset.prepared_clone_for(self.rate),
                 )))?;
+                // A loaded preset can change the timbre's engine type.
+                self.meta.kind = sad_pet::timbres::Kind::of(&preset);
                 self.preset = preset;
                 Ok(json!(self.preset))
             }

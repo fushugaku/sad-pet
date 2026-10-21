@@ -120,6 +120,9 @@ pub struct State {
     pub sample: Arc<SampleBuffer>,
     #[serde(skip)]
     pub recording_take: Option<Arc<crate::recording::Take>>,
+    /// The waveform shows a Drum or Synth engine's live history.
+    #[serde(skip)]
+    pub showing_history: bool,
 }
 
 pub struct Runtime {
@@ -268,6 +271,7 @@ impl Runtime {
             step_edits: [None; 16],
             recording: Default::default(),
             recording_take: None,
+            showing_history: false,
             performance: crate::performance::Performance::new(preset.performance.clone()).view(),
             sequencer: crate::sequence::View::default(),
             lfos: [0.0; crate::preset::MODULATORS],
@@ -369,7 +373,8 @@ impl Runtime {
                                 }
                             }
                             Command::Midi(message) => {
-                                let program_enabled = engine.preset.drums.is_none();
+                                let program_enabled =
+                                    engine.preset.drums.is_none() && engine.preset.synth.is_none();
                                 engine.midi(message);
                                 if program_enabled && let Message::Program { value, .. } = message {
                                     publisher.applied(telemetry::Applied::Program(value));

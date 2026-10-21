@@ -245,3 +245,50 @@ fn native_command_replies_follow_the_published_metadata() {
     assert!(done.recv_timeout(Duration::from_secs(2)).unwrap().is_err());
     assert_eq!(runtime.state.lock().unwrap().preset.name, "Drums");
 }
+
+#[test]
+fn synth_engines_publish_their_live_history_and_restore_the_file_display() {
+    let sample = Arc::new(SampleBuffer::demo(8000));
+    let runtime = Runtime::new(sample.clone(), Preset::default(), false);
+    let state = runtime.state.clone();
+    drop(runtime);
+    let (mut publisher, worker) = Publisher::new(state.clone());
+    let synth = crate::timbres::Kind::Synth.preset().unwrap();
+    let mut engine = Engine::new(8000, sample.clone(), synth);
+    engine.set_midi_gate(true);
+    engine.midi(Message::NoteOn {
+        channel: 0,
+        note: 60,
+        velocity: 100,
+    });
+    let recorder = crate::recording::Recorder::new(8000);
+    let mut frames = [[0.; 2]; 128];
+    for _ in 0..64 {
+        engine.process(&mut frames);
+    }
+    assert!(publisher.publish(&mut engine, &recorder, 0., 0, false));
+    barrier(&mut publisher, engine.region);
+    {
+        let state = state.lock().unwrap();
+        assert!(state.showing_history);
+        assert_eq!(state.sample_frames, 8 * 8000);
+        assert_eq!(state.sample_seconds, 8.);
+        assert_ne!(state.waveform, sample.waveform);
+        assert!(
+            state.waveform.iter().any(|bin| bin[1] > 0.001),
+            "The live synth waveform is missing"
+        );
+    }
+    engine.set_preset(Preset::default());
+    engine.process(&mut frames);
+    assert!(publisher.publish(&mut engine, &recorder, 0., 0, false));
+    barrier(&mut publisher, engine.region);
+    {
+        let state = state.lock().unwrap();
+        assert!(!state.showing_history);
+        assert_eq!(state.sample_frames, sample.len());
+        assert_eq!(state.waveform, sample.waveform);
+    }
+    drop(publisher);
+    worker.join().unwrap();
+}

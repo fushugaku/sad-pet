@@ -1167,3 +1167,62 @@ fn native_drum_buffer_choices_use_reserved_history_without_audio_heap_work() {
         assert_eq!(engine.source_sample().len(), 32 * 8000);
     }
 }
+
+#[test]
+fn synth_timbres_play_notes_switch_grains_and_save_without_audio_allocations() {
+    let mut control = Controller::new(false);
+    let context = call(&mut control, "/api/timbres/add", json!({"kind":"synth"}));
+    assert_eq!(context["active"], 1);
+    assert_eq!(context["timbres"][1]["kind"], "synth");
+    assert_eq!(context["timbres"][1]["name"], "Synth 1");
+    call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":0,"muted":true}),
+    );
+    call(
+        &mut control,
+        "/api/parameters",
+        json!({"synth_count":2,"synth_osc2_waveform":2,"synth_osc2_transpose":7}),
+    );
+    let mut audio = control.prepare(48000);
+    let values = control.values();
+    no_heap(|| {
+        audio.begin(&values, 120., None, false, 4096);
+        assert!(render(&mut audio, 4096, [0.; 2]) < 1e-5);
+        audio.midi(Message::NoteOn {
+            channel: 0,
+            note: 60,
+            velocity: 100,
+        });
+        audio.begin(&values, 120., None, false, 8192);
+        assert!(render(&mut audio, 8192, [0.; 2]) > 0.01);
+    });
+    call(
+        &mut control,
+        "/api/parameters",
+        json!({"synth_granular":1,"synth_buffer_seconds":2,"grains":0.9,"position":0}),
+    );
+    no_heap(|| {
+        audio.begin(&values, 120., None, false, 48000);
+        assert!(render(&mut audio, 48000, [0.; 2]) > 0.01);
+    });
+    let state = call(&mut control, "/api/state", Value::Null);
+    assert_eq!(state["sample_name"], "Synth engine");
+    assert_eq!(state["sample_seconds"], 2.0);
+    assert_eq!(state["preset"]["synth"]["granular"], true);
+    assert_eq!(
+        state["preset"]["synth"]["oscillators"][1]["waveform"],
+        "triangle"
+    );
+    let saved = control.save().unwrap();
+    let mut restored = Controller::new(false);
+    restored.restore(&saved).unwrap();
+    let state = call(&mut restored, "/api/state", Value::Null);
+    assert_eq!(state["timbres"]["active"], 1);
+    assert_eq!(state["timbres"]["timbres"][1]["kind"], "synth");
+    assert_eq!(state["preset"]["synth"]["count"], 2);
+    assert_eq!(state["preset"]["synth"]["oscillators"][1]["transpose"], 7.0);
+    call(&mut restored, "/api/timbres/select", json!({"id":0}));
+    assert!(call(&mut restored, "/api/state", Value::Null)["preset"]["synth"].is_null());
+}
