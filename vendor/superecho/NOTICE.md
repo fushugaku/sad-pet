@@ -2,7 +2,8 @@ Vendored DSP subset of https://github.com/fushugaku/KekLocator
 commit d7901c9dc5b9720819ccd8a2fa14c67a73864586.
 
 SAD PET names this effect SuperEcho. The static Rust DSP and parameter mappings
-are retained; reset reuses its buffers. No upstream UI, sequencer or plug-in glue
+are retained; reset reuses its buffers and the standalone allocation trace hook
+is removed to keep Windows resets allocation-free. No upstream UI, sequencer or plug-in glue
 is included. The pinned ROM is included for reproducible offline builds.
 SHA-256: 9cea9f9a998ac7bf05297821290d36ef2843ad72b10f0da583765cc914c58211.
 

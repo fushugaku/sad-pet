@@ -179,10 +179,8 @@ impl Machine {
                 "firmware heap exhausted: allocation {bytes}, used {start}"
             )));
         }
-        #[cfg(not(target_arch = "wasm32"))]
-        if std::env::var_os("ERIKA_TRACE_ALLOC").is_some() {
-            eprintln!("malloc {bytes} at 0x{:08x}", 0x80000000u32 + start as u32);
-        }
+        // Allocation tracing from the standalone project is intentionally absent:
+        // environment lookups can allocate on Windows, including during reset.
         self.heap[start..start + bytes].fill(0);
         self.heap_cursor = start + bytes;
         Ok(0x80000000 + start as u32)
