@@ -46,6 +46,7 @@ struct Lane {
     amount: f32,
     absolute: bool,
     gate_output: bool,
+    env_gate: bool,
     root: u8,
     pitch_oscillators: [bool; 4],
     velocity: [u8; 16],
@@ -128,6 +129,7 @@ impl Runtime {
                     amount: t.amount,
                     absolute: t.absolute,
                     gate_output: t.gate_output,
+                    env_gate: t.env_gate,
                     root: t.root_note,
                     pitch_oscillators: t.pitch_oscillators,
                     velocity: t.steps.map(|s| s.velocity),
@@ -270,6 +272,7 @@ impl Runtime {
             l.amount = track.amount;
             l.absolute = track.absolute;
             l.gate_output = track.gate_output;
+            l.env_gate = track.env_gate;
             l.root = track.root_note;
             l.pitch_oscillators = track.pitch_oscillators;
         }
@@ -418,6 +421,21 @@ impl Runtime {
             }));
         }
         (lane.id, actions)
+    }
+    /// Unmuted Main pitch lanes that gate ENV, read right after a clock tick:
+    /// whether one of them triggered a new gate and whether any gate is open.
+    /// Tied steps keep the gate open without a retrigger, like a legato note.
+    pub fn env_gate(&self) -> Option<(bool, bool)> {
+        let mut gate = None;
+        for &i in &self.main_pitch_routes {
+            if self.lanes[i].env_gate && self.core.tracks[i].config[field::MUTE] == 0 {
+                let open = self.core.gate(i);
+                let (trigger, any) = gate.get_or_insert((false, false));
+                *trigger |= open && self.core.track_events(i) & 1 != 0;
+                *any |= open;
+            }
+        }
+        gate
     }
     pub fn apply(&self, m: &mut Modulated) {
         if !self.enabled || !self.started {

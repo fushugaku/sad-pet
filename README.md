@@ -65,7 +65,8 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   Pitch, a per-step Gate length knob, Pulses, Ratchet, Slide, Probability and
   Velocity are available together. Main pitch can also target any combination
   of OSC 1–4; their own tracks add −24…+24 semitones to that pitch, at independent
-  clocks. Double-click a step's Gate knob to inherit the track's Gate setting.
+  clocks. With Gate ENV, Main pitch steps also restart and release the envelopes
+  like notes. Double-click a step's Gate knob to inherit the track's Gate setting.
 - In the browser and DAW plug-ins, add independent **Granular** and **Drum machine**
   timbres as tabs across the top. They run together, with per-timbre level, mute,
   solo and MIDI channel. Each owns its source, effects, Resynth, envelopes, LFOs

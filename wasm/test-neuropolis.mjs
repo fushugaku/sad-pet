@@ -64,6 +64,7 @@ core.request("/api/sequencer/edit", [
   { track: 256, stage: 5, field: 0, value: 77 },
   { track: 2, field: 3, value: 65 },
   { track: 1, field: 52, value: 1 },
+  { track: 1, field: 53, value: 1 },
   { track: 2, stage: 0, field: 9, value: 27 },
   { track: 1, stage: 5, field: 16, value: -0.25 },
   { track: 1, stage: 5, field: 17, value: 0.125 },
@@ -81,6 +82,8 @@ assert.deepEqual(imported.preset.sequencer.tracks[0].pitch_oscillators, [
   true,
   true,
 ]);
+assert.equal(imported.preset.sequencer.tracks[0].env_gate, true);
+assert.equal(imported.preset.sequencer.tracks[1].env_gate, false);
 assert.equal(imported.preset.sequencer.tracks[1].steps[0].gate_override, 27);
 assert.deepEqual(
   ["destination1", "destination2", "destination3"].map(k => imported.preset.sequencer.tracks[0].steps[5][k]),

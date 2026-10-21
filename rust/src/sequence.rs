@@ -171,6 +171,9 @@ pub struct Track {
     /// Main pitch also transposes the selected Resynth layers. Oscillator
     /// lanes add their own -24..24 semitone offset to that shared pitch.
     pub pitch_oscillators: [bool; 4],
+    /// Main pitch steps also gate ENV like a note: on at each trigger, off when
+    /// the step's gate ends. Off keeps older patterns droning as before.
+    pub env_gate: bool,
     pub destinations: [Option<String>; 3],
     #[serde(with = "config_words")]
     pub config: [i32; field::COUNT],
@@ -187,6 +190,7 @@ impl Default for Track {
             gate_output: false,
             root_note: 60,
             pitch_oscillators: [false; 4],
+            env_gate: false,
             destinations: Default::default(),
             config: default_config(),
             steps: [Stage::default(); STAGES],
@@ -216,6 +220,7 @@ impl Track {
                     self.root_note = edit.value.round().clamp(0.0, 127.0) as u8;
                 }
                 49..=52 => self.pitch_oscillators[(edit.field - 49) as usize] = edit.value >= 0.5,
+                53 => self.env_gate = edit.value >= 0.5,
                 _ => {}
             }
         }
@@ -407,7 +412,7 @@ pub fn parse_edits(value: &serde_json::Value) -> Result<Vec<Edit>, String> {
                 > if e.stage.is_some() {
                     STAGE_FIELDS - 1
                 } else {
-                    52
+                    53
                 }
             || (e.track == 0 && (e.stage.is_some() || e.field > 1))
     }) {
