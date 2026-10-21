@@ -6,6 +6,7 @@ pub mod delay;
 pub mod effects;
 pub mod fast;
 pub mod filter;
+pub mod filter_slots;
 mod imported_rate;
 pub mod modulation;
 mod radias_filter;
@@ -26,11 +27,12 @@ use crate::{
     matrix::{self, Source},
     midi::Message,
     performance::{Mode, Performance},
-    preset::{Destination, Env, Lfo, Params, Preset},
+    preset::{Destination, Env, FilterPosition, FilterSlot, Lfo, MAX_FILTER_SLOTS, Params, Preset},
     tables::{self, Random},
 };
 use color::ColorRack;
 use filter::FilterBank;
+use filter_slots::Instance;
 use modulation::{Envelope, Oscillator};
 use sample::LiveInput;
 pub use sample::{Fades, Region, SampleBuffer};
@@ -123,6 +125,8 @@ pub(crate) struct Modulated {
     /// A modulation route wrote into a color slot of this frame. Clean frames
     /// carry the preset's own slots, so the racks need no reconfiguration.
     pub(crate) color_dirty: bool,
+    pub(crate) filter_slots: [FilterSlot; MAX_FILTER_SLOTS],
+    pub(crate) filter_len: usize,
 }
 impl Modulated {
     fn from_preset(preset: &Preset) -> Self {
@@ -151,6 +155,8 @@ impl Modulated {
             .as_ref()
             .map_or_else(Default::default, |d| d.params);
         self.color_dirty = false;
+        self.filter_len = preset.filter_slots.len();
+        self.filter_slots[..self.filter_len].copy_from_slice(&preset.filter_slots);
     }
     fn route(&mut self, destination: Destination, value: f32) {
         if value == 0.0 {
@@ -168,6 +174,13 @@ impl Modulated {
             EnvParameter as E, LfoParameter as L, Parameter as P, PerformanceParameter as F,
         };
         let variable = match destination {
+            Destination::FilterSlot { slot, parameter } => self.filter_slots[..self.filter_len]
+                .iter_mut()
+                .find(|s| s.id == slot)
+                .map(|s| {
+                    let (target, min, max) = s.parameter_mut(parameter);
+                    (target, min, max, false)
+                }),
             Destination::Parameter { parameter } => {
                 let p = &mut self.params;
                 Some(match parameter {
@@ -357,6 +370,10 @@ pub struct Engine {
     source_fade_remaining: u32,
     pub source_fx_error: bool,
     filters: [FilterBank; VOICES],
+    /// Banks of the added filters, in preset slot order.
+    filter_banks: Vec<Box<filter_slots::Bank>>,
+    /// Enabled added filters per position, refreshed at control rate.
+    filter_masks: [u16; filter_slots::POSITIONS],
     random: Random,
     frame: u64,
     cursor: f64,
@@ -441,6 +458,8 @@ impl Engine {
             source_fade_remaining: 0,
             source_fx_error: false,
             filters: std::array::from_fn(|_| FilterBank::new(sr)),
+            filter_banks: Vec::new(),
+            filter_masks: [0; filter_slots::POSITIONS],
             random: Random::default(),
             frame: 0,
             cursor: 0.0,
@@ -499,6 +518,11 @@ impl Engine {
         preset
             .drum_runtime
             .prepare(preset.drums.as_deref(), self.sample_rate);
+        preset.filter_banks.prepare_reusing(
+            &preset.filter_slots,
+            self.sample_rate,
+            &mut self.filter_banks,
+        );
         self.exchange_preset(&mut preset);
     }
 
@@ -578,6 +602,8 @@ impl Engine {
             self.source_color
                 .attach_imported(*slot, &mut preset.imported_effects);
         }
+        filter_slots::inherit(&mut preset.filter_banks.0, &mut self.filter_banks);
+        std::mem::swap(&mut self.filter_banks, &mut preset.filter_banks.0);
         std::mem::swap(&mut self.preset, preset);
         self.invalidate_racks();
         self.sync_stored_chord();
@@ -675,7 +701,7 @@ impl Engine {
         self.source_color.clear();
         self.invalidate_racks();
         self.resynth.clear();
-        self.filters.iter_mut().for_each(FilterBank::clear);
+        self.clear_filters();
     }
 
     /// Tempo is measured in quarter notes; e.g. 6/8 is three quarter notes per bar.
@@ -768,7 +794,7 @@ impl Engine {
                 self.voices[0].velocity = 1.0;
                 self.voices[0].note = 60;
                 self.voices[0].held = true;
-                self.filters[0].clear();
+                self.clear_voice_filters(0);
                 self.voices[0].on(self.preset.env_count as usize);
                 self.mod_note_on(0, 60, 127);
                 self.configure_voice_filter(0);
@@ -877,7 +903,7 @@ impl Engine {
         self.pre_color_rack.clear();
         self.source_color.clear();
         self.invalidate_racks();
-        self.filters.iter_mut().for_each(FilterBank::clear);
+        self.clear_filters();
         Ok(())
     }
     fn source_range(&self) -> std::ops::Range<usize> {
@@ -916,7 +942,7 @@ impl Engine {
         self.pre_color_rack.clear();
         self.source_color.clear();
         self.invalidate_racks();
-        self.filters.iter_mut().for_each(FilterBank::clear);
+        self.clear_filters();
         if !self.playing {
             for voice in &mut self.voices {
                 voice.kill();
@@ -1001,7 +1027,7 @@ impl Engine {
                 self.voices[0].velocity = 1.0;
                 self.voices[0].note = 60;
                 self.voices[0].held = true;
-                self.filters[0].clear();
+                self.clear_voice_filters(0);
                 self.voices[0].on(self.preset.env_count as usize);
                 self.mod_note_on(0, 60, 127);
                 self.configure_voice_filter(0);
@@ -1034,7 +1060,7 @@ impl Engine {
             self.voices[0].note = 60;
             self.voices[0].velocity = 1.0;
             self.voices[0].held = true;
-            self.filters[0].clear();
+            self.clear_voice_filters(0);
             self.voices[0].on(self.preset.env_count as usize);
             self.mod_note_on(0, 60, 127);
             self.configure_voice_filter(0);
@@ -1353,8 +1379,8 @@ impl Engine {
                     .unwrap_or(1 + self.next_voice % (VOICES - 1));
                 self.next_voice = index;
                 self.kill_voice_grains(index);
+                self.clear_voice_filters(index);
                 let v = &mut self.voices[index];
-                self.filters[index].clear();
                 v.note = note;
                 v.owner = owner;
                 v.channel = channel;
@@ -1434,6 +1460,9 @@ impl Engine {
                     if v.channel == channel {
                         v.kill();
                         self.filters[i].clear();
+                        for bank in &mut self.filter_banks {
+                            bank.clear_voice(i);
+                        }
                         v.held = false;
                         v.sustained = false;
                         self.kill_voice_grains(i);
@@ -1520,7 +1549,7 @@ impl Engine {
                 self.pre_color_rack.clear();
                 self.source_color.clear();
                 self.invalidate_racks();
-                self.filters.iter_mut().for_each(FilterBank::clear);
+                self.clear_filters();
             }
             _ => {}
         }
@@ -1698,6 +1727,9 @@ impl Engine {
                 }
             }
         }
+        let slots = &m.filter_slots[..m.filter_len];
+        self.filter_masks = filter_slots::masks(slots, &self.filter_banks);
+        filter_slots::configure_shared(slots, &mut self.filter_banks);
         for (i, voice) in self.voices.iter().enumerate() {
             if !voice.envelopes[0].active() {
                 continue;
@@ -1705,6 +1737,7 @@ impl Engine {
             let note = voice.note as f32
                 + self.bend[voice.channel as usize] * m.params.midi_pitchbend_range;
             self.filters[i].configure(&m.params, note, voice.env_values);
+            filter_slots::configure_voice(slots, &mut self.filter_banks, i, note, voice.env_values);
         }
         let params = m.params;
         self.spare_modulated = Some(std::mem::replace(&mut self.modulated, m));
@@ -1754,6 +1787,25 @@ impl Engine {
         let note = voice.note as f32
             + self.bend[voice.channel as usize] * self.modulated.params.midi_pitchbend_range;
         self.filters[index].configure(&self.modulated.params, note, voice.env_values);
+        filter_slots::configure_voice(
+            &self.modulated.filter_slots[..self.modulated.filter_len],
+            &mut self.filter_banks,
+            index,
+            note,
+            voice.env_values,
+        );
+    }
+    fn clear_voice_filters(&mut self, voice: usize) {
+        self.filters[voice].clear();
+        for bank in &mut self.filter_banks {
+            bank.clear_voice(voice);
+        }
+    }
+    fn clear_filters(&mut self) {
+        self.filters.iter_mut().for_each(FilterBank::clear);
+        for bank in &mut self.filter_banks {
+            bank.clear();
+        }
     }
 
     pub fn voice_filter_cutoffs(&self, note: u8) -> Option<[f32; 2]> {
@@ -2128,10 +2180,17 @@ impl Engine {
         let mut mixed_frames = [[0.0; 2]; VOICES];
         let mut before_fx = [0.0; 2];
         let mut grain_tap = [0.0; 2];
+        let masks = self.filter_masks;
         for (i, frame) in voice_frames.into_iter().enumerate() {
             if self.voices[i].value <= 0.0 {
                 continue;
             }
+            let frame = filter_slots::chain(
+                &mut self.filter_banks,
+                masks[FilterPosition::AfterGrains as usize],
+                frame,
+                Instance::Voice(i),
+            );
             mixed_frames[i] = std::array::from_fn(|c| {
                 (source[c] * dry_amount + frame[c] * grain_amount) * input_gain
             });
@@ -2149,7 +2208,7 @@ impl Engine {
             grain_tap.iter_mut().for_each(|v| *v /= voice_sum);
         }
         let resynth_active = self.resynth.active();
-        let resynth_output = self.resynth.process_with_grains(
+        let resynth_output = self.resynth.process_with_filters(
             before_fx,
             source.map(|x| x * input_gain),
             grain_tap,
@@ -2158,9 +2217,24 @@ impl Engine {
             &self.sample,
             &self.file_range,
             self.playing,
+            [
+                masks[FilterPosition::AfterOsc1 as usize],
+                masks[FilterPosition::AfterOsc2 as usize],
+                masks[FilterPosition::AfterOsc3 as usize],
+                masks[FilterPosition::AfterOsc4 as usize],
+            ],
+            &mut self.filter_banks,
+        );
+        let after_resynth = masks[FilterPosition::AfterResynth as usize];
+        let resynth_output = filter_slots::chain(
+            &mut self.filter_banks,
+            after_resynth,
+            resynth_output,
+            Instance::Shared,
         );
         let pre_output = self.pre_color_rack.process(resynth_output);
-        let correction = if self.pre_color_rack.is_active() || resynth_active {
+        let correction = if self.pre_color_rack.is_active() || resynth_active || after_resynth != 0
+        {
             std::array::from_fn(|c| pre_output[c] - before_fx[c])
         } else {
             [0.0; 2]
@@ -2170,7 +2244,19 @@ impl Engine {
             if self.voices[i].value <= 0.0 {
                 continue;
             }
-            let voice = self.filters[i].process(std::array::from_fn(|c| mixed[c] + correction[c]));
+            let voice = filter_slots::chain(
+                &mut self.filter_banks,
+                masks[FilterPosition::BeforeFilters as usize],
+                std::array::from_fn(|c| mixed[c] + correction[c]),
+                Instance::Voice(i),
+            );
+            let voice = self.filters[i].process(voice);
+            let voice = filter_slots::chain(
+                &mut self.filter_banks,
+                masks[FilterPosition::AfterFilters as usize],
+                voice,
+                Instance::Voice(i),
+            );
             for c in 0..2 {
                 filtered[c] += voice[c] * self.voices[i].value;
             }
@@ -2178,6 +2264,12 @@ impl Engine {
         let processed = self
             .color_rack
             .process_with_voice_gain(filtered, loudest_voice);
+        let processed = filter_slots::chain(
+            &mut self.filter_banks,
+            masks[FilterPosition::AfterFx as usize],
+            processed,
+            Instance::Shared,
+        );
         let volume = if self.bypass {
             self.preset.params.master_volume
         } else {

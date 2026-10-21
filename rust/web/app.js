@@ -719,6 +719,7 @@ function buildFilters() {
   }
   $("filter-routing").onchange = (e) =>
     setParam("filter_routing", e.target.value);
+  $("add-filter").onclick = addFilter;
 }
 function syncFilters() {
   if (!preset) return;
@@ -764,6 +765,218 @@ function syncFilters() {
         }[model] ?? "";
     controls.get(prefix)?.();
   }
+  syncAddedFilters();
+}
+// Filters 3 and up. Positions inside a note's path run one filter per voice
+// with its own envelope and key tracking; the others are one shared filter.
+const FILTER_POSITIONS = [
+  ["after_grains", "After grains"],
+  ["after_osc1", "After OSC 1"],
+  ["after_osc2", "After OSC 2"],
+  ["after_osc3", "After OSC 3"],
+  ["after_osc4", "After OSC 4"],
+  ["after_resynth", "After Resynth"],
+  ["before_filters", "Before Filter 1·2"],
+  ["after_filters", "After Filter 1·2"],
+  ["after_fx", "After FX"],
+];
+const PER_VOICE_FILTER_POSITIONS = [
+  "after_grains",
+  "before_filters",
+  "after_filters",
+];
+const MAX_FILTER_SLOTS = 16;
+const FILTER_SLOT_DEFAULT = {
+  id: 0,
+  enabled: true,
+  position: "after_filters",
+  model: "legacy",
+  kind: "low_pass",
+  cutoff: 0.7,
+  resonance: 0.12,
+  drive: 0,
+  morph: 0,
+  env: "env2",
+  env_depth: 0,
+  keytrack: 0,
+};
+const FILTER_SLOT_CONTROLS = [
+  ["cutoff", "CUTOFF"],
+  ["resonance", "RESONANCE"],
+  ["env_depth", "ENV DEPTH", -1, 1],
+  ["keytrack", "KEYTRACK"],
+  ["drive", "DRIVE"],
+  ["morph", "MORPH"],
+];
+let addedFilterSignature = "";
+const findFilterSlot = (id) => preset.filter_slots?.find((s) => s.id === id);
+function filterModelOptions() {
+  const responses = (model) =>
+    filterResponses
+      .map(
+        ([id, label]) =>
+          `<option value="${model}:${id}">${model === "radias2" ? "RADIAS 2 · " : ""}${label}</option>`,
+      )
+      .join("");
+  const models = filterModels
+    .slice(1, -1)
+    .map(([id, label]) => `<option value="${id}">${label}</option>`)
+    .join("");
+  return `<optgroup label="SAD PET">${responses("legacy")}</optgroup><optgroup label="Rustias">${models}</optgroup><optgroup label="RADIAS Filter 2">${responses("radias2")}</optgroup>`;
+}
+function editAddedFilters() {
+  syncAddedFilters();
+  refreshColorDestinations();
+  schedulePreset();
+}
+function addFilter() {
+  preset.filter_slots ||= [];
+  if (preset.filter_slots.length >= MAX_FILTER_SLOTS) return;
+  let id = 1;
+  while (preset.filter_slots.some((s) => s.id === id)) id++;
+  preset.filter_slots.push({ ...FILTER_SLOT_DEFAULT, id });
+  editAddedFilters();
+}
+function removeFilter(id) {
+  preset.filter_slots = preset.filter_slots.filter((s) => s.id !== id);
+  const unrouted = (d) => d?.filter_slot?.slot === id;
+  for (const lfo of preset.lfos)
+    if (unrouted(lfo.destination)) lfo.destination = "none";
+  for (const env of preset.envs)
+    for (const field of ["destination", "extra_destination"])
+      if (unrouted(env[field])) env[field] = "none";
+  for (const route of preset.matrix)
+    if (unrouted(route.destination)) route.destination = "none";
+  syncLfos();
+  syncEnvs();
+  syncMatrix();
+  editAddedFilters();
+}
+function moveFilter(id, delta) {
+  const slots = preset.filter_slots;
+  const index = slots.findIndex((s) => s.id === id),
+    target = index + delta;
+  if (index < 0 || target < 0 || target >= slots.length) return;
+  [slots[index], slots[target]] = [slots[target], slots[index]];
+  editAddedFilters();
+}
+function syncAddedFilters() {
+  if (!preset) return;
+  const slots = (preset.filter_slots ||= []);
+  $("add-filter").disabled = slots.length >= MAX_FILTER_SLOTS;
+  const signature = slots
+    .map((s) => `${s.id}:${s.position}:${s.model}:${s.kind}:${s.enabled}`)
+    .join(",");
+  if (
+    signature !== addedFilterSignature ||
+    $("added-filters").children.length !== slots.length
+  ) {
+    addedFilterSignature = signature;
+    for (const key of controls.keys())
+      if (key.startsWith("filter_slot:")) {
+        controls.delete(key);
+        modulationViews.delete(key);
+      }
+    $("added-filters").replaceChildren();
+    for (const [index, slot] of slots.entries())
+      $("added-filters").append(addedFilterCard(index, slot));
+  }
+  for (const slot of slots) {
+    const card = $("added-filters").querySelector(`[data-id="${slot.id}"]`);
+    if (!card) continue;
+    card.querySelector(".added-filter-env").value = slot.env;
+    for (const [field] of FILTER_SLOT_CONTROLS)
+      controls.get(`filter_slot:${slot.id}:${field}`)?.();
+  }
+}
+function addedFilterCard(index, slot) {
+  const number = index + 3,
+    id = slot.id,
+    perVoice = PER_VOICE_FILTER_POSITIONS.includes(slot.position);
+  const card = document.createElement("div");
+  card.className = "filter-card added-filter-card";
+  card.classList.toggle("inactive", !slot.enabled);
+  card.dataset.id = id;
+  card.innerHTML = `<div class="filter-title added-filter-title"><strong>Filter ${number}</strong><select class="added-filter-position" aria-label="Filter ${number} position"></select><select class="added-filter-type" aria-label="Filter ${number} model">${filterModelOptions()}</select><select class="added-filter-env" aria-label="Filter ${number} envelope"><option value="env1">ENV 1</option><option value="env2">ENV 2</option><option value="env3">ENV 3</option></select><div class="color-actions"><button class="color-bypass" aria-label="Bypass Filter ${number}" title="Bypass" aria-pressed="${!slot.enabled}">⏻</button><button class="color-up" aria-label="Move Filter ${number} up" title="Move up">↑</button><button class="color-down" aria-label="Move Filter ${number} down" title="Move down">↓</button><button class="color-remove" aria-label="Remove Filter ${number}" title="Remove">×</button></div></div><div id="filter-slot-${id}-controls" class="knob-grid filter-controls"></div>`;
+  const position = card.querySelector(".added-filter-position");
+  position.replaceChildren(
+    ...FILTER_POSITIONS.map(([value, label]) => option(value, label)),
+  );
+  position.value = slot.position;
+  position.onchange = () => {
+    findFilterSlot(id).position = position.value;
+    editAddedFilters();
+  };
+  const type = card.querySelector(".added-filter-type");
+  type.value = ["legacy", "radias2"].includes(slot.model)
+    ? `${slot.model}:${slot.kind}`
+    : slot.model;
+  type.onchange = () => {
+    const [model, response] = type.value.split(":");
+    const s = findFilterSlot(id);
+    s.model = model;
+    if (response) s.kind = response;
+    editAddedFilters();
+  };
+  const env = card.querySelector(".added-filter-env");
+  env.hidden = !perVoice;
+  env.onchange = () => {
+    findFilterSlot(id).env = env.value;
+    schedulePreset();
+  };
+  card.querySelector(".color-bypass").onclick = () => {
+    const s = findFilterSlot(id);
+    s.enabled = !s.enabled;
+    editAddedFilters();
+  };
+  card.querySelector(".color-up").onclick = () => moveFilter(id, -1);
+  card.querySelector(".color-down").onclick = () => moveFilter(id, 1);
+  card.querySelector(".color-remove").onclick = () => removeFilter(id);
+  const container = card.querySelector(".filter-controls");
+  for (const [field, label, min = 0, max = 1] of FILTER_SLOT_CONTROLS) {
+    const key = `filter_slot:${id}:${field}`;
+    const current = () => findFilterSlot(id) || FILTER_SLOT_DEFAULT;
+    const format =
+      field === "cutoff"
+        ? (v) => {
+            const s = current();
+            const comb = s.model !== "legacy" || s.kind === "comb";
+            return `${Math.round((comb ? 30 : 20) * (comb ? 200 : 1000) ** v).toLocaleString()} Hz`;
+          }
+        : field === "env_depth"
+          ? signedPercent
+          : percent;
+    createKnob(
+      [key, label, format, min, max, `Filter ${number} ${label.toLowerCase()}`],
+      container,
+      {
+        get: () => current()[field],
+        set: (value) => {
+          const s = findFilterSlot(id);
+          if (!s) return;
+          s[field] = value;
+          controls.get(key)?.();
+          scheduleParameter(`filter${number}_${field}`, value);
+        },
+        reset: () => FILTER_SLOT_DEFAULT[field],
+      },
+    );
+    const active =
+      field === "env_depth" || field === "keytrack"
+        ? perVoice
+        : field === "drive"
+          ? slot.model !== "legacy"
+          : field === "morph"
+            ? ["radias", "sem", "multi_filter"].includes(slot.model)
+            : true;
+    const dial = container.querySelector(`[data-control-key="${key}"]`);
+    dial.closest(".knob").classList.toggle("filter-unused", !active);
+    dial.setAttribute("aria-disabled", String(!active));
+    dial.tabIndex = active ? 0 : -1;
+    if (!perVoice && (field === "env_depth" || field === "keytrack"))
+      dial.closest(".knob").title = "Per-note positions only";
+  }
+  return card;
 }
 function scheduleDrum(edit) {
   editGeneration++;
@@ -2173,11 +2386,29 @@ function fillDestination(select, destination) {
       ]),
     });
   }
+  for (const [index, slot] of (preset.filter_slots || []).entries()) {
+    const perVoice = PER_VOICE_FILTER_POSITIONS.includes(slot.position);
+    groups.push({
+      label: `Filter ${index + 3}`,
+      choices: FILTER_SLOT_CONTROLS.filter(
+        ([field]) => perVoice || (field !== "env_depth" && field !== "keytrack"),
+      ).map(([parameter, label]) => [
+        destinationValue({ filter_slot: { slot: slot.id, parameter } }),
+        `Filter ${index + 3} · ${label.charAt(0) + label.slice(1).toLowerCase()}`,
+      ]),
+    });
+  }
   const value = destinationValue(destination);
   if (typeof destination !== "string" && !groups.some(g => g.choices.some(([v]) => v === value))) {
-    const entry = colorEntries().find(e => e.slot.id === destination.color?.slot);
-    const label = destination.color?.parameter.replaceAll("_", " ") || "Unassigned";
-    groups.push({ choices: [[value, `${entry ? `${entry.rack.label} ${entry.index + 1}` : "FX"} · ${label} (inactive)`]] });
+    if (destination.filter_slot) {
+      const index = (preset.filter_slots || []).findIndex(s => s.id === destination.filter_slot.slot);
+      const label = destination.filter_slot.parameter.replaceAll("_", " ");
+      groups.push({ choices: [[value, `${index >= 0 ? `Filter ${index + 3}` : "Filter"} · ${label} (inactive)`]] });
+    } else {
+      const entry = colorEntries().find(e => e.slot.id === destination.color?.slot);
+      const label = destination.color?.parameter.replaceAll("_", " ") || "Unassigned";
+      groups.push({ choices: [[value, `${entry ? `${entry.rack.label} ${entry.index + 1}` : "FX"} · ${label} (inactive)`]] });
+    }
   }
   window.SadLazySelect.configure(select, value, groups);
 }
@@ -2278,7 +2509,12 @@ function modulationGroups() {
   const extra = new Map();
   for (const spec of sequenceCatalog?.modulation || []) {
     if (spec.id.startsWith("drum") && !preset.drums) continue;
-    if (/^(pre_)?fx\d+_/.test(spec.id) || /^(lfo|env)\d+_/.test(spec.id))
+    // Added filters have their own groups, addressed by slot id.
+    if (
+      /^(pre_)?fx\d+_/.test(spec.id) ||
+      /^(lfo|env)\d+_/.test(spec.id) ||
+      /^filter([3-9]|1\d)_/.test(spec.id)
+    )
       continue;
     // Existing named routes keep their serialized identities. The catalog adds
     // oscillator controls and any numeric control absent from those groups.

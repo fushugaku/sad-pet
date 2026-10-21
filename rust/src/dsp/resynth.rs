@@ -1,7 +1,11 @@
 //! Streaming 16-band excitation of four Rustias carrier layers.
 //! All histories and tables are allocated before rendering; scalar edits keep
 //! phases, envelope histories and the original OSC1 four-frame control slew.
-use super::{SampleBuffer, radias_oscillator, radias_wavefolder};
+use super::{
+    SampleBuffer,
+    filter_slots::{self, Bank, Instance},
+    radias_oscillator, radias_wavefolder,
+};
 use crate::{
     Stereo,
     resynth::{BANDS, CrossInput, Input, MAX_OSCILLATORS, Mode, Model, Settings, Waveform},
@@ -228,7 +232,7 @@ impl Resynth {
         });
         Self {
             sample_rate: sr as f32,
-            oversample: if sr < 96000 { 2 } else { 1 },
+            oversample: oversample(sr) as usize,
             frequencies,
             bands: frequencies.map(|hz| Band::new(hz, sr as f32)),
             source_bands: frequencies.map(|hz| Band::new(hz, sr as f32)),
@@ -479,6 +483,38 @@ impl Resynth {
         range: &Range<usize>,
         running: bool,
     ) -> Stereo {
+        self.process_with_filters(
+            dry,
+            source,
+            grains,
+            lfo,
+            voice_scale,
+            sample,
+            range,
+            running,
+            [0; MAX_OSCILLATORS],
+            &mut [],
+        )
+    }
+    /// As `process_with_grains`, with added filters after oscillators: one
+    /// mask of filter slots per oscillator. A filtered oscillator sums its
+    /// carriers on its own before the filters; the sync and ring taps were
+    /// taken from the carriers already, so filters never change them.
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn process_with_filters(
+        &mut self,
+        dry: Stereo,
+        source: Stereo,
+        grains: Stereo,
+        lfo: f32,
+        voice_scale: f32,
+        sample: &SampleBuffer,
+        range: &Range<usize>,
+        running: bool,
+        layer_filters: [u16; MAX_OSCILLATORS],
+        banks: &mut [Box<Bank>],
+    ) -> Stereo {
         if !self.active() {
             return dry;
         }
@@ -551,7 +587,7 @@ impl Resynth {
             } else {
                 self.frame & !3
             };
-            for layer_id in 0..MAX_OSCILLATORS {
+            for (layer_id, &filters) in layer_filters.iter().enumerate() {
                 let layer = &mut self.layers[layer_id];
                 if paused
                     || (!self.needed[layer_id] && layer.target_gain == 0.0 && layer.gain == 0.0)
@@ -562,6 +598,7 @@ impl Resynth {
                     continue;
                 }
                 let o = layer.settings;
+                let mut layer_wet = [0.0; 2];
                 let pcm_loop =
                     (o.waveform == Waveform::Pcm).then(|| PcmLoop::new(sample, range, o));
                 let lfo = if o.waveform.analog()
@@ -667,8 +704,20 @@ impl Resynth {
                     self.taps[layer_id][band] = mono(raw);
                     let stereo = raw.map(|x| x * self.gains[band]);
                     self.feedback[layer_id][band] = (stereo[0] + stereo[1]) * 0.5;
+                    let sum = if filters == 0 {
+                        &mut wet
+                    } else {
+                        &mut layer_wet
+                    };
                     for c in 0..2 {
-                        wet[c] += stereo[c] * layer.gain * layer.pan[c] * 0.6;
+                        sum[c] += stereo[c] * layer.gain * layer.pan[c] * 0.6;
+                    }
+                }
+                if filters != 0 {
+                    let filtered =
+                        filter_slots::chain(banks, filters, layer_wet, Instance::Oscillator);
+                    for c in 0..2 {
+                        wet[c] += filtered[c];
                     }
                 }
             }
@@ -691,6 +740,11 @@ impl Resynth {
                     * self.wet
         })
     }
+}
+
+/// Carriers run at twice the host rate below 96 kHz.
+pub(crate) fn oversample(sample_rate: u32) -> u32 {
+    if sample_rate < 96000 { 2 } else { 1 }
 }
 
 fn mono(x: Stereo) -> f32 {
@@ -952,6 +1006,71 @@ mod tests {
         let out = engine.process(dry, [1.0; 2], 0.0, 1.0, &sample, &(0..sample.len()));
         assert_eq!(dry.map(f32::to_bits), out.map(f32::to_bits));
     }
+    #[test]
+    fn filters_after_an_oscillator_leave_sync_ring_and_feedback_alone() {
+        use crate::{
+            preset::{FilterPosition, FilterSlot},
+            resynth::Interaction,
+        };
+        let (mut plain, sample, mut settings) = setup(48000);
+        let (mut filtered, _, _) = setup(48000);
+        settings.count = 4;
+        for (i, o) in settings.oscillators.iter_mut().enumerate() {
+            o.waveform = [
+                Waveform::Saw,
+                Waveform::Sine,
+                Waveform::Triangle,
+                Waveform::Pulse,
+            ][i];
+            // OSC 2..4 sync and ring from OSC 1, which also cross-modulates OSC 2.
+            if i > 0 {
+                o.interaction = Interaction::RingSync;
+                o.interaction_source = 2;
+            }
+            o.cross_source = u8::from(i == 1);
+        }
+        plain.configure(settings, &sample, 60.0);
+        filtered.configure(settings, &sample, 60.0);
+        let slots = [FilterSlot {
+            id: 1,
+            position: FilterPosition::AfterOsc1,
+            cutoff: 0.05,
+            ..FilterSlot::default()
+        }];
+        let mut banks = crate::dsp::filter_slots::Prepared::default();
+        banks.prepare(&slots, 48000);
+        crate::dsp::filter_slots::configure_shared(&slots, &mut banks.0);
+        let range = 0..sample.len();
+        let mut changed = false;
+        for n in 0..12_000 {
+            let input = tone(n, 440.0, 48000);
+            let a =
+                plain.process_with_grains([0.0; 2], input, input, 0.0, 1.0, &sample, &range, true);
+            let b = filtered.process_with_filters(
+                [0.0; 2],
+                input,
+                input,
+                0.0,
+                1.0,
+                &sample,
+                &range,
+                true,
+                [1, 0, 0, 0],
+                &mut banks.0,
+            );
+            changed |= a != b;
+            let bits = |r: &Resynth| {
+                (
+                    r.taps.map(|t| t.map(f32::to_bits)),
+                    r.feedback.map(|t| t.map(f32::to_bits)),
+                    r.wraps,
+                )
+            };
+            assert_eq!(bits(&plain), bits(&filtered), "frame {n}");
+        }
+        assert!(changed, "the filter after OSC 1 never shaped the output");
+    }
+
     #[test]
     fn stopped_carriers_pause_in_silence_without_changing_the_output() {
         let (mut playing, sample, mut settings) = setup(48000);

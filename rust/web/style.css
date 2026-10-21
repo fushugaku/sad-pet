@@ -454,6 +454,31 @@ h2 {
 .filter-card .filter-controls {
   grid-template-columns: repeat(6, minmax(0, 1fr));
 }
+.added-filter-grid {
+  margin-top: 14px;
+}
+.added-filter-grid:empty {
+  display: none;
+}
+.filter-title.added-filter-title {
+  display: flex;
+  flex-wrap: wrap;
+}
+.added-filter-title strong {
+  flex: 0 0 auto;
+}
+.added-filter-title select {
+  flex: 1 1 120px;
+  width: auto;
+}
+.added-filter-title .added-filter-env {
+  flex: 0 0 82px;
+}
+.filter-routing button {
+  height: 31px;
+  font-size: 11px;
+  white-space: nowrap;
+}
 .filter-unused {
   opacity: 0.35;
 }
