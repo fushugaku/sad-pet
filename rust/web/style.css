@@ -3651,6 +3651,32 @@ input[type="range"] {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
+}
+.drum-buffer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.drum-buffer select {
+  width: 94px;
+  min-height: 36px;
+  padding-block: 6px;
+}
+.drum-grain-slot > .bank {
+  margin: 8px 0 20px;
+  padding-block: 16px;
+}
+.drum-wave-slot > .sample-panel {
+  margin: 8px 0 20px;
+}
+.drum-waveform :is(.input-source, #sample-select, #live-source-name, #library-toggle, .file-library, .drop-hint) {
+  display: none;
+}
+.drum-waveform .wave-wrap {
+  cursor: default;
 }
 .drum-pages,
 .drum-voice-tabs {
@@ -3793,6 +3819,13 @@ input[type="range"] {
   padding: 0 8px;
 }
 @media (max-width: 600px) {
+  #drum-machine > .section-heading {
+    flex-wrap: wrap;
+  }
+  .drum-global {
+    flex: 1 1 100%;
+    justify-content: space-between;
+  }
   .timbre-top {
     flex-wrap: wrap;
   }

@@ -73,4 +73,19 @@ console.log("Library upgrade passed: soundtrack and short-cover selections move 
     preset: { name: "glasses5" },
   }, Array.from({ length: 6 }, (_, i) => ({ name: i === 5 ? "glasses5" : "Init" })));
   assert.equal(activated, audio, "The new initial scene prevented the remembered audio from restoring");
+
+  const drumState = {
+    ...native, plugin: { effect: false }, preset: { drums: {} },
+    input: { active: false }, sample_name: "Drum machine", sample_id: null,
+    file_source: { sample_name: "Dusty keys", sample_id: "factory:dusty-keys:v1", sample_seconds: 12 },
+  };
+  let remembered;
+  sceneLibrary.rememberNative = async source => { remembered = source; };
+  await sceneLibrary.initialize(drumState, []);
+  assert.equal(remembered.sample_name, "Dusty keys",
+    "Opening a drum project treated the live waveform as a stored source");
+  let synchronized = 0;
+  sceneLibrary.synchronizeNative = async () => synchronized++;
+  sceneLibrary.observe(drumState);
+  assert.equal(synchronized, 0, "Drum telemetry replaced the remembered file selection");
 }

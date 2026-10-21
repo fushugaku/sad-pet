@@ -228,10 +228,14 @@ impl Host {
             },
             configuration: changed.then_some(Configuration {
                 preset: &self.engine.preset,
-                name: &sample.name,
+                name: if self.engine.preset.drums.is_some() {
+                    "Drum machine"
+                } else {
+                    &sample.name
+                },
                 id: &sample.library_id,
-                seconds: sample.duration(),
-                frames: sample.len(),
+                seconds: self.engine.source_duration(),
+                frames: self.engine.source_frames(),
                 region: self.engine.region,
                 fades: self.engine.fades,
                 live: self.engine.live_input.is_some(),
@@ -389,8 +393,12 @@ fn decode_snapshot(
     state["timbres"] = json!(packet.context);
     state["source_generation"] = json!(packet.source_generation);
     state["drums"] = json!(v.drums);
-    if preset.drums.is_some() {
+    if let Some(drums) = &preset.drums {
         state["playing"] = json!(v.drums.playing);
+        // The drum history length follows its Buffer setting, not the file.
+        let frames = drums.buffer_frames(rate);
+        state["sample_frames"] = json!(frames);
+        state["sample_seconds"] = json!(frames as f64 / rate as f64);
     }
     state["lfos"] = json!(v.lfos);
     state["envs"] = json!(v.envs);

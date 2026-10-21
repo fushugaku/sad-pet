@@ -44,11 +44,16 @@ for (let i = 0; i < 148; i++)
 state = core.request("/api/state");
 assert.ok(state.drums.positions[0] >= 126);
 assert.ok(peak > 0.001, "The 128th drum step did not sound");
+assert.equal(state.sample_name, "Drum machine");
+assert.equal(state.sample_seconds, 8);
+assert.ok(state.waveform.some(bin => bin.some(value => Math.abs(value) > 0.001)),
+  "The live drum waveform is missing in direct mode");
 const before = state.drums.positions[0];
 core.request("/api/parameters", { drum1_0: 91 });
 core.process(64);
+state = core.request("/api/state");
 assert.equal(
-  core.request("/api/state").drums.positions[0],
+  state.drums.positions[0],
   before,
   "A scalar parameter restarted the drum clock",
 );
@@ -59,6 +64,8 @@ let size = core.snapshot(packet),
 assert.ok(size > 0);
 const decoded = utility.json("sad_snapshot_import", packet.slice(0, size));
 assert.equal(decoded.state.timbres.active, 1);
+assert.equal(decoded.state.sample_name, "Drum machine");
+assert.deepEqual(decoded.state.waveform, state.waveform);
 assert.equal(decoded.state.preset.drums.tracks[0].steps.length, 128);
 core.request("/api/timbres/select", { id: 0 });
 core.wasm.sad_snapshot_ack(sequence, 1); // Ack must still reach the previous active part.
@@ -91,11 +98,33 @@ for (let i = 0; i < 80; i++)
     wet = Math.max(wet, Math.abs(x));
   }
 assert.ok(wet > 0.001, "Drums did not reach the granular engine");
+const granular = imported.request("/api/state");
+assert.ok(granular.active_grains > 0);
+assert.ok(granular.waveform.some(bin => bin.some(value => Math.abs(value) > 0.001)),
+  "The live drum waveform is missing in granular mode");
 assert.equal(
   imported.wasm.memory.buffer.byteLength,
   memory,
   "Rendering grew WASM memory",
 );
+const pcmCapacity = imported.wasm.memory.buffer.byteLength;
+for (const seconds of [0.125, 32, 0.5, 16, 1]) {
+  imported.request("/api/parameters", { drum_buffer_seconds: seconds });
+  for (let i = 0; i < 8; i++)
+    assert.ok(imported.process(128).every(Number.isFinite));
+  const resized = imported.request("/api/state");
+  assert.equal(resized.sample_seconds, seconds);
+  assert.equal(resized.sample_frames, seconds * 8000);
+  assert.ok(resized.center >= 0 && resized.center < 1);
+  assert.ok(resized.grains.every(g => g.position >= 0 && g.position <= 1));
+  assert.equal(imported.wasm.memory.buffer.byteLength, pcmCapacity, "Changing drum history grew WASM memory");
+}
+utility.call("sad_scene_load", imported.call("sad_scene_pack"));
+const withBuffer = utility.json("sad_scene_document");
+assert.equal(withBuffer.timbres[0].preset.drums.buffer_seconds, 1);
+const recalled = new Core(module, 8000);
+recalled.call("sad_scene_load", utility.call("sad_scene_prepare", withBuffer));
+assert.equal(recalled.request("/api/state").sample_seconds, 1);
 imported.request("/api/timbres/remove", { id: 1 });
 assert.equal(
   imported.request("/api/timbres/add", { kind: "granular" }).active,

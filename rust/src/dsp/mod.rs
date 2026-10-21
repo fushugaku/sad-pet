@@ -151,9 +151,8 @@ impl Modulated {
         if let Destination::Control { index } = destination {
             if let Some(spec) = crate::parameters::specs().get(index as usize)
                 && spec.can_sequence()
-                && let Some(base) = spec.frame_get(self)
             {
-                spec.frame_set(self, base + value * (spec.max - spec.min));
+                spec.frame_modulate(self, value);
             }
             return;
         }
@@ -286,6 +285,14 @@ impl Modulated {
                 else {
                     return;
                 };
+                if parameter == crate::color::ColorParameter::LcrRatio {
+                    effect.settings.lcr_ratio = crate::radias_delay::modulate_lcr_ratio(
+                        effect.settings.lcr_sync,
+                        effect.settings.lcr_ratio,
+                        value,
+                    );
+                    return;
+                }
                 effect.parameter_mut(parameter)
             }
             Destination::ReverbDecay => &mut p.reverb_decay,
@@ -835,9 +842,16 @@ impl Engine {
         Ok(())
     }
     fn source_range(&self) -> std::ops::Range<usize> {
-        self.live_input
-            .as_ref()
-            .map_or_else(|| self.file_range.clone(), |input| 0..input.sample.len())
+        self.live_input.as_ref().map_or_else(
+            || self.file_range.clone(),
+            |input| {
+                if self.preset.drums.is_some() {
+                    input.range()
+                } else {
+                    0..input.sample.len()
+                }
+            },
+        )
     }
     pub fn set_fades(&mut self, fades: Fades) -> Result<(), String> {
         if self.live_input.is_some() {
@@ -875,6 +889,35 @@ impl Engine {
         self.live_input
             .as_ref()
             .map_or(&self.sample, |input| &input.sample)
+    }
+    pub fn source_frames(&self) -> usize {
+        self.preset.drums.as_ref().map_or_else(
+            || self.source_sample().len(),
+            |settings| settings.buffer_frames(self.sample_rate),
+        )
+    }
+    pub fn source_duration(&self) -> f64 {
+        if self.preset.drums.is_some() {
+            self.source_frames() as f64 / self.sample_rate as f64
+        } else {
+            self.source_sample().duration()
+        }
+    }
+    pub fn source_position(&self, position: f64) -> f64 {
+        if self.preset.drums.is_some()
+            && let Some(input) = &self.live_input
+        {
+            input.display_position(position)
+        } else {
+            position.rem_euclid(self.source_sample().len() as f64)
+                / self.source_sample().len() as f64
+        }
+    }
+    fn grain_seconds(&self, size: f32) -> f32 {
+        self.preset.drums.as_ref().map_or_else(
+            || tables::grain_duration(size),
+            |settings| settings.grain_seconds(size),
+        )
     }
     pub fn reset_grains(&mut self) {
         self.live_grains = 0;
@@ -961,17 +1004,23 @@ impl Engine {
         if self.frozen {
             self.frozen_center
         } else if let Some(input) = &self.live_input {
-            let length = input.sample.len() as f64;
+            let range = self.source_range();
+            let length = range.len() as f64;
             let p = &self.modulated.params;
             // Leave enough history for a grain to advance without overtaking
             // the capture head. Position scans backwards through the history.
-            let margin =
-                (tables::grain_duration(p.grain_size) as f64 * self.sample_rate as f64 * 2.0
-                    + p.cloud as f64 * length * 0.5
-                    + 4.0)
-                    .min(length * 0.9);
-            (input.head() as f64 - margin - p.position as f64 * (length - margin))
-                .rem_euclid(length)
+            let margin = (self.grain_seconds(p.grain_size) as f64 * self.sample_rate as f64 * 2.0
+                + p.cloud as f64 * length * 0.5
+                + 4.0)
+                .min(length * 0.9);
+            let head = if self.preset.drums.is_some() {
+                range.end as f64
+            } else {
+                input.head() as f64
+            };
+            range.start as f64
+                + (head - range.start as f64 - margin - p.position as f64 * (length - margin))
+                    .rem_euclid(length)
         } else if self.bar_loop_active()
             && let Some(voice) = self.voices.iter().enumerate().position(|(i, v)| {
                 (i != 0 || !self.midi_gate)
@@ -1021,8 +1070,7 @@ impl Engine {
     pub fn grain_views(&self) -> Vec<GrainView> {
         self.live_grain_list()
             .map(|g| GrainView {
-                position: (g.position.rem_euclid(self.source_sample().len() as f64)
-                    / self.source_sample().len() as f64) as f32,
+                position: self.source_position(g.position) as f32,
                 age: g.age as f32 / g.duration as f32,
                 pan: (g.pan[1] - g.pan[0] + 1.0) * 0.5,
             })
@@ -1681,7 +1729,7 @@ impl Engine {
         let rate = tables::pitch_ratio(semis) * self.source_sample().sample_rate as f64
             / self.sample_rate as f64
             * if p.grain_size < 0.5 { -1.0 } else { 1.0 };
-        let duration = (tables::grain_duration(p.grain_size) * self.sample_rate as f32)
+        let duration = (self.grain_seconds(p.grain_size) * self.sample_rate as f32)
             .round()
             .max(4.0) as u32;
         let position = range.start as f64
@@ -1747,6 +1795,23 @@ impl Engine {
         };
         if let (Some(settings), Some(live)) = (&self.preset.drums, &mut self.live_input) {
             live.effects_only = !settings.granular;
+            if live.set_window_seconds(settings.buffer_seconds) {
+                let range = live.range();
+                let capacity = live.sample.len() as f64;
+                let remap = |position: f64| {
+                    let mut position = position.rem_euclid(capacity);
+                    if position < range.start as f64 {
+                        position += capacity;
+                    }
+                    range.start as f64
+                        + (position - range.start as f64).rem_euclid(range.len() as f64)
+                };
+                self.frozen_center = remap(self.frozen_center);
+                for slot in self.live_grain_slots() {
+                    let grain = &mut self.grains[slot];
+                    grain.position = remap(grain.position);
+                }
+            }
         }
         let effects_only = self.live_input.as_ref().is_some_and(|i| i.effects_only);
         let source_input = if self.live_input.is_some() {
@@ -1761,7 +1826,18 @@ impl Engine {
             input
         };
         if let Some(live) = &mut self.live_input {
+            let drums = self.preset.drums.is_some();
+            let epoch = if drums { live.range_epoch() } else { 0 };
             live.push_with_meter(source_input, input, self.frozen);
+            if drums {
+                let shift = (live.range_epoch() - epoch) as f64;
+                if shift != 0.0 {
+                    self.frozen_center -= shift;
+                    for slot in self.live_grain_slots() {
+                        self.grains[slot].position -= shift;
+                    }
+                }
+            }
         }
         if self.playing {
             let tick = self.preset.sequencer.runtime.as_mut().is_some_and(|r| {

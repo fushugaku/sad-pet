@@ -442,6 +442,12 @@ function setParam(key, value) {
   else if (key === "loop_one_bar") scheduleParameter(key, Number(value));
   else schedulePreset();
 }
+function grainSeconds(value) {
+  const span = preset?.drums
+    ? Math.min(2, Math.max(0, (preset.drums.buffer_seconds ?? 8) - 0.01))
+    : 2;
+  return 0.01 + span * Math.abs(value * 2 - 1) ** 3;
+}
 const grainSchema = [
   ["position", "POSITION", (v) => percent(v)],
   ["grains", "GRAINS", (v) => `${(128 * v ** 3).toFixed(1)} /s`],
@@ -449,7 +455,7 @@ const grainSchema = [
     "grain_size",
     "SIZE",
     (v) =>
-      `${v < 0.5 ? "←" : "→"} ${Math.round((0.01 + 2 * Math.abs(v * 2 - 1) ** 3) * 1000)} ms`,
+      `${v < 0.5 ? "←" : "→"} ${Math.round(grainSeconds(v) * 1000)} ms`,
   ],
   [
     "pitch",
@@ -480,7 +486,9 @@ function createKnob(
   const get = () => (binding ? binding.get() : preset.params[key]);
   const set = (v) => {
     if (dial.getAttribute("aria-disabled") === "true") return;
-    return binding ? binding.set(v) : setParam(key, v);
+    const result = binding ? binding.set(v) : setParam(key, v);
+    update();
+    return result;
   };
   const box = document.createElement("div");
   box.className = "knob";
@@ -805,9 +813,29 @@ function changeTimbre(path, data, scalar = false) {
 function syncTimbreRouting() {
   const drums = !!preset?.drums;
   $("load-wav").hidden = drums;
-  document.querySelector(".sample-panel").hidden = drums;
-  $("grain-controls").closest("section").hidden =
-    drums && !preset.drums.granular;
+  const samplePanel = document.querySelector(".sample-panel");
+  samplePanel.classList.toggle("drum-waveform", drums);
+  samplePanel.setAttribute("aria-label", drums ? "Drum waveform and grains" : "Sample and grains");
+  $("drum-source-name").hidden = !drums;
+  $("wave").setAttribute("aria-label", drums
+    ? "Live drum waveform and grains"
+    : "Sample waveform. Drag to select a loop, click to change position");
+  $("wave").title = drums ? `Live drum signal · last ${preset.drums.buffer_seconds ?? 8} seconds`
+    : "Drag to select a loop · drag the handles to adjust it";
+  const waveSlot = document.querySelector(".drum-wave-slot");
+  if (drums && waveSlot && samplePanel.parentElement !== waveSlot)
+    waveSlot.append(samplePanel);
+  else if (!drums && $("sample-panel-home").nextElementSibling !== samplePanel)
+    $("sample-panel-home").after(samplePanel);
+  const grains = $("grain-engine");
+  grains.hidden = drums && !preset.drums.granular;
+  const grainSlot = document.querySelector(".drum-grain-slot");
+  if (drums && grainSlot && grains.parentElement !== grainSlot)
+    grainSlot.append(grains);
+  else if (!drums && $("grain-engine-home").nextElementSibling !== grains)
+    $("grain-engine-home").after(grains);
+  $("drum-grain-count").hidden = !drums;
+  syncControl("grain_size");
   const transport = document.querySelector(".transport");
   if (drums && transport.nextElementSibling !== $("drum-machine"))
     $("drum-machine").before(transport);
@@ -2429,7 +2457,23 @@ const DESTINATIONS = [
   ["diffuse", "First reverb diffuse"],
   ["volume", "Volume"],
 ];
+function removeModulator(kind) {
+  const bank = kind === "lfo" ? "lfos" : "envs";
+  const countKey = `${kind}_count`;
+  const count = preset[countKey] || 3;
+  if (count <= 3) return;
+  preset[bank][count - 1] = structuredClone(presets[0][bank][count - 1]);
+  preset[countKey] = count - 1;
+  preset.matrix = preset.matrix.filter((route) => route.source !== `${kind}${count}`);
+  if (kind === "lfo") scopes[count - 1].values = [];
+  syncLfos();
+  syncEnvs();
+  syncMatrix();
+  refreshColorDestinations();
+  schedulePreset();
+}
 function buildLfos() {
+  $("lfo-remove").onclick = () => removeModulator("lfo");
   $("lfo-add").onclick = () => {
     if ((preset.lfo_count || 3) >= 8) return;
     preset.lfo_count = (preset.lfo_count || 3) + 1;
@@ -2479,6 +2523,8 @@ function syncLfos() {
   const count = preset.lfo_count || 3;
   $("lfo-count").textContent = `${count} / 8`;
   $("lfo-add").disabled = count >= 8;
+  $("lfo-remove").hidden = count <= 3;
+  $("lfo-remove").setAttribute("aria-label", `Remove LFO ${count}`);
   for (let i = 0; i < scopes.length; i++) {
     const card = scopes[i].card,
       l = preset.lfos[i];
@@ -2513,6 +2559,7 @@ const envTime = (seconds) =>
 const signedPercent = (value) =>
   `${value > 0 ? "+" : ""}${Math.round(value * 100)}%`;
 function buildEnvs() {
+  $("env-remove").onclick = () => removeModulator("env");
   $("env-add").onclick = () => {
     if ((preset.env_count || 3) >= 8) return;
     preset.env_count = (preset.env_count || 3) + 1;
@@ -2575,6 +2622,8 @@ function syncEnvs() {
   const count = preset.env_count || 3;
   $("env-count").textContent = `${count} / 8`;
   $("env-add").disabled = count >= 8;
+  $("env-remove").hidden = count <= 3;
+  $("env-remove").setAttribute("aria-label", `Remove ENV ${count}`);
   for (let i = 0; i < envCards.length; i++) {
     const { card, routes } = envCards[i],
       env = preset.envs[i];
@@ -3135,18 +3184,19 @@ function bind() {
   for (const type of ["dragenter", "dragover"])
     drop.addEventListener(type, (e) => {
       e.preventDefault();
-      drop.classList.add("drag");
+      if (!preset?.drums) drop.classList.add("drag");
     });
   for (const type of ["dragleave", "drop"])
     drop.addEventListener(type, (e) => {
       e.preventDefault();
       drop.classList.remove("drag");
     });
-  drop.addEventListener("drop", (e) =>
+  drop.addEventListener("drop", (e) => {
+    if (preset?.drums) return;
     fileLibrary
       .importFiles([...e.dataTransfer.files])
-      .catch((error) => notify(error.message, true)),
-  );
+      .catch((error) => notify(error.message, true));
+  });
   $("midi-refresh").onclick = () => refreshMidi(true);
   $("midi").onchange = async (e) => {
     try {
@@ -3424,7 +3474,8 @@ function syncInput(input) {
     $("render").disabled = false;
   $("render").dataset.liveDisabled = String(active);
   $("render").title = active ? "Use Record to save the live output" : "";
-  const effectsOnly = active && input.mode === "effects";
+  const effectsOnly = preset?.drums
+    ? !preset.drums.granular : active && input.mode === "effects";
   $("grain-controls").inert = effectsOnly;
   $("grain-controls").classList.toggle("inactive", effectsOnly);
   $("antialias").disabled = effectsOnly;
@@ -3493,7 +3544,7 @@ async function poll() {
     $("sample-name").textContent = next.sample_name;
     presetLibrary?.observe(next, pending > 0);
     fileLibrary?.observe(next);
-    $("sample-info").textContent = `${next.sample_seconds.toFixed(2)} s`;
+    $("sample-info").textContent = `${next.sample_seconds.toFixed(next.preset?.drums && next.sample_seconds < 1 ? 3 : 2)} s`;
     syncInput(next.input);
     updateResynthMeter(next.resynth);
     neuroEditor?.update(next.sequencer, next.playing);
@@ -3505,6 +3556,7 @@ async function poll() {
       next.center * next.sample_seconds,
     );
     $("grain-count").textContent = next.active_grains;
+    $("drum-grain-count").textContent = `${next.active_grains} grains`;
     $("play").setAttribute("aria-pressed", String(next.playing));
     $("play-icon").textContent = next.playing ? "Ⅱ" : "▶";
     $("play-label").textContent = next.playing ? "Pause" : "Play";

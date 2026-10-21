@@ -38,6 +38,28 @@ fn interpolate(table: &[u16], value: f32) -> f32 {
     table[left] as f32 + (table[right] as f32 - table[left] as f32) * fraction
 }
 
+/// Modulators use the knob's continuous physical range. Stepped table positions
+/// are retained for saved patches, but must not create dead zones for an LFO.
+pub fn modulate_lcr_ratio(sync: bool, base: f32, amount: f32) -> f32 {
+    if amount == 0.0 {
+        return base;
+    }
+    let table = if sync { &SYNC_RATIO } else { &FREE_RATIO };
+    let first = table[0] as f32;
+    let last = table[table.len() - 1] as f32;
+    let target = (interpolate(table, base) + amount * (last - first)).clamp(first, last);
+    if target <= first {
+        return 0.0;
+    }
+    if target >= last {
+        return 1.0;
+    }
+    let right = table.partition_point(|&value| (value as f32) < target);
+    let left = right - 1;
+    let fraction = (target - table[left] as f32) / (table[right] - table[left]) as f32;
+    (left as f32 + fraction) / (table.len() - 1) as f32
+}
+
 /// Keep the musical divisions as anchors, allowing all times between them.
 pub fn smooth_seconds(
     sync: bool,

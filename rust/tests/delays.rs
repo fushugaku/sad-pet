@@ -134,6 +134,70 @@ fn lcr_ratio_is_continuous_without_smooth_and_retains_original_table_anchors() {
 }
 
 #[test]
+fn lcr_ratio_modulation_has_no_plateaus_and_is_finer_than_manual_steps() {
+    for sync in [false, true] {
+        let base = 64.0 / 127.0;
+        let time = 50.0 / 127.0;
+        let note = 8.0 / 13.0;
+        let mut previous = 0.0;
+        for i in 0..1000 {
+            let offset = (i as f32 - 500.0) * 0.000001;
+            let position = radias_delay::modulate_lcr_ratio(sync, base, offset);
+            let seconds = radias_delay::seconds(sync, position, time, note, 120.0, false);
+            if i > 0 {
+                assert!(seconds > previous, "Small ratio modulation had a dead zone");
+                assert!(seconds - previous < 0.00001);
+            }
+            previous = seconds;
+        }
+        assert_eq!(radias_delay::modulate_lcr_ratio(sync, base, 0.0), base);
+    }
+    // Both stable effect IDs and generic numeric destinations use the same mapping.
+    for generic in [false, true] {
+        let mut p = Preset {
+            color_chain: vec![slot(1, Type::LcrDelay)],
+            ..Preset::default()
+        };
+        p.params.grains = 0.0;
+        p.lfos[0].rate_hz = 1.0;
+        p.lfos[0].depth = 0.0002;
+        p.lfos[0].destination = if generic {
+            Destination::Control {
+                index: sad_pet::parameters::specs()
+                    .iter()
+                    .position(|s| s.id == "fx1_lcr_ratio")
+                    .unwrap() as u16,
+            }
+        } else {
+            Destination::Color {
+                slot: 1,
+                parameter: P::LcrRatio,
+            }
+        };
+        let mut e = Engine::new(8000, Arc::new(SampleBuffer::demo(8000)), p);
+        e.set_playing(true);
+        e.process_frame();
+        let mut range = [f32::MAX, f32::MIN];
+        for _ in 0..100 {
+            for _ in 0..32 {
+                e.process_frame();
+            }
+            let s = e.modulated_color_slots()[0].settings;
+            let actual = radias_delay::seconds(true, s.lcr_ratio, 0.0, 8.0 / 13.0, 120.0, false);
+            let expected = 0.5 * (1000.0 + e.lfo_values[0] * 0.0001 * 3875.0) / 1000.0;
+            assert!((actual - expected).abs() < 0.000001);
+            range[0] = range[0].min(actual);
+            range[1] = range[1].max(actual);
+        }
+        assert!(
+            range[1] - range[0] > 0.0001,
+            "Low-depth LFO did not change ratio"
+        );
+        assert_eq!(e.preset.color_chain[0].settings.lcr_ratio, 64.0 / 127.0);
+    }
+}
+
+#[test]
 fn lcr_ratio_glides_without_smooth_and_does_not_clear_the_existing_tail() {
     for sr in [8000, 48000] {
         let mut s = slot(1, Type::LcrDelay);

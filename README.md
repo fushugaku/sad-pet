@@ -29,6 +29,11 @@ source, selection/fades, four-oscillator Resynth, sequencer and both FX racks.
 It is also the first Factory choice; Init remains available. Saved DAW projects
 and remembered browser User presets take priority over this initial sound.
 
+New browser sessions and DAW instances start with **glasses5**: its Dusty keys
+source, selection/fades, four-oscillator Resynth, sequencer and both FX racks.
+It is also the first Factory choice; Init remains available. Saved DAW projects
+and remembered browser User presets take priority over this initial sound.
+
 Each effect has its own named preset selector and Save button. Effect presets
 are shared across the three FX racks and all timbres of the same effect type.
 Portable `.sadfx` import/export moves settings between the web and native
@@ -69,6 +74,8 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   plus eight modulation-matrix routes. OSC 1–4 shape, mode, tuning, level, pan,
   Ring/Sync and other realtime numeric controls are available as destinations.
   Existing three-modulator patches retain their sound and routing.
+  **− LFO** / **− ENV** removes the last added modulator while keeping the first
+  three and the remaining assignments intact.
 - **DXM-088 / LXR-02 drum timbres**, using the original Rust synthesis engine:
   three drum voices, snare, clap/cymbal and shared closed/open hi-hat. All 56 voice
   controls are available, including FM, transients, envelopes and both filters.
@@ -77,6 +84,15 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   conditions and two parameter locks. The drum page has its own Neuropolis mod
   sequencer. **Granular** routes the drum mix through the shared Grain Engine;
   turn it off for direct processing through the remaining filter/FX chain.
+  Grain controls appear directly below the Granular switch, with a live grain
+  count. **Buffer** selects 125 ms–32 s of live drum history (8 s by default).
+  The waveform, Position and Cloud use that duration; Size scales its full range
+  to shorter buffers. Changing duration retains captured audio, including Freeze,
+  and uses reserved memory without restarting the pattern or rebuilding DSP.
+  The duration saves separately per timbre in presets and DAW projects, in both
+  the browser and native plug-ins.
+  Selecting a sequencer track or step also selects that drum's sound;
+  voice knobs repaint immediately while dragging.
   The firmware clock, original stereo DSP and host-rate resampler are preserved.
 - Two filters with single, serial and parallel routing, envelope depth and key tracking.
 - All **18 Rustias filter models** in either slot: RADIAS, Ladder LP/HP/BP24,

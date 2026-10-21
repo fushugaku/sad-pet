@@ -363,7 +363,7 @@ fn drum_step_edits_and_granular_routing_publish_sparse_views_without_heap_work()
     host.ack_snapshot(host.snapshot_sequence, 1);
     let revision = host.config_revision;
     host.command(json!({"path":"/api/drums/edit","data":[{"track":0,"step":127,"field":0,"value":0.8},{"track":0,"step":null,"field":0,"value":128}]})).unwrap();
-    host.command(json!({"path":"/api/parameters","data":{"drum_granular":1,"drum1_0":72}}))
+    host.command(json!({"path":"/api/parameters","data":{"drum_granular":1,"drum1_0":72,"drum_buffer_seconds":0.125}}))
         .unwrap();
     assert_eq!(
         host.config_revision, revision,
@@ -391,4 +391,24 @@ fn drum_step_edits_and_granular_routing_publish_sparse_views_without_heap_work()
         json!(0.8_f32)
     );
     assert_eq!(view["state"]["preset"]["drums"]["granular"], true);
+    assert_eq!(view["state"]["sample_seconds"], 0.125);
+    assert_eq!(view["state"]["sample_frames"], 1000);
+    host.ack_snapshot(host.snapshot_sequence, 1);
+    // A second sparse edit must update duration even when configuration is omitted.
+    host.command(json!({"path":"/api/parameters","data":{"drum_buffer_seconds":16}}))
+        .unwrap();
+    no_heap(|| {
+        for _ in 0..128 {
+            host.engine.process_frame();
+        }
+        size = host.publish_snapshot();
+    });
+    worker.input.clear();
+    worker
+        .input
+        .extend_from_slice(&host.snapshot_buffer[..size]);
+    let view = worker.import_snapshot(false).unwrap();
+    assert_eq!(view["state"]["sample_seconds"], 16.);
+    assert_eq!(view["state"]["sample_frames"], 128000);
+    assert_eq!(host.config_revision, revision);
 }

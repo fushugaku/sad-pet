@@ -51,12 +51,22 @@ rotary controls. Conditions and two parameter locks remain visible alongside.
 Audition plays a single drum even while DAW transport is stopped.
 
 Enable **Granular** in the drum heading to send its live mix through Grain Engine.
+Its controls and live grain count appear directly below the switch. Selecting a
+drum timbre also shows the shared waveform display and its grain positions, in
+both direct and granular modes. **Buffer** selects 125 ms–32 s of history (8 s
+by default). Position and Cloud follow that duration; Size uses the full knob
+range up to the shorter buffer length, with a 10 ms minimum. Changing duration
+retains captured sound and Freeze without allocating audio buffers or restarting
+the pattern. Each timbre saves its own duration in presets and DAW projects. Selecting a
+drum track or step also selects its sound editor, and voice knobs repaint during
+the drag without waiting for the next engine-state poll.
 Source FX processes the drum audio before capture; pre-filter FX, filters, Resynth
 and post-filter FX remain available on the selected timbre. Main pitch transposes
 the drum voices in direct mode and the grains in granular mode. The drum page's
 Neuropolis editor is independent of every other timbre's program.
 
-Use **+ LFO** / **+ ENV** to add up to eight of each per timbre. Destination menus
+Use **+ LFO** / **+ ENV** to add up to eight of each per timbre, and **− LFO** /
+**− ENV** to remove the last added modulator down to three. Destination menus
 include every Resynth oscillator's realtime numeric controls and all drum voice
 controls. Knob edits, drum steps and the Granular switch use sparse commands;
 they preserve clocks, voice histories and other timbres. Three-modulator patches
@@ -82,6 +92,8 @@ L/C/R Delay **Time Ratio** always uses continuous values and a 0.25 percentage
 point gesture step. Ratio changes glide in audio even with Smooth off; Smooth
 still enables the intermediate tap times between musical divisions. Existing
 RADIAS ratio positions in saved presets and host automation retain their mapping.
+LFO/ENV/matrix modulation changes the physical Time Ratio continuously without
+the gesture's 0.25% quantization or the original ratio table's flat regions.
 
 ## Install
 

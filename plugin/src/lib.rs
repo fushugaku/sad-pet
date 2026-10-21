@@ -297,12 +297,9 @@ impl Controller {
             },
             sample,
             live: (source != Source::File || preset.drums.is_some()).then(|| {
-                let mut input = LiveInput::new(
-                    self.rate,
-                    preset
-                        .drums
-                        .as_ref()
-                        .map_or(source == Source::Effects, |d| !d.granular),
+                let mut input = preset.drums.as_ref().map_or_else(
+                    || LiveInput::new(self.rate, source == Source::Effects),
+                    |d| LiveInput::for_drums(self.rate, !d.granular, d.buffer_seconds),
                 );
                 input.sample.name = if preset.drums.is_some() {
                     "Drum machine"
@@ -403,6 +400,13 @@ impl Controller {
         }
         let view = &self.view;
         let live = self.source != Source::File;
+        let drums = self.preset.drums.is_some();
+        let buffered = live || drums;
+        let buffer_frames = self
+            .preset
+            .drums
+            .as_ref()
+            .map_or(self.rate as usize * 8, |d| d.buffer_frames(self.rate));
         let knobs = sad_pet::dsp::telemetry::knob_states_from_view(&self.preset, view);
         let mut reduction: std::collections::BTreeMap<_, _> = view
             .gain_reduction
@@ -421,13 +425,13 @@ impl Controller {
             "plugin": {"effect":self.effect,"sync":self.sync,"host_bpm":self.host_bpm,"host_playing":self.host_playing,"bar_beats":view.bar_beats},
             "sample_rate":self.rate,"audio_device":"DAW","audio_enabled":true,"audio_error":null,
             "playing":self.playing,"midi_gate":self.midi_gate,"frozen":self.frozen,"bypass":self.bypass,
-            "preset":displayed_preset,"sample_name":if live { "DAW input" } else { &self.sample.name },
+            "preset":displayed_preset,"sample_name":if drums { "Drum machine" } else if live { "DAW input" } else { &self.sample.name },
             "preset_selection":self.selection,
-            "sample_id":if live { None } else { self.sample.library_id.as_ref() },
-            "sample_seconds":if live { 8.0 } else { self.sample.duration() },
-            "sample_frames":if live { self.rate as usize * 8 } else { self.sample.len() },
+            "sample_id":if buffered { None } else { self.sample.library_id.as_ref() },
+            "sample_seconds":if buffered { buffer_frames as f64 / self.rate as f64 } else { self.sample.duration() },
+            "sample_frames":if buffered { buffer_frames } else { self.sample.len() },
             "file_source":{"sample_name":self.sample.name,"sample_id":self.sample.library_id,"sample_seconds":self.sample.duration(),"sample_frames":self.sample.len(),"waveform":self.sample.waveform},
-            "waveform":if live { &view.waveform[..view.waveform_len] } else { &self.sample.waveform },
+            "waveform":if buffered { &view.waveform[..view.waveform_len] } else { &self.sample.waveform },
             "region":self.region,"fades":self.fades,"center":view.center,
             "grains":&view.grains[..view.grain_count],"active_grains":view.grain_count,
             "notes":&view.notes[..view.note_count],"step_entry":view.step_entry,"step_edits":view.step_edits,

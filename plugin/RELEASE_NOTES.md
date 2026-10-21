@@ -1,5 +1,28 @@
 SAD PET instrument and SAD PET FX, with native Rust DSP and an embedded editor.
 
+**Selectable drum granular buffer.** The drum heading's **Buffer** selector sets
+125 ms–32 s of captured history per timbre, with 8 s as the compatible default.
+The waveform, Position and Cloud use that duration; Size scales its full range
+to short buffers. Changing duration retains audio and Freeze, uses preallocated
+memory and leaves the drum clock running. Presets and DAW projects recall it.
+
+**Live drum waveform.** Drum timbres now show the same waveform and grain display
+as sample timbres, directly above Grain Engine. It reads the selected live
+drum input history in both direct and granular modes. Native editors publish
+the drum buffer instead of the unrelated file waveform. File selection controls
+and fades return when switching back to a sample timbre.
+
+**Responsive drum controls and visible granular processing.** Voice knobs repaint
+during each drag instead of waiting for engine telemetry. Selecting a sequencer
+track or step also selects its sound editor. With Granular enabled, the drum page
+shows Grain Engine controls directly below the switch and a live grain count.
+
+**Continuous LFO Time Ratio and removable extra modulators.** LFO/ENV/matrix routes
+change L/C/R Delay's physical ratio continuously, without the knob gesture's
+0.25% quantization or the original table's flat regions. Audio gliding and saved
+ratio anchors are preserved. **− LFO** / **− ENV** removes the last added slot and
+its outgoing routes; the first three and remaining slot addresses stay intact.
+
 **glasses5 on first open.** New instances and fresh browser sessions load the
 supplied complete sound: Dusty keys, its selection/fades, four-oscillator Resynth,
 Neuropolis tracks and both FX racks. It appears first in Factory presets, with
@@ -78,6 +101,19 @@ are supplied individually and in `SHA256SUMS.txt`.
 ---
 
 В обоих установщиках есть инструмент **SAD PET** и эффект **SAD PET FX**.
+**Buffer** на странице драм-машины выбирает от 125 мс до 32 с истории звука.
+Волна, Position и Cloud масштабируются под буфер, а Size использует весь ход
+ручки и на коротких буферах. При смене длительности захваченный звук и Freeze
+сохраняются, паттерн продолжает играть, память в аудиопотоке не выделяется.
+Длительность сохраняется отдельно для каждого тембра в пресетах и проектах DAW.
+На странице драм-машины есть такая же волна, как у обычного тембра: реальная
+история барабанного сигнала выбранной длины с позициями гранул. Она доступна
+с Granular и без него, в web и нативных плагинах.
+Ручки барабанов обновляются при движении, выбор дорожки или шага выбирает тот же
+звук. При включении Granular его ручки и счётчик гранул находятся сразу под
+переключателем. LFO/ENV меняют Time Ratio плавно, без ступеней таблицы и без
+шага ручки 0,25%. Кнопки **− LFO** / **− ENV** удаляют последний добавленный слот;
+первые три остаются на месте.
 При первом открытии загружается **glasses5** со своим сэмплом, фейдами, Resynth,
 секвенсором и эффектами. Он стоит первым в Factory; Init остаётся доступен.
 Сохранённые проекты DAW и последний выбранный User-пресет в web сохраняют приоритет.

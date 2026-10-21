@@ -81,7 +81,8 @@ pub struct SampleBuffer {
     pub waveform: Vec<[f32; 2]>,
 }
 
-/// Eight seconds of input history, allocated once when the input is enabled.
+/// Input history allocated once when the input is enabled. Drum captures reserve
+/// 32 seconds, with a shorter read window that can change without heap work.
 /// The mip levels are updated incrementally rather than rebuilding a sample on
 /// the audio callback. The original file remains available in Engine::sample.
 pub struct LiveInput {
@@ -90,12 +91,22 @@ pub struct LiveInput {
     pub peak: Stereo,
     write: usize,
     captured: usize,
+    total: u64,
+    window: usize,
+    waveform_rebuild: Option<(u64, u64)>,
     lowpass: [[Stereo; 2]; 6],
 }
 
 impl LiveInput {
     pub fn new(sample_rate: u32, effects_only: bool) -> Self {
-        let mut length = sample_rate as usize * 8;
+        Self::with_capacity(sample_rate, effects_only, 8, 8.0)
+    }
+    pub fn for_drums(sample_rate: u32, effects_only: bool, seconds: f32) -> Self {
+        Self::with_capacity(sample_rate, effects_only, 32, seconds)
+    }
+    fn with_capacity(sample_rate: u32, effects_only: bool, seconds: usize, window: f32) -> Self {
+        let capacity = sample_rate as usize * seconds;
+        let mut length = capacity;
         let mut levels = Vec::with_capacity(7);
         for _ in 0..7 {
             levels.push(vec![[0.0; 2]; length]);
@@ -108,14 +119,62 @@ impl LiveInput {
             peak: [0.0; 2],
             write: 0,
             captured: 0,
+            total: capacity as u64,
+            window: ((window.clamp(0.125, seconds as f32) * sample_rate as f32).round() as usize)
+                .clamp(1, capacity),
+            waveform_rebuild: None,
             lowpass: [[[0.0; 2]; 2]; 6],
         }
+    }
+    pub fn window_frames(&self) -> usize {
+        self.window
+    }
+    pub fn range_epoch(&self) -> u64 {
+        (self.total - self.window as u64) / self.sample.len() as u64 * self.sample.len() as u64
+    }
+    pub fn range(&self) -> std::ops::Range<usize> {
+        let start = ((self.total - self.window as u64) % self.sample.len() as u64) as usize;
+        start..start + self.window
+    }
+    pub fn display_position(&self, position: f64) -> f64 {
+        (position + self.range_epoch() as f64).rem_euclid(self.window as f64) / self.window as f64
+    }
+    pub fn set_window_seconds(&mut self, seconds: f32) -> bool {
+        let frames = ((seconds.clamp(0.125, 32.0) * self.sample.sample_rate as f32).round()
+            as usize)
+            .clamp(1, self.sample.len());
+        if frames == self.window {
+            return false;
+        }
+        self.window = frames;
+        self.sample.waveform.fill([0.; 2]);
+        self.waveform_rebuild = Some((self.total - self.captured.min(frames) as u64, self.total));
+        true
+    }
+    // Rebuild the new view in bounded work, including while capture is frozen.
+    // The retained PCM and antialiasing levels are never rebuilt or cleared.
+    fn rebuild_waveform(&mut self) {
+        let Some((mut at, end)) = self.waveform_rebuild else {
+            return;
+        };
+        at = at.max(self.total - self.window as u64);
+        let until = (at + 16).min(end);
+        for index in at..until {
+            let frame = self.sample.levels[0][(index % self.sample.len() as u64) as usize];
+            let value = (frame[0] + frame[1]) * 0.5;
+            let bin =
+                (index % self.window as u64) as usize * self.sample.waveform.len() / self.window;
+            self.sample.waveform[bin][0] = self.sample.waveform[bin][0].min(value);
+            self.sample.waveform[bin][1] = self.sample.waveform[bin][1].max(value);
+        }
+        self.waveform_rebuild = (until < end).then_some((until, end));
     }
 
     pub fn push(&mut self, frame: Stereo, frozen: bool) {
         self.push_with_meter(frame, frame, frozen);
     }
     pub fn push_with_meter(&mut self, frame: Stereo, meter: Stereo, frozen: bool) {
+        self.rebuild_waveform();
         let mut frame = frame.map(|x| {
             if x.is_finite() {
                 x.clamp(-16.0, 16.0)
@@ -133,9 +192,10 @@ impl LiveInput {
         }
         let index = self.write;
         self.sample.levels[0][index] = frame;
-        let bin = index * self.sample.waveform.len() / self.sample.len();
+        let phase = (self.total % self.window as u64) as usize;
+        let bin = phase * self.sample.waveform.len() / self.window;
         let value = (frame[0] + frame[1]) * 0.5;
-        if index == 0 || (index - 1) * self.sample.waveform.len() / self.sample.len() != bin {
+        if phase == 0 || (phase - 1) * self.sample.waveform.len() / self.window != bin {
             self.sample.waveform[bin] = [value; 2];
         } else {
             self.sample.waveform[bin][0] = self.sample.waveform[bin][0].min(value);
@@ -156,24 +216,22 @@ impl LiveInput {
         }
         self.write = (index + 1) % self.sample.len();
         self.captured = (self.captured + 1).min(self.sample.len());
+        self.total += 1;
     }
 
     pub fn head(&self) -> usize {
         self.write
     }
     pub fn seconds(&self) -> f64 {
-        self.captured as f64 / self.sample.sample_rate as f64
+        self.captured.min(self.window) as f64 / self.sample.sample_rate as f64
     }
 
     /// Return only captured frames, oldest first, including after a ring wrap.
     pub fn capture(&self) -> Vec<Stereo> {
-        let start = if self.captured == self.sample.len() {
-            self.write
-        } else {
-            0
-        };
-        (0..self.captured)
-            .map(|i| self.sample.frames()[(start + i) % self.sample.len()])
+        let count = self.captured.min(self.window);
+        let start = self.total - count as u64;
+        (0..count)
+            .map(|i| self.sample.frames()[((start + i as u64) % self.sample.len() as u64) as usize])
             .collect()
     }
 }
@@ -219,6 +277,8 @@ impl LiveInputPreparation {
         self.level == 7
     }
     pub fn finish(self) -> Option<LiveInput> {
+        // Eight seconds, all of them visible, as LiveInput::new.
+        let capacity = self.sample_rate as usize * 8;
         (self.level == 7).then(|| LiveInput {
             sample: SampleBuffer {
                 name: "Microphone".into(),
@@ -226,12 +286,15 @@ impl LiveInputPreparation {
                 sample_rate: self.sample_rate,
                 levels: self.levels,
                 active_levels: 7,
-                waveform: vec![[0.0; 2]; (self.sample_rate as usize * 8).min(640)],
+                waveform: vec![[0.0; 2]; capacity.min(640)],
             },
             effects_only: self.effects_only,
             peak: [0.0; 2],
             write: 0,
             captured: 0,
+            total: capacity as u64,
+            window: capacity,
+            waveform_rebuild: None,
             lowpass: [[[0.0; 2]; 2]; 6],
         })
     }
@@ -598,14 +661,19 @@ fn interpolation_frames(data: &[Stereo], base: i64, range: &std::ops::Range<usiz
     // wrap used for tiny selections, negative positions and reverse grains.
     if base > range.start as i64 && base + 2 < range.end as i64 {
         let i = base as usize;
-        [data[i - 1], data[i], data[i + 1], data[i + 2]]
-    } else {
-        std::array::from_fn(|i| {
-            data[range.start
-                + (base + i as i64 - 1 - range.start as i64).rem_euclid(range.len() as i64)
-                    as usize]
-        })
+        if i + 2 < data.len() {
+            return [data[i - 1], data[i], data[i + 1], data[i + 2]];
+        }
+        let i = i % data.len();
+        if i > 0 && i + 2 < data.len() {
+            return [data[i - 1], data[i], data[i + 1], data[i + 2]];
+        }
     }
+    std::array::from_fn(|i| {
+        data[(range.start
+            + (base + i as i64 - 1 - range.start as i64).rem_euclid(range.len() as i64) as usize)
+            % data.len()]
+    })
 }
 
 /// `rem_euclid` without its `fmod` call when the position is less than one

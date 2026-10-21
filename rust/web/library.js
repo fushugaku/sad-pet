@@ -131,7 +131,7 @@
       }
     }
     async initialize(native, presets) {
-      if (native.plugin && native.input?.active && native.file_source)
+      if (native.plugin && (native.input?.active || native.preset?.drums) && native.file_source)
         native = { ...native, ...native.file_source };
       this.instanceId = native.instance_id;
       const [, response] = await Promise.all([
@@ -329,7 +329,7 @@
       this.renderCurrent();
     }
     observe(native) {
-      if (native.input?.active) return;
+      if (native.input?.active || native.preset?.drums) return;
       if (!this.ready || this.initializing || this.loading || this.observing)
         return;
       if (
