@@ -197,3 +197,34 @@ impl PreparedEffects {
             .and_then(|e| e.core.take())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn alphaverb_mode_labels_match_original_compressor_and_gate_flags() {
+        let manifest: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/erika-fx/manifest.json")).unwrap();
+        let mut core = Core::new(SaturatorType::AlphaVerb).unwrap();
+        let mut slot = ColorSlot {
+            kind: SaturatorType::AlphaVerb,
+            ..Default::default()
+        };
+        for mode in manifest["alpha_verb"]["dynamics_modes"].as_array().unwrap() {
+            slot.settings.alpha_verb_dynamics = mode["normalized"].as_f64().unwrap() as f32;
+            core.configure(slot, 120.0);
+            let Algorithm::AlphaVerb { engine, .. } = &core.engine else {
+                unreachable!()
+            };
+            let bytes = engine.state_bytes();
+            let flags =
+                u16::from_le_bytes(bytes[0x6b0 + 0x1384..0x6b0 + 0x1386].try_into().unwrap());
+            assert_eq!(
+                u64::from(flags),
+                mode["flags"].as_u64().unwrap(),
+                "{}",
+                mode["label"]
+            );
+        }
+    }
+}

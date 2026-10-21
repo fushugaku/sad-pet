@@ -68,6 +68,22 @@ for (const [kind, title, count] of [
     assert.ok(fields.includes(key) && label && values.length >= 2);
   }
 }
+const manifest = JSON.parse(
+  await readFile(
+    new URL("../rust/tests/fixtures/erika-fx/manifest.json", import.meta.url),
+    "utf8",
+  ),
+);
+const dynamics = vm.runInContext(
+  "IMPORTED_FX_CHOICES.alpha_verb.find(([p]) => p === 'alpha_verb_dynamics')[2]",
+  context,
+);
+for (const mode of manifest.alpha_verb.dynamics_modes)
+  assert.equal(
+    dynamics[Math.round(mode.normalized * 3)],
+    mode.label,
+    "AlphaVerb mode name does not match the original firmware value",
+  );
 const synced = vm.runInContext(
   `colorSchema('super_echo',{settings:{super_echo_sync:1}})`,
   context,

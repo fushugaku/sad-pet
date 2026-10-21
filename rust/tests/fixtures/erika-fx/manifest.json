@@ -57,7 +57,30 @@
     "source": "dayverb/tests/fixtures/audio-{input,output}-q31.bin at c8b27d3cf2c981b8efeadbee4d4cb21d5af1820d",
     "warmup_frames": 48000,
     "mix": 1,
-    "parameters": "original defaults"
+    "parameters": "original defaults",
+    "dynamics_modes": [
+      {
+        "label": "Off",
+        "normalized": 0.0,
+        "flags": 0
+      },
+      {
+        "label": "Comp + Gate",
+        "normalized": 0.3333333333333333,
+        "flags": 257
+      },
+      {
+        "label": "Compressor",
+        "normalized": 0.6666666666666666,
+        "flags": 1
+      },
+      {
+        "label": "Gate",
+        "normalized": 1.0,
+        "flags": 256
+      }
+    ],
+    "dynamics_source": "dayverb/plugins/Dayverb/WebEditor.h and tools/check-controls.mjs; flags at state + 0x1384 (DTCM 0x20001a34)"
   },
   "sha256": {
     "super-echo-input.q31": "2f5b958ce3b919331d430d9ac26dfc2df36108904de6f864a0b7862f5f71a2b8",

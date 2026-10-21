@@ -1355,7 +1355,7 @@ const IMPORTED_FX_CHOICES = {
     [
       "alpha_verb_dynamics",
       "DYNAMICS",
-      ["Off", "Compressor", "Gate", "Comp + Gate"],
+      ["Off", "Comp + Gate", "Compressor", "Gate"],
     ],
     ["alpha_verb_freeze", "FREEZE", ["Off", "On"]],
   ],
