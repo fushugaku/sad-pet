@@ -1,5 +1,16 @@
 SAD PET instrument and SAD PET FX, with native Rust DSP and an embedded editor.
 
+**Responsive drum controls and visible granular processing.** Voice knobs repaint
+during each drag instead of waiting for engine telemetry. Selecting a sequencer
+track or step also selects its sound editor. With Granular enabled, the drum page
+shows Grain Engine controls directly below the switch and a live grain count.
+
+**Continuous LFO Time Ratio and removable extra modulators.** LFO/ENV/matrix routes
+change L/C/R Delay's physical ratio continuously, without the knob gesture's
+0.25% quantization or the original table's flat regions. Audio gliding and saved
+ratio anchors are preserved. **− LFO** / **− ENV** removes the last added slot and
+its outgoing routes; the first three and remaining slot addresses stay intact.
+
 **glasses5 on first open.** New instances and fresh browser sessions load the
 supplied complete sound: Dusty keys, its selection/fades, four-oscillator Resynth,
 Neuropolis tracks and both FX racks. It appears first in Factory presets, with
@@ -78,6 +89,11 @@ are supplied individually and in `SHA256SUMS.txt`.
 ---
 
 В обоих установщиках есть инструмент **SAD PET** и эффект **SAD PET FX**.
+Ручки барабанов обновляются при движении, выбор дорожки или шага выбирает тот же
+звук. При включении Granular его ручки и счётчик гранул находятся сразу под
+переключателем. LFO/ENV меняют Time Ratio плавно, без ступеней таблицы и без
+шага ручки 0,25%. Кнопки **− LFO** / **− ENV** удаляют последний добавленный слот;
+первые три остаются на месте.
 При первом открытии загружается **glasses5** со своим сэмплом, фейдами, Resynth,
 секвенсором и эффектами. Он стоит первым в Factory; Init остаётся доступен.
 Сохранённые проекты DAW и последний выбранный User-пресет в web сохраняют приоритет.

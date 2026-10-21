@@ -472,9 +472,10 @@
         </div>
         <div id="source-color-chain" class="color-chain"></div>
       </section>
-      <section class="bank">
+      <div id="grain-engine-home" hidden></div>
+      <section class="bank" id="grain-engine" aria-label="Grain engine">
         <div class="section-heading">
-          <h2>Grain engine</h2>
+          <h2>Grain engine <span id="drum-grain-count" hidden>0 grains</span></h2>
           <label class="check"
             ><input id="antialias" type="checkbox" checked />Anti-alias</label
           >
@@ -561,12 +562,14 @@
         </div>
         <div class="mod-bank-tools">
           <strong>LFO <span id="lfo-count">3 / 8</span></strong
-          ><button id="lfo-add">+ LFO</button>
+          ><button id="lfo-remove" aria-label="Remove last LFO" hidden>− LFO</button>
+          <button id="lfo-add">+ LFO</button>
         </div>
         <div id="lfos" class="lfo-grid"></div>
         <div class="mod-bank-tools">
           <strong>ENV <span id="env-count">3 / 8</span></strong
-          ><button id="env-add">+ ENV</button>
+          ><button id="env-remove" aria-label="Remove last ENV" hidden>− ENV</button>
+          <button id="env-add">+ ENV</button>
         </div>
         <div id="envs" class="env-grid"></div>
       </section>

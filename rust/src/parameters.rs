@@ -172,6 +172,24 @@ impl Spec {
             },
         })
     }
+    pub(crate) fn frame_modulate(&self, m: &mut crate::dsp::Modulated, amount: f32) {
+        if let Target::Fx(pre, index, ColorParameter::LcrRatio) = self.target {
+            let slots = if pre {
+                &mut m.pre_color_slots[..m.pre_color_len]
+            } else {
+                &mut m.color_slots[..m.color_len]
+            };
+            if let Some(slot) = slots.get_mut(index) {
+                slot.settings.lcr_ratio = crate::radias_delay::modulate_lcr_ratio(
+                    slot.settings.lcr_sync,
+                    slot.settings.lcr_ratio,
+                    amount,
+                );
+            }
+        } else if let Some(base) = self.frame_get(m) {
+            self.frame_set(m, base + amount * (self.max - self.min));
+        }
+    }
     pub(crate) fn frame_set(&self, m: &mut crate::dsp::Modulated, value: f32) {
         if !value.is_finite() {
             return;

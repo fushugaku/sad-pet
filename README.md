@@ -56,6 +56,8 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   plus eight modulation-matrix routes. OSC 1–4 shape, mode, tuning, level, pan,
   Ring/Sync and other realtime numeric controls are available as destinations.
   Existing three-modulator patches retain their sound and routing.
+  **− LFO** / **− ENV** removes the last added modulator while keeping the first
+  three and the remaining assignments intact.
 - **DXM-088 / LXR-02 drum timbres**, using the original Rust synthesis engine:
   three drum voices, snare, clap/cymbal and shared closed/open hi-hat. All 56 voice
   controls are available, including FM, transients, envelopes and both filters.
@@ -64,6 +66,9 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   conditions and two parameter locks. The drum page has its own Neuropolis mod
   sequencer. **Granular** routes the drum mix through the shared Grain Engine;
   turn it off for direct processing through the remaining filter/FX chain.
+  Grain controls appear directly below the Granular switch, with a live grain
+  count. Selecting a sequencer track or step also selects that drum's sound;
+  voice knobs repaint immediately while dragging.
   The firmware clock, original stereo DSP and host-rate resampler are preserved.
 - Two filters with single, serial and parallel routing, envelope depth and key tracking.
 - All **18 Rustias filter models** in either slot: RADIAS, Ladder LP/HP/BP24,

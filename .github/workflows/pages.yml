@@ -46,6 +46,7 @@ jobs:
           node wasm/test-library.mjs
           node wasm/test-presets.mjs
           node wasm/test-startup.mjs
+          node wasm/test-controls-ui.mjs
           node wasm/test-effect-presets.mjs
           node wasm/test-parameters.mjs
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0

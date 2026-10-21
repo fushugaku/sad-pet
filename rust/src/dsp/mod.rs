@@ -148,9 +148,8 @@ impl Modulated {
         if let Destination::Control { index } = destination {
             if let Some(spec) = crate::parameters::specs().get(index as usize)
                 && spec.can_sequence()
-                && let Some(base) = spec.frame_get(self)
             {
-                spec.frame_set(self, base + value * (spec.max - spec.min));
+                spec.frame_modulate(self, value);
             }
             return;
         }
@@ -283,6 +282,14 @@ impl Modulated {
                 else {
                     return;
                 };
+                if parameter == crate::color::ColorParameter::LcrRatio {
+                    effect.settings.lcr_ratio = crate::radias_delay::modulate_lcr_ratio(
+                        effect.settings.lcr_sync,
+                        effect.settings.lcr_ratio,
+                        value,
+                    );
+                    return;
+                }
                 effect.parameter_mut(parameter)
             }
             Destination::ReverbDecay => &mut p.reverb_decay,

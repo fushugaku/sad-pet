@@ -478,7 +478,9 @@ function createKnob(
   const get = () => (binding ? binding.get() : preset.params[key]);
   const set = (v) => {
     if (dial.getAttribute("aria-disabled") === "true") return;
-    return binding ? binding.set(v) : setParam(key, v);
+    const result = binding ? binding.set(v) : setParam(key, v);
+    update();
+    return result;
   };
   const box = document.createElement("div");
   box.className = "knob";
@@ -804,8 +806,14 @@ function syncTimbreRouting() {
   const drums = !!preset?.drums;
   $("load-wav").hidden = drums;
   document.querySelector(".sample-panel").hidden = drums;
-  $("grain-controls").closest("section").hidden =
-    drums && !preset.drums.granular;
+  const grains = $("grain-engine");
+  grains.hidden = drums && !preset.drums.granular;
+  const grainSlot = document.querySelector(".drum-grain-slot");
+  if (drums && grainSlot && grains.parentElement !== grainSlot)
+    grainSlot.append(grains);
+  else if (!drums && $("grain-engine-home").nextElementSibling !== grains)
+    $("grain-engine-home").after(grains);
+  $("drum-grain-count").hidden = !drums;
   const transport = document.querySelector(".transport");
   if (drums && transport.nextElementSibling !== $("drum-machine"))
     $("drum-machine").before(transport);
@@ -2448,7 +2456,23 @@ const DESTINATIONS = [
   ["diffuse", "First reverb diffuse"],
   ["volume", "Volume"],
 ];
+function removeModulator(kind) {
+  const bank = kind === "lfo" ? "lfos" : "envs";
+  const countKey = `${kind}_count`;
+  const count = preset[countKey] || 3;
+  if (count <= 3) return;
+  preset[bank][count - 1] = structuredClone(presets[0][bank][count - 1]);
+  preset[countKey] = count - 1;
+  preset.matrix = preset.matrix.filter((route) => route.source !== `${kind}${count}`);
+  if (kind === "lfo") scopes[count - 1].values = [];
+  syncLfos();
+  syncEnvs();
+  syncMatrix();
+  refreshColorDestinations();
+  schedulePreset();
+}
 function buildLfos() {
+  $("lfo-remove").onclick = () => removeModulator("lfo");
   $("lfo-add").onclick = () => {
     if ((preset.lfo_count || 3) >= 8) return;
     preset.lfo_count = (preset.lfo_count || 3) + 1;
@@ -2498,6 +2522,8 @@ function syncLfos() {
   const count = preset.lfo_count || 3;
   $("lfo-count").textContent = `${count} / 8`;
   $("lfo-add").disabled = count >= 8;
+  $("lfo-remove").hidden = count <= 3;
+  $("lfo-remove").setAttribute("aria-label", `Remove LFO ${count}`);
   for (let i = 0; i < scopes.length; i++) {
     const card = scopes[i].card,
       l = preset.lfos[i];
@@ -2531,6 +2557,7 @@ const envTime = (seconds) =>
 const signedPercent = (value) =>
   `${value > 0 ? "+" : ""}${Math.round(value * 100)}%`;
 function buildEnvs() {
+  $("env-remove").onclick = () => removeModulator("env");
   $("env-add").onclick = () => {
     if ((preset.env_count || 3) >= 8) return;
     preset.env_count = (preset.env_count || 3) + 1;
@@ -2593,6 +2620,8 @@ function syncEnvs() {
   const count = preset.env_count || 3;
   $("env-count").textContent = `${count} / 8`;
   $("env-add").disabled = count >= 8;
+  $("env-remove").hidden = count <= 3;
+  $("env-remove").setAttribute("aria-label", `Remove ENV ${count}`);
   for (let i = 0; i < envCards.length; i++) {
     const { card, routes } = envCards[i],
       env = preset.envs[i];
@@ -3464,6 +3493,7 @@ async function poll() {
       next.center * next.sample_seconds,
     );
     $("grain-count").textContent = next.active_grains;
+    $("drum-grain-count").textContent = `${next.active_grains} grains`;
     $("play").setAttribute("aria-pressed", String(next.playing));
     $("play-icon").textContent = next.playing ? "Ⅱ" : "▶";
     $("play-label").textContent = next.playing ? "Pause" : "Play";

@@ -299,7 +299,7 @@
       this.views = new Map();
       this.knobs = [];
       defs.forEach((d, i) => Object.assign(d, catalog.controls[i]));
-      root.innerHTML = `<div class="section-heading"><h2>Drum machine <span>DXM-088</span></h2><div class="drum-global"><label class="check"><input type="checkbox" aria-label="Drum granular processing">Granular</label></div></div><div class="drum-pages" role="tablist" aria-label="Drum pattern pages"></div><div class="drum-pattern-scroll"><div class="drum-pattern" role="group" aria-label="Drum steps"></div></div><div class="drum-track-settings"></div><div class="drum-step-panel"><div class="drum-step-title"></div><div class="drum-step-knobs knob-grid"></div><div class="drum-step-extras"></div></div><div class="drum-voice-tabs" role="tablist" aria-label="Drum voices"></div><div class="drum-voice-controls"></div>`;
+      root.innerHTML = `<div class="section-heading"><h2>Drum machine <span>DXM-088</span></h2><div class="drum-global"><label class="check"><input type="checkbox" aria-label="Drum granular processing">Granular</label></div></div><div class="drum-grain-slot"></div><div class="drum-pages" role="tablist" aria-label="Drum pattern pages"></div><div class="drum-pattern-scroll"><div class="drum-pattern" role="group" aria-label="Drum steps"></div></div><div class="drum-track-settings"></div><div class="drum-step-panel"><div class="drum-step-title"></div><div class="drum-step-knobs knob-grid"></div><div class="drum-step-extras"></div></div><div class="drum-voice-tabs" role="tablist" aria-label="Drum voices"></div><div class="drum-voice-controls"></div>`;
       this.granular = root.querySelector(
         '[aria-label="Drum granular processing"]',
       );
@@ -327,6 +327,7 @@
       names.forEach((name, i) => {
         const tab = button(name, `${name} voice`, () => {
           this.view().voice = i;
+          this.view().track = i;
           this.signature = "";
           this.sync();
         });
@@ -447,6 +448,7 @@
         const title = el("div", "drum-track-label");
         const select = button(name, `${name} track`, () => {
           this.view().track = t;
+          this.view().voice = t;
           this.signature = "";
           this.sync();
         });
@@ -459,6 +461,7 @@
           const step = view.page * 16 + i;
           const hit = button("", `${name} step ${step + 1}`, (e) => {
             this.view().track = t;
+            this.view().voice = t;
             this.view().step = step;
             if (!e.shiftKey) {
               const current = this.settings().tracks[t];
@@ -812,6 +815,10 @@
         hit.classList.toggle("outside", s >= settings.tracks[t].length);
         hit.style.setProperty("--velocity", step.velocity);
       }
+      for (const [track, row] of [...this.root.querySelectorAll(".drum-track-label")].entries())
+        row.querySelector("button").setAttribute(
+          "aria-pressed", String(track === v.track),
+        );
       this.fields.forEach((update) => update());
       this.knobs.forEach((update) => update());
     }

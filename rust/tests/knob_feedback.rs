@@ -153,8 +153,25 @@ fn every_visible_effect_knob_has_a_stable_key_and_correct_mapping() {
             let key = format!("color:{}:{}", slot.id, parameter.key());
             let s = e.knob_states()[&key];
             let mut base = slot;
-            close(s.min, (*base.parameter_mut(parameter) - 0.25).max(0.0));
-            close(s.max, (*base.parameter_mut(parameter) + 0.25).min(1.0));
+            if parameter == C::LcrRatio {
+                let seconds = |ratio| {
+                    sad_pet::radias_delay::seconds(
+                        slot.settings.lcr_sync,
+                        ratio,
+                        0.0,
+                        8.0 / 13.0,
+                        120.0,
+                        false,
+                    )
+                };
+                let (low, high) = (seconds(0.0), seconds(1.0));
+                let base = seconds(slot.settings.lcr_ratio);
+                close(seconds(s.min), (base - 0.25 * (high - low)).max(low));
+                close(seconds(s.max), (base + 0.25 * (high - low)).min(high));
+            } else {
+                close(s.min, (*base.parameter_mut(parameter) - 0.25).max(0.0));
+                close(s.max, (*base.parameter_mut(parameter) + 0.25).min(1.0));
+            }
             let mut actual = *e
                 .modulated_color_slots()
                 .iter()

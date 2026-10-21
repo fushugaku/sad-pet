@@ -4,9 +4,9 @@ on:
   push:
     branches: [main, 'codex/daw-plugins']
     tags: ['plugins-v*']
-    paths: ['plugin/**', 'rust/**', 'vendor/**', 'Cargo.toml', 'Cargo.lock', 'wasm/test-presets.mjs', 'wasm/test-parameters.mjs', 'wasm/test-sequencer-ui.mjs', 'wasm/test-imported*.mjs', '.github/workflows/plugins.yml']
+    paths: ['plugin/**', 'rust/**', 'vendor/**', 'Cargo.toml', 'Cargo.lock', 'wasm/test-presets.mjs', 'wasm/test-parameters.mjs', 'wasm/test-sequencer-ui.mjs', 'wasm/test-controls-ui.mjs', 'wasm/test-imported*.mjs', '.github/workflows/plugins.yml']
   pull_request:
-    paths: ['plugin/**', 'rust/**', 'vendor/**', 'Cargo.toml', 'Cargo.lock', 'wasm/test-presets.mjs', 'wasm/test-parameters.mjs', 'wasm/test-sequencer-ui.mjs', 'wasm/test-imported*.mjs', '.github/workflows/plugins.yml']
+    paths: ['plugin/**', 'rust/**', 'vendor/**', 'Cargo.toml', 'Cargo.lock', 'wasm/test-presets.mjs', 'wasm/test-parameters.mjs', 'wasm/test-sequencer-ui.mjs', 'wasm/test-controls-ui.mjs', 'wasm/test-imported*.mjs', '.github/workflows/plugins.yml']
   workflow_dispatch:
 
 permissions:
@@ -48,13 +48,14 @@ jobs:
           cargo test -p sad-pet --lib --no-default-features --features source-worker --locked
           cargo test -p sad-pet --no-default-features --test parameter_updates --locked
           cargo test -p sad-pet --no-default-features --test neuropolis --locked
-          cargo test -p sad-pet --no-default-features --test delays --test knob_feedback --locked
+          cargo test -p sad-pet --no-default-features --test delays --test knob_feedback --test drums_processing --locked
           cargo test -p sad-pet --no-default-features --test modulators --locked
           cargo test -p sad-pet --no-default-features --test rustias_filters --locked
           node wasm/test-presets.mjs
           node wasm/test-effect-presets.mjs
           node wasm/test-parameters.mjs
           node wasm/test-sequencer-ui.mjs
+          node wasm/test-controls-ui.mjs
           cargo test -p sad-pet --no-default-features --test imported_fx --locked
           node wasm/test-imported-ui.mjs
           node wasm/test-filters-ui.mjs

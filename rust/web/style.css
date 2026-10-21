@@ -3652,6 +3652,10 @@ input[type="range"] {
   align-items: center;
   gap: 12px;
 }
+.drum-grain-slot > .bank {
+  margin: 8px 0 20px;
+  padding-block: 16px;
+}
 .drum-pages,
 .drum-voice-tabs {
   display: flex;
