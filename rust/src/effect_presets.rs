@@ -65,13 +65,15 @@ pub fn factory() -> Vec<FactoryPreset> {
     // and 17 little-endian 12-bit control values. Apply the same pre-Dub
     // upgrades as KekLocator's PresetBank::from_elb / original firmware.
     let echo = ECHO_BANK[16..]
-        .chunks_exact(50)
+        .as_chunks::<50>()
+        .0
+        .iter()
         .enumerate()
         .map(|(index, row)| {
             let end = row[..16].iter().position(|&b| b == 0).unwrap_or(16);
             let mut values = [0.0; 20];
-            for (value, bytes) in values.iter_mut().zip(row[16..].chunks_exact(2)) {
-                *value = u16::from_le_bytes([bytes[0], bytes[1]]) as f32 / 4095.0;
+            for (value, bytes) in values.iter_mut().zip(row[16..].as_chunks::<2>().0) {
+                *value = u16::from_le_bytes(*bytes) as f32 / 4095.0;
             }
             values[15] = 0.0;
             values[16] = 2047.0 / 4095.0;

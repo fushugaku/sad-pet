@@ -178,8 +178,10 @@ fn main() {
                 let before = std::fs::read(&file).unwrap();
                 assert_eq!(before.len(), output.len(), "{} length", file.display());
                 let differences = before
-                    .chunks_exact(4)
-                    .zip(output.chunks_exact(4))
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .zip(output.as_chunks::<4>().0)
                     .filter(|(a, b)| a != b)
                     .count();
                 assert_eq!(differences, 0, "{}: changed samples", file.display());

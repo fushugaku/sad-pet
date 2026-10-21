@@ -61,7 +61,9 @@ fn processor(rate: u32, s: ColorSlot) -> ColorProcessor {
     p
 }
 fn q31(data: &[u8]) -> Vec<[f32; 2]> {
-    data.chunks_exact(8)
+    data.as_chunks::<8>()
+        .0
+        .iter()
         .map(|f| {
             std::array::from_fn(|c| {
                 i32::from_le_bytes(f[c * 4..c * 4 + 4].try_into().unwrap()) as f32 / 2147483648.0
