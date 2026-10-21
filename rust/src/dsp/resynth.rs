@@ -218,6 +218,8 @@ pub struct Resynth {
     wet_target: f32,
     frame: u64,
     lfo: i16,
+    /// Advances with every configuration that can change carrier controls.
+    control_epoch: u64,
 }
 impl Resynth {
     pub fn new(sr: u32) -> Self {
@@ -258,6 +260,7 @@ impl Resynth {
             wet_target: 0.0,
             frame: 0,
             lfo: 0,
+            control_epoch: 0,
         }
     }
     pub fn clear(&mut self) {
@@ -438,6 +441,7 @@ impl Resynth {
         self.settings = settings;
         self.pcm_source = pcm_source;
         self.configured = true;
+        self.control_epoch += 1;
     }
     pub fn active(&self) -> bool {
         self.wet > 0.0 || self.wet_target > 0.0
@@ -459,8 +463,9 @@ impl Resynth {
         sample: &SampleBuffer,
         range: &Range<usize>,
     ) -> Stereo {
-        self.process_with_grains(dry, source, dry, lfo, voice_scale, sample, range)
+        self.process_with_grains(dry, source, dry, lfo, voice_scale, sample, range, true)
     }
+    /// `running` is the transport: stopped and fully silent, carriers pause.
     #[inline]
     #[allow(clippy::too_many_arguments)]
     pub fn process_with_grains(
@@ -472,6 +477,7 @@ impl Resynth {
         voice_scale: f32,
         sample: &SampleBuffer,
         range: &Range<usize>,
+        running: bool,
     ) -> Stereo {
         if !self.active() {
             return dry;
@@ -531,6 +537,11 @@ impl Resynth {
         for layer in &mut self.layers {
             layer.gain += (layer.target_gain - layer.gain).clamp(-1.0 / 128.0, 1.0 / 128.0);
         }
+        // With every band gain exactly zero, each carrier adds an exact zero.
+        // While stopped they pause there instead of rendering silence, and later
+        // resume from their own phases. During playback they always run, so
+        // rendered audio is unchanged.
+        let paused = !running && self.gains.iter().all(|&gain| gain == 0.0);
         let mut wet = [0.0; 2];
         for sub in 0..self.oversample {
             wet = [0.0; 2];
@@ -542,7 +553,9 @@ impl Resynth {
             };
             for layer_id in 0..MAX_OSCILLATORS {
                 let layer = &mut self.layers[layer_id];
-                if !self.needed[layer_id] && layer.target_gain == 0.0 && layer.gain == 0.0 {
+                if paused
+                    || (!self.needed[layer_id] && layer.target_gain == 0.0 && layer.gain == 0.0)
+                {
                     self.feedback[layer_id].fill(0.0);
                     self.taps[layer_id].fill(0.0);
                     self.wraps[layer_id].fill(false);
@@ -631,6 +644,7 @@ impl Resynth {
                                     frame,
                                     layer_id * BANDS + band,
                                     sync,
+                                    self.control_epoch,
                                 )
                                 .0 as f32
                                 / 1073741824.0;
@@ -745,6 +759,7 @@ mod tests {
                     1.0,
                     &sample,
                     &(0..sample.len()),
+                    true,
                 )[0]
             })
             .collect()
@@ -937,6 +952,87 @@ mod tests {
         let out = engine.process(dry, [1.0; 2], 0.0, 1.0, &sample, &(0..sample.len()));
         assert_eq!(dry.map(f32::to_bits), out.map(f32::to_bits));
     }
+    #[test]
+    fn stopped_carriers_pause_in_silence_without_changing_the_output() {
+        let (mut playing, sample, mut settings) = setup(48000);
+        let (mut stopping, _, _) = setup(48000);
+        settings.count = 4;
+        for (i, o) in settings.oscillators.iter_mut().enumerate() {
+            o.waveform = [
+                Waveform::Saw,
+                Waveform::Sine,
+                Waveform::Formant,
+                Waveform::Triangle,
+            ][i];
+            if i == 1 {
+                o.model = Model::Wavefolder;
+            }
+        }
+        playing.configure(settings, &sample, 60.0);
+        stopping.configure(settings, &sample, 60.0);
+        let range = 0..sample.len();
+        let phases = |r: &Resynth| {
+            (
+                r.layers[0].carriers[3].oscillator.phase.0,
+                r.layers[1].carriers[3].folder.phase,
+            )
+        };
+        let mut paused = 0;
+        // Play a tone, stop at frame 12000 and stay silent: the stopped copy
+        // pauses once every band has closed, sample for sample identical.
+        for n in 0..60_000 {
+            let input = if n < 12_000 {
+                tone(n, 440.0, 48000)
+            } else {
+                [0.0; 2]
+            };
+            let before = phases(&stopping);
+            let a = playing.process_with_grains(
+                [0.1, -0.2],
+                input,
+                input,
+                0.0,
+                1.0,
+                &sample,
+                &range,
+                true,
+            );
+            let b = stopping.process_with_grains(
+                [0.1, -0.2],
+                input,
+                input,
+                0.0,
+                1.0,
+                &sample,
+                &range,
+                n < 12_000,
+            );
+            assert_eq!(a.map(f32::to_bits), b.map(f32::to_bits), "frame {n}");
+            if n >= 12_000 && stopping.gains.iter().all(|&g| g == 0.0) {
+                assert_eq!(
+                    phases(&stopping),
+                    before,
+                    "carriers advanced while paused at {n}"
+                );
+                paused += 1;
+            }
+        }
+        assert!(paused > 30_000, "paused for only {paused} frames");
+        assert_ne!(phases(&playing), phases(&stopping));
+        // Both resume normally; only their oscillator phases differ.
+        let mut energy = [0.0; 2];
+        for n in 0..12_000 {
+            let input = tone(n, 440.0, 48000);
+            for (r, e) in [&mut playing, &mut stopping].into_iter().zip(&mut energy) {
+                let out =
+                    r.process_with_grains([0.0; 2], input, input, 0.0, 1.0, &sample, &range, true);
+                assert!(out.iter().all(|x| x.is_finite()));
+                *e += out[0] * out[0];
+            }
+        }
+        assert!(energy.iter().all(|&e| e > 0.001), "{energy:?}");
+    }
+
     #[test]
     fn four_independent_layers_cross_feedback_and_pcm_trim_stay_bounded() {
         let (mut engine, sample, mut settings) = setup(48000);

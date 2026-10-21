@@ -36,6 +36,9 @@ pub(crate) struct Controller {
     inputs: Option<ControlInputs>,
     target: i16,
     parameters: Option<PrimaryParameters>,
+    /// (configuration epoch, LFO) at the last full input comparison. Inputs
+    /// change only with one of these, so an equal key means equal inputs.
+    seen: Option<(u64, i16)>,
 }
 // The plan owns immutable tables. A new plan/table identity invalidates the
 // cache; oscillator history, feedback and four-frame slew never live here.
@@ -58,6 +61,7 @@ impl Default for Controller {
             inputs: None,
             target: 0,
             parameters: None,
+            seen: None,
         }
     }
 }
@@ -77,6 +81,7 @@ impl Controller {
         frame: u64,
         id: usize,
         sync: bool,
+        epoch: u64,
     ) -> Sample {
         let fresh = self.selection != program.selection;
         if fresh {
@@ -93,16 +98,18 @@ impl Controller {
             self.noise = tables.noise.compile(program, code, lfo, modulation);
             self.inputs = None;
             self.parameters = None;
+            self.seen = None;
         }
-        let inputs = ControlInputs {
+        let inputs = (self.seen != Some((epoch, lfo))).then_some(ControlInputs {
             program,
             increment,
             code,
             lfo,
             modulation,
             tables: tables as *const Tables as usize,
-        };
-        let changed = self.inputs != Some(inputs);
+        });
+        self.seen = Some((epoch, lfo));
+        let changed = inputs.is_some() && self.inputs != inputs;
         let weights = SlewWeights {
             target: 0x1d4,
             memory: 0x7e2d,
@@ -119,7 +126,7 @@ impl Controller {
                     radias_synth_domain::noise_control::formant_frequency(increment)
                 };
                 noise.receive_pitch(increment, coefficient);
-                self.inputs = Some(inputs);
+                self.inputs = inputs;
             }
             if fresh {
                 noise.initialize_targets();
@@ -168,7 +175,7 @@ impl Controller {
                 _ => {}
             }
             self.parameters = Some(parameters);
-            self.inputs = Some(inputs);
+            self.inputs = inputs;
         }
         let mut parameters = self.parameters.unwrap();
         match &mut parameters {

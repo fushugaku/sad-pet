@@ -16,9 +16,15 @@ fn main() {
     std::fs::create_dir_all(&folder).unwrap();
     for rate in [44_100, 48_000, 96_000] {
         let sample = Arc::new(SampleBuffer::demo(rate));
-        for case in 0..11 {
-            let mut p = Preset::builtin(case % 5);
-            if case >= 3 {
+        for case in 0..12 {
+            // Case 11 is the first-open glasses5 scene with four Resynth layers.
+            let glasses5 = case == 11;
+            let mut p = if glasses5 {
+                sad_pet::startup::preset()
+            } else {
+                Preset::builtin(case % 5)
+            };
+            if (3..11).contains(&case) {
                 p.params.grains = 1.0;
                 p.params.grain_size = 0.9;
                 p.params.filter_routing = FilterRouting::Serial;
@@ -66,7 +72,7 @@ fn main() {
                     .collect();
             }
             // Expanded f64 and fixed-point filter models, then drums and imported FX.
-            if case >= 8 {
+            if (8..11).contains(&case) {
                 let models = [
                     (FilterModel::LadderLp24, FilterModel::LinearBp24),
                     (FilterModel::ProLp24, FilterModel::MultiFilter),
@@ -95,7 +101,16 @@ fn main() {
                 }];
             }
             p.params.loop_one_bar = case == 5;
-            let mut e = Engine::new(rate, sample.clone(), p);
+            let source = if glasses5 {
+                sad_pet::startup::sample()
+            } else {
+                sample.clone()
+            };
+            let mut e = Engine::new(rate, source, p);
+            if glasses5 {
+                e.set_fades(sad_pet::startup::FADES).unwrap();
+                e.set_midi_gate(false);
+            }
             if case == 2 || case == 5 {
                 e.set_region(Region {
                     start: 0.251,
@@ -114,7 +129,7 @@ fn main() {
                 e.set_live_input(true, false);
             }
             e.set_playing(true);
-            if case >= 3 {
+            if (3..11).contains(&case) {
                 e.set_midi_gate(true);
                 for note in [36, 48, 55, 60, 67, 72, 79, 91] {
                     e.midi(Message::NoteOn {
@@ -143,6 +158,10 @@ fn main() {
                 }
                 if case == 10 && n % 23 == 0 {
                     e.trigger_drum(n / 23 % 7, 0.8);
+                }
+                if glasses5 && n == 600 {
+                    // Stopped and never restarted: Resynth tails, then silence.
+                    e.set_playing(false);
                 }
                 if n == 280 {
                     e.set_frozen(true);

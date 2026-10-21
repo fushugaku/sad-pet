@@ -2150,6 +2150,7 @@ impl Engine {
             dry_scale,
             &self.sample,
             &self.file_range,
+            self.playing,
         );
         let pre_output = self.pre_color_rack.process(resynth_output);
         let correction = if self.pre_color_rack.is_active() || resynth_active {
