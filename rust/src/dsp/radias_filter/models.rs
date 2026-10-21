@@ -4,6 +4,8 @@
 //! model; parameter caches contain no signal history. Firmware-free.
 //! Both channels share one parameter state and run as two independent lanes,
 //! each with the exact per-channel operations, so they can use one vector op.
+use crate::dsp::fast::flush64;
+
 pub type Lanes = [f64; 2];
 
 #[inline(always)]
@@ -173,7 +175,11 @@ impl Model {
         self.previous = input;
         // A short output smoother also de-clicks a live model change.
         for (output, result) in self.output.iter_mut().zip(result) {
-            *output += (result.clamp(-4.0, 4.0) - *output) * self.smoothing;
+            *output = flush64(*output + (result.clamp(-4.0, 4.0) - *output) * self.smoothing);
+        }
+        // Decaying integrators leave the subnormal range long before they matter.
+        for lane in self.poles.iter_mut().chain(self.svf.iter_mut()) {
+            *lane = lane.map(flush64);
         }
         self.output
     }

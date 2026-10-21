@@ -62,8 +62,10 @@ impl Resampler {
         let fraction = (phase - index as f64) as f32;
         let mut out = [0.; OUTPUT_CHANNELS];
         for i in 0..TAPS {
-            let weight = (self.coefficients[index + 1][i] - self.coefficients[index][i])
-                .mul_add(fraction, self.coefficients[index][i]);
+            // Plain multiply-add: WebAssembly has no fused multiply-add, so
+            // `mul_add` would call a software routine for every tap.
+            let weight = (self.coefficients[index + 1][i] - self.coefficients[index][i]) * fraction
+                + self.coefficients[index][i];
             let value = self.history[(self.head + TAPS - i) % TAPS];
             for c in 0..channels {
                 out[c] += value[c] * weight;

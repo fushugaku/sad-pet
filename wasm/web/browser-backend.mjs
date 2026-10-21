@@ -90,6 +90,8 @@ export class BrowserBackend {
     );
     this.telemetry.onmessage = (message) => this.workerMessage(message);
     this.recorder.onmessage = (message) => this.workerMessage(message);
+    // The optional SIMD engine (build.py --simd) renders identical samples
+    // but measured slower in V8, so the baseline engine is loaded.
     const module = await compileEngine(new URL("./sad_pet.wasm", import.meta.url));
     await Promise.all([
       this.worker.call("init", { module, rate: this.rate }),

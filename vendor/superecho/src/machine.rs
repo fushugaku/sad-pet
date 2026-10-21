@@ -40,6 +40,9 @@ fn crossing_memory(pc: u32, address: u32, operation: &str) -> Fault {
 }
 
 pub struct Machine {
+    /// Tests compare the fused ITCM dispatch against the page dispatcher.
+    #[cfg(test)]
+    pub reference_dispatch: bool,
     pub registers: [u8; 2048],
     pub itcm: Vec<u8>,
     pub dtcm: Vec<u8>,
@@ -64,6 +67,8 @@ impl Machine {
         dtcm[..0x1f60].copy_from_slice(&ROM[0x37398..0x392f8]);
         dtcm[0x1f60..0x2674].copy_from_slice(&ROM[0x3c7f8..0x3cf0c]);
         Self {
+            #[cfg(test)]
+            reference_dispatch: false,
             registers: [0; 2048],
             itcm: ROM[0x392f8..0x3c7f8].to_vec(),
             dtcm,
@@ -222,7 +227,15 @@ impl Machine {
                 return Err(self.fault("instruction budget exceeded"));
             }
             if !self.host_call()? {
-                self.pc = crate::generated::run_block(self, self.pc)?;
+                #[cfg(test)]
+                let fused = !self.reference_dispatch;
+                #[cfg(not(test))]
+                let fused = true;
+                self.pc = if fused {
+                    crate::fused::step(self, self.pc)?
+                } else {
+                    crate::generated::run_block(self, self.pc)?
+                };
             }
         }
         Ok(self.reg(0x20, 4) as u32)

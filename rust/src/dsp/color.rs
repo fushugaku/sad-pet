@@ -1,6 +1,7 @@
 use super::compressor::Compressor;
 use super::delay::RadiasDelay;
 use super::effects::{Delay, Effects};
+use super::fast;
 use super::radias_waveshaper::{RadiasWaveshaper, WaveshaperMode};
 use crate::{
     Stereo,
@@ -305,16 +306,19 @@ impl ColorProcessor {
                 let bias = self.bias;
                 let offset = self.bias_offset;
                 std::array::from_fn(|c| {
-                    let shaped = ((frame[c] * self.drive + bias).tanh() - offset) / self.drive_sqrt;
+                    let shaped =
+                        (fast::tanh(frame[c] * self.drive + bias) - offset) / self.drive_sqrt;
                     // Remove the DC produced by asymmetric clipping.
                     let highpass = shaped - self.dc_input[c] + self.dc_r * self.dc_output[c];
                     self.dc_input[c] = shaped;
-                    self.dc_output[c] = highpass;
+                    self.dc_output[c] = fast::flush(highpass);
                     let input = if bias.abs() > 1e-6 { highpass } else { shaped };
                     if s.distortion_tone >= 0.999 {
                         self.tone_state[c] = input;
                     } else {
-                        self.tone_state[c] += self.tone_alpha * (input - self.tone_state[c]);
+                        self.tone_state[c] = fast::flush(
+                            self.tone_state[c] + self.tone_alpha * (input - self.tone_state[c]),
+                        );
                     }
                     self.tone_state[c]
                 })
@@ -331,7 +335,9 @@ impl ColorProcessor {
                 }
                 self.hold_clock -= 1.0;
                 std::array::from_fn(|c| {
-                    self.smoothed[c] += self.smooth_alpha * (self.held[c] - self.smoothed[c]);
+                    self.smoothed[c] = fast::flush(
+                        self.smoothed[c] + self.smooth_alpha * (self.held[c] - self.smoothed[c]),
+                    );
                     self.smoothed[c]
                 })
             }
@@ -352,8 +358,8 @@ impl ColorProcessor {
                     self.base_delay + self.excursion * tables::sine(self.phase + self.stereo),
                 )[1];
                 self.delay.push([
-                    (frame[0] + l * self.feedback).clamp(-8.0, 8.0),
-                    (frame[1] + r * self.feedback).clamp(-8.0, 8.0),
+                    fast::flush((frame[0] + l * self.feedback).clamp(-8.0, 8.0)),
+                    fast::flush((frame[1] + r * self.feedback).clamp(-8.0, 8.0)),
                 ]);
                 self.phase = super::sample::wrap_position(self.phase + self.phase_step, 1.0);
                 [(frame[0] + l) * 0.7, (frame[1] + r) * 0.7]
@@ -362,8 +368,8 @@ impl ColorProcessor {
                 let delayed = self.delay.read(self.base_delay);
                 self.delay.push(frame);
                 let crossfeed = s.binaural_crossfeed * 0.75;
-                let left = (frame[0] + delayed[1] * crossfeed).tanh();
-                let right = (frame[1] + delayed[0] * crossfeed).tanh();
+                let left = fast::tanh(frame[0] + delayed[1] * crossfeed);
+                let right = fast::tanh(frame[1] + delayed[0] * crossfeed);
                 let mid = (left + right) * 0.5;
                 let side = (left - right) * s.binaural_width;
                 [mid + side, mid - side]

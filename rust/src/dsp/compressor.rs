@@ -1,4 +1,5 @@
 //! Feed-forward peak compressor with a stereo-linked detector and soft knee.
+use super::fast;
 use crate::{Stereo, color::ColorSettings};
 
 pub struct Compressor {
@@ -52,7 +53,7 @@ impl Compressor {
         // Both channels receive the same gain, preserving their balance even
         // when a transient arrives on just one side. No lookahead or latency.
         let peak = frame[0].abs().max(frame[1].abs()).max(1e-12);
-        let over = 20.0 * peak.log10() - self.threshold_db;
+        let over = fast::db(peak) - self.threshold_db;
         let half_knee = self.knee_db * 0.5;
         let target = if over <= -half_knee {
             0.0
@@ -68,8 +69,8 @@ impl Compressor {
         } else {
             self.release_alpha
         };
-        self.reduction_db += alpha * (target - self.reduction_db);
-        let gain = self.makeup_gain * 10.0_f32.powf(-self.reduction_db / 20.0);
+        self.reduction_db = fast::flush(self.reduction_db + alpha * (target - self.reduction_db));
+        let gain = self.makeup_gain * fast::gain_db(-self.reduction_db);
         [frame[0] * gain, frame[1] * gain]
     }
 }

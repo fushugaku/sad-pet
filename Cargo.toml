@@ -7,3 +7,11 @@ resolver = "2"
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+# Browser engine. Fat LTO and abort-on-panic remove unwinding paths and let
+# LLVM optimize across every crate; float arithmetic is unchanged, so renders
+# stay bit-identical to the release profile.
+[profile.wasm]
+inherits = "release"
+lto = "fat"
+panic = "abort"

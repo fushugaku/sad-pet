@@ -42,3 +42,30 @@ try {
   WebAssembly.compile = compile;
 }
 console.log("WASM loader: streamed compilation, generic MIME/older webview fallback and download/compile errors passed.");
+
+// The SIMD engine is chosen only where the browser can run it, and a missing
+// or rejected SIMD file falls back to the baseline engine.
+const simdFetch = globalThis.fetch;
+try {
+  const requested = [];
+  const module = (status = 200) => new Response(status === 200 ? wasm : "missing", {
+    status,
+    headers: { "content-type": "application/wasm" },
+  });
+  globalThis.fetch = async (url) => {
+    requested.push(String(url));
+    return module(String(url).includes("simd") ? 404 : 200);
+  };
+  assert.ok(await compileEngine("engine.wasm", "engine.simd.wasm") instanceof WebAssembly.Module);
+  const simd = WebAssembly.validate(Uint8Array.of(0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11));
+  assert.deepEqual(requested, simd ? ["engine.simd.wasm", "engine.wasm"] : ["engine.wasm"]);
+  requested.length = 0;
+  globalThis.fetch = async (url) => {
+    requested.push(String(url));
+    return module();
+  };
+  assert.ok(await compileEngine("engine.wasm", "engine.simd.wasm") instanceof WebAssembly.Module);
+  assert.deepEqual(requested, simd ? ["engine.simd.wasm"] : ["engine.wasm"]);
+} finally {
+  globalThis.fetch = simdFetch;
+}

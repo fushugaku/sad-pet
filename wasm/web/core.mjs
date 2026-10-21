@@ -109,7 +109,7 @@ export class Core extends Abi {
       this.snapshotView.byteOffset !== pointer
     )
       this.snapshotView = new Uint8Array(memory, pointer, length);
-    for (let i = 0; i < length; i++) target[i] = this.snapshotView[i];
+    target.set(this.snapshotView.subarray(0, length));
     return length;
   }
   sourceChunk(bytes, offset) {
@@ -121,7 +121,7 @@ export class Core extends Abi {
       this.sourceView.byteOffset !== pointer
     )
       this.sourceView = new Uint8Array(memory, pointer, 32768);
-    for (let i = 0; i < length; i++) this.sourceView[i] = bytes[offset + i];
+    this.sourceView.set(bytes.subarray(offset, offset + length));
     this.sourceCopied = length;
     return this.wasm.sad_source_push(length / 8);
   }

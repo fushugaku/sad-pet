@@ -525,7 +525,8 @@ impl Resynth {
             } else {
                 0.0
             };
-            self.gains[band] += (gain - self.gains[band]) * 0.0625;
+            self.gains[band] =
+                super::fast::flush(self.gains[band] + (gain - self.gains[band]) * 0.0625);
         }
         for layer in &mut self.layers {
             layer.gain += (layer.target_gain - layer.gain).clamp(-1.0 / 128.0, 1.0 / 128.0);

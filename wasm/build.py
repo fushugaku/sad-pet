@@ -39,10 +39,41 @@ def strip_debug_names(data):
     return output
 
 
+def cargo_build(env, target, simd):
+    """Compile the engine; the SIMD variant keeps its own target directory."""
+    env = env.copy()
+    if simd:
+        target = target.with_name(target.name + "-simd")
+        env["RUSTFLAGS"] = (env.get("RUSTFLAGS", "") + " -C target-feature=+simd128").strip()
+    env["CARGO_TARGET_DIR"] = str(target)
+    subprocess.run([
+        "cargo", "build", "--locked", "--profile", "wasm", "--target", "wasm32-unknown-unknown",
+        "-p", "sad-pet-wasm",
+    ], cwd=ROOT, env=env, check=True)
+    return target / "wasm32-unknown-unknown" / "wasm" / "sad_pet_wasm.wasm"
+
+
+def optimize(wasm_opt, level, path, simd):
+    """Binaryen keeps IEEE float semantics without --fast-math: identical renders."""
+    features = [
+        "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext",
+        "--enable-mutable-globals", "--enable-multivalue", "--enable-reference-types",
+    ]
+    if simd:
+        features.append("--enable-simd")
+    subprocess.run([wasm_opt, level, *features, "-o", str(path), str(path)], check=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=ROOT / "dist" / "web")
     parser.add_argument("--keep-debug-names", action="store_true", help="Keep WASM names for profiling")
+    parser.add_argument("--wasm-opt", nargs="?", const="-O1", metavar="LEVEL",
+                        help="Also run Binaryen's wasm-opt at LEVEL (default -O1). Off by default: "
+                             "-O3 measured 25-47%% slower on the translated SuperEcho firmware")
+    parser.add_argument("--simd", action="store_true",
+                        help="Also build sad_pet.simd.wasm (+simd128). Experimental: it renders "
+                             "identical samples but measured about 5%% slower in V8")
     args = parser.parse_args()
     env = os.environ.copy()
     # Homebrew's cargo can precede rustup on PATH; use the rustc that owns the
@@ -52,13 +83,24 @@ def main():
     target = Path(env.get("CARGO_TARGET_DIR", ROOT / "target" / "browser"))
     if not target.is_absolute():
         target = ROOT / target
-    env["CARGO_TARGET_DIR"] = str(target)
-    subprocess.run([
-        "cargo", "build", "--locked", "--release", "--target", "wasm32-unknown-unknown",
-        "-p", "sad-pet-wasm",
-    ], cwd=ROOT, env=env, check=True)
+    wasm_opt = None
+    if args.wasm_opt:
+        wasm_opt = env.get("WASM_OPT") or shutil.which("wasm-opt")
+        if wasm_opt is None:
+            raise SystemExit("--wasm-opt needs Binaryen's wasm-opt on PATH or in $WASM_OPT")
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
+    variants = [("sad_pet.wasm", False)] + ([("sad_pet.simd.wasm", True)] if args.simd else [])
+    for name, simd in variants:
+        built = cargo_build(env, target, simd)
+        shutil.copy2(built, output / name)
+        if wasm_opt:
+            optimize(wasm_opt, args.wasm_opt, output / name, simd)
+        if not args.keep_debug_names:
+            wasm = output / name
+            wasm.write_bytes(strip_debug_names(wasm.read_bytes()))
+    if not args.simd:
+        (output / "sad_pet.simd.wasm").unlink(missing_ok=True)
     for name in ("index.html", "app.js", "library.js", "selection.js", "presets.js", "sequence.js", "panels.js", "style.css"):
         shutil.copy2(ROOT / "rust" / "web" / name, output / name)
     index = (output / "index.html").read_text()
@@ -66,10 +108,6 @@ def main():
     index = index.replace("RUST EDITION", "WEBASSEMBLY")
     (output / "index.html").write_text(index)
     shutil.copytree(ROOT / "wasm" / "web", output, dirs_exist_ok=True)
-    shutil.copy2(target / "wasm32-unknown-unknown" / "release" / "sad_pet_wasm.wasm", output / "sad_pet.wasm")
-    if not args.keep_debug_names:
-        wasm = output / "sad_pet.wasm"
-        wasm.write_bytes(strip_debug_names(wasm.read_bytes()))
     (output / "licenses").mkdir(exist_ok=True)
     shutil.copy2(ROOT / "rust/licenses/neuropolis-AGPL-3.0.txt", output / "licenses/neuropolis-AGPL-3.0.txt")
     for name in ("superecho", "alphaverb", "dxm088"):
@@ -84,7 +122,8 @@ def main():
                         lambda match: f'{match[1]}{match[2]}?v={version}{match[1]}', source)
         path.write_text(source)
     (output / ".nojekyll").touch()
-    print(f"Built {output} ({(output / 'sad_pet.wasm').stat().st_size:,} byte WASM engine)")
+    sizes = ", ".join(f"{name} {(output / name).stat().st_size:,} bytes" for name, _ in variants)
+    print(f"Built {output} ({sizes})")
 
 
 if __name__ == "__main__":

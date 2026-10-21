@@ -232,6 +232,7 @@ impl Spec {
                 };
                 if let Some(slot) = slots.get_mut(i) {
                     *slot.parameter_mut(field) = value;
+                    m.color_dirty = true;
                 }
             }
             Target::Performance(field) => {

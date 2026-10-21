@@ -1,5 +1,6 @@
 //! Portable desktop effects. These replace, rather than translate, unresolved
 //! NEON kernels; the original reverb impulse responses are not reproduced.
+use super::fast;
 use crate::{
     Stereo,
     preset::{Params, ReverbType},
@@ -34,17 +35,23 @@ impl Delay {
     }
     pub fn push(&mut self, frame: Stereo) {
         self.frames[self.cursor] = frame;
-        self.cursor = (self.cursor + 1) % self.frames.len();
+        // The cursor is always inside the buffer: wrapping by comparison is the
+        // same as the modulo it replaces, without an integer division per frame.
+        self.cursor += 1;
+        if self.cursor == self.frames.len() {
+            self.cursor = 0;
+        }
     }
     pub fn read(&self, samples: f32) -> Stereo {
+        let len = self.frames.len();
         let position = super::sample::wrap_position(
-            self.cursor as f64 - samples.clamp(1.0, (self.frames.len() - 2) as f32) as f64,
-            self.frames.len() as f64,
+            self.cursor as f64 - samples.clamp(1.0, (len - 2) as f32) as f64,
+            len as f64,
         );
         let i = position as usize;
         let f = (position - i as f64) as f32;
         let a = self.frames[i];
-        let b = self.frames[(i + 1) % self.frames.len()];
+        let b = self.frames[if i + 1 == len { 0 } else { i + 1 }];
         [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]
     }
     pub fn clear(&mut self) {
@@ -157,7 +164,7 @@ impl Effects {
             let b = self
                 .reverse
                 .read((other * window as f32 * 2.0 + 1.0).min(self.sample_rate * 0.55));
-            let wa = (std::f32::consts::PI * phase).sin().powi(2);
+            let wa = fast::sin2_pi(phase);
             input = std::array::from_fn(|i| a[i] * wa + b[i] * (1.0 - wa));
             self.reverse_phase = (self.reverse_phase + 1) % window;
         }
@@ -165,7 +172,7 @@ impl Effects {
             let old =
                 self.diffuser[i].read(self.sample_rate * (if i == 0 { 0.0097 } else { 0.0151 }));
             let gain = p.diffuse * 0.7;
-            let next = std::array::from_fn(|c| input[c] + old[c] * gain);
+            let next = std::array::from_fn(|c| fast::flush(input[c] + old[c] * gain));
             self.diffuser[i].push(next);
             input = std::array::from_fn(|c| old[c] - next[c] * gain);
         }
@@ -175,7 +182,7 @@ impl Effects {
         let other = (phase + 0.5).fract();
         let a = self.shifter.read(1.0 + (1.0 - phase) * shift_window);
         let b = self.shifter.read(1.0 + (1.0 - other) * shift_window);
-        let wa = (std::f32::consts::PI * phase).sin().powi(2);
+        let wa = fast::sin2_pi(phase);
         self.shifter_phase =
             super::sample::wrap_position(self.shifter_phase + 1.0 / shift_window as f64, 1.0);
         input = std::array::from_fn(|c| {
@@ -184,7 +191,8 @@ impl Effects {
         let mut taps = [0.0_f32; 8];
         for (i, tap) in taps.iter_mut().enumerate() {
             let x = self.tank[i].read(self.lengths[i])[0];
-            self.tank_damping[i] += self.tone * (x - self.tank_damping[i]);
+            self.tank_damping[i] =
+                fast::flush(self.tank_damping[i] + self.tone * (x - self.tank_damping[i]));
             *tap = self.tank_damping[i];
         }
         let reflection = taps.iter().sum::<f32>() * 0.25;

@@ -1,7 +1,7 @@
 //! L/C/R and mono-input Mod Delay, adapted from radias-emulator's native
 //! effect_audio.rs. Control tables retain RADIAS ranges; buffers, interpolation
 //! and arithmetic use this desktop engine, not original FXD03 instructions.
-use super::effects::Delay;
+use super::{effects::Delay, fast};
 use crate::{
     Stereo,
     color::{ColorSettings, ColorSlot},
@@ -137,9 +137,13 @@ impl RadiasDelay {
         self.low_alpha = alpha(20.0 + 780.0 * low);
     }
     fn damp(&mut self, channel: usize, sample: f32, low_amount: f32) -> f32 {
-        self.high_state[channel] += self.high_alpha * (sample - self.high_state[channel]);
+        self.high_state[channel] = fast::flush(
+            self.high_state[channel] + self.high_alpha * (sample - self.high_state[channel]),
+        );
         let high = self.high_state[channel];
-        self.low_state[channel] += self.low_alpha * (high - self.low_state[channel]);
+        self.low_state[channel] = fast::flush(
+            self.low_state[channel] + self.low_alpha * (high - self.low_state[channel]),
+        );
         high - self.low_state[channel] * low_amount
     }
     pub fn process(&mut self, input: Stereo) -> Stereo {
@@ -164,7 +168,7 @@ impl RadiasDelay {
         if self.kind == SaturatorType::LcrDelay {
             let taps: [f32; 3] = std::array::from_fn(|i| self.buffer.read(self.times[i] as f32)[0]);
             let tail = self.damp(0, taps[1], s.lcr_low_damp);
-            let write = (mono * s.lcr_trim + tail * self.feedback).clamp(-8.0, 8.0);
+            let write = fast::flush((mono * s.lcr_trim + tail * self.feedback).clamp(-8.0, 8.0));
             self.buffer.push([write; 2]);
             let center = taps[1] * s.lcr_center_level * 0.707;
             let left = taps[0] * s.lcr_left_level + center;
@@ -180,7 +184,7 @@ impl RadiasDelay {
                 self.buffer.read(self.times[c] as f32 + modulation * depth)[c]
             });
             let write = std::array::from_fn(|c| {
-                (mono + self.damp(c, delayed[c], 0.0) * self.feedback).clamp(-8.0, 8.0)
+                fast::flush((mono + self.damp(c, delayed[c], 0.0) * self.feedback).clamp(-8.0, 8.0))
             });
             self.buffer.push(write);
             self.phase = super::sample::wrap_position(self.phase + self.phase_step, 1.0);

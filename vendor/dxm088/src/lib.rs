@@ -14,6 +14,16 @@ use performance::*;
 use sequencer::*;
 
 pub const MAX_FRAMES: usize = 4096;
+/// Decaying meters and smoothers stop before the subnormal range, where x86
+/// float arithmetic slows by two orders of magnitude.
+#[inline(always)]
+pub(crate) fn flush(x: f32) -> f32 {
+    if x.abs() < 1e-20 {
+        0.0
+    } else {
+        x
+    }
+}
 /// Main stereo pair followed by seven stereo drum outputs.
 pub const OUTPUT_CHANNELS: usize = 16;
 
@@ -534,7 +544,7 @@ impl Engine {
             self.frame_count = self.frame_count.wrapping_add(1);
             for (c, &x) in out[..2].iter().enumerate() {
                 self.output[frame * 2 + c] = x;
-                self.peak[c] = self.peak[c].max(x.abs()) * 0.9995;
+                self.peak[c] = flush(self.peak[c].max(x.abs()) * 0.9995);
             }
             if self.capture_stems {
                 let at = frame * (OUTPUT_CHANNELS - 2);
@@ -565,10 +575,11 @@ impl Engine {
             } else {
                 levels[t]
             };
-            self.smooth_levels[t] += (target - self.smooth_levels[t]) * 0.01;
-            self.meters[t] *= 0.9985;
+            self.smooth_levels[t] =
+                flush(self.smooth_levels[t] + (target - self.smooth_levels[t]) * 0.01);
+            self.meters[t] = flush(self.meters[t] * 0.9985);
         }
-        self.smooth_master += (self.master - self.smooth_master) * 0.004;
+        self.smooth_master = flush(self.smooth_master + (self.master - self.smooth_master) * 0.004);
         let mut mixed = [0i16; 2];
         let mut stems = [[0i16; 2]; TRACKS];
         for v in 0..VOICES {

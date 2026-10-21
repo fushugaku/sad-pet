@@ -1,5 +1,5 @@
 //! Two independent stereo filters for each voice, before the shared color/reverb.
-use super::effects::Delay;
+use super::{effects::Delay, fast};
 use crate::{
     Stereo,
     preset::{FilterModel, FilterRouting, FilterType, Params},
@@ -100,8 +100,9 @@ impl Filter {
         }
         if self.kind == FilterType::Comb {
             let delayed = self.comb.read(self.delay);
-            let result =
-                std::array::from_fn(|c| (frame[c] + delayed[c] * self.resonance * 0.92).tanh());
+            let result = std::array::from_fn(|c| {
+                fast::flush(fast::tanh(frame[c] + delayed[c] * self.resonance * 0.92))
+            });
             self.comb.push(result);
             return result;
         }
@@ -112,7 +113,7 @@ impl Filter {
             let v3 = frame[c] - ic2;
             let band = a1 * ic1 + a2 * v3;
             let low = ic2 + a2 * ic1 + a3 * v3;
-            self.state[c] = [2.0 * band - ic1, 2.0 * low - ic2];
+            self.state[c] = [fast::flush(2.0 * band - ic1), fast::flush(2.0 * low - ic2)];
             if self.cutoff >= 0.999 && self.kind == FilterType::LowPass {
                 frame[c]
             } else {
@@ -148,16 +149,21 @@ pub fn cutoff_hz(kind: FilterType, value: f32) -> f32 {
 /// Cutoff modulation in logarithmic frequency space. C4 is the tracking pivot;
 /// 100% tracking shifts the cutoff by one octave per octave played, including bend.
 pub fn voice_cutoffs<const N: usize>(p: &Params, note: f32, envs: [f32; N]) -> [f32; 2] {
+    // ln(200) and ln(1000) once, from the same libm call as before, instead of
+    // a logarithm per voice and filter on every control block.
+    static SPAN_LN: std::sync::LazyLock<[f32; 2]> =
+        std::sync::LazyLock::new(|| [200.0_f32.ln(), 1000.0_f32.ln()]);
+    let span_ln = *SPAN_LN;
     let tracked = |model, kind, base: f32, depth: f32, source: usize, tracking: f32| {
-        let span: f32 = if model != FilterModel::Legacy || kind == FilterType::Comb {
-            200.0
+        let span_ln = if model != FilterModel::Legacy || kind == FilterType::Comb {
+            span_ln[0]
         } else {
-            1000.0
+            span_ln[1]
         };
         (base
             + envs[source] * depth
-            + (note - 60.0) * tracking * std::f32::consts::LN_2 / (12.0 * span.ln()))
-        .clamp(0.0, 1.0)
+            + (note - 60.0) * tracking * std::f32::consts::LN_2 / (12.0 * span_ln))
+            .clamp(0.0, 1.0)
     };
     [
         tracked(

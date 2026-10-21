@@ -25,7 +25,15 @@ pub struct Engine {
 }
 impl Engine {
     pub fn new() -> Result<Self> {
+        Self::build(Machine::new())
+    }
+    #[cfg(test)]
+    pub fn new_reference() -> Result<Self> {
         let mut machine = Machine::new();
+        machine.reference_dispatch = true;
+        Self::build(machine)
+    }
+    fn build(mut machine: Machine) -> Result<Self> {
         // Install the original settings defaults without invoking physical OLED/UART/GPIO setup.
         machine.store(0x20003414, 4, 0x20001234)?;
         for i in 0..36 {
@@ -295,6 +303,105 @@ impl Engine {
             1.0
         } else {
             (self.morph_index as f32 / self.morph_blocks as f32).min(1.0)
+        }
+    }
+}
+
+#[cfg(test)]
+mod fusion_tests {
+    use super::*;
+
+    fn same_state(a: &Machine, b: &Machine, context: &str) {
+        assert!(a.registers == b.registers, "{context}: registers differ");
+        assert!(a.itcm == b.itcm, "{context}: ITCM differs");
+        assert!(a.dtcm == b.dtcm, "{context}: DTCM differs");
+        assert!(a.ocram == b.ocram, "{context}: OCRAM differs");
+        assert_eq!(a.heap_cursor, b.heap_cursor, "{context}: heap cursor");
+        assert!(
+            a.heap[..a.heap_cursor] == b.heap[..b.heap_cursor],
+            "{context}: delay histories differ"
+        );
+        assert_eq!(a.ticks, b.ticks, "{context}: ticks");
+        assert_eq!(a.exclusive, b.exclusive, "{context}: exclusive monitor");
+        assert_eq!(a.irq_enabled, b.irq_enabled, "{context}: irq");
+    }
+
+    #[test]
+    fn fused_itcm_dispatch_matches_the_page_dispatcher_byte_for_byte() {
+        let mut fast = Engine::new().unwrap();
+        let mut reference = Engine::new_reference().unwrap();
+        same_state(&fast.machine, &reference.machine, "after initialization");
+        let mut random = 0x1234_5678_u32;
+        let mut next = || {
+            random = random.wrapping_mul(1664525).wrapping_add(1013904223);
+            random
+        };
+        for scene in 0..6 {
+            let mut values = [0.0_f32; 20];
+            for (id, value) in values.iter_mut().enumerate() {
+                *value = if scene == 0 {
+                    default_values()[id]
+                } else {
+                    ((scene * 31 + id * 17) % 101) as f32 / 100.0
+                };
+            }
+            let sync = scene % 2 == 1;
+            let tempo = 60.0 + scene as f32 * 37.0;
+            for engine in [&mut fast, &mut reference] {
+                engine.set_sync(sync, tempo).unwrap();
+                // Odd scenes morph through the ITCM control tick; even scenes jump.
+                engine
+                    .apply_preset(values, if scene % 2 == 1 { 0.25 } else { 0.0 })
+                    .unwrap();
+                if scene == 4 {
+                    engine.set_locked_parameter(3, 0.4).unwrap();
+                }
+            }
+            same_state(
+                &fast.machine,
+                &reference.machine,
+                &format!("scene {scene} setup"),
+            );
+            for block in 0..48 {
+                let frames = [1, 24, 128, 512][block % 4];
+                let mut input = vec![[0.0_f32; 2]; frames];
+                if block < 36 {
+                    for frame in &mut input {
+                        for value in frame {
+                            *value = (next() as i32) as f32 / 2147483648.0 * 0.5;
+                        }
+                    }
+                }
+                let mut actual = vec![[0.0; 2]; frames];
+                let mut expected = vec![[0.0; 2]; frames];
+                fast.process(&input, &mut actual).unwrap();
+                reference.process(&input, &mut expected).unwrap();
+                assert!(
+                    actual
+                        .iter()
+                        .flatten()
+                        .map(|v| v.to_bits())
+                        .eq(expected.iter().flatten().map(|v| v.to_bits())),
+                    "scene {scene}, block {block}: output differs"
+                );
+                if block % 12 == 11 {
+                    same_state(
+                        &fast.machine,
+                        &reference.machine,
+                        &format!("scene {scene}, block {block}"),
+                    );
+                }
+            }
+            same_state(
+                &fast.machine,
+                &reference.machine,
+                &format!("scene {scene} end"),
+            );
+            if scene == 2 {
+                fast.reset().unwrap();
+                reference.reset().unwrap();
+                same_state(&fast.machine, &reference.machine, "after reset");
+            }
         }
     }
 }

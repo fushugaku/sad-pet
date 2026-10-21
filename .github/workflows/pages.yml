@@ -29,6 +29,7 @@ jobs:
           cargo clippy -p sad-pet-wasm --target wasm32-unknown-unknown --locked -- -D warnings
           cargo test -p sad-pet-wasm --lib --locked
           cargo test -p sad-pet-alphaverb --release --lib --locked
+          cargo test -p sad-pet-superecho --release --lib --locked
       - name: Build the standalone site
         run: python3 wasm/build.py
       - name: Exercise the compiled audio engine

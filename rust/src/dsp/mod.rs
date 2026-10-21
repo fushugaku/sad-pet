@@ -4,6 +4,7 @@ pub mod color;
 pub mod compressor;
 pub mod delay;
 pub mod effects;
+pub mod fast;
 pub mod filter;
 mod imported_rate;
 pub mod modulation;
@@ -119,30 +120,37 @@ pub(crate) struct Modulated {
     pub(crate) performance: crate::performance::Modulation,
     pub(crate) resynth: crate::resynth::Settings,
     pub(crate) drums: crate::drums::Controls,
+    /// A modulation route wrote into a color slot of this frame. Clean frames
+    /// carry the preset's own slots, so the racks need no reconfiguration.
+    pub(crate) color_dirty: bool,
 }
 impl Modulated {
     fn from_preset(preset: &Preset) -> Self {
-        let mut result = Self {
-            params: preset.params,
-            pan: 0.5,
-            color_slots: [ColorSlot::default(); MAX_COLOR_SLOTS],
-            color_len: preset.color_chain.len(),
-            pre_color_slots: [ColorSlot::default(); MAX_COLOR_SLOTS],
-            pre_color_len: preset.pre_color_chain.len(),
-            lfos: preset.lfos,
-            envs: preset.envs,
-            lfo_count: preset.lfo_count as usize,
-            env_count: preset.env_count as usize,
-            performance: crate::performance::Modulation::from_settings(&preset.performance),
-            resynth: preset.resynth,
-            drums: preset
-                .drums
-                .as_ref()
-                .map_or_else(Default::default, |d| d.params),
-        };
-        result.color_slots[..result.color_len].copy_from_slice(&preset.color_chain);
-        result.pre_color_slots[..result.pre_color_len].copy_from_slice(&preset.pre_color_chain);
+        let mut result = Self::default();
+        result.write_from_preset(preset);
         result
+    }
+    /// Rebuild from the preset without a fresh frame. Only the active color
+    /// slots are copied: every reader slices by `color_len`/`pre_color_len`,
+    /// so slots beyond them are never observed.
+    fn write_from_preset(&mut self, preset: &Preset) {
+        self.params = preset.params;
+        self.pan = 0.5;
+        self.color_len = preset.color_chain.len();
+        self.color_slots[..self.color_len].copy_from_slice(&preset.color_chain);
+        self.pre_color_len = preset.pre_color_chain.len();
+        self.pre_color_slots[..self.pre_color_len].copy_from_slice(&preset.pre_color_chain);
+        self.lfos = preset.lfos;
+        self.envs = preset.envs;
+        self.lfo_count = preset.lfo_count as usize;
+        self.env_count = preset.env_count as usize;
+        self.performance = crate::performance::Modulation::from_settings(&preset.performance);
+        self.resynth = preset.resynth;
+        self.drums = preset
+            .drums
+            .as_ref()
+            .map_or_else(Default::default, |d| d.params);
+        self.color_dirty = false;
     }
     fn route(&mut self, destination: Destination, value: f32) {
         if value == 0.0 {
@@ -246,6 +254,7 @@ impl Modulated {
         {
             let target = slot.parameter_mut(parameter);
             *target = (*target + value).clamp(0.0, 1.0);
+            self.color_dirty = true;
             crate::color::mirror_reverb(&mut self.params, &self.color_slots[..self.color_len]);
             if self.color_len > 0 {
                 self.params.saturation = self.color_slots[0].mix;
@@ -272,6 +281,7 @@ impl Modulated {
             Destination::Filter2Resonance => &mut p.filter2_resonance,
             Destination::Saturation => {
                 if self.color_len > 0 {
+                    self.color_dirty = true;
                     &mut self.color_slots[0].mix
                 } else {
                     &mut p.saturation
@@ -285,6 +295,7 @@ impl Modulated {
                 else {
                     return;
                 };
+                self.color_dirty = true;
                 if parameter == crate::color::ColorParameter::LcrRatio {
                     effect.settings.lcr_ratio = crate::radias_delay::modulate_lcr_ratio(
                         effect.settings.lcr_sync,
@@ -367,7 +378,17 @@ pub struct Engine {
     pressure: [f32; 16],
     poly_pressure: [[f32; 128]; 16],
     pub matrix_values: [f32; matrix::MAX_ROUTES],
-    modulated: Modulated,
+    modulated: Box<Modulated>,
+    /// The previous frame, rebuilt in place on the next control block instead
+    /// of constructing and copying a new frame.
+    spare_modulated: Option<Box<Modulated>>,
+    /// (preset revision, bpm bits, shaper pitch bits) the racks last saw.
+    rack_key: Option<(u64, u32, u32)>,
+    rack_configured_dirty: bool,
+    /// (preset revision, bpm bits, sample root note bits) the source FX last saw.
+    source_key: Option<(u64, u32, u32)>,
+    color_revision: u64,
+    applied_shaper_pitch: u32,
     overlap: f32,
     smooth_mix: f32,
     smooth_gain: f32,
@@ -383,6 +404,7 @@ pub struct Engine {
 
 impl Engine {
     pub fn new(sample_rate: u32, sample: Arc<SampleBuffer>, preset: Preset) -> Self {
+        fast::warm_up();
         let sr = sample_rate.clamp(8_000, 384_000);
         let mut engine = Self {
             sample_rate: sr,
@@ -440,7 +462,13 @@ impl Engine {
             pressure: [0.0; 16],
             poly_pressure: [[0.0; 128]; 16],
             matrix_values: [0.0; matrix::MAX_ROUTES],
-            modulated: Modulated::default(),
+            modulated: Box::new(Modulated::default()),
+            spare_modulated: Some(Box::new(Modulated::default())),
+            rack_key: None,
+            rack_configured_dirty: false,
+            source_key: None,
+            color_revision: 0,
+            applied_shaper_pitch: 60.0_f32.to_bits(),
             overlap: 1.0,
             smooth_mix: 1.0,
             smooth_gain: 0.0,
@@ -551,6 +579,7 @@ impl Engine {
                 .attach_imported(*slot, &mut preset.imported_effects);
         }
         std::mem::swap(&mut self.preset, preset);
+        self.invalidate_racks();
         self.sync_stored_chord();
         self.update_modulation();
         if mode_changed || hold_chord_changed {
@@ -644,6 +673,7 @@ impl Engine {
         self.color_rack.clear();
         self.pre_color_rack.clear();
         self.source_color.clear();
+        self.invalidate_racks();
         self.resynth.clear();
         self.filters.iter_mut().for_each(FilterBank::clear);
     }
@@ -711,7 +741,13 @@ impl Engine {
     /// Refresh numeric host automation without rebuilding the preset or effects.
     pub fn refresh_parameters(&mut self) {
         self.performance.refresh_timing(&self.preset.performance);
+        self.invalidate_racks();
         self.update_modulation();
+    }
+    /// The preset or a rack history changed outside modulation: the next
+    /// control block must present every slot to its processor again.
+    fn invalidate_racks(&mut self) {
+        self.color_revision = self.color_revision.wrapping_add(1);
     }
     fn sequence_has_notes(&self) -> bool {
         self.sequence_running
@@ -770,6 +806,7 @@ impl Engine {
                 runtime.restart();
             }
         }
+        self.invalidate_racks();
         self.update_modulation();
         self.refresh_sequence_free_voice();
     }
@@ -800,6 +837,7 @@ impl Engine {
         if let Some(runtime) = &mut self.preset.sequencer.runtime {
             runtime.start(running && self.preset.sequencer.enabled);
         }
+        self.invalidate_racks();
         self.update_modulation();
         self.refresh_sequence_free_voice();
     }
@@ -838,6 +876,7 @@ impl Engine {
         self.color_rack.clear();
         self.pre_color_rack.clear();
         self.source_color.clear();
+        self.invalidate_racks();
         self.filters.iter_mut().for_each(FilterBank::clear);
         Ok(())
     }
@@ -876,6 +915,7 @@ impl Engine {
         self.color_rack.clear();
         self.pre_color_rack.clear();
         self.source_color.clear();
+        self.invalidate_racks();
         self.filters.iter_mut().for_each(FilterBank::clear);
         if !self.playing {
             for voice in &mut self.voices {
@@ -1270,6 +1310,9 @@ impl Engine {
         self.apply_owned_midi(message, 0);
     }
     fn apply_owned_midi(&mut self, message: Message, owner: u32) {
+        if matches!(message, Message::Control { .. } | Message::Program { .. }) {
+            self.invalidate_racks();
+        }
         match message {
             Message::NoteOn {
                 channel,
@@ -1399,6 +1442,7 @@ impl Engine {
                 self.color_rack.clear();
                 self.pre_color_rack.clear();
                 self.source_color.clear();
+                self.invalidate_racks();
             }
             Message::Control {
                 channel,
@@ -1475,6 +1519,7 @@ impl Engine {
                 self.color_rack.clear();
                 self.pre_color_rack.clear();
                 self.source_color.clear();
+                self.invalidate_racks();
                 self.filters.iter_mut().for_each(FilterBank::clear);
             }
             _ => {}
@@ -1527,7 +1572,8 @@ impl Engine {
         }
     }
     fn update_modulation(&mut self) {
-        let mut m = Modulated::from_preset(&self.preset);
+        let mut m = self.spare_modulated.take().expect("spare modulation frame");
+        m.write_from_preset(&self.preset);
         if self.preset.sequencer.enabled
             && self.sequence_running
             && let Some(runtime) = &self.preset.sequencer.runtime
@@ -1578,22 +1624,43 @@ impl Engine {
         }
         self.last_position = m.params.position;
         crate::color::mirror_reverb(&mut m.params, &m.color_slots[..m.color_len]);
-        self.color_rack
-            .configure_tempo(&m.color_slots[..m.color_len], m.params.bpm);
-        self.pre_color_rack
-            .configure_tempo(&m.pre_color_slots[..m.pre_color_len], m.params.bpm);
-        self.source_color.set_pitch(m.params.sample_root_note);
-        self.source_color.configure_tempo(
-            self.preset
-                .source_color_chain
-                .first()
-                .copied()
-                .unwrap_or(ColorSlot {
-                    enabled: false,
-                    ..ColorSlot::default()
-                }),
-            m.params.bpm,
+        // Racks reconfigure only when their inputs can differ from the previous
+        // call: a slot modulated now or last time, a preset edit, a tempo
+        // change, or a shaper pitch they received since. Otherwise every
+        // processor would compare its whole slot and return unchanged.
+        let rack_key = (
+            self.color_revision,
+            m.params.bpm.to_bits(),
+            self.applied_shaper_pitch,
         );
+        if m.color_dirty || self.rack_configured_dirty || self.rack_key != Some(rack_key) {
+            self.color_rack
+                .configure_tempo(&m.color_slots[..m.color_len], m.params.bpm);
+            self.pre_color_rack
+                .configure_tempo(&m.pre_color_slots[..m.pre_color_len], m.params.bpm);
+            self.rack_key = Some(rack_key);
+            self.rack_configured_dirty = m.color_dirty;
+        }
+        let source_key = (
+            self.color_revision,
+            m.params.bpm.to_bits(),
+            m.params.sample_root_note.to_bits(),
+        );
+        if self.source_key != Some(source_key) {
+            self.source_color.set_pitch(m.params.sample_root_note);
+            self.source_color.configure_tempo(
+                self.preset
+                    .source_color_chain
+                    .first()
+                    .copied()
+                    .unwrap_or(ColorSlot {
+                        enabled: false,
+                        ..ColorSlot::default()
+                    }),
+                m.params.bpm,
+            );
+            self.source_key = Some(source_key);
+        }
         self.resynth
             .configure(m.resynth, &self.sample, m.params.sample_root_note);
         let shaper_note = self.source_note as f32
@@ -1603,6 +1670,7 @@ impl Engine {
             + m.params.sample_tune_cents * 0.01;
         self.pre_color_rack.set_pitch(shaper_note);
         self.color_rack.set_pitch(shaper_note);
+        self.applied_shaper_pitch = shaper_note.to_bits();
         self.performance.modulate(m.performance);
         if let (Some(drums), Some(settings)) = (&mut self.drums, &self.preset.drums) {
             let transpose = if settings.granular {
@@ -1638,24 +1706,26 @@ impl Engine {
                 + self.bend[voice.channel as usize] * m.params.midi_pitchbend_range;
             self.filters[i].configure(&m.params, note, voice.env_values);
         }
-        self.modulated = m;
+        let params = m.params;
+        self.spare_modulated = Some(std::mem::replace(&mut self.modulated, m));
         // Keep the control clock and exact powf expression; unchanged dB values
         // can reuse their result without changing modulation or smoothing.
-        let gain_key = [m.params.in_gain.to_bits(), m.params.out_gain.to_bits()];
+        let gain_key = [params.in_gain.to_bits(), params.out_gain.to_bits()];
         if self.gain_key.map(|key| key[0]) != Some(gain_key[0]) {
-            self.input_gain = 10.0_f32.powf(m.params.in_gain * 0.05);
+            self.input_gain = 10.0_f32.powf(params.in_gain * 0.05);
         }
         if self.gain_key.map(|key| key[1]) != Some(gain_key[1]) {
-            self.output_gain = 10.0_f32.powf(m.params.out_gain * 0.05);
+            self.output_gain = 10.0_f32.powf(params.out_gain * 0.05);
         }
         self.gain_key = Some(gain_key);
-        self.grain_density = m.params.min_grains
-            + (MAX_GRAINS as f32 - m.params.min_grains) * m.params.grains.powi(3);
+        self.grain_density =
+            params.min_grains + (MAX_GRAINS as f32 - params.min_grains) * params.grains.powi(3);
         self.grain_step = self.grain_density as f64 / self.sample_rate as f64;
-        self.bar_phase_step =
-            m.params.bpm as f64 / (60.0 * self.sample_rate as f64 * self.bar_beats);
+        self.bar_phase_step = params.bpm as f64 / (60.0 * self.sample_rate as f64 * self.bar_beats);
         let count = self.active_grains() as f32;
-        self.overlap += (count - self.overlap) * if count > self.overlap { 0.9 } else { 0.2 };
+        self.overlap = fast::flush(
+            self.overlap + (count - self.overlap) * if count > self.overlap { 0.9 } else { 0.2 },
+        );
     }
     pub fn resynth_meter(&self) -> crate::resynth::Meter {
         crate::resynth::Meter {
@@ -1930,12 +2000,15 @@ impl Engine {
             })
         };
         let level = source[0].abs().max(source[1].abs());
-        self.follower += (level - self.follower)
-            * if level > self.follower {
-                0.006
-            } else {
-                0.00015
-            };
+        self.follower = fast::flush(
+            self.follower
+                + (level - self.follower)
+                    * if level > self.follower {
+                        0.006
+                    } else {
+                        0.00015
+                    },
+        );
         self.lfo_values.fill(0.0);
         for i in 0..self.modulated.lfo_count {
             self.lfo_values[i] = self.oscillators[i].next_sample(
@@ -2031,7 +2104,8 @@ impl Engine {
             1.0
         };
         let input_gain = self.input_gain;
-        self.smooth_mix += (self.modulated.params.mix - self.smooth_mix) * 0.002;
+        self.smooth_mix =
+            fast::flush(self.smooth_mix + (self.modulated.params.mix - self.smooth_mix) * 0.002);
         // The source is shared by all notes. Distribute it across their filter
         // banks without multiplying its level when a chord adds more voices.
         let dry_scale = if voice_sum > 0.0 {
@@ -2102,9 +2176,11 @@ impl Engine {
             self.modulated.params.master_volume
         };
         let gain = volume * self.output_gain;
-        self.smooth_gain += (gain - self.smooth_gain) * 0.002;
-        self.smooth_bypass_gate +=
-            ((if self.playing { 1.0 } else { 0.0 }) - self.smooth_bypass_gate) * 0.002;
+        self.smooth_gain = fast::flush(self.smooth_gain + (gain - self.smooth_gain) * 0.002);
+        self.smooth_bypass_gate = fast::flush(
+            self.smooth_bypass_gate
+                + ((if self.playing { 1.0 } else { 0.0 }) - self.smooth_bypass_gate) * 0.002,
+        );
         let bypass_source = if self.bypass
             && (self.processed_source.is_some()
                 || self.previous_source.is_some()
@@ -2139,7 +2215,7 @@ impl Engine {
             if !value.is_finite() {
                 0.0
             } else if value.abs() > 0.98 {
-                value.signum() * (0.98 + 0.02 * ((value.abs() - 0.98) / 0.02).tanh())
+                value.signum() * (0.98 + 0.02 * fast::tanh((value.abs() - 0.98) / 0.02))
             } else {
                 value
             }

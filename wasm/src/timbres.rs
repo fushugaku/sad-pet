@@ -368,7 +368,7 @@ impl Registry {
                 } else {
                     0.
                 };
-                part.gain += (target - part.gain) * 0.004;
+                part.gain = sad_pet::dsp::fast::flush(part.gain + (target - part.gain) * 0.004);
                 let out = part.host.engine.process_input_frame(input);
                 for c in 0..2 {
                     frame[c] += out[c] * part.gain;

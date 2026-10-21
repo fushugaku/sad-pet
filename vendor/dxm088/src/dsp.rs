@@ -466,7 +466,7 @@ impl Voice {
             1.
         };
         let out = output as f32 / 32768. * modulation;
-        self.meter = self.meter.max(out.abs()) * 0.999;
+        self.meter = crate::flush(self.meter.max(out.abs()) * 0.999);
         out
     }
 }
