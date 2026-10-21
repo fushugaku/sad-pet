@@ -7,7 +7,15 @@ pub(super) struct Part {
     pub host: Host,
     pub gain: f32,
 }
+struct Preparing {
+    kind: Kind,
+    stage: u8,
+    host: Option<Host>,
+    preset: Option<Preset>,
+    live: Option<sad_pet::dsp::sample::LiveInputPreparation>,
+}
 pub(super) struct Registry {
+    preparing: Option<Preparing>,
     pub parts: Vec<Part>,
     pub selected: usize,
     pub target: Option<usize>,
@@ -20,6 +28,7 @@ pub(super) struct Registry {
 impl Registry {
     pub fn new(rate: u32) -> Self {
         let mut r = Self {
+            preparing: None,
             parts: vec![Part {
                 meta: Meta::default(),
                 host: Host::new(rate),
@@ -96,6 +105,116 @@ impl Registry {
         self.refresh_context();
         Ok(())
     }
+    fn begin_part(&mut self, kind: Kind) -> Result<(), String> {
+        if self.preparing.is_some() {
+            return Err("A timbre is already being prepared".into());
+        }
+        self.next_id
+            .checked_add(1)
+            .ok_or("Timbre identity overflow")?;
+        self.preparing = Some(Preparing {
+            kind,
+            stage: 0,
+            host: None,
+            preset: None,
+            live: None,
+        });
+        Ok(())
+    }
+    fn prepare_part(&mut self) -> Result<bool, String> {
+        let mut pending = self
+            .preparing
+            .take()
+            .ok_or("No timbre preparation is pending")?;
+        let rate = self.parts[0].host.rate;
+        match pending.stage {
+            0 => pending.host = Some(Host::new(rate)),
+            1 if pending.kind == Kind::Drums => {
+                let mut preset = Preset {
+                    name: "Drums".into(),
+                    drums: Some(Box::default()),
+                    ..Preset::default()
+                };
+                preset.sanitize();
+                preset.prepare_effects_reusing(rate, &pending.host.as_ref().unwrap().engine.preset);
+                pending.preset = Some(preset);
+            }
+            2 if pending.kind == Kind::Drums => {
+                let preset = pending.preset.as_mut().unwrap();
+                preset
+                    .drum_runtime
+                    .prepare_engine(preset.drums.as_deref(), rate);
+            }
+            3 if pending.kind == Kind::Drums => {
+                let preset = pending.preset.as_mut().unwrap();
+                let input = pending.live.get_or_insert_with(|| {
+                    sad_pet::dsp::sample::LiveInputPreparation::new(
+                        rate,
+                        !preset.drums.as_ref().unwrap().granular,
+                    )
+                });
+                if !input.step() {
+                    self.preparing = Some(pending);
+                    return Ok(false);
+                }
+                let mut input = pending.live.take().unwrap().finish().unwrap();
+                input.sample.name = "Drum machine".into();
+                preset.drum_runtime.0.as_mut().unwrap().live = Some(input);
+            }
+            4 if pending.kind == Kind::Drums => {
+                let size = rmp_serde::to_vec_named(pending.preset.as_ref().unwrap())
+                    .map_or(0, |bytes| bytes.len())
+                    + 131072;
+                pending
+                    .host
+                    .as_mut()
+                    .unwrap()
+                    .snapshot_buffer
+                    .resize(size, 0);
+            }
+            _ => {
+                let mut host = pending.host.take().unwrap();
+                let primary = &self.parts[0].host;
+                host.engine.set_sample(primary.engine.sample.clone());
+                host.engine.set_midi_gate(primary.engine.midi_gate);
+                host.file_generation = primary.file_generation;
+                if let Some(mut preset) = pending.preset.take() {
+                    host.engine.exchange_preset(&mut preset);
+                    host.engine.set_midi_gate(false);
+                }
+                host.engine.set_playing(primary.engine.playing);
+                let kind = pending.kind;
+                let count = self.parts.iter().filter(|p| p.meta.kind == kind).count() + 1;
+                let id = self.next_id;
+                self.next_id = id.checked_add(1).ok_or("Timbre identity overflow")?;
+                self.parts.push(Part {
+                    meta: Meta {
+                        id,
+                        kind,
+                        name: format!(
+                            "{} {count}",
+                            if kind == Kind::Drums {
+                                "Drums"
+                            } else {
+                                "Granular"
+                            }
+                        ),
+                        ..Meta::default()
+                    },
+                    host,
+                    gain: 1.,
+                });
+                self.selected = self.parts.len() - 1;
+                self.target = None;
+                self.revision = self.revision.wrapping_add(1);
+                self.refresh_context();
+                return Ok(true);
+            }
+        }
+        pending.stage += 1;
+        self.preparing = Some(pending);
+        Ok(false)
+    }
     pub fn command(&mut self, request: Value) -> Result<Value, String> {
         let path = request["path"].as_str().ok_or("Missing command")?;
         let data = &request["data"];
@@ -109,47 +228,11 @@ impl Registry {
                     return Ok(json!(self.context()));
                 }
                 "/api/timbres/add" => {
-                    let kind: Kind =
+                    let kind =
                         serde_json::from_value(data["kind"].clone()).map_err(|e| e.to_string())?;
-                    let id = self.next_id;
-                    let next_id = id.checked_add(1).ok_or("Timbre identity overflow")?;
-                    let count = self.parts.iter().filter(|p| p.meta.kind == kind).count() + 1;
-                    let mut host = Host::new(self.parts[0].host.rate);
-                    let primary = &self.parts[0].host;
-                    host.engine.set_sample(primary.engine.sample.clone());
-                    host.engine.set_midi_gate(primary.engine.midi_gate);
-                    host.file_generation = primary.file_generation;
-                    if kind == Kind::Drums {
-                        let preset = Preset {
-                            name: "Drums".into(),
-                            drums: Some(Box::default()),
-                            ..Preset::default()
-                        };
-                        host.engine.set_preset(preset);
-                        host.engine.set_midi_gate(false);
-                        host.resize_snapshot();
-                    }
-                    host.engine.set_playing(primary.engine.playing);
-                    host.reserve_source_buffers();
-                    self.parts.push(Part {
-                        meta: Meta {
-                            id,
-                            kind,
-                            name: format!(
-                                "{} {count}",
-                                if kind == Kind::Drums {
-                                    "Drums"
-                                } else {
-                                    "Granular"
-                                }
-                            ),
-                            ..Meta::default()
-                        },
-                        host,
-                        gain: 1.,
-                    });
-                    self.selected = self.parts.len() - 1;
-                    self.next_id = next_id;
+                    self.begin_part(kind)?;
+                    while !self.prepare_part()? {}
+                    return Ok(json!(self.context()));
                 }
                 "/api/timbres/reset" => {
                     self.parts.retain(|p| p.meta.id == 0);
@@ -434,7 +517,7 @@ impl Registry {
                 }));
                 host.engine.exchange_processed_source(&mut cache);
             }
-            host.reserve_source_buffers();
+            host.reset_source_buffers();
             host.resize_snapshot();
             parts.push(Part {
                 meta: state.meta,
@@ -585,7 +668,7 @@ impl Registry {
                 .set_midi_gate(state["midi_gate"].as_bool().unwrap_or(true));
             host.engine.set_playing(false);
             host.engine.bypass = state["bypass"] == true;
-            host.reserve_source_buffers();
+            host.reset_source_buffers();
             host.resize_snapshot();
             parts.push(Part {
                 meta,
@@ -698,4 +781,33 @@ pub extern "C" fn sad_scene_render_document() -> u32 {
         })();
         r.parts[i].host.finish(result)
     })
+}
+
+/// Preparation is called once per worklet quantum; existing parts keep rendering.
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_timbre_prepare_begin() -> u32 {
+    registry(|r| {
+        let index = r.index();
+        let result = serde_json::from_slice::<Value>(&r.parts[index].host.input)
+            .map_err(|e| e.to_string())
+            .and_then(|v| serde_json::from_value(v["kind"].clone()).map_err(|e| e.to_string()))
+            .and_then(|kind| r.begin_part(kind))
+            .map(|_| b"{}".to_vec());
+        r.parts[index].host.finish(result)
+    })
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_timbre_prepare_step() -> u32 {
+    registry(|r| {
+        let result = r.prepare_part().and_then(|done| {
+            serde_json::to_vec(&json!({"done":done,"context":done.then(||r.context())}))
+                .map_err(|e| e.to_string())
+        });
+        let index = r.index();
+        r.parts[index].host.finish(result)
+    })
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_timbre_prepare_cancel() {
+    registry(|r| r.preparing = None);
 }

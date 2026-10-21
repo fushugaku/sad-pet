@@ -4,6 +4,7 @@ pub mod audio;
 pub mod color;
 pub mod drums;
 pub mod dsp;
+pub mod effect_presets;
 pub mod firmware;
 pub mod imported_fx;
 pub mod matrix;
@@ -19,6 +20,7 @@ pub mod samples;
 pub mod sequence;
 #[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
 pub mod server;
+pub mod startup;
 pub mod tables;
 pub mod timbres;
 pub mod wav;

@@ -1,0 +1,3278 @@
+diff --git a/.github/workflows/pages.yml b/.github/workflows/pages.yml
+index de0b5e7..07572e6 100644
+--- a/.github/workflows/pages.yml
++++ b/.github/workflows/pages.yml
+@@ -28,6 +28,7 @@ jobs:
+           cargo fmt --all -- --check
+           cargo clippy -p sad-pet-wasm --target wasm32-unknown-unknown --locked -- -D warnings
+           cargo test -p sad-pet-wasm --lib --locked
++          cargo test -p sad-pet-alphaverb --release --lib --locked
+       - name: Build the standalone site
+         run: python3 wasm/build.py
+       - name: Exercise the compiled audio engine
+@@ -45,6 +46,7 @@ jobs:
+           node wasm/test-microphone.mjs
+           node wasm/test-library.mjs
+           node wasm/test-presets.mjs
++          node wasm/test-startup.mjs
+           node wasm/test-effect-presets.mjs
+           node wasm/test-parameters.mjs
+       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+diff --git a/Cargo.lock b/Cargo.lock
+index 98cdb60..3832eb6 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -759,7 +759,7 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
+ 
+ [[package]]
+ name = "sad-pet"
+-version = "0.30.0"
++version = "0.30.1"
+ dependencies = [
+  "cpal",
+  "ctrlc",
+@@ -788,7 +788,7 @@ version = "0.9.0"
+ 
+ [[package]]
+ name = "sad-pet-plugin"
+-version = "0.12.0"
++version = "0.12.1"
+ dependencies = [
+  "base64",
+  "flate2",
+@@ -807,7 +807,7 @@ dependencies = [
+ 
+ [[package]]
+ name = "sad-pet-wasm"
+-version = "0.30.0"
++version = "0.30.1"
+ dependencies = [
+  "base64",
+  "rmp-serde",
+diff --git a/README.md b/README.md
+index 079c41d..22c1ecc 100644
+--- a/README.md
++++ b/README.md
+@@ -7,10 +7,20 @@ A granular instrument with a shared Rust audio engine for desktop and WebAssembl
+ The web version runs entirely in the browser: Rust DSP in an AudioWorklet, with
+ sample preparation, WAV rendering and MP3 encoding off the audio thread. Dedicated
+ workers handle binary UI telemetry and recording ingestion. Audio views and
+-recording buffers are reused. No backend
++recording buffers are reused. The UI receives preset changes and meter deltas,
++and only visible, changed graphs are drawn. Large FX histories are prepared for
++the selected effects; Source FX upload buffers are reserved on demand. Adding a
++web timbre spreads preparation across audio blocks while existing parts continue
++playing. Sample rates, antialiasing, interpolation and effect algorithms are
++unchanged. No backend
+ or installation is required. Click Play or a keyboard key to enable sound.
+ The desktop version uses the system audio output and a local browser panel.
+ 
++New browser sessions and DAW instances start with **glasses5**: its Dusty keys
++source, selection/fades, four-oscillator Resynth, sequencer and both FX racks.
++It is also the first Factory choice; Init remains available. Saved DAW projects
++and remembered browser User presets take priority over this initial sound.
++
+ Each effect has its own named preset selector and Save button. Effect presets
+ are shared across the three FX racks and all timbres of the same effect type.
+ Portable `.sadfx` import/export moves settings between the web and native
+@@ -152,15 +162,40 @@ python3 -m http.server 8080 --directory dist/web --bind 127.0.0.1
+ 
+ Open `http://127.0.0.1:8080/`. Deployment needs only the files in `dist/web` on an
+ HTTPS static host. Relative asset paths also work under a project subdirectory.
++Release builds omit WASM debug names; pass `--keep-debug-names` to `wasm/build.py`
++when profiling. Only metadata is removed.
+ The GitHub Actions workflow builds, checks and publishes the site on every push to
+ `main`; repository Settings → Pages uses **GitHub Actions** as its source.
+ 
+ Use a browser with WebAssembly and AudioWorklet support. Web MIDI is optional and
+ requires a supported browser and permission through the MIDI refresh button.
++
+ Audio files, presets, rendered WAVs and WAV/MP3 recordings stay in IndexedDB and
+ can be downloaded from Library. Storage belongs to each browser profile and site
+ origin; the hosted site and the local desktop panel have separate libraries.
+ 
++For DSP changes, capture a reference before editing and compare with the new
++build on the same platform/compiler. These offline benchmarks require exact
++PCM equality, including FX histories, Resynth and drum scenes:
++
++```sh
++node wasm/benchmark.mjs capture target/perf/reference
++node wasm/benchmark-scenes.mjs capture target/perf/scenes-reference
++node wasm/benchmark-alphaverb.mjs capture target/perf/alphaverb-reference
++# Rebuild after the change, then:
++node wasm/benchmark.mjs compare target/perf/reference
++node wasm/benchmark-scenes.mjs compare target/perf/scenes-reference
++node wasm/benchmark-alphaverb.mjs compare target/perf/alphaverb-reference
++```
++
++The AlphaVerb benchmark covers one/two instances, parameter changes and tails at
++44.1/48/96 kHz, checks exact PCM and reports audio-block render times. Its native
++firmware-state comparison runs with:
++
++```sh
++cargo test -p sad-pet-alphaverb --release --lib --locked
++```
++
+ Use **Load WAV** or drop a mono/stereo WAV onto the waveform to import your own
+ audio. Drag across the waveform to choose a loop, adjust its **IN / OUT** handles,
+ or enter exact boundaries in seconds. The selection immediately limits playback,
+@@ -258,7 +293,10 @@ SuperEcho and AlphaVerb are available in Source FX, Pre FX and FX. SuperEcho use
+ KekLocator's original Rust Tape/BBD delay, orbit, filters, pitch/frequency shimmer,
+ dub, compressor, freeze and 17 tempo divisions. AlphaVerb uses Dayverb's original
+ Rust reverb, early/late balance, damping, EQ, spin, stereo, shimmer, compressor,
+-gate and freeze. All controls save in presets; Pre FX/FX controls support DAW
++gate and freeze. SuperEcho includes all 51 original KekLocator factory presets;
++AlphaVerb includes all 45 Dayverb presets, including the 15 gated reverbs. They
++appear under Factory in each effect's preset selector in every rack and can be
++saved as User copies. All controls save in presets; Pre FX/FX controls support DAW
+ automation, LFO/ENV, matrix and Neuropolis. Source FX is prepared before grain reads.
+ The same Rust cores run natively and in WASM. Both process at their original
+ 48 kHz with 96-tap bandlimited conversion at other host rates. The wet paths have
+diff --git a/plugin/CMakeLists.txt b/plugin/CMakeLists.txt
+index 27ebda8..d81444e 100644
+--- a/plugin/CMakeLists.txt
++++ b/plugin/CMakeLists.txt
+@@ -1,5 +1,5 @@
+ cmake_minimum_required(VERSION 3.22)
+-project(SadPetPlugins VERSION 0.12.0 LANGUAGES C CXX)
++project(SadPetPlugins VERSION 0.12.1 LANGUAGES C CXX)
+ 
+ set(CMAKE_CXX_STANDARD 17)
+ set(CMAKE_CXX_STANDARD_REQUIRED ON)
+diff --git a/plugin/Cargo.toml b/plugin/Cargo.toml
+index cfd6941..69909a3 100644
+--- a/plugin/Cargo.toml
++++ b/plugin/Cargo.toml
+@@ -1,6 +1,6 @@
+ [package]
+ name = "sad-pet-plugin"
+-version = "0.12.0"
++version = "0.12.1"
+ edition = "2024"
+ publish = false
+ description = "Host-driven SAD PET engine for VST3 and Audio Unit wrappers"
+diff --git a/plugin/README.md b/plugin/README.md
+index 726dbd7..656493b 100644
+--- a/plugin/README.md
++++ b/plugin/README.md
+@@ -8,6 +8,11 @@ the plug-in window; it does not launch a separate browser, audio device or serve
+ | SAD PET | MIDI instrument with imported or built-in samples | VST3, AU instrument | VST3 |
+ | SAD PET FX | Stereo input through filters/effects or an eight-second granular buffer; also receives MIDI | VST3, AU MIDI-controlled effect | VST3 |
+ 
++New instances open **glasses5**, including the Dusty keys source, selection/fades,
++Resynth, sequencer and effect chains. It appears first in Factory presets; Init
++is still available. Restoring a saved DAW project replaces this initial scene.
++SAD PET FX keeps its DAW input as the source.
++
+ ## Effect presets
+ 
+ Every Source FX, pre-filter FX and post-filter FX slot has a preset selector and
+@@ -15,6 +20,11 @@ Every Source FX, pre-filter FX and post-filter FX slot has a preset selector and
+ They store the effect's controls, modes, tempo sync, Smooth and Mix; applying one
+ keeps the slot identity, bypass state, modulation routes and other effects.
+ 
++**AlphaVerb** includes all 45 original Dayverb factory presets (30 original and
++15 gated reverb); **SuperEcho** includes all 51 KekLocator factory presets.
++They appear under **Factory** in the effect's selector in every rack. Save makes
++an editable User copy; factory entries stay available and can be exported.
++
+ Save updates the selected preset after edits; **Save as new** creates a separate
+ entry. The **⋯** menu imports/exports portable `.sadfx` files and deletes saved
+ entries with **Undo delete**. **Init** restores the algorithm's default settings.
+diff --git a/plugin/RELEASE_NOTES.md b/plugin/RELEASE_NOTES.md
+index b3e02b8..449f3f1 100644
+--- a/plugin/RELEASE_NOTES.md
++++ b/plugin/RELEASE_NOTES.md
+@@ -1,5 +1,11 @@
+ SAD PET instrument and SAD PET FX, with native Rust DSP and an embedded editor.
+ 
++**glasses5 on first open.** New instances and fresh browser sessions load the
++supplied complete sound: Dusty keys, its selection/fades, four-oscillator Resynth,
++Neuropolis tracks and both FX racks. It appears first in Factory presets, with
++Init still available. Existing project state and remembered browser User presets
++take priority. Host parameter initialization preserves the startup sound.
++
+ **Three extra destinations per sequencer track.** Assign Destination 1–3 to
+ realtime controls; every step has independent −100…+100% amount knobs. They
+ follow the track's own clock and order, save with presets and DAW projects, and
+@@ -72,6 +78,9 @@ are supplied individually and in `SHA256SUMS.txt`.
+ ---
+ 
+ В обоих установщиках есть инструмент **SAD PET** и эффект **SAD PET FX**.
++При первом открытии загружается **glasses5** со своим сэмплом, фейдами, Resynth,
++секвенсором и эффектами. Он стоит первым в Factory; Init остаётся доступен.
++Сохранённые проекты DAW и последний выбранный User-пресет в web сохраняют приоритет.
+ У каждой дорожки секвенсора есть три дополнительных назначения и три ручки
+ силы воздействия на каждом шаге. Ручки эффектов показывают модулированное
+ значение движущимся указателем, Depth у LFO — числом. Time Ratio у L/C/R Delay
+diff --git a/plugin/native/HostTest.cpp b/plugin/native/HostTest.cpp
+index 0367660..4453781 100644
+--- a/plugin/native/HostTest.cpp
++++ b/plugin/native/HostTest.cpp
+@@ -48,6 +48,18 @@ int main() {
+         StateListener listener;
+         SadPetProcessor processor;
+         processor.addListener(&listener);
++        const auto initial = command(processor, "/api/state");
++        require(initial["preset"]["name"].toString() == "glasses5", "New instance did not load the startup scene");
++        require(initial["file_source"]["sample_name"].toString() == "Dusty keys", "Startup sample was not loaded");
++        require(initial["preset_selection"]["id"].toString() == "factory:5", "Startup factory selection is wrong");
++        require(!static_cast<bool>(initial["preset_selection"]["dirty"]), "Host normalization marked the startup scene modified");
++        require(std::abs(static_cast<float>(initial["preset"]["params"]["filter"]) - 0.4988926f) < 0.00001f,
++            "Host parameter defaults replaced the startup filter");
++        require(std::abs(processor.parameters.getRawParameterValue("filter")->load() - 0.4988926f) < 0.00001f,
++            "Startup values were not published to host automation");
++        // Use the neutral DSP for the offset, routing and project-state checks below.
++        command(processor, "/api/preset-library/factory", juce::JSON::parse(R"({"index":0})"));
++        command(processor, "/api/fades", juce::JSON::parse(R"({"fade_in":0,"fade_out":0})"));
+         processor.setPlayConfigDetails(SAD_PET_EFFECT ? 2 : 0, 2, 48000.0, 4096);
+         processor.prepareToPlay(48000.0, 4096);
+         juce::AudioBuffer<float> buffer(2, 4096);
+diff --git a/plugin/native/Processor.cpp b/plugin/native/Processor.cpp
+index 2d6f400..190d7ff 100644
+--- a/plugin/native/Processor.cpp
++++ b/plugin/native/Processor.cpp
+@@ -110,8 +110,10 @@ SadPetProcessor::SadPetProcessor()
+     }
+     renderValues.resize(rawParameters.size());
+     controlValues.resize(rawParameters.size());
+-    readParameters(controlValues);
+-    sad_control_set_parameters(control, controlValues.data(), controlValues.size());
++    // Publish the initial scene to the host before it can send parameter values
++    // back. Descriptor defaults describe Init and must not replace the scene.
++    readParameters(renderValues);
++    publishParameters(renderValues, false);
+ }
+ 
+ SadPetProcessor::~SadPetProcessor() {
+diff --git a/plugin/src/effect_presets.rs b/plugin/src/effect_presets.rs
+index 4b514cc..b13841c 100644
+--- a/plugin/src/effect_presets.rs
++++ b/plugin/src/effect_presets.rs
+@@ -192,6 +192,7 @@ impl Controller {
+     ) -> Result<Value, String> {
+         let id = || data["id"].as_str().ok_or("Choose an effect preset.");
+         match (path, post) {
++            ("/api/effect-presets/factory", false) => Ok(json!(sad_pet::effect_presets::factory())),
+             ("/api/effect-presets", false) => Ok(json!(self.effect_list()?)),
+             ("/api/effect-presets/save", true) => {
+                 let patch =
+@@ -294,6 +295,39 @@ mod tests {
+         json!({"format":"sad-pet-effect-v1","name":"Эхо / тихое","kind":"lcr_delay","mix":0.83,"settings":settings})
+     }
+     #[test]
++    fn factory_banks_are_available_without_a_user_library_and_save_as_copies() {
++        let root = std::env::temp_dir().join(format!("sad-fx-factory-{}", unique_id()));
++        let mut control = controller(&root);
++        let request = json!({"path":"/api/effect-presets/factory","method":"GET"});
++        let bank = control.request(&request).unwrap();
++        assert_eq!(bank.as_array().unwrap().len(), 96);
++        assert_eq!(bank[18]["name"], "GREAT EYE");
++        assert_eq!(bank[95]["name"], "LEGEND OF HS");
++        assert!(!root.exists());
++        let saved = control
++            .effect_presets_request(
++                "/api/effect-presets/save",
++                true,
++                &json!({"preset":bank[18]}),
++            )
++            .unwrap();
++        assert_eq!(saved["name"], bank[18]["name"]);
++        assert_eq!(saved["settings"], bank[18]["settings"]);
++        assert_ne!(saved["id"], bank[18]["id"]);
++        assert_eq!(control.effect_list().unwrap().len(), 1);
++        assert!(
++            control
++                .effect_presets_request(
++                    "/api/effect-presets/delete",
++                    true,
++                    &json!({"id":bank[18]["id"]}),
++                )
++                .is_err()
++        );
++        assert_eq!(control.request(&request).unwrap(), bank);
++        fs::remove_dir_all(root).unwrap();
++    }
++    #[test]
+     fn effect_library_is_shared_portable_and_does_not_touch_the_scene() {
+         let root = std::env::temp_dir().join(format!("sad-fx-{}", unique_id()));
+         let mut first = controller(&root);
+diff --git a/plugin/src/lib.rs b/plugin/src/lib.rs
+index 6ea0d06..6a57d91 100644
+--- a/plugin/src/lib.rs
++++ b/plugin/src/lib.rs
+@@ -173,6 +173,19 @@ struct SavedState {
+ }
+ 
+ impl Controller {
++    /// A new DAW instance starts with the factory scene; newly added timbres
++    /// still use the empty constructor below. Project restoration replaces it.
++    fn new_plugin(effect: bool) -> Self {
++        let mut control = Self::new(effect);
++        control.preset = sad_pet::startup::preset();
++        control.preset.sanitize();
++        control.sample = sad_pet::startup::sample();
++        control.region = sad_pet::startup::REGION;
++        control.fades = sad_pet::startup::FADES;
++        control.selection.id = format!("factory:{}", sad_pet::startup::INDEX);
++        control
++    }
++
+     fn new(effect: bool) -> Self {
+         let (commands, _) = RingBuffer::new(QUEUE);
+         let (_, retired) = RingBuffer::new(QUEUE);
+@@ -369,6 +382,11 @@ impl Controller {
+     fn set_values(&mut self, values: &[f32]) {
+         for (spec, &value) in parameters::specs().iter().zip(values) {
+             let previous = spec.get(&self.preset);
++            // Hosts normalize to float32 and back; retain the saved value when
++            // the difference is only that round trip's precision.
++            if (value - previous).abs() <= 2.0 * f32::EPSILON * (spec.max - spec.min) {
++                continue;
++            }
+             spec.set(&mut self.preset, value);
+             if previous != spec.get(&self.preset) {
+                 self.selection.dirty = true;
+@@ -420,6 +438,7 @@ impl Controller {
+             "peak":view.peak,"gain_reduction":reduction,"cpu_percent":0.0,"underruns":0,
+             "source_fx":{"pending":view.source_fx_pending,"error":if view.source_fx_error {Some("Could not prepare Source FX")}else{None}},
+         });
++        state["startup_preset_index"] = json!(sad_pet::startup::INDEX);
+         state["resynth"] =
+             json!({"bands":view.resynth_bands,"frequencies":view.resynth_frequencies});
+         state["sequencer"] = json!(view.sequencer);
+@@ -565,7 +584,11 @@ impl Controller {
+         let result = match (path, post) {
+             ("/api/state", _) => Ok(self.state()),
+             ("/api/preset", false) => Ok(json!(self.preset)),
+-            ("/api/presets", false) => Ok(json!((0..5).map(Preset::builtin).collect::<Vec<_>>())),
++            ("/api/presets", false) => Ok(json!(
++                (0..=sad_pet::startup::INDEX)
++                    .map(Preset::builtin)
++                    .collect::<Vec<_>>()
++            )),
+             ("/api/color-defaults", false) => Ok(
+                 json!({"max_slots":sad_pet::color::MAX_COLOR_SLOTS,"slot":sad_pet::color::ColorSlot::default(),"delay_tables":sad_pet::radias_delay::display_tables()}),
+             ),
+@@ -1024,7 +1047,7 @@ pub extern "C" fn sad_parameters() -> Bytes {
+ 
+ #[unsafe(no_mangle)]
+ pub extern "C" fn sad_control_new(effect: bool) -> *mut Controller {
+-    Box::into_raw(Box::new(Controller::new(effect)))
++    Box::into_raw(Box::new(Controller::new_plugin(effect)))
+ }
+ 
+ // The wrapper serializes Controller calls and calls prepare/free only while audio is stopped.
+diff --git a/plugin/src/preset_library.rs b/plugin/src/preset_library.rs
+index 2f806e8..ad4925d 100644
+--- a/plugin/src/preset_library.rs
++++ b/plugin/src/preset_library.rs
+@@ -349,16 +349,27 @@ impl Controller {
+             ("/api/preset-library/factory", true) => {
+                 let index = data["index"]
+                     .as_u64()
+-                    .filter(|n| *n < 5)
++                    .filter(|n| *n <= sad_pet::startup::INDEX as u64)
+                     .ok_or("Unknown factory preset.")?;
+                 let preset = Preset::builtin(index as usize);
+-                let source = self.prepared_source_for(
+-                    self.sample.clone(),
+-                    self.source,
+-                    self.region,
+-                    self.fades,
+-                    &preset,
+-                );
++                let startup = index as usize == sad_pet::startup::INDEX;
++                let sample = if startup {
++                    sad_pet::startup::sample()
++                } else {
++                    self.sample.clone()
++                };
++                let region = if startup {
++                    sad_pet::startup::REGION
++                } else {
++                    self.region
++                };
++                let fades = if startup {
++                    sad_pet::startup::FADES
++                } else {
++                    self.fades
++                };
++                let source =
++                    self.prepared_source_for(sample.clone(), self.source, region, fades, &preset);
+                 self.enqueue(Command::Restore(Box::new(super::Restore {
+                     parts: None,
+                     mix: Default::default(),
+@@ -375,6 +386,9 @@ impl Controller {
+                 self.meta = sad_pet::timbres::Meta::default();
+                 self.scene_revision = self.scene_revision.wrapping_add(1);
+                 self.preset = preset;
++                self.sample = sample;
++                self.region = region;
++                self.fades = fades;
+                 self.selection = Selection {
+                     id: format!("factory:{index}"),
+                     dirty: false,
+diff --git a/plugin/src/tests.rs b/plugin/src/tests.rs
+index c25750a..be35ae3 100644
+--- a/plugin/src/tests.rs
++++ b/plugin/src/tests.rs
+@@ -60,6 +60,70 @@ fn render(audio: &mut Audio, frames: usize, input: Stereo) -> f32 {
+     peak
+ }
+ 
++#[test]
++fn new_plugin_starts_with_glasses5_and_restoration_replaces_it() {
++    for effect in [false, true] {
++        let mut control = Controller::new_plugin(effect);
++        let state = call(&mut control, "/api/state", Value::Null);
++        assert_eq!(state["preset"]["name"], "glasses5");
++        assert_eq!(state["preset_selection"]["id"], "factory:5");
++        assert_eq!(state["preset_selection"]["dirty"], false);
++        assert_eq!(state["file_source"]["sample_id"], "factory:dusty-keys:v1");
++        assert_eq!(state["file_source"]["sample_seconds"], 12.0);
++        assert_eq!(control.fades.fade_in, 1.0);
++        assert_eq!(control.fades.fade_out, 1.0);
++        assert_eq!(control.preset.pre_color_chain.len(), 2);
++        assert_eq!(control.preset.color_chain.len(), 5);
++        assert_eq!(control.preset.resynth.count, 4);
++        assert_eq!(control.preset.sequencer.tracks.len(), 2);
++        assert!(control.source == if effect { Source::Grains } else { Source::File });
++        assert_eq!(
++            call(&mut control, "/api/presets", Value::Null)[5]["name"],
++            "glasses5"
++        );
++
++        let precise = json!(control.preset);
++        let mut normalized: Vec<f32> = parameters::specs()
++            .iter()
++            .map(|spec| {
++                let value = spec.get(&control.preset);
++                let normalized = (value - spec.min) / (spec.max - spec.min);
++                spec.min + normalized * (spec.max - spec.min)
++            })
++            .collect();
++        control.set_values(&normalized);
++        assert!(!control.selection.dirty);
++        assert_eq!(json!(control.preset), precise);
++        let volume = parameters::specs()
++            .iter()
++            .position(|spec| spec.id == "master_volume")
++            .unwrap();
++        normalized[volume] = 0.4;
++        control.set_values(&normalized);
++        assert!(control.selection.dirty);
++        assert_eq!(control.preset.params.master_volume, 0.4);
++
++        // Existing projects remain authoritative, including their source and fades.
++        let mut previous = Controller::new(effect);
++        previous.preset.name = "Saved project".into();
++        let saved = previous.snapshot().unwrap();
++        control.restore_saved(saved).unwrap();
++        assert_eq!(control.preset.name, "Saved project");
++        assert_eq!(control.sample.name, "Glass sequence");
++        assert_eq!(control.fades.fade_in, 0.0);
++
++        // Factory recall carries the original source, not the previous sample.
++        call(
++            &mut control,
++            "/api/preset-library/factory",
++            json!({"index":5}),
++        );
++        assert_eq!(control.sample.name, "Dusty keys");
++        assert_eq!(control.preset.name, "glasses5");
++        assert_eq!(control.fades.fade_out, 1.0);
++    }
++}
++
+ #[test]
+ fn neuropolis_tracks_follow_daw_transport_survive_project_recall_and_edit_without_heap_work() {
+     use sad_pet::sequence::{Target, Track};
+diff --git a/rust/Cargo.toml b/rust/Cargo.toml
+index 10eab88..331881e 100644
+--- a/rust/Cargo.toml
++++ b/rust/Cargo.toml
+@@ -1,6 +1,6 @@
+ [package]
+ name = "sad-pet"
+-version = "0.30.0"
++version = "0.30.1"
+ edition = "2024"
+ description = "SAD PET desktop granular instrument"
+ publish = false
+diff --git a/rust/src/drums.rs b/rust/src/drums.rs
+index aea19ee..f001e7e 100644
+--- a/rust/src/drums.rs
++++ b/rust/src/drums.rs
+@@ -281,6 +281,11 @@ impl std::fmt::Debug for Prepared {
+ }
+ impl Prepared {
+     pub fn prepare(&mut self, settings: Option<&Settings>, rate: u32) {
++        self.prepare_engine(settings, rate);
++        self.prepare_input(settings, rate);
++    }
++    /// Web hosts can spread construction over separate render quanta.
++    pub fn prepare_engine(&mut self, settings: Option<&Settings>, rate: u32) {
+         self.0 = settings.map(|s| {
+             let mut engine = Engine::new(rate as f32);
+             engine.params = s.params.0;
+@@ -290,13 +295,15 @@ impl Prepared {
+                 copy_track(&mut engine, i, track);
+             }
+             engine.configure_params(&s.params.0);
++            Box::new(Runtime { engine, live: None })
++        });
++    }
++    pub fn prepare_input(&mut self, settings: Option<&Settings>, rate: u32) {
++        if let (Some(runtime), Some(s)) = (&mut self.0, settings) {
+             let mut input = LiveInput::new(rate, !s.granular);
+             input.sample.name = "Drum machine".into();
+-            Box::new(Runtime {
+-                engine,
+-                live: Some(input),
+-            })
+-        });
++            runtime.live = Some(input);
++        }
+     }
+ }
+ fn copy_track(engine: &mut Engine, i: usize, track: &Track) {
+diff --git a/rust/src/dsp/color.rs b/rust/src/dsp/color.rs
+index 54802b0..791572a 100644
+--- a/rust/src/dsp/color.rs
++++ b/rust/src/dsp/color.rs
+@@ -81,9 +81,9 @@ impl ColorProcessor {
+             excursion: 0.0,
+             feedback: 0.0,
+             stereo: 0.0,
+-            reverb: Effects::new(sample_rate),
++            reverb: Effects::unallocated(sample_rate),
++            radias_delay: RadiasDelay::unallocated(sample_rate),
+             reverb_params: Params::default(),
+-            radias_delay: RadiasDelay::new(sample_rate),
+             compressor: Compressor::new(sample_rate),
+             waveshaper: RadiasWaveshaper::new(sample_rate),
+             imported: None,
+@@ -127,6 +127,17 @@ impl ColorProcessor {
+     }
+     pub(super) fn detach_imported(&mut self, pool: &mut crate::imported_fx::PreparedEffects) {
+         pool.store(self.id, &mut self.imported);
++        let mut buffers = crate::imported_fx::Buffers {
++            reverb: self
++                .reverb
++                .has_storage()
++                .then(|| self.reverb.take_storage()),
++            delay: self
++                .radias_delay
++                .has_storage()
++                .then(|| self.radias_delay.take_storage()),
++        };
++        pool.store_buffers(self.id, &mut buffers);
+     }
+     pub(super) fn attach_imported(
+         &mut self,
+@@ -135,6 +146,13 @@ impl ColorProcessor {
+     ) {
+         debug_assert!(self.imported.is_none());
+         self.imported = pool.take(slot.id);
++        let buffers = pool.take_buffers(slot.id);
++        if let Some(storage) = buffers.reverb {
++            self.reverb.install_storage(storage);
++        }
++        if let Some(storage) = buffers.delay {
++            self.radias_delay.install_storage(storage);
++        }
+         self.imported_fresh = self.id != slot.id || self.slot.kind != slot.kind;
+         if self.imported_fresh {
+             self.imported_rate.clear();
+@@ -247,10 +265,20 @@ impl ColorProcessor {
+                 self.base_delay = (s.binaural_delay * 0.0015 * self.sample_rate).max(1.0)
+             }
+             SaturatorType::Reverb => {
++                // Runtime presets attach prepared histories; standalone offline
++                // processors allocate only on their first configuration.
++                if !self.reverb.has_storage() {
++                    self.reverb
++                        .install_storage(Effects::new(self.sample_rate as u32).take_storage());
++                }
+                 self.reverb_params = slot.reverb_params();
+                 self.reverb.configure(&self.reverb_params);
+             }
+             SaturatorType::LcrDelay | SaturatorType::ModDelay => {
++                if !self.radias_delay.has_storage() {
++                    self.radias_delay
++                        .install_storage(RadiasDelay::new(self.sample_rate as u32).take_storage());
++                }
+                 self.radias_delay.configure(slot, bpm)
+             }
+             SaturatorType::SuperEcho | SaturatorType::AlphaVerb => {
+diff --git a/rust/src/dsp/delay.rs b/rust/src/dsp/delay.rs
+index e833794..aa77cf8 100644
+--- a/rust/src/dsp/delay.rs
++++ b/rust/src/dsp/delay.rs
+@@ -30,10 +30,18 @@ pub struct RadiasDelay {
+ }
+ impl RadiasDelay {
+     pub fn new(sample_rate: u32) -> Self {
++        Self::create(sample_rate, true)
++    }
++    pub(crate) fn unallocated(sample_rate: u32) -> Self {
++        Self::create(sample_rate, false)
++    }
++    fn create(sample_rate: u32, allocate: bool) -> Self {
+         Self {
+-            buffer: Delay::new(
+-                (sample_rate as f32 * radias_delay::MAX_SECONDS).ceil() as usize + 4,
+-            ),
++            buffer: if allocate {
++                Delay::new((sample_rate as f32 * radias_delay::MAX_SECONDS).ceil() as usize + 4)
++            } else {
++                Delay::empty()
++            },
+             sample_rate: sample_rate as f32,
+             kind: SaturatorType::LcrDelay,
+             settings: ColorSettings::default(),
+@@ -52,6 +60,15 @@ impl RadiasDelay {
+             low_state: [0.0; 2],
+         }
+     }
++    pub(crate) fn has_storage(&self) -> bool {
++        self.buffer.has_storage()
++    }
++    pub(crate) fn take_storage(&mut self) -> Vec<Stereo> {
++        self.buffer.take_storage()
++    }
++    pub(crate) fn install_storage(&mut self, frames: Vec<Stereo>) {
++        self.buffer.install_storage(frames);
++    }
+     pub fn clear(&mut self) {
+         self.buffer.clear();
+         self.phase = 0.0;
+diff --git a/rust/src/dsp/effects.rs b/rust/src/dsp/effects.rs
+index 5292085..61217a4 100644
+--- a/rust/src/dsp/effects.rs
++++ b/rust/src/dsp/effects.rs
+@@ -16,14 +16,31 @@ impl Delay {
+             cursor: 0,
+         }
+     }
++    pub(crate) fn empty() -> Self {
++        Self {
++            frames: Vec::new(),
++            cursor: 0,
++        }
++    }
++    pub(crate) fn has_storage(&self) -> bool {
++        !self.frames.is_empty()
++    }
++    pub(crate) fn take_storage(&mut self) -> Vec<Stereo> {
++        std::mem::take(&mut self.frames)
++    }
++    pub(crate) fn install_storage(&mut self, frames: Vec<Stereo>) {
++        debug_assert!(self.frames.is_empty());
++        self.frames = frames;
++    }
+     pub fn push(&mut self, frame: Stereo) {
+         self.frames[self.cursor] = frame;
+         self.cursor = (self.cursor + 1) % self.frames.len();
+     }
+     pub fn read(&self, samples: f32) -> Stereo {
+-        let position = (self.cursor as f64
+-            - samples.clamp(1.0, (self.frames.len() - 2) as f32) as f64)
+-            .rem_euclid(self.frames.len() as f64);
++        let position = super::sample::wrap_position(
++            self.cursor as f64 - samples.clamp(1.0, (self.frames.len() - 2) as f32) as f64,
++            self.frames.len() as f64,
++        );
+         let i = position as usize;
+         let f = (position - i as f64) as f32;
+         let a = self.frames[i];
+@@ -36,6 +53,8 @@ impl Delay {
+     }
+ }
+ 
++pub(crate) type Storage = [Vec<Stereo>; 13];
++
+ pub struct Effects {
+     sample_rate: f32,
+     predelay: Delay,
+@@ -54,27 +73,61 @@ pub struct Effects {
+ 
+ impl Effects {
+     pub fn new(sample_rate: u32) -> Self {
++        Self::create(sample_rate, true)
++    }
++    pub(crate) fn unallocated(sample_rate: u32) -> Self {
++        Self::create(sample_rate, false)
++    }
++    fn create(sample_rate: u32, allocate: bool) -> Self {
+         let sr = sample_rate as f32;
++        let delay = |frames| {
++            if allocate {
++                Delay::new(frames)
++            } else {
++                Delay::empty()
++            }
++        };
+         Self {
+             sample_rate: sr,
+-            predelay: Delay::new((sr * 0.25) as usize),
+-            tank: std::array::from_fn(|_| Delay::new((sr * 0.18) as usize)),
++            predelay: delay((sr * 0.25) as usize),
++            tank: std::array::from_fn(|_| delay((sr * 0.18) as usize)),
+             tank_damping: [0.0; 8],
+             feedback: [0.8; 8],
+             lengths: [1000.0; 8],
+-            diffuser: [
+-                Delay::new((sr * 0.013) as usize),
+-                Delay::new((sr * 0.019) as usize),
+-            ],
+-            reverse: Delay::new((sr * 0.6) as usize + 4),
++            diffuser: [delay((sr * 0.013) as usize), delay((sr * 0.019) as usize)],
++            reverse: delay((sr * 0.6) as usize + 4),
+             reverse_phase: 0,
+-            shifter: Delay::new((sr * 0.1) as usize + 8),
++            shifter: delay((sr * 0.1) as usize + 8),
+             shifter_phase: 0.0,
+             tone: 0.5,
+             predelay_samples: 1.0,
+         }
+     }
+ 
++    fn delays(&mut self) -> impl Iterator<Item = &mut Delay> {
++        std::iter::once(&mut self.predelay)
++            .chain(self.tank.iter_mut())
++            .chain(self.diffuser.iter_mut())
++            .chain(std::iter::once(&mut self.reverse))
++            .chain(std::iter::once(&mut self.shifter))
++    }
++    pub(crate) fn has_storage(&self) -> bool {
++        self.predelay.has_storage()
++    }
++    pub(crate) fn take_storage(&mut self) -> Storage {
++        let mut storage = std::array::from_fn(|_| Vec::new());
++        for (delay, frames) in self.delays().zip(storage.iter_mut()) {
++            std::mem::swap(&mut delay.frames, frames);
++        }
++        storage
++    }
++    pub(crate) fn install_storage(&mut self, mut storage: Storage) {
++        for (delay, frames) in self.delays().zip(storage.iter_mut()) {
++            debug_assert!(delay.frames.is_empty());
++            std::mem::swap(&mut delay.frames, frames);
++        }
++    }
++
+     pub fn configure(&mut self, p: &Params) {
+         let scale = match p.reverb_type {
+             ReverbType::PlateS => 0.65,
+diff --git a/rust/src/dsp/mod.rs b/rust/src/dsp/mod.rs
+index 04234e4..2de38d5 100644
+--- a/rust/src/dsp/mod.rs
++++ b/rust/src/dsp/mod.rs
+@@ -451,7 +451,7 @@ impl Engine {
+ 
+     pub fn set_preset(&mut self, mut preset: Preset) {
+         preset.sanitize();
+-        preset.prepare_imported_effects();
++        preset.prepare_effects_reusing(self.sample_rate, &self.preset);
+         preset
+             .drum_runtime
+             .prepare(preset.drums.as_deref(), self.sample_rate);
+@@ -459,6 +459,7 @@ impl Engine {
+     }
+ 
+     /// Exchange a sanitized preset without allocating or destroying its buffers.
++    /// Structural FX/drum edits must use `prepared_clone_for(sample_rate)`.
+     /// The caller retires the previous preset away from the audio callback.
+     pub fn exchange_preset(&mut self, preset: &mut Preset) {
+         if let Some(next) = &mut preset.drum_runtime.0 {
+@@ -517,9 +518,14 @@ impl Engine {
+             .detach_imported(&mut self.preset.imported_effects);
+         self.source_color
+             .detach_imported(&mut self.preset.imported_effects);
+-        preset
+-            .imported_effects
+-            .inherit(&mut self.preset.imported_effects);
++        preset.imported_effects.inherit_matching(
++            &mut self.preset.imported_effects,
++            preset
++                .color_chain
++                .iter()
++                .chain(&preset.pre_color_chain)
++                .chain(&preset.source_color_chain),
++        );
+         self.color_rack
+             .attach_imported(&preset.color_chain, &mut preset.imported_effects);
+         self.pre_color_rack
+@@ -1901,7 +1907,10 @@ impl Engine {
+                 voice_frames[grain.voice][c] += frame[c] * amplitude * grain.pan[c];
+             }
+             grain.position = range.start as f64
+-                + (grain.position + grain.rate - range.start as f64).rem_euclid(range.len() as f64);
++                + sample::wrap_position(
++                    grain.position + grain.rate - range.start as f64,
++                    range.len() as f64,
++                );
+             grain.age += 1;
+             grain.active = grain.age < grain.duration;
+         }
+diff --git a/rust/src/dsp/sample.rs b/rust/src/dsp/sample.rs
+index 8417fdb..36a8552 100644
+--- a/rust/src/dsp/sample.rs
++++ b/rust/src/dsp/sample.rs
+@@ -418,7 +418,7 @@ impl SampleBuffer {
+         }
+         let data = &self.levels[level];
+         // Keep indices in f64: f32 loses sub-sample precision on long recordings.
+-        let p = position.rem_euclid(self.len() as f64) / (1_usize << level) as f64;
++        let p = wrap_position(position, self.len() as f64) / (1_usize << level) as f64;
+         let base = p.floor() as i64;
+         let fraction = (p - p.floor()) as f32;
+         let [a, b, c, d] = interpolation_frames(data, base, &(0..data.len()));
+@@ -456,7 +456,8 @@ impl SampleBuffer {
+         if !position.is_finite() {
+             return [0.0; 2];
+         }
+-        let p = range.start as f64 + (position - range.start as f64).rem_euclid(range.len() as f64);
++        let p =
++            range.start as f64 + wrap_position(position - range.start as f64, range.len() as f64);
+         while level > 0 {
+             let scale = (1_usize << level) as f64;
+             let base = (p / scale).floor();
+@@ -547,3 +548,13 @@ fn interpolation_frames(data: &[Stereo], base: i64, range: &std::ops::Range<usiz
+         })
+     }
+ }
++
++/// Skip the remainder only when its result is already the input value.
++#[inline]
++pub(super) fn wrap_position(position: f64, length: f64) -> f64 {
++    #[cfg(target_arch = "wasm32")]
++    if position >= 0.0 && position < length {
++        return position;
++    }
++    position.rem_euclid(length)
++}
+diff --git a/rust/src/imported_fx.rs b/rust/src/imported_fx.rs
+index ed897af..1f53417 100644
+--- a/rust/src/imported_fx.rs
++++ b/rust/src/imported_fx.rs
+@@ -138,15 +138,56 @@ impl Core {
+ struct Entry {
+     id: u32,
+     kind: SaturatorType,
++    scope: u8,
++    rate: u32,
+     core: Option<Box<Core>>,
++    buffers: Buffers,
++}
++
++/// Large delay histories exist only for slots which use them. Like imported
++/// firmware instances, they are prepared and retired by the control owner.
++#[derive(Default)]
++pub(crate) struct Buffers {
++    pub reverb: Option<crate::dsp::effects::Storage>,
++    pub delay: Option<Vec<Stereo>>,
++}
++impl Buffers {
++    fn new(kind: SaturatorType, rate: u32) -> Self {
++        Self {
++            reverb: (kind == SaturatorType::Reverb)
++                .then(|| crate::dsp::effects::Effects::new(rate).take_storage()),
++            delay: matches!(kind, SaturatorType::LcrDelay | SaturatorType::ModDelay)
++                .then(|| crate::dsp::delay::RadiasDelay::new(rate).take_storage()),
++        }
++    }
++    fn is_empty(&self) -> bool {
++        self.reverb.is_none() && self.delay.is_none()
++    }
+ }
+ #[derive(Default)]
+ pub struct PreparedEffects {
+     entries: Vec<Entry>,
++    rate: Option<u32>,
+ }
+ impl Clone for PreparedEffects {
+     fn clone(&self) -> Self {
+-        Self::default()
++        // Keep identities so an edit to a sequencer-only clone can inherit its
++        // existing histories without preparing or allocating audio buffers.
++        Self {
++            rate: self.rate,
++            entries: self
++                .entries
++                .iter()
++                .map(|entry| Entry {
++                    id: entry.id,
++                    kind: entry.kind,
++                    scope: entry.scope,
++                    rate: entry.rate,
++                    core: None,
++                    buffers: Buffers::default(),
++                })
++                .collect(),
++        }
+     }
+ }
+ impl std::fmt::Debug for PreparedEffects {
+@@ -159,26 +200,117 @@ impl std::fmt::Debug for PreparedEffects {
+ impl PreparedEffects {
+     /// Called only while preparing a preset, never from exchange_preset/process.
+     pub fn prepare<'a>(&mut self, slots: impl Iterator<Item = &'a ColorSlot>) {
++        self.prepare_for(slots, 48_000);
++    }
++    pub fn prepare_for<'a>(&mut self, slots: impl Iterator<Item = &'a ColorSlot>, rate: u32) {
++        self.prepare_scoped(slots.map(|slot| (0, slot)), rate, |_, _| (false, false));
++    }
++    pub(crate) fn prepare_racks(&mut self, racks: [&[ColorSlot]; 3], rate: u32) {
++        self.prepare_scoped(
++            racks
++                .into_iter()
++                .enumerate()
++                .flat_map(|(scope, slots)| slots.iter().map(move |slot| (scope as u8, slot))),
++            rate,
++            |_, _| (false, false),
++        );
++    }
++    pub(crate) fn prepare_racks_reusing(
++        &mut self,
++        racks: [&[ColorSlot]; 3],
++        rate: u32,
++        previous: &Self,
++        previous_racks: [&[ColorSlot]; 3],
++    ) {
++        self.prepare_scoped(
++            racks
++                .into_iter()
++                .enumerate()
++                .flat_map(|(scope, slots)| slots.iter().map(move |s| (scope as u8, s))),
++            rate,
++            |scope, slot| {
++                let old = previous.entries.iter().find(|e| {
++                    e.id == slot.id
++                        && e.kind == slot.kind
++                        && e.rate == rate
++                        && previous_racks[e.scope as usize]
++                            .iter()
++                            .any(|s| s.id == slot.id && s.kind == slot.kind)
++                });
++                (old.is_some(), old.is_some_and(|e| e.scope == scope))
++            },
++        );
++    }
++    fn prepare_scoped<'a>(
++        &mut self,
++        slots: impl Iterator<Item = (u8, &'a ColorSlot)>,
++        rate: u32,
++        mut reuse: impl FnMut(u8, &ColorSlot) -> (bool, bool),
++    ) {
++        self.rate = Some(rate);
+         self.entries = slots
+-            .filter(|s| matches!(s.kind, SaturatorType::SuperEcho | SaturatorType::AlphaVerb))
+-            .map(|s| Entry {
+-                id: s.id,
+-                kind: s.kind,
+-                core: Core::new(s.kind),
++            .map(|(scope, s)| {
++                let (core, buffers) = reuse(scope, s);
++                Entry {
++                    id: s.id,
++                    kind: s.kind,
++                    scope,
++                    rate,
++                    core: if core { None } else { Core::new(s.kind) },
++                    buffers: if buffers {
++                        Buffers::default()
++                    } else {
++                        Buffers::new(s.kind, rate)
++                    },
++                }
+             })
+             .collect();
+     }
+     pub fn inherit(&mut self, old: &mut Self) {
++        if self.rate.is_none() {
++            self.rate = old.rate;
++        }
+         for entry in &mut self.entries {
+             if let Some(previous) = old
+                 .entries
+                 .iter_mut()
+-                .find(|e| e.id == entry.id && e.kind == entry.kind)
++                .find(|e| e.id == entry.id && e.kind == entry.kind && e.rate == entry.rate)
+             {
+                 std::mem::swap(&mut entry.core, &mut previous.core);
++                // Legacy racks reset a newly placed processor. Only histories
++                // whose identity stays in the same rack are retained.
++                if entry.scope == previous.scope {
++                    std::mem::swap(&mut entry.buffers, &mut previous.buffers);
++                }
+             }
+         }
+     }
++    pub(crate) fn inherit_matching<'a>(
++        &mut self,
++        old: &mut Self,
++        slots: impl Iterator<Item = &'a ColorSlot>,
++    ) {
++        // A controller may enqueue an unprepared copy for a metadata-only
++        // change. Reuse the existing owner and its storage without allocating
++        // or retiring the histories on the render thread.
++        let mut slots = slots.peekable();
++        if self.entries.is_empty()
++            && slots.peek().is_some()
++            && slots.all(|slot| {
++                old.entries
++                    .iter()
++                    .any(|e| e.id == slot.id && e.kind == slot.kind)
++            })
++        {
++            self.rate = old.rate;
++            std::mem::swap(&mut self.entries, &mut old.entries);
++        } else {
++            self.inherit(old);
++        }
++    }
++    pub(crate) fn sample_rate(&self) -> Option<u32> {
++        self.rate
++    }
+     pub fn store(&mut self, id: u32, core: &mut Option<Box<Core>>) {
+         if core.is_some() {
+             let entry = self
+@@ -196,12 +328,66 @@ impl PreparedEffects {
+             .find(|e| e.id == id)
+             .and_then(|e| e.core.take())
+     }
++    pub(crate) fn store_buffers(&mut self, id: u32, buffers: &mut Buffers) {
++        if !buffers.is_empty() {
++            let entry = self
++                .entries
++                .iter_mut()
++                .find(|e| e.id == id)
++                .expect("Prepared effect buffer identity");
++            debug_assert!(entry.buffers.is_empty());
++            std::mem::swap(&mut entry.buffers, buffers);
++        }
++    }
++    pub(crate) fn take_buffers(&mut self, id: u32) -> Buffers {
++        self.entries
++            .iter_mut()
++            .find(|e| e.id == id)
++            .map(|e| std::mem::take(&mut e.buffers))
++            .unwrap_or_default()
++    }
+ }
+ 
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+     #[test]
++    fn moving_a_legacy_effect_to_another_rack_uses_fresh_history() {
++        let slots = [ColorSlot {
++            id: 7,
++            kind: SaturatorType::Reverb,
++            ..Default::default()
++        }];
++        let mut old = PreparedEffects::default();
++        old.prepare_racks([&slots, &[], &[]], 8000);
++        old.entries[0].buffers.reverb.as_mut().unwrap()[0][0] = [0.75, -0.25];
++        let mut moved = PreparedEffects::default();
++        moved.prepare_racks([&[], &slots, &[]], 8000);
++        moved.inherit(&mut old);
++        assert_eq!(
++            moved.entries[0].buffers.reverb.as_ref().unwrap()[0][0],
++            [0.; 2]
++        );
++        assert_eq!(
++            old.entries[0].buffers.reverb.as_ref().unwrap()[0][0],
++            [0.75, -0.25]
++        );
++    }
++    #[test]
++    fn removing_all_effects_retires_histories_with_the_previous_preset() {
++        let slots = [ColorSlot {
++            id: 7,
++            kind: SaturatorType::Reverb,
++            ..Default::default()
++        }];
++        let mut old = PreparedEffects::default();
++        old.prepare_for(slots.iter(), 8000);
++        let mut empty = PreparedEffects::default();
++        empty.inherit_matching(&mut old, [].iter());
++        assert!(empty.entries.is_empty());
++        assert!(old.entries[0].buffers.reverb.is_some());
++    }
++    #[test]
+     fn alphaverb_mode_labels_match_original_compressor_and_gate_flags() {
+         let manifest: serde_json::Value =
+             serde_json::from_str(include_str!("../tests/fixtures/erika-fx/manifest.json")).unwrap();
+diff --git a/rust/src/lib.rs b/rust/src/lib.rs
+index 028c945..e4906d1 100644
+--- a/rust/src/lib.rs
++++ b/rust/src/lib.rs
+@@ -4,6 +4,7 @@ pub mod audio;
+ pub mod color;
+ pub mod drums;
+ pub mod dsp;
++pub mod effect_presets;
+ pub mod firmware;
+ pub mod imported_fx;
+ pub mod matrix;
+@@ -19,6 +20,7 @@ pub mod samples;
+ pub mod sequence;
+ #[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
+ pub mod server;
++pub mod startup;
+ pub mod tables;
+ pub mod timbres;
+ pub mod wav;
+diff --git a/rust/src/preset.rs b/rust/src/preset.rs
+index 2a8266e..f6327b8 100644
+--- a/rust/src/preset.rs
++++ b/rust/src/preset.rs
+@@ -674,21 +674,45 @@ impl<'de> Deserialize<'de> for Preset {
+ impl Preset {
+     /// Prepare the audio owner's copy on the control thread.
+     pub fn prepared_clone(&self) -> Self {
+-        self.prepared_clone_for(48_000)
++        self.prepared_clone_for(self.imported_effects.sample_rate().unwrap_or(48_000))
+     }
+     pub fn prepared_clone_for(&self, rate: u32) -> Self {
+         let mut preset = self.clone();
+         preset.sanitize();
+-        preset.prepare_imported_effects();
++        preset.prepare_effects(rate);
+         preset.drum_runtime.prepare(preset.drums.as_deref(), rate);
+         preset
+     }
+     pub fn prepare_imported_effects(&mut self) {
+-        self.imported_effects.prepare(
+-            self.color_chain
+-                .iter()
+-                .chain(&self.pre_color_chain)
+-                .chain(&self.source_color_chain),
++        self.prepare_effects(48_000);
++    }
++    pub fn prepare_effects(&mut self, rate: u32) {
++        self.imported_effects.prepare_racks(
++            [
++                &self.color_chain,
++                &self.pre_color_chain,
++                &self.source_color_chain,
++            ],
++            rate,
++        );
++    }
++    /// Synchronous owners know exactly which histories are still available.
++    /// Queued native updates use prepared_clone_for instead, so a future slot
++    /// change cannot invalidate their prepared resources.
++    pub fn prepare_effects_reusing(&mut self, rate: u32, previous: &Self) {
++        self.imported_effects.prepare_racks_reusing(
++            [
++                &self.color_chain,
++                &self.pre_color_chain,
++                &self.source_color_chain,
++            ],
++            rate,
++            &previous.imported_effects,
++            [
++                &previous.color_chain,
++                &previous.pre_color_chain,
++                &previous.source_color_chain,
++            ],
+         );
+     }
+     pub fn sanitize(&mut self) {
+@@ -791,6 +815,9 @@ impl Preset {
+     }
+ 
+     pub fn builtin(index: usize) -> Self {
++        if index == crate::startup::INDEX {
++            return crate::startup::preset();
++        }
+         let mut p = Self::default();
+         match index {
+             1 => {
+diff --git a/rust/src/server.rs b/rust/src/server.rs
+index b640491..a22e1ac 100644
+--- a/rust/src/server.rs
++++ b/rust/src/server.rs
+@@ -184,6 +184,7 @@ fn handle(
+                         Ok((wav::bytes(take.sample_rate, &take.frames)?, "audio/wav"))
+                     }
+                 }
++                "/api/effect-presets/factory" => json(&crate::effect_presets::factory()),
+                 "/api/color-defaults" => json(
+                     &serde_json::json!({"max_slots": crate::color::MAX_COLOR_SLOTS, "slot": crate::color::ColorSlot::default(), "delay_tables": crate::radias_delay::display_tables()}),
+                 ),
+@@ -269,10 +270,11 @@ fn handle(
+                 let mut preset: Preset =
+                     serde_json::from_value(value).map_err(|e| format!("Preset: {e}"))?;
+                 preset.sanitize();
++                let rate = state.lock().map_err(|e| e.to_string())?.sample_rate;
+                 let (reply, result) = std::sync::mpsc::sync_channel(1);
+                 send(
+                     &commands,
+-                    Command::Preset(Box::new(preset.prepared_clone()), reply),
++                    Command::Preset(Box::new(preset.prepared_clone_for(rate)), reply),
+                 )?;
+                 result
+                     .recv_timeout(Duration::from_secs(5))
+diff --git a/rust/tests/reverb_chain.rs b/rust/tests/reverb_chain.rs
+index 15ad494..3dd8356 100644
+--- a/rust/tests/reverb_chain.rs
++++ b/rust/tests/reverb_chain.rs
+@@ -48,6 +48,55 @@ fn difference(a: &[Stereo], b: &[Stereo]) -> f32 {
+         / (a.len() * 2) as f32
+ }
+ 
++#[test]
++fn prepared_edits_keep_effect_histories_at_the_engine_sample_rate() {
++    for rate in [8000, 44100, 48000, 96000] {
++        let p = Preset {
++            color_chain: vec![
++                reverb(1, ReverbType::PlateL),
++                ColorSlot {
++                    id: 2,
++                    kind: Type::LcrDelay,
++                    mix: 0.4,
++                    ..Default::default()
++                },
++                ColorSlot {
++                    id: 3,
++                    kind: Type::ModDelay,
++                    mix: 0.4,
++                    ..Default::default()
++                },
++            ],
++            ..Default::default()
++        };
++        let sample = Arc::new(SampleBuffer::new("input".into(), rate, vec![[0.; 2]; 128]).unwrap());
++        let mut edited = Engine::new(rate, sample.clone(), p.clone());
++        let mut reference = Engine::new(rate, sample, p);
++        for e in [&mut edited, &mut reference] {
++            e.set_live_input(true, true);
++            e.set_playing(true);
++        }
++        for i in 0..4096 {
++            let frame = input(i, rate);
++            assert_eq!(
++                edited.process_input_frame(frame).map(f32::to_bits),
++                reference.process_input_frame(frame).map(f32::to_bits)
++            );
++        }
++        let mut next = edited.preset.prepared_clone();
++        next.name = "Renamed".into();
++        edited.exchange_preset(&mut next);
++        for i in 4096..16384 {
++            let frame = input(i, rate);
++            assert_eq!(
++                edited.process_input_frame(frame).map(f32::to_bits),
++                reference.process_input_frame(frame).map(f32::to_bits),
++                "FX history changed at {rate} Hz, frame {i}"
++            );
++        }
++    }
++}
++
+ #[test]
+ fn migration_keeps_eight_color_effects_then_reverb_settings_and_existing_routes() {
+     let mut old = Preset {
+diff --git a/rust/web/app.js b/rust/web/app.js
+index 232fa60..4e82eb8 100644
+--- a/rust/web/app.js
++++ b/rust/web/app.js
+@@ -84,6 +84,8 @@ async function api(path, data, headers) {
+   return response;
+ }
+ async function request(path, data) {
++  if (path === "/api/state" && data === undefined && window.sadPetState)
++    return window.sadPetState();
+   const result = await (await api(path, data)).json();
+   if (
+     data !== undefined &&
+@@ -2131,46 +2133,25 @@ function syncGainReduction(next) {
+   }
+ }
+ function fillDestination(select, destination) {
+-  const value = destinationValue(destination);
+-  select.replaceChildren(...DESTINATIONS.map(([v, label]) => option(v, label)));
+-  for (const [label, choices] of modulationGroups()) {
+-    const group = document.createElement("optgroup");
+-    group.label = label;
+-    for (const [value, text] of choices)
+-      group.append(option(destinationValue(value), text));
+-    select.append(group);
+-  }
+-  for (const { rack, index, slot } of colorEntries().filter(
+-    (e) => e.rack.key !== "source_color_chain",
+-  )) {
+-    const group = document.createElement("optgroup");
+-    group.label = `${rack.label} ${index + 1} · ${COLOR_TYPES.find(([k]) => k === slot.kind)[1]}`;
+-    for (const [parameter, label] of colorDestinationSchema(slot.kind))
+-      group.append(
+-        option(
+-          destinationValue({ color: { slot: slot.id, parameter } }),
+-          `${rack.label} ${index + 1} · ${label.charAt(0) + label.slice(1).toLowerCase()}`,
+-        ),
+-      );
+-    select.append(group);
++  const groups = [{ choices: DESTINATIONS }, ...modulationGroups().map(([label, choices]) => ({
++    label, choices: choices.map(([value, text]) => [destinationValue(value), text]),
++  }))];
++  for (const { rack, index, slot } of colorEntries().filter(e => e.rack.key !== "source_color_chain")) {
++    groups.push({
++      label: `${rack.label} ${index + 1} · ${COLOR_TYPES.find(([k]) => k === slot.kind)[1]}`,
++      choices: colorDestinationSchema(slot.kind).map(([parameter, label]) => [
++        destinationValue({ color: { slot: slot.id, parameter } }),
++        `${rack.label} ${index + 1} · ${label.charAt(0) + label.slice(1).toLowerCase()}`,
++      ]),
++    });
+   }
+-  if (
+-    ![...select.options].some((o) => o.value === value) &&
+-    typeof destination !== "string"
+-  ) {
+-    const entry = colorEntries().find(
+-      (e) => e.slot.id === destination.color?.slot,
+-    );
+-    const label =
+-      destination.color?.parameter.replaceAll("_", " ") || "Unassigned";
+-    select.append(
+-      option(
+-        value,
+-        `${entry ? `${entry.rack.label} ${entry.index + 1}` : "FX"} · ${label} (inactive)`,
+-      ),
+-    );
++  const value = destinationValue(destination);
++  if (typeof destination !== "string" && !groups.some(g => g.choices.some(([v]) => v === value))) {
++    const entry = colorEntries().find(e => e.slot.id === destination.color?.slot);
++    const label = destination.color?.parameter.replaceAll("_", " ") || "Unassigned";
++    groups.push({ choices: [[value, `${entry ? `${entry.rack.label} ${entry.index + 1}` : "FX"} · ${label} (inactive)`]] });
+   }
+-  select.value = value;
++  window.SadLazySelect.configure(select, value, groups);
+ }
+ function refreshColorDestinations() {
+   for (const [i, scope] of scopes.entries())
+@@ -2511,9 +2492,10 @@ function syncLfos() {
+       ["division", ".division"],
+     ]) {
+       const input = card.querySelector(selector);
+-      if (document.activeElement !== input)
+-        input.value =
+-          field === "destination" ? destinationValue(l[field]) : l[field];
++      if (document.activeElement !== input) {
++        if (field === "destination") window.SadLazySelect.setValue(input, destinationValue(l[field]));
++        else input.value = l[field];
++      }
+     }
+     card.querySelector(".depth-value").textContent = signedPercent(l.depth);
+     card.querySelector(".sync").checked = l.sync;
+@@ -2610,7 +2592,7 @@ function syncEnvs() {
+     }
+     for (const route of routes) {
+       if (document.activeElement !== route.select)
+-        route.select.value = destinationValue(env[route.destination]);
++        window.SadLazySelect.setValue(route.select, destinationValue(env[route.destination]));
+       if (document.activeElement !== route.input)
+         route.input.value = env[route.depth];
+       route.output.textContent = signedPercent(env[route.depth]);
+@@ -2619,9 +2601,12 @@ function syncEnvs() {
+ }
+ function drawEnvs() {
+   for (let i = 0; i < envCards.length; i++) {
+-    const { canvas } = envCards[i],
+-      env = preset.envs[i],
+-      [c, w, h] = resizeCanvas(canvas);
++    const { canvas } = envCards[i];
++    if (!visibleCanvas(canvas)) continue;
++    const env = preset.envs[i], [c, w, h] = resizeCanvas(canvas);
++    const drawKey = [w, h, devicePixelRatio, env.attack, env.decay, env.sustain, env.release, state?.envs?.[i] || 0].join(":");
++    if (envCards[i].drawKey === drawKey) continue;
++    envCards[i].drawKey = drawKey;
+     c.clearRect(0, 0, w, h);
+     const top = 7,
+       bottom = h - 7,
+@@ -3241,11 +3226,41 @@ function bind() {
+     releaseKeyboard();
+   });
+ }
++const canvasInfo = new WeakMap();
++const observedCanvases = new Set();
++let canvasDirty = true, drawnState = null, waveBackground = null;
++const canvasVisibility = typeof IntersectionObserver === "function"
++  ? new IntersectionObserver(entries => {
++      for (const entry of entries) canvasInfo.get(entry.target).visible = entry.isIntersecting;
++      canvasDirty = true;
++    }) : null;
++const canvasResize = typeof ResizeObserver === "function"
++  ? new ResizeObserver(entries => {
++      for (const entry of entries) canvasInfo.get(entry.target).size = null;
++      canvasDirty = true;
++    }) : null;
++function visibleCanvas(canvas) {
++  if (canvas.closest("[hidden]")) return false;
++  if (!canvasInfo.has(canvas)) {
++    canvasInfo.set(canvas, { visible: true, size: null });
++    observedCanvases.add(canvas);
++    canvasVisibility?.observe(canvas);
++    canvasResize?.observe(canvas);
++  }
++  return canvasInfo.get(canvas).visible;
++}
++for (const event of ["input", "pointerdown", "pointermove", "keydown", "visibilitychange"])
++  document.addEventListener(event, () => { canvasDirty = true; }, { passive: true });
++window.addEventListener("resize", () => {
++  for (const canvas of observedCanvases) canvasInfo.get(canvas).size = null;
++  canvasDirty = true;
++}, { passive: true });
+ function resizeCanvas(canvas) {
+-  const r = canvas.getBoundingClientRect(),
+-    dpr = Math.min(devicePixelRatio || 1, 2),
+-    w = Math.round(r.width * dpr),
+-    h = Math.round(r.height * dpr);
++  const info = canvasInfo.get(canvas);
++  const r = info?.size || canvas.getBoundingClientRect();
++  if (info) info.size = { width: r.width, height: r.height };
++  const dpr = Math.min(devicePixelRatio || 1, 2),
++    w = Math.round(r.width * dpr), h = Math.round(r.height * dpr);
+   if (canvas.width !== w || canvas.height !== h) {
+     canvas.width = w;
+     canvas.height = h;
+@@ -3254,10 +3269,18 @@ function resizeCanvas(canvas) {
+   c.setTransform(dpr, 0, 0, dpr, 0, 0);
+   return [c, r.width, r.height];
+ }
+-function draw() {
+-  if (state) {
+-    const [c, w, h] = resizeCanvas($("wave"));
+-    c.clearRect(0, 0, w, h);
++
++function paintWaveform(context, w, h) {
++  const dpr = Math.min(devicePixelRatio || 1, 2);
++  const key = [w, h, dpr, state.sample_frames, state.sample_seconds, state.input?.active,
++    sampleSelection?.region.start, sampleSelection?.region.end,
++    sampleSelection?.fades.fade_in, sampleSelection?.fades.fade_out].join(":");
++  if (!waveBackground || waveBackground.key !== key || waveBackground.waveform !== state.waveform) {
++    const bitmap = document.createElement("canvas");
++    bitmap.width = Math.round(w * dpr);
++    bitmap.height = Math.round(h * dpr);
++    const c = bitmap.getContext("2d");
++    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+     c.strokeStyle = "#2b392a";
+     c.lineWidth = 1;
+     for (let i = 0; i < 17; i++) {
+@@ -3299,6 +3322,19 @@ function draw() {
+       c.closePath();
+       c.fill();
+     }
++    waveBackground = { key, waveform: state.waveform, bitmap };
++  }
++  context.drawImage(waveBackground.bitmap, 0, 0, w, h);
++}
++function draw() {
++  requestAnimationFrame(draw);
++  if (!state || document.hidden || (drawnState === state && !canvasDirty)) return;
++  canvasDirty = false;
++  drawnState = state;
++  if (visibleCanvas($("wave"))) {
++    const [c, w, h] = resizeCanvas($("wave"));
++    c.clearRect(0, 0, w, h);
++    paintWaveform(c, w, h);
+     sampleSelection?.draw(c, w, h);
+     for (const grain of state.grains) {
+       const x = grain.position * w,
+@@ -3326,7 +3362,9 @@ function draw() {
+     c.lineTo(x + 4, 0);
+     c.lineTo(x, 5);
+     c.fill();
++  }
+     for (let i = 0; i < scopes.length; i++) {
++      if (!visibleCanvas(scopes[i].canvas)) continue;
+       const s = scopes[i],
+         ctx = s.canvas.getContext("2d"),
+         a = s.values;
+@@ -3342,10 +3380,9 @@ function draw() {
+       ctx.stroke();
+     }
+     drawEnvs();
+-  }
+-  requestAnimationFrame(draw);
+ }
+ let failures = 0;
++let receivedPreset = null;
+ let inputDevicesKey = "";
+ function syncInput(input) {
+   if (!input) return;
+@@ -3444,11 +3481,15 @@ async function poll() {
+         !pending &&
+         !editing &&
+         !document.activeElement?.matches("input,select") &&
++        next.preset !== receivedPreset &&
+         JSON.stringify(preset) !== JSON.stringify(next.preset))
+     ) {
+       preset = structuredClone(next.preset);
+       syncAll();
+     }
++    if (generation === editGeneration && !pending && !editing
++        && !document.activeElement?.matches("input,select"))
++      receivedPreset = next.preset;
+     $("sample-name").textContent = next.sample_name;
+     presetLibrary?.observe(next, pending > 0);
+     fileLibrary?.observe(next);
+diff --git a/rust/web/library.js b/rust/web/library.js
+index efe7a5e..5a199b0 100644
+--- a/rust/web/library.js
++++ b/rust/web/library.js
+@@ -161,11 +161,13 @@
+       byId("library-import").disabled = false;
+       const last = await this.store.setting("last-audio");
+       const previous = await this.previousAudio(last);
++      const startup = native.startup_preset_index !== undefined &&
++        native.preset?.name === presets[native.startup_preset_index]?.name;
+       if (
+         !native.plugin &&
+         previous &&
+         !previous.trashedAt &&
+-        native.sample_id === factoryId(this.catalog[0]) &&
++        (startup || native.sample_id === factoryId(this.catalog[0])) &&
+         !native.playing &&
+         last.instance !== native.instance_id &&
+         last.id !== native.sample_id
+@@ -173,7 +175,7 @@
+         await this.activate(previous);
+       } else {
+         await this.rememberNative(native);
+-        if (!native.plugin && native.fades && !native.playing && !native.input?.active)
++        if (!native.plugin && !native.timbres?.timbres && native.fades && !native.playing && !native.input?.active)
+           await this.actions.loadFades(await this.fades(this.currentId));
+       }
+       this.status = "";
+diff --git a/rust/web/presets.js b/rust/web/presets.js
+index 4b2bc16..73d2550 100644
+--- a/rust/web/presets.js
++++ b/rust/web/presets.js
+@@ -214,8 +214,18 @@
+     async initialize(state, factory) {
+       this.native = Boolean(state.plugin);
+       this.factory = factory;
++      this.startupIndex = state.startup_preset_index ?? -1;
+       if (this.native) {
+         this.observe(state);
++      } else if (
++        !this.actions.edited?.() &&
++        factory[this.startupIndex] &&
++        state.preset?.name === factory[this.startupIndex]?.name
++      ) {
++        this.selection = {
++          id: `factory:${this.startupIndex}`,
++          dirty: Boolean(this.selection?.dirty),
++        };
+       }
+       await this.refresh();
+       if (!this.native) {
+@@ -223,7 +233,8 @@
+         if (
+           !this.actions.edited?.() &&
+           last &&
+-          this.users.some((r) => r.id === last.id)
++          (this.users.some((r) => r.id === last.id) ||
++            this.factory.some((_, i) => i !== this.startupIndex && last.id === `factory:${i}`))
+         )
+           await this.load(last.id);
+       }
+@@ -299,7 +310,13 @@
+       const query = $("preset-search").value.toLocaleLowerCase().trim();
+       const choices =
+         this.bank === "factory"
+-          ? this.factory.map((p, i) => ({ id: `factory:${i}`, name: p.name }))
++          ? this.factory
++              .map((p, i) => ({ id: `factory:${i}`, name: p.name }))
++              .sort(
++                (a, b) =>
++                  Number(b.id === `factory:${this.startupIndex}`) -
++                  Number(a.id === `factory:${this.startupIndex}`),
++              )
+           : this.users;
+       const shown = choices.filter((p) =>
+         p.name.toLocaleLowerCase().includes(query),
+@@ -513,11 +530,14 @@
+           id.startsWith("factory:") ? { index: Number(id.slice(8)) } : { id },
+         );
+       } else if (id.startsWith("factory:")) {
+-        if (this.actions.read().state?.timbres?.timbres)
+-          await this.actions.request("/api/timbres/reset", {});
+-        await this.actions.applyPreset(
+-          structuredClone(this.factory[Number(id.slice(8))]),
+-        );
++        const index = Number(id.slice(8));
++        if (index === this.startupIndex) {
++          await this.actions.request("/api/startup", { load: true });
++        } else {
++          if (this.actions.read().state?.timbres?.timbres)
++            await this.actions.request("/api/timbres/reset", {});
++          await this.actions.applyPreset(structuredClone(this.factory[index]));
++        }
+       } else {
+         const record = await this.files.store.read("files", id);
+         if (!record || record.trashedAt)
+@@ -645,6 +665,7 @@
+       this.defaults = defaults;
+       this.types = types;
+       this.choices = choices;
++      this.factory = [];
+       this.records = [];
+       this.views = new Set();
+       this.selections = new Map();
+@@ -658,6 +679,8 @@
+       }
+     }
+     async initialize() {
++      this.factory = (await this.actions.request("/api/effect-presets/factory"))
++        .map((record) => ({ ...this.validate(record), id: record.id, factory: true }));
+       await this.refresh();
+       this.ready = true;
+       this.sync();
+@@ -688,6 +711,7 @@
+           .filter((r) => r.key.startsWith("effect-preset:"))
+           .map((r) => r.value).filter((r) => !r.trashed_at);
+       records.sort((a, b) => a.name.localeCompare(b.name));
++      records.push(...(this.factory || []));
+       const signature = JSON.stringify(records);
+       if (signature !== this.recordsSignature) {
+         this.records = records;
+@@ -759,8 +783,15 @@
+       const slot = view.get();
+       if (!slot) return;
+       if (view.revision !== this.revision) {
+-        view.select.replaceChildren(new Option("Custom", ""), new Option("Init", "init"),
+-          ...this.records.filter((r) => r.kind === slot.kind).map((r) => new Option(r.name, r.id)));
++        view.select.replaceChildren(new Option("Custom", ""), new Option("Init", "init"));
++        for (const [label, factory] of [["Factory", true], ["User", false]]) {
++          const records = this.records.filter((r) => r.kind === slot.kind && Boolean(r.factory) === factory);
++          if (!records.length) continue;
++          const group = document.createElement("optgroup");
++          group.label = label;
++          group.append(...records.map((r) => new Option(r.name, r.id)));
++          view.select.append(group);
++        }
+         view.revision = this.revision;
+       }
+       const match = this.match(view);
+@@ -774,8 +805,8 @@
+       }
+       for (const input of view.bar.querySelectorAll("select,button"))
+         input.disabled = !this.ready || this.busy;
+-      for (const action of ["export", "delete"])
+-        view.bar.querySelector('[data-action="' + action + '"]').disabled = !this.ready || this.busy || !match;
++      view.bar.querySelector('[data-action="export"]').disabled = !this.ready || this.busy || !match;
++      view.bar.querySelector('[data-action="delete"]').disabled = !this.ready || this.busy || !match || Boolean(match.factory);
+       view.bar.querySelector('[data-action="undo"]').disabled = !this.ready || this.busy || !this.deleted;
+     }
+     async run(action) {
+@@ -821,9 +852,10 @@
+     openSave(view) {
+       const slot = this.current(view);
+       this.saving = view;
+-      this.previous = this.records.find((r) => r.id === this.selections.get(view.key) && r.kind === slot.kind);
++      const selected = this.records.find((r) => r.id === this.selections.get(view.key) && r.kind === slot.kind);
++      this.previous = selected?.factory ? undefined : selected;
+       this.modal.querySelector("h2").textContent = "Save " + this.label(slot.kind) + " preset";
+-      this.name.value = this.previous?.name || this.label(slot.kind);
++      this.name.value = selected?.name || this.label(slot.kind);
+       this.modal.querySelector('[data-save="new"]').hidden = !this.previous;
+       this.error.textContent = "";
+       this.modal.hidden = false;
+@@ -839,7 +871,7 @@
+       preset = this.validate(preset);
+       if (this.actions.native)
+         return this.actions.request("/api/effect-presets/save", { preset, id });
+-      if (this.records.some((r) => r.id !== id && r.kind === preset.kind &&
++      if (this.records.some((r) => !r.factory && r.id !== id && r.kind === preset.kind &&
+           r.name.toLocaleLowerCase() === preset.name.toLocaleLowerCase()))
+         throw new Error("An effect preset named “" + preset.name + "” already exists.");
+       const previous = id ? await this.store.setting("effect-preset:" + id) : null;
+@@ -870,9 +902,13 @@
+     async export(view) {
+       const record = this.match(view);
+       if (!record) return;
+-      const blob = this.actions.native
++      const portable = record.factory
++        ? { ...this.validate(record), id: crypto.randomUUID().replaceAll("-", ""),
++            created_at: Date.now(), modified_at: Date.now() }
++        : record;
++      const blob = this.actions.native && !record.factory
+         ? await (await this.actions.api("/api/effect-presets/export", { id: record.id })).blob()
+-        : await encodeEffect(record);
++        : await encodeEffect(portable);
+       this.actions.download(blob, filename(record.name).replace(/\.sadpet$/, ".sadfx"));
+     }
+     async import(view) {
+@@ -895,7 +931,7 @@
+           if (preset.kind !== kind) throw new Error("Choose a preset of the same effect type.");
+           const base = preset.name;
+           let suffix = 2;
+-          while (this.records.some((r) => r.kind === preset.kind && r.name.toLocaleLowerCase() === preset.name.toLocaleLowerCase()))
++          while (this.records.some((r) => !r.factory && r.kind === preset.kind && r.name.toLocaleLowerCase() === preset.name.toLocaleLowerCase()))
+             preset.name = [...base].slice(0, 70).join("") + " (" + suffix++ + ")";
+           record = await this.write(preset);
+         }
+@@ -907,7 +943,7 @@
+     }
+     async delete(view) {
+       const record = this.match(view);
+-      if (!record) return;
++      if (!record || record.factory) return;
+       if (this.actions.native) await this.actions.request("/api/effect-presets/delete", { id: record.id });
+       else await this.store.setting("effect-preset:" + record.id, { ...record, trashed_at: Date.now() });
+       this.deleted = record;
+@@ -916,7 +952,7 @@
+     }
+     async undo() {
+       if (!this.deleted) return;
+-      if (this.records.some((r) => r.kind === this.deleted.kind &&
++      if (this.records.some((r) => !r.factory && r.kind === this.deleted.kind &&
+           r.name.toLocaleLowerCase() === this.deleted.name.toLocaleLowerCase()))
+         throw new Error("A preset with this name already exists. Rename it before undoing the deletion.");
+       if (this.actions.native) await this.actions.request("/api/effect-presets/restore", { id: this.deleted.id });
+diff --git a/rust/web/sequence.js b/rust/web/sequence.js
+index 3a7f700..41c878c 100644
+--- a/rust/web/sequence.js
++++ b/rust/web/sequence.js
+@@ -1,3 +1,54 @@
++"use strict";
++// Keep large routing menus out of the live DOM until a pointer, keyboard or
++// accessibility focus opens them. The selected label remains a native option.
++window.SadLazySelect = (() => {
++  const models = new WeakMap();
++  const option = (value, label) => {
++    const node = document.createElement("option");
++    node.value = value;
++    node.textContent = label;
++    return node;
++  };
++  function render(select, expanded, value = select.value) {
++    const model = models.get(select);
++    if (!model) { select.value = value; return; }
++    model.expanded = expanded;
++    if (expanded) {
++      const nodes = model.groups.map(({ label, choices }) => {
++        if (!label) return choices.map(([v, text]) => option(v, text));
++        const group = document.createElement("optgroup");
++        group.label = label;
++        group.append(...choices.map(([v, text]) => option(v, text)));
++        return group;
++      }).flat();
++      if (!model.labels.has(value)) nodes.push(option(value, `${value} · unavailable`));
++      select.replaceChildren(...nodes);
++    } else {
++      select.replaceChildren(option(value, model.labels.get(value) ?? `${value} · unavailable`));
++    }
++    select.value = value;
++  }
++  return {
++    configure(select, value, groups) {
++      if (!models.has(select)) {
++        const expand = () => {
++          if (!models.get(select).expanded) render(select, true);
++        };
++        select.onpointerdown = expand;
++        select.onfocus = expand;
++        select.onkeydown = expand;
++        select.onblur = () => render(select, false);
++      }
++      models.set(select, { groups, labels: new Map(groups.flatMap(g => g.choices)), expanded: false });
++      render(select, document.activeElement === select, String(value));
++    },
++    setValue(select, value) {
++      value = String(value);
++      if (select.value !== value) render(select, !!models.get(select)?.expanded, value);
++    },
++  };
++})();
++
+ /* Neuropolis stage, pulse, gate and lane editor. Audio runs in metropolix-core. */
+ "use strict";
+ window.SadNeuropolis = class {
+@@ -383,7 +434,7 @@ window.SadNeuropolis = class {
+     }
+     grid.append(labels);
+   }
+-  parameterOptions(select, prefix = "") {
++  parameterGroups(prefix = "") {
+     const preset = this.hooks.read(), groups = new Map();
+     for (const spec of this.catalog.parameters) {
+       const fx = /^(pre_)?fx(\d+)_/.exec(spec.id);
+@@ -401,13 +452,11 @@ window.SadNeuropolis = class {
+         : spec.id.startsWith("lfo") ? "LFO"
+         : spec.id.startsWith("arp_") ? "Arpeggiator" : "Main & filters";
+       if (!groups.has(family)) {
+-        const group = document.createElement("optgroup");
+-        group.label = family;
+-        groups.set(family, group);
+-        select.append(group);
++        groups.set(family, { label: family, choices: [] });
+       }
+-      groups.get(family).append(this.option(`${prefix}${spec.id}`, spec.name));
++      groups.get(family).choices.push([`${prefix}${spec.id}`, spec.name]);
+     }
++    return [...groups.values()];
+   }
+   buildStages(editor, track) {
+     const parameter = track.target.kind === "parameter",
+@@ -671,30 +720,13 @@ window.SadNeuropolis = class {
+     };
+     const target = document.createElement("select");
+     target.setAttribute("aria-label", "Track destination");
+-    const group = document.createElement("optgroup");
+-    group.label = "Pitch & notes";
+-    for (const [value, label] of [
+-      ["main_pitch", "Main track pitch"],
+-      ["notes", "Notes → grains + ENV"],
+-      ...[0, 1, 2, 3].map((i) => [`osc:${i}`, `OSC ${i + 1} pitch offset`]),
+-    ])
+-      group.append(this.option(value, label));
+-    target.append(group);
+-    this.parameterOptions(target, "param:");
+-    target.value =
+-      track.target.kind === "oscillator"
+-        ? `osc:${track.target.index}`
+-        : track.target.kind === "parameter"
+-          ? `param:${track.target.parameter}`
+-          : track.target.kind;
+-    if (!target.value)
+-      (target.append(
+-        this.option(
+-          `param:${track.target.parameter}`,
+-          `${track.target.parameter} · unavailable`,
+-        ),
+-      ),
+-        (target.value = `param:${track.target.parameter}`));
++    window.SadLazySelect.configure(target,
++      track.target.kind === "oscillator" ? `osc:${track.target.index}`
++        : track.target.kind === "parameter" ? `param:${track.target.parameter}` : track.target.kind,
++      [{ label: "Pitch & notes", choices: [
++        ["main_pitch", "Main track pitch"], ["notes", "Notes → grains + ENV"],
++        ...[0, 1, 2, 3].map(i => [`osc:${i}`, `OSC ${i + 1} pitch offset`]),
++      ] }, ...this.parameterGroups("param:")]);
+     target.onchange = () => {
+       const current = this.track(track.id);
+       current.target = target.value.startsWith("osc:")
+@@ -807,13 +839,9 @@ window.SadNeuropolis = class {
+       title.textContent = `DESTINATION ${i + 1}`;
+       const select = document.createElement("select");
+       select.setAttribute("aria-label", `Track destination ${i + 1}`);
+-      select.append(this.option("", "Unassigned"));
+-      this.parameterOptions(select);
+-      const value = track.destinations?.[i] || "";
+-      if (value && !Array.from(select.children).some((group) =>
+-        Array.from(group.children).some((option) => option.value === value)))
+-        select.append(this.option(value, `${value} · unavailable`));
+-      select.value = value;
++      window.SadLazySelect.configure(select, track.destinations?.[i] || "", [
++        { choices: [["", "Unassigned"]] }, ...this.parameterGroups(),
++      ]);
+       select.onchange = () => {
+         const current = this.track(track.id);
+         current.destinations ??= [null, null, null];
+diff --git a/vendor/alphaverb/NOTICE.md b/vendor/alphaverb/NOTICE.md
+index f39e888..0aebcd8 100644
+--- a/vendor/alphaverb/NOTICE.md
++++ b/vendor/alphaverb/NOTICE.md
+@@ -4,6 +4,15 @@ commit c8b27d3cf2c981b8efeadbee4d4cb21d5af1820d.
+ SAD PET names this effect AlphaVerb. The original static Rust translation,
+ parameter callbacks, memory adapter and pinned source images are retained.
+ The C ABI, standalone UI, sequencer and plug-in wrappers are excluded.
++`presets.json` is copied unchanged from `web/presets.json` at the revision above:
++30 original factory presets and 15 gated reverb presets from firmware 1.02.
++SHA-256: 61a77ea316a1d54637e84d642877b9d2be0a2fa63f893fac7c41a57490252d0b.
++SAD PET maps all 20 saved controls to AlphaVerb, with freeze off and the original
++default 50% mix.
++
++SAD PET's build joins the original blocks of the two hot delay-line routines
++with direct calls. Their arithmetic, state writes and error checks are retained;
++the original block dispatcher remains the differential-test reference.
+ 
+ Dayverb is an unofficial software port of the digital processing in Erica Synths /
+ 112dB Nightverb firmware 1.02. This software is not affiliated with or endorsed by
+diff --git a/vendor/alphaverb/src/lib.rs b/vendor/alphaverb/src/lib.rs
+index 0a92c06..e871574 100644
+--- a/vendor/alphaverb/src/lib.rs
++++ b/vendor/alphaverb/src/lib.rs
+@@ -2,6 +2,17 @@
+ //! callbacks, delay network, interpolation, filters and dynamics run here.
+ #[path = "audio_generated/mod.rs"]
+ mod generated;
++#[allow(
++    unused_variables,
++    unused_assignments,
++    unreachable_code,
++    unused_parens,
++    unused_mut,
++    unused_comparisons
++)]
++mod fused {
++    include!(concat!(env!("OUT_DIR"), "/fused.rs"));
++}
+ mod machine;
+ pub mod parameters;
+ mod userops;
+@@ -129,3 +140,54 @@ impl Nightverb {
+         self.cpu.float(address)
+     }
+ }
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn fused_delay_lines_match_every_firmware_state_byte() {
++        let mut fast = Nightverb::new().unwrap();
++        let mut reference = Nightverb::new().unwrap();
++        reference.cpu.reference_dispatch = true;
++        let mut random = 0x12345678u32;
++        for scene in 0..8 {
++            for (id, parameter) in parameters::PARAMETERS.iter().enumerate() {
++                let value = match id {
++                    0 => (scene % 2) as f32,
++                    13 => (scene % 4) as f32 / 3.,
++                    20 => 1.,
++                    21 => f32::from(scene == 6),
++                    _ if scene == 0 => parameter.default_normalized,
++                    _ => ((scene * 37 + id * 13) % 101) as f32 / 100.,
++                };
++                fast.set_parameter(id, value).unwrap();
++                reference.set_parameter(id, value).unwrap();
++            }
++            for block in 0..160 {
++                let frames = [1, 24, 128, 512][block % 4];
++                let mut input = vec![0i32; frames * 2];
++                if block < 80 {
++                    for value in &mut input {
++                        random = random.wrapping_mul(1664525).wrapping_add(1013904223);
++                        *value = (random as i32) / 4;
++                    }
++                }
++                let mut actual = vec![0; input.len()];
++                let mut expected = vec![0; input.len()];
++                fast.process_q31(&input, &mut actual).unwrap();
++                reference.process_q31(&input, &mut expected).unwrap();
++                assert_eq!(actual, expected, "scene {scene}, block {block}");
++                if block % 40 == 0 {
++                    fast.cpu.assert_same_state(&reference.cpu);
++                }
++            }
++            fast.cpu.assert_same_state(&reference.cpu);
++            if scene == 3 {
++                fast.clear().unwrap();
++                reference.clear().unwrap();
++                fast.cpu.assert_same_state(&reference.cpu);
++            }
++        }
++    }
++}
+diff --git a/vendor/alphaverb/src/machine.rs b/vendor/alphaverb/src/machine.rs
+index cac4865..f5afbab 100644
+--- a/vendor/alphaverb/src/machine.rs
++++ b/vendor/alphaverb/src/machine.rs
+@@ -6,6 +6,8 @@ pub const RETURN: u32 = 0xfffffff0;
+ const FLASH: &[u8] = include_bytes!("../assets/flash.bin");
+ 
+ pub struct Machine {
++    #[cfg(test)]
++    pub reference_dispatch: bool,
+     regs: [u8; 4096],
+     itcm: Vec<u8>,
+     dtcm: Vec<u8>,
+@@ -34,6 +36,8 @@ pub fn signed_overflow(a: u64, b: u64, size: usize, subtract: bool) -> u64 {
+ impl Machine {
+     pub fn new() -> Self {
+         let mut m = Self {
++            #[cfg(test)]
++            reference_dispatch: false,
+             regs: [0; 4096],
+             itcm: vec![0; 65536],
+             dtcm: vec![0; 0x20000],
+@@ -139,7 +143,13 @@ impl Machine {
+             if pc == RETURN {
+                 return self.fault.get().map_or(Ok(()), Err);
+             }
++            #[cfg(test)]
++            let fused = !self.reference_dispatch;
++            #[cfg(not(test))]
++            let fused = true;
+             match pc {
++                0x60029898 if fused => pc = crate::fused::b_60029898(self),
++                0x60029dcc if fused => pc = crate::fused::b_60029dcc(self),
+                 // Replace only platform allocation; DSP/math execute translated Rust.
+                 0x600414c0 => {
+                     let size = self.r(32, 4) as usize;
+@@ -240,4 +250,15 @@ impl Machine {
+     pub fn heap_used(&self) -> usize {
+         self.heap_cursor
+     }
++    #[cfg(test)]
++    pub fn assert_same_state(&self, other: &Self) {
++        assert!(self.regs == other.regs, "registers changed");
++        assert!(self.itcm == other.itcm, "ITCM changed");
++        assert!(self.dtcm == other.dtcm, "DTCM changed");
++        assert!(self.ocram == other.ocram, "OCRAM changed");
++        assert!(self.heap == other.heap, "delay histories changed");
++        assert_eq!(self.heap_cursor, other.heap_cursor);
++        assert_eq!(self.fault.get(), other.fault.get());
++        assert_eq!(self.irq, other.irq);
++    }
+ }
+diff --git a/vendor/superecho/NOTICE.md b/vendor/superecho/NOTICE.md
+index 962db7c..c775fde 100644
+--- a/vendor/superecho/NOTICE.md
++++ b/vendor/superecho/NOTICE.md
+@@ -20,7 +20,12 @@ this software does not change their ownership or grant a license to that materia
+ The upstream KekLocator repository obtains its pinned source data with
+ `tools/prepare-firmware.py`; its provenance is recorded in `PORTING.md` and
+ `crates/engine/firmware/source.json`. This DSP subset includes only the extracted
+-ROM named above, not the UF2 or factory preset bank.
++ROM named above and the original 51-preset `default-backup.elb`, not the UF2.
++The factory bank is copied unchanged from `crates/engine/firmware/default-backup.elb`
++at the revision above. SHA-256:
++1329d0c4fa7323f2d3ba61a4a0112f0264bc7ff25db071ed9fd741c002534982.
++SAD PET applies the upstream pre-Dub bank upgrades and maps the original controls
++to SuperEcho, with tempo sync and freeze off and the original default 50% mix.
+ 
+ This repository does not assert a blanket open-source license over the
+ firmware-derived code or factory data.
+diff --git a/wasm/Cargo.toml b/wasm/Cargo.toml
+index 9fef2e7..3451a10 100644
+--- a/wasm/Cargo.toml
++++ b/wasm/Cargo.toml
+@@ -1,6 +1,6 @@
+ [package]
+ name = "sad-pet-wasm"
+-version = "0.30.0"
++version = "0.30.1"
+ edition = "2024"
+ description = "SAD PET WebAssembly audio engine"
+ publish = false
+diff --git a/wasm/build.py b/wasm/build.py
+index 2f0495a..60acedf 100644
+--- a/wasm/build.py
++++ b/wasm/build.py
+@@ -11,9 +11,38 @@ import subprocess
+ ROOT = Path(__file__).resolve().parent.parent
+ 
+ 
++def strip_debug_names(data):
++    """Remove metadata only; preserve every executable/data section byte."""
++    def integer(offset):
++        value, shift = 0, 0
++        while True:
++            byte = data[offset]
++            offset += 1
++            value |= (byte & 127) << shift
++            if byte < 128:
++                return value, offset
++            shift += 7
++
++    output = bytearray(data[:8])
++    offset = 8
++    while offset < len(data):
++        kind = data[offset]
++        size, start = integer(offset + 1)
++        end = start + size
++        name = b""
++        if kind == 0:
++            length, name_start = integer(start)
++            name = data[name_start:name_start + length]
++        if name != b"name" and not name.startswith(b".debug_"):
++            output.extend(data[offset:end])
++        offset = end
++    return output
++
++
+ def main():
+     parser = argparse.ArgumentParser(description=__doc__)
+     parser.add_argument("--output", type=Path, default=ROOT / "dist" / "web")
++    parser.add_argument("--keep-debug-names", action="store_true", help="Keep WASM names for profiling")
+     args = parser.parse_args()
+     env = os.environ.copy()
+     # Homebrew's cargo can precede rustup on PATH; use the rustc that owns the
+@@ -38,6 +67,9 @@ def main():
+     (output / "index.html").write_text(index)
+     shutil.copytree(ROOT / "wasm" / "web", output, dirs_exist_ok=True)
+     shutil.copy2(target / "wasm32-unknown-unknown" / "release" / "sad_pet_wasm.wasm", output / "sad_pet.wasm")
++    if not args.keep_debug_names:
++        wasm = output / "sad_pet.wasm"
++        wasm.write_bytes(strip_debug_names(wasm.read_bytes()))
+     (output / "licenses").mkdir(exist_ok=True)
+     shutil.copy2(ROOT / "rust/licenses/neuropolis-AGPL-3.0.txt", output / "licenses/neuropolis-AGPL-3.0.txt")
+     for name in ("superecho", "alphaverb", "dxm088"):
+diff --git a/wasm/src/allocation_tests.rs b/wasm/src/allocation_tests.rs
+index 5fd71c5..31de0b5 100644
+--- a/wasm/src/allocation_tests.rs
++++ b/wasm/src/allocation_tests.rs
+@@ -40,6 +40,59 @@ fn no_heap(f: impl FnOnce()) {
+     );
+ }
+ 
++#[test]
++fn telemetry_deltas_keep_presets_and_waveforms_until_they_change() {
++    let mut audio = Host::new(8000);
++    let mut worker = Host::new(8000);
++    let transfer = |audio: &mut Host, worker: &mut Host, delta| {
++        let length = audio.publish_snapshot();
++        assert!(length > 0);
++        worker.input.clear();
++        worker
++            .input
++            .extend_from_slice(&audio.snapshot_buffer[..length]);
++        let result = worker.import_snapshot(delta).unwrap();
++        audio.ack_snapshot(audio.snapshot_sequence, 1);
++        result
++    };
++    let initial = transfer(&mut audio, &mut worker, true);
++    assert!(initial["state"]["preset"].is_object());
++    assert!(initial["state"]["waveform"].is_array());
++    let tick = transfer(&mut audio, &mut worker, true);
++    assert!(tick["state"].get("preset").is_none());
++    assert!(tick["state"].get("waveform").is_none());
++    audio
++        .command(json!({"path":"/api/parameters","data":{"filter":0.41}}))
++        .unwrap();
++    let edited = transfer(&mut audio, &mut worker, true);
++    assert_eq!(
++        edited["state"]["preset"]["params"]["filter"],
++        json!(0.41_f32)
++    );
++    let tick = transfer(&mut audio, &mut worker, true);
++    assert!(tick["state"].get("preset").is_none());
++    let full = transfer(&mut audio, &mut worker, false);
++    assert_eq!(full["state"]["preset"], edited["state"]["preset"]);
++    assert_eq!(full["state"]["waveform"], initial["state"]["waveform"]);
++    // A rejected main-thread delta must trigger a complete resynchronization.
++    let length = audio.publish_snapshot();
++    assert!(length > 0);
++    audio.ack_snapshot(audio.snapshot_sequence, 0);
++    let reset = transfer(&mut audio, &mut worker, true);
++    assert!(reset["state"]["preset"].is_object());
++    assert!(reset["state"]["sample_name"].is_string());
++    worker
++        .command(json!({"path":"/api/preset","data":reset["state"]["preset"]}))
++        .unwrap();
++    assert!(
++        worker
++            .engine
++            .process_frame()
++            .into_iter()
++            .all(f32::is_finite)
++    );
++}
++
+ #[test]
+ fn neuropolis_large_patches_publish_sparse_edits_without_heap_or_full_configuration() {
+     use sad_pet::sequence::{Edit, Target, Track};
+@@ -71,7 +124,7 @@ fn neuropolis_large_patches_publish_sparse_edits_without_heap_or_full_configurat
+     worker
+         .input
+         .extend_from_slice(&audio.snapshot_buffer[..length]);
+-    let state = worker.import_snapshot().unwrap();
++    let state = worker.import_snapshot(false).unwrap();
+     assert_eq!(
+         state["state"]["preset"]["sequencer"]["tracks"]
+             .as_array()
+@@ -112,7 +165,7 @@ fn neuropolis_large_patches_publish_sparse_edits_without_heap_or_full_configurat
+     worker
+         .input
+         .extend_from_slice(&audio.snapshot_buffer[..length]);
+-    let state = worker.import_snapshot().unwrap();
++    let state = worker.import_snapshot(false).unwrap();
+     assert_eq!(
+         state["state"]["preset"]["sequencer"]["tracks"][255]["steps"][3]["pitch"],
+         77
+@@ -168,7 +221,7 @@ fn resynth_render_scalar_edits_and_binary_meters_have_no_heap_operations() {
+     });
+     let mut worker = Host::new(48000);
+     worker.input.extend_from_slice(&audio.snapshot_buffer[..n]);
+-    let state = worker.import_snapshot().unwrap();
++    let state = worker.import_snapshot(false).unwrap();
+     assert_eq!(
+         state["state"]["resynth"]["bands"].as_array().unwrap().len(),
+         16
+@@ -194,7 +247,7 @@ fn binary_publication_has_no_heap_and_worker_matches_original_state() {
+     assert!(n > 0 && n < 131072);
+     let mut worker = Host::new(8000);
+     worker.input.extend_from_slice(&audio.snapshot_buffer[..n]);
+-    let result = worker.import_snapshot().unwrap();
++    let result = worker.import_snapshot(false).unwrap();
+     for key in [
+         "preset",
+         "waveform",
+@@ -227,7 +280,7 @@ fn source_pcm_and_mips_upload_without_allocating_or_restarting_the_audio() {
+     sad_init(8000);
+     let recipe = host(|h| {
+         h.engine.set_sample(Arc::new(SampleBuffer::demo(8000)));
+-        h.reserve_source_buffers();
++        h.reset_source_buffers();
+         h.file_generation = 1;
+         h.engine
+             .set_region(sad_pet::dsp::Region {
+@@ -325,7 +378,7 @@ fn drum_step_edits_and_granular_routing_publish_sparse_views_without_heap_work()
+     worker
+         .input
+         .extend_from_slice(&host.snapshot_buffer[..size]);
+-    let view = worker.import_snapshot().unwrap();
++    let view = worker.import_snapshot(false).unwrap();
+     assert_eq!(
+         view["state"]["preset"]["drums"]["tracks"][0]["steps"][127]["velocity"],
+         json!(0.8_f32)
+diff --git a/wasm/src/lib.rs b/wasm/src/lib.rs
+index e4e44d1..fc4abdf 100644
+--- a/wasm/src/lib.rs
++++ b/wasm/src/lib.rs
+@@ -114,6 +114,7 @@ impl Host {
+             "cpu_percent": 0, "underruns": 0,
+             "source_fx":{"pending":e.source_effects_pending(),"recipe":sad_pet::dsp::source_fx::Recipe::from_engine(e)},
+         });
++        state["startup_preset_index"] = json!(sad_pet::startup::INDEX);
+         state["source_generation"] = json!(self.file_generation);
+         if self.engine.preset.drums.is_some() {
+             state["playing"] = json!(self.engine.drum_view().playing);
+@@ -235,8 +236,14 @@ impl Host {
+                 }
+                 Ok(json!({"ok":true}))
+             }
+-            "/api/presets" => Ok(json!((0..5).map(Preset::builtin).collect::<Vec<_>>())),
++            "/api/presets" => Ok(json!(
++                (0..=sad_pet::startup::INDEX)
++                    .map(Preset::builtin)
++                    .collect::<Vec<_>>()
++            )),
++            "/api/startup" => Ok(sad_pet::startup::configuration()),
+             "/api/samples" => Ok(json!(sad_pet::samples::TRACKS)),
++            "/api/effect-presets/factory" => Ok(json!(sad_pet::effect_presets::factory())),
+             "/api/color-defaults" => Ok(json!({
+                 "max_slots": sad_pet::color::MAX_COLOR_SLOTS,
+                 "slot": sad_pet::color::ColorSlot::default(),
+@@ -528,7 +535,7 @@ pub extern "C" fn sad_load() -> u32 {
+     host(|h| {
+         let result = unpack(&h.input).map(|sample| {
+             h.engine.set_sample(Arc::new(sample));
+-            h.reserve_source_buffers();
++            h.reset_source_buffers();
+             h.config_revision = h.config_revision.wrapping_add(1);
+             serde_json::to_vec(&h.command(json!({"path": "/sample-info"})).unwrap()).unwrap()
+         });
+diff --git a/wasm/src/source_fx.rs b/wasm/src/source_fx.rs
+index a6a6192..6b56b6a 100644
+--- a/wasm/src/source_fx.rs
++++ b/wasm/src/source_fx.rs
+@@ -57,13 +57,28 @@ pub extern "C" fn sad_source_begin() -> u32 {
+                     {
+                         return Err("Source cache length changed".into());
+                     }
+-                    let old = reusable
++                    let fits = reusable
+                         .as_mut()
+                         .and_then(Arc::get_mut)
+-                        .ok_or("No source buffer available")?;
+-                    old.sample
+-                        .reset_prepared(&header.lengths)
+-                        .map_err(str::to_owned)?;
++                        .is_some_and(|old| old.sample.reset_prepared(&header.lengths).is_ok());
++                    if !fits {
++                        // Reserve only the requested selection when Source FX is
++                        // actually used. PCM is initialized by bounded uploads;
++                        // no FIR or whole-buffer zero fill runs on this thread.
++                        reusable = Some(Arc::new(ProcessedSource {
++                            original: h.engine.sample.clone(),
++                            sample: SampleBuffer::blank_prepared(
++                                h.engine.sample.name.clone(),
++                                header.sample_rate,
++                                &header.lengths,
++                            )?,
++                            range: range.clone(),
++                            slot: Default::default(),
++                            bpm: 120.0,
++                            root: 60.0,
++                        }));
++                    }
++                    let old = Arc::get_mut(reusable.as_mut().unwrap()).unwrap();
+                     old.original = h.engine.sample.clone();
+                     old.range = range;
+                     old.slot = begin.recipe.slot.ok_or("Missing source effect")?;
+@@ -157,33 +172,11 @@ pub extern "C" fn sad_source_push(count: usize) -> u32 {
+ }
+ 
+ impl Host {
+-    pub(super) fn reserve_source_buffers(&mut self) {
++    pub(super) fn reset_source_buffers(&mut self) {
+         self.engine.clear_processed_sources();
+         self.source_stage = None;
+         self.retired_source = None;
+         self.source_pool.clear();
+-        let lengths: Vec<_> = self
+-            .engine
+-            .sample
+-            .prepared_levels()
+-            .iter()
+-            .map(Vec::len)
+-            .collect();
+-        for _ in 0..3 {
+-            self.source_pool.push(Arc::new(ProcessedSource {
+-                original: self.engine.sample.clone(),
+-                sample: SampleBuffer::blank_prepared(
+-                    self.engine.sample.name.clone(),
+-                    self.engine.sample.sample_rate,
+-                    &lengths,
+-                )
+-                .expect("valid source capacity"),
+-                range: 0..self.engine.sample.len(),
+-                slot: Default::default(),
+-                bpm: 120.0,
+-                root: 60.0,
+-            }));
+-        }
+     }
+ }
+ 
+diff --git a/wasm/src/telemetry.rs b/wasm/src/telemetry.rs
+index 5c06ca1..531df09 100644
+--- a/wasm/src/telemetry.rs
++++ b/wasm/src/telemetry.rs
+@@ -157,13 +157,28 @@ impl Host {
+         }
+     }
+ 
+-    pub(super) fn import_snapshot(&mut self) -> Result<Value, String> {
++    pub(super) fn import_snapshot(&mut self, delta: bool) -> Result<Value, String> {
+         let packet: OwnedPacket = rmp_serde::from_slice(&self.input).map_err(|e| e.to_string())?;
+-        if let Some(config) = packet.configuration {
++        let configuration_changed = packet.configuration.is_some();
++        let mut preset_changed = configuration_changed
++            || !packet.sequence_edits.is_empty()
++            || !packet.drum_edits.is_empty()
++            || packet
++                .parameter_edits
++                .as_object()
++                .is_some_and(|v| !v.is_empty());
++        if let Some(mut config) = packet.configuration {
++            // Imported UI data must not discard the ownership metadata for
++            // this host's prepared DSP buffers, even if it is reused later.
++            std::mem::swap(
++                &mut config.preset.imported_effects,
++                &mut self.engine.preset.imported_effects,
++            );
+             self.engine.preset = config.preset;
+             self.engine.region = config.region;
+             self.snapshot_state = json!({
+                 "version":env!("CARGO_PKG_VERSION"),"instance_id":"browser",
++                "startup_preset_index":sad_pet::startup::INDEX,
+                 "sample_rate":self.rate,"audio_device":"Web Audio","audio_error":null,"audio_enabled":false,
+                 "sample_name":config.name,"sample_id":config.id,"sample_seconds":config.seconds,"sample_frames":config.frames,
+                 "region":config.region,"fades":config.fades,"input":{"active":config.live},
+@@ -196,6 +211,11 @@ impl Host {
+         v.grains[..v.grain_count].copy_from_slice(&packet.grains);
+         v.color[..v.color_len].copy_from_slice(&packet.color);
+         v.pre_color[..v.pre_color_len].copy_from_slice(&packet.pre_color);
++        if v.chord_len > 32 {
++            return Err("Invalid chord count".into());
++        }
++        preset_changed |=
++            self.engine.preset.performance.chord.as_slice() != &v.chord[..v.chord_len];
+         self.engine.preset.performance.chord.clear();
+         self.engine
+             .preset
+@@ -204,12 +224,29 @@ impl Host {
+             .extend_from_slice(&v.chord[..v.chord_len]);
+         for (i, step) in v.step_edits.iter().enumerate() {
+             if let Some(step) = step {
++                preset_changed |= self.engine.preset.performance.steps[i] != *step;
+                 self.engine.preset.performance.steps[i] = *step;
+             }
+         }
+-        let mut state = self.snapshot_state.clone();
++        if preset_changed {
++            self.snapshot_state["preset"] = json!(self.engine.preset);
++        }
+         if !packet.waveform.is_empty() {
+-            state["waveform"] = json!(packet.waveform);
++            self.snapshot_state["waveform"] = json!(packet.waveform);
++        }
++        // Cache only configuration, never clone the full preset on a meter tick.
++        let mut state = if !delta || configuration_changed {
++            self.snapshot_state.clone()
++        } else {
++            json!({})
++        };
++        if delta && !configuration_changed {
++            if preset_changed {
++                state["preset"] = self.snapshot_state["preset"].clone();
++            }
++            if !packet.waveform.is_empty() {
++                state["waveform"] = self.snapshot_state["waveform"].clone();
++            }
+         }
+         state["input"]["seconds"] = json!(v.input_seconds);
+         state["input"]["peak"] = json!(v.input_peak);
+@@ -217,7 +254,6 @@ impl Host {
+         state["midi_gate"] = json!(v.midi_gate);
+         state["frozen"] = json!(v.frozen);
+         state["bypass"] = json!(v.bypass);
+-        state["preset"] = json!(self.engine.preset);
+         state["center"] = json!(v.center);
+         state["grains"] = json!(&v.grains[..v.grain_count]);
+         state["active_grains"] = json!(v.grain_count);
+@@ -235,7 +271,27 @@ impl Host {
+         state["lfos"] = json!(v.lfos);
+         state["envs"] = json!(v.envs);
+         state["matrix_values"] = json!(v.matrix);
+-        state["knobs"] = json!(self.engine.knob_states_from_view(&v));
++        let knobs = json!(self.engine.knob_states_from_view(&v));
++        if delta && !configuration_changed {
++            let mut changes = serde_json::Map::new();
++            let previous = self.snapshot_state["knobs"].as_object();
++            for (key, value) in knobs.as_object().unwrap() {
++                if previous.and_then(|p| p.get(key)) != Some(value) {
++                    changes.insert(key.clone(), value.clone());
++                }
++            }
++            if let Some(previous) = previous {
++                for key in previous.keys() {
++                    if knobs.get(key).is_none() {
++                        changes.insert(key.clone(), Value::Null);
++                    }
++                }
++            }
++            state["knob_changes"] = Value::Object(changes);
++        } else {
++            state["knobs"] = knobs.clone();
++        }
++        self.snapshot_state["knobs"] = knobs;
+         state["peak"] = json!(v.peak);
+         state["resynth"] = json!({"bands":v.resynth_bands,"frequencies":v.resynth_frequencies});
+         state["source_fx"] = json!({"pending":v.source_fx_pending,"recipe":sad_pet::dsp::source_fx::Recipe::from_engine(&self.engine),"error":if v.source_fx_error {Some("Could not prepare Source FX")}else{None}});
+@@ -250,8 +306,7 @@ impl Host {
+             state["gain_reduction"][v.source_gain_reduction.0.to_string()] =
+                 json!(v.source_gain_reduction.1);
+         }
+-        self.snapshot_state = state.clone();
+-        Ok(json!({"revision":packet.revision,"state":state}))
++        Ok(json!({"revision":packet.revision,"delta":delta,"state":state}))
+     }
+ }
+ 
+@@ -296,6 +351,13 @@ pub extern "C" fn sad_snapshot_capacity() -> usize {
+ }
+ #[unsafe(no_mangle)]
+ pub extern "C" fn sad_snapshot_import() -> u32 {
++    import_snapshot(false)
++}
++#[unsafe(no_mangle)]
++pub extern "C" fn sad_snapshot_import_delta() -> u32 {
++    import_snapshot(true)
++}
++fn import_snapshot(delta: bool) -> u32 {
+     registry(|r| {
+         let index = r.index();
+         let bytes = std::mem::take(&mut r.parts[index].host.input);
+@@ -314,7 +376,7 @@ pub extern "C" fn sad_snapshot_import() -> u32 {
+                 .position(|p| p.meta.id == id)
+                 .ok_or("Obsolete timbre snapshot")?;
+             r.parts[index].host.input = bytes;
+-            r.parts[index].host.import_snapshot()
++            r.parts[index].host.import_snapshot(delta)
+         })()
+         .and_then(|v| serde_json::to_vec(&v).map_err(|e| e.to_string()));
+         let index = r.index();
+diff --git a/wasm/src/timbres.rs b/wasm/src/timbres.rs
+index a64af84..36c432c 100644
+--- a/wasm/src/timbres.rs
++++ b/wasm/src/timbres.rs
+@@ -7,7 +7,14 @@ pub(super) struct Part {
+     pub host: Host,
+     pub gain: f32,
+ }
++struct Preparing {
++    kind: Kind,
++    stage: u8,
++    host: Option<Host>,
++    preset: Option<Preset>,
++}
+ pub(super) struct Registry {
++    preparing: Option<Preparing>,
+     pub parts: Vec<Part>,
+     pub selected: usize,
+     pub target: Option<usize>,
+@@ -20,6 +27,7 @@ pub(super) struct Registry {
+ impl Registry {
+     pub fn new(rate: u32) -> Self {
+         let mut r = Self {
++            preparing: None,
+             parts: vec![Part {
+                 meta: Meta::default(),
+                 host: Host::new(rate),
+@@ -96,6 +104,95 @@ impl Registry {
+         self.refresh_context();
+         Ok(())
+     }
++    fn begin_part(&mut self, kind: Kind) -> Result<(), String> {
++        if self.preparing.is_some() {
++            return Err("A timbre is already being prepared".into());
++        }
++        self.next_id
++            .checked_add(1)
++            .ok_or("Timbre identity overflow")?;
++        self.preparing = Some(Preparing {
++            kind,
++            stage: 0,
++            host: None,
++            preset: None,
++        });
++        Ok(())
++    }
++    fn prepare_part(&mut self) -> Result<bool, String> {
++        let mut pending = self
++            .preparing
++            .take()
++            .ok_or("No timbre preparation is pending")?;
++        let rate = self.parts[0].host.rate;
++        match pending.stage {
++            0 => pending.host = Some(Host::new(rate)),
++            1 if pending.kind == Kind::Drums => {
++                let mut preset = Preset {
++                    name: "Drums".into(),
++                    drums: Some(Box::default()),
++                    ..Preset::default()
++                };
++                preset.sanitize();
++                preset.prepare_effects_reusing(rate, &pending.host.as_ref().unwrap().engine.preset);
++                pending.preset = Some(preset);
++            }
++            2 if pending.kind == Kind::Drums => {
++                let preset = pending.preset.as_mut().unwrap();
++                preset
++                    .drum_runtime
++                    .prepare_engine(preset.drums.as_deref(), rate);
++            }
++            3 if pending.kind == Kind::Drums => {
++                let preset = pending.preset.as_mut().unwrap();
++                preset
++                    .drum_runtime
++                    .prepare_input(preset.drums.as_deref(), rate);
++            }
++            _ => {
++                let mut host = pending.host.take().unwrap();
++                let primary = &self.parts[0].host;
++                host.engine.set_sample(primary.engine.sample.clone());
++                host.engine.set_midi_gate(primary.engine.midi_gate);
++                host.file_generation = primary.file_generation;
++                if let Some(mut preset) = pending.preset.take() {
++                    host.engine.exchange_preset(&mut preset);
++                    host.engine.set_midi_gate(false);
++                    host.resize_snapshot();
++                }
++                host.engine.set_playing(primary.engine.playing);
++                let kind = pending.kind;
++                let count = self.parts.iter().filter(|p| p.meta.kind == kind).count() + 1;
++                let id = self.next_id;
++                self.next_id = id.checked_add(1).ok_or("Timbre identity overflow")?;
++                self.parts.push(Part {
++                    meta: Meta {
++                        id,
++                        kind,
++                        name: format!(
++                            "{} {count}",
++                            if kind == Kind::Drums {
++                                "Drums"
++                            } else {
++                                "Granular"
++                            }
++                        ),
++                        ..Meta::default()
++                    },
++                    host,
++                    gain: 1.,
++                });
++                self.selected = self.parts.len() - 1;
++                self.target = None;
++                self.revision = self.revision.wrapping_add(1);
++                self.refresh_context();
++                return Ok(true);
++            }
++        }
++        pending.stage += 1;
++        self.preparing = Some(pending);
++        Ok(false)
++    }
+     pub fn command(&mut self, request: Value) -> Result<Value, String> {
+         let path = request["path"].as_str().ok_or("Missing command")?;
+         let data = &request["data"];
+@@ -109,47 +206,11 @@ impl Registry {
+                     return Ok(json!(self.context()));
+                 }
+                 "/api/timbres/add" => {
+-                    let kind: Kind =
++                    let kind =
+                         serde_json::from_value(data["kind"].clone()).map_err(|e| e.to_string())?;
+-                    let id = self.next_id;
+-                    let next_id = id.checked_add(1).ok_or("Timbre identity overflow")?;
+-                    let count = self.parts.iter().filter(|p| p.meta.kind == kind).count() + 1;
+-                    let mut host = Host::new(self.parts[0].host.rate);
+-                    let primary = &self.parts[0].host;
+-                    host.engine.set_sample(primary.engine.sample.clone());
+-                    host.engine.set_midi_gate(primary.engine.midi_gate);
+-                    host.file_generation = primary.file_generation;
+-                    if kind == Kind::Drums {
+-                        let preset = Preset {
+-                            name: "Drums".into(),
+-                            drums: Some(Box::default()),
+-                            ..Preset::default()
+-                        };
+-                        host.engine.set_preset(preset);
+-                        host.engine.set_midi_gate(false);
+-                        host.resize_snapshot();
+-                    }
+-                    host.engine.set_playing(primary.engine.playing);
+-                    host.reserve_source_buffers();
+-                    self.parts.push(Part {
+-                        meta: Meta {
+-                            id,
+-                            kind,
+-                            name: format!(
+-                                "{} {count}",
+-                                if kind == Kind::Drums {
+-                                    "Drums"
+-                                } else {
+-                                    "Granular"
+-                                }
+-                            ),
+-                            ..Meta::default()
+-                        },
+-                        host,
+-                        gain: 1.,
+-                    });
+-                    self.selected = self.parts.len() - 1;
+-                    self.next_id = next_id;
++                    self.begin_part(kind)?;
++                    while !self.prepare_part()? {}
++                    return Ok(json!(self.context()));
+                 }
+                 "/api/timbres/reset" => {
+                     self.parts.retain(|p| p.meta.id == 0);
+@@ -434,7 +495,7 @@ impl Registry {
+                 }));
+                 host.engine.exchange_processed_source(&mut cache);
+             }
+-            host.reserve_source_buffers();
++            host.reset_source_buffers();
+             host.resize_snapshot();
+             parts.push(Part {
+                 meta: state.meta,
+@@ -585,7 +646,7 @@ impl Registry {
+                 .set_midi_gate(state["midi_gate"].as_bool().unwrap_or(true));
+             host.engine.set_playing(false);
+             host.engine.bypass = state["bypass"] == true;
+-            host.reserve_source_buffers();
++            host.reset_source_buffers();
+             host.resize_snapshot();
+             parts.push(Part {
+                 meta,
+@@ -699,3 +760,32 @@ pub extern "C" fn sad_scene_render_document() -> u32 {
+         r.parts[i].host.finish(result)
+     })
+ }
++
++/// Preparation is called once per worklet quantum; existing parts keep rendering.
++#[unsafe(no_mangle)]
++pub extern "C" fn sad_timbre_prepare_begin() -> u32 {
++    registry(|r| {
++        let index = r.index();
++        let result = serde_json::from_slice::<Value>(&r.parts[index].host.input)
++            .map_err(|e| e.to_string())
++            .and_then(|v| serde_json::from_value(v["kind"].clone()).map_err(|e| e.to_string()))
++            .and_then(|kind| r.begin_part(kind))
++            .map(|_| b"{}".to_vec());
++        r.parts[index].host.finish(result)
++    })
++}
++#[unsafe(no_mangle)]
++pub extern "C" fn sad_timbre_prepare_step() -> u32 {
++    registry(|r| {
++        let result = r.prepare_part().and_then(|done| {
++            serde_json::to_vec(&json!({"done":done,"context":done.then(||r.context())}))
++                .map_err(|e| e.to_string())
++        });
++        let index = r.index();
++        r.parts[index].host.finish(result)
++    })
++}
++#[unsafe(no_mangle)]
++pub extern "C" fn sad_timbre_prepare_cancel() {
++    registry(|r| r.preparing = None);
++}
+diff --git a/wasm/test-effect-presets.mjs b/wasm/test-effect-presets.mjs
+index ff9df85..ed8b87e 100644
+--- a/wasm/test-effect-presets.mjs
++++ b/wasm/test-effect-presets.mjs
+@@ -60,6 +60,40 @@ bank.selections.set(view.key, saved.id);
+ assert.equal(bank.match(view), undefined, "editing retains the selected preset for overwrite rather than another matching preset");
+ assert.throws(() => bank.validate({...record, settings:{lcr_feedback:NaN}}));
+ assert.throws(() => bank.validate({...record, settings:{reverb_type:"missing"}}));
++// Factory entries remain available across refresh/delete, and Save creates an
++// independent User copy even when it keeps the original factory name.
++const factory = { ...record, id:"factory:lcr_delay:0", name:"ORIGINAL", factory:true };
++bank.factory = [factory];
++await bank.refresh();
++const factoryView = {key:"factory-slot", get:()=>({kind:factory.kind,mix:factory.mix,settings:factory.settings})};
++bank.selections.set(factoryView.key, factory.id);
++assert.equal(bank.match(factoryView).name, factory.name);
++const size = data.size;
++await bank.delete(factoryView);
++assert.equal(data.size, size);
++assert(bank.records.some((r) => r.id === factory.id));
++const copy = await bank.write(factory);
++assert.notEqual(copy.id, factory.id);
++assert.equal(copy.name, factory.name);
++assert.equal(copy.factory, undefined);
++await bank.refresh();
++bank.selections.set(factoryView.key, copy.id);
++await bank.delete(factoryView);
++await bank.undo();
++assert(bank.records.some((r) => r.id === factory.id));
++assert(bank.records.some((r) => r.id === copy.id));
++// Native factory export uses the portable codec without trying to read a User
++// file from disk, and the exported copy can be imported in either environment.
++let downloaded;
++bank.actions.native = true;
++bank.actions.download = (blob) => { downloaded = blob; };
++bank.actions.api = () => { throw new Error("Factory export tried to read a User file"); };
++bank.selections.set(factoryView.key, factory.id);
++await bank.export(factoryView);
++const exportedFactory = await decode(downloaded);
++assert.equal(exportedFactory.name, factory.name);
++assert.equal(exportedFactory.factory, undefined);
++assert.match(exportedFactory.id, /^[a-f0-9]{32}$/);
+ if (process.argv.includes("--fixture")) {
+   await mkdir("target/effect-presets-qa", {recursive:true});
+   await writeFile("target/effect-presets-qa/browser-export.sadfx", bytes);
+diff --git a/wasm/test-imported.mjs b/wasm/test-imported.mjs
+index 1ec9661..d68785b 100644
+--- a/wasm/test-imported.mjs
++++ b/wasm/test-imported.mjs
+@@ -19,6 +19,7 @@ for (const rate of [44100, 48000, 96000]) {
+   for (const [kind, rack, id] of [
+     ["super_echo", "color_chain", 1],
+     ["alpha_verb", "pre_color_chain", 2],
++    ["alpha_verb", "color_chain", 3],
+   ]) {
+     const slot = structuredClone(defaults.slot);
+     slot.id = id;
+@@ -50,6 +51,7 @@ for (const rate of [44100, 48000, 96000]) {
+     fx1_super_echo_note: 0.375,
+     pre_fx1_alpha_verb_size: 0.72,
+     pre_fx1_alpha_verb_dynamics: 1,
++    fx2_alpha_verb_size: 0.34,
+   });
+   for (let i = 0; i < 8; i++)
+     assert.ok(core.process(128).every(Number.isFinite));
+@@ -57,6 +59,7 @@ for (const rate of [44100, 48000, 96000]) {
+   const restored = core.request("/api/preset");
+   assert.equal(restored.color_chain[0].kind, "super_echo");
+   assert.equal(restored.pre_color_chain[0].kind, "alpha_verb");
++  assert.equal(restored.color_chain[1].kind, "alpha_verb");
+   assert.ok(
+     Math.abs(restored.color_chain[0].settings.super_echo_feedback - 0.63) <
+       1e-6,
+@@ -65,6 +68,9 @@ for (const rate of [44100, 48000, 96000]) {
+     Math.abs(restored.pre_color_chain[0].settings.alpha_verb_size - 0.72) <
+       1e-6,
+   );
++  assert.ok(
++    Math.abs(restored.color_chain[1].settings.alpha_verb_size - 0.34) < 1e-6,
++  );
+   const catalog = JSON.stringify(core.request("/api/sequencer/catalog"));
+   assert.ok(
+     catalog.includes("fx1_super_echo_feedback") &&
+@@ -72,5 +78,5 @@ for (const rate of [44100, 48000, 96000]) {
+   );
+ }
+ console.log(
+-  "SuperEcho / AlphaVerb WASM: 3 sample rates, simultaneous pre/post FX, scalar modes, preset recall, Neuropolis and no audio memory growth passed.",
++  "SuperEcho + two AlphaVerb instances: 3 sample rates, simultaneous pre/post FX, independent controls, preset recall, Neuropolis and no audio memory growth passed.",
+ );
+diff --git a/wasm/test-library.mjs b/wasm/test-library.mjs
+index dc65bac..427008e 100644
+--- a/wasm/test-library.mjs
++++ b/wasm/test-library.mjs
+@@ -3,10 +3,13 @@ import assert from "node:assert/strict";
+ import { readFile } from "node:fs/promises";
+ import { runInNewContext } from "node:vm";
+ 
+-const window = {};
++const window = { fetch: async () => ({ ok: true, json: async () => [] }) };
+ runInNewContext(
+   await readFile(new URL("../rust/web/library.js", import.meta.url), "utf8"),
+-  { window },
++  {
++    window,
++    document: { getElementById: () => ({}) },
++  },
+ );
+ const library = Object.create(window.EvilFileLibrary.prototype);
+ const cover = { id: "harvest-dawn-loop", name: "Harvest Dawn · harp loop" };
+@@ -36,3 +39,38 @@ assert.equal(await library.previousAudio(null), undefined);
+ library.catalog = [];
+ assert.equal(await library.previousAudio({ id: original.id }), original);
+ console.log("Library upgrade passed: soundtrack and short-cover selections move to the new loop; saved audio is preserved.");
++
++// The scene's fades belong to its sound, rather than the sample library's last edit.
++{
++  const sceneLibrary = Object.create(window.EvilFileLibrary.prototype);
++  let restoredFades = 0;
++  sceneLibrary.actions = { presets: true, loadFades: async () => restoredFades++ };
++  sceneLibrary.store = { open: async () => {}, setting: async () => null };
++  sceneLibrary.refresh = async () => {};
++  sceneLibrary.rememberNative = async () => {};
++  sceneLibrary.seed = async () => {};
++  sceneLibrary.render = () => {};
++  const native = {
++    instance_id: "fresh-browser",
++    fades: { fade_in: 1, fade_out: 1 },
++    timbres: { timbres: [{ id: 0 }] },
++  };
++  await sceneLibrary.initialize(native, []);
++  assert.equal(restoredFades, 0, "Library initialization replaced the scene fades");
++  await sceneLibrary.initialize({ ...native, timbres: undefined }, []);
++  assert.equal(restoredFades, 1, "Legacy desktop sample fades no longer restore");
++
++  const last = { id: "audio:previous", instance: "previous-session" };
++  const audio = { id: last.id, kind: "audio" };
++  sceneLibrary.store.setting = async () => last;
++  sceneLibrary.previousAudio = async () => audio;
++  let activated;
++  sceneLibrary.activate = async (record) => { activated = record; };
++  await sceneLibrary.initialize({
++    ...native,
++    sample_id: "factory:dusty-keys:v1",
++    startup_preset_index: 5,
++    preset: { name: "glasses5" },
++  }, Array.from({ length: 6 }, (_, i) => ({ name: i === 5 ? "glasses5" : "Init" })));
++  assert.equal(activated, audio, "The new initial scene prevented the remembered audio from restoring");
++}
+diff --git a/wasm/test-presets.mjs b/wasm/test-presets.mjs
+index 988cf1d..5d1df4e 100644
+--- a/wasm/test-presets.mjs
++++ b/wasm/test-presets.mjs
+@@ -41,6 +41,38 @@ const { encode, decode } = window.SadPresetFile;
+   await bank.initialize({}, []);
+   assert.equal(loads, 1);
+ }
++// Fresh browsers select the startup factory sound; remembered choices take priority.
++{
++  const factory = Array.from({ length: 6 }, (_, i) => ({ name: i === 5 ? "glasses5" : `Factory ${i}` }));
++  const bank = Object.create(window.SadPresetLibrary.prototype);
++  let last = null;
++  const loads = [];
++  bank.actions = { edited: () => false };
++  bank.files = { store: { setting: async () => last } };
++  bank.users = [{ id: "saved-user" }];
++  bank.refresh = async () => {};
++  bank.render = () => {};
++  bank.load = async (id) => loads.push(id);
++  const state = { preset: factory[5], startup_preset_index: 5 };
++  await bank.initialize(state, factory);
++  assert.equal(bank.selection.id, "factory:5");
++  assert.equal(bank.selection.dirty, false);
++  assert.equal(loads.length, 0);
++  last = { id: "saved-user" };
++  await bank.initialize(state, factory);
++  assert.deepEqual(loads, ["saved-user"]);
++  last = { id: "factory:0" };
++  await bank.initialize(state, factory);
++  assert.deepEqual(loads, ["saved-user", "factory:0"]);
++  last = { id: "deleted-user" };
++  await bank.initialize(state, factory);
++  assert.equal(loads.length, 2);
++  last = { id: "factory:5" };
++  bank.selection.dirty = true; // The sample library restored the user's last audio.
++  await bank.initialize(state, factory);
++  assert.equal(loads.length, 2, "The startup scene was needlessly loaded again");
++  assert.equal(bank.selection.dirty, true);
++}
+ const record = {
+   id: "1234567890abcdef1234567890abcdef",
+   name: "Тихая комната 🎹",
+diff --git a/wasm/test-realtime.mjs b/wasm/test-realtime.mjs
+index 188ed0d..eb42797 100644
+--- a/wasm/test-realtime.mjs
++++ b/wasm/test-realtime.mjs
+@@ -271,6 +271,60 @@ assert.equal(
+   false,
+   "Same-length file reused the previous generation",
+ );
++// Incremental timbre construction must leave every sample of existing parts
++// untouched, then start the new part at the same boundary as a synchronous add.
++for (const kind of ["granular", "drums"]) {
++  const staged = new Processor({ processorOptions: { module } });
++  const reference = new Core(module);
++  for (const core of [staged.core, reference]) {
++    core.call("sad_load", prepared);
++    core.request("/api/transport", { playing: true, midi_gate: false });
++  }
++  const requestId = ++id;
++  staged.port.onmessage({ data: { id: requestId, type: "add-timbre", data: { kind } } });
++  assert.ok(!messages.some(m => m.id === requestId), "Preparation blocked the message handler");
++  let finished = false;
++  for (let block = 0; block < 80; block++) {
++    const channels = [new Float32Array(128), new Float32Array(128)];
++    assert.equal(staged.process([], [channels]), true);
++    const expected = reference.process(128);
++    for (let frame = 0; frame < 128; frame++)
++      for (let c = 0; c < 2; c++)
++        assert.equal(channels[c][frame], expected[frame * 2 + c], `${kind}: audio changed at ${block}/${frame}`);
++    if (!finished && messages.some(m => m.id === requestId)) {
++      const response = messages.findLast(m => m.id === requestId);
++      assert.ok(!response.error, response.error);
++      assert.equal(response.result.timbres.length, 2);
++      reference.request("/api/timbres/add", { kind });
++      finished = true;
++    }
++  }
++  assert.ok(finished, "Timbre preparation never completed");
++}
++
++// A meter-only message retains the preset object. Rejected deltas request a
++// full resync, so a late message cannot lose a new preset or timbre selection.
++const receiver = Object.create(BrowserBackend.prototype), acknowledgements = [];
++Object.assign(receiver, {
++  viewStamp: 0, stateWaiters: new Set(), scheduleSourceEffects() {},
++  audio: { port: { postMessage: message => acknowledgements.push(message) } },
++});
++const savedPreset = { name: "Delta test" };
++receiver.workerMessage({ type: "snapshot", delta: true, stamp: 1,
++  state: { preset: savedPreset, timbres: { active: 0 }, waveform: [[0, 1]], input: { active: false } } });
++receiver.workerMessage({ type: "snapshot", delta: true, stamp: 2,
++  state: { timbres: { active: 0 }, peak: [0.2, 0.3], input: { seconds: 2 } } });
++assert.equal(receiver.state.preset, savedPreset);
++assert.equal(receiver.state.input.active, false);
++receiver.workerMessage({ type: "snapshot", delta: true, stamp: 1,
++  state: { preset: { name: "Stale" }, timbres: { active: 0 } } });
++assert.equal(acknowledgements.at(-1).success, false);
++assert.equal(receiver.state.preset, savedPreset);
++receiver.workerMessage({ type: "snapshot", delta: true, stamp: 3,
++  state: { timbres: { active: 1 } } });
++assert.equal(acknowledgements.at(-1).success, false);
++assert.equal(receiver.state.timbres.active, 0);
++
+ await Promise.all([
+   telemetry.w.terminate(),
+   recorder.w.terminate(),
+diff --git a/wasm/test-sequencer-ui.mjs b/wasm/test-sequencer-ui.mjs
+index 9044521..7b7ec56 100644
+--- a/wasm/test-sequencer-ui.mjs
++++ b/wasm/test-sequencer-ui.mjs
+@@ -262,3 +262,13 @@ assert.ok(refreshes > 0);
+ console.log(
+   "Sequencer editor: snapshot/reorder-safe pitch, 96 step knobs, integer Pulses/Ratchet, scalar OSC routing and ±24 st offsets passed.",
+ );
++
++const lazy = control("Track destination");
++const selectedValue = lazy.value;
++assert.equal(lazy.all().filter(n => n.tagName === "OPTION").length, 1);
++lazy.onfocus();
++assert.ok(lazy.all().filter(n => n.tagName === "OPTION").length > 1);
++assert.equal(lazy.value, selectedValue);
++lazy.onblur();
++assert.equal(lazy.all().filter(n => n.tagName === "OPTION").length, 1);
++assert.equal(lazy.value, selectedValue);
+diff --git a/wasm/web/browser-backend.mjs b/wasm/web/browser-backend.mjs
+index 6bbd977..b08496f 100644
+--- a/wasm/web/browser-backend.mjs
++++ b/wasm/web/browser-backend.mjs
+@@ -69,7 +69,10 @@ export class BrowserBackend {
+       );
+     this.context = new AudioContext({ latencyHint: "interactive" });
+     this.rate = this.context.sampleRate;
+-    this.context.onstatechange = () => this.updateStatus();
++    this.context.onstatechange = () => {
++      this.updateStatus();
++      if (this.context.state !== "running") this.audio?.port.postMessage({ type: "prepare-idle" });
++    };
+     this.worker = new Rpc(
+       new Worker(new URL("./worker.mjs", import.meta.url), { type: "module" }),
+     );
+@@ -90,23 +93,14 @@ export class BrowserBackend {
+     if (!response.ok)
+       throw new Error("Cannot download the WebAssembly engine.");
+     const module = await WebAssembly.compile(await response.arrayBuffer());
+-    await this.worker.call("init", { module, rate: this.rate });
+-    await this.telemetry.call("init", { module, rate: this.rate });
+-    const catalog = await this.worker.call("request", null, [], "/api/samples");
+-    const wav = await this.worker.call("factory", 0);
+-    const { prepared } = await this.worker.call(
+-      "prepare",
+-      {
+-        wav,
+-        name: catalog[0].name,
+-        libraryId: `factory:${catalog[0].id}:v1`,
+-        generation: this.sourceGeneration,
+-      },
+-      [wav],
+-    );
+-    await this.context.audioWorklet.addModule(
+-      new URL("./worklet.mjs", import.meta.url),
+-    );
++    await Promise.all([
++      this.worker.call("init", { module, rate: this.rate }),
++      this.telemetry.call("init", { module, rate: this.rate }),
++      this.context.audioWorklet.addModule(new URL("./worklet.mjs", import.meta.url)),
++    ]);
++    const prepared = await this.worker.call("startup", {
++      generation: this.sourceGeneration,
++    });
+     this.node = new AudioWorkletNode(this.context, "sad-pet", {
+       numberOfInputs: 1,
+       numberOfOutputs: 1,
+@@ -130,11 +124,7 @@ export class BrowserBackend {
+     };
+     this.monitor = this.context.createGain();
+     this.node.connect(this.monitor).connect(this.context.destination);
+-    await this.audio.call(
+-      "load",
+-      { prepared, generation: this.sourceGeneration },
+-      [prepared],
+-    );
++    await this.audio.call("scene-load", prepared, [prepared]);
+     this.state = await this.audio.call("request", null, [], "/api/state");
+     this.viewStamp = this.audio.stamp || 0;
+     const quit = document.getElementById("quit");
+@@ -219,10 +209,24 @@ export class BrowserBackend {
+   }
+   workerMessage(message) {
+     if (message.type === "snapshot") {
+-      if (message.state && (message.stamp || 0) >= (this.viewStamp || 0)) {
+-        this.state = message.state;
++      const accepted = message.state && (message.stamp || 0) >= (this.viewStamp || 0)
++        && (!message.delta || message.state.preset
++          || this.state?.timbres?.active === message.state.timbres?.active);
++      if (accepted) {
++        this.state = message.delta ? {
++          ...this.state, ...message.state,
++          input: { ...this.state?.input, ...message.state.input },
++        } : message.state;
++        if (message.state.knob_changes) {
++          this.state.knobs = { ...this.state.knobs };
++          for (const [key, value] of Object.entries(message.state.knob_changes)) {
++            if (value === null) delete this.state.knobs[key];
++            else this.state.knobs[key] = value;
++          }
++          delete this.state.knob_changes;
++        }
+         this.viewStamp = message.stamp || 0;
+-        this.scheduleSourceEffects(message.state);
++        this.scheduleSourceEffects(this.state);
+         for (const waiter of this.stateWaiters || []) {
+           if (this.viewStamp >= waiter.stamp) {
+             clearTimeout(waiter.timer);
+@@ -236,7 +240,7 @@ export class BrowserBackend {
+           type: "snapshot-return",
+           data: message.buffer,
+           sequence: message.sequence,
+-          success: !message.error,
++          success: !message.error && !!accepted,
+         },
+         [message.buffer],
+       );
+@@ -453,9 +457,15 @@ export class BrowserBackend {
+       if (route === "/api/state") {
+         await this.freshState();
+         result = this.snapshot();
+-      } else if (route === "/api/scene") {
++      } else if (route === "/api/scene" || (route === "/api/startup" && data)) {
+         if (data) {
+-          const prepared = await this.worker.call("scene-prepare", data);
++          await this.sourceLoadTail;
++          const prepared =
++            route === "/api/startup"
++              ? await this.worker.call("startup", {
++                  generation: this.sourceGeneration + 1,
++                })
++              : await this.worker.call("scene-prepare", data);
+           result = await this.audio.call("scene-load", prepared, [prepared]);
+           this.sourceRecipeKey = null;
+           this.state = await this.audio.call("request", null, [], "/api/state");
+@@ -474,7 +484,9 @@ export class BrowserBackend {
+         }
+       } else if (route.startsWith("/api/timbres")) {
+         await this.sourceLoadTail;
+-        result = await this.audio.call("request", data, [], route);
++        result = route === "/api/timbres/add"
++          ? await this.audio.call("add-timbre", { ...data, idle: this.context.state !== "running" })
++          : await this.audio.call("request", data, [], route);
+         if (route === "/api/timbres/update") {
+           this.state.timbres = result;
+         } else {
+@@ -628,6 +640,7 @@ export class BrowserBackend {
+           "/api/presets",
+           "/api/samples",
+           "/api/color-defaults",
++          "/api/effect-presets/factory",
+           "/api/sequencer/catalog",
+           "/api/drums/catalog",
+         ].includes(route)
+diff --git a/wasm/web/browser.js b/wasm/web/browser.js
+index 471042b..d48c8fa 100644
+--- a/wasm/web/browser.js
++++ b/wasm/web/browser.js
+@@ -11,6 +11,9 @@
+   // Keep the native panel's API contract without a server or a fetch override.
+   window.sadPetFetch = (...args) =>
+     ready.then((engine) => engine.fetch(...args));
++  // State already lives on this thread. Avoid encoding and parsing the entire
++  // preset through a synthetic HTTP Response at every UI tick.
++  window.sadPetState = () => ready.then((engine) => engine.snapshot());
+   window.sadPetAudio = {
+     status: () => backend?.status || "Loading WebAssembly…",
+   };
+diff --git a/wasm/web/worker.mjs b/wasm/web/worker.mjs
+index cce51c1..5606f10 100644
+--- a/wasm/web/worker.mjs
++++ b/wasm/web/worker.mjs
+@@ -1,5 +1,5 @@
+ import { Core } from "./core.mjs";
+-import { Mp3Encoder } from "./vendor/lamejs.mjs";
++
+ 
+ let core,
+   take = null;
+@@ -35,7 +35,8 @@ function wave(chunks, rate, frames) {
+   return buffer;
+ }
+ 
+-function mp3(chunks, rate) {
++async function mp3(chunks, rate) {
++  const { Mp3Encoder } = await import("./vendor/lamejs.mjs");
+   const encoder = new Mp3Encoder(2, rate, 192),
+     output = [];
+   const left = new Int16Array(1152),
+@@ -77,7 +78,7 @@ async function handle(message) {
+     switch (type) {
+       case "snapshot": {
+         const packet = core.json(
+-          "sad_snapshot_import",
++          "sad_snapshot_import_delta",
+           new Uint8Array(message.buffer, 0, message.length),
+         );
+         self.postMessage(
+@@ -106,6 +107,32 @@ async function handle(message) {
+       case "scene-render":
+         result = core.call("sad_scene_render_document", data);
+         break;
++      case "startup": {
++        const scene = core.request("/api/startup");
++        core.request("/api/timbres/reset", {});
++        core.request("/api/input", { active: false });
++        core.call(
++          "sad_prepare",
++          core.call("sad_factory", undefined, scene.sample_index),
++        );
++        core.call("sad_sample_name", {
++          name: scene.sample_name,
++          id: scene.sample_id,
++        });
++        sourceGeneration = data.generation ?? sourceGeneration + 1;
++        core.wasm.sad_source_generation(sourceGeneration);
++        core.request("/api/preset", scene.preset);
++        core.request("/api/region", scene.region);
++        core.request("/api/fades", scene.fades);
++        core.request("/api/transport", {
++          playing: false,
++          midi_gate: true,
++          frozen: false,
++          bypass: false,
++        });
++        result = core.call("sad_scene_pack");
++        break;
++      }
+       case "request":
+         result = core.request(message.path, data);
+         break;
+@@ -198,7 +225,7 @@ async function handle(message) {
+         result =
+           type === "record-wav"
+             ? wave(take.chunks, take.rate, take.frames)
+-            : mp3(take.chunks, take.rate);
++            : await mp3(take.chunks, take.rate);
+         break;
+       default:
+         throw new Error(`Unknown worker command: ${type}`);
+diff --git a/wasm/web/worklet.mjs b/wasm/web/worklet.mjs
+index a94530f..93f3796 100644
+--- a/wasm/web/worklet.mjs
++++ b/wasm/web/worklet.mjs
+@@ -21,6 +21,10 @@ class SadPetProcessor extends AudioWorkletProcessor {
+     );
+     this.port.onmessage = ({ data: message }) => {
+       const { id, type, data } = message;
++      if (type === "prepare-idle") {
++        while (this.preparingTimbre) this.advanceTimbre();
++        return;
++      }
+       if (type === "snapshot-now") {
+         this.snapshot();
+         return;
+@@ -45,6 +49,13 @@ class SadPetProcessor extends AudioWorkletProcessor {
+       }
+       try {
+         let result;
++        if (type === "add-timbre") {
++          if (this.preparingTimbre) throw new Error("A timbre is already being prepared.");
++          this.core.json("sad_timbre_prepare_begin", data);
++          this.preparingTimbre = { id };
++          if (data.idle) while (this.preparingTimbre) this.advanceTimbre();
++          return;
++        }
+         if (type === "scene-pack") result = this.core.call("sad_scene_pack");
+         else if (type === "scene-load")
+           result = this.core.json("sad_scene_load", data);
+@@ -138,6 +149,24 @@ class SadPetProcessor extends AudioWorkletProcessor {
+     };
+     this.port.postMessage({ type: "ready" });
+   }
++  advanceTimbre() {
++    const pending = this.preparingTimbre;
++    if (!pending) return;
++    try {
++      const result = this.core.json("sad_timbre_prepare_step");
++      if (!result.done) return;
++      this.preparingTimbre = null;
++      this.stateStamp++;
++      const capacity = this.core.wasm.sad_snapshot_capacity();
++      this.snapshotPool = this.snapshotPool.map(buffer => buffer.length >= capacity ? buffer : new Uint8Array(capacity));
++      this.port.postMessage({ id: pending.id, result: result.context, stamp: this.stateStamp });
++      this.snapshot();
++    } catch (error) {
++      this.preparingTimbre = null;
++      this.core.wasm.sad_timbre_prepare_cancel();
++      this.port.postMessage({ id: pending.id, error: error.message });
++    }
++  }
+   snapshot() {
+     const buffer = this.snapshotPool.pop();
+     // UI backpressure must never delay audio/MIDI or discard unreported peaks.
+@@ -250,11 +279,13 @@ class SadPetProcessor extends AudioWorkletProcessor {
+           });
+         }
+       }
++      // Source FX preparation also consumes these views while the UI is hidden.
+       this.telemetryFrames += count;
+       if (this.telemetryFrames >= sampleRate / 20) {
+         this.telemetryFrames = 0;
+         this.snapshot();
+       }
++      this.advanceTimbre();
+     } catch (error) {
+       this.port.postMessage({ type: "fatal", error: error.message });
+       return false;

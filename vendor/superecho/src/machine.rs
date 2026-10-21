@@ -19,6 +19,26 @@ impl fmt::Display for Fault {
 }
 impl std::error::Error for Fault {}
 
+// Keep formatting/allocation for invalid firmware addresses out of the hot,
+// inlined memory adapter (and out of every generated DSP load/store).
+#[cold]
+#[inline(never)]
+fn unmapped_memory(pc: u32, address: u32, size: usize, operation: &str) -> Fault {
+    Fault {
+        pc,
+        message: format!("{operation} unmapped address 0x{address:08x} ({size} bytes)"),
+    }
+}
+
+#[cold]
+#[inline(never)]
+fn crossing_memory(pc: u32, address: u32, operation: &str) -> Fault {
+    Fault {
+        pc,
+        message: format!("{operation} crosses region at 0x{address:08x}"),
+    }
+}
+
 pub struct Machine {
     pub registers: [u8; 2048],
     pub itcm: Vec<u8>,
@@ -110,6 +130,10 @@ impl Machine {
             }
         }
     }
+    // DSP loads have constant widths and often constant addresses. Keeping the
+    // checked region selection beside each load lets LLVM remove redundant
+    // mapping/width checks instead of calling this adapter for every sample.
+    #[inline(always)]
     fn region(&self, address: u32, size: usize) -> Result<&[u8]> {
         let (bytes, off): (&[u8], usize) = match address {
             0x00000000..=0x000034ff => (&self.itcm, address as usize),
@@ -117,16 +141,13 @@ impl Machine {
             0x20200000..=0x2027ffff => (&self.ocram, (address - 0x20200000) as usize),
             0x60020000..=0x6005cfff => (ROM, (address - FLASH_BASE) as usize),
             0x80000000..=0x81ffffff => (&self.heap, (address - 0x80000000) as usize),
-            _ => {
-                return Err(self.fault(format!(
-                    "read unmapped address 0x{address:08x} ({size} bytes)"
-                )))
-            }
+            _ => return Err(unmapped_memory(self.pc, address, size, "read")),
         };
         bytes
             .get(off..off + size)
-            .ok_or_else(|| self.fault(format!("read crosses region at 0x{address:08x}")))
+            .ok_or_else(|| crossing_memory(self.pc, address, "read"))
     }
+    #[inline(always)]
     fn region_mut(&mut self, address: u32, size: usize) -> Result<&mut [u8]> {
         let pc = self.pc;
         let (bytes, off): (&mut [u8], usize) = match address {
@@ -134,17 +155,11 @@ impl Machine {
             0x20000000..=0x2001ffff => (&mut self.dtcm, (address - 0x20000000) as usize),
             0x20200000..=0x2027ffff => (&mut self.ocram, (address - 0x20200000) as usize),
             0x80000000..=0x81ffffff => (&mut self.heap, (address - 0x80000000) as usize),
-            _ => {
-                return Err(Fault {
-                    pc,
-                    message: format!("write unmapped address 0x{address:08x} ({size} bytes)"),
-                })
-            }
+            _ => return Err(unmapped_memory(pc, address, size, "write")),
         };
-        bytes.get_mut(off..off + size).ok_or_else(|| Fault {
-            pc,
-            message: format!("write crosses region at 0x{address:08x}"),
-        })
+        bytes
+            .get_mut(off..off + size)
+            .ok_or_else(|| crossing_memory(pc, address, "write"))
     }
     #[inline(always)]
     pub fn load(&self, address: u32, size: usize) -> Result<u64> {

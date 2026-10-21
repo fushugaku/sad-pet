@@ -48,6 +48,18 @@ int main() {
         StateListener listener;
         SadPetProcessor processor;
         processor.addListener(&listener);
+        const auto initial = command(processor, "/api/state");
+        require(initial["preset"]["name"].toString() == "glasses5", "New instance did not load the startup scene");
+        require(initial["file_source"]["sample_name"].toString() == "Dusty keys", "Startup sample was not loaded");
+        require(initial["preset_selection"]["id"].toString() == "factory:5", "Startup factory selection is wrong");
+        require(!static_cast<bool>(initial["preset_selection"]["dirty"]), "Host normalization marked the startup scene modified");
+        require(std::abs(static_cast<float>(initial["preset"]["params"]["filter"]) - 0.4988926f) < 0.00001f,
+            "Host parameter defaults replaced the startup filter");
+        require(std::abs(processor.parameters.getRawParameterValue("filter")->load() - 0.4988926f) < 0.00001f,
+            "Startup values were not published to host automation");
+        // Use the neutral DSP for the offset, routing and project-state checks below.
+        command(processor, "/api/preset-library/factory", juce::JSON::parse(R"({"index":0})"));
+        command(processor, "/api/fades", juce::JSON::parse(R"({"fade_in":0,"fade_out":0})"));
         processor.setPlayConfigDetails(SAD_PET_EFFECT ? 2 : 0, 2, 48000.0, 4096);
         processor.prepareToPlay(48000.0, 4096);
         juce::AudioBuffer<float> buffer(2, 4096);

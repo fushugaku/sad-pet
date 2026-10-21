@@ -1,0 +1,13 @@
+{
+  "nodes": 10912,
+  "selectOptions": 6192,
+  "canvases": 17,
+  "inactiveHiddenCanvases": 10,
+  "viewport": {
+    "width": 1078,
+    "height": 1537
+  },
+  "playbackStatus": "48.0 kHz · WebAssembly",
+  "testedUrl": "http://127.0.0.1:8086/",
+  "transportStoppedAfterTest": true
+}

@@ -1,0 +1,5 @@
+   Compiling sad-pet-alphaverb v0.4.0 (/Users/georgy/Projects/Evil_update/vendor/alphaverb)
+    Checking sad-pet-superecho v1.2.0 (/Users/georgy/Projects/Evil_update/vendor/superecho)
+    Checking sad-pet v0.30.1 (/Users/georgy/Projects/Evil_update/rust)
+    Checking sad-pet-wasm v0.30.1 (/Users/georgy/Projects/Evil_update/wasm)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 12.57s

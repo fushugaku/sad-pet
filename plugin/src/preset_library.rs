@@ -349,16 +349,27 @@ impl Controller {
             ("/api/preset-library/factory", true) => {
                 let index = data["index"]
                     .as_u64()
-                    .filter(|n| *n < 5)
+                    .filter(|n| *n <= sad_pet::startup::INDEX as u64)
                     .ok_or("Unknown factory preset.")?;
                 let preset = Preset::builtin(index as usize);
-                let source = self.prepared_source_for(
-                    self.sample.clone(),
-                    self.source,
-                    self.region,
-                    self.fades,
-                    &preset,
-                );
+                let startup = index as usize == sad_pet::startup::INDEX;
+                let sample = if startup {
+                    sad_pet::startup::sample()
+                } else {
+                    self.sample.clone()
+                };
+                let region = if startup {
+                    sad_pet::startup::REGION
+                } else {
+                    self.region
+                };
+                let fades = if startup {
+                    sad_pet::startup::FADES
+                } else {
+                    self.fades
+                };
+                let source =
+                    self.prepared_source_for(sample.clone(), self.source, region, fades, &preset);
                 self.enqueue(Command::Restore(Box::new(super::Restore {
                     parts: None,
                     mix: Default::default(),
@@ -375,6 +386,9 @@ impl Controller {
                 self.meta = sad_pet::timbres::Meta::default();
                 self.scene_revision = self.scene_revision.wrapping_add(1);
                 self.preset = preset;
+                self.sample = sample;
+                self.region = region;
+                self.fades = fades;
                 self.selection = Selection {
                     id: format!("factory:{index}"),
                     dirty: false,

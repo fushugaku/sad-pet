@@ -11,9 +11,38 @@ import subprocess
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def strip_debug_names(data):
+    """Remove metadata only; preserve every executable/data section byte."""
+    def integer(offset):
+        value, shift = 0, 0
+        while True:
+            byte = data[offset]
+            offset += 1
+            value |= (byte & 127) << shift
+            if byte < 128:
+                return value, offset
+            shift += 7
+
+    output = bytearray(data[:8])
+    offset = 8
+    while offset < len(data):
+        kind = data[offset]
+        size, start = integer(offset + 1)
+        end = start + size
+        name = b""
+        if kind == 0:
+            length, name_start = integer(start)
+            name = data[name_start:name_start + length]
+        if name != b"name" and not name.startswith(b".debug_"):
+            output.extend(data[offset:end])
+        offset = end
+    return output
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=ROOT / "dist" / "web")
+    parser.add_argument("--keep-debug-names", action="store_true", help="Keep WASM names for profiling")
     args = parser.parse_args()
     env = os.environ.copy()
     # Homebrew's cargo can precede rustup on PATH; use the rustc that owns the
@@ -38,6 +67,9 @@ def main():
     (output / "index.html").write_text(index)
     shutil.copytree(ROOT / "wasm" / "web", output, dirs_exist_ok=True)
     shutil.copy2(target / "wasm32-unknown-unknown" / "release" / "sad_pet_wasm.wasm", output / "sad_pet.wasm")
+    if not args.keep_debug_names:
+        wasm = output / "sad_pet.wasm"
+        wasm.write_bytes(strip_debug_names(wasm.read_bytes()))
     (output / "licenses").mkdir(exist_ok=True)
     shutil.copy2(ROOT / "rust/licenses/neuropolis-AGPL-3.0.txt", output / "licenses/neuropolis-AGPL-3.0.txt")
     for name in ("superecho", "alphaverb", "dxm088"):

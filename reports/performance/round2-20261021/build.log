@@ -1,0 +1,6 @@
+    Blocking waiting for file lock on build directory
+   Compiling sad-pet-superecho v1.2.0 (/Users/georgy/Projects/Evil_update/vendor/superecho)
+   Compiling sad-pet v0.30.1 (/Users/georgy/Projects/Evil_update/rust)
+   Compiling sad-pet-wasm v0.30.1 (/Users/georgy/Projects/Evil_update/wasm)
+    Finished `release` profile [optimized] target(s) in 2m 13s
+Built /Users/georgy/Projects/Evil_update/dist/web (16,669,662 byte WASM engine)

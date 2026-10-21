@@ -111,6 +111,45 @@ fn super_echo_matches_the_unchanged_arm_firmware_in_tape_and_bbd_modes() {
         );
     }
 }
+
+#[test]
+fn super_echo_memory_adapter_keeps_checked_boundaries_and_fault_locations() {
+    let mut machine = sad_pet_superecho::machine::Machine::new();
+    machine.pc = 0x208;
+    for (start, end) in [
+        (0, 0x3500),
+        (0x20000000, 0x20020000),
+        (0x20200000, 0x20280000),
+        (0x80000000, 0x82000000),
+    ] {
+        for size in [1, 2, 4, 8] {
+            // Both unaligned accesses and the last valid span remain supported.
+            for address in [start + 1, end - size as u32] {
+                let value = 0x8877665544332211 & (u64::MAX >> (64 - size * 8));
+                machine.store(address, size, value).unwrap();
+                assert_eq!(machine.load(address, size).unwrap(), value);
+            }
+        }
+        let read = machine.load(end - 1, 4).unwrap_err();
+        let write = machine.store(end - 1, 4, 0).unwrap_err();
+        assert_eq!(read.pc, 0x208);
+        assert_eq!(write.pc, 0x208);
+        assert_eq!(
+            read.message,
+            format!("read crosses region at 0x{:08x}", end - 1)
+        );
+        assert_eq!(
+            write.message,
+            format!("write crosses region at 0x{:08x}", end - 1)
+        );
+    }
+    let flash = sad_pet_superecho::machine::FLASH_BASE;
+    assert!(machine.load(flash, 4).is_ok());
+    assert!(machine.store(flash, 4, 0).is_err());
+    let fault = machine.load(0x12340000, 4).unwrap_err();
+    assert_eq!(fault.pc, 0x208);
+    assert_eq!(fault.message, "read unmapped address 0x12340000 (4 bytes)");
+}
 #[test]
 fn alpha_verb_matches_the_upstream_original_firmware_reference() {
     let input = q31(include_bytes!("fixtures/erika-fx/alpha-verb-input.q31"));

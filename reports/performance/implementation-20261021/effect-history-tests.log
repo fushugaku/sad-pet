@@ -1,0 +1,43 @@
+   Compiling sad-pet v0.30.1 (/Users/georgy/Projects/Evil_update/rust)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.68s
+     Running tests/imported_fx.rs (target/debug/deps/imported_fx-f8bc98401041deb4)
+
+running 6 tests
+test all_three_racks_roundtrip_controls_and_released_parameter_positions_are_stable ... ok
+test only_selected_slots_allocate_original_engines ... ok
+test super_echo_matches_the_unchanged_arm_firmware_in_tape_and_bbd_modes ... ok
+test numeric_changes_and_prepared_preset_exchange_retain_running_tails_and_do_not_allocate ... ok
+test all_rates_extremes_controls_and_resets_are_finite_without_audio_allocation ... ok
+test alpha_verb_matches_the_upstream_original_firmware_reference ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 22.65s
+
+     Running tests/neuropolis.rs (target/debug/deps/neuropolis-e324afa354e7bcf1)
+
+running 8 tests
+test old_chord_patterns_migrate_into_neuropolis_note_lanes ... ok
+test opposite_tracks_cancel_before_clamping_and_unipolar_absolute_cv_uses_the_full_range ... ok
+test note_tracks_trigger_envelopes_and_do_not_release_an_external_note_with_the_same_pitch ... ok
+test three_step_destinations_reach_filters_oscillators_and_fx_with_sparse_realtime_edits ... ok
+test destinations_change_working_sound_parameters_without_overwriting_the_patch ... ok
+test unlimited_tracks_recall_and_id_based_adoption_do_not_allocate_or_reset_other_lanes ... ok
+test step_gate_length_uses_the_original_core_and_oscillator_presets_use_signed_offsets ... ok
+test real_neuropolis_orders_pulses_probability_and_independent_clocks_match_upstream ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.47s
+
+     Running tests/reverb_chain.rs (target/debug/deps/reverb_chain-fc1464f87484fda5)
+
+running 9 tests
+test migration_keeps_eight_color_effects_then_reverb_settings_and_existing_routes ... ok
+test per_reverb_envelopes_and_lfos_keep_their_targets_when_moved_or_deleted ... ok
+test reordering_and_removing_other_slots_preserve_reverb_tails_and_removal_resets_its_state ... ok
+test repeated_reverbs_are_independent_and_order_relative_to_distortion_matters ... ok
+test stacked_reverbs_render_identically_across_audio_block_sizes ... ok
+test migrated_rack_matches_previous_color_then_shared_reverb_audio ... ok
+test every_reverb_knob_and_algorithm_affects_sound_and_bypass_is_exact ... ok
+test twelve_reverbs_are_finite_at_high_resonance_and_multiple_sample_rates ... ok
+test prepared_edits_keep_effect_histories_at_the_engine_sample_rate ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.86s
+

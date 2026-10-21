@@ -674,21 +674,45 @@ impl<'de> Deserialize<'de> for Preset {
 impl Preset {
     /// Prepare the audio owner's copy on the control thread.
     pub fn prepared_clone(&self) -> Self {
-        self.prepared_clone_for(48_000)
+        self.prepared_clone_for(self.imported_effects.sample_rate().unwrap_or(48_000))
     }
     pub fn prepared_clone_for(&self, rate: u32) -> Self {
         let mut preset = self.clone();
         preset.sanitize();
-        preset.prepare_imported_effects();
+        preset.prepare_effects(rate);
         preset.drum_runtime.prepare(preset.drums.as_deref(), rate);
         preset
     }
     pub fn prepare_imported_effects(&mut self) {
-        self.imported_effects.prepare(
-            self.color_chain
-                .iter()
-                .chain(&self.pre_color_chain)
-                .chain(&self.source_color_chain),
+        self.prepare_effects(48_000);
+    }
+    pub fn prepare_effects(&mut self, rate: u32) {
+        self.imported_effects.prepare_racks(
+            [
+                &self.color_chain,
+                &self.pre_color_chain,
+                &self.source_color_chain,
+            ],
+            rate,
+        );
+    }
+    /// Synchronous owners know exactly which histories are still available.
+    /// Queued native updates use prepared_clone_for instead, so a future slot
+    /// change cannot invalidate their prepared resources.
+    pub fn prepare_effects_reusing(&mut self, rate: u32, previous: &Self) {
+        self.imported_effects.prepare_racks_reusing(
+            [
+                &self.color_chain,
+                &self.pre_color_chain,
+                &self.source_color_chain,
+            ],
+            rate,
+            &previous.imported_effects,
+            [
+                &previous.color_chain,
+                &previous.pre_color_chain,
+                &previous.source_color_chain,
+            ],
         );
     }
     pub fn sanitize(&mut self) {
@@ -791,6 +815,9 @@ impl Preset {
     }
 
     pub fn builtin(index: usize) -> Self {
+        if index == crate::startup::INDEX {
+            return crate::startup::preset();
+        }
         let mut p = Self::default();
         match index {
             1 => {

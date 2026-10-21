@@ -1,0 +1,97 @@
+{
+  "implemented": [
+    "Shared immutable filter tables per sample rate, with independent voice histories",
+    "Exact cached gain conversion without changing the control clock",
+    "Separate telemetry decoder with per-timbre metadata and no audio engines",
+    "Snapshot copying bounded by the published payload, regardless of the destination pool capacity"
+  ],
+  "pcm": {
+    "wasm": {
+      "cases": 24,
+      "samples": 6019072,
+      "differences": 0
+    },
+    "native": {
+      "cases": 24,
+      "samples": 9027584,
+      "differences": 0
+    },
+    "scenes": {
+      "cases": 12,
+      "samples": 3009536,
+      "differences": 0
+    },
+    "controls": {
+      "cases": 60,
+      "samples": 1966080,
+      "differences": 0
+    }
+  },
+  "total_identical_samples": 20022272,
+  "measurements": {
+    "initialization_ms": {
+      "before": [
+        0.3953330000000008,
+        0.37070900000000506,
+        0.3691249999999968,
+        0.3658330000000092,
+        0.3149999999999977,
+        0.32529199999999037,
+        0.369624999999985
+      ],
+      "after": [
+        0.08787499999999682,
+        0.0886250000000075,
+        0.08733399999999847,
+        0.0760840000000087,
+        0.08012499999998113,
+        0.07420799999999872,
+        0.07712500000002365
+      ],
+      "median_before": 0.3691249999999968,
+      "median_after": 0.08012499999998113,
+      "reduction_percent": 78.29326109042145
+    },
+    "telemetry": {
+      "same_build": {
+        "initial": {
+          "legacy_MiB": 6.6875,
+          "lightweight_MiB": 3.3125
+        },
+        "four_timbres": {
+          "legacy_MiB": 16.75,
+          "lightweight_MiB": 4.9375
+        }
+      },
+      "before": {
+        "initial": {
+          "legacy_MiB": 6.6875,
+          "lightweight_MiB": null
+        },
+        "four_timbres": {
+          "legacy_MiB": 16.9375,
+          "lightweight_MiB": null
+        }
+      }
+    }
+  },
+  "validation": {
+    "rust_tests": 221,
+    "web_suites": 17,
+    "clippy": "passed",
+    "format": "passed",
+    "browser": "48 kHz playback; added drum timbre, enabled granular drums, returned to original timbre, added Source FX chorus; no console errors"
+  },
+  "measurement_method": "Local Node/V8. Initialization: sad_init at 48 kHz in an existing WASM instance after warm-up, seven alternating runs of 60 iterations; median of per-run medians. It is not page load time. Telemetry: WASM linear memory before and after decoding four granular parts; code and browser overhead are not included.",
+  "verified_binaries": {
+    "wasm": {
+      "path": "target/perf/round2-20261021/candidate.wasm",
+      "sha256": "163c1bf7761c7a837148dfef3edd51c611ce6269c60c991ed6e49d91d4ba80d1"
+    },
+    "native": {
+      "path": "target/perf/round2-20261021/native-after",
+      "sha256": "e182752735cb51a411babcc1d6d9e455d1b388cdf9da19b3566e537c29487c13"
+    }
+  },
+  "workspace_note": "Existing and concurrent startup, effect preset, packaging and firmware optimizations were preserved. This report covers the three requested follow-up optimizations; source-only baseline copies and a preexisting diff are retained in this folder."
+}

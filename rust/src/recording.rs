@@ -23,10 +23,33 @@ pub struct Take {
 
 pub struct Recorder {
     sample_rate: u32,
-    id: Option<String>,
+    id: Option<Arc<str>>,
     frames: Vec<Stereo>,
     take: Option<Arc<Take>>,
-    error: Option<String>,
+    error: Option<Arc<str>>,
+}
+
+/// Share recording metadata with the UI without copying strings on the DSP thread.
+pub(crate) struct Feedback {
+    id: Option<Arc<str>>,
+    seconds: f64,
+    error: Option<Arc<str>>,
+    pub take: Option<Arc<Take>>,
+}
+impl Feedback {
+    pub fn view(&self) -> View {
+        View {
+            active: self.id.is_some(),
+            id: self
+                .id
+                .as_ref()
+                .map(|id| id.to_string())
+                .or_else(|| self.take.as_ref().map(|take| take.id.clone())),
+            seconds: self.seconds,
+            available: self.id.is_none() && self.take.is_some(),
+            error: self.error.as_ref().map(|error| error.to_string()),
+        }
+    }
 }
 impl Recorder {
     pub fn new(sample_rate: u32) -> Self {
@@ -47,20 +70,23 @@ impl Recorder {
             .try_reserve(self.sample_rate as usize * 10)
             .map_err(|e| e.to_string())?;
         self.error = None;
-        self.id = Some(format!(
-            "{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos()
-        ));
+        self.id = Some(
+            format!(
+                "{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos()
+            )
+            .into(),
+        );
         Ok(())
     }
     pub fn stop(&mut self) -> Result<Arc<Take>, String> {
         if let Some(id) = self.id.take() {
             self.take = Some(Arc::new(Take {
-                id,
+                id: id.to_string(),
                 sample_rate: self.sample_rate,
                 frames: std::mem::take(&mut self.frames),
             }));
@@ -78,7 +104,7 @@ impl Recorder {
         if self.frames.capacity() - self.frames.len() < count
             && let Err(error) = self.frames.try_reserve(self.sample_rate as usize * 10)
         {
-            self.error = Some(format!("Recording stopped: {error}"));
+            self.error = Some(format!("Recording stopped: {error}").into());
             let _ = self.stop();
             return;
         }
@@ -92,12 +118,11 @@ impl Recorder {
         self.take.clone()
     }
     pub fn view(&self) -> View {
-        View {
-            active: self.id.is_some(),
-            id: self
-                .id
-                .clone()
-                .or_else(|| self.take.as_ref().map(|take| take.id.clone())),
+        self.feedback().view()
+    }
+    pub(crate) fn feedback(&self) -> Feedback {
+        Feedback {
+            id: self.id.clone(),
             seconds: if self.id.is_some() {
                 self.frames.len() as f64 / self.sample_rate as f64
             } else {
@@ -105,8 +130,8 @@ impl Recorder {
                     take.frames.len() as f64 / self.sample_rate as f64
                 })
             },
-            available: self.id.is_none() && self.take.is_some(),
             error: self.error.clone(),
+            take: self.take.clone(),
         }
     }
 }

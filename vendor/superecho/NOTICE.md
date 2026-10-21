@@ -20,8 +20,17 @@ this software does not change their ownership or grant a license to that materia
 The upstream KekLocator repository obtains its pinned source data with
 `tools/prepare-firmware.py`; its provenance is recorded in `PORTING.md` and
 `crates/engine/firmware/source.json`. This DSP subset includes only the extracted
-ROM named above, not the UF2 or factory preset bank.
+ROM named above and the original 51-preset `default-backup.elb`, not the UF2.
+The factory bank is copied unchanged from `crates/engine/firmware/default-backup.elb`
+at the revision above. SHA-256:
+1329d0c4fa7323f2d3ba61a4a0112f0264bc7ff25db071ed9fd741c002534982.
+SAD PET applies the upstream pre-Dub bank upgrades and maps the original controls
+to SuperEcho, with tempo sync and freeze off and the original default 50% mix.
 
 This repository does not assert a blanket open-source license over the
 firmware-derived code or factory data.
+
+SAD PET specializes the checked memory adapter at DSP call sites and puts fault
+formatting in cold error handlers. The firmware instructions, arithmetic, delay
+histories and parameter callbacks are unchanged.
 

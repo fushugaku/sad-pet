@@ -42,10 +42,13 @@ function decode(bytes) {
 }
 
 const NO_INPUT = [];
-export class Core {
-  constructor(module, rate = 48000) {
+class Abi {
+  constructor(module, rate, prefix) {
     this.wasm = new WebAssembly.Instance(module, {}).exports;
-    this.wasm.sad_init(rate);
+    this.allocateInput = this.wasm[`${prefix}_input`];
+    this.outputPointer = this.wasm[`${prefix}_output`];
+    this.outputLength = this.wasm[`${prefix}_output_len`];
+    this.wasm[`${prefix}_init`](rate);
   }
   input(value) {
     const bytes =
@@ -54,15 +57,15 @@ export class Core {
         : value instanceof Uint8Array
           ? value
           : encode(JSON.stringify(value));
-    const pointer = this.wasm.sad_input(bytes.length);
+    const pointer = this.allocateInput(bytes.length);
     if (!pointer) throw new Error("The audio file is too large.");
     new Uint8Array(this.wasm.memory.buffer, pointer, bytes.length).set(bytes);
   }
   output() {
     return new Uint8Array(
       this.wasm.memory.buffer,
-      this.wasm.sad_output(),
-      this.wasm.sad_output_len(),
+      this.outputPointer(),
+      this.outputLength(),
     );
   }
   call(name, input, ...args) {
@@ -72,8 +75,23 @@ export class Core {
       throw new Error(JSON.parse(decode(this.output())).error);
     return this.output().slice().buffer;
   }
-  json(name, input) {
-    return JSON.parse(decode(new Uint8Array(this.call(name, input))));
+  json(name, input, ...args) {
+    return JSON.parse(decode(new Uint8Array(this.call(name, input, ...args))));
+  }
+}
+
+export class TelemetryCore extends Abi {
+  constructor(module, rate = 48000) {
+    super(module, rate, "sad_telemetry");
+  }
+  snapshot(packet, delta = true) {
+    return this.json("sad_telemetry_import", packet, Number(delta));
+  }
+}
+
+export class Core extends Abi {
+  constructor(module, rate = 48000) {
+    super(module, rate, "sad");
   }
   request(path, data = null) {
     return this.json("sad_command", { path, data });
@@ -87,10 +105,10 @@ export class Core {
       memory = this.wasm.memory.buffer;
     if (
       this.snapshotView?.buffer !== memory ||
-      this.snapshotView?.length !== target.length ||
+      this.snapshotView?.length < length ||
       this.snapshotView.byteOffset !== pointer
     )
-      this.snapshotView = new Uint8Array(memory, pointer, target.length);
+      this.snapshotView = new Uint8Array(memory, pointer, length);
     for (let i = 0; i < length; i++) target[i] = this.snapshotView[i];
     return length;
   }

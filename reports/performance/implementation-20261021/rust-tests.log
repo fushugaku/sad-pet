@@ -1,0 +1,18 @@
+   Compiling sad-pet v0.30.1 (/Users/georgy/Projects/Evil_update/rust)
+error[E0432]: unresolved import `sad_pet::recording`
+  --> rust/tests/recording.rs:3:5
+   |
+ 3 |     recording::{Recorder, mp3},
+   |     ^^^^^^^^^ could not find `recording` in `sad_pet`
+   |
+note: found an item that was configured out
+  --> rust/src/lib.rs:16:9
+   |
+15 | #[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
+   |           ------------------- the item is gated behind the `desktop` feature
+16 | pub mod recording;
+   |         ^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0432`.
+error: could not compile `sad-pet` (test "recording") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...

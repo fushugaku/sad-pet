@@ -8,12 +8,22 @@ the plug-in window; it does not launch a separate browser, audio device or serve
 | SAD PET | MIDI instrument with imported or built-in samples | VST3, AU instrument | VST3 |
 | SAD PET FX | Stereo input through filters/effects or an eight-second granular buffer; also receives MIDI | VST3, AU MIDI-controlled effect | VST3 |
 
+New instances open **glasses5**, including the Dusty keys source, selection/fades,
+Resynth, sequencer and effect chains. It appears first in Factory presets; Init
+is still available. Restoring a saved DAW project replaces this initial scene.
+SAD PET FX keeps its DAW input as the source.
+
 ## Effect presets
 
 Every Source FX, pre-filter FX and post-filter FX slot has a preset selector and
 **Save**. Presets are shared across all slots and timbres of the same effect type.
 They store the effect's controls, modes, tempo sync, Smooth and Mix; applying one
 keeps the slot identity, bypass state, modulation routes and other effects.
+
+**AlphaVerb** includes all 45 original Dayverb factory presets (30 original and
+15 gated reverb); **SuperEcho** includes all 51 KekLocator factory presets.
+They appear under **Factory** in the effect's selector in every rack. Save makes
+an editable User copy; factory entries stay available and can be exported.
 
 Save updates the selected preset after edits; **Save as new** creates a separate
 entry. The **⋯** menu imports/exports portable `.sadfx` files and deletes saved

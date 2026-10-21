@@ -1,0 +1,177 @@
+{
+  "implemented": [
+    "Native UI state, command acknowledgements and preset retirement on a dedicated publisher, with three preallocated DSP snapshots and a bounded event queue",
+    "Drum live-input history initialized in bounded 256 KiB steps, with separate snapshot preparation and cancellation on scene replacement",
+    "Streaming WASM compilation with buffered compatibility for noncanonical MIME types and unavailable streaming APIs"
+  ],
+  "pcm": {
+    "wasm": {
+      "cases": 24,
+      "identical_samples": 6019072,
+      "differences": 0
+    },
+    "native": {
+      "cases": 24,
+      "identical_samples": 9027584,
+      "differences": 0
+    },
+    "scenes": {
+      "cases": 12,
+      "identical_samples": 3009536,
+      "differences": 0
+    }
+  },
+  "total_identical_samples": 18056192,
+  "validation": {
+    "rust_tests": 225,
+    "web_suites": 18,
+    "native_clippy": "passed",
+    "wasm_clippy": "passed",
+    "format": "passed",
+    "blocked_UI_publication_allocations_and_deallocations": 0,
+    "blocked_UI_PCM_frames": 20480,
+    "staged_timbre_cases": 6,
+    "staged_timbre_rates": [
+      48000,
+      96000,
+      192000
+    ],
+    "staged_timbre_comparison_frames_per_case": 23040,
+    "loader": "streaming, generic MIME, MIME parameters, missing API, HTTP errors and invalid WASM tested",
+    "browser": "Web: streaming load, playback, drum add, granular drums, and idle granular add. Native headless panel: Hold, note input, filter edit and transport stop. No console errors."
+  },
+  "add_timbre_measurements": [
+    {
+      "sample_rate": 44100,
+      "before_max_step_us": 1961.5840000000162,
+      "after_max_step_us": 841.9169999999951,
+      "reduction_percent": 57.07973759981789,
+      "steps": 37,
+      "preparation_audio_time_ms": 107.3922902494331,
+      "runs": [
+        [
+          2276.875000000004,
+          1678.0839999999985,
+          1961.5840000000162,
+          18204.70800000001,
+          1758.4170000000086,
+          1884.3750000000057,
+          2038.4590000000173
+        ],
+        [
+          1537.1669999999967,
+          661.2919999999889,
+          841.9169999999951,
+          1689.458000000002,
+          691.1249999999995,
+          721.9589999999982,
+          945.8750000000009
+        ]
+      ]
+    },
+    {
+      "sample_rate": 48000,
+      "before_max_step_us": 2035.2499999999623,
+      "after_max_step_us": 708.9170000000422,
+      "reduction_percent": 65.16806289153394,
+      "steps": 38,
+      "preparation_audio_time_ms": 101.33333333333333,
+      "runs": [
+        [
+          2507.3340000000144,
+          2080.7499999999663,
+          1932.4589999999944,
+          1892.832999999996,
+          2233.9999999999804,
+          1876.958000000002,
+          2035.2499999999623
+        ],
+        [
+          649.6669999999938,
+          789.0420000000518,
+          714.0410000000088,
+          945.3330000000051,
+          708.9170000000422,
+          707.1670000000267,
+          698.5000000000241
+        ]
+      ]
+    },
+    {
+      "sample_rate": 96000,
+      "before_max_step_us": 3565.207999999984,
+      "after_max_step_us": 684.1249999999945,
+      "reduction_percent": 80.81107750235056,
+      "steps": 61,
+      "preparation_audio_time_ms": 81.33333333333333,
+      "runs": [
+        [
+          3385.749999999973,
+          3534.8749999999995,
+          3732.75000000001,
+          3565.207999999984,
+          3604.791999999975,
+          3508.375000000001,
+          3745.3330000000165
+        ],
+        [
+          1018.6249999999859,
+          670.9999999999923,
+          543.2079999999928,
+          846.2919999999485,
+          817.1249999999759,
+          615.4580000000465,
+          684.1249999999945
+        ]
+      ]
+    },
+    {
+      "sample_rate": 192000,
+      "before_max_step_us": 7271.874999999909,
+      "after_max_step_us": 864.8339999999735,
+      "reduction_percent": 88.10713880532897,
+      "steps": 107,
+      "preparation_audio_time_ms": 71.33333333333333,
+      "runs": [
+        [
+          7448.29100000004,
+          9752.124999999978,
+          6763.5420000000295,
+          6475.332999999978,
+          7271.874999999909,
+          6803.750000000036,
+          7547.874999999976
+        ],
+        [
+          1024.5840000000044,
+          1345.6670000000486,
+          1011.792000000014,
+          760.0830000000087,
+          796.7500000000882,
+          843.5000000000628,
+          864.8339999999735
+        ]
+      ]
+    }
+  ],
+  "measurement_method": "Node/V8 offline, 128-frame quanta. Seven alternating baseline/candidate runs per sample rate after one warmup. Timing is the median of the maximum preparation-step duration in each run, not the whole audio callback. Preparation latency is the number of stages times a render quantum. It does not lower quality or shorten live-input history.",
+  "images": {
+    "web": "target/perf/round3-20261021/browser-web.png",
+    "native": "target/perf/round3-20261021/browser-native.png"
+  },
+  "verified_binaries": {
+    "wasm": {
+      "path": "target/perf/round3-20261021/candidate.wasm",
+      "sha256": "9f428ace5813909db5c416894692b75b529648f025cea8c6321e8ddd3dacbb70"
+    },
+    "native_benchmark": {
+      "path": "target/perf/round3-20261021/native-after",
+      "sha256": "3b6362685837b461ac7165544a01f085cdea0caf17f116bd879c8d6668e29602"
+    },
+    "native_app": {
+      "path": "target/release/sad-pet",
+      "sha256": "2fc8e017a38c76cc6dfae60ce56c344946fea0daee92fefd090a8a3b293dce9a"
+    }
+  },
+  "workspace_note": "Earlier and concurrent changes were preserved. Baseline binaries, PCM fixtures, source snapshots and the preexisting diff are retained in this folder."
+}

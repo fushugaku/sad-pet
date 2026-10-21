@@ -192,6 +192,7 @@ impl Controller {
     ) -> Result<Value, String> {
         let id = || data["id"].as_str().ok_or("Choose an effect preset.");
         match (path, post) {
+            ("/api/effect-presets/factory", false) => Ok(json!(sad_pet::effect_presets::factory())),
             ("/api/effect-presets", false) => Ok(json!(self.effect_list()?)),
             ("/api/effect-presets/save", true) => {
                 let patch =
@@ -292,6 +293,39 @@ mod tests {
             ..Default::default()
         };
         json!({"format":"sad-pet-effect-v1","name":"Эхо / тихое","kind":"lcr_delay","mix":0.83,"settings":settings})
+    }
+    #[test]
+    fn factory_banks_are_available_without_a_user_library_and_save_as_copies() {
+        let root = std::env::temp_dir().join(format!("sad-fx-factory-{}", unique_id()));
+        let mut control = controller(&root);
+        let request = json!({"path":"/api/effect-presets/factory","method":"GET"});
+        let bank = control.request(&request).unwrap();
+        assert_eq!(bank.as_array().unwrap().len(), 96);
+        assert_eq!(bank[18]["name"], "GREAT EYE");
+        assert_eq!(bank[95]["name"], "LEGEND OF HS");
+        assert!(!root.exists());
+        let saved = control
+            .effect_presets_request(
+                "/api/effect-presets/save",
+                true,
+                &json!({"preset":bank[18]}),
+            )
+            .unwrap();
+        assert_eq!(saved["name"], bank[18]["name"]);
+        assert_eq!(saved["settings"], bank[18]["settings"]);
+        assert_ne!(saved["id"], bank[18]["id"]);
+        assert_eq!(control.effect_list().unwrap().len(), 1);
+        assert!(
+            control
+                .effect_presets_request(
+                    "/api/effect-presets/delete",
+                    true,
+                    &json!({"id":bank[18]["id"]}),
+                )
+                .is_err()
+        );
+        assert_eq!(control.request(&request).unwrap(), bank);
+        fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn effect_library_is_shared_portable_and_does_not_touch_the_scene() {

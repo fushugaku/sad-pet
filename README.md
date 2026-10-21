@@ -7,9 +7,27 @@ A granular instrument with a shared Rust audio engine for desktop and WebAssembl
 The web version runs entirely in the browser: Rust DSP in an AudioWorklet, with
 sample preparation, WAV rendering and MP3 encoding off the audio thread. Dedicated
 workers handle binary UI telemetry and recording ingestion. Audio views and
-recording buffers are reused. No backend
+recording buffers are reused. The UI receives preset changes and meter deltas,
+and only visible, changed graphs are drawn. Large FX histories are prepared for
+the selected effects; Source FX upload buffers are reserved on demand. Adding a
+web timbre spreads preparation across audio blocks while existing parts continue
+playing; drum history initialization is limited to 256 KiB per step. Voices
+share immutable filter tables at the same sample rate, and
+unchanged gain controls reuse their exact conversion. A lightweight telemetry
+decoder keeps only preset/view metadata, without creating DSP engines for its
+timbres. Sample rates, antialiasing, interpolation and effect algorithms are
+unchanged. No backend
 or installation is required. Click Play or a keyboard key to enable sound.
 The desktop version uses the system audio output and a local browser panel.
+Its DSP publishes into three reusable snapshot buffers. A separate thread builds
+UI state, retires replaced presets and acknowledges edits in order; a busy panel
+does not block rendering or discard unpublished peaks. MIDI notes keep their
+direct route to the DSP worker.
+
+New browser sessions and DAW instances start with **glasses5**: its Dusty keys
+source, selection/fades, four-oscillator Resynth, sequencer and both FX racks.
+It is also the first Factory choice; Init remains available. Saved DAW projects
+and remembered browser User presets take priority over this initial sound.
 
 Each effect has its own named preset selector and Save button. Effect presets
 are shared across the three FX racks and all timbres of the same effect type.
@@ -140,6 +158,8 @@ rustup target add wasm32-unknown-unknown
 python3 wasm/build.py
 node wasm/test.mjs
 node wasm/test-realtime.mjs
+node wasm/test-telemetry.mjs
+node wasm/test-loader.mjs
 node wasm/test-resynth.mjs
 node wasm/test-neuropolis.mjs
 node wasm/test-sequencer-ui.mjs
@@ -152,14 +172,49 @@ python3 -m http.server 8080 --directory dist/web --bind 127.0.0.1
 
 Open `http://127.0.0.1:8080/`. Deployment needs only the files in `dist/web` on an
 HTTPS static host. Relative asset paths also work under a project subdirectory.
+Release builds omit WASM debug names; pass `--keep-debug-names` to `wasm/build.py`
+when profiling. Only metadata is removed.
+The browser compiles WASM while downloading it when the host serves
+`application/wasm`. Generic MIME types and older webviews use buffered loading.
 The GitHub Actions workflow builds, checks and publishes the site on every push to
 `main`; repository Settings → Pages uses **GitHub Actions** as its source.
 
 Use a browser with WebAssembly and AudioWorklet support. Web MIDI is optional and
 requires a supported browser and permission through the MIDI refresh button.
+
 Audio files, presets, rendered WAVs and WAV/MP3 recordings stay in IndexedDB and
 can be downloaded from Library. Storage belongs to each browser profile and site
 origin; the hosted site and the local desktop panel have separate libraries.
+
+For DSP changes, capture a reference before editing and compare with the new
+build on the same platform/compiler. These offline benchmarks require exact
+PCM equality, including FX histories, Resynth and drum scenes:
+
+```sh
+node wasm/benchmark.mjs capture target/perf/reference
+node wasm/benchmark-scenes.mjs capture target/perf/scenes-reference
+node wasm/benchmark-controls.mjs capture target/perf/controls-reference
+node wasm/benchmark-alphaverb.mjs capture target/perf/alphaverb-reference
+node wasm/benchmark-superecho.mjs capture target/perf/superecho-reference
+# Rebuild after the change, then:
+node wasm/benchmark.mjs compare target/perf/reference
+node wasm/benchmark-scenes.mjs compare target/perf/scenes-reference
+node wasm/benchmark-controls.mjs compare target/perf/controls-reference
+node wasm/benchmark-alphaverb.mjs compare target/perf/alphaverb-reference
+node wasm/benchmark-superecho.mjs compare target/perf/superecho-reference
+```
+
+The AlphaVerb benchmark covers one/two instances, parameter changes and tails at
+44.1/48/96 kHz, checks exact PCM and reports audio-block render times. Its native
+firmware-state comparison runs with:
+
+```sh
+cargo test -p sad-pet-alphaverb --release --lib --locked
+```
+
+The SuperEcho benchmark also covers Tape/BBD, two simultaneous instances and a
+SuperEcho + AlphaVerb chain, including shimmer, dynamics, freeze and tempo sync.
+Both imported effects retain the original firmware arithmetic and audio rate.
 
 Use **Load WAV** or drop a mono/stereo WAV onto the waveform to import your own
 audio. Drag across the waveform to choose a loop, adjust its **IN / OUT** handles,
@@ -258,7 +313,10 @@ SuperEcho and AlphaVerb are available in Source FX, Pre FX and FX. SuperEcho use
 KekLocator's original Rust Tape/BBD delay, orbit, filters, pitch/frequency shimmer,
 dub, compressor, freeze and 17 tempo divisions. AlphaVerb uses Dayverb's original
 Rust reverb, early/late balance, damping, EQ, spin, stereo, shimmer, compressor,
-gate and freeze. All controls save in presets; Pre FX/FX controls support DAW
+gate and freeze. SuperEcho includes all 51 original KekLocator factory presets;
+AlphaVerb includes all 45 Dayverb presets, including the 15 gated reverbs. They
+appear under Factory in each effect's preset selector in every rack and can be
+saved as User copies. All controls save in presets; Pre FX/FX controls support DAW
 automation, LFO/ENV, matrix and Neuropolis. Source FX is prepared before grain reads.
 The same Rust cores run natively and in WASM. Both process at their original
 48 kHz with 96-tap bandlimited conversion at other host rates. The wet paths have

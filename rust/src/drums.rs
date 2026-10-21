@@ -281,6 +281,11 @@ impl std::fmt::Debug for Prepared {
 }
 impl Prepared {
     pub fn prepare(&mut self, settings: Option<&Settings>, rate: u32) {
+        self.prepare_engine(settings, rate);
+        self.prepare_input(settings, rate);
+    }
+    /// Web hosts can spread construction over separate render quanta.
+    pub fn prepare_engine(&mut self, settings: Option<&Settings>, rate: u32) {
         self.0 = settings.map(|s| {
             let mut engine = Engine::new(rate as f32);
             engine.params = s.params.0;
@@ -290,13 +295,15 @@ impl Prepared {
                 copy_track(&mut engine, i, track);
             }
             engine.configure_params(&s.params.0);
+            Box::new(Runtime { engine, live: None })
+        });
+    }
+    pub fn prepare_input(&mut self, settings: Option<&Settings>, rate: u32) {
+        if let (Some(runtime), Some(s)) = (&mut self.0, settings) {
             let mut input = LiveInput::new(rate, !s.granular);
             input.sample.name = "Drum machine".into();
-            Box::new(Runtime {
-                engine,
-                live: Some(input),
-            })
-        });
+            runtime.live = Some(input);
+        }
     }
 }
 fn copy_track(engine: &mut Engine, i: usize, track: &Track) {

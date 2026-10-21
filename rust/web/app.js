@@ -84,6 +84,8 @@ async function api(path, data, headers) {
   return response;
 }
 async function request(path, data) {
+  if (path === "/api/state" && data === undefined && window.sadPetState)
+    return window.sadPetState();
   const result = await (await api(path, data)).json();
   if (
     data !== undefined &&
@@ -2131,46 +2133,25 @@ function syncGainReduction(next) {
   }
 }
 function fillDestination(select, destination) {
+  const groups = [{ choices: DESTINATIONS }, ...modulationGroups().map(([label, choices]) => ({
+    label, choices: choices.map(([value, text]) => [destinationValue(value), text]),
+  }))];
+  for (const { rack, index, slot } of colorEntries().filter(e => e.rack.key !== "source_color_chain")) {
+    groups.push({
+      label: `${rack.label} ${index + 1} · ${COLOR_TYPES.find(([k]) => k === slot.kind)[1]}`,
+      choices: colorDestinationSchema(slot.kind).map(([parameter, label]) => [
+        destinationValue({ color: { slot: slot.id, parameter } }),
+        `${rack.label} ${index + 1} · ${label.charAt(0) + label.slice(1).toLowerCase()}`,
+      ]),
+    });
+  }
   const value = destinationValue(destination);
-  select.replaceChildren(...DESTINATIONS.map(([v, label]) => option(v, label)));
-  for (const [label, choices] of modulationGroups()) {
-    const group = document.createElement("optgroup");
-    group.label = label;
-    for (const [value, text] of choices)
-      group.append(option(destinationValue(value), text));
-    select.append(group);
+  if (typeof destination !== "string" && !groups.some(g => g.choices.some(([v]) => v === value))) {
+    const entry = colorEntries().find(e => e.slot.id === destination.color?.slot);
+    const label = destination.color?.parameter.replaceAll("_", " ") || "Unassigned";
+    groups.push({ choices: [[value, `${entry ? `${entry.rack.label} ${entry.index + 1}` : "FX"} · ${label} (inactive)`]] });
   }
-  for (const { rack, index, slot } of colorEntries().filter(
-    (e) => e.rack.key !== "source_color_chain",
-  )) {
-    const group = document.createElement("optgroup");
-    group.label = `${rack.label} ${index + 1} · ${COLOR_TYPES.find(([k]) => k === slot.kind)[1]}`;
-    for (const [parameter, label] of colorDestinationSchema(slot.kind))
-      group.append(
-        option(
-          destinationValue({ color: { slot: slot.id, parameter } }),
-          `${rack.label} ${index + 1} · ${label.charAt(0) + label.slice(1).toLowerCase()}`,
-        ),
-      );
-    select.append(group);
-  }
-  if (
-    ![...select.options].some((o) => o.value === value) &&
-    typeof destination !== "string"
-  ) {
-    const entry = colorEntries().find(
-      (e) => e.slot.id === destination.color?.slot,
-    );
-    const label =
-      destination.color?.parameter.replaceAll("_", " ") || "Unassigned";
-    select.append(
-      option(
-        value,
-        `${entry ? `${entry.rack.label} ${entry.index + 1}` : "FX"} · ${label} (inactive)`,
-      ),
-    );
-  }
-  select.value = value;
+  window.SadLazySelect.configure(select, value, groups);
 }
 function refreshColorDestinations() {
   for (const [i, scope] of scopes.entries())
@@ -2511,9 +2492,10 @@ function syncLfos() {
       ["division", ".division"],
     ]) {
       const input = card.querySelector(selector);
-      if (document.activeElement !== input)
-        input.value =
-          field === "destination" ? destinationValue(l[field]) : l[field];
+      if (document.activeElement !== input) {
+        if (field === "destination") window.SadLazySelect.setValue(input, destinationValue(l[field]));
+        else input.value = l[field];
+      }
     }
     card.querySelector(".depth-value").textContent = signedPercent(l.depth);
     card.querySelector(".sync").checked = l.sync;
@@ -2610,7 +2592,7 @@ function syncEnvs() {
     }
     for (const route of routes) {
       if (document.activeElement !== route.select)
-        route.select.value = destinationValue(env[route.destination]);
+        window.SadLazySelect.setValue(route.select, destinationValue(env[route.destination]));
       if (document.activeElement !== route.input)
         route.input.value = env[route.depth];
       route.output.textContent = signedPercent(env[route.depth]);
@@ -2619,9 +2601,12 @@ function syncEnvs() {
 }
 function drawEnvs() {
   for (let i = 0; i < envCards.length; i++) {
-    const { canvas } = envCards[i],
-      env = preset.envs[i],
-      [c, w, h] = resizeCanvas(canvas);
+    const { canvas } = envCards[i];
+    if (!visibleCanvas(canvas)) continue;
+    const env = preset.envs[i], [c, w, h] = resizeCanvas(canvas);
+    const drawKey = [w, h, devicePixelRatio, env.attack, env.decay, env.sustain, env.release, state?.envs?.[i] || 0].join(":");
+    if (envCards[i].drawKey === drawKey) continue;
+    envCards[i].drawKey = drawKey;
     c.clearRect(0, 0, w, h);
     const top = 7,
       bottom = h - 7,
@@ -3241,11 +3226,41 @@ function bind() {
     releaseKeyboard();
   });
 }
+const canvasInfo = new WeakMap();
+const observedCanvases = new Set();
+let canvasDirty = true, drawnState = null, waveBackground = null;
+const canvasVisibility = typeof IntersectionObserver === "function"
+  ? new IntersectionObserver(entries => {
+      for (const entry of entries) canvasInfo.get(entry.target).visible = entry.isIntersecting;
+      canvasDirty = true;
+    }) : null;
+const canvasResize = typeof ResizeObserver === "function"
+  ? new ResizeObserver(entries => {
+      for (const entry of entries) canvasInfo.get(entry.target).size = null;
+      canvasDirty = true;
+    }) : null;
+function visibleCanvas(canvas) {
+  if (canvas.closest("[hidden]")) return false;
+  if (!canvasInfo.has(canvas)) {
+    canvasInfo.set(canvas, { visible: true, size: null });
+    observedCanvases.add(canvas);
+    canvasVisibility?.observe(canvas);
+    canvasResize?.observe(canvas);
+  }
+  return canvasInfo.get(canvas).visible;
+}
+for (const event of ["input", "pointerdown", "pointermove", "keydown", "visibilitychange"])
+  document.addEventListener(event, () => { canvasDirty = true; }, { passive: true });
+window.addEventListener("resize", () => {
+  for (const canvas of observedCanvases) canvasInfo.get(canvas).size = null;
+  canvasDirty = true;
+}, { passive: true });
 function resizeCanvas(canvas) {
-  const r = canvas.getBoundingClientRect(),
-    dpr = Math.min(devicePixelRatio || 1, 2),
-    w = Math.round(r.width * dpr),
-    h = Math.round(r.height * dpr);
+  const info = canvasInfo.get(canvas);
+  const r = info?.size || canvas.getBoundingClientRect();
+  if (info) info.size = { width: r.width, height: r.height };
+  const dpr = Math.min(devicePixelRatio || 1, 2),
+    w = Math.round(r.width * dpr), h = Math.round(r.height * dpr);
   if (canvas.width !== w || canvas.height !== h) {
     canvas.width = w;
     canvas.height = h;
@@ -3254,10 +3269,18 @@ function resizeCanvas(canvas) {
   c.setTransform(dpr, 0, 0, dpr, 0, 0);
   return [c, r.width, r.height];
 }
-function draw() {
-  if (state) {
-    const [c, w, h] = resizeCanvas($("wave"));
-    c.clearRect(0, 0, w, h);
+
+function paintWaveform(context, w, h) {
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  const key = [w, h, dpr, state.sample_frames, state.sample_seconds, state.input?.active,
+    sampleSelection?.region.start, sampleSelection?.region.end,
+    sampleSelection?.fades.fade_in, sampleSelection?.fades.fade_out].join(":");
+  if (!waveBackground || waveBackground.key !== key || waveBackground.waveform !== state.waveform) {
+    const bitmap = document.createElement("canvas");
+    bitmap.width = Math.round(w * dpr);
+    bitmap.height = Math.round(h * dpr);
+    const c = bitmap.getContext("2d");
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
     c.strokeStyle = "#2b392a";
     c.lineWidth = 1;
     for (let i = 0; i < 17; i++) {
@@ -3299,6 +3322,19 @@ function draw() {
       c.closePath();
       c.fill();
     }
+    waveBackground = { key, waveform: state.waveform, bitmap };
+  }
+  context.drawImage(waveBackground.bitmap, 0, 0, w, h);
+}
+function draw() {
+  requestAnimationFrame(draw);
+  if (!state || document.hidden || (drawnState === state && !canvasDirty)) return;
+  canvasDirty = false;
+  drawnState = state;
+  if (visibleCanvas($("wave"))) {
+    const [c, w, h] = resizeCanvas($("wave"));
+    c.clearRect(0, 0, w, h);
+    paintWaveform(c, w, h);
     sampleSelection?.draw(c, w, h);
     for (const grain of state.grains) {
       const x = grain.position * w,
@@ -3326,7 +3362,9 @@ function draw() {
     c.lineTo(x + 4, 0);
     c.lineTo(x, 5);
     c.fill();
+  }
     for (let i = 0; i < scopes.length; i++) {
+      if (!visibleCanvas(scopes[i].canvas)) continue;
       const s = scopes[i],
         ctx = s.canvas.getContext("2d"),
         a = s.values;
@@ -3342,10 +3380,9 @@ function draw() {
       ctx.stroke();
     }
     drawEnvs();
-  }
-  requestAnimationFrame(draw);
 }
 let failures = 0;
+let receivedPreset = null;
 let inputDevicesKey = "";
 function syncInput(input) {
   if (!input) return;
@@ -3444,11 +3481,15 @@ async function poll() {
         !pending &&
         !editing &&
         !document.activeElement?.matches("input,select") &&
+        next.preset !== receivedPreset &&
         JSON.stringify(preset) !== JSON.stringify(next.preset))
     ) {
       preset = structuredClone(next.preset);
       syncAll();
     }
+    if (generation === editGeneration && !pending && !editing
+        && !document.activeElement?.matches("input,select"))
+      receivedPreset = next.preset;
     $("sample-name").textContent = next.sample_name;
     presetLibrary?.observe(next, pending > 0);
     fileLibrary?.observe(next);

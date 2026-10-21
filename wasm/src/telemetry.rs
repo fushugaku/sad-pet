@@ -91,6 +91,111 @@ struct OwnedPacket {
     pre_color: Vec<sad_pet::color::ColorSlot>,
 }
 
+#[derive(Default)]
+struct DecodedPart {
+    preset: Preset,
+    region: sad_pet::dsp::Region,
+    state: Value,
+}
+struct Decoder {
+    rate: u32,
+    revision: u64,
+    parts: std::collections::BTreeMap<u32, DecodedPart>,
+    input: Vec<u8>,
+    output: Vec<u8>,
+}
+impl Decoder {
+    fn new(rate: u32) -> Self {
+        Self {
+            rate: rate.clamp(8_000, 384_000),
+            revision: 0,
+            parts: [(0, DecodedPart::default())].into(),
+            input: Vec::new(),
+            output: Vec::new(),
+        }
+    }
+    fn import(&mut self, delta: bool) -> Result<Value, String> {
+        let packet: OwnedPacket = rmp_serde::from_slice(&self.input).map_err(|e| e.to_string())?;
+        let context = &packet.context;
+        if !context.timbres.is_empty() && context.revision >= self.revision {
+            if !context.timbres.iter().any(|part| part.id == context.active) {
+                return Err("Unknown timbre".into());
+            }
+            self.parts
+                .retain(|id, _| context.timbres.iter().any(|part| part.id == *id));
+            for part in &context.timbres {
+                self.parts.entry(part.id).or_default();
+            }
+            self.revision = context.revision;
+        }
+        let part = self
+            .parts
+            .get_mut(&context.active)
+            .ok_or("Obsolete timbre snapshot")?;
+        if part.state.is_null() && packet.configuration.is_none() {
+            return Err("Telemetry configuration is missing".into());
+        }
+        decode_snapshot(
+            packet,
+            delta,
+            self.rate,
+            &mut part.preset,
+            &mut part.region,
+            &mut part.state,
+        )
+    }
+}
+thread_local! {
+    static DECODER: RefCell<Option<Decoder>> = const { RefCell::new(None) };
+}
+fn decoder<T>(f: impl FnOnce(&mut Decoder) -> T) -> T {
+    DECODER.with(|d| {
+        f(d.borrow_mut()
+            .as_mut()
+            .expect("Call sad_telemetry_init first"))
+    })
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_telemetry_init(rate: u32) {
+    DECODER.with(|d| *d.borrow_mut() = Some(Decoder::new(rate)));
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_telemetry_input(length: usize) -> *mut u8 {
+    decoder(|d| {
+        if length > MAX_INPUT {
+            return std::ptr::null_mut();
+        }
+        d.input.resize(length, 0);
+        d.input.as_mut_ptr()
+    })
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_telemetry_output() -> *const u8 {
+    decoder(|d| d.output.as_ptr())
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_telemetry_output_len() -> usize {
+    decoder(|d| d.output.len())
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_telemetry_import(delta: u32) -> u32 {
+    decoder(|d| {
+        let result = d
+            .import(delta != 0)
+            .and_then(|value| serde_json::to_vec(&value).map_err(|e| e.to_string()));
+        match result {
+            Ok(bytes) => {
+                d.output = bytes;
+                200
+            }
+            Err(error) => {
+                d.output = serde_json::to_vec(&json!({"error":error})).unwrap();
+                400
+            }
+        }
+    })
+}
+
 impl Host {
     pub(super) fn publish_snapshot(&mut self) -> usize {
         let Some(slot) = self.unacked_peaks.iter().position(Option::is_none) else {
@@ -157,102 +262,175 @@ impl Host {
         }
     }
 
-    pub(super) fn import_snapshot(&mut self) -> Result<Value, String> {
-        let packet: OwnedPacket = rmp_serde::from_slice(&self.input).map_err(|e| e.to_string())?;
-        if let Some(config) = packet.configuration {
-            self.engine.preset = config.preset;
-            self.engine.region = config.region;
-            self.snapshot_state = json!({
-                "version":env!("CARGO_PKG_VERSION"),"instance_id":"browser",
-                "sample_rate":self.rate,"audio_device":"Web Audio","audio_error":null,"audio_enabled":false,
-                "sample_name":config.name,"sample_id":config.id,"sample_seconds":config.seconds,"sample_frames":config.frames,
-                "region":config.region,"fades":config.fades,"input":{"active":config.live},
-                "recording":{"active":false,"id":null,"seconds":0,"available":false,"error":null},
-                "cpu_percent":0,"underruns":0,
-            });
+    pub(super) fn import_snapshot(&mut self, delta: bool) -> Result<Value, String> {
+        let packet = rmp_serde::from_slice(&self.input).map_err(|e| e.to_string())?;
+        decode_snapshot(
+            packet,
+            delta,
+            self.rate,
+            &mut self.engine.preset,
+            &mut self.engine.region,
+            &mut self.snapshot_state,
+        )
+    }
+}
+
+// The decoder only needs preset metadata and the published view. Audio buffers,
+// filters, effect histories and synthesis state stay in the audio owner.
+fn decode_snapshot(
+    packet: OwnedPacket,
+    delta: bool,
+    rate: u32,
+    preset: &mut Preset,
+    region: &mut sad_pet::dsp::Region,
+    state_cache: &mut Value,
+) -> Result<Value, String> {
+    let configuration_changed = packet.configuration.is_some();
+    let mut preset_changed = configuration_changed
+        || !packet.sequence_edits.is_empty()
+        || !packet.drum_edits.is_empty()
+        || packet
+            .parameter_edits
+            .as_object()
+            .is_some_and(|v| !v.is_empty());
+    if let Some(mut config) = packet.configuration {
+        // Imported UI data must not discard the ownership metadata for
+        // this host's prepared DSP buffers, even if it is reused later.
+        std::mem::swap(
+            &mut config.preset.imported_effects,
+            &mut preset.imported_effects,
+        );
+        *preset = config.preset;
+        *region = config.region;
+        *state_cache = json!({
+            "version":env!("CARGO_PKG_VERSION"),"instance_id":"browser",
+            "startup_preset_index":sad_pet::startup::INDEX,
+            "sample_rate":rate,"audio_device":"Web Audio","audio_error":null,"audio_enabled":false,
+            "sample_name":config.name,"sample_id":config.id,"sample_seconds":config.seconds,"sample_frames":config.frames,
+            "region":config.region,"fades":config.fades,"input":{"active":config.live},
+            "recording":{"active":false,"id":null,"seconds":0,"available":false,"error":null},
+            "cpu_percent":0,"underruns":0,
+        });
+    }
+    let mut v = packet.view;
+    preset.sequencer.edit(&packet.sequence_edits);
+    if let Some(drums) = &mut preset.drums {
+        drums.edit(&packet.drum_edits);
+    }
+    let parameters = sad_pet::parameters::parse(&packet.parameter_edits)?;
+    sad_pet::parameters::apply(preset, &parameters);
+    if v.grain_count > sad_pet::dsp::MAX_GRAINS
+        || v.color_len > sad_pet::color::MAX_COLOR_SLOTS
+        || v.pre_color_len > sad_pet::color::MAX_COLOR_SLOTS
+        || v.note_count > 8
+        || v.chord_len > 32
+        || v.waveform_len > 640
+    {
+        return Err("Invalid telemetry counts".into());
+    }
+    if packet.grains.len() != v.grain_count
+        || packet.color.len() != v.color_len
+        || packet.pre_color.len() != v.pre_color_len
+    {
+        return Err("Invalid telemetry lengths".into());
+    }
+    v.grains[..v.grain_count].copy_from_slice(&packet.grains);
+    v.color[..v.color_len].copy_from_slice(&packet.color);
+    v.pre_color[..v.pre_color_len].copy_from_slice(&packet.pre_color);
+    if v.chord_len > 32 {
+        return Err("Invalid chord count".into());
+    }
+    preset_changed |= preset.performance.chord.as_slice() != &v.chord[..v.chord_len];
+    preset.performance.chord.clear();
+    preset
+        .performance
+        .chord
+        .extend_from_slice(&v.chord[..v.chord_len]);
+    for (i, step) in v.step_edits.iter().enumerate() {
+        if let Some(step) = step {
+            preset_changed |= preset.performance.steps[i] != *step;
+            preset.performance.steps[i] = *step;
         }
-        let mut v = packet.view;
-        self.engine.preset.sequencer.edit(&packet.sequence_edits);
-        if let Some(drums) = &mut self.engine.preset.drums {
-            drums.edit(&packet.drum_edits);
+    }
+    if preset_changed {
+        state_cache["preset"] = json!(preset);
+    }
+    if !packet.waveform.is_empty() {
+        state_cache["waveform"] = json!(packet.waveform);
+    }
+    // Cache only configuration, never clone the full preset on a meter tick.
+    let mut state = if !delta || configuration_changed {
+        state_cache.clone()
+    } else {
+        json!({})
+    };
+    if delta && !configuration_changed {
+        if preset_changed {
+            state["preset"] = state_cache["preset"].clone();
         }
-        let parameters = sad_pet::parameters::parse(&packet.parameter_edits)?;
-        sad_pet::parameters::apply(&mut self.engine.preset, &parameters);
-        if v.grain_count > sad_pet::dsp::MAX_GRAINS
-            || v.color_len > sad_pet::color::MAX_COLOR_SLOTS
-            || v.pre_color_len > sad_pet::color::MAX_COLOR_SLOTS
-            || v.note_count > 8
-            || v.chord_len > 32
-            || v.waveform_len > 640
-        {
-            return Err("Invalid telemetry counts".into());
+        if !packet.waveform.is_empty() {
+            state["waveform"] = state_cache["waveform"].clone();
         }
-        if packet.grains.len() != v.grain_count
-            || packet.color.len() != v.color_len
-            || packet.pre_color.len() != v.pre_color_len
-        {
-            return Err("Invalid telemetry lengths".into());
-        }
-        v.grains[..v.grain_count].copy_from_slice(&packet.grains);
-        v.color[..v.color_len].copy_from_slice(&packet.color);
-        v.pre_color[..v.pre_color_len].copy_from_slice(&packet.pre_color);
-        self.engine.preset.performance.chord.clear();
-        self.engine
-            .preset
-            .performance
-            .chord
-            .extend_from_slice(&v.chord[..v.chord_len]);
-        for (i, step) in v.step_edits.iter().enumerate() {
-            if let Some(step) = step {
-                self.engine.preset.performance.steps[i] = *step;
+    }
+    state["input"]["seconds"] = json!(v.input_seconds);
+    state["input"]["peak"] = json!(v.input_peak);
+    state["playing"] = json!(v.playing);
+    state["midi_gate"] = json!(v.midi_gate);
+    state["frozen"] = json!(v.frozen);
+    state["bypass"] = json!(v.bypass);
+    state["center"] = json!(v.center);
+    state["grains"] = json!(&v.grains[..v.grain_count]);
+    state["active_grains"] = json!(v.grain_count);
+    state["notes"] = json!(&v.notes[..v.note_count]);
+    state["step_entry"] = json!(v.step_entry);
+    state["step_edits"] = json!(v.step_edits);
+    state["performance"] = json!({"mode":preset.performance.mode,"step":v.step,"arp_index":v.arp_index,"chord":&v.chord[..v.chord_len],"gate":v.gate,"beat":v.beat});
+    state["sequencer"] = json!(v.sequencer);
+    state["timbres"] = json!(packet.context);
+    state["source_generation"] = json!(packet.source_generation);
+    state["drums"] = json!(v.drums);
+    if preset.drums.is_some() {
+        state["playing"] = json!(v.drums.playing);
+    }
+    state["lfos"] = json!(v.lfos);
+    state["envs"] = json!(v.envs);
+    state["matrix_values"] = json!(v.matrix);
+    let knobs = json!(sad_pet::dsp::telemetry::knob_states_from_view(preset, &v));
+    if delta && !configuration_changed {
+        let mut changes = serde_json::Map::new();
+        let previous = state_cache["knobs"].as_object();
+        for (key, value) in knobs.as_object().unwrap() {
+            if previous.and_then(|p| p.get(key)) != Some(value) {
+                changes.insert(key.clone(), value.clone());
             }
         }
-        let mut state = self.snapshot_state.clone();
-        if !packet.waveform.is_empty() {
-            state["waveform"] = json!(packet.waveform);
+        if let Some(previous) = previous {
+            for key in previous.keys() {
+                if knobs.get(key).is_none() {
+                    changes.insert(key.clone(), Value::Null);
+                }
+            }
         }
-        state["input"]["seconds"] = json!(v.input_seconds);
-        state["input"]["peak"] = json!(v.input_peak);
-        state["playing"] = json!(v.playing);
-        state["midi_gate"] = json!(v.midi_gate);
-        state["frozen"] = json!(v.frozen);
-        state["bypass"] = json!(v.bypass);
-        state["preset"] = json!(self.engine.preset);
-        state["center"] = json!(v.center);
-        state["grains"] = json!(&v.grains[..v.grain_count]);
-        state["active_grains"] = json!(v.grain_count);
-        state["notes"] = json!(&v.notes[..v.note_count]);
-        state["step_entry"] = json!(v.step_entry);
-        state["step_edits"] = json!(v.step_edits);
-        state["performance"] = json!({"mode":self.engine.preset.performance.mode,"step":v.step,"arp_index":v.arp_index,"chord":&v.chord[..v.chord_len],"gate":v.gate,"beat":v.beat});
-        state["sequencer"] = json!(v.sequencer);
-        state["timbres"] = json!(packet.context);
-        state["source_generation"] = json!(packet.source_generation);
-        state["drums"] = json!(v.drums);
-        if self.engine.preset.drums.is_some() {
-            state["playing"] = json!(v.drums.playing);
-        }
-        state["lfos"] = json!(v.lfos);
-        state["envs"] = json!(v.envs);
-        state["matrix_values"] = json!(v.matrix);
-        state["knobs"] = json!(self.engine.knob_states_from_view(&v));
-        state["peak"] = json!(v.peak);
-        state["resynth"] = json!({"bands":v.resynth_bands,"frequencies":v.resynth_frequencies});
-        state["source_fx"] = json!({"pending":v.source_fx_pending,"recipe":sad_pet::dsp::source_fx::Recipe::from_engine(&self.engine),"error":if v.source_fx_error {Some("Could not prepare Source FX")}else{None}});
-        state["gain_reduction"] = json!(
-            v.gain_reduction
-                .iter()
-                .filter(|(id, _)| *id != 0)
-                .map(|(id, db)| (id.to_string(), *db))
-                .collect::<std::collections::BTreeMap<_, _>>()
-        );
-        if v.source_gain_reduction.0 != 0 {
-            state["gain_reduction"][v.source_gain_reduction.0.to_string()] =
-                json!(v.source_gain_reduction.1);
-        }
-        self.snapshot_state = state.clone();
-        Ok(json!({"revision":packet.revision,"state":state}))
+        state["knob_changes"] = Value::Object(changes);
+    } else {
+        state["knobs"] = knobs.clone();
     }
+    state_cache["knobs"] = knobs;
+    state["peak"] = json!(v.peak);
+    state["resynth"] = json!({"bands":v.resynth_bands,"frequencies":v.resynth_frequencies});
+    state["source_fx"] = json!({"pending":v.source_fx_pending,"recipe":sad_pet::dsp::source_fx::Recipe::new(*region, preset.source_color_chain.first().copied(), preset.params.bpm, preset.params.sample_root_note),"error":if v.source_fx_error {Some("Could not prepare Source FX")}else{None}});
+    state["gain_reduction"] = json!(
+        v.gain_reduction
+            .iter()
+            .filter(|(id, _)| *id != 0)
+            .map(|(id, db)| (id.to_string(), *db))
+            .collect::<std::collections::BTreeMap<_, _>>()
+    );
+    if v.source_gain_reduction.0 != 0 {
+        state["gain_reduction"][v.source_gain_reduction.0.to_string()] =
+            json!(v.source_gain_reduction.1);
+    }
+    Ok(json!({"revision":packet.revision,"delta":delta,"state":state}))
 }
 
 #[unsafe(no_mangle)]
@@ -296,6 +474,13 @@ pub extern "C" fn sad_snapshot_capacity() -> usize {
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn sad_snapshot_import() -> u32 {
+    import_snapshot(false)
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_snapshot_import_delta() -> u32 {
+    import_snapshot(true)
+}
+fn import_snapshot(delta: bool) -> u32 {
     registry(|r| {
         let index = r.index();
         let bytes = std::mem::take(&mut r.parts[index].host.input);
@@ -314,7 +499,7 @@ pub extern "C" fn sad_snapshot_import() -> u32 {
                 .position(|p| p.meta.id == id)
                 .ok_or("Obsolete timbre snapshot")?;
             r.parts[index].host.input = bytes;
-            r.parts[index].host.import_snapshot()
+            r.parts[index].host.import_snapshot(delta)
         })()
         .and_then(|v| serde_json::to_vec(&v).map_err(|e| e.to_string()));
         let index = r.index();

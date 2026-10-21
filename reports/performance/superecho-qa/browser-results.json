@@ -1,0 +1,28 @@
+{
+  "sample_rate": 48000,
+  "block_frames": 128,
+  "warmup_blocks": 1000,
+  "measured_blocks": 1125,
+  "results": [
+    {
+      "scene": "Tape",
+      "baseline_ms": 0.803,
+      "optimized_ms": 0.663
+    },
+    {
+      "scene": "BBD",
+      "baseline_ms": 0.832,
+      "optimized_ms": 0.472
+    },
+    {
+      "scene": "Два SuperEcho",
+      "baseline_ms": 1.657,
+      "optimized_ms": 1.09
+    },
+    {
+      "scene": "SuperEcho + AlphaVerb",
+      "baseline_ms": 1.085,
+      "optimized_ms": 0.923
+    }
+  ]
+}

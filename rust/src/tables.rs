@@ -1,23 +1,37 @@
 //! Original little-endian f32 tables extracted from the supplied 1.63 image.
 //! Addresses and hashes are recorded in assets/manifest.json.
-const PITCH: &[u8] = include_bytes!("../assets/pitch.f32");
-const FINE_PITCH: &[u8] = include_bytes!("../assets/fine_pitch.f32");
-const WINDOW: &[u8] = include_bytes!("../assets/grain_window.f32");
-const SINE: &[u8] = include_bytes!("../assets/sine.f32");
+// Decoded once at compile time, bit for bit, instead of on every read.
+static PITCH: [f32; 256] = decode(include_bytes!("../assets/pitch.f32"));
+static FINE_PITCH: [f32; 257] = decode(include_bytes!("../assets/fine_pitch.f32"));
+static WINDOW: [f32; 4097] = decode(include_bytes!("../assets/grain_window.f32"));
+static SINE: [f32; 256] = decode(include_bytes!("../assets/sine.f32"));
 
-fn value(table: &[u8], i: usize) -> f32 {
-    f32::from_le_bytes(table[i * 4..i * 4 + 4].try_into().unwrap())
+const fn decode<const N: usize>(bytes: &[u8]) -> [f32; N] {
+    assert!(bytes.len() == N * 4, "table length");
+    let mut table = [0.0; N];
+    let mut i = 0;
+    while i < N {
+        let b = [
+            bytes[i * 4],
+            bytes[i * 4 + 1],
+            bytes[i * 4 + 2],
+            bytes[i * 4 + 3],
+        ];
+        table[i] = f32::from_le_bytes(b);
+        i += 1;
+    }
+    table
 }
 
-fn lookup(table: &[u8], position: f32) -> f32 {
-    let end = table.len() / 4 - 1;
+fn lookup<const N: usize>(table: &[f32; N], position: f32) -> f32 {
+    let end = N - 1;
     let p = position.clamp(0.0, end as f32);
     let i = p as usize;
-    let a = value(table, i);
+    let a = table[i];
     if i == end {
         a
     } else {
-        a + (value(table, i + 1) - a) * (p - i as f32)
+        a + (table[i + 1] - a) * (p - i as f32)
     }
 }
 
@@ -30,7 +44,7 @@ pub fn pitch_ratio(semitones: f32) -> f64 {
     };
     let whole = semitones.floor();
     let fraction = ((semitones - whole) * 256.0) as usize;
-    (value(PITCH, (whole as i32 + 128) as usize) * value(FINE_PITCH, fraction.min(255))) as f64
+    (PITCH[(whole as i32 + 128) as usize] * FINE_PITCH[fraction.min(255)]) as f64
 }
 
 /// c003840c: a mirrored ramp mixed with the original half-cosine window LUT.
@@ -39,11 +53,14 @@ pub fn grain_window(phase: f32, shape: f32) -> f32 {
         return 0.0;
     }
     let triangle = if phase <= 1.0 { phase } else { 2.0 - phase };
-    triangle + shape.clamp(0.0, 1.0) * (lookup(WINDOW, triangle * 4096.0) - triangle)
+    triangle + shape.clamp(0.0, 1.0) * (lookup(&WINDOW, triangle * 4096.0) - triangle)
 }
 
 pub fn sine(phase: f64) -> f32 {
-    lookup(SINE, phase.rem_euclid(1.0) as f32 * 255.0)
+    lookup(
+        &SINE,
+        crate::dsp::sample::wrap_position(phase, 1.0) as f32 * 255.0,
+    )
 }
 
 /// The normalization approximation in c003ea3c (one Newton step).

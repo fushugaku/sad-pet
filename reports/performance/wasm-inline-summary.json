@@ -1,0 +1,146 @@
+[
+  {
+    "case": "44100-0",
+    "before_us": 57.46,
+    "after_us": 47.21,
+    "reduction_percent": 17.8
+  },
+  {
+    "case": "44100-1",
+    "before_us": 107.79,
+    "after_us": 88.21,
+    "reduction_percent": 18.2
+  },
+  {
+    "case": "44100-2",
+    "before_us": 90.71,
+    "after_us": 69.71,
+    "reduction_percent": 23.2
+  },
+  {
+    "case": "44100-3",
+    "before_us": 432.21,
+    "after_us": 324.92,
+    "reduction_percent": 24.8
+  },
+  {
+    "case": "44100-4",
+    "before_us": 437.42,
+    "after_us": 331.71,
+    "reduction_percent": 24.2
+  },
+  {
+    "case": "44100-5",
+    "before_us": 634.04,
+    "after_us": 376.58,
+    "reduction_percent": 40.6
+  },
+  {
+    "case": "44100-6",
+    "before_us": 536.21,
+    "after_us": 395.54,
+    "reduction_percent": 26.2
+  },
+  {
+    "case": "44100-7",
+    "before_us": 408.29,
+    "after_us": 296.96,
+    "reduction_percent": 27.3
+  },
+  {
+    "case": "48000-0",
+    "before_us": 59.67,
+    "after_us": 46.5,
+    "reduction_percent": 22.1
+  },
+  {
+    "case": "48000-1",
+    "before_us": 111.21,
+    "after_us": 89.08,
+    "reduction_percent": 19.9
+  },
+  {
+    "case": "48000-2",
+    "before_us": 88.88,
+    "after_us": 70.46,
+    "reduction_percent": 20.7
+  },
+  {
+    "case": "48000-3",
+    "before_us": 433.71,
+    "after_us": 334.54,
+    "reduction_percent": 22.9
+  },
+  {
+    "case": "48000-4",
+    "before_us": 429.87,
+    "after_us": 320.0,
+    "reduction_percent": 25.6
+  },
+  {
+    "case": "48000-5",
+    "before_us": 627.5,
+    "after_us": 375.63,
+    "reduction_percent": 40.1
+  },
+  {
+    "case": "48000-6",
+    "before_us": 546.21,
+    "after_us": 395.5,
+    "reduction_percent": 27.6
+  },
+  {
+    "case": "48000-7",
+    "before_us": 405.46,
+    "after_us": 295.71,
+    "reduction_percent": 27.1
+  },
+  {
+    "case": "96000-0",
+    "before_us": 57.17,
+    "after_us": 46.5,
+    "reduction_percent": 18.7
+  },
+  {
+    "case": "96000-1",
+    "before_us": 104.33,
+    "after_us": 87.42,
+    "reduction_percent": 16.2
+  },
+  {
+    "case": "96000-2",
+    "before_us": 86.04,
+    "after_us": 67.33,
+    "reduction_percent": 21.7
+  },
+  {
+    "case": "96000-3",
+    "before_us": 397.92,
+    "after_us": 323.0,
+    "reduction_percent": 18.8
+  },
+  {
+    "case": "96000-4",
+    "before_us": 399.42,
+    "after_us": 318.04,
+    "reduction_percent": 20.4
+  },
+  {
+    "case": "96000-5",
+    "before_us": 523.75,
+    "after_us": 359.08,
+    "reduction_percent": 31.4
+  },
+  {
+    "case": "96000-6",
+    "before_us": 474.96,
+    "after_us": 367.08,
+    "reduction_percent": 22.7
+  },
+  {
+    "case": "96000-7",
+    "before_us": 405.33,
+    "after_us": 288.96,
+    "reduction_percent": 28.7
+  }
+]

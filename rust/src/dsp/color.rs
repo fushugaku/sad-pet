@@ -81,9 +81,9 @@ impl ColorProcessor {
             excursion: 0.0,
             feedback: 0.0,
             stereo: 0.0,
-            reverb: Effects::new(sample_rate),
+            reverb: Effects::unallocated(sample_rate),
+            radias_delay: RadiasDelay::unallocated(sample_rate),
             reverb_params: Params::default(),
-            radias_delay: RadiasDelay::new(sample_rate),
             compressor: Compressor::new(sample_rate),
             waveshaper: RadiasWaveshaper::new(sample_rate),
             imported: None,
@@ -127,6 +127,17 @@ impl ColorProcessor {
     }
     pub(super) fn detach_imported(&mut self, pool: &mut crate::imported_fx::PreparedEffects) {
         pool.store(self.id, &mut self.imported);
+        let mut buffers = crate::imported_fx::Buffers {
+            reverb: self
+                .reverb
+                .has_storage()
+                .then(|| self.reverb.take_storage()),
+            delay: self
+                .radias_delay
+                .has_storage()
+                .then(|| self.radias_delay.take_storage()),
+        };
+        pool.store_buffers(self.id, &mut buffers);
     }
     pub(super) fn attach_imported(
         &mut self,
@@ -135,6 +146,13 @@ impl ColorProcessor {
     ) {
         debug_assert!(self.imported.is_none());
         self.imported = pool.take(slot.id);
+        let buffers = pool.take_buffers(slot.id);
+        if let Some(storage) = buffers.reverb {
+            self.reverb.install_storage(storage);
+        }
+        if let Some(storage) = buffers.delay {
+            self.radias_delay.install_storage(storage);
+        }
         self.imported_fresh = self.id != slot.id || self.slot.kind != slot.kind;
         if self.imported_fresh {
             self.imported_rate.clear();
@@ -247,10 +265,20 @@ impl ColorProcessor {
                 self.base_delay = (s.binaural_delay * 0.0015 * self.sample_rate).max(1.0)
             }
             SaturatorType::Reverb => {
+                // Runtime presets attach prepared histories; standalone offline
+                // processors allocate only on their first configuration.
+                if !self.reverb.has_storage() {
+                    self.reverb
+                        .install_storage(Effects::new(self.sample_rate as u32).take_storage());
+                }
                 self.reverb_params = slot.reverb_params();
                 self.reverb.configure(&self.reverb_params);
             }
             SaturatorType::LcrDelay | SaturatorType::ModDelay => {
+                if !self.radias_delay.has_storage() {
+                    self.radias_delay
+                        .install_storage(RadiasDelay::new(self.sample_rate as u32).take_storage());
+                }
                 self.radias_delay.configure(slot, bpm)
             }
             SaturatorType::SuperEcho | SaturatorType::AlphaVerb => {
@@ -327,7 +355,7 @@ impl ColorProcessor {
                     (frame[0] + l * self.feedback).clamp(-8.0, 8.0),
                     (frame[1] + r * self.feedback).clamp(-8.0, 8.0),
                 ]);
-                self.phase = (self.phase + self.phase_step).rem_euclid(1.0);
+                self.phase = super::sample::wrap_position(self.phase + self.phase_step, 1.0);
                 [(frame[0] + l) * 0.7, (frame[1] + r) * 0.7]
             }
             SaturatorType::Binaural => {

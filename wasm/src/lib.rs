@@ -114,6 +114,7 @@ impl Host {
             "cpu_percent": 0, "underruns": 0,
             "source_fx":{"pending":e.source_effects_pending(),"recipe":sad_pet::dsp::source_fx::Recipe::from_engine(e)},
         });
+        state["startup_preset_index"] = json!(sad_pet::startup::INDEX);
         state["source_generation"] = json!(self.file_generation);
         if self.engine.preset.drums.is_some() {
             state["playing"] = json!(self.engine.drum_view().playing);
@@ -235,8 +236,14 @@ impl Host {
                 }
                 Ok(json!({"ok":true}))
             }
-            "/api/presets" => Ok(json!((0..5).map(Preset::builtin).collect::<Vec<_>>())),
+            "/api/presets" => Ok(json!(
+                (0..=sad_pet::startup::INDEX)
+                    .map(Preset::builtin)
+                    .collect::<Vec<_>>()
+            )),
+            "/api/startup" => Ok(sad_pet::startup::configuration()),
             "/api/samples" => Ok(json!(sad_pet::samples::TRACKS)),
+            "/api/effect-presets/factory" => Ok(json!(sad_pet::effect_presets::factory())),
             "/api/color-defaults" => Ok(json!({
                 "max_slots": sad_pet::color::MAX_COLOR_SLOTS,
                 "slot": sad_pet::color::ColorSlot::default(),
@@ -528,7 +535,7 @@ pub extern "C" fn sad_load() -> u32 {
     host(|h| {
         let result = unpack(&h.input).map(|sample| {
             h.engine.set_sample(Arc::new(sample));
-            h.reserve_source_buffers();
+            h.reset_source_buffers();
             h.config_revision = h.config_revision.wrapping_add(1);
             serde_json::to_vec(&h.command(json!({"path": "/sample-info"})).unwrap()).unwrap()
         });

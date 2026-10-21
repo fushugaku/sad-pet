@@ -1,0 +1,152 @@
+diff --git a/plugin/src/lib.rs b/plugin/src/lib.rs
+index 6ea0d06..39d2d28 100644
+--- a/plugin/src/lib.rs
++++ b/plugin/src/lib.rs
+@@ -173,6 +173,19 @@ struct SavedState {
+ }
+ 
+ impl Controller {
++    /// A new DAW instance starts with the factory scene; newly added timbres
++    /// still use the empty constructor below. Project restoration replaces it.
++    fn new_plugin(effect: bool) -> Self {
++        let mut control = Self::new(effect);
++        control.preset = sad_pet::startup::preset();
++        control.preset.sanitize();
++        control.sample = sad_pet::startup::sample();
++        control.region = sad_pet::startup::REGION;
++        control.fades = sad_pet::startup::FADES;
++        control.selection.id = format!("factory:{}", sad_pet::startup::INDEX);
++        control
++    }
++
+     fn new(effect: bool) -> Self {
+         let (commands, _) = RingBuffer::new(QUEUE);
+         let (_, retired) = RingBuffer::new(QUEUE);
+@@ -405,6 +418,7 @@ impl Controller {
+             "playing":self.playing,"midi_gate":self.midi_gate,"frozen":self.frozen,"bypass":self.bypass,
+             "preset":displayed_preset,"sample_name":if live { "DAW input" } else { &self.sample.name },
+             "preset_selection":self.selection,
++            "startup_preset_index":sad_pet::startup::INDEX,
+             "sample_id":if live { None } else { self.sample.library_id.as_ref() },
+             "sample_seconds":if live { 8.0 } else { self.sample.duration() },
+             "sample_frames":if live { self.rate as usize * 8 } else { self.sample.len() },
+@@ -1024,7 +1038,7 @@ pub extern "C" fn sad_parameters() -> Bytes {
+ 
+ #[unsafe(no_mangle)]
+ pub extern "C" fn sad_control_new(effect: bool) -> *mut Controller {
+-    Box::into_raw(Box::new(Controller::new(effect)))
++    Box::into_raw(Box::new(Controller::new_plugin(effect)))
+ }
+ 
+ // The wrapper serializes Controller calls and calls prepare/free only while audio is stopped.
+diff --git a/plugin/src/preset_library.rs b/plugin/src/preset_library.rs
+index 2f806e8..ce5e0b9 100644
+--- a/plugin/src/preset_library.rs
++++ b/plugin/src/preset_library.rs
+@@ -349,14 +349,18 @@ impl Controller {
+             ("/api/preset-library/factory", true) => {
+                 let index = data["index"]
+                     .as_u64()
+-                    .filter(|n| *n < 5)
++                    .filter(|n| *n <= sad_pet::startup::INDEX as u64)
+                     .ok_or("Unknown factory preset.")?;
+                 let preset = Preset::builtin(index as usize);
++                let startup = index as usize == sad_pet::startup::INDEX;
++                let sample = if startup { sad_pet::startup::sample() } else { self.sample.clone() };
++                let region = if startup { sad_pet::startup::REGION } else { self.region };
++                let fades = if startup { sad_pet::startup::FADES } else { self.fades };
+                 let source = self.prepared_source_for(
+-                    self.sample.clone(),
++                    sample.clone(),
+                     self.source,
+-                    self.region,
+-                    self.fades,
++                    region,
++                    fades,
+                     &preset,
+                 );
+                 self.enqueue(Command::Restore(Box::new(super::Restore {
+@@ -375,6 +379,9 @@ impl Controller {
+                 self.meta = sad_pet::timbres::Meta::default();
+                 self.scene_revision = self.scene_revision.wrapping_add(1);
+                 self.preset = preset;
++                self.sample = sample;
++                self.region = region;
++                self.fades = fades;
+                 self.selection = Selection {
+                     id: format!("factory:{index}"),
+                     dirty: false,
+diff --git a/rust/src/lib.rs b/rust/src/lib.rs
+index 028c945..92962f9 100644
+--- a/rust/src/lib.rs
++++ b/rust/src/lib.rs
+@@ -17,6 +17,7 @@ pub mod recording;
+ pub mod resynth;
+ pub mod samples;
+ pub mod sequence;
++pub mod startup;
+ #[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
+ pub mod server;
+ pub mod tables;
+diff --git a/rust/src/preset.rs b/rust/src/preset.rs
+index 2a8266e..80483fb 100644
+--- a/rust/src/preset.rs
++++ b/rust/src/preset.rs
+@@ -791,6 +791,9 @@ impl Preset {
+     }
+ 
+     pub fn builtin(index: usize) -> Self {
++        if index == crate::startup::INDEX {
++            return crate::startup::preset();
++        }
+         let mut p = Self::default();
+         match index {
+             1 => {
+diff --git a/rust/src/server.rs b/rust/src/server.rs
+index b640491..d1781ec 100644
+--- a/rust/src/server.rs
++++ b/rust/src/server.rs
+@@ -156,7 +156,8 @@ fn handle(
+                 "/favicon.ico" => Ok((Vec::new(), "image/x-icon")),
+                 "/api/state" => json(&*state.lock().map_err(|e| e.to_string())?),
+                 "/api/preset" => json(&state.lock().map_err(|e| e.to_string())?.preset),
+-                "/api/presets" => json(&(0..5).map(Preset::builtin).collect::<Vec<_>>()),
++                "/api/presets" => json(&(0..=crate::startup::INDEX).map(Preset::builtin).collect::<Vec<_>>()),
++                "/api/startup" => json(&crate::startup::configuration()),
+                 "/api/samples" => json(&crate::samples::TRACKS),
+                 "/api/sample.wav" => {
+                     let sample = state.lock().map_err(|e| e.to_string())?.sample.clone();
+diff --git a/wasm/src/lib.rs b/wasm/src/lib.rs
+index e4e44d1..dd24fa6 100644
+--- a/wasm/src/lib.rs
++++ b/wasm/src/lib.rs
+@@ -91,6 +91,7 @@ impl Host {
+         let sample = e.source_sample();
+         let mut state = json!({
+             "version": env!("CARGO_PKG_VERSION"), "instance_id": "browser",
++            "startup_preset_index":sad_pet::startup::INDEX,
+             "sample_rate": self.rate, "audio_device": "Web Audio", "audio_error": null,
+             "audio_enabled": false, "playing": e.playing, "frozen": e.frozen,
+             "bypass": e.bypass, "midi_gate": e.midi_gate, "preset": e.preset,
+@@ -235,7 +236,8 @@ impl Host {
+                 }
+                 Ok(json!({"ok":true}))
+             }
+-            "/api/presets" => Ok(json!((0..5).map(Preset::builtin).collect::<Vec<_>>())),
++            "/api/presets" => Ok(json!((0..=sad_pet::startup::INDEX).map(Preset::builtin).collect::<Vec<_>>())),
++            "/api/startup" => Ok(sad_pet::startup::configuration()),
+             "/api/samples" => Ok(json!(sad_pet::samples::TRACKS)),
+             "/api/color-defaults" => Ok(json!({
+                 "max_slots": sad_pet::color::MAX_COLOR_SLOTS,
+diff --git a/wasm/src/telemetry.rs b/wasm/src/telemetry.rs
+index 5c06ca1..802a87d 100644
+--- a/wasm/src/telemetry.rs
++++ b/wasm/src/telemetry.rs
+@@ -164,6 +164,7 @@ impl Host {
+             self.engine.region = config.region;
+             self.snapshot_state = json!({
+                 "version":env!("CARGO_PKG_VERSION"),"instance_id":"browser",
++                "startup_preset_index":sad_pet::startup::INDEX,
+                 "sample_rate":self.rate,"audio_device":"Web Audio","audio_error":null,"audio_enabled":false,
+                 "sample_name":config.name,"sample_id":config.id,"sample_seconds":config.seconds,"sample_frames":config.frames,
+                 "region":config.region,"fades":config.fades,"input":{"active":config.live},

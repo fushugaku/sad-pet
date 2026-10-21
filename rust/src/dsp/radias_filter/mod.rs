@@ -2,7 +2,10 @@
 //! Filter 2 and Comb come directly from radias-synth-domain; the expanded
 //! f64 kernels live in models.rs. All delay memory is prepared off-thread.
 mod models;
-use std::cell::RefCell;
+use std::{
+    cell::RefCell,
+    sync::{Arc, Mutex, Weak},
+};
 
 #[derive(Clone, Copy)]
 struct Prewarped {
@@ -57,33 +60,33 @@ use radias_synth_domain::{
     filter_routing::{Filter2, Filter2Coefficients, Filter2Output},
 };
 
-pub(super) struct RustiasFilter {
-    rate: f64,
+// Shared immutable coefficients; every filter retains its own delay/integrator state.
+struct FilterTables {
+    rate: u32,
     frequencies: ControllerFilterTables,
     mix: FilterMixTable,
     comb_tables: CombControlTables,
-    first: [ResonantFilter; 2],
-    second: [Filter2; 2],
-    comb: Box<[Comb; 2]>,
-    models: [models::Model; 2],
-    coefficients: FilterCoefficients,
-    comb_delay: u32,
-    comb_feedback: i32,
-    model: FilterModel,
-    kind: FilterType,
-    cutoff: f64,
-    resonance: f64,
-    drive: f64,
-    morph: f64,
-    gain: f64,
-    control_key: Option<(i32, u64)>,
 }
-
-impl RustiasFilter {
-    pub fn new(sample_rate: u32) -> Self {
+impl FilterTables {
+    fn shared(rate: u32) -> Arc<Self> {
+        static CACHE: Mutex<Vec<Weak<FilterTables>>> = Mutex::new(Vec::new());
+        let mut cache = CACHE.lock().expect("filter table cache");
+        cache.retain(|entry| entry.strong_count() != 0);
+        if let Some(tables) = cache
+            .iter()
+            .filter_map(Weak::upgrade)
+            .find(|t| t.rate == rate)
+        {
+            return tables;
+        }
+        let tables = Arc::new(Self::new(rate));
+        cache.push(Arc::downgrade(&tables));
+        tables
+    }
+    fn new(sample_rate: u32) -> Self {
         let rate = sample_rate as f64;
         Self {
-            rate,
+            rate: sample_rate,
             // Firmware-free analytic tables from standalone_tables.rs. Bound
             // the original fixed-point integrator to its supported rate ratio.
             frequencies: ControllerFilterTables {
@@ -120,13 +123,43 @@ impl RustiasFilter {
                 }),
                 feedback: std::array::from_fn(|i| (i as f64 / 127.0 * 0.98 * 2147483647.0) as u32),
             },
+        }
+    }
+}
+
+pub(super) struct RustiasFilter {
+    rate: f64,
+    tables: Arc<FilterTables>,
+    first: [ResonantFilter; 2],
+    second: [Filter2; 2],
+    comb: Box<[Comb; 2]>,
+    model_lanes: models::Model,
+    coefficients: FilterCoefficients,
+    comb_delay: u32,
+    comb_feedback: i32,
+    model: FilterModel,
+    kind: FilterType,
+    cutoff: f64,
+    resonance: f64,
+    drive: f64,
+    morph: f64,
+    gain: f64,
+    control_key: Option<(i32, u64)>,
+}
+
+impl RustiasFilter {
+    pub fn new(sample_rate: u32) -> Self {
+        let rate = sample_rate as f64;
+        Self {
+            rate,
+            tables: FilterTables::shared(sample_rate),
             first: [ResonantFilter::default(); 2],
             second: [Filter2::default(); 2],
             comb: Box::new(std::array::from_fn(|_| Comb {
                 feedback: Default::default(),
                 delay: Default::default(),
             })),
-            models: std::array::from_fn(|_| models::Model::new(rate)),
+            model_lanes: models::Model::new(rate),
             coefficients: FilterCoefficients {
                 input_gain: 24576,
                 feedback: 0,
@@ -151,7 +184,7 @@ impl RustiasFilter {
     pub fn clear(&mut self) {
         self.first = [ResonantFilter::default(); 2];
         self.second = [Filter2::default(); 2];
-        self.models = std::array::from_fn(|_| models::Model::new(self.rate));
+        self.model_lanes = models::Model::new(self.rate);
         // Only Comb can have written its memory. Do not zero unused delay
         // buffers on every polyphonic note in a different filter model.
         if self.model == FilterModel::Radias2 && self.kind == FilterType::Comb {
@@ -177,7 +210,7 @@ impl RustiasFilter {
         let code = (cutoff * 127.0 * 256.0).round() as i32;
         let key = (code, resonance.to_bits());
         if self.control_key != Some(key) {
-            let frequency = self.frequencies.frequency(code) as i32;
+            let frequency = self.tables.frequencies.frequency(code) as i32;
             let c = filter_control::compile(
                 frequency,
                 (resonance * 0.95 * 2147483647.0) as i32,
@@ -187,8 +220,8 @@ impl RustiasFilter {
             self.coefficients.integrator_gain = c.integrator_gain;
             self.coefficients.post_gain = c.post_gain;
             self.coefficients.post_feedback = c.post_feedback;
-            self.comb_delay = self.comb_tables.delay(code);
-            self.comb_feedback = self.comb_tables.compile_feedback(
+            self.comb_delay = self.tables.comb_tables.delay(code);
+            self.comb_feedback = self.tables.comb_tables.compile_feedback(
                 code,
                 CombResonanceControl {
                     resonance: (resonance * 127.0).round() as u8,
@@ -197,7 +230,10 @@ impl RustiasFilter {
             ) as i32;
             self.control_key = Some(key);
         }
-        self.coefficients.mix = self.mix.weights((morph * 127.0).round() as u16 * 256);
+        self.coefficients.mix = self
+            .tables
+            .mix
+            .weights((morph * 127.0).round() as u16 * 256);
         if !matches!(model, FilterModel::Radias | FilterModel::Radias2) {
             let prewarped = prewarped(self.coefficients.integrator_gain, self.rate);
             self.cutoff = prewarped.cutoff;
@@ -210,21 +246,22 @@ impl RustiasFilter {
 
     pub fn process(&mut self, frame: Stereo) -> Stereo {
         use FilterModel::{Radias, Radias2};
+        if !matches!(self.model, Radias | Radias2) {
+            return self
+                .model_lanes
+                .sample(
+                    frame.map(f64::from),
+                    self.model as u8 - 1,
+                    self.cutoff,
+                    self.resonance,
+                    self.drive,
+                    self.morph,
+                    self.gain,
+                )
+                .map(|output| output.clamp(-1.0, 1.0) as f32);
+        }
         std::array::from_fn(|channel| {
             let input = f64::from(frame[channel]);
-            if !matches!(self.model, Radias | Radias2) {
-                return self.models[channel]
-                    .sample(
-                        input,
-                        self.model as u8 - 1,
-                        self.cutoff,
-                        self.resonance,
-                        self.drive,
-                        self.morph,
-                        self.gain,
-                    )
-                    .clamp(-1.0, 1.0) as f32;
-            }
             let input = if self.drive == 0.0 {
                 input
             } else {
@@ -254,5 +291,23 @@ impl RustiasFilter {
             };
             (output.0 as f64 / 2147483648.0) as f32
         })
+    }
+}
+
+#[cfg(test)]
+mod table_tests {
+    use super::*;
+    #[test]
+    fn shares_only_immutable_tables_at_the_same_rate() {
+        let a = RustiasFilter::new(44_100);
+        let b = RustiasFilter::new(44_100);
+        let c = RustiasFilter::new(96_000);
+        assert!(Arc::ptr_eq(&a.tables, &b.tables));
+        assert!(!Arc::ptr_eq(&a.tables, &c.tables));
+        assert_ne!(
+            a.tables.frequencies.frequency,
+            c.tables.frequencies.frequency
+        );
+        assert!(!std::ptr::eq(&*a.comb, &*b.comb));
     }
 }

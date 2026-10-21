@@ -1,0 +1,23 @@
+{
+  "source": "/Users/georgy/Projects/Evil_update",
+  "destination": "/Users/georgy/Projects/SadPetRust",
+  "compatibility_symlink": "/Users/georgy/Projects/Evil_update",
+  "excluded_artifacts": "/Users/georgy/.Trash/SadPetRust-build-artifacts-20261021-201404",
+  "git_head": "90c6cafc6f31620ac2c012e187d07c7a896a4fb8",
+  "git_branch": "codex/daw-plugins",
+  "retained_files_verified": 2689,
+  "retained_bytes_verified": 196556582,
+  "verification": "Every retained file has identical SHA-256, relative path and permissions; original Git status and HEAD match.",
+  "performance_evidence_files": 211,
+  "retained_builds": [
+    "dist/web",
+    "dist/SAD PET.app"
+  ],
+  "checks": {
+    "cargo_metadata": "passed; all three workspace packages resolve under SadPetRust",
+    "git_connectivity": "passed",
+    "linked_worktree": "repaired and verified",
+    "dev_launcher_help": "passed",
+    "browser": "WASM loaded and playback started at 48 kHz from the relocated dist/web; no warnings or errors"
+  }
+}

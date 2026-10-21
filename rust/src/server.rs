@@ -184,6 +184,7 @@ fn handle(
                         Ok((wav::bytes(take.sample_rate, &take.frames)?, "audio/wav"))
                     }
                 }
+                "/api/effect-presets/factory" => json(&crate::effect_presets::factory()),
                 "/api/color-defaults" => json(
                     &serde_json::json!({"max_slots": crate::color::MAX_COLOR_SLOTS, "slot": crate::color::ColorSlot::default(), "delay_tables": crate::radias_delay::display_tables()}),
                 ),
@@ -269,10 +270,11 @@ fn handle(
                 let mut preset: Preset =
                     serde_json::from_value(value).map_err(|e| format!("Preset: {e}"))?;
                 preset.sanitize();
+                let rate = state.lock().map_err(|e| e.to_string())?.sample_rate;
                 let (reply, result) = std::sync::mpsc::sync_channel(1);
                 send(
                     &commands,
-                    Command::Preset(Box::new(preset.prepared_clone()), reply),
+                    Command::preset(preset.prepared_clone_for(rate), reply),
                 )?;
                 result
                     .recv_timeout(Duration::from_secs(5))

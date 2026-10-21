@@ -2,18 +2,27 @@
 //! f64, two oversampling passes, transfer functions and operation order are
 //! preserved. Host-rate prewarping and smoothing extend the original 48 kHz
 //! model; parameter caches contain no signal history. Firmware-free.
+//! Both channels share one parameter state and run as two independent lanes,
+//! each with the exact per-channel operations, so they can use one vector op.
+pub type Lanes = [f64; 2];
+
+#[inline(always)]
+fn lanes(f: impl FnMut(usize) -> f64) -> Lanes {
+    std::array::from_fn(f)
+}
+
 #[derive(Default)]
 pub struct Model {
-    poles: [f64; 4],
-    svf: [f64; 4],
-    previous: f64,
+    poles: [Lanes; 4],
+    svf: [Lanes; 4],
+    previous: Lanes,
     cutoff: f64,
     resonance: f64,
     drive: f64,
     morph: f64,
     key: Option<(u8, u64, u64, u64, u64)>,
     gain: f64,
-    output: f64,
+    output: Lanes,
     mode: u8,
     sample_rate: f64,
     smoothing: f64,
@@ -39,6 +48,21 @@ pub(super) fn soft(x: f64) -> f64 {
     }
     x * (27.0 + x * x) / (27.0 + 9.0 * x * x)
 }
+/// soft() on both lanes. Selects rather than branches, so the lanes can share
+/// one division; the selected values are the ones soft() returns.
+#[inline(always)]
+fn soft_lanes(x: Lanes) -> Lanes {
+    x.map(|x| {
+        let y = x * (27.0 + x * x) / (27.0 + 9.0 * x * x);
+        if x >= 3.0 {
+            1.0
+        } else if x <= -3.0 {
+            -1.0
+        } else {
+            y
+        }
+    })
+}
 impl Model {
     pub fn new(sample_rate: f64) -> Self {
         Self {
@@ -54,28 +78,28 @@ impl Model {
     #[allow(clippy::too_many_arguments)]
     pub fn sample(
         &mut self,
-        input: f64,
+        input: Lanes,
         mode: u8,
         cutoff: f64,
         resonance: f64,
         drive: f64,
         morph: f64,
         gain: f64,
-    ) -> f64 {
+    ) -> Lanes {
         self.sample_with_gain(input, mode, cutoff, resonance, drive, morph, Some(gain))
     }
 
     #[allow(clippy::too_many_arguments)]
     fn sample_with_gain(
         &mut self,
-        input: f64,
+        input: Lanes,
         mode: u8,
         cutoff: f64,
         resonance: f64,
         drive: f64,
         morph: f64,
         gain: Option<f64>,
-    ) -> f64 {
+    ) -> Lanes {
         let key = (
             mode,
             cutoff.to_bits(),
@@ -148,40 +172,44 @@ impl Model {
         };
         self.previous = input;
         // A short output smoother also de-clicks a live model change.
-        self.output += (result.clamp(-4.0, 4.0) - self.output) * self.smoothing;
+        for (output, result) in self.output.iter_mut().zip(result) {
+            *output += (result.clamp(-4.0, 4.0) - *output) * self.smoothing;
+        }
         self.output
     }
 
-    fn render<const MODE: u8>(&mut self, input: f64) -> f64 {
-        let mut result = 0.0;
-        for x in [(self.previous + input) * 0.5, input] {
+    fn render<const MODE: u8>(&mut self, input: Lanes) -> Lanes {
+        let mut result = [0.0; 2];
+        for x in [lanes(|c| (self.previous[c] + input[c]) * 0.5), input] {
             let x = if MODE >= 10 && self.drive <= 1.0 {
                 x
             } else {
-                soft(x * self.drive)
+                soft_lanes(x.map(|x| x * self.drive))
             };
             let y = if matches!(MODE, 1 | 4 | 7 | 8 | 9) {
                 let g = self.ladder_gain;
                 let feedback = self.feedback;
-                let mut y = soft(x - self.poles[3] * feedback);
-                let mut taps = [0.0; 4];
+                let mut y = soft_lanes(lanes(|c| x[c] - self.poles[3][c] * feedback));
+                let mut taps = [[0.0; 2]; 4];
                 for (i, z) in self.poles.iter_mut().enumerate() {
-                    let v = (y - *z) * g;
-                    let p = v + *z;
-                    *z = (p + v).clamp(-4.0, 4.0);
+                    let v = lanes(|c| (y[c] - z[c]) * g);
+                    let p = lanes(|c| v[c] + z[c]);
+                    *z = lanes(|c| (p[c] + v[c]).clamp(-4.0, 4.0));
                     y = if MODE == 4 {
-                        soft(p * 1.15) / 1.15
+                        soft_lanes(p.map(|p| p * 1.15)).map(|y| y / 1.15)
                     } else if MODE == 9 {
-                        soft(p * self.stage_drive) / self.stage_drive
+                        soft_lanes(p.map(|p| p * self.stage_drive)).map(|y| y / self.stage_drive)
                     } else {
                         p
                     };
                     taps[i] = y;
                 }
                 match MODE {
-                    7 => x - 4.0 * taps[0] + 6.0 * taps[1] - 4.0 * taps[2] + taps[3],
-                    8 => 4.0 * (taps[1] - 2.0 * taps[2] + taps[3]),
-                    _ => y * self.output_gain,
+                    7 => lanes(|c| {
+                        x[c] - 4.0 * taps[0][c] + 6.0 * taps[1][c] - 4.0 * taps[2][c] + taps[3][c]
+                    }),
+                    8 => lanes(|c| 4.0 * (taps[1][c] - 2.0 * taps[2][c] + taps[3][c])),
+                    _ => y.map(|y| y * self.output_gain),
                 }
             } else {
                 let k = self.damping;
@@ -190,47 +218,50 @@ impl Model {
                     let mut output = x;
                     for stage in 0..if MODE % 2 == 1 { 2 } else { 1 } {
                         let i = stage * 2;
-                        let v3 = output - self.svf[i + 1];
-                        let band = a1 * self.svf[i] + self.a2 * v3;
-                        let low = self.svf[i + 1] + self.a2 * self.svf[i] + self.a3 * v3;
-                        self.svf[i] = 2.0 * band - self.svf[i];
-                        self.svf[i + 1] = 2.0 * low - self.svf[i + 1];
-                        let high = output - k * band - low;
+                        let [s0, s1] = [self.svf[i], self.svf[i + 1]];
+                        let v3 = lanes(|c| output[c] - s1[c]);
+                        let band = lanes(|c| a1 * s0[c] + self.a2 * v3[c]);
+                        let low = lanes(|c| s1[c] + self.a2 * s0[c] + self.a3 * v3[c]);
+                        self.svf[i] = lanes(|c| 2.0 * band[c] - s0[c]);
+                        self.svf[i + 1] = lanes(|c| 2.0 * low[c] - s1[c]);
+                        let high = lanes(|c| output[c] - k * band[c] - low[c]);
                         output = match (MODE - 10) / 2 {
                             0 => low,
                             1 => high,
-                            2 => band * k,
-                            _ => low + high,
+                            2 => band.map(|band| band * k),
+                            _ => lanes(|c| low[c] + high[c]),
                         };
                     }
-                    result += output * 0.5;
+                    result = lanes(|c| result[c] + output[c] * 0.5);
                     continue;
                 }
-                let v3 = x - self.svf[1];
-                let band = a1 * self.svf[0] + self.a2 * v3;
-                let low = self.svf[1] + self.a2 * self.svf[0] + self.a3 * v3;
-                self.svf[0] = soft(2.0 * band - self.svf[0]);
-                self.svf[1] = soft(2.0 * low - self.svf[1]);
-                let high = x - k * band - low;
+                let [s0, s1] = [self.svf[0], self.svf[1]];
+                let v3 = lanes(|c| x[c] - s1[c]);
+                let band = lanes(|c| a1 * s0[c] + self.a2 * v3[c]);
+                let low = lanes(|c| s1[c] + self.a2 * s0[c] + self.a3 * v3[c]);
+                self.svf[0] = soft_lanes(lanes(|c| 2.0 * band[c] - s0[c]));
+                self.svf[1] = soft_lanes(lanes(|c| 2.0 * low[c] - s1[c]));
+                let high = lanes(|c| x[c] - k * band[c] - low[c]);
                 match MODE {
-                    2 => soft((low + band * self.resonance * 0.35) * 1.3) / 1.3,
-                    3 => soft(high * 1.3) / 1.3,
+                    2 => soft_lanes(lanes(|c| (low[c] + band[c] * self.resonance * 0.35) * 1.3))
+                        .map(|y| y / 1.3),
+                    3 => soft_lanes(high.map(|high| high * 1.3)).map(|y| y / 1.3),
                     5 => {
                         if self.morph < 0.5 {
-                            low + high * self.morph * 2.0
+                            lanes(|c| low[c] + high[c] * self.morph * 2.0)
                         } else {
-                            low * (2.0 - self.morph * 2.0) + high
+                            lanes(|c| low[c] * (2.0 - self.morph * 2.0) + high[c])
                         }
                     }
                     6 => {
-                        let taps = [low, band, high, low + high];
+                        let taps = [low, band, high, lanes(|c| low[c] + high[c])];
                         let i = self.morph_index;
-                        taps[i] + (taps[i + 1] - taps[i]) * self.morph_fraction
+                        lanes(|c| taps[i][c] + (taps[i + 1][c] - taps[i][c]) * self.morph_fraction)
                     }
                     _ => low,
                 }
             };
-            result += y * 0.5;
+            result = lanes(|c| result[c] + y[c] * 0.5);
         }
         result
     }
@@ -248,24 +279,44 @@ mod tests {
             "../../../tests/fixtures/rustias-filters-91cae3f.json"
         ))
         .unwrap();
+        // Lane 0 always carries the reference input. The second lane carries
+        // the same input in one model and unrelated audio in the other, so it
+        // must match bit for bit in the first and must not leak in the second.
         for mode in 0..18 {
-            let mut m = Model::new(48_000.0);
+            let mut same = Model::new(48_000.0);
+            let mut other = Model::new(48_000.0);
             let mut seed = 0x51a3beef_u32;
             for i in 0..4096 {
                 seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
                 let input =
                     seed as i32 as f64 / 2147483648.0 * if i % 37 == 0 { 3.0 } else { 0.35 };
+                let unrelated = (i as f64 * 0.37).sin() * if i % 53 == 0 { 4.0 } else { 0.6 };
                 let step = (i / 256) % 4;
                 let cutoff = [120.0, 1800.0, 9900.0, 18000.0][step];
                 let gain = (std::f64::consts::PI * cutoff / 96_000.0).tan();
-                let output = m.sample(
-                    input,
-                    mode,
+                let settings = (
                     cutoff,
                     [0.0, 0.25, 0.99, 1.0][step],
                     [0.0, 0.23, 1.0, 0.7][step],
                     [0.0, 0.33, 0.67, 1.0][step],
+                );
+                let (cutoff, resonance, drive, morph) = settings;
+                let [output, copy] =
+                    same.sample([input; 2], mode, cutoff, resonance, drive, morph, gain);
+                let [isolated, _] = other.sample(
+                    [input, unrelated],
+                    mode,
+                    cutoff,
+                    resonance,
+                    drive,
+                    morph,
                     gain,
+                );
+                assert_eq!(output.to_bits(), copy.to_bits(), "model {mode}, frame {i}");
+                assert_eq!(
+                    output.to_bits(),
+                    isolated.to_bits(),
+                    "model {mode}, frame {i}"
                 );
                 if i % 128 == 127 {
                     let reference = expected[mode as usize][i / 128];

@@ -1,0 +1,53 @@
+   Compiling sad-pet v0.30.1 (/Users/georgy/Projects/Evil_update/rust)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.06s
+     Running unittests src/lib.rs (target/debug/deps/sad_pet-0fd8aabafe349eae)
+
+running 37 tests
+test dsp::radias_filter::table_tests::shares_only_immutable_tables_at_the_same_rate ... ok
+test dsp::resynth::tests::pcm_overlap_has_a_continuous_seam_and_handles_large_steps_and_tiny_trims ... ok
+test dsp::radias_filter::models::tests::kernels_match_original_rustias_across_live_parameter_changes ... ok
+test dsp::resynth::tests::scalar_edits_keep_phase_and_disabled_processing_is_exact ... ok
+test dsp::sequence::tests::carrier_pitch_contributions_cancel_before_clamping_and_keep_independent_clocks ... ok
+test dsp::sequence::tests::main_pitch_routes_to_selected_carriers_and_oscillator_offsets_are_additive ... ok
+test dsp::source_fx::tests::excluded_audio_never_enters_a_source_delay ... ok
+test dsp::source_fx::tests::cache_swaps_keep_held_notes_and_loop_phase_and_do_not_affect_raw_bypass ... ok
+test dsp::source_fx::tests::live_source_is_processed_once_and_raw_meter_and_freeze_are_preserved ... ok
+test dsp::bar_loop_tests::root_pitch_and_bend_change_grain_pitch_without_retiming_the_loop ... ok
+test dsp::bar_loop_tests::changing_the_selection_preserves_phase_and_disabling_restores_original_speed ... ok
+test effect_presets::tests::factory_banks_preserve_every_original_dsp_value ... ok
+test audio::telemetry_tests::native_command_replies_follow_the_published_metadata ... ok
+test imported_fx::tests::moving_a_legacy_effect_to_another_rack_uses_fresh_history ... ok
+test imported_fx::tests::removing_all_effects_retires_histories_with_the_previous_preset ... ok
+test drums::tests::factory_tones_and_original_stereo_dsp_are_preserved ... ok
+test parameters::tests::numeric_batches_clamp_values_preserve_topology_and_mirror_legacy_fields ... ok
+test parameters::tests::numeric_messages_reject_unknown_non_numeric_and_out_of_range_addresses ... ok
+test parameters::tests::osc4_interactions_append_after_all_released_resynth_ids ... ok
+test parameters::tests::old_presets_keep_original_playback_and_new_loop_settings_roundtrip ... ok
+test parameters::tests::resynth_is_backward_compatible_and_appended_controls_roundtrip ... ok
+test imported_fx::tests::alphaverb_mode_labels_match_original_compressor_and_gate_flags ... ok
+test dsp::bar_loop_tests::meter_and_tempo_changes_keep_phase_and_use_quarter_note_beats ... ok
+test dsp::source_fx::tests::file_fx_process_selected_input_before_any_grain_or_pitch ... ok
+test dsp::sample::preparation_tests::bounded_input_preparation_matches_the_original_history_and_mips ... ok
+test dsp::bar_loop_tests::overlapping_notes_start_at_the_selection_and_retrigger_independently ... ok
+test dsp::source_fx_worker::tests::a_full_request_queue_still_invalidates_older_results ... ok
+test dsp::source_fx::tests::source_recipe_tracks_pitch_for_pickup_and_every_sub_oscillator ... ok
+test dsp::resynth::tests::shared_source_carriers_do_not_multiply_with_a_midi_chord ... ok
+test dsp::bar_loop_tests::rendered_pitch_changes_while_the_loop_duration_stays_the_same ... ok
+test audio::telemetry_tests::a_blocked_ui_does_not_allocate_stall_or_change_dsp_samples ... ok
+test dsp::resynth::tests::four_independent_layers_cross_feedback_and_pcm_trim_stay_bounded ... ok
+test dsp::bar_loop_tests::every_note_and_pitch_traverses_the_whole_selection_in_one_bar ... ok
+test dsp::resynth::tests::analysis_selects_bands_and_envelopes_release_to_silence ... ok
+test dsp::resynth::tests::all_osc4_shapes_and_both_controls_reach_every_layer ... ok
+test dsp::resynth::tests::all_radias_types_and_modes_render_at_host_rates ... ok
+test dsp::resynth::tests::ring_and_sync_use_separate_source_grain_and_unmixed_oscillator_taps ... ok
+
+test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.05s
+
+     Running tests/recording.rs (target/debug/deps/recording-aa5dce06eadc3ffd)
+
+running 2 tests
+test recording_captures_exact_blocks_and_stopping_is_retryable ... ok
+test mp3_contains_stereo_mpeg_frames_at_the_requested_bitrate ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+

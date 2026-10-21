@@ -161,11 +161,13 @@
       byId("library-import").disabled = false;
       const last = await this.store.setting("last-audio");
       const previous = await this.previousAudio(last);
+      const startup = native.startup_preset_index !== undefined &&
+        native.preset?.name === presets[native.startup_preset_index]?.name;
       if (
         !native.plugin &&
         previous &&
         !previous.trashedAt &&
-        native.sample_id === factoryId(this.catalog[0]) &&
+        (startup || native.sample_id === factoryId(this.catalog[0])) &&
         !native.playing &&
         last.instance !== native.instance_id &&
         last.id !== native.sample_id
@@ -173,7 +175,7 @@
         await this.activate(previous);
       } else {
         await this.rememberNative(native);
-        if (!native.plugin && native.fades && !native.playing && !native.input?.active)
+        if (!native.plugin && !native.timbres?.timbres && native.fades && !native.playing && !native.input?.active)
           await this.actions.loadFades(await this.fades(this.currentId));
       }
       this.status = "";

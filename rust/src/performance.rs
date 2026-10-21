@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 pub const STEPS: usize = 16;
 /// The audio engine has eight polyphonic voices.
 pub const MAX_STEP_NOTES: usize = 8;
-const MAX_CHORD: usize = 32;
+pub const MAX_CHORD: usize = 32;
 pub type Actions = [Option<Message>; 2];
 pub type TickActions = [Option<Message>; MAX_STEP_NOTES * 2];
 
@@ -340,6 +340,29 @@ pub struct View {
     pub beat: f64,
 }
 
+#[derive(Clone, Copy)]
+pub struct RealtimeView {
+    pub mode: Mode,
+    pub step: Option<usize>,
+    pub arp_index: usize,
+    pub chord: [u8; MAX_CHORD],
+    pub chord_len: usize,
+    pub gate: bool,
+    pub beat: f64,
+}
+impl RealtimeView {
+    pub fn into_view(self) -> View {
+        View {
+            mode: self.mode,
+            step: self.step,
+            arp_index: self.arp_index,
+            chord: self.chord[..self.chord_len].to_vec(),
+            gate: self.gate,
+            beat: self.beat,
+        }
+    }
+}
+
 pub struct Performance {
     settings: Settings,
     base_rates: [f32; 2],
@@ -567,6 +590,22 @@ impl Performance {
                 .iter()
                 .map(|k| k.note)
                 .collect(),
+            gate: self.active.len > 0
+                || (self.running && self.mode() == Mode::Hold && self.latched.len > 0),
+            beat: self.beat,
+        }
+    }
+    pub fn realtime_view(&self) -> RealtimeView {
+        let mut chord = [0; MAX_CHORD];
+        for (out, key) in chord.iter_mut().zip(&self.latched.keys[..self.latched.len]) {
+            *out = key.note;
+        }
+        RealtimeView {
+            mode: self.mode(),
+            step: self.current_step,
+            arp_index: self.last_arp_index,
+            chord,
+            chord_len: self.latched.len,
             gate: self.active.len > 0
                 || (self.running && self.mode() == Mode::Hold && self.latched.len > 0),
             beat: self.beat,

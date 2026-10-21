@@ -1,0 +1,59 @@
+   Compiling sad-pet-superecho v1.2.0 (/Users/georgy/Projects/Evil_update/vendor/superecho)
+   Compiling sad-pet v0.30.1 (/Users/georgy/Projects/Evil_update/rust)
+   Compiling sad-pet-wasm v0.30.1 (/Users/georgy/Projects/Evil_update/wasm)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 16.32s
+     Running unittests src/lib.rs (target/debug/deps/sad_pet-0fd8aabafe349eae)
+
+running 34 tests
+test dsp::radias_filter::table_tests::shares_only_immutable_tables_at_the_same_rate ... ok
+test dsp::resynth::tests::pcm_overlap_has_a_continuous_seam_and_handles_large_steps_and_tiny_trims ... ok
+test dsp::sequence::tests::carrier_pitch_contributions_cancel_before_clamping_and_keep_independent_clocks ... ok
+test dsp::sequence::tests::main_pitch_routes_to_selected_carriers_and_oscillator_offsets_are_additive ... ok
+test dsp::radias_filter::models::tests::kernels_match_original_rustias_across_live_parameter_changes ... ok
+test dsp::source_fx::tests::excluded_audio_never_enters_a_source_delay ... ok
+test dsp::resynth::tests::scalar_edits_keep_phase_and_disabled_processing_is_exact ... ok
+test dsp::source_fx::tests::live_source_is_processed_once_and_raw_meter_and_freeze_are_preserved ... ok
+test effect_presets::tests::factory_banks_preserve_every_original_dsp_value ... ok
+test dsp::source_fx::tests::cache_swaps_keep_held_notes_and_loop_phase_and_do_not_affect_raw_bypass ... ok
+test imported_fx::tests::alphaverb_mode_labels_match_original_compressor_and_gate_flags ... ok
+test imported_fx::tests::moving_a_legacy_effect_to_another_rack_uses_fresh_history ... ok
+test imported_fx::tests::removing_all_effects_retires_histories_with_the_previous_preset ... ok
+test parameters::tests::numeric_messages_reject_unknown_non_numeric_and_out_of_range_addresses ... ok
+test parameters::tests::numeric_batches_clamp_values_preserve_topology_and_mirror_legacy_fields ... ok
+test parameters::tests::old_presets_keep_original_playback_and_new_loop_settings_roundtrip ... ok
+test parameters::tests::osc4_interactions_append_after_all_released_resynth_ids ... ok
+test parameters::tests::resynth_is_backward_compatible_and_appended_controls_roundtrip ... ok
+test dsp::bar_loop_tests::root_pitch_and_bend_change_grain_pitch_without_retiming_the_loop ... ok
+test dsp::source_fx::tests::file_fx_process_selected_input_before_any_grain_or_pitch ... ok
+test dsp::bar_loop_tests::meter_and_tempo_changes_keep_phase_and_use_quarter_note_beats ... ok
+test drums::tests::factory_tones_and_original_stereo_dsp_are_preserved ... ok
+test dsp::bar_loop_tests::changing_the_selection_preserves_phase_and_disabling_restores_original_speed ... ok
+test dsp::source_fx_worker::tests::a_full_request_queue_still_invalidates_older_results ... ok
+test dsp::bar_loop_tests::overlapping_notes_start_at_the_selection_and_retrigger_independently ... ok
+test dsp::source_fx::tests::source_recipe_tracks_pitch_for_pickup_and_every_sub_oscillator ... ok
+test dsp::resynth::tests::shared_source_carriers_do_not_multiply_with_a_midi_chord ... ok
+test dsp::bar_loop_tests::rendered_pitch_changes_while_the_loop_duration_stays_the_same ... ok
+test dsp::resynth::tests::four_independent_layers_cross_feedback_and_pcm_trim_stay_bounded ... ok
+test dsp::bar_loop_tests::every_note_and_pitch_traverses_the_whole_selection_in_one_bar ... ok
+test dsp::resynth::tests::analysis_selects_bands_and_envelopes_release_to_silence ... ok
+test dsp::resynth::tests::all_osc4_shapes_and_both_controls_reach_every_layer ... ok
+test dsp::resynth::tests::all_radias_types_and_modes_render_at_host_rates ... ok
+test dsp::resynth::tests::ring_and_sync_use_separate_source_grain_and_unmixed_oscillator_taps ... ok
+
+test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.24s
+
+     Running unittests src/lib.rs (target/debug/deps/sad_pet_wasm-a1b92c49964a6635)
+
+running 9 tests
+test allocation_tests::telemetry_decoder_does_not_initialize_an_audio_registry ... ok
+test allocation_tests::telemetry_deltas_keep_presets_and_waveforms_until_they_change ... ok
+test allocation_tests::drum_step_edits_and_granular_routing_publish_sparse_views_without_heap_work ... ok
+test allocation_tests::binary_publication_has_no_heap_and_worker_matches_original_state ... ok
+test tests::prepared_transfer_preserves_all_read_rates ... ok
+test tests::rejects_incomplete_or_invalid_prepared_samples ... ok
+test allocation_tests::source_pcm_and_mips_upload_without_allocating_or_restarting_the_audio ... ok
+test allocation_tests::neuropolis_large_patches_publish_sparse_edits_without_heap_or_full_configuration ... ok
+test allocation_tests::resynth_render_scalar_edits_and_binary_meters_have_no_heap_operations ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.73s
+

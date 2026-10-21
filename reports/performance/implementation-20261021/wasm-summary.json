@@ -1,0 +1,362 @@
+[
+  {
+    "rate": 44100,
+    "case": 0,
+    "before": {
+      "samples": 176384,
+      "median_us": 50.5,
+      "p99_us": 192.17
+    },
+    "after": {
+      "samples": 176384,
+      "median_us": 47.46,
+      "p99_us": 153.71
+    },
+    "reduction_percent": 6.0198019801980145
+  },
+  {
+    "rate": 44100,
+    "case": 1,
+    "before": {
+      "samples": 176384,
+      "median_us": 98.38,
+      "p99_us": 291.63
+    },
+    "after": {
+      "samples": 176384,
+      "median_us": 84.88,
+      "p99_us": 270.42
+    },
+    "reduction_percent": 13.722301280748116
+  },
+  {
+    "rate": 44100,
+    "case": 2,
+    "before": {
+      "samples": 176384,
+      "median_us": 75.17,
+      "p99_us": 256.0
+    },
+    "after": {
+      "samples": 176384,
+      "median_us": 62.0,
+      "p99_us": 199.5
+    },
+    "reduction_percent": 17.520287348676334
+  },
+  {
+    "rate": 44100,
+    "case": 3,
+    "before": {
+      "samples": 176384,
+      "median_us": 357.54,
+      "p99_us": 825.92
+    },
+    "after": {
+      "samples": 176384,
+      "median_us": 304.54,
+      "p99_us": 681.17
+    },
+    "reduction_percent": 14.82351624993008
+  },
+  {
+    "rate": 44100,
+    "case": 4,
+    "before": {
+      "samples": 176384,
+      "median_us": 362.5,
+      "p99_us": 749.54
+    },
+    "after": {
+      "samples": 176384,
+      "median_us": 293.87,
+      "p99_us": 713.75
+    },
+    "reduction_percent": 18.932413793103443
+  },
+  {
+    "rate": 44100,
+    "case": 5,
+    "before": {
+      "samples": 176384,
+      "median_us": 395.96,
+      "p99_us": 862.92
+    },
+    "after": {
+      "samples": 176384,
+      "median_us": 307.54,
+      "p99_us": 710.96
+    },
+    "reduction_percent": 22.33053843822608
+  },
+  {
+    "rate": 44100,
+    "case": 6,
+    "before": {
+      "samples": 176384,
+      "median_us": 404.79,
+      "p99_us": 844.75
+    },
+    "after": {
+      "samples": 176384,
+      "median_us": 334.17,
+      "p99_us": 748.38
+    },
+    "reduction_percent": 17.44608315422812
+  },
+  {
+    "rate": 44100,
+    "case": 7,
+    "before": {
+      "samples": 176384,
+      "median_us": 306.71,
+      "p99_us": 724.38
+    },
+    "after": {
+      "samples": 176384,
+      "median_us": 259.58,
+      "p99_us": 666.54
+    },
+    "reduction_percent": 15.36630693488964
+  },
+  {
+    "rate": 48000,
+    "case": 0,
+    "before": {
+      "samples": 192000,
+      "median_us": 49.71,
+      "p99_us": 176.88
+    },
+    "after": {
+      "samples": 192000,
+      "median_us": 46.25,
+      "p99_us": 181.79
+    },
+    "reduction_percent": 6.960370146851746
+  },
+  {
+    "rate": 48000,
+    "case": 1,
+    "before": {
+      "samples": 192000,
+      "median_us": 95.54,
+      "p99_us": 281.29
+    },
+    "after": {
+      "samples": 192000,
+      "median_us": 84.33,
+      "p99_us": 246.62
+    },
+    "reduction_percent": 11.733305421812856
+  },
+  {
+    "rate": 48000,
+    "case": 2,
+    "before": {
+      "samples": 192000,
+      "median_us": 74.17,
+      "p99_us": 238.04
+    },
+    "after": {
+      "samples": 192000,
+      "median_us": 62.21,
+      "p99_us": 211.58
+    },
+    "reduction_percent": 16.125117972225965
+  },
+  {
+    "rate": 48000,
+    "case": 3,
+    "before": {
+      "samples": 192000,
+      "median_us": 355.71,
+      "p99_us": 800.79
+    },
+    "after": {
+      "samples": 192000,
+      "median_us": 294.37,
+      "p99_us": 749.96
+    },
+    "reduction_percent": 17.24438447049562
+  },
+  {
+    "rate": 48000,
+    "case": 4,
+    "before": {
+      "samples": 192000,
+      "median_us": 353.42,
+      "p99_us": 809.12
+    },
+    "after": {
+      "samples": 192000,
+      "median_us": 299.63,
+      "p99_us": 706.21
+    },
+    "reduction_percent": 15.219851734480228
+  },
+  {
+    "rate": 48000,
+    "case": 5,
+    "before": {
+      "samples": 192000,
+      "median_us": 398.54,
+      "p99_us": 861.17
+    },
+    "after": {
+      "samples": 192000,
+      "median_us": 295.63,
+      "p99_us": 717.83
+    },
+    "reduction_percent": 25.821749385256187
+  },
+  {
+    "rate": 48000,
+    "case": 6,
+    "before": {
+      "samples": 192000,
+      "median_us": 407.54,
+      "p99_us": 875.58
+    },
+    "after": {
+      "samples": 192000,
+      "median_us": 327.33,
+      "p99_us": 695.33
+    },
+    "reduction_percent": 19.681503656082842
+  },
+  {
+    "rate": 48000,
+    "case": 7,
+    "before": {
+      "samples": 192000,
+      "median_us": 313.25,
+      "p99_us": 754.67
+    },
+    "after": {
+      "samples": 192000,
+      "median_us": 255.58,
+      "p99_us": 653.46
+    },
+    "reduction_percent": 18.410215482841174
+  },
+  {
+    "rate": 96000,
+    "case": 0,
+    "before": {
+      "samples": 384000,
+      "median_us": 52.37,
+      "p99_us": 183.67
+    },
+    "after": {
+      "samples": 384000,
+      "median_us": 46.0,
+      "p99_us": 174.29
+    },
+    "reduction_percent": 12.16345235822035
+  },
+  {
+    "rate": 96000,
+    "case": 1,
+    "before": {
+      "samples": 384000,
+      "median_us": 94.17,
+      "p99_us": 282.13
+    },
+    "after": {
+      "samples": 384000,
+      "median_us": 81.63,
+      "p99_us": 263.33
+    },
+    "reduction_percent": 13.31634278432623
+  },
+  {
+    "rate": 96000,
+    "case": 2,
+    "before": {
+      "samples": 384000,
+      "median_us": 74.67,
+      "p99_us": 226.25
+    },
+    "after": {
+      "samples": 384000,
+      "median_us": 60.29,
+      "p99_us": 205.96
+    },
+    "reduction_percent": 19.258068836212672
+  },
+  {
+    "rate": 96000,
+    "case": 3,
+    "before": {
+      "samples": 384000,
+      "median_us": 355.96,
+      "p99_us": 768.67
+    },
+    "after": {
+      "samples": 384000,
+      "median_us": 290.58,
+      "p99_us": 687.08
+    },
+    "reduction_percent": 18.367232273289137
+  },
+  {
+    "rate": 96000,
+    "case": 4,
+    "before": {
+      "samples": 384000,
+      "median_us": 349.62,
+      "p99_us": 762.25
+    },
+    "after": {
+      "samples": 384000,
+      "median_us": 286.71,
+      "p99_us": 694.5
+    },
+    "reduction_percent": 17.99382186373778
+  },
+  {
+    "rate": 96000,
+    "case": 5,
+    "before": {
+      "samples": 384000,
+      "median_us": 372.0,
+      "p99_us": 820.0
+    },
+    "after": {
+      "samples": 384000,
+      "median_us": 274.62,
+      "p99_us": 705.75
+    },
+    "reduction_percent": 26.177419354838705
+  },
+  {
+    "rate": 96000,
+    "case": 6,
+    "before": {
+      "samples": 384000,
+      "median_us": 376.12,
+      "p99_us": 778.62
+    },
+    "after": {
+      "samples": 384000,
+      "median_us": 300.46,
+      "p99_us": 683.21
+    },
+    "reduction_percent": 20.115920450919923
+  },
+  {
+    "rate": 96000,
+    "case": 7,
+    "before": {
+      "samples": 384000,
+      "median_us": 308.0,
+      "p99_us": 734.71
+    },
+    "after": {
+      "samples": 384000,
+      "median_us": 259.79,
+      "p99_us": 651.29
+    },
+    "reduction_percent": 15.6525974025974
+  }
+]

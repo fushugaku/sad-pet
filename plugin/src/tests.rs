@@ -61,6 +61,70 @@ fn render(audio: &mut Audio, frames: usize, input: Stereo) -> f32 {
 }
 
 #[test]
+fn new_plugin_starts_with_glasses5_and_restoration_replaces_it() {
+    for effect in [false, true] {
+        let mut control = Controller::new_plugin(effect);
+        let state = call(&mut control, "/api/state", Value::Null);
+        assert_eq!(state["preset"]["name"], "glasses5");
+        assert_eq!(state["preset_selection"]["id"], "factory:5");
+        assert_eq!(state["preset_selection"]["dirty"], false);
+        assert_eq!(state["file_source"]["sample_id"], "factory:dusty-keys:v1");
+        assert_eq!(state["file_source"]["sample_seconds"], 12.0);
+        assert_eq!(control.fades.fade_in, 1.0);
+        assert_eq!(control.fades.fade_out, 1.0);
+        assert_eq!(control.preset.pre_color_chain.len(), 2);
+        assert_eq!(control.preset.color_chain.len(), 5);
+        assert_eq!(control.preset.resynth.count, 4);
+        assert_eq!(control.preset.sequencer.tracks.len(), 2);
+        assert!(control.source == if effect { Source::Grains } else { Source::File });
+        assert_eq!(
+            call(&mut control, "/api/presets", Value::Null)[5]["name"],
+            "glasses5"
+        );
+
+        let precise = json!(control.preset);
+        let mut normalized: Vec<f32> = parameters::specs()
+            .iter()
+            .map(|spec| {
+                let value = spec.get(&control.preset);
+                let normalized = (value - spec.min) / (spec.max - spec.min);
+                spec.min + normalized * (spec.max - spec.min)
+            })
+            .collect();
+        control.set_values(&normalized);
+        assert!(!control.selection.dirty);
+        assert_eq!(json!(control.preset), precise);
+        let volume = parameters::specs()
+            .iter()
+            .position(|spec| spec.id == "master_volume")
+            .unwrap();
+        normalized[volume] = 0.4;
+        control.set_values(&normalized);
+        assert!(control.selection.dirty);
+        assert_eq!(control.preset.params.master_volume, 0.4);
+
+        // Existing projects remain authoritative, including their source and fades.
+        let mut previous = Controller::new(effect);
+        previous.preset.name = "Saved project".into();
+        let saved = previous.snapshot().unwrap();
+        control.restore_saved(saved).unwrap();
+        assert_eq!(control.preset.name, "Saved project");
+        assert_eq!(control.sample.name, "Glass sequence");
+        assert_eq!(control.fades.fade_in, 0.0);
+
+        // Factory recall carries the original source, not the previous sample.
+        call(
+            &mut control,
+            "/api/preset-library/factory",
+            json!({"index":5}),
+        );
+        assert_eq!(control.sample.name, "Dusty keys");
+        assert_eq!(control.preset.name, "glasses5");
+        assert_eq!(control.fades.fade_out, 1.0);
+    }
+}
+
+#[test]
 fn neuropolis_tracks_follow_daw_transport_survive_project_recall_and_edit_without_heap_work() {
     use sad_pet::sequence::{Target, Track};
     let mut control = Controller::new(false);

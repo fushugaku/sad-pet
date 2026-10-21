@@ -214,8 +214,18 @@
     async initialize(state, factory) {
       this.native = Boolean(state.plugin);
       this.factory = factory;
+      this.startupIndex = state.startup_preset_index ?? -1;
       if (this.native) {
         this.observe(state);
+      } else if (
+        !this.actions.edited?.() &&
+        factory[this.startupIndex] &&
+        state.preset?.name === factory[this.startupIndex]?.name
+      ) {
+        this.selection = {
+          id: `factory:${this.startupIndex}`,
+          dirty: Boolean(this.selection?.dirty),
+        };
       }
       await this.refresh();
       if (!this.native) {
@@ -223,7 +233,8 @@
         if (
           !this.actions.edited?.() &&
           last &&
-          this.users.some((r) => r.id === last.id)
+          (this.users.some((r) => r.id === last.id) ||
+            this.factory.some((_, i) => i !== this.startupIndex && last.id === `factory:${i}`))
         )
           await this.load(last.id);
       }
@@ -299,7 +310,13 @@
       const query = $("preset-search").value.toLocaleLowerCase().trim();
       const choices =
         this.bank === "factory"
-          ? this.factory.map((p, i) => ({ id: `factory:${i}`, name: p.name }))
+          ? this.factory
+              .map((p, i) => ({ id: `factory:${i}`, name: p.name }))
+              .sort(
+                (a, b) =>
+                  Number(b.id === `factory:${this.startupIndex}`) -
+                  Number(a.id === `factory:${this.startupIndex}`),
+              )
           : this.users;
       const shown = choices.filter((p) =>
         p.name.toLocaleLowerCase().includes(query),
@@ -513,11 +530,14 @@
           id.startsWith("factory:") ? { index: Number(id.slice(8)) } : { id },
         );
       } else if (id.startsWith("factory:")) {
-        if (this.actions.read().state?.timbres?.timbres)
-          await this.actions.request("/api/timbres/reset", {});
-        await this.actions.applyPreset(
-          structuredClone(this.factory[Number(id.slice(8))]),
-        );
+        const index = Number(id.slice(8));
+        if (index === this.startupIndex) {
+          await this.actions.request("/api/startup", { load: true });
+        } else {
+          if (this.actions.read().state?.timbres?.timbres)
+            await this.actions.request("/api/timbres/reset", {});
+          await this.actions.applyPreset(structuredClone(this.factory[index]));
+        }
       } else {
         const record = await this.files.store.read("files", id);
         if (!record || record.trashedAt)
@@ -645,6 +665,7 @@
       this.defaults = defaults;
       this.types = types;
       this.choices = choices;
+      this.factory = [];
       this.records = [];
       this.views = new Set();
       this.selections = new Map();
@@ -658,6 +679,8 @@
       }
     }
     async initialize() {
+      this.factory = (await this.actions.request("/api/effect-presets/factory"))
+        .map((record) => ({ ...this.validate(record), id: record.id, factory: true }));
       await this.refresh();
       this.ready = true;
       this.sync();
@@ -688,6 +711,7 @@
           .filter((r) => r.key.startsWith("effect-preset:"))
           .map((r) => r.value).filter((r) => !r.trashed_at);
       records.sort((a, b) => a.name.localeCompare(b.name));
+      records.push(...(this.factory || []));
       const signature = JSON.stringify(records);
       if (signature !== this.recordsSignature) {
         this.records = records;
@@ -759,8 +783,15 @@
       const slot = view.get();
       if (!slot) return;
       if (view.revision !== this.revision) {
-        view.select.replaceChildren(new Option("Custom", ""), new Option("Init", "init"),
-          ...this.records.filter((r) => r.kind === slot.kind).map((r) => new Option(r.name, r.id)));
+        view.select.replaceChildren(new Option("Custom", ""), new Option("Init", "init"));
+        for (const [label, factory] of [["Factory", true], ["User", false]]) {
+          const records = this.records.filter((r) => r.kind === slot.kind && Boolean(r.factory) === factory);
+          if (!records.length) continue;
+          const group = document.createElement("optgroup");
+          group.label = label;
+          group.append(...records.map((r) => new Option(r.name, r.id)));
+          view.select.append(group);
+        }
         view.revision = this.revision;
       }
       const match = this.match(view);
@@ -774,8 +805,8 @@
       }
       for (const input of view.bar.querySelectorAll("select,button"))
         input.disabled = !this.ready || this.busy;
-      for (const action of ["export", "delete"])
-        view.bar.querySelector('[data-action="' + action + '"]').disabled = !this.ready || this.busy || !match;
+      view.bar.querySelector('[data-action="export"]').disabled = !this.ready || this.busy || !match;
+      view.bar.querySelector('[data-action="delete"]').disabled = !this.ready || this.busy || !match || Boolean(match.factory);
       view.bar.querySelector('[data-action="undo"]').disabled = !this.ready || this.busy || !this.deleted;
     }
     async run(action) {
@@ -821,9 +852,10 @@
     openSave(view) {
       const slot = this.current(view);
       this.saving = view;
-      this.previous = this.records.find((r) => r.id === this.selections.get(view.key) && r.kind === slot.kind);
+      const selected = this.records.find((r) => r.id === this.selections.get(view.key) && r.kind === slot.kind);
+      this.previous = selected?.factory ? undefined : selected;
       this.modal.querySelector("h2").textContent = "Save " + this.label(slot.kind) + " preset";
-      this.name.value = this.previous?.name || this.label(slot.kind);
+      this.name.value = selected?.name || this.label(slot.kind);
       this.modal.querySelector('[data-save="new"]').hidden = !this.previous;
       this.error.textContent = "";
       this.modal.hidden = false;
@@ -839,7 +871,7 @@
       preset = this.validate(preset);
       if (this.actions.native)
         return this.actions.request("/api/effect-presets/save", { preset, id });
-      if (this.records.some((r) => r.id !== id && r.kind === preset.kind &&
+      if (this.records.some((r) => !r.factory && r.id !== id && r.kind === preset.kind &&
           r.name.toLocaleLowerCase() === preset.name.toLocaleLowerCase()))
         throw new Error("An effect preset named “" + preset.name + "” already exists.");
       const previous = id ? await this.store.setting("effect-preset:" + id) : null;
@@ -870,9 +902,13 @@
     async export(view) {
       const record = this.match(view);
       if (!record) return;
-      const blob = this.actions.native
+      const portable = record.factory
+        ? { ...this.validate(record), id: crypto.randomUUID().replaceAll("-", ""),
+            created_at: Date.now(), modified_at: Date.now() }
+        : record;
+      const blob = this.actions.native && !record.factory
         ? await (await this.actions.api("/api/effect-presets/export", { id: record.id })).blob()
-        : await encodeEffect(record);
+        : await encodeEffect(portable);
       this.actions.download(blob, filename(record.name).replace(/\.sadpet$/, ".sadfx"));
     }
     async import(view) {
@@ -895,7 +931,7 @@
           if (preset.kind !== kind) throw new Error("Choose a preset of the same effect type.");
           const base = preset.name;
           let suffix = 2;
-          while (this.records.some((r) => r.kind === preset.kind && r.name.toLocaleLowerCase() === preset.name.toLocaleLowerCase()))
+          while (this.records.some((r) => !r.factory && r.kind === preset.kind && r.name.toLocaleLowerCase() === preset.name.toLocaleLowerCase()))
             preset.name = [...base].slice(0, 70).join("") + " (" + suffix++ + ")";
           record = await this.write(preset);
         }
@@ -907,7 +943,7 @@
     }
     async delete(view) {
       const record = this.match(view);
-      if (!record) return;
+      if (!record || record.factory) return;
       if (this.actions.native) await this.actions.request("/api/effect-presets/delete", { id: record.id });
       else await this.store.setting("effect-preset:" + record.id, { ...record, trashed_at: Date.now() });
       this.deleted = record;
@@ -916,7 +952,7 @@
     }
     async undo() {
       if (!this.deleted) return;
-      if (this.records.some((r) => r.kind === this.deleted.kind &&
+      if (this.records.some((r) => !r.factory && r.kind === this.deleted.kind &&
           r.name.toLocaleLowerCase() === this.deleted.name.toLocaleLowerCase()))
         throw new Error("A preset with this name already exists. Rename it before undoing the deletion.");
       if (this.actions.native) await this.actions.request("/api/effect-presets/restore", { id: this.deleted.id });

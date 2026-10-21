@@ -1,0 +1,57 @@
+   Compiling sad-pet v0.30.1 (/Users/georgy/Projects/Evil_update/rust)
+   Compiling sad-pet-plugin v0.12.1 (/Users/georgy/Projects/Evil_update/plugin)
+   Compiling sad-pet-wasm v0.30.1 (/Users/georgy/Projects/Evil_update/wasm)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.32s
+     Running unittests src/lib.rs (target/debug/deps/sad_pet_plugin-3d38c2572fa18920)
+
+running 21 tests
+test tests::host_sync_uses_bpm_and_restarts_sequence_at_the_daw_position ... ok
+test tests::custom_sample_full_preset_and_selection_survive_project_recall ... ok
+test tests::numeric_editor_updates_preserve_routes_host_values_and_playing_notes_without_heap_work ... ok
+test tests::queue_backpressure_never_frees_or_blocks_on_the_audio_thread ... ok
+test effect_presets::tests::effect_library_is_shared_portable_and_does_not_touch_the_scene ... ok
+test tests::disk_presets_restore_sound_sample_region_and_host_values_in_another_instance ... ok
+test tests::instrument_is_silent_until_midi_and_instances_are_independent ... ok
+test tests::factory_recall_replaces_the_scene_and_a_drum_route_toggle_does_not_rebuild_audio ... ok
+test tests::drum_audition_rings_out_while_the_daw_transport_is_stopped ... ok
+test tests::both_fx_racks_waveshaper_changes_automation_and_feedback_are_realtime_safe ... ok
+test tests::new_and_removed_timbres_are_adopted_and_retired_away_from_audio ... ok
+test tests::preset_mode_changes_midi_capture_automation_and_seek_do_not_allocate ... ok
+test tests::effect_processes_audio_and_granular_source_is_prepared_off_thread ... ok
+test tests::one_bar_loop_host_controls_and_meter_are_realtime_safe_and_saved ... ok
+test tests::four_resynth_layers_automation_and_project_recall_are_realtime_safe ... ok
+test tests::neuropolis_tracks_follow_daw_transport_survive_project_recall_and_edit_without_heap_work ... ok
+test tests::drum_timbres_mix_independently_save_all_parts_and_edit_without_audio_allocations ... ok
+test tests::source_fx_cache_updates_and_host_automation_never_allocate_on_audio ... ok
+test tests::new_plugin_starts_with_glasses5_and_restoration_replaces_it ... ok
+test tests::preset_overwrite_import_export_and_invalid_files_preserve_existing_patches ... ok
+test tests::legacy_preset_migration_is_idempotent_and_fx_patches_can_load_in_the_instrument ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.16s
+
+     Running unittests src/lib.rs (target/debug/deps/sad_pet_wasm-3d39f035e831bb86)
+
+running 8 tests
+test allocation_tests::telemetry_deltas_keep_presets_and_waveforms_until_they_change ... ok
+test allocation_tests::drum_step_edits_and_granular_routing_publish_sparse_views_without_heap_work ... ok
+test allocation_tests::binary_publication_has_no_heap_and_worker_matches_original_state ... ok
+test tests::prepared_transfer_preserves_all_read_rates ... ok
+test tests::rejects_incomplete_or_invalid_prepared_samples ... ok
+test allocation_tests::source_pcm_and_mips_upload_without_allocating_or_restarting_the_audio ... ok
+test allocation_tests::neuropolis_large_patches_publish_sparse_edits_without_heap_or_full_configuration ... ok
+test allocation_tests::resynth_render_scalar_edits_and_binary_meters_have_no_heap_operations ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.77s
+
+   Doc-tests sad_pet_plugin
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests sad_pet_wasm
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

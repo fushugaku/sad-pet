@@ -1,0 +1,21 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling sad-pet-superecho v1.2.0 (/Users/georgy/Projects/Evil_update/vendor/superecho)
+   Compiling sad-pet v0.30.1 (/Users/georgy/Projects/Evil_update/rust)
+error[E0282]: type annotations needed
+   --> rust/src/audio.rs:284:36
+    |
+284 |         let (commands, receiver) = mpsc::sync_channel(256);
+    |                                    ^^^^^^^^^^^^^^^^^^ cannot infer type of the type parameter `T` declared on the function `sync_channel`
+...
+304 |                         if command.needs_publication() && publisher.full() {
+    |                            ------- type must be known at this point
+    |
+help: consider specifying a concrete type for the type parameter `T`
+    |
+284 |         let (commands, receiver) = mpsc::sync_channel::</* Type */>(256);
+    |                                                      ++++++++++++++
+
+For more information about this error, try `rustc --explain E0282`.
+error: could not compile `sad-pet` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...

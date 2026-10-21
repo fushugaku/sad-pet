@@ -1,5 +1,5 @@
-import { Core } from "./core.mjs";
-import { Mp3Encoder } from "./vendor/lamejs.mjs";
+import { Core, TelemetryCore } from "./core.mjs";
+
 
 let core,
   take = null;
@@ -35,7 +35,8 @@ function wave(chunks, rate, frames) {
   return buffer;
 }
 
-function mp3(chunks, rate) {
+async function mp3(chunks, rate) {
+  const { Mp3Encoder } = await import("./vendor/lamejs.mjs");
   const encoder = new Mp3Encoder(2, rate, 192),
     output = [];
   const left = new Int16Array(1152),
@@ -76,10 +77,10 @@ async function handle(message) {
     let result;
     switch (type) {
       case "snapshot": {
-        const packet = core.json(
-          "sad_snapshot_import",
-          new Uint8Array(message.buffer, 0, message.length),
-        );
+        const bytes = new Uint8Array(message.buffer, 0, message.length);
+        const packet = core instanceof TelemetryCore
+          ? core.snapshot(bytes)
+          : core.json("sad_snapshot_import_delta", bytes);
         self.postMessage(
           {
             type: "snapshot",
@@ -93,7 +94,9 @@ async function handle(message) {
         return;
       }
       case "init":
-        core = new Core(data.module, data.rate);
+        core = data.telemetry
+          ? new TelemetryCore(data.module, data.rate)
+          : new Core(data.module, data.rate);
         result = true;
         break;
       case "scene-document":
@@ -106,6 +109,32 @@ async function handle(message) {
       case "scene-render":
         result = core.call("sad_scene_render_document", data);
         break;
+      case "startup": {
+        const scene = core.request("/api/startup");
+        core.request("/api/timbres/reset", {});
+        core.request("/api/input", { active: false });
+        core.call(
+          "sad_prepare",
+          core.call("sad_factory", undefined, scene.sample_index),
+        );
+        core.call("sad_sample_name", {
+          name: scene.sample_name,
+          id: scene.sample_id,
+        });
+        sourceGeneration = data.generation ?? sourceGeneration + 1;
+        core.wasm.sad_source_generation(sourceGeneration);
+        core.request("/api/preset", scene.preset);
+        core.request("/api/region", scene.region);
+        core.request("/api/fades", scene.fades);
+        core.request("/api/transport", {
+          playing: false,
+          midi_gate: true,
+          frozen: false,
+          bypass: false,
+        });
+        result = core.call("sad_scene_pack");
+        break;
+      }
       case "request":
         result = core.request(message.path, data);
         break;
@@ -198,7 +227,7 @@ async function handle(message) {
         result =
           type === "record-wav"
             ? wave(take.chunks, take.rate, take.frames)
-            : mp3(take.chunks, take.rate);
+            : await mp3(take.chunks, take.rate);
         break;
       default:
         throw new Error(`Unknown worker command: ${type}`);

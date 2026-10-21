@@ -1,0 +1,4 @@
+Resynth WASM 44100: 4 layers, median 582.5 us (20.1% block budget), p99 1034.0 us
+Resynth WASM 48000: 4 layers, median 589.6 us (22.1% block budget), p99 990.7 us
+Resynth WASM 96000: 4 layers, median 319.4 us (24.0% block budget), p99 691.8 us
+Resynth checks passed: all 8 types, all analog modes, all 5 OSC4 Wavefolders in every slot, Ring/Sync, separate Source/Grains/oscillator taps, 16 envelopes, host parameters and deterministic quanta.

@@ -1,0 +1,65 @@
+--- a/rust/src/dsp/sample.rs
++++ b/rust/src/dsp/sample.rs
+@@ -418,7 +418,7 @@
+         }
+         let data = &self.levels[level];
+         // Keep indices in f64: f32 loses sub-sample precision on long recordings.
+-        let p = position.rem_euclid(self.len() as f64) / (1_usize << level) as f64;
++        let p = wrap_position(position, self.len() as f64) / (1_usize << level) as f64;
+         let base = p.floor() as i64;
+         let fraction = (p - p.floor()) as f32;
+         let [a, b, c, d] = interpolation_frames(data, base, &(0..data.len()));
+@@ -456,7 +456,8 @@
+         if !position.is_finite() {
+             return [0.0; 2];
+         }
+-        let p = range.start as f64 + (position - range.start as f64).rem_euclid(range.len() as f64);
++        let p = range.start as f64
++            + wrap_position(position - range.start as f64, range.len() as f64);
+         while level > 0 {
+             let scale = (1_usize << level) as f64;
+             let base = (p / scale).floor();
+@@ -547,3 +548,13 @@
+         })
+     }
+ }
++
++/// Skip the remainder only when its result is already the input value.
++#[inline]
++pub(super) fn wrap_position(position: f64, length: f64) -> f64 {
++    if position >= 0.0 && position < length {
++        position
++    } else {
++        position.rem_euclid(length)
++    }
++}
+--- a/rust/src/dsp/mod.rs
++++ b/rust/src/dsp/mod.rs
+@@ -1901,7 +1901,10 @@
+                 voice_frames[grain.voice][c] += frame[c] * amplitude * grain.pan[c];
+             }
+             grain.position = range.start as f64
+-                + (grain.position + grain.rate - range.start as f64).rem_euclid(range.len() as f64);
++                + sample::wrap_position(
++                    grain.position + grain.rate - range.start as f64,
++                    range.len() as f64,
++                );
+             grain.age += 1;
+             grain.active = grain.age < grain.duration;
+         }
+--- a/rust/src/dsp/effects.rs
++++ b/rust/src/dsp/effects.rs
+@@ -21,9 +21,10 @@
+         self.cursor = (self.cursor + 1) % self.frames.len();
+     }
+     pub fn read(&self, samples: f32) -> Stereo {
+-        let position = (self.cursor as f64
+-            - samples.clamp(1.0, (self.frames.len() - 2) as f32) as f64)
+-            .rem_euclid(self.frames.len() as f64);
++        let position = super::sample::wrap_position(
++            self.cursor as f64 - samples.clamp(1.0, (self.frames.len() - 2) as f32) as f64,
++            self.frames.len() as f64,
++        );
+         let i = position as usize;
+         let f = (position - i as f64) as f32;
+         let a = self.frames[i];

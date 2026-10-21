@@ -1,0 +1,110 @@
+{
+  "wasm": {
+    "cases": 24,
+    "runs_per_build": 3,
+    "identical_samples": 6019072,
+    "median_time_reduction_percent": 17.76244340499133,
+    "range_percent": [
+      6.978620411456237,
+      28.925311976159428
+    ]
+  },
+  "native": {
+    "cases": 24,
+    "runs_per_build": 3,
+    "identical_samples": 9027584,
+    "median_time_reduction_percent": 23.11451965334329,
+    "range_percent": [
+      -1.7392158789427237,
+      55.28657731199792
+    ]
+  },
+  "scenes": {
+    "cases": 12,
+    "identical_samples": 3009536,
+    "includes": [
+      "FX reorder and bypass",
+      "PRE/POST moves and effect type changes",
+      "four Resynth layers",
+      "drum timbres and granular routing"
+    ]
+  },
+  "memory": {
+    "stopped": {
+      "memory_MiB": 18.3125,
+      "steady_state_JSON_bytes": 5923
+    },
+    "default": {
+      "memory_MiB": 18.3125,
+      "steady_state_JSON_bytes": 6137
+    },
+    "dense": {
+      "memory_MiB": 18.625,
+      "steady_state_JSON_bytes": 16553
+    },
+    "resynth4": {
+      "memory_MiB": 19.0625,
+      "steady_state_JSON_bytes": 6385
+    },
+    "drums-stopped": {
+      "memory_MiB": 32.1875,
+      "steady_state_JSON_bytes": 9904
+    },
+    "drums": {
+      "memory_MiB": 32.1875,
+      "steady_state_JSON_bytes": 9930
+    },
+    "4-timbres": {
+      "memory_MiB": 27.3125,
+      "steady_state_JSON_bytes": 6422
+    },
+    "4-muted-timbres": {
+      "memory_MiB": 27.3125,
+      "steady_state_JSON_bytes": 6418
+    }
+  },
+  "wasm_file": {
+    "raw_bytes": 12996722,
+    "shipped_bytes": 11744130,
+    "metadata_bytes_removed": 1252592,
+    "sha256": "e50b9499076b4da439132a648fd0ac325fb1751ecf072b1aed9bd57a1fe95aed"
+  },
+  "validation": {
+    "full_rust_suite": 219,
+    "web_suites": 16,
+    "clippy": "passed",
+    "format": "passed",
+    "browser": "Final web build: 48 kHz playback, staged drum addition during playback, no console errors. Earlier check: lazy routing menu selection and 390px responsive layout.",
+    "PCM_differences": 0,
+    "latest_exact_comparisons": {
+      "wasm": 24,
+      "native": 24,
+      "scenes": 12
+    },
+    "default_stack_recheck": "passed",
+    "PCM_total_samples": 18056192,
+    "verified_binaries": {
+      "wasm": {
+        "path": "target/perf/implementation-20261021/verified-final.wasm",
+        "sha256": "e50b9499076b4da439132a648fd0ac325fb1751ecf072b1aed9bd57a1fe95aed"
+      },
+      "native": {
+        "path": "target/perf/implementation-20261021/verified-final-native",
+        "sha256": "3ac210536e0ad01be78985e200c65bfb8da05958e08e8cc00d6534952f5a6aff"
+      }
+    }
+  },
+  "method": "Alternating baseline/candidate offline renders, 128 stereo frames; median of three runs. WASM uses Node/V8. Native uses macOS interactive QoS in both binaries. Rates 44.1/48/96 kHz. Baseline captured before these changes, with existing startup-preset edits preserved.",
+  "notes": [
+    "Time reduction is from the three alternating baseline/candidate runs, not the later simultaneous test runs.",
+    "The workspace also contains concurrent startup preset, factory effect preset, plugin packaging and AlphaVerb changes, preserved without reverting. Final PCM comparisons used the latest compiled artifacts."
+  ],
+  "memory_baseline": {
+    "4_timbres_MiB": 282.125,
+    "drums_state_JSON_bytes": 217609
+  },
+  "memory_improvement": {
+    "4_timbres_reduction_percent": 90.31900753212228,
+    "drums_state_JSON_ratio": 21.914300100704935
+  }
+}

@@ -28,12 +28,15 @@ jobs:
           cargo fmt --all -- --check
           cargo clippy -p sad-pet-wasm --target wasm32-unknown-unknown --locked -- -D warnings
           cargo test -p sad-pet-wasm --lib --locked
+          cargo test -p sad-pet-alphaverb --release --lib --locked
       - name: Build the standalone site
         run: python3 wasm/build.py
       - name: Exercise the compiled audio engine
         run: |
           node wasm/test.mjs
           node wasm/test-realtime.mjs
+          node wasm/test-telemetry.mjs
+          node wasm/test-loader.mjs
           node wasm/test-resynth.mjs
           node wasm/test-filters.mjs
           node wasm/test-imported.mjs
@@ -45,6 +48,7 @@ jobs:
           node wasm/test-microphone.mjs
           node wasm/test-library.mjs
           node wasm/test-presets.mjs
+          node wasm/test-startup.mjs
           node wasm/test-effect-presets.mjs
           node wasm/test-parameters.mjs
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0

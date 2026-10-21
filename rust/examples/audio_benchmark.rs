@@ -5,7 +5,7 @@ use sad_pet::{
     color::ColorSlot,
     dsp::{Engine, Region, SampleBuffer},
     midi::Message,
-    preset::{Destination, FilterRouting, FilterType, Preset, SaturatorType},
+    preset::{Destination, FilterModel, FilterRouting, FilterType, Preset, SaturatorType},
 };
 use std::{hint::black_box, path::PathBuf, sync::Arc, time::Instant};
 
@@ -16,7 +16,7 @@ fn main() {
     std::fs::create_dir_all(&folder).unwrap();
     for rate in [44_100, 48_000, 96_000] {
         let sample = Arc::new(SampleBuffer::demo(rate));
-        for case in 0..8 {
+        for case in 0..11 {
             let mut p = Preset::builtin(case % 5);
             if case >= 3 {
                 p.params.grains = 1.0;
@@ -65,6 +65,35 @@ fn main() {
                     })
                     .collect();
             }
+            // Expanded f64 and fixed-point filter models, then drums and imported FX.
+            if case >= 8 {
+                let models = [
+                    (FilterModel::LadderLp24, FilterModel::LinearBp24),
+                    (FilterModel::ProLp24, FilterModel::MultiFilter),
+                    (FilterModel::Sem, FilterModel::Radias2),
+                ];
+                (p.params.filter_model, p.params.filter2_model) = models[case - 8];
+                p.params.filter_drive = 0.3;
+                p.params.filter2_morph = 0.4;
+                if case == 9 {
+                    p.params.filter_routing = FilterRouting::Parallel;
+                }
+            }
+            if case == 10 {
+                p.drums = Some(Box::default());
+                p.color_chain = vec![ColorSlot {
+                    kind: SaturatorType::SuperEcho,
+                    id: 1,
+                    mix: 0.5,
+                    ..Default::default()
+                }];
+                p.pre_color_chain = vec![ColorSlot {
+                    kind: SaturatorType::AlphaVerb,
+                    id: 2,
+                    mix: 0.4,
+                    ..Default::default()
+                }];
+            }
             p.params.loop_one_bar = case == 5;
             let mut e = Engine::new(rate, sample.clone(), p);
             if case == 2 || case == 5 {
@@ -111,6 +140,9 @@ fn main() {
                         channel: 0,
                         value: (n * 13 % 16384) as u16,
                     });
+                }
+                if case == 10 && n % 23 == 0 {
+                    e.trigger_drum(n / 23 % 7, 0.8);
                 }
                 if n == 280 {
                     e.set_frozen(true);

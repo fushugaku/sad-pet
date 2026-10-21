@@ -37,12 +37,15 @@ use serde::Serialize;
 use std::sync::Arc;
 
 pub const MAX_GRAINS: usize = 128;
+const _: () = assert!(
+    MAX_GRAINS == u128::BITS as usize,
+    "one occupancy bit per grain slot"
+);
 const VOICES: usize = 9;
 const CONTROL_INTERVAL: u64 = 32;
 
 #[derive(Clone, Copy, Debug, Default)]
 struct Grain {
-    active: bool,
     position: f64,
     rate: f64,
     read_level: usize,
@@ -319,6 +322,9 @@ pub struct Engine {
     performance: Performance,
     sequence_running: bool,
     grains: [Grain; MAX_GRAINS],
+    /// Occupied grain slots, bit n for slot n. Visiting set bits from the lowest
+    /// keeps the order of a full slot scan, so voices still sum in that order.
+    live_grains: u128,
     voices: [Voice; VOICES],
     oscillators: [Oscillator; crate::preset::MODULATORS],
     pub lfo_values: [f32; crate::preset::MODULATORS],
@@ -361,6 +367,7 @@ pub struct Engine {
     smooth_bypass_gate: f32,
     input_gain: f32,
     output_gain: f32,
+    gain_key: Option<[u32; 2]>,
     grain_density: f32,
     grain_step: f64,
     bar_phase_step: f64,
@@ -388,6 +395,7 @@ impl Engine {
             performance: Performance::default(),
             sequence_running: true,
             grains: [Grain::default(); MAX_GRAINS],
+            live_grains: 0,
             voices: [Voice::default(); VOICES],
             oscillators: std::array::from_fn(|i| {
                 Oscillator::new(0x853c49e6748fea9b_u64.wrapping_add(i as u64 * 0x12345679))
@@ -432,6 +440,7 @@ impl Engine {
             smooth_bypass_gate: 0.0,
             input_gain: 1.0,
             output_gain: 1.0,
+            gain_key: None,
             grain_density: 0.0,
             grain_step: 0.0,
             bar_phase_step: 0.0,
@@ -451,7 +460,7 @@ impl Engine {
 
     pub fn set_preset(&mut self, mut preset: Preset) {
         preset.sanitize();
-        preset.prepare_imported_effects();
+        preset.prepare_effects_reusing(self.sample_rate, &self.preset);
         preset
             .drum_runtime
             .prepare(preset.drums.as_deref(), self.sample_rate);
@@ -459,6 +468,7 @@ impl Engine {
     }
 
     /// Exchange a sanitized preset without allocating or destroying its buffers.
+    /// Structural FX/drum edits must use `prepared_clone_for(sample_rate)`.
     /// The caller retires the previous preset away from the audio callback.
     pub fn exchange_preset(&mut self, preset: &mut Preset) {
         if let Some(next) = &mut preset.drum_runtime.0 {
@@ -517,9 +527,14 @@ impl Engine {
             .detach_imported(&mut self.preset.imported_effects);
         self.source_color
             .detach_imported(&mut self.preset.imported_effects);
-        preset
-            .imported_effects
-            .inherit(&mut self.preset.imported_effects);
+        preset.imported_effects.inherit_matching(
+            &mut self.preset.imported_effects,
+            preset
+                .color_chain
+                .iter()
+                .chain(&preset.pre_color_chain)
+                .chain(&preset.source_color_chain),
+        );
         self.color_rack
             .attach_imported(&preset.color_chain, &mut preset.imported_effects);
         self.pre_color_rack
@@ -862,7 +877,7 @@ impl Engine {
             .map_or(&self.sample, |input| &input.sample)
     }
     pub fn reset_grains(&mut self) {
-        self.grains.fill(Grain::default());
+        self.live_grains = 0;
         self.grain_clock = 1.0;
     }
     pub fn set_playing(&mut self, playing: bool) {
@@ -975,7 +990,26 @@ impl Engine {
         }
     }
     pub fn active_grains(&self) -> usize {
-        self.grains.iter().filter(|g| g.active).count()
+        self.live_grains.count_ones() as usize
+    }
+    /// Live slots in ascending order.
+    fn live_grain_slots(&self) -> impl Iterator<Item = usize> + use<> {
+        let mut pending = self.live_grains;
+        std::iter::from_fn(move || {
+            let slot = (pending != 0).then(|| pending.trailing_zeros() as usize)?;
+            pending &= pending - 1;
+            Some(slot)
+        })
+    }
+    fn live_grain_list(&self) -> impl Iterator<Item = &Grain> {
+        self.live_grain_slots().map(|slot| &self.grains[slot])
+    }
+    fn kill_voice_grains(&mut self, voice: usize) {
+        for slot in self.live_grain_slots() {
+            if self.grains[slot].voice == voice {
+                self.live_grains &= !(1 << slot);
+            }
+        }
     }
     pub fn held_notes(&self) -> Vec<u8> {
         self.voices[1..]
@@ -985,9 +1019,7 @@ impl Engine {
             .collect()
     }
     pub fn grain_views(&self) -> Vec<GrainView> {
-        self.grains
-            .iter()
-            .filter(|g| g.active)
+        self.live_grain_list()
             .map(|g| GrainView {
                 position: (g.position.rem_euclid(self.source_sample().len() as f64)
                     / self.source_sample().len() as f64) as f32,
@@ -1013,6 +1045,9 @@ impl Engine {
     }
     pub fn performance_view(&self) -> crate::performance::View {
         self.performance.view()
+    }
+    pub fn realtime_performance_view(&self) -> crate::performance::RealtimeView {
+        self.performance.realtime_view()
     }
     pub fn clear_hold(&mut self) {
         self.performance.clear();
@@ -1226,11 +1261,7 @@ impl Engine {
                     .or_else(|| (1..VOICES).find(|&i| !self.voices[i].active()))
                     .unwrap_or(1 + self.next_voice % (VOICES - 1));
                 self.next_voice = index;
-                for grain in &mut self.grains {
-                    if grain.voice == index {
-                        grain.active = false;
-                    }
-                }
+                self.kill_voice_grains(index);
                 let v = &mut self.voices[index];
                 self.filters[index].clear();
                 v.note = note;
@@ -1307,17 +1338,14 @@ impl Engine {
                 controller: 120,
                 ..
             } if channel < 16 => {
-                for (i, v) in self.voices.iter_mut().enumerate() {
+                for i in 0..VOICES {
+                    let v = &mut self.voices[i];
                     if v.channel == channel {
                         v.kill();
                         self.filters[i].clear();
                         v.held = false;
                         v.sustained = false;
-                        for grain in &mut self.grains {
-                            if grain.voice == i {
-                                grain.active = false;
-                            }
-                        }
+                        self.kill_voice_grains(i);
                     }
                 }
                 self.color_rack.clear();
@@ -1563,8 +1591,16 @@ impl Engine {
             self.filters[i].configure(&m.params, note, voice.env_values);
         }
         self.modulated = m;
-        self.input_gain = 10.0_f32.powf(m.params.in_gain * 0.05);
-        self.output_gain = 10.0_f32.powf(m.params.out_gain * 0.05);
+        // Keep the control clock and exact powf expression; unchanged dB values
+        // can reuse their result without changing modulation or smoothing.
+        let gain_key = [m.params.in_gain.to_bits(), m.params.out_gain.to_bits()];
+        if self.gain_key.map(|key| key[0]) != Some(gain_key[0]) {
+            self.input_gain = 10.0_f32.powf(m.params.in_gain * 0.05);
+        }
+        if self.gain_key.map(|key| key[1]) != Some(gain_key[1]) {
+            self.output_gain = 10.0_f32.powf(m.params.out_gain * 0.05);
+        }
+        self.gain_key = Some(gain_key);
         self.grain_density = m.params.min_grains
             + (MAX_GRAINS as f32 - m.params.min_grains) * m.params.grains.powi(3);
         self.grain_step = self.grain_density as f64 / self.sample_rate as f64;
@@ -1615,9 +1651,11 @@ impl Engine {
     }
 
     fn spawn(&mut self) {
-        let Some(slot) = self.grains.iter().position(|g| !g.active) else {
+        // Lowest free slot, as the previous linear scan chose.
+        let slot = (!self.live_grains).trailing_zeros() as usize;
+        if slot == MAX_GRAINS {
             return;
-        };
+        }
         let Some(voice) = (0..VOICES)
             .map(|i| (i + self.next_voice) % VOICES)
             .find(|&i| self.voices[i].envelopes[0].active())
@@ -1652,8 +1690,8 @@ impl Engine {
                 .rem_euclid(length);
         let pan =
             (self.modulated.pan + self.random.bipolar() * p.stereo_spread * 0.5).clamp(0.0, 1.0);
+        self.live_grains |= 1 << slot;
         self.grains[slot] = Grain {
-            active: true,
             position,
             rate,
             read_level: self.source_sample().level_for_rate(rate, true),
@@ -1869,10 +1907,11 @@ impl Engine {
             .live_input
             .as_ref()
             .map_or(&*self.sample, |i| &i.sample);
-        for grain in &mut self.grains {
-            if !grain.active {
-                continue;
-            }
+        let mut pending = self.live_grains;
+        while pending != 0 {
+            let slot = pending.trailing_zeros() as usize;
+            pending &= pending - 1;
+            let grain = &mut self.grains[slot];
             let phase = 2.0 * grain.age as f32 / (grain.duration - 1) as f32;
             let amplitude = tables::grain_window(phase, grain.shape);
             let level = if self.preset.params.antialiasing {
@@ -1901,9 +1940,14 @@ impl Engine {
                 voice_frames[grain.voice][c] += frame[c] * amplitude * grain.pan[c];
             }
             grain.position = range.start as f64
-                + (grain.position + grain.rate - range.start as f64).rem_euclid(range.len() as f64);
+                + sample::wrap_position(
+                    grain.position + grain.rate - range.start as f64,
+                    range.len() as f64,
+                );
             grain.age += 1;
-            grain.active = grain.age < grain.duration;
+            if grain.age >= grain.duration {
+                self.live_grains &= !(1 << slot);
+            }
         }
         let norm = if !effects_only && self.overlap > 2.0 {
             tables::inverse_sqrt(self.overlap - 1.0)
@@ -2033,7 +2077,8 @@ impl Engine {
             if bar_loop && !self.frozen {
                 for voice in &mut self.voices {
                     if voice.active() {
-                        voice.loop_phase = (voice.loop_phase + phase_step).rem_euclid(1.0);
+                        voice.loop_phase =
+                            sample::wrap_position(voice.loop_phase + phase_step, 1.0);
                     }
                 }
             }
@@ -2047,8 +2092,10 @@ impl Engine {
                 source_rate
             };
             self.cursor = self.file_range.start as f64
-                + (self.cursor + advance - self.file_range.start as f64)
-                    .rem_euclid(self.file_range.len() as f64);
+                + sample::wrap_position(
+                    self.cursor + advance - self.file_range.start as f64,
+                    self.file_range.len() as f64,
+                );
         }
         self.frame += 1;
         self.source_fade_remaining = self.source_fade_remaining.saturating_sub(1);

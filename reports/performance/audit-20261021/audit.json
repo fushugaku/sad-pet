@@ -1,0 +1,299 @@
+[
+  {
+    "name": "utility-init",
+    "ms": 10.381874999999997,
+    "memoryMiB": 52.875
+  },
+  {
+    "name": "stopped",
+    "initMs": 7.122874999999993,
+    "commands": [],
+    "memoryMiB": 81.9375,
+    "process": {
+      "median_us": 37.91700000002152,
+      "p99_us": 126.54100000000312
+    },
+    "peak": 0,
+    "telemetry": {
+      "firstPacket": {
+        "bytes": 34704,
+        "publish_us": 4103.833000000009,
+        "import_us": 21144.959
+      },
+      "packetBytes": 14721,
+      "stateJsonBytes": 68009,
+      "publish": {
+        "median_us": 49.040999999988344,
+        "p99_us": 153.99999999999636
+      },
+      "import": {
+        "median_us": 893.1670000000054,
+        "p99_us": 1839.7090000000276
+      },
+      "clone": {
+        "median_us": 207.917000000009,
+        "p99_us": 689.5419999999604
+      }
+    }
+  },
+  {
+    "name": "default",
+    "initMs": 4.8770000000000095,
+    "commands": [],
+    "memoryMiB": 81.9375,
+    "process": {
+      "median_us": 48.749999999984084,
+      "p99_us": 131.2499999999659
+    },
+    "peak": 0.16944105923175812,
+    "telemetry": {
+      "firstPacket": {
+        "bytes": 34770,
+        "publish_us": 591.3750000000277,
+        "import_us": 1296.4999999999804
+      },
+      "packetBytes": 14787,
+      "stateJsonBytes": 68223,
+      "publish": {
+        "median_us": 47.66699999993307,
+        "p99_us": 216.7499999999336
+      },
+      "import": {
+        "median_us": 934.9169999999276,
+        "p99_us": 1542.7079999999478
+      },
+      "clone": {
+        "median_us": 206.00000000001728,
+        "p99_us": 506.6669999999931
+      }
+    }
+  },
+  {
+    "name": "dense",
+    "initMs": 4.96083299999998,
+    "commands": [],
+    "memoryMiB": 82.25,
+    "process": {
+      "median_us": 356.95800000007694,
+      "p99_us": 724.4170000001304
+    },
+    "peak": 0.09402468800544739,
+    "telemetry": {
+      "firstPacket": {
+        "bytes": 38959,
+        "publish_us": 496.4580000000751,
+        "import_us": 1648.4159999999974
+      },
+      "packetBytes": 18948,
+      "stateJsonBytes": 78549,
+      "publish": {
+        "median_us": 54.66599999999744,
+        "p99_us": 165.70799999999508
+      },
+      "import": {
+        "median_us": 1019.1250000000309,
+        "p99_us": 1712.791000000152
+      },
+      "clone": {
+        "median_us": 237.20800000000963,
+        "p99_us": 646.4999999998327
+      }
+    }
+  },
+  {
+    "name": "resynth4",
+    "initMs": 5.4688750000000255,
+    "commands": [],
+    "memoryMiB": 82.6875,
+    "process": {
+      "median_us": 485.5419999998958,
+      "p99_us": 930.6249999999636
+    },
+    "peak": 0.6148404479026794,
+    "telemetry": {
+      "firstPacket": {
+        "bytes": 34770,
+        "publish_us": 842.7499999997963,
+        "import_us": 1352.0410000000993
+      },
+      "packetBytes": 14787,
+      "stateJsonBytes": 68470,
+      "publish": {
+        "median_us": 39.74999999991269,
+        "p99_us": 269.1660000000411
+      },
+      "import": {
+        "median_us": 865.7090000001517,
+        "p99_us": 1432.8749999999673
+      },
+      "clone": {
+        "median_us": 204.62499999985084,
+        "p99_us": 411.3750000001346
+      }
+    }
+  },
+  {
+    "name": "drums-stopped",
+    "initMs": 5.742583000000195,
+    "commands": [
+      {
+        "command": "add drums",
+        "ms": 22.09916599999997
+      }
+    ],
+    "memoryMiB": 159.1875,
+    "process": {
+      "median_us": 101.95800000019517,
+      "p99_us": 265.91700000017227
+    },
+    "peak": 0,
+    "telemetry": {
+      "firstPacket": {
+        "bytes": 153779,
+        "publish_us": 1248.583999999937,
+        "import_us": 23600.582999999915
+      },
+      "packetBytes": 21824,
+      "stateJsonBytes": 217583,
+      "publish": {
+        "median_us": 90.45900000000984,
+        "p99_us": 342.08399999988615
+      },
+      "import": {
+        "median_us": 3925.0419999998485,
+        "p99_us": 4754.500000000007
+      },
+      "clone": {
+        "median_us": 1154.7080000000278,
+        "p99_us": 2275.8749999998145
+      }
+    }
+  },
+  {
+    "name": "drums",
+    "initMs": 5.713749999999891,
+    "commands": [
+      {
+        "command": "add drums",
+        "ms": 23.17995800000017
+      }
+    ],
+    "memoryMiB": 159.1875,
+    "process": {
+      "median_us": 121.99999999984357,
+      "p99_us": 292.8750000000946
+    },
+    "peak": 2.942726775082116e-44,
+    "telemetry": {
+      "firstPacket": {
+        "bytes": 153779,
+        "publish_us": 1630.7499999998072,
+        "import_us": 3750.6250000001273
+      },
+      "packetBytes": 21824,
+      "stateJsonBytes": 217609,
+      "publish": {
+        "median_us": 95.41699999999764,
+        "p99_us": 286.6669999998521
+      },
+      "import": {
+        "median_us": 4048.334000000068,
+        "p99_us": 4680.667000000085
+      },
+      "clone": {
+        "median_us": 1170.6250000002,
+        "p99_us": 2404.3329999999514
+      }
+    }
+  },
+  {
+    "name": "4-timbres",
+    "initMs": 6.1079170000002705,
+    "commands": [
+      {
+        "command": "add granular",
+        "ms": 32.12575000000015
+      },
+      {
+        "command": "add granular",
+        "ms": 39.9253749999998
+      },
+      {
+        "command": "add granular",
+        "ms": 49.4471250000006
+      }
+    ],
+    "memoryMiB": 282.125,
+    "process": {
+      "median_us": 200.20800000020245,
+      "p99_us": 512.1250000001965
+    },
+    "peak": 0.6777642369270325,
+    "telemetry": {
+      "firstPacket": {
+        "bytes": 34971,
+        "publish_us": 627.9589999994641,
+        "import_us": 44431.16699999973
+      },
+      "packetBytes": 14988,
+      "stateJsonBytes": 68508,
+      "publish": {
+        "median_us": 55.75000000044383,
+        "p99_us": 313.29100000039034
+      },
+      "import": {
+        "median_us": 966.0420000000158,
+        "p99_us": 1854.4590000001335
+      },
+      "clone": {
+        "median_us": 213.00000000064756,
+        "p99_us": 768.4170000002268
+      }
+    }
+  },
+  {
+    "name": "4-muted-timbres",
+    "initMs": 5.199333000000479,
+    "commands": [
+      {
+        "command": "add granular",
+        "ms": 24.035750000000007
+      },
+      {
+        "command": "add granular",
+        "ms": 25.878999999999905
+      },
+      {
+        "command": "add granular",
+        "ms": 32.07025000000067
+      }
+    ],
+    "memoryMiB": 282.125,
+    "process": {
+      "median_us": 198.4999999995125,
+      "p99_us": 432.6249999994616
+    },
+    "peak": 1.1770907100328463e-43,
+    "telemetry": {
+      "firstPacket": {
+        "bytes": 34971,
+        "publish_us": 140.33300000028248,
+        "import_us": 1199.7089999995296
+      },
+      "packetBytes": 14988,
+      "stateJsonBytes": 68504,
+      "publish": {
+        "median_us": 39.83299999981682,
+        "p99_us": 121.62499999976717
+      },
+      "import": {
+        "median_us": 881.6249999999854,
+        "p99_us": 1371.5000000001965
+      },
+      "clone": {
+        "median_us": 198.00000000032014,
+        "p99_us": 615.3340000000753
+      }
+    }
+  }
+]

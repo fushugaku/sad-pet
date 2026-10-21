@@ -1,0 +1,46 @@
+   Compiling sad-pet v0.30.1 (/Users/georgy/Projects/Evil_update/rust)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.14s
+     Running tests/neuropolis.rs (target/debug/deps/neuropolis-e324afa354e7bcf1)
+
+running 1 test
+
+thread 'unlimited_tracks_recall_and_id_based_adoption_do_not_allocate_or_reset_other_lanes' (180330016) panicked at rust/src/dsp/color.rs:358:22:
+called `Option::unwrap()` on a `None` value
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: core::panicking::panic
+   3: core::option::unwrap_failed
+   4: <core::option::Option<&mut alloc::boxed::Box<sad_pet::dsp::effects::Effects>>>::unwrap
+             at /opt/homebrew/Cellar/rust/1.97.1/lib/rustlib/src/rust/library/core/src/option.rs:1013:21
+   5: <sad_pet::dsp::color::ColorProcessor>::process_with_voice_gain
+             at ./src/dsp/color.rs:358:22
+   6: <sad_pet::dsp::color::ColorRack>::process_with_voice_gain
+             at ./src/dsp/color.rs:471:31
+   7: <sad_pet::dsp::Engine>::process_input_frame
+             at ./src/dsp/mod.rs:1981:14
+   8: <sad_pet::dsp::Engine>::process_frame
+             at ./src/dsp/mod.rs:1669:14
+   9: neuropolis::frames
+             at ./tests/neuropolis.rs:50:19
+  10: neuropolis::unlimited_tracks_recall_and_id_based_adoption_do_not_allocate_or_reset_other_lanes::{closure#1}
+             at ./tests/neuropolis.rs:324:9
+  11: neuropolis::no_heap::<neuropolis::unlimited_tracks_recall_and_id_based_adoption_do_not_allocate_or_reset_other_lanes::{closure#1}>
+             at ./tests/neuropolis.rs:41:5
+  12: neuropolis::unlimited_tracks_recall_and_id_based_adoption_do_not_allocate_or_reset_other_lanes
+             at ./tests/neuropolis.rs:321:5
+  13: neuropolis::unlimited_tracks_recall_and_id_based_adoption_do_not_allocate_or_reset_other_lanes::{closure#0}
+             at ./tests/neuropolis.rs:277:88
+  14: <neuropolis::unlimited_tracks_recall_and_id_based_adoption_do_not_allocate_or_reset_other_lanes::{closure#0} as core::ops::function::FnOnce<()>>::call_once
+             at /opt/homebrew/Cellar/rust/1.97.1/lib/rustlib/src/rust/library/core/src/ops/function.rs:250:5
+note: Some details are omitted, run with `RUST_BACKTRACE=full` for a verbose backtrace.
+test unlimited_tracks_recall_and_id_based_adoption_do_not_allocate_or_reset_other_lanes ... FAILED
+
+failures:
+
+failures:
+    unlimited_tracks_recall_and_id_based_adoption_do_not_allocate_or_reset_other_lanes
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.37s
+
+error: test failed, to rerun pass `-p sad-pet --test neuropolis`

@@ -41,6 +41,66 @@ fn no_heap(f: impl FnOnce()) {
 }
 
 #[test]
+fn telemetry_decoder_does_not_initialize_an_audio_registry() {
+    HOST.with(|h| *h.borrow_mut() = None);
+    telemetry::sad_telemetry_init(48_000);
+    assert!(HOST.with(|h| h.borrow().is_none()));
+}
+
+#[test]
+fn telemetry_deltas_keep_presets_and_waveforms_until_they_change() {
+    let mut audio = Host::new(8000);
+    let mut worker = Host::new(8000);
+    let transfer = |audio: &mut Host, worker: &mut Host, delta| {
+        let length = audio.publish_snapshot();
+        assert!(length > 0);
+        worker.input.clear();
+        worker
+            .input
+            .extend_from_slice(&audio.snapshot_buffer[..length]);
+        let result = worker.import_snapshot(delta).unwrap();
+        audio.ack_snapshot(audio.snapshot_sequence, 1);
+        result
+    };
+    let initial = transfer(&mut audio, &mut worker, true);
+    assert!(initial["state"]["preset"].is_object());
+    assert!(initial["state"]["waveform"].is_array());
+    let tick = transfer(&mut audio, &mut worker, true);
+    assert!(tick["state"].get("preset").is_none());
+    assert!(tick["state"].get("waveform").is_none());
+    audio
+        .command(json!({"path":"/api/parameters","data":{"filter":0.41}}))
+        .unwrap();
+    let edited = transfer(&mut audio, &mut worker, true);
+    assert_eq!(
+        edited["state"]["preset"]["params"]["filter"],
+        json!(0.41_f32)
+    );
+    let tick = transfer(&mut audio, &mut worker, true);
+    assert!(tick["state"].get("preset").is_none());
+    let full = transfer(&mut audio, &mut worker, false);
+    assert_eq!(full["state"]["preset"], edited["state"]["preset"]);
+    assert_eq!(full["state"]["waveform"], initial["state"]["waveform"]);
+    // A rejected main-thread delta must trigger a complete resynchronization.
+    let length = audio.publish_snapshot();
+    assert!(length > 0);
+    audio.ack_snapshot(audio.snapshot_sequence, 0);
+    let reset = transfer(&mut audio, &mut worker, true);
+    assert!(reset["state"]["preset"].is_object());
+    assert!(reset["state"]["sample_name"].is_string());
+    worker
+        .command(json!({"path":"/api/preset","data":reset["state"]["preset"]}))
+        .unwrap();
+    assert!(
+        worker
+            .engine
+            .process_frame()
+            .into_iter()
+            .all(f32::is_finite)
+    );
+}
+
+#[test]
 fn neuropolis_large_patches_publish_sparse_edits_without_heap_or_full_configuration() {
     use sad_pet::sequence::{Edit, Target, Track};
     let mut audio = Host::new(8000);
@@ -71,7 +131,7 @@ fn neuropolis_large_patches_publish_sparse_edits_without_heap_or_full_configurat
     worker
         .input
         .extend_from_slice(&audio.snapshot_buffer[..length]);
-    let state = worker.import_snapshot().unwrap();
+    let state = worker.import_snapshot(false).unwrap();
     assert_eq!(
         state["state"]["preset"]["sequencer"]["tracks"]
             .as_array()
@@ -112,7 +172,7 @@ fn neuropolis_large_patches_publish_sparse_edits_without_heap_or_full_configurat
     worker
         .input
         .extend_from_slice(&audio.snapshot_buffer[..length]);
-    let state = worker.import_snapshot().unwrap();
+    let state = worker.import_snapshot(false).unwrap();
     assert_eq!(
         state["state"]["preset"]["sequencer"]["tracks"][255]["steps"][3]["pitch"],
         77
@@ -168,7 +228,7 @@ fn resynth_render_scalar_edits_and_binary_meters_have_no_heap_operations() {
     });
     let mut worker = Host::new(48000);
     worker.input.extend_from_slice(&audio.snapshot_buffer[..n]);
-    let state = worker.import_snapshot().unwrap();
+    let state = worker.import_snapshot(false).unwrap();
     assert_eq!(
         state["state"]["resynth"]["bands"].as_array().unwrap().len(),
         16
@@ -194,7 +254,7 @@ fn binary_publication_has_no_heap_and_worker_matches_original_state() {
     assert!(n > 0 && n < 131072);
     let mut worker = Host::new(8000);
     worker.input.extend_from_slice(&audio.snapshot_buffer[..n]);
-    let result = worker.import_snapshot().unwrap();
+    let result = worker.import_snapshot(false).unwrap();
     for key in [
         "preset",
         "waveform",
@@ -227,7 +287,7 @@ fn source_pcm_and_mips_upload_without_allocating_or_restarting_the_audio() {
     sad_init(8000);
     let recipe = host(|h| {
         h.engine.set_sample(Arc::new(SampleBuffer::demo(8000)));
-        h.reserve_source_buffers();
+        h.reset_source_buffers();
         h.file_generation = 1;
         h.engine
             .set_region(sad_pet::dsp::Region {
@@ -325,7 +385,7 @@ fn drum_step_edits_and_granular_routing_publish_sparse_views_without_heap_work()
     worker
         .input
         .extend_from_slice(&host.snapshot_buffer[..size]);
-    let view = worker.import_snapshot().unwrap();
+    let view = worker.import_snapshot(false).unwrap();
     assert_eq!(
         view["state"]["preset"]["drums"]["tracks"][0]["steps"][127]["velocity"],
         json!(0.8_f32)

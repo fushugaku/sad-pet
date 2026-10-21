@@ -1,4 +1,5 @@
 import { Microphone } from "./microphone.mjs";
+import { compileEngine } from "./compile.mjs";
 
 class Rpc {
   constructor(port) {
@@ -69,7 +70,10 @@ export class BrowserBackend {
       );
     this.context = new AudioContext({ latencyHint: "interactive" });
     this.rate = this.context.sampleRate;
-    this.context.onstatechange = () => this.updateStatus();
+    this.context.onstatechange = () => {
+      this.updateStatus();
+      if (this.context.state !== "running") this.audio?.port.postMessage({ type: "prepare-idle" });
+    };
     this.worker = new Rpc(
       new Worker(new URL("./worker.mjs", import.meta.url), { type: "module" }),
     );
@@ -86,27 +90,15 @@ export class BrowserBackend {
     );
     this.telemetry.onmessage = (message) => this.workerMessage(message);
     this.recorder.onmessage = (message) => this.workerMessage(message);
-    const response = await fetch(new URL("./sad_pet.wasm", import.meta.url));
-    if (!response.ok)
-      throw new Error("Cannot download the WebAssembly engine.");
-    const module = await WebAssembly.compile(await response.arrayBuffer());
-    await this.worker.call("init", { module, rate: this.rate });
-    await this.telemetry.call("init", { module, rate: this.rate });
-    const catalog = await this.worker.call("request", null, [], "/api/samples");
-    const wav = await this.worker.call("factory", 0);
-    const { prepared } = await this.worker.call(
-      "prepare",
-      {
-        wav,
-        name: catalog[0].name,
-        libraryId: `factory:${catalog[0].id}:v1`,
-        generation: this.sourceGeneration,
-      },
-      [wav],
-    );
-    await this.context.audioWorklet.addModule(
-      new URL("./worklet.mjs", import.meta.url),
-    );
+    const module = await compileEngine(new URL("./sad_pet.wasm", import.meta.url));
+    await Promise.all([
+      this.worker.call("init", { module, rate: this.rate }),
+      this.telemetry.call("init", { module, rate: this.rate, telemetry: true }),
+      this.context.audioWorklet.addModule(new URL("./worklet.mjs", import.meta.url)),
+    ]);
+    const prepared = await this.worker.call("startup", {
+      generation: this.sourceGeneration,
+    });
     this.node = new AudioWorkletNode(this.context, "sad-pet", {
       numberOfInputs: 1,
       numberOfOutputs: 1,
@@ -130,11 +122,7 @@ export class BrowserBackend {
     };
     this.monitor = this.context.createGain();
     this.node.connect(this.monitor).connect(this.context.destination);
-    await this.audio.call(
-      "load",
-      { prepared, generation: this.sourceGeneration },
-      [prepared],
-    );
+    await this.audio.call("scene-load", prepared, [prepared]);
     this.state = await this.audio.call("request", null, [], "/api/state");
     this.viewStamp = this.audio.stamp || 0;
     const quit = document.getElementById("quit");
@@ -219,10 +207,24 @@ export class BrowserBackend {
   }
   workerMessage(message) {
     if (message.type === "snapshot") {
-      if (message.state && (message.stamp || 0) >= (this.viewStamp || 0)) {
-        this.state = message.state;
+      const accepted = message.state && (message.stamp || 0) >= (this.viewStamp || 0)
+        && (!message.delta || message.state.preset
+          || this.state?.timbres?.active === message.state.timbres?.active);
+      if (accepted) {
+        this.state = message.delta ? {
+          ...this.state, ...message.state,
+          input: { ...this.state?.input, ...message.state.input },
+        } : message.state;
+        if (message.state.knob_changes) {
+          this.state.knobs = { ...this.state.knobs };
+          for (const [key, value] of Object.entries(message.state.knob_changes)) {
+            if (value === null) delete this.state.knobs[key];
+            else this.state.knobs[key] = value;
+          }
+          delete this.state.knob_changes;
+        }
         this.viewStamp = message.stamp || 0;
-        this.scheduleSourceEffects(message.state);
+        this.scheduleSourceEffects(this.state);
         for (const waiter of this.stateWaiters || []) {
           if (this.viewStamp >= waiter.stamp) {
             clearTimeout(waiter.timer);
@@ -236,7 +238,7 @@ export class BrowserBackend {
           type: "snapshot-return",
           data: message.buffer,
           sequence: message.sequence,
-          success: !message.error,
+          success: !message.error && !!accepted,
         },
         [message.buffer],
       );
@@ -453,9 +455,15 @@ export class BrowserBackend {
       if (route === "/api/state") {
         await this.freshState();
         result = this.snapshot();
-      } else if (route === "/api/scene") {
+      } else if (route === "/api/scene" || (route === "/api/startup" && data)) {
         if (data) {
-          const prepared = await this.worker.call("scene-prepare", data);
+          await this.sourceLoadTail;
+          const prepared =
+            route === "/api/startup"
+              ? await this.worker.call("startup", {
+                  generation: this.sourceGeneration + 1,
+                })
+              : await this.worker.call("scene-prepare", data);
           result = await this.audio.call("scene-load", prepared, [prepared]);
           this.sourceRecipeKey = null;
           this.state = await this.audio.call("request", null, [], "/api/state");
@@ -474,7 +482,9 @@ export class BrowserBackend {
         }
       } else if (route.startsWith("/api/timbres")) {
         await this.sourceLoadTail;
-        result = await this.audio.call("request", data, [], route);
+        result = route === "/api/timbres/add"
+          ? await this.audio.call("add-timbre", { ...data, idle: this.context.state !== "running" })
+          : await this.audio.call("request", data, [], route);
         if (route === "/api/timbres/update") {
           this.state.timbres = result;
         } else {
@@ -628,6 +638,7 @@ export class BrowserBackend {
           "/api/presets",
           "/api/samples",
           "/api/color-defaults",
+          "/api/effect-presets/factory",
           "/api/sequencer/catalog",
           "/api/drums/catalog",
         ].includes(route)

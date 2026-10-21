@@ -60,6 +60,40 @@ bank.selections.set(view.key, saved.id);
 assert.equal(bank.match(view), undefined, "editing retains the selected preset for overwrite rather than another matching preset");
 assert.throws(() => bank.validate({...record, settings:{lcr_feedback:NaN}}));
 assert.throws(() => bank.validate({...record, settings:{reverb_type:"missing"}}));
+// Factory entries remain available across refresh/delete, and Save creates an
+// independent User copy even when it keeps the original factory name.
+const factory = { ...record, id:"factory:lcr_delay:0", name:"ORIGINAL", factory:true };
+bank.factory = [factory];
+await bank.refresh();
+const factoryView = {key:"factory-slot", get:()=>({kind:factory.kind,mix:factory.mix,settings:factory.settings})};
+bank.selections.set(factoryView.key, factory.id);
+assert.equal(bank.match(factoryView).name, factory.name);
+const size = data.size;
+await bank.delete(factoryView);
+assert.equal(data.size, size);
+assert(bank.records.some((r) => r.id === factory.id));
+const copy = await bank.write(factory);
+assert.notEqual(copy.id, factory.id);
+assert.equal(copy.name, factory.name);
+assert.equal(copy.factory, undefined);
+await bank.refresh();
+bank.selections.set(factoryView.key, copy.id);
+await bank.delete(factoryView);
+await bank.undo();
+assert(bank.records.some((r) => r.id === factory.id));
+assert(bank.records.some((r) => r.id === copy.id));
+// Native factory export uses the portable codec without trying to read a User
+// file from disk, and the exported copy can be imported in either environment.
+let downloaded;
+bank.actions.native = true;
+bank.actions.download = (blob) => { downloaded = blob; };
+bank.actions.api = () => { throw new Error("Factory export tried to read a User file"); };
+bank.selections.set(factoryView.key, factory.id);
+await bank.export(factoryView);
+const exportedFactory = await decode(downloaded);
+assert.equal(exportedFactory.name, factory.name);
+assert.equal(exportedFactory.factory, undefined);
+assert.match(exportedFactory.id, /^[a-f0-9]{32}$/);
 if (process.argv.includes("--fixture")) {
   await mkdir("target/effect-presets-qa", {recursive:true});
   await writeFile("target/effect-presets-qa/browser-export.sadfx", bytes);

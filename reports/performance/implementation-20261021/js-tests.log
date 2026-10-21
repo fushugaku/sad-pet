@@ -1,0 +1,53 @@
+
+wasm/test-effect-presets.mjs
+Effect presets: portable gzip, Unicode, shared per-type banks, overwrite, soft delete/undo, modes and damaged-file rejection passed.
+
+wasm/test-filters-ui.mjs
+Filter editor: initialization, 12 controls, model/Comb selection, conditional Morph and scalar transport passed.
+
+wasm/test-filters.mjs
+Rustias filters: 20 model selections, 3 host rates, both slots, all routings, scalar recall, quantum invariance and no audio memory growth passed.
+
+wasm/test-imported-ui.mjs
+SuperEcho / AlphaVerb UI: all 42 controls, 33 knobs, original modes, sync divisions and formatters passed.
+L/C/R Time Ratio: continuous physical gestures, 0.25% up/down across all plateaus, both clocks and Smooth modes passed.
+
+wasm/test-imported.mjs
+SuperEcho / AlphaVerb WASM: 3 sample rates, simultaneous pre/post FX, scalar modes, preset recall, Neuropolis and no audio memory growth passed.
+
+wasm/test-library.mjs
+Library upgrade passed: soundtrack and short-cover selections move to the new loop; saved audio is preserved.
+
+wasm/test-microphone.mjs
+Microphone lifecycle passed: explicit access, device switching, gain/mode reuse, disconnect, cancellation and denied permission.
+
+wasm/test-neuropolis.mjs
+Neuropolis WASM: 257 tracks, independent clocks, ID adoption, sparse edits and worklet buffers passed
+
+wasm/test-parameters.mjs
+Parameter transport passed: sparse writes, coalesced dragging, structural ordering, save flush and recall/retry races.
+Sequencer transport passed: stage drags coalesce, structural edits preserve commands, retries keep the latest value.
+
+wasm/test-presets.mjs
+Preset files passed: portable gzip format, Unicode names, Source FX and both racks, legacy import and damaged-file rejection.
+
+wasm/test-realtime.mjs
+Realtime checks passed: telemetry failure/resync, transferable pools, repeated takes, memory.grow, incremental Source FX and parallel file-load isolation.
+
+wasm/test-resynth.mjs
+Resynth WASM 44100: 4 layers, median 614.2 us (21.2% block budget), p99 1004.2 us
+Resynth WASM 48000: 4 layers, median 695.4 us (26.1% block budget), p99 1087.4 us
+Resynth WASM 96000: 4 layers, median 327.4 us (24.6% block budget), p99 678.3 us
+Resynth checks passed: all 8 types, all analog modes, all 5 OSC4 Wavefolders in every slot, Ring/Sync, separate Source/Grains/oscillator taps, 16 envelopes, host parameters and deterministic quanta.
+
+wasm/test-sequencer-ui.mjs
+Sequencer editor: snapshot/reorder-safe pitch, 96 step knobs, integer Pulses/Ratchet, scalar OSC routing and ±24 st offsets passed.
+
+wasm/test-startup.mjs
+Startup scene: glasses5, exact source PCM, full routing, quiet first open and factory recall passed.
+
+wasm/test-timbres.mjs
+Timbres: 128-step drum playback, independent controls, stable IDs, cross-part snapshot acknowledgements, whole-scene recall and granular routing passed.
+
+wasm/test.mjs
+WASM checks passed: 30 factory sources, bounded bank memory, stereo audio at 44.1/48 kHz, deterministic quanta, chord entry, MIDI, effect stack, live microphone, sample-exact recording, region loops and non-destructive trims/renders.

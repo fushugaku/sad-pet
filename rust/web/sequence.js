@@ -1,3 +1,54 @@
+"use strict";
+// Keep large routing menus out of the live DOM until a pointer, keyboard or
+// accessibility focus opens them. The selected label remains a native option.
+window.SadLazySelect = (() => {
+  const models = new WeakMap();
+  const option = (value, label) => {
+    const node = document.createElement("option");
+    node.value = value;
+    node.textContent = label;
+    return node;
+  };
+  function render(select, expanded, value = select.value) {
+    const model = models.get(select);
+    if (!model) { select.value = value; return; }
+    model.expanded = expanded;
+    if (expanded) {
+      const nodes = model.groups.map(({ label, choices }) => {
+        if (!label) return choices.map(([v, text]) => option(v, text));
+        const group = document.createElement("optgroup");
+        group.label = label;
+        group.append(...choices.map(([v, text]) => option(v, text)));
+        return group;
+      }).flat();
+      if (!model.labels.has(value)) nodes.push(option(value, `${value} · unavailable`));
+      select.replaceChildren(...nodes);
+    } else {
+      select.replaceChildren(option(value, model.labels.get(value) ?? `${value} · unavailable`));
+    }
+    select.value = value;
+  }
+  return {
+    configure(select, value, groups) {
+      if (!models.has(select)) {
+        const expand = () => {
+          if (!models.get(select).expanded) render(select, true);
+        };
+        select.onpointerdown = expand;
+        select.onfocus = expand;
+        select.onkeydown = expand;
+        select.onblur = () => render(select, false);
+      }
+      models.set(select, { groups, labels: new Map(groups.flatMap(g => g.choices)), expanded: false });
+      render(select, document.activeElement === select, String(value));
+    },
+    setValue(select, value) {
+      value = String(value);
+      if (select.value !== value) render(select, !!models.get(select)?.expanded, value);
+    },
+  };
+})();
+
 /* Neuropolis stage, pulse, gate and lane editor. Audio runs in metropolix-core. */
 "use strict";
 window.SadNeuropolis = class {
@@ -383,7 +434,7 @@ window.SadNeuropolis = class {
     }
     grid.append(labels);
   }
-  parameterOptions(select, prefix = "") {
+  parameterGroups(prefix = "") {
     const preset = this.hooks.read(), groups = new Map();
     for (const spec of this.catalog.parameters) {
       const fx = /^(pre_)?fx(\d+)_/.exec(spec.id);
@@ -401,13 +452,11 @@ window.SadNeuropolis = class {
         : spec.id.startsWith("lfo") ? "LFO"
         : spec.id.startsWith("arp_") ? "Arpeggiator" : "Main & filters";
       if (!groups.has(family)) {
-        const group = document.createElement("optgroup");
-        group.label = family;
-        groups.set(family, group);
-        select.append(group);
+        groups.set(family, { label: family, choices: [] });
       }
-      groups.get(family).append(this.option(`${prefix}${spec.id}`, spec.name));
+      groups.get(family).choices.push([`${prefix}${spec.id}`, spec.name]);
     }
+    return [...groups.values()];
   }
   buildStages(editor, track) {
     const parameter = track.target.kind === "parameter",
@@ -671,30 +720,13 @@ window.SadNeuropolis = class {
     };
     const target = document.createElement("select");
     target.setAttribute("aria-label", "Track destination");
-    const group = document.createElement("optgroup");
-    group.label = "Pitch & notes";
-    for (const [value, label] of [
-      ["main_pitch", "Main track pitch"],
-      ["notes", "Notes → grains + ENV"],
-      ...[0, 1, 2, 3].map((i) => [`osc:${i}`, `OSC ${i + 1} pitch offset`]),
-    ])
-      group.append(this.option(value, label));
-    target.append(group);
-    this.parameterOptions(target, "param:");
-    target.value =
-      track.target.kind === "oscillator"
-        ? `osc:${track.target.index}`
-        : track.target.kind === "parameter"
-          ? `param:${track.target.parameter}`
-          : track.target.kind;
-    if (!target.value)
-      (target.append(
-        this.option(
-          `param:${track.target.parameter}`,
-          `${track.target.parameter} · unavailable`,
-        ),
-      ),
-        (target.value = `param:${track.target.parameter}`));
+    window.SadLazySelect.configure(target,
+      track.target.kind === "oscillator" ? `osc:${track.target.index}`
+        : track.target.kind === "parameter" ? `param:${track.target.parameter}` : track.target.kind,
+      [{ label: "Pitch & notes", choices: [
+        ["main_pitch", "Main track pitch"], ["notes", "Notes → grains + ENV"],
+        ...[0, 1, 2, 3].map(i => [`osc:${i}`, `OSC ${i + 1} pitch offset`]),
+      ] }, ...this.parameterGroups("param:")]);
     target.onchange = () => {
       const current = this.track(track.id);
       current.target = target.value.startsWith("osc:")
@@ -807,13 +839,9 @@ window.SadNeuropolis = class {
       title.textContent = `DESTINATION ${i + 1}`;
       const select = document.createElement("select");
       select.setAttribute("aria-label", `Track destination ${i + 1}`);
-      select.append(this.option("", "Unassigned"));
-      this.parameterOptions(select);
-      const value = track.destinations?.[i] || "";
-      if (value && !Array.from(select.children).some((group) =>
-        Array.from(group.children).some((option) => option.value === value)))
-        select.append(this.option(value, `${value} · unavailable`));
-      select.value = value;
+      window.SadLazySelect.configure(select, track.destinations?.[i] || "", [
+        { choices: [["", "Unassigned"]] }, ...this.parameterGroups(),
+      ]);
       select.onchange = () => {
         const current = this.track(track.id);
         current.destinations ??= [null, null, null];

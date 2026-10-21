@@ -1,0 +1,401 @@
+   Compiling sad-pet v0.30.1 (/Users/georgy/Projects/Evil_update/rust)
+   Compiling sad-pet-plugin v0.12.1 (/Users/georgy/Projects/Evil_update/plugin)
+   Compiling sad-pet-wasm v0.30.1 (/Users/georgy/Projects/Evil_update/wasm)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 17.48s
+     Running unittests src/lib.rs (target/debug/deps/sad_pet-ad45fe10a223a275)
+
+running 31 tests
+test dsp::resynth::tests::pcm_overlap_has_a_continuous_seam_and_handles_large_steps_and_tiny_trims ... ok
+test dsp::sequence::tests::main_pitch_routes_to_selected_carriers_and_oscillator_offsets_are_additive ... ok
+test dsp::sequence::tests::carrier_pitch_contributions_cancel_before_clamping_and_keep_independent_clocks ... ok
+test dsp::resynth::tests::scalar_edits_keep_phase_and_disabled_processing_is_exact ... ok
+test dsp::radias_filter::models::tests::kernels_match_original_rustias_across_live_parameter_changes ... ok
+test dsp::source_fx::tests::excluded_audio_never_enters_a_source_delay ... ok
+test dsp::source_fx::tests::live_source_is_processed_once_and_raw_meter_and_freeze_are_preserved ... ok
+test imported_fx::tests::alphaverb_mode_labels_match_original_compressor_and_gate_flags ... ok
+test imported_fx::tests::removing_all_effects_retires_histories_with_the_previous_preset ... ok
+test parameters::tests::numeric_batches_clamp_values_preserve_topology_and_mirror_legacy_fields ... ok
+test parameters::tests::numeric_messages_reject_unknown_non_numeric_and_out_of_range_addresses ... ok
+test parameters::tests::old_presets_keep_original_playback_and_new_loop_settings_roundtrip ... ok
+test parameters::tests::osc4_interactions_append_after_all_released_resynth_ids ... ok
+test dsp::bar_loop_tests::root_pitch_and_bend_change_grain_pitch_without_retiming_the_loop ... ok
+test parameters::tests::resynth_is_backward_compatible_and_appended_controls_roundtrip ... ok
+test dsp::source_fx::tests::cache_swaps_keep_held_notes_and_loop_phase_and_do_not_affect_raw_bypass ... ok
+test dsp::bar_loop_tests::meter_and_tempo_changes_keep_phase_and_use_quarter_note_beats ... ok
+test dsp::source_fx::tests::file_fx_process_selected_input_before_any_grain_or_pitch ... ok
+test dsp::bar_loop_tests::changing_the_selection_preserves_phase_and_disabling_restores_original_speed ... ok
+test drums::tests::factory_tones_and_original_stereo_dsp_are_preserved ... ok
+test dsp::source_fx_worker::tests::a_full_request_queue_still_invalidates_older_results ... ok
+test dsp::bar_loop_tests::overlapping_notes_start_at_the_selection_and_retrigger_independently ... ok
+test dsp::source_fx::tests::source_recipe_tracks_pitch_for_pickup_and_every_sub_oscillator ... ok
+test dsp::resynth::tests::shared_source_carriers_do_not_multiply_with_a_midi_chord ... ok
+test dsp::bar_loop_tests::rendered_pitch_changes_while_the_loop_duration_stays_the_same ... ok
+test dsp::resynth::tests::four_independent_layers_cross_feedback_and_pcm_trim_stay_bounded ... ok
+test dsp::bar_loop_tests::every_note_and_pitch_traverses_the_whole_selection_in_one_bar ... ok
+test dsp::resynth::tests::analysis_selects_bands_and_envelopes_release_to_silence ... ok
+test dsp::resynth::tests::all_osc4_shapes_and_both_controls_reach_every_layer ... ok
+test dsp::resynth::tests::all_radias_types_and_modes_render_at_host_rates ... ok
+test dsp::resynth::tests::ring_and_sync_use_separate_source_grain_and_unmixed_oscillator_taps ... ok
+
+test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.58s
+
+     Running unittests src/main.rs (target/debug/deps/sad_pet-393fc9849e300151)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/color.rs (target/debug/deps/color-e03ef6da2f27d37e)
+
+running 10 tests
+test legacy_color_and_reverb_migrate_and_new_empty_chain_stays_empty ... ok
+test presets_save_chain_order_inactive_settings_and_target_ids_and_repair_bad_values ... ok
+test insertion_move_and_removal_preserve_other_slots_delay_tails ... ok
+test asymmetric_distortion_removes_dc_and_binaural_width_can_make_mono ... ok
+test envelopes_and_lfos_follow_slot_ids_through_reordering_and_deleted_targets_are_removed ... ok
+test chain_is_sequential_and_changing_order_changes_audio ... ok
+test repeated_effects_have_independent_buffers_settings_and_random_streams ... ok
+test empty_chain_bypass_and_zero_mix_preserve_dry_samples_exactly ... ok
+test every_algorithm_parameter_changes_rendered_audio ... ok
+test full_rack_stays_finite_at_extremes_and_renders_independently_of_block_size ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.73s
+
+     Running tests/compressor.rs (target/debug/deps/compressor-9ef8c82526007962)
+
+running 6 tests
+test knee_blends_near_threshold_and_makeup_and_parallel_mix_work ... ok
+test compressor_presets_roundtrip_and_missing_or_invalid_settings_are_repaired ... ok
+test independent_compressors_stack_and_keep_their_envelopes_when_reordered ... ok
+test engine_meters_show_real_attenuation_and_zero_during_pause_or_global_bypass ... ok
+test threshold_ratio_and_stereo_link_match_the_expected_static_curve ... ok
+test attack_preserves_transients_and_release_recovers_gradually_in_real_time ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/delays.rs (target/debug/deps/delays-d937de4f94e94a10)
+
+running 12 tests
+test lcr_ratio_is_continuous_without_smooth_and_retains_original_table_anchors ... ok
+test smooth_clock_keeps_note_anchors_and_fills_the_spaces_between_them ... ok
+test clocks_settings_and_modulation_targets_roundtrip_without_changing_old_presets ... ok
+test radias_tables_and_tempo_place_three_impulses_at_the_expected_times ... ok
+test mod_delay_uses_mono_input_independent_times_and_audible_modulation ... ok
+test smooth_delay_emits_an_echo_halfway_between_two_note_divisions ... ok
+test lcr_ratio_glides_without_smooth_and_does_not_clear_the_existing_tail ... ok
+test duplicate_delays_have_separate_tails_and_reordering_keeps_them ... ok
+test stacked_delays_and_reverb_render_identically_across_audio_blocks ... ok
+test bypass_mix_and_extreme_stacks_remain_finite_at_multiple_sample_rates ... ok
+test smooth_delay_glides_on_time_changes_without_clearing_the_tail ... ok
+test all_delay_controls_change_the_audio_in_their_clock_mode ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.56s
+
+     Running tests/envelopes.rs (target/debug/deps/envelopes-c6520ebe623f273d)
+
+running 8 tests
+test adsr_reaches_sustain_releases_and_retriggers_from_zero ... ok
+test envelope_routes_are_saved_legacy_adsr_migrates_and_bad_values_are_sanitized ... ok
+test three_envelopes_have_independent_times_and_share_note_gates ... ok
+test default_second_env_drives_filter_and_new_routes_reach_effect_controls ... ok
+test amp_envelope_stays_polyphonic_and_sustain_defers_all_three_releases ... ok
+test each_env_can_drive_two_destinations_without_removing_amp_control ... ok
+test amp_controls_dry_audio_and_long_release_keeps_grains_alive ... ok
+test envelopes_retrigger_in_hold_arp_and_sequence_and_render_is_block_independent ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.51s
+
+     Running tests/fades.rs (target/debug/deps/fades-ba5409758473fb50)
+
+running 4 tests
+test fades_have_silent_ends_smooth_monotonic_ramps_and_follow_the_selected_region ... ok
+test fade_export_preserves_duration_original_frames_and_stereo_balance ... ok
+test realtime_dry_and_bypass_loop_through_fades_and_new_files_reset_them ... ok
+test forward_and_reverse_grains_read_the_faded_source ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.30s
+
+     Running tests/filters.rs (target/debug/deps/filters-f51310494e6c9ae3)
+
+running 9 tests
+test each_filter_tracks_octaves_from_c4_even_for_comb ... ok
+test independent_envelope_sources_signed_depth_and_clamping ... ok
+test legacy_presets_migrate_filter_env_without_doubling_or_losing_free_routes ... ok
+test filter_settings_and_modulation_destinations_roundtrip_and_sanitize ... ok
+test single_uses_only_first_filter_and_parallel_preserves_open_level ... ok
+test serial_cascades_attenuation_and_parallel_is_average_of_independent_paths ... ok
+test low_high_and_bandpass_have_expected_frequency_response ... ok
+test engine_filters_use_each_voices_note_envelope_and_channel_bend ... ok
+test all_filter_pairs_and_routings_are_finite_at_extreme_settings ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running tests/imported_fx.rs (target/debug/deps/imported_fx-f8bc98401041deb4)
+
+running 6 tests
+test all_three_racks_roundtrip_controls_and_released_parameter_positions_are_stable ... ok
+test only_selected_slots_allocate_original_engines ... ok
+test super_echo_matches_the_unchanged_arm_firmware_in_tape_and_bbd_modes ... ok
+test numeric_changes_and_prepared_preset_exchange_retain_running_tails_and_do_not_allocate ... ok
+test all_rates_extremes_controls_and_resets_are_finite_without_audio_allocation ... ok
+test alpha_verb_matches_the_upstream_original_firmware_reference ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 25.25s
+
+     Running tests/knob_feedback.rs (target/debug/deps/knob_feedback-1cf04ebe0a288c69)
+
+running 8 tests
+test generator_depth_modulation_expands_the_destination_range ... ok
+test moving_effects_keeps_feedback_ids_and_removing_them_removes_keys ... ok
+test correlated_matrix_routes_cancel_and_negative_unipolar_ranges_are_one_sided ... ok
+test filter_feedback_includes_dedicated_envelopes_and_keyboard_tracking ... ok
+test every_visible_effect_knob_has_a_stable_key_and_correct_mapping ... ok
+test matrix_lfo_and_envelope_ranges_combine_and_clip_in_parameter_space ... ok
+test reading_feedback_does_not_change_audio_presets_or_random_generators ... ok
+test eight_modulator_feedback_is_current_for_imported_effects_in_both_racks ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 15.09s
+
+     Running tests/live_input.rs (target/debug/deps/live_input-dba77d4033ffc8e0)
+
+running 4 tests
+test input_capture_is_chronological_after_wrap_and_ignores_nonfinite_values ... ok
+test live_effects_use_input_instead_of_the_loaded_file ... ok
+test live_input_passes_through_the_filter ... ok
+test live_grains_read_the_captured_buffer_and_freeze_it ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests/matrix.rs (target/debug/deps/matrix-200d956c60ba5d39)
+
+running 10 tests
+test matrix_limits_validates_and_roundtrips_eight_rows ... ok
+test step_note_and_velocity_targets_reach_the_sample_clocked_sequencer ... ok
+test every_parameter_family_is_bounded_and_applied_without_mutating_knobs ... ok
+test controller_sources_are_channel_aware_and_reset_without_sticking ... ok
+test equal_opposite_routes_cancel_before_clamping_and_bypass_restores_base ... ok
+test effect_targets_follow_slot_ids_and_are_cleared_on_deletion ... ok
+test all_lfos_envelopes_and_follower_produce_live_source_values ... ok
+test adsr_lfo_and_filter_control_targets_affect_the_running_engine ... ok
+test random_note_is_held_between_notes_and_reproducible ... ok
+test random_matrix_and_delay_stack_render_identically_across_blocks ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+     Running tests/mix_routing.rs (target/debug/deps/mix_routing-0e7a653e05ae17cf)
+
+running 5 tests
+test reverb_and_delay_tails_remain_audible_at_fully_dry_after_note_release ... ok
+test blend_happens_before_nonlinear_effects_and_dry_level_does_not_multiply_with_chords ... ok
+test effects_only_microphone_always_uses_the_same_filter_and_fx_path ... ok
+test fully_dry_audio_uses_both_filters_in_every_routing_for_files_and_microphone ... ok
+test fully_dry_audio_reaches_every_effect_and_their_order_matters ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.80s
+
+     Running tests/modulators.rs (target/debug/deps/modulators-a4df76c706306d7a)
+
+running 2 tests
+test old_three_generator_presets_pad_without_changing_their_routes_and_new_banks_roundtrip ... ok
+test eight_generators_modulate_oscillators_and_numeric_controls_without_audio_allocations ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/neuropolis.rs (target/debug/deps/neuropolis-e324afa354e7bcf1)
+
+running 8 tests
+test old_chord_patterns_migrate_into_neuropolis_note_lanes ... ok
+test opposite_tracks_cancel_before_clamping_and_unipolar_absolute_cv_uses_the_full_range ... ok
+test note_tracks_trigger_envelopes_and_do_not_release_an_external_note_with_the_same_pitch ... ok
+test three_step_destinations_reach_filters_oscillators_and_fx_with_sparse_realtime_edits ... ok
+test destinations_change_working_sound_parameters_without_overwriting_the_patch ... ok
+test unlimited_tracks_recall_and_id_based_adoption_do_not_allocate_or_reset_other_lanes ... ok
+test step_gate_length_uses_the_original_core_and_oscillator_presets_use_signed_offsets ... ok
+test real_neuropolis_orders_pulses_probability_and_independent_clocks_match_upstream ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.54s
+
+     Running tests/parameter_updates.rs (target/debug/deps/parameter_updates-7d04c6e792d00e66)
+
+running 3 tests
+test unrelated_numeric_refresh_does_not_retrigger_a_modulated_clock ... ok
+test cached_waveshapers_match_direct_processing_across_pitch_changes_bypass_and_resets ... ok
+test sparse_rate_edits_retime_the_next_note_like_a_full_preset_update ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/performance.rs (target/debug/deps/performance-218dc244eaef4939)
+
+running 14 tests
+test note_hold_toggles_and_clear_drops_both_chord_and_physical_keys ... ok
+test changing_step_rate_releases_all_eight_previous_notes_before_retriggering ... ok
+test hold_disabled_cannot_restore_a_stale_chord_when_another_control_changes ... ok
+test arp_hold_latches_a_chord_replaces_it_and_releases_when_disabled ... ok
+test chord_steps_round_trip_and_legacy_single_notes_still_load ... ok
+test arpeggiator_uses_sample_clock_and_releases_each_gate ... ok
+test sequencer_respects_rests_length_velocity_and_gate ... ok
+test sequencer_starts_and_releases_whole_chords_on_the_same_sample ... ok
+test sequencer_arpeggiates_each_steps_chord_and_rest_cuts_a_note_between_pulses ... ok
+test random_arp_restarts_deterministically_and_single_note_bounce_is_valid ... ok
+test arpeggiator_orders_octaves_and_bounces_without_repeating_endpoints ... ok
+test hold_preset_restores_all_notes_and_keyboard_does_not_add_a_default_note ... ok
+test mode_changes_and_restarts_release_old_voices ... ok
+test new_modes_produce_identical_audio_for_different_block_sizes_and_save_in_presets ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s
+
+     Running tests/pre_filter_fx.rs (target/debug/deps/pre_filter_fx-0fcc4228e7535620)
+
+running 5 tests
+test pre_and_post_ids_modulation_meters_and_preset_recall_are_independent ... ok
+test all_radias_modes_retain_depth_and_stereo_state_at_host_sample_rates ... ok
+test post_sub_oscillators_follow_note_envelopes_and_stay_silent_without_notes ... ok
+test old_presets_and_bypassed_pre_racks_preserve_polyphonic_audio ... ok
+test pre_effects_are_before_the_filters_and_can_use_the_whole_catalog ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.97s
+
+     Running tests/reconstruction.rs (target/debug/deps/reconstruction-9f30f4dbdb751270)
+
+running 12 tests
+test supplied_images_and_extracted_tables_match ... ignored, requires the seven original .fw fixtures in the workspace root
+test recovered_random_sequence_is_stable ... ok
+test midi_running_status_realtime_and_sysex_do_not_corrupt_notes ... ok
+test interpolation_preserves_long_recording_fractional_positions_and_wraps ... ok
+test recovered_pitch_and_grain_curves_have_expected_musical_values ... ok
+test wav_pcm_and_float_roundtrip_handle_both_channels ... ok
+test malformed_parameter_values_are_repaired_before_processing ... ok
+test midi_chords_sustain_and_channel_note_offs_are_independent ... ok
+test antialiasing_rejects_high_frequencies_in_both_directions ... ok
+test engine_is_deterministic_across_audio_block_sizes ... ok
+test zero_density_is_silent_and_bypass_preserves_the_source_gain ... ok
+test all_color_modes_remain_finite_at_extreme_settings ... ok
+
+test result: ok. 11 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 2.32s
+
+     Running tests/recording.rs (target/debug/deps/recording-d5c7f421e7c6a9e9)
+
+running 2 tests
+test recording_captures_exact_blocks_and_stopping_is_retryable ... ok
+test mp3_contains_stereo_mpeg_frames_at_the_requested_bitrate ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running tests/reverb_chain.rs (target/debug/deps/reverb_chain-fc1464f87484fda5)
+
+running 9 tests
+test migration_keeps_eight_color_effects_then_reverb_settings_and_existing_routes ... ok
+test per_reverb_envelopes_and_lfos_keep_their_targets_when_moved_or_deleted ... ok
+test reordering_and_removing_other_slots_preserve_reverb_tails_and_removal_resets_its_state ... ok
+test repeated_reverbs_are_independent_and_order_relative_to_distortion_matters ... ok
+test stacked_reverbs_render_identically_across_audio_block_sizes ... ok
+test migrated_rack_matches_previous_color_then_shared_reverb_audio ... ok
+test every_reverb_knob_and_algorithm_affects_sound_and_bypass_is_exact ... ok
+test twelve_reverbs_are_finite_at_high_resonance_and_multiple_sample_rates ... ok
+test prepared_edits_keep_effect_histories_at_the_engine_sample_rate ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.96s
+
+     Running tests/rustias_filters.rs (target/debug/deps/rustias_filters-d7a2fbb05c149542)
+
+running 5 tests
+test both_slots_track_notes_envelopes_and_pitch_bend_on_each_models_frequency_scale ... ok
+test live_drive_and_morph_edits_preserve_filter_history_and_repeated_configuration_is_exact ... ok
+test every_model_is_stereo_independent_and_has_low_high_band_or_notch_response ... ok
+test presets_and_host_ids_remain_compatible_and_new_controls_are_realtime ... ok
+test all_models_rates_routings_and_live_extremes_are_finite_without_crosstalk ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.81s
+
+     Running tests/sample_library.rs (target/debug/deps/sample_library-dad801e48b5a84bf)
+
+running 5 tests
+test native_bank_reuses_samples_and_glass_stays_compatible ... ok
+test every_track_has_unique_identity_valid_audio_and_exact_duration ... ok
+test generated_tracks_are_reproducible_and_float_wav_export_is_lossless ... ok
+test expanded_bank_preserves_four_bar_timing_and_loop_seams ... ok
+test harvest_loop_preserves_the_opening_and_wraps_its_room_tail ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.67s
+
+     Running tests/sample_regions.rs (target/debug/deps/sample_regions-27eaf42088c762f8)
+
+running 3 tests
+test trim_keeps_exact_stereo_frames_and_the_original ... ok
+test interpolation_and_mips_never_include_excluded_audio ... ok
+test moving_a_loop_limits_dry_bypass_grains_cloud_and_frozen_position ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.81s
+
+     Running tests/step_entry.rs (target/debug/deps/step_entry-21e1a241622f9ef7)
+
+running 7 tests
+test a_played_note_fills_and_enables_only_the_chosen_step_without_starting_transport ... ok
+test velocity_zero_and_invalid_midi_do_not_consume_the_selected_step ... ok
+test chord_entry_toggles_notes_limits_polyphony_and_consumes_releases_after_done ... ok
+test capture_consumes_the_matching_note_off_without_releasing_an_arp_note ... ok
+test cancel_and_mode_changes_restore_normal_keyboard_behavior ... ok
+test stale_parameter_updates_cannot_erase_notes_captured_from_midi ... ok
+test preset_load_can_replace_pending_edits_and_capture_state_is_not_saved ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src/lib.rs (target/debug/deps/sad_pet_plugin-762442f1768934cf)
+
+running 21 tests
+test tests::custom_sample_full_preset_and_selection_survive_project_recall ... ok
+test tests::host_sync_uses_bpm_and_restarts_sequence_at_the_daw_position ... ok
+test tests::numeric_editor_updates_preserve_routes_host_values_and_playing_notes_without_heap_work ... ok
+test tests::queue_backpressure_never_frees_or_blocks_on_the_audio_thread ... ok
+test effect_presets::tests::effect_library_is_shared_portable_and_does_not_touch_the_scene ... ok
+test tests::disk_presets_restore_sound_sample_region_and_host_values_in_another_instance ... ok
+test tests::instrument_is_silent_until_midi_and_instances_are_independent ... ok
+test tests::factory_recall_replaces_the_scene_and_a_drum_route_toggle_does_not_rebuild_audio ... ok
+test tests::drum_audition_rings_out_while_the_daw_transport_is_stopped ... ok
+test tests::new_and_removed_timbres_are_adopted_and_retired_away_from_audio ... ok
+test tests::both_fx_racks_waveshaper_changes_automation_and_feedback_are_realtime_safe ... ok
+test tests::preset_mode_changes_midi_capture_automation_and_seek_do_not_allocate ... ok
+test tests::effect_processes_audio_and_granular_source_is_prepared_off_thread ... ok
+test tests::one_bar_loop_host_controls_and_meter_are_realtime_safe_and_saved ... ok
+test tests::four_resynth_layers_automation_and_project_recall_are_realtime_safe ... ok
+test tests::neuropolis_tracks_follow_daw_transport_survive_project_recall_and_edit_without_heap_work ... ok
+test tests::drum_timbres_mix_independently_save_all_parts_and_edit_without_audio_allocations ... ok
+test tests::source_fx_cache_updates_and_host_automation_never_allocate_on_audio ... ok
+test tests::new_plugin_starts_with_glasses5_and_restoration_replaces_it ... ok
+test tests::preset_overwrite_import_export_and_invalid_files_preserve_existing_patches ... ok
+test tests::legacy_preset_migration_is_idempotent_and_fx_patches_can_load_in_the_instrument ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.85s
+
+     Running unittests src/lib.rs (target/debug/deps/sad_pet_wasm-99af8c5e26c5604e)
+
+running 8 tests
+test allocation_tests::telemetry_deltas_keep_presets_and_waveforms_until_they_change ... ok
+test allocation_tests::drum_step_edits_and_granular_routing_publish_sparse_views_without_heap_work ... ok
+test allocation_tests::binary_publication_has_no_heap_and_worker_matches_original_state ... ok
+test tests::prepared_transfer_preserves_all_read_rates ... ok
+test tests::rejects_incomplete_or_invalid_prepared_samples ... ok
+test allocation_tests::source_pcm_and_mips_upload_without_allocating_or_restarting_the_audio ... ok
+test allocation_tests::neuropolis_large_patches_publish_sparse_edits_without_heap_or_full_configuration ... ok
+test allocation_tests::resynth_render_scalar_edits_and_binary_meters_have_no_heap_operations ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.71s
+
+   Doc-tests sad_pet
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests sad_pet_plugin
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests sad_pet_wasm
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

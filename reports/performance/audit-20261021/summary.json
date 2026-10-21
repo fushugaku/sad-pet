@@ -1,0 +1,46 @@
+{
+  "wasm": {
+    "cases": 24,
+    "identical_float_samples_per_run": 6019072,
+    "median_time_reduction_percent": 17.760239767810553,
+    "min_time_reduction_percent": 4.619174707452267,
+    "max_time_reduction_percent": 26.04021820515563,
+    "runs_each": 3
+  },
+  "native": {
+    "cases": 24,
+    "identical_float_samples_per_run": 9027584,
+    "median_time_reduction_percent": 13.422371266373833,
+    "min_time_reduction_percent": -22.779043280182233,
+    "max_time_reduction_percent": 23.70654158759712,
+    "runs_each": 3,
+    "regression_cases": [
+      {
+        "rate": 48000,
+        "case": 6,
+        "time_increase_percent": 7.079812206572766
+      },
+      {
+        "rate": 96000,
+        "case": 1,
+        "time_increase_percent": 22.779043280182233
+      },
+      {
+        "rate": 96000,
+        "case": 2,
+        "time_increase_percent": 13.454351308061941
+      }
+    ]
+  },
+  "method": "Same machine and compiler; 128 stereo frames per block; alternating baseline/prototype order; median of three runs. WASM in Node/V8, native release executable; browser UI/playback separately verified. Main application sources unchanged.",
+  "baseline_commit": "90c6caf",
+  "recommendation": "WASM prototype consistently reduced measured block time in all 24 cases. Native timings include three regressions and need further profiling before applying the same optimization there. This is an audit/prototype, not a production change.",
+  "parallel_workspace_changes": "Other workspace edits appeared during the audit (startup preset selection); they were not modified or incorporated in the captured baseline.",
+  "tests": [
+    "WASM differential: 24 cases at 44.1, 48 and 96 kHz, three comparisons, zero differing samples",
+    "Native differential: 24 cases at 44.1, 48 and 96 kHz, three comparisons, zero differing samples",
+    "wasm/test-realtime.mjs passed on baseline",
+    "wasm/test-resynth.mjs passed on baseline",
+    "Local browser: interface loaded and played at 48 kHz; output muted for the test; stopped afterward"
+  ]
+}

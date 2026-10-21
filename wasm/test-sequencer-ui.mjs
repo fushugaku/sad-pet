@@ -262,3 +262,13 @@ assert.ok(refreshes > 0);
 console.log(
   "Sequencer editor: snapshot/reorder-safe pitch, 96 step knobs, integer Pulses/Ratchet, scalar OSC routing and ±24 st offsets passed.",
 );
+
+const lazy = control("Track destination");
+const selectedValue = lazy.value;
+assert.equal(lazy.all().filter(n => n.tagName === "OPTION").length, 1);
+lazy.onfocus();
+assert.ok(lazy.all().filter(n => n.tagName === "OPTION").length > 1);
+assert.equal(lazy.value, selectedValue);
+lazy.onblur();
+assert.equal(lazy.all().filter(n => n.tagName === "OPTION").length, 1);
+assert.equal(lazy.value, selectedValue);

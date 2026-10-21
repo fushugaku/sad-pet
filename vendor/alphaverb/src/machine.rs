@@ -6,6 +6,8 @@ pub const RETURN: u32 = 0xfffffff0;
 const FLASH: &[u8] = include_bytes!("../assets/flash.bin");
 
 pub struct Machine {
+    #[cfg(test)]
+    pub reference_dispatch: bool,
     regs: [u8; 4096],
     itcm: Vec<u8>,
     dtcm: Vec<u8>,
@@ -34,6 +36,8 @@ pub fn signed_overflow(a: u64, b: u64, size: usize, subtract: bool) -> u64 {
 impl Machine {
     pub fn new() -> Self {
         let mut m = Self {
+            #[cfg(test)]
+            reference_dispatch: false,
             regs: [0; 4096],
             itcm: vec![0; 65536],
             dtcm: vec![0; 0x20000],
@@ -139,7 +143,13 @@ impl Machine {
             if pc == RETURN {
                 return self.fault.get().map_or(Ok(()), Err);
             }
+            #[cfg(test)]
+            let fused = !self.reference_dispatch;
+            #[cfg(not(test))]
+            let fused = true;
             match pc {
+                0x60029898 if fused => pc = crate::fused::b_60029898(self),
+                0x60029dcc if fused => pc = crate::fused::b_60029dcc(self),
                 // Replace only platform allocation; DSP/math execute translated Rust.
                 0x600414c0 => {
                     let size = self.r(32, 4) as usize;
@@ -239,5 +249,16 @@ impl Machine {
     }
     pub fn heap_used(&self) -> usize {
         self.heap_cursor
+    }
+    #[cfg(test)]
+    pub fn assert_same_state(&self, other: &Self) {
+        assert!(self.regs == other.regs, "registers changed");
+        assert!(self.itcm == other.itcm, "ITCM changed");
+        assert!(self.dtcm == other.dtcm, "DTCM changed");
+        assert!(self.ocram == other.ocram, "OCRAM changed");
+        assert!(self.heap == other.heap, "delay histories changed");
+        assert_eq!(self.heap_cursor, other.heap_cursor);
+        assert_eq!(self.fault.get(), other.fault.get());
+        assert_eq!(self.irq, other.irq);
     }
 }

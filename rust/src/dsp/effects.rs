@@ -16,14 +16,31 @@ impl Delay {
             cursor: 0,
         }
     }
+    pub(crate) fn empty() -> Self {
+        Self {
+            frames: Vec::new(),
+            cursor: 0,
+        }
+    }
+    pub(crate) fn has_storage(&self) -> bool {
+        !self.frames.is_empty()
+    }
+    pub(crate) fn take_storage(&mut self) -> Vec<Stereo> {
+        std::mem::take(&mut self.frames)
+    }
+    pub(crate) fn install_storage(&mut self, frames: Vec<Stereo>) {
+        debug_assert!(self.frames.is_empty());
+        self.frames = frames;
+    }
     pub fn push(&mut self, frame: Stereo) {
         self.frames[self.cursor] = frame;
         self.cursor = (self.cursor + 1) % self.frames.len();
     }
     pub fn read(&self, samples: f32) -> Stereo {
-        let position = (self.cursor as f64
-            - samples.clamp(1.0, (self.frames.len() - 2) as f32) as f64)
-            .rem_euclid(self.frames.len() as f64);
+        let position = super::sample::wrap_position(
+            self.cursor as f64 - samples.clamp(1.0, (self.frames.len() - 2) as f32) as f64,
+            self.frames.len() as f64,
+        );
         let i = position as usize;
         let f = (position - i as f64) as f32;
         let a = self.frames[i];
@@ -35,6 +52,8 @@ impl Delay {
         self.cursor = 0;
     }
 }
+
+pub(crate) type Storage = [Vec<Stereo>; 13];
 
 pub struct Effects {
     sample_rate: f32,
@@ -54,24 +73,58 @@ pub struct Effects {
 
 impl Effects {
     pub fn new(sample_rate: u32) -> Self {
+        Self::create(sample_rate, true)
+    }
+    pub(crate) fn unallocated(sample_rate: u32) -> Self {
+        Self::create(sample_rate, false)
+    }
+    fn create(sample_rate: u32, allocate: bool) -> Self {
         let sr = sample_rate as f32;
+        let delay = |frames| {
+            if allocate {
+                Delay::new(frames)
+            } else {
+                Delay::empty()
+            }
+        };
         Self {
             sample_rate: sr,
-            predelay: Delay::new((sr * 0.25) as usize),
-            tank: std::array::from_fn(|_| Delay::new((sr * 0.18) as usize)),
+            predelay: delay((sr * 0.25) as usize),
+            tank: std::array::from_fn(|_| delay((sr * 0.18) as usize)),
             tank_damping: [0.0; 8],
             feedback: [0.8; 8],
             lengths: [1000.0; 8],
-            diffuser: [
-                Delay::new((sr * 0.013) as usize),
-                Delay::new((sr * 0.019) as usize),
-            ],
-            reverse: Delay::new((sr * 0.6) as usize + 4),
+            diffuser: [delay((sr * 0.013) as usize), delay((sr * 0.019) as usize)],
+            reverse: delay((sr * 0.6) as usize + 4),
             reverse_phase: 0,
-            shifter: Delay::new((sr * 0.1) as usize + 8),
+            shifter: delay((sr * 0.1) as usize + 8),
             shifter_phase: 0.0,
             tone: 0.5,
             predelay_samples: 1.0,
+        }
+    }
+
+    fn delays(&mut self) -> impl Iterator<Item = &mut Delay> {
+        std::iter::once(&mut self.predelay)
+            .chain(self.tank.iter_mut())
+            .chain(self.diffuser.iter_mut())
+            .chain(std::iter::once(&mut self.reverse))
+            .chain(std::iter::once(&mut self.shifter))
+    }
+    pub(crate) fn has_storage(&self) -> bool {
+        self.predelay.has_storage()
+    }
+    pub(crate) fn take_storage(&mut self) -> Storage {
+        let mut storage = std::array::from_fn(|_| Vec::new());
+        for (delay, frames) in self.delays().zip(storage.iter_mut()) {
+            std::mem::swap(&mut delay.frames, frames);
+        }
+        storage
+    }
+    pub(crate) fn install_storage(&mut self, mut storage: Storage) {
+        for (delay, frames) in self.delays().zip(storage.iter_mut()) {
+            debug_assert!(delay.frames.is_empty());
+            std::mem::swap(&mut delay.frames, frames);
         }
     }
 
@@ -123,7 +176,8 @@ impl Effects {
         let a = self.shifter.read(1.0 + (1.0 - phase) * shift_window);
         let b = self.shifter.read(1.0 + (1.0 - other) * shift_window);
         let wa = (std::f32::consts::PI * phase).sin().powi(2);
-        self.shifter_phase = (self.shifter_phase + 1.0 / shift_window as f64).rem_euclid(1.0);
+        self.shifter_phase =
+            super::sample::wrap_position(self.shifter_phase + 1.0 / shift_window as f64, 1.0);
         input = std::array::from_fn(|c| {
             input[c] * (1.0 - p.shimmer * 0.5) + (a[c] * wa + b[c] * (1.0 - wa)) * p.shimmer * 0.5
         });

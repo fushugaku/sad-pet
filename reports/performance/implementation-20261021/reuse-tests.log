@@ -1,0 +1,22 @@
+   Compiling sad-pet-alphaverb v0.4.0 (/Users/georgy/Projects/Evil_update/vendor/alphaverb)
+   Compiling sad-pet v0.30.1 (/Users/georgy/Projects/Evil_update/rust)
+   Compiling sad-pet-plugin v0.12.1 (/Users/georgy/Projects/Evil_update/plugin)
+   Compiling sad-pet-wasm v0.30.1 (/Users/georgy/Projects/Evil_update/wasm)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6m 57s
+     Running unittests src/lib.rs (target/debug/deps/sad_pet-0fd8aabafe349eae)
+
+running 32 tests
+test dsp::resynth::tests::pcm_overlap_has_a_continuous_seam_and_handles_large_steps_and_tiny_trims ... ok
+test dsp::sequence::tests::main_pitch_routes_to_selected_carriers_and_oscillator_offsets_are_additive ... ok
+test dsp::sequence::tests::carrier_pitch_contributions_cancel_before_clamping_and_keep_independent_clocks ... ok
+test dsp::radias_filter::models::tests::kernels_match_original_rustias_across_live_parameter_changes ... ok
+test dsp::resynth::tests::scalar_edits_keep_phase_and_disabled_processing_is_exact ... ok
+test dsp::source_fx::tests::excluded_audio_never_enters_a_source_delay ... ok
+test dsp::source_fx::tests::live_source_is_processed_once_and_raw_meter_and_freeze_are_preserved ... ok
+
+thread 'imported_fx::tests::alphaverb_mode_labels_match_original_compressor_and_gate_flags' (180491013) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+error: test failed, to rerun pass `-p sad-pet --lib`
+
+Caused by:
+  process didn't exit successfully: `/Users/georgy/Projects/Evil_update/target/debug/deps/sad_pet-0fd8aabafe349eae` (signal: 6, SIGABRT: process abort signal)

@@ -1,0 +1,3 @@
+    Blocking waiting for file lock on build directory
+   Compiling sad-pet v0.30.1 (/Users/georgy/Projects/Evil_update/rust)
+    Finished `release` profile [optimized] target(s) in 47.94s

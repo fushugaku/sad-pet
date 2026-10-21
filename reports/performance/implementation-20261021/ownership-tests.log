@@ -1,0 +1,11 @@
+   Compiling sad-pet v0.30.1 (/Users/georgy/Projects/Evil_update/rust)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.91s
+     Running unittests src/lib.rs (target/debug/deps/sad_pet-ad45fe10a223a275)
+
+running 3 tests
+test imported_fx::tests::removing_all_effects_retires_histories_with_the_previous_preset ... ok
+test imported_fx::tests::moving_a_legacy_effect_to_another_rack_uses_fresh_history ... ok
+test imported_fx::tests::alphaverb_mode_labels_match_original_compressor_and_gate_flags ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; finished in 0.01s
+

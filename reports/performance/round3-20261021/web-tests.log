@@ -1,0 +1,26 @@
+WASM checks passed: 30 factory sources, bounded bank memory, stereo audio at 44.1/48 kHz, deterministic quanta, chord entry, MIDI, effect stack, live microphone, sample-exact recording, region loops and non-destructive trims/renders.
+Effect presets: portable gzip, Unicode, shared per-type banks, overwrite, soft delete/undo, modes and damaged-file rejection passed.
+Filter editor: initialization, 12 controls, model/Comb selection, conditional Morph and scalar transport passed.
+Rustias filters: 20 model selections, 3 host rates, both slots, all routings, scalar recall, quantum invariance and no audio memory growth passed.
+SuperEcho / AlphaVerb UI: all 42 controls, 33 knobs, original modes, sync divisions and formatters passed.
+L/C/R Time Ratio: continuous physical gestures, 0.25% up/down across all plateaus, both clocks and Smooth modes passed.
+Two SuperEcho + two AlphaVerb instances: 3 sample rates, simultaneous pre/post FX, independent controls, preset recall, Neuropolis and no audio memory growth passed.
+Library upgrade passed: soundtrack and short-cover selections move to the new loop; saved audio is preserved.
+WASM loader: streamed compilation, generic MIME/older webview fallback and download/compile errors passed.
+Microphone lifecycle passed: explicit access, device switching, gain/mode reuse, disconnect, cancellation and denied permission.
+Neuropolis WASM: 257 tracks, independent clocks, ID adoption, sparse edits and worklet buffers passed
+Parameter transport passed: sparse writes, coalesced dragging, structural ordering, save flush and recall/retry races.
+Sequencer transport passed: stage drags coalesce, structural edits preserve commands, retries keep the latest value.
+Preset files passed: portable gzip format, Unicode names, Source FX and both racks, legacy import and damaged-file rejection.
+Realtime checks passed: telemetry failure/resync, transferable pools, repeated takes, memory.grow, incremental Source FX and parallel file-load isolation.
+Resynth WASM 44100: 4 layers, median 675.8 us (23.3% block budget), p99 902.4 us
+Resynth WASM 48000: 4 layers, median 667.2 us (25.0% block budget), p99 960.5 us
+Resynth WASM 96000: 4 layers, median 343.7 us (25.8% block budget), p99 646.0 us
+Resynth checks passed: all 8 types, all analog modes, all 5 OSC4 Wavefolders in every slot, Ring/Sync, separate Source/Grains/oscillator taps, 16 envelopes, host parameters and deterministic quanta.
+Sequencer editor: snapshot/reorder-safe pitch, 96 step knobs, integer Pulses/Ratchet, scalar OSC routing and ±24 st offsets passed.
+Startup scene: glasses5, exact source PCM, full routing, quiet first open and factory recall passed.
+Telemetry 8000: full/delta state, edits, timbre switch/removal and resync match; 12.25 -> 9.6875 MiB
+Telemetry 44100: full/delta state, edits, timbre switch/removal and resync match; 15.8125 -> 9.6875 MiB
+Telemetry 48000: full/delta state, edits, timbre switch/removal and resync match; 15.8125 -> 9.6875 MiB
+Telemetry 96000: full/delta state, edits, timbre switch/removal and resync match; 23.1875 -> 9.6875 MiB
+Timbres: 128-step drum playback, independent controls, stable IDs, cross-part snapshot acknowledgements, whole-scene recall and granular routing passed.

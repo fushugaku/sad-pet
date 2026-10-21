@@ -57,13 +57,28 @@ pub extern "C" fn sad_source_begin() -> u32 {
                     {
                         return Err("Source cache length changed".into());
                     }
-                    let old = reusable
+                    let fits = reusable
                         .as_mut()
                         .and_then(Arc::get_mut)
-                        .ok_or("No source buffer available")?;
-                    old.sample
-                        .reset_prepared(&header.lengths)
-                        .map_err(str::to_owned)?;
+                        .is_some_and(|old| old.sample.reset_prepared(&header.lengths).is_ok());
+                    if !fits {
+                        // Reserve only the requested selection when Source FX is
+                        // actually used. PCM is initialized by bounded uploads;
+                        // no FIR or whole-buffer zero fill runs on this thread.
+                        reusable = Some(Arc::new(ProcessedSource {
+                            original: h.engine.sample.clone(),
+                            sample: SampleBuffer::blank_prepared(
+                                h.engine.sample.name.clone(),
+                                header.sample_rate,
+                                &header.lengths,
+                            )?,
+                            range: range.clone(),
+                            slot: Default::default(),
+                            bpm: 120.0,
+                            root: 60.0,
+                        }));
+                    }
+                    let old = Arc::get_mut(reusable.as_mut().unwrap()).unwrap();
                     old.original = h.engine.sample.clone();
                     old.range = range;
                     old.slot = begin.recipe.slot.ok_or("Missing source effect")?;
@@ -157,33 +172,11 @@ pub extern "C" fn sad_source_push(count: usize) -> u32 {
 }
 
 impl Host {
-    pub(super) fn reserve_source_buffers(&mut self) {
+    pub(super) fn reset_source_buffers(&mut self) {
         self.engine.clear_processed_sources();
         self.source_stage = None;
         self.retired_source = None;
         self.source_pool.clear();
-        let lengths: Vec<_> = self
-            .engine
-            .sample
-            .prepared_levels()
-            .iter()
-            .map(Vec::len)
-            .collect();
-        for _ in 0..3 {
-            self.source_pool.push(Arc::new(ProcessedSource {
-                original: self.engine.sample.clone(),
-                sample: SampleBuffer::blank_prepared(
-                    self.engine.sample.name.clone(),
-                    self.engine.sample.sample_rate,
-                    &lengths,
-                )
-                .expect("valid source capacity"),
-                range: 0..self.engine.sample.len(),
-                slot: Default::default(),
-                bpm: 120.0,
-                root: 60.0,
-            }));
-        }
     }
 }
 

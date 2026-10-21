@@ -1,0 +1,4 @@
+Telemetry 8000: full/delta state, edits, timbre switch/removal and resync match; 12.3125 -> 9.6875 MiB
+Telemetry 44100: full/delta state, edits, timbre switch/removal and resync match; 15.9375 -> 9.6875 MiB
+Telemetry 48000: full/delta state, edits, timbre switch/removal and resync match; 16 -> 9.6875 MiB
+Telemetry 96000: full/delta state, edits, timbre switch/removal and resync match; 23.375 -> 9.6875 MiB

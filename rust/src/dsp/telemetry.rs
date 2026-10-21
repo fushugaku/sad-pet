@@ -235,7 +235,7 @@ impl Engine {
             view.note_count += 1;
         }
         view.grain_count = 0;
-        for grain in self.grains.iter().filter(|g| g.active) {
+        for grain in self.live_grain_list() {
             view.grains[view.grain_count] = super::GrainView {
                 position: (grain.position.rem_euclid(self.source_sample().len() as f64)
                     / self.source_sample().len() as f64) as f32,

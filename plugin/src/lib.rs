@@ -173,6 +173,19 @@ struct SavedState {
 }
 
 impl Controller {
+    /// A new DAW instance starts with the factory scene; newly added timbres
+    /// still use the empty constructor below. Project restoration replaces it.
+    fn new_plugin(effect: bool) -> Self {
+        let mut control = Self::new(effect);
+        control.preset = sad_pet::startup::preset();
+        control.preset.sanitize();
+        control.sample = sad_pet::startup::sample();
+        control.region = sad_pet::startup::REGION;
+        control.fades = sad_pet::startup::FADES;
+        control.selection.id = format!("factory:{}", sad_pet::startup::INDEX);
+        control
+    }
+
     fn new(effect: bool) -> Self {
         let (commands, _) = RingBuffer::new(QUEUE);
         let (_, retired) = RingBuffer::new(QUEUE);
@@ -369,6 +382,11 @@ impl Controller {
     fn set_values(&mut self, values: &[f32]) {
         for (spec, &value) in parameters::specs().iter().zip(values) {
             let previous = spec.get(&self.preset);
+            // Hosts normalize to float32 and back; retain the saved value when
+            // the difference is only that round trip's precision.
+            if (value - previous).abs() <= 2.0 * f32::EPSILON * (spec.max - spec.min) {
+                continue;
+            }
             spec.set(&mut self.preset, value);
             if previous != spec.get(&self.preset) {
                 self.selection.dirty = true;
@@ -420,6 +438,7 @@ impl Controller {
             "peak":view.peak,"gain_reduction":reduction,"cpu_percent":0.0,"underruns":0,
             "source_fx":{"pending":view.source_fx_pending,"error":if view.source_fx_error {Some("Could not prepare Source FX")}else{None}},
         });
+        state["startup_preset_index"] = json!(sad_pet::startup::INDEX);
         state["resynth"] =
             json!({"bands":view.resynth_bands,"frequencies":view.resynth_frequencies});
         state["sequencer"] = json!(view.sequencer);
@@ -565,7 +584,11 @@ impl Controller {
         let result = match (path, post) {
             ("/api/state", _) => Ok(self.state()),
             ("/api/preset", false) => Ok(json!(self.preset)),
-            ("/api/presets", false) => Ok(json!((0..5).map(Preset::builtin).collect::<Vec<_>>())),
+            ("/api/presets", false) => Ok(json!(
+                (0..=sad_pet::startup::INDEX)
+                    .map(Preset::builtin)
+                    .collect::<Vec<_>>()
+            )),
             ("/api/color-defaults", false) => Ok(
                 json!({"max_slots":sad_pet::color::MAX_COLOR_SLOTS,"slot":sad_pet::color::ColorSlot::default(),"delay_tables":sad_pet::radias_delay::display_tables()}),
             ),
@@ -1024,7 +1047,7 @@ pub extern "C" fn sad_parameters() -> Bytes {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn sad_control_new(effect: bool) -> *mut Controller {
-    Box::into_raw(Box::new(Controller::new(effect)))
+    Box::into_raw(Box::new(Controller::new_plugin(effect)))
 }
 
 // The wrapper serializes Controller calls and calls prepare/free only while audio is stopped.

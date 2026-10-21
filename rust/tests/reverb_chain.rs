@@ -49,6 +49,55 @@ fn difference(a: &[Stereo], b: &[Stereo]) -> f32 {
 }
 
 #[test]
+fn prepared_edits_keep_effect_histories_at_the_engine_sample_rate() {
+    for rate in [8000, 44100, 48000, 96000] {
+        let p = Preset {
+            color_chain: vec![
+                reverb(1, ReverbType::PlateL),
+                ColorSlot {
+                    id: 2,
+                    kind: Type::LcrDelay,
+                    mix: 0.4,
+                    ..Default::default()
+                },
+                ColorSlot {
+                    id: 3,
+                    kind: Type::ModDelay,
+                    mix: 0.4,
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let sample = Arc::new(SampleBuffer::new("input".into(), rate, vec![[0.; 2]; 128]).unwrap());
+        let mut edited = Engine::new(rate, sample.clone(), p.clone());
+        let mut reference = Engine::new(rate, sample, p);
+        for e in [&mut edited, &mut reference] {
+            e.set_live_input(true, true);
+            e.set_playing(true);
+        }
+        for i in 0..4096 {
+            let frame = input(i, rate);
+            assert_eq!(
+                edited.process_input_frame(frame).map(f32::to_bits),
+                reference.process_input_frame(frame).map(f32::to_bits)
+            );
+        }
+        let mut next = edited.preset.prepared_clone();
+        next.name = "Renamed".into();
+        edited.exchange_preset(&mut next);
+        for i in 4096..16384 {
+            let frame = input(i, rate);
+            assert_eq!(
+                edited.process_input_frame(frame).map(f32::to_bits),
+                reference.process_input_frame(frame).map(f32::to_bits),
+                "FX history changed at {rate} Hz, frame {i}"
+            );
+        }
+    }
+}
+
+#[test]
 fn migration_keeps_eight_color_effects_then_reverb_settings_and_existing_routes() {
     let mut old = Preset {
         color_chain: (1..=8)

@@ -75,9 +75,7 @@ fn every_note_and_pitch_traverses_the_whole_selection_in_one_bar() {
             let error = (position - expected + 0.5).rem_euclid(1.0) - 0.5;
             assert!(error.abs() < 1e-9);
             assert!(
-                e.grains
-                    .iter()
-                    .filter(|g| g.active)
+                e.live_grain_list()
                     .all(|g| e.file_range.contains(&(g.position as usize)))
             );
         }
@@ -127,11 +125,7 @@ fn root_pitch_and_bend_change_grain_pitch_without_retiming_the_loop() {
     );
     let voice = note(&mut e, 72);
     advance(&mut e, 1000);
-    assert!(
-        e.grains
-            .iter()
-            .any(|g| g.active && (g.rate - 1.5).abs() < 1e-6)
-    );
+    assert!(e.live_grain_list().any(|g| (g.rate - 1.5).abs() < 1e-6));
     e.apply_parameters(&crate::parameters::parse(&serde_json::json!({"pitch":2.0/3.0})).unwrap());
     e.midi(Message::PitchBend {
         channel: 0,
@@ -141,9 +135,8 @@ fn root_pitch_and_bend_change_grain_pitch_without_retiming_the_loop() {
     phase(&e, voice, 0.25);
     let expected = 1.5 * 2.0_f64.powf(13.0 / 12.0);
     assert!(
-        e.grains
-            .iter()
-            .any(|g| g.active && (g.rate - expected).abs() < 1e-4)
+        e.live_grain_list()
+            .any(|g| (g.rate - expected).abs() < 1e-4)
     );
 }
 

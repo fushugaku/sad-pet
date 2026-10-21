@@ -4,6 +4,10 @@ use crate::{
     midi::Message,
     preset::Preset,
 };
+mod priority;
+mod telemetry;
+#[cfg(test)]
+mod telemetry_tests;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -26,7 +30,11 @@ pub struct Transport {
 }
 
 pub enum Command {
-    Preset(Box<Preset>, SyncSender<()>),
+    Preset {
+        audio: Box<Preset>,
+        view: Box<Preset>,
+        reply: SyncSender<()>,
+    },
     Parameters(Vec<crate::parameters::Change>, SyncSender<()>),
     Sequence(Vec<crate::sequence::Edit>, SyncSender<()>),
     SequenceView(usize),
@@ -38,6 +46,29 @@ pub enum Command {
     StepEntry(Option<usize>, bool, bool),
     Recording(bool, SyncSender<Result<crate::recording::View, String>>),
     Shutdown,
+}
+impl Command {
+    /// Both owners' copies are prepared by the caller, outside the DSP thread.
+    pub fn preset(preset: Preset, reply: SyncSender<()>) -> Self {
+        Self::Preset {
+            view: Box::new(preset.clone()),
+            audio: Box::new(preset),
+            reply,
+        }
+    }
+    fn needs_publication(&self) -> bool {
+        matches!(
+            self,
+            Self::Preset { .. }
+                | Self::Sample(..)
+                | Self::Parameters(..)
+                | Self::Sequence(..)
+                | Self::Region(..)
+                | Self::Fades(..)
+                | Self::Recording(..)
+                | Self::Midi(Message::Program { .. })
+        )
+    }
 }
 
 #[derive(Clone, Serialize)]
@@ -96,6 +127,7 @@ pub struct Runtime {
     pub state: Arc<Mutex<State>>,
     running: Arc<AtomicBool>,
     worker: Option<thread::JoinHandle<()>>,
+    publisher: Option<thread::JoinHandle<()>>,
     stream: Option<cpal::Stream>,
 }
 
@@ -144,7 +176,8 @@ where
 }
 
 impl Runtime {
-    pub fn new(sample: Arc<SampleBuffer>, preset: Preset, audio: bool) -> Self {
+    pub fn new(sample: Arc<SampleBuffer>, mut preset: Preset, audio: bool) -> Self {
+        preset.sanitize();
         let (mut producer, consumer) = rtrb::RingBuffer::new(2048);
         let underruns = Arc::new(AtomicU64::new(0));
         let failed = Arc::new(AtomicBool::new(false));
@@ -253,116 +286,163 @@ impl Runtime {
             sample: sample.clone(),
         }));
         let running = Arc::new(AtomicBool::new(true));
-        let (commands, receiver) = mpsc::sync_channel(256);
+        let (commands, receiver) = mpsc::sync_channel::<Command>(256);
         let worker_running = running.clone();
-        let worker_state = state.clone();
-        let worker=thread::Builder::new().name("evil-dsp".into()).spawn(move || {
-            let mut engine=Engine::new(sr,sample,preset);
-            let mut source_renderer=crate::dsp::source_fx_worker::Renderer::new(&engine);
-            let mut recorder=crate::recording::Recorder::new(sr);
-            let mut frames=[[0.0;2];128];
-            let mut last_publish=Instant::now(); let mut cpu=0.0;
-            let mut deadline=Instant::now();
-            while worker_running.load(Ordering::Relaxed) {
-                for _ in 0..64 {
-                    let Ok(command)=receiver.try_recv() else {break;};
-                    match command {
-                        Command::Preset(mut preset,reply)=> {
-                            engine.exchange_preset(&mut preset);
-                            if let Ok(mut state)=worker_state.lock() {state.preset=engine.preset.clone();}
-                            let _=reply.try_send(());
-                        },
-                        Command::Parameters(changes,reply)=> {
-                            engine.apply_parameters(&changes);
-                            if let Ok(mut state)=worker_state.lock() {crate::parameters::apply(&mut state.preset,&changes);}
-                            let _=reply.try_send(());
-                        },
-                        Command::Sequence(edits,reply)=> {
-                            engine.apply_sequence_edits(&edits);
-                            if let Ok(mut state)=worker_state.lock() {state.preset.sequencer.edit(&edits);}
-                            let _=reply.try_send(());
-                        },
-                        Command::SequenceView(offset)=>engine.set_sequence_view(offset),
-                        Command::Sample(sample)=>engine.set_sample(sample),
-                        Command::Region(region,reply)=> {
-                            let result=engine.set_region(region).map(|_|engine.region);
-                            if let Ok(mut state)=worker_state.lock() {state.region=engine.region;}
-                            let _=reply.try_send(result);
-                        },
-                        Command::Fades(fades,reply)=> {
-                            let result=engine.set_fades(fades).map(|_|engine.fades);
-                            if let Ok(mut state)=worker_state.lock() {state.fades=engine.fades;}
-                            let _=reply.try_send(result);
-                        },
-                        Command::Transport(t)=> {
-                            if let Some(v)=t.midi_gate {engine.set_midi_gate(v);}
-                            if let Some(v)=t.playing {engine.set_playing(v);}
-                            if let Some(v)=t.frozen {engine.set_frozen(v);}
-                            if let Some(v)=t.bypass {engine.bypass=v;}
-                            if t.clear_hold==Some(true) {engine.clear_hold();}
+        let (mut publisher, publication_thread) = telemetry::Publisher::new(state.clone());
+        let worker = thread::Builder::new()
+            .name("evil-dsp".into())
+            .spawn(move || {
+                let mut engine = Engine::new(sr, sample, preset);
+                let mut source_renderer = crate::dsp::source_fx_worker::Renderer::new(&engine);
+                let mut recorder = crate::recording::Recorder::new(sr);
+                let mut frames = [[0.0; 2]; 128];
+                if worker_device.load(Ordering::Relaxed)
+                    && let Err(error) = priority::promote(frames.len(), sr)
+                {
+                    eprintln!("Audio: {error}");
+                }
+                let mut last_publish = Instant::now();
+                let mut cpu = 0.0;
+                let mut deadline = Instant::now();
+                let mut deferred = None;
+                while worker_running.load(Ordering::Relaxed) {
+                    for _ in 0..64 {
+                        let Some(command) = deferred.take().or_else(|| receiver.try_recv().ok())
+                        else {
+                            break;
+                        };
+                        if command.needs_publication() && publisher.full() {
+                            deferred = Some(command);
+                            break;
                         }
-                        Command::Midi(message)=>engine.midi(message),
-                        Command::StepEntry(step,reset,clear)=> {
-                            engine.set_step_entry(step,reset);
-                            if clear {engine.clear_step_notes();}
-                        },
-                        Command::Recording(active,reply)=> {
-                            let result = if active {recorder.start()} else {recorder.stop().map(|_|())};
-                            if let Ok(mut state)=worker_state.lock() {
-                                state.recording=recorder.view();
-                                state.recording_take=recorder.take();
+                        match command {
+                            Command::Preset {
+                                audio: mut preset,
+                                view,
+                                reply,
+                            } => {
+                                engine.exchange_preset(&mut preset);
+                                publisher.applied(telemetry::Applied::Preset {
+                                    view,
+                                    retired: preset,
+                                    reply,
+                                });
                             }
-                            let _=reply.try_send(result.map(|_|recorder.view()));
-                        },
-                        Command::Shutdown=>{worker_running.store(false,Ordering::Relaxed);break;}
-                    }
-                }
-                let device_active=worker_device.load(Ordering::Relaxed);
-                if device_active && producer.slots()<frames.len() {thread::sleep(Duration::from_micros(700));continue;}
-                let start=Instant::now();
-                source_renderer.update(&mut engine);
-                engine.process(&mut frames);
-                recorder.capture(&frames);
-                let load=start.elapsed().as_secs_f32()/(frames.len() as f32/sr as f32)*100.0;
-                cpu+=(load-cpu)*0.05;
-                if device_active {for &frame in &frames {let _=producer.push(frame);}}
-                else {
-                    deadline+=Duration::from_secs_f64(frames.len() as f64/sr as f64);
-                    if let Some(wait)=deadline.checked_duration_since(Instant::now()) {thread::sleep(wait);} else {deadline=Instant::now();}
-                }
-                if last_publish.elapsed()>=Duration::from_millis(40) {
-                    if let Ok(mut state)=worker_state.lock() {
-                        state.playing=engine.playing;state.frozen=engine.frozen;state.bypass=engine.bypass;state.midi_gate=engine.midi_gate;
-                        state.preset=engine.preset.clone();state.center=(engine.center()/engine.sample.len() as f64) as f32;
-                        state.region=engine.region;
-                        state.fades=engine.fades;
-                        state.grains=engine.grain_views();state.active_grains=engine.active_grains();state.notes=engine.held_notes();
-                        state.performance=engine.performance_view();
-                        state.sequencer=engine.sequence_view();
-                        state.step_entry=engine.step_entry;
-                        state.step_edits=engine.step_edits;
-                        state.recording=recorder.view();state.recording_take=recorder.take();
-                        state.lfos=engine.lfo_values;state.envs=engine.env_values;state.peak=engine.peak;state.cpu_percent=cpu;
-                        state.matrix_values=engine.matrix_values;
-                        state.knobs=engine.knob_states();
-                        state.gain_reduction=engine.gain_reduction();
-                        state.resynth=engine.resynth_meter();
-                        state.source_fx=SourceFxStatus {pending:engine.source_effects_pending(),error:if engine.source_fx_error{Some("Could not prepare Source FX")}else{None}};
-                        state.underruns=underruns.load(Ordering::Relaxed);
-                        if !Arc::ptr_eq(&state.sample,&engine.sample) {
-                            state.sample_name=engine.sample.name.clone();state.sample_id=engine.sample.library_id.clone();state.sample_seconds=engine.sample.duration();state.sample_frames=engine.sample.len();state.waveform=engine.sample.waveform.clone();state.sample=engine.sample.clone();
+                            Command::Parameters(changes, reply) => {
+                                engine.apply_parameters(&changes);
+                                publisher.applied(telemetry::Applied::Parameters(changes, reply));
+                            }
+                            Command::Sequence(edits, reply) => {
+                                engine.apply_sequence_edits(&edits);
+                                publisher.applied(telemetry::Applied::Sequence(edits, reply));
+                            }
+                            Command::SequenceView(offset) => engine.set_sequence_view(offset),
+                            Command::Sample(mut sample) => {
+                                let mut live = None;
+                                engine.exchange_source(&mut sample, &mut live);
+                                let history = live.map(|input| input.sample);
+                                publisher.applied(telemetry::Applied::Retired(sample, history));
+                            }
+                            Command::Region(region, reply) => {
+                                let result = engine.set_region(region).map(|_| engine.region);
+                                publisher.applied(telemetry::Applied::Region(result, reply));
+                            }
+                            Command::Fades(fades, reply) => {
+                                let result = engine.set_fades(fades).map(|_| engine.fades);
+                                publisher.applied(telemetry::Applied::Fades(result, reply));
+                            }
+                            Command::Transport(t) => {
+                                if let Some(v) = t.midi_gate {
+                                    engine.set_midi_gate(v);
+                                }
+                                if let Some(v) = t.playing {
+                                    engine.set_playing(v);
+                                }
+                                if let Some(v) = t.frozen {
+                                    engine.set_frozen(v);
+                                }
+                                if let Some(v) = t.bypass {
+                                    engine.bypass = v;
+                                }
+                                if t.clear_hold == Some(true) {
+                                    engine.clear_hold();
+                                }
+                            }
+                            Command::Midi(message) => {
+                                let program_enabled = engine.preset.drums.is_none();
+                                engine.midi(message);
+                                if program_enabled && let Message::Program { value, .. } = message {
+                                    publisher.applied(telemetry::Applied::Program(value));
+                                }
+                            }
+                            Command::StepEntry(step, reset, clear) => {
+                                engine.set_step_entry(step, reset);
+                                if clear {
+                                    engine.clear_step_notes();
+                                }
+                            }
+                            Command::Recording(active, reply) => {
+                                let result = if active {
+                                    recorder.start()
+                                } else {
+                                    recorder.stop().map(|_| ())
+                                };
+                                publisher.applied(telemetry::Applied::Recording {
+                                    feedback: recorder.feedback(),
+                                    result,
+                                    reply,
+                                });
+                            }
+                            Command::Shutdown => {
+                                worker_running.store(false, Ordering::Relaxed);
+                                break;
+                            }
                         }
-                        if failed.load(Ordering::Relaxed) {state.audio_error=Some("Audio device disconnected. Restart the application after reconnecting it.".into());}
                     }
-                    engine.peak=[0.0;2];last_publish=Instant::now();
+                    let device_active = worker_device.load(Ordering::Relaxed);
+                    if device_active && producer.slots() < frames.len() {
+                        thread::sleep(Duration::from_micros(700));
+                        continue;
+                    }
+                    let start = Instant::now();
+                    source_renderer.update(&mut engine);
+                    engine.process(&mut frames);
+                    recorder.capture(&frames);
+                    let load =
+                        start.elapsed().as_secs_f32() / (frames.len() as f32 / sr as f32) * 100.0;
+                    cpu += (load - cpu) * 0.05;
+                    if device_active {
+                        for &frame in &frames {
+                            let _ = producer.push(frame);
+                        }
+                    } else {
+                        deadline += Duration::from_secs_f64(frames.len() as f64 / sr as f64);
+                        if let Some(wait) = deadline.checked_duration_since(Instant::now()) {
+                            thread::sleep(wait);
+                        } else {
+                            deadline = Instant::now();
+                        }
+                    }
+                    if last_publish.elapsed() >= Duration::from_millis(40)
+                        && publisher.publish(
+                            &mut engine,
+                            &recorder,
+                            cpu,
+                            underruns.load(Ordering::Relaxed),
+                            failed.load(Ordering::Relaxed),
+                        )
+                    {
+                        last_publish = Instant::now();
+                    }
                 }
-            }
-        }).expect("start DSP worker");
+            })
+            .expect("start DSP worker");
         let runtime = Self {
             commands,
             state,
             running,
             worker: Some(worker),
+            publisher: Some(publication_thread),
             stream,
         };
         if let Some(stream) = &runtime.stream {
@@ -385,6 +465,9 @@ impl Drop for Runtime {
         self.stream.take();
         if let Some(worker) = self.worker.take() {
             let _ = worker.join();
+        }
+        if let Some(publisher) = self.publisher.take() {
+            let _ = publisher.join();
         }
     }
 }

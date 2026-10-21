@@ -3,10 +3,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { runInNewContext } from "node:vm";
 
-const window = {};
+const window = { fetch: async () => ({ ok: true, json: async () => [] }) };
 runInNewContext(
   await readFile(new URL("../rust/web/library.js", import.meta.url), "utf8"),
-  { window },
+  {
+    window,
+    document: { getElementById: () => ({}) },
+  },
 );
 const library = Object.create(window.EvilFileLibrary.prototype);
 const cover = { id: "harvest-dawn-loop", name: "Harvest Dawn · harp loop" };
@@ -36,3 +39,38 @@ assert.equal(await library.previousAudio(null), undefined);
 library.catalog = [];
 assert.equal(await library.previousAudio({ id: original.id }), original);
 console.log("Library upgrade passed: soundtrack and short-cover selections move to the new loop; saved audio is preserved.");
+
+// The scene's fades belong to its sound, rather than the sample library's last edit.
+{
+  const sceneLibrary = Object.create(window.EvilFileLibrary.prototype);
+  let restoredFades = 0;
+  sceneLibrary.actions = { presets: true, loadFades: async () => restoredFades++ };
+  sceneLibrary.store = { open: async () => {}, setting: async () => null };
+  sceneLibrary.refresh = async () => {};
+  sceneLibrary.rememberNative = async () => {};
+  sceneLibrary.seed = async () => {};
+  sceneLibrary.render = () => {};
+  const native = {
+    instance_id: "fresh-browser",
+    fades: { fade_in: 1, fade_out: 1 },
+    timbres: { timbres: [{ id: 0 }] },
+  };
+  await sceneLibrary.initialize(native, []);
+  assert.equal(restoredFades, 0, "Library initialization replaced the scene fades");
+  await sceneLibrary.initialize({ ...native, timbres: undefined }, []);
+  assert.equal(restoredFades, 1, "Legacy desktop sample fades no longer restore");
+
+  const last = { id: "audio:previous", instance: "previous-session" };
+  const audio = { id: last.id, kind: "audio" };
+  sceneLibrary.store.setting = async () => last;
+  sceneLibrary.previousAudio = async () => audio;
+  let activated;
+  sceneLibrary.activate = async (record) => { activated = record; };
+  await sceneLibrary.initialize({
+    ...native,
+    sample_id: "factory:dusty-keys:v1",
+    startup_preset_index: 5,
+    preset: { name: "glasses5" },
+  }, Array.from({ length: 6 }, (_, i) => ({ name: i === 5 ? "glasses5" : "Init" })));
+  assert.equal(activated, audio, "The new initial scene prevented the remembered audio from restoring");
+}

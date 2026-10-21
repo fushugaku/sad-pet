@@ -2,6 +2,17 @@
 //! callbacks, delay network, interpolation, filters and dynamics run here.
 #[path = "audio_generated/mod.rs"]
 mod generated;
+#[allow(
+    unused_variables,
+    unused_assignments,
+    unreachable_code,
+    unused_parens,
+    unused_mut,
+    unused_comparisons
+)]
+mod fused {
+    include!(concat!(env!("OUT_DIR"), "/fused.rs"));
+}
 mod machine;
 pub mod parameters;
 mod userops;
@@ -127,5 +138,56 @@ impl Nightverb {
     }
     pub fn state_float(&self, address: u32) -> f32 {
         self.cpu.float(address)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fused_delay_lines_match_every_firmware_state_byte() {
+        let mut fast = Nightverb::new().unwrap();
+        let mut reference = Nightverb::new().unwrap();
+        reference.cpu.reference_dispatch = true;
+        let mut random = 0x12345678u32;
+        for scene in 0..8 {
+            for (id, parameter) in parameters::PARAMETERS.iter().enumerate() {
+                let value = match id {
+                    0 => (scene % 2) as f32,
+                    13 => (scene % 4) as f32 / 3.,
+                    20 => 1.,
+                    21 => f32::from(scene == 6),
+                    _ if scene == 0 => parameter.default_normalized,
+                    _ => ((scene * 37 + id * 13) % 101) as f32 / 100.,
+                };
+                fast.set_parameter(id, value).unwrap();
+                reference.set_parameter(id, value).unwrap();
+            }
+            for block in 0..160 {
+                let frames = [1, 24, 128, 512][block % 4];
+                let mut input = vec![0i32; frames * 2];
+                if block < 80 {
+                    for value in &mut input {
+                        random = random.wrapping_mul(1664525).wrapping_add(1013904223);
+                        *value = (random as i32) / 4;
+                    }
+                }
+                let mut actual = vec![0; input.len()];
+                let mut expected = vec![0; input.len()];
+                fast.process_q31(&input, &mut actual).unwrap();
+                reference.process_q31(&input, &mut expected).unwrap();
+                assert_eq!(actual, expected, "scene {scene}, block {block}");
+                if block % 40 == 0 {
+                    fast.cpu.assert_same_state(&reference.cpu);
+                }
+            }
+            fast.cpu.assert_same_state(&reference.cpu);
+            if scene == 3 {
+                fast.clear().unwrap();
+                reference.clear().unwrap();
+                fast.cpu.assert_same_state(&reference.cpu);
+            }
+        }
     }
 }

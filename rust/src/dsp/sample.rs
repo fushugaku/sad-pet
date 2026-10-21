@@ -55,7 +55,7 @@ impl Fades {
             return 1.0;
         }
         let length = range.len().saturating_sub(1) as f64;
-        let p = (position - range.start as f64).rem_euclid(range.len() as f64);
+        let p = wrap_position(position - range.start as f64, range.len() as f64);
         let ramp = |distance: f64, seconds: f64| {
             if seconds == 0.0 {
                 return 1.0;
@@ -175,6 +175,65 @@ impl LiveInput {
         (0..self.captured)
             .map(|i| self.sample.frames()[(start + i) % self.sample.len()])
             .collect()
+    }
+}
+
+/// Build a live history between render quanta. Only initialized, complete input
+/// buffers can be committed to an engine; no synthesis state is advanced here.
+pub struct LiveInputPreparation {
+    sample_rate: u32,
+    effects_only: bool,
+    levels: Vec<Vec<Stereo>>,
+    level: usize,
+    length: usize,
+}
+impl LiveInputPreparation {
+    pub fn new(sample_rate: u32, effects_only: bool) -> Self {
+        assert!(
+            (8_000..=384_000).contains(&sample_rate),
+            "valid input sample rate"
+        );
+        Self {
+            sample_rate,
+            effects_only,
+            levels: Vec::with_capacity(7),
+            level: 0,
+            length: sample_rate as usize * 8,
+        }
+    }
+    /// Reserve at most one level or initialize at most 256 KiB in one step.
+    pub fn step(&mut self) -> bool {
+        if self.level == 7 {
+            return true;
+        }
+        if self.level == self.levels.len() {
+            self.levels.push(Vec::with_capacity(self.length));
+            return false;
+        }
+        let level = &mut self.levels[self.level];
+        level.resize((level.len() + 32_768).min(self.length), [0.0; 2]);
+        if level.len() == self.length {
+            self.level += 1;
+            self.length = self.length.div_ceil(2);
+        }
+        self.level == 7
+    }
+    pub fn finish(self) -> Option<LiveInput> {
+        (self.level == 7).then(|| LiveInput {
+            sample: SampleBuffer {
+                name: "Microphone".into(),
+                library_id: None,
+                sample_rate: self.sample_rate,
+                levels: self.levels,
+                active_levels: 7,
+                waveform: vec![[0.0; 2]; (self.sample_rate as usize * 8).min(640)],
+            },
+            effects_only: self.effects_only,
+            peak: [0.0; 2],
+            write: 0,
+            captured: 0,
+            lowpass: [[[0.0; 2]; 2]; 6],
+        })
     }
 }
 
@@ -412,13 +471,14 @@ impl SampleBuffer {
         }
     }
 
+    #[inline(always)]
     fn read_level(&self, position: f64, level: usize) -> Stereo {
         if !position.is_finite() {
             return [0.0; 2];
         }
         let data = &self.levels[level];
         // Keep indices in f64: f32 loses sub-sample precision on long recordings.
-        let p = position.rem_euclid(self.len() as f64) / (1_usize << level) as f64;
+        let p = wrap_position(position, self.len() as f64) / (1_usize << level) as f64;
         let base = p.floor() as i64;
         let fraction = (p - p.floor()) as f32;
         let [a, b, c, d] = interpolation_frames(data, base, &(0..data.len()));
@@ -456,7 +516,8 @@ impl SampleBuffer {
         if !position.is_finite() {
             return [0.0; 2];
         }
-        let p = range.start as f64 + (position - range.start as f64).rem_euclid(range.len() as f64);
+        let p =
+            range.start as f64 + wrap_position(position - range.start as f64, range.len() as f64);
         while level > 0 {
             let scale = (1_usize << level) as f64;
             let base = (p / scale).floor();
@@ -531,8 +592,7 @@ impl SampleBuffer {
     }
 }
 
-#[cfg_attr(target_arch = "wasm32", inline(always))]
-#[cfg_attr(not(target_arch = "wasm32"), inline)]
+#[inline(always)]
 fn interpolation_frames(data: &[Stereo], base: i64, range: &std::ops::Range<usize>) -> [Stereo; 4] {
     // Most grain reads are inside the region. Boundary reads retain the exact
     // wrap used for tiny selections, negative positions and reverse grains.
@@ -545,5 +605,95 @@ fn interpolation_frames(data: &[Stereo], base: i64, range: &std::ops::Range<usiz
                 + (base + i as i64 - 1 - range.start as i64).rem_euclid(range.len() as i64)
                     as usize]
         })
+    }
+}
+
+/// `rem_euclid` without its `fmod` call when the position is less than one
+/// length outside the range. Both shortcuts are the exact operations
+/// `rem_euclid` performs there: the remainder of |x| < length is x itself, and
+/// a negative one gets length added once. -length itself stays on the slow
+/// path, where the result is -0.0.
+#[inline]
+pub(crate) fn wrap_position(position: f64, length: f64) -> f64 {
+    if position >= 0.0 && position < length {
+        return position;
+    }
+    if position < 0.0 && position > -length {
+        return position + length;
+    }
+    position.rem_euclid(length)
+}
+
+#[cfg(test)]
+mod preparation_tests {
+    use super::*;
+    #[test]
+    fn bounded_input_preparation_matches_the_original_history_and_mips() {
+        for rate in [8000, 44_100, 96_000] {
+            let mut pending = LiveInputPreparation::new(rate, false);
+            loop {
+                let before: usize = pending.levels.iter().map(Vec::len).sum();
+                let ready = pending.step();
+                let after: usize = pending.levels.iter().map(Vec::len).sum();
+                assert!(after - before <= 32_768);
+                if ready {
+                    break;
+                }
+            }
+            let mut actual = pending.finish().unwrap();
+            let mut reference = LiveInput::new(rate, false);
+            assert_eq!(actual.sample.levels, reference.sample.levels);
+            assert_eq!(actual.sample.waveform, reference.sample.waveform);
+            for i in 0..1024 {
+                let frame = [(i as f32 * 0.13).sin(), (i as f32 * 0.17).cos()];
+                actual.push(frame, i % 41 == 0);
+                reference.push(frame, i % 41 == 0);
+            }
+            assert_eq!(actual.capture(), reference.capture());
+            assert_eq!(actual.sample.levels, reference.sample.levels);
+            assert_eq!(actual.sample.waveform, reference.sample.waveform);
+            assert_eq!(actual.peak, reference.peak);
+            assert_eq!(actual.lowpass, reference.lowpass);
+        }
+    }
+}
+
+#[cfg(test)]
+mod wrap_tests {
+    #[test]
+    fn wrap_position_is_rem_euclid_bit_for_bit() {
+        let mut seed = 0x2545_f491_4f6c_dd1d_u64;
+        for length in [1.0, 4.0, 3.0e-3, 44_100.0, 352_800.0, 1e9 + 0.5] {
+            let below = |x: f64| f64::from_bits(x.to_bits() - 1);
+            let mut positions = vec![
+                0.0,
+                -0.0,
+                length,
+                -length,
+                below(length),
+                -below(length),
+                length * 2.0,
+                -length * 2.0,
+                -1e-300,
+                1e-300,
+                f64::NAN,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+            ];
+            for _ in 0..10_000 {
+                seed ^= seed << 13;
+                seed ^= seed >> 7;
+                seed ^= seed << 17;
+                let unit = (seed >> 11) as f64 / (1_u64 << 53) as f64;
+                positions.push((unit * 6.0 - 3.0) * length);
+            }
+            for x in positions {
+                assert_eq!(
+                    super::wrap_position(x, length).to_bits(),
+                    x.rem_euclid(length).to_bits(),
+                    "{x} wrapped by {length}"
+                );
+            }
+        }
     }
 }

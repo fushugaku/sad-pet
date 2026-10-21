@@ -19,6 +19,8 @@ for (const rate of [44100, 48000, 96000]) {
   for (const [kind, rack, id] of [
     ["super_echo", "color_chain", 1],
     ["alpha_verb", "pre_color_chain", 2],
+    ["alpha_verb", "color_chain", 3],
+    ["super_echo", "pre_color_chain", 4],
   ]) {
     const slot = structuredClone(defaults.slot);
     slot.id = id;
@@ -30,6 +32,7 @@ for (const rate of [44100, 48000, 96000]) {
         super_echo_feedback: 0.4,
         super_echo_sync: 1,
         super_echo_note: 0,
+        super_echo_dirty: id === 4 ? 1 : 0,
       });
     p[rack].push(slot);
   }
@@ -50,6 +53,8 @@ for (const rate of [44100, 48000, 96000]) {
     fx1_super_echo_note: 0.375,
     pre_fx1_alpha_verb_size: 0.72,
     pre_fx1_alpha_verb_dynamics: 1,
+    fx2_alpha_verb_size: 0.34,
+    pre_fx2_super_echo_feedback: 0.27,
   });
   for (let i = 0; i < 8; i++)
     assert.ok(core.process(128).every(Number.isFinite));
@@ -57,6 +62,8 @@ for (const rate of [44100, 48000, 96000]) {
   const restored = core.request("/api/preset");
   assert.equal(restored.color_chain[0].kind, "super_echo");
   assert.equal(restored.pre_color_chain[0].kind, "alpha_verb");
+  assert.equal(restored.color_chain[1].kind, "alpha_verb");
+  assert.equal(restored.pre_color_chain[1].kind, "super_echo");
   assert.ok(
     Math.abs(restored.color_chain[0].settings.super_echo_feedback - 0.63) <
       1e-6,
@@ -65,6 +72,12 @@ for (const rate of [44100, 48000, 96000]) {
     Math.abs(restored.pre_color_chain[0].settings.alpha_verb_size - 0.72) <
       1e-6,
   );
+  assert.ok(
+    Math.abs(restored.color_chain[1].settings.alpha_verb_size - 0.34) < 1e-6,
+  );
+  assert.ok(
+    Math.abs(restored.pre_color_chain[1].settings.super_echo_feedback - 0.27) < 1e-6,
+  );
   const catalog = JSON.stringify(core.request("/api/sequencer/catalog"));
   assert.ok(
     catalog.includes("fx1_super_echo_feedback") &&
@@ -72,5 +85,5 @@ for (const rate of [44100, 48000, 96000]) {
   );
 }
 console.log(
-  "SuperEcho / AlphaVerb WASM: 3 sample rates, simultaneous pre/post FX, scalar modes, preset recall, Neuropolis and no audio memory growth passed.",
+  "Two SuperEcho + two AlphaVerb instances: 3 sample rates, simultaneous pre/post FX, independent controls, preset recall, Neuropolis and no audio memory growth passed.",
 );

@@ -21,6 +21,10 @@ class SadPetProcessor extends AudioWorkletProcessor {
     );
     this.port.onmessage = ({ data: message }) => {
       const { id, type, data } = message;
+      if (type === "prepare-idle") {
+        while (this.preparingTimbre) this.advanceTimbre();
+        return;
+      }
       if (type === "snapshot-now") {
         this.snapshot();
         return;
@@ -45,6 +49,15 @@ class SadPetProcessor extends AudioWorkletProcessor {
       }
       try {
         let result;
+        if (type === "scene-load" || (type === "request" && message.path === "/api/timbres/reset"))
+          this.cancelTimbre("Timbre preparation cancelled by a scene change.");
+        if (type === "add-timbre") {
+          if (this.preparingTimbre) throw new Error("A timbre is already being prepared.");
+          this.core.json("sad_timbre_prepare_begin", data);
+          this.preparingTimbre = { id };
+          if (data.idle) while (this.preparingTimbre) this.advanceTimbre();
+          return;
+        }
         if (type === "scene-pack") result = this.core.call("sad_scene_pack");
         else if (type === "scene-load")
           result = this.core.json("sad_scene_load", data);
@@ -137,6 +150,31 @@ class SadPetProcessor extends AudioWorkletProcessor {
       }
     };
     this.port.postMessage({ type: "ready" });
+  }
+  advanceTimbre() {
+    const pending = this.preparingTimbre;
+    if (!pending) return;
+    try {
+      const result = this.core.json("sad_timbre_prepare_step");
+      if (!result.done) return;
+      this.preparingTimbre = null;
+      this.stateStamp++;
+      const capacity = this.core.wasm.sad_snapshot_capacity();
+      this.snapshotPool = this.snapshotPool.map(buffer => buffer.length >= capacity ? buffer : new Uint8Array(capacity));
+      this.port.postMessage({ id: pending.id, result: result.context, stamp: this.stateStamp });
+      this.snapshot();
+    } catch (error) {
+      this.preparingTimbre = null;
+      this.core.wasm.sad_timbre_prepare_cancel();
+      this.port.postMessage({ id: pending.id, error: error.message });
+    }
+  }
+  cancelTimbre(reason) {
+    if (!this.preparingTimbre) return;
+    const { id } = this.preparingTimbre;
+    this.preparingTimbre = null;
+    this.core.wasm.sad_timbre_prepare_cancel();
+    this.port.postMessage({ id, error: reason });
   }
   snapshot() {
     const buffer = this.snapshotPool.pop();
@@ -250,11 +288,13 @@ class SadPetProcessor extends AudioWorkletProcessor {
           });
         }
       }
+      // Source FX preparation also consumes these views while the UI is hidden.
       this.telemetryFrames += count;
       if (this.telemetryFrames >= sampleRate / 20) {
         this.telemetryFrames = 0;
         this.snapshot();
       }
+      this.advanceTimbre();
     } catch (error) {
       this.port.postMessage({ type: "fatal", error: error.message });
       return false;

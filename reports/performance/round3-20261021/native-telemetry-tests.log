@@ -1,0 +1,10 @@
+   Compiling sad-pet v0.30.1 (/Users/georgy/Projects/Evil_update/rust)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.01s
+     Running unittests src/lib.rs (target/debug/deps/sad_pet-0fd8aabafe349eae)
+
+running 2 tests
+test audio::telemetry_tests::native_command_replies_follow_the_published_metadata ... ok
+test audio::telemetry_tests::a_blocked_ui_does_not_allocate_stall_or_change_dsp_samples ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 35 filtered out; finished in 0.29s
+

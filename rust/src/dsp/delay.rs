@@ -30,10 +30,18 @@ pub struct RadiasDelay {
 }
 impl RadiasDelay {
     pub fn new(sample_rate: u32) -> Self {
+        Self::create(sample_rate, true)
+    }
+    pub(crate) fn unallocated(sample_rate: u32) -> Self {
+        Self::create(sample_rate, false)
+    }
+    fn create(sample_rate: u32, allocate: bool) -> Self {
         Self {
-            buffer: Delay::new(
-                (sample_rate as f32 * radias_delay::MAX_SECONDS).ceil() as usize + 4,
-            ),
+            buffer: if allocate {
+                Delay::new((sample_rate as f32 * radias_delay::MAX_SECONDS).ceil() as usize + 4)
+            } else {
+                Delay::empty()
+            },
             sample_rate: sample_rate as f32,
             kind: SaturatorType::LcrDelay,
             settings: ColorSettings::default(),
@@ -51,6 +59,15 @@ impl RadiasDelay {
             high_state: [0.0; 2],
             low_state: [0.0; 2],
         }
+    }
+    pub(crate) fn has_storage(&self) -> bool {
+        self.buffer.has_storage()
+    }
+    pub(crate) fn take_storage(&mut self) -> Vec<Stereo> {
+        self.buffer.take_storage()
+    }
+    pub(crate) fn install_storage(&mut self, frames: Vec<Stereo>) {
+        self.buffer.install_storage(frames);
     }
     pub fn clear(&mut self) {
         self.buffer.clear();
@@ -166,7 +183,7 @@ impl RadiasDelay {
                 (mono + self.damp(c, delayed[c], 0.0) * self.feedback).clamp(-8.0, 8.0)
             });
             self.buffer.push(write);
-            self.phase = (self.phase + self.phase_step).rem_euclid(1.0);
+            self.phase = super::sample::wrap_position(self.phase + self.phase_step, 1.0);
             delayed
         }
     }

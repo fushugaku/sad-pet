@@ -11,6 +11,9 @@
   // Keep the native panel's API contract without a server or a fetch override.
   window.sadPetFetch = (...args) =>
     ready.then((engine) => engine.fetch(...args));
+  // State already lives on this thread. Avoid encoding and parsing the entire
+  // preset through a synthetic HTTP Response at every UI tick.
+  window.sadPetState = () => ready.then((engine) => engine.snapshot());
   window.sadPetAudio = {
     status: () => backend?.status || "Loading WebAssembly…",
   };

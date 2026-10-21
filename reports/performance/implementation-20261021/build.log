@@ -1,0 +1,6 @@
+    Blocking waiting for file lock on build directory
+   Compiling sad-pet-alphaverb v0.4.0 (/Users/georgy/Projects/Evil_update/vendor/alphaverb)
+   Compiling sad-pet v0.30.1 (/Users/georgy/Projects/Evil_update/rust)
+   Compiling sad-pet-wasm v0.30.1 (/Users/georgy/Projects/Evil_update/wasm)
+    Finished `release` profile [optimized] target(s) in 7m 39s
+Built /Users/georgy/Projects/Evil_update/dist/web (11,670,498 byte WASM engine)
