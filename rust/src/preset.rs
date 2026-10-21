@@ -214,6 +214,40 @@ impl Default for Lfo {
     }
 }
 
+/// Envelope generator type. `Legacy` is the original SAD PET ADSR; the others
+/// are the Rustias EG types (RADIAS controller ADSR and the Q modes).
+/// Host values index `ALL`, so the order is stable.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum EnvMode {
+    #[default]
+    Legacy,
+    Radias,
+    QAdsr,
+    QAds1ds2r,
+    QOneShot,
+    QLoopS1s2,
+    QLoopAll,
+}
+impl EnvMode {
+    pub const ALL: [Self; 7] = [
+        Self::Legacy,
+        Self::Radias,
+        Self::QAdsr,
+        Self::QAds1ds2r,
+        Self::QOneShot,
+        Self::QLoopS1s2,
+        Self::QLoopAll,
+    ];
+    /// Rustias `q_envelope::Settings::mode`: 0 RADIAS, 1..=5 the Q modes.
+    pub fn rustias_mode(self) -> Option<u8> {
+        match self {
+            Self::Legacy => None,
+            mode => Some(mode as u8 - 1),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Env {
@@ -225,6 +259,14 @@ pub struct Env {
     pub depth: f32,
     pub extra_destination: Destination,
     pub extra_depth: f32,
+    /// Presets without a type keep the original SAD PET envelope.
+    pub mode: EnvMode,
+    /// Q ADS1DS2R and loop modes: Attack level, Decay 2 time, Sustain 2 level.
+    pub attack_level: f32,
+    pub decay2: f32,
+    pub sustain2: f32,
+    /// RADIAS decay/release curve, 0..=7.
+    pub curve: u8,
 }
 impl Default for Env {
     fn default() -> Self {
@@ -237,10 +279,20 @@ impl Default for Env {
             depth: 0.0,
             extra_destination: Destination::None,
             extra_depth: 0.0,
+            mode: EnvMode::Legacy,
+            // Rustias defaults: 127, 64, 64 and curve 1.
+            attack_level: 1.0,
+            decay2: 0.5,
+            sustain2: 0.5,
+            curve: 1,
         }
     }
 }
 impl Env {
+    /// A 0..1 control as the 0..=127 value the Rustias EG types read.
+    pub fn rustias_control(value: f32) -> u8 {
+        (value.clamp(0.0, 1.0) * 127.0).round() as u8
+    }
     pub fn attack_seconds(&self) -> f32 {
         0.002 + self.attack.powi(3) * 8.0
     }
@@ -258,6 +310,10 @@ impl Env {
         finite_clamp(&mut self.release, 0.0, 1.0, fallback.release);
         finite_clamp(&mut self.depth, -1.0, 1.0, 0.0);
         finite_clamp(&mut self.extra_depth, -1.0, 1.0, 0.0);
+        finite_clamp(&mut self.attack_level, 0.0, 1.0, fallback.attack_level);
+        finite_clamp(&mut self.decay2, 0.0, 1.0, fallback.decay2);
+        finite_clamp(&mut self.sustain2, 0.0, 1.0, fallback.sustain2);
+        self.curve = self.curve.min(7);
     }
 }
 fn default_envs() -> [Env; crate::preset::MODULATORS] {

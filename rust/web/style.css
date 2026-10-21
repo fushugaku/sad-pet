@@ -1331,6 +1331,19 @@ h2 {
   font-size: 10px;
   letter-spacing: 0;
 }
+.env-type {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.env-type select {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 29px;
+  font-size: 11px;
+  padding: 0 27px 0 7px;
+  background-color: #20271f;
+}
 .env-scope {
   display: block;
   width: 100%;
@@ -3547,7 +3560,9 @@ input[type="range"] {
   height: 32px;
 }
 .lfo-card[hidden],
-.env-card[hidden] {
+.env-card[hidden],
+.env-type select[hidden],
+.env-parameter[hidden] {
   display: none;
 }
 .color-import-options label {
