@@ -67,7 +67,8 @@ fn main() {
             *incoming.entry(pc).or_default() += 1;
         }
     }
-    let mut output = String::from("use crate::machine::{Machine, signed, signed_overflow};\n");
+    let mut output =
+        String::from("use crate::machine::{FastFma, Machine, signed, signed_overflow};\n");
     // Retain the original abs instructions, including their register/flag effects.
     output.push_str(&format!(
         "#[inline(always)]\nfn abs(c: &mut Machine) -> u32 {{{}\n}}\n",
@@ -114,9 +115,45 @@ fn main() {
             "#[inline({inline})]\npub fn b_{address:x}(c: &mut Machine) -> u32 {{\n{fused}\n}}\n"
         ));
     }
+    // Direct table for the ITCM blocks (the per-sample DSP): one index per
+    // block address instead of a thousand-arm match for every executed block.
+    let mut itcm = BTreeMap::new();
+    for entry in fs::read_dir("src/audio_generated").unwrap() {
+        let name = entry.unwrap().file_name().into_string().unwrap();
+        let Some(module) = name
+            .strip_suffix(".rs")
+            .filter(|module| module.starts_with("blocks_"))
+        else {
+            continue;
+        };
+        let source = fs::read_to_string(format!("src/audio_generated/{name}")).unwrap();
+        for function in source.split("pub fn b_").skip(1) {
+            let (address, _) = function.split_once('(').unwrap();
+            let address = u32::from_str_radix(address, 16).unwrap();
+            if address < ITCM_SLOTS * 2 {
+                itcm.insert(address, module.to_owned());
+            }
+        }
+    }
+    output.push_str(&format!(
+        "pub static ITCM: [Option<fn(&mut Machine) -> u32>; {ITCM_SLOTS}] = [\n"
+    ));
+    for slot in 0..ITCM_SLOTS {
+        match itcm.get(&(slot * 2)) {
+            Some(module) => output.push_str(&format!(
+                "Some(crate::generated::{module}::b_{:x}),\n",
+                slot * 2
+            )),
+            None => output.push_str("None,\n"),
+        }
+    }
+    output.push_str("];\n");
     fs::write(
         PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("fused.rs"),
         output,
     )
     .unwrap();
 }
+
+/// ITCM holds 13440 bytes of translated code; blocks start at even addresses.
+const ITCM_SLOTS: u32 = 0x3480 / 2;

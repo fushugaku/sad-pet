@@ -6,7 +6,7 @@
     unused_mut,
     unused_comparisons
 )]
-use crate::machine::{signed, signed_overflow, Machine};
+use crate::machine::{signed, signed_overflow, FastFma, Machine};
 pub fn b_6002cb28(c: &mut Machine) -> u32 {
     {
         // 0x6002cb28 ldr r1,[0x6002cd64]
@@ -65,7 +65,7 @@ pub fn b_6002cb28(c: &mut Machine) -> u32 {
     {
         // 0x6002cb46 vfma.f32 s15,s14,s14
         let value = f32::from_bits(c.r(824, 4) as u32)
-            .mul_add(
+            .fast_mul_add(
                 f32::from_bits(c.r(824, 4) as u32),
                 f32::from_bits(c.r(828, 4) as u32),
             )
@@ -311,7 +311,7 @@ pub fn b_6002cb86(c: &mut Machine) -> u32 {
     {
         // 0x6002cb96 vfma.f32 s15,s13,s11
         let value = f32::from_bits(c.r(820, 4) as u32)
-            .mul_add(
+            .fast_mul_add(
                 f32::from_bits(c.r(812, 4) as u32),
                 f32::from_bits(c.r(828, 4) as u32),
             )
@@ -327,7 +327,7 @@ pub fn b_6002cb86(c: &mut Machine) -> u32 {
     {
         // 0x6002cb9e vfma.f32 s15,s14,s12
         let value = f32::from_bits(c.r(824, 4) as u32)
-            .mul_add(
+            .fast_mul_add(
                 f32::from_bits(c.r(816, 4) as u32),
                 f32::from_bits(c.r(828, 4) as u32),
             )
@@ -420,7 +420,7 @@ pub fn b_6002cbaa(c: &mut Machine) -> u32 {
     {
         // 0x6002cbd0 vfma.f32 s15,s0,s0
         let value = f32::from_bits(c.r(768, 4) as u32)
-            .mul_add(
+            .fast_mul_add(
                 f32::from_bits(c.r(768, 4) as u32),
                 f32::from_bits(c.r(828, 4) as u32),
             )
@@ -1950,7 +1950,7 @@ pub fn b_6002ce72(c: &mut Machine) -> u32 {
     {
         // 0x6002ce9a vfma.f32 s6,s0,s14
         let value = f32::from_bits(c.r(768, 4) as u32)
-            .mul_add(
+            .fast_mul_add(
                 f32::from_bits(c.r(824, 4) as u32),
                 f32::from_bits(c.r(792, 4) as u32),
             )
@@ -5856,7 +5856,7 @@ pub fn b_6002d214(c: &mut Machine) -> u32 {
     {
         // 0x6002d240 vfma.f32 s7,s0,s6
         let value = f32::from_bits(c.r(768, 4) as u32)
-            .mul_add(
+            .fast_mul_add(
                 f32::from_bits(c.r(792, 4) as u32),
                 f32::from_bits(c.r(796, 4) as u32),
             )
@@ -9522,7 +9522,7 @@ pub fn b_6002d532(c: &mut Machine) -> u32 {
     {
         // 0x6002d546 vfma.f32 s15,s11,s9
         let value = f32::from_bits(c.r(812, 4) as u32)
-            .mul_add(
+            .fast_mul_add(
                 f32::from_bits(c.r(804, 4) as u32),
                 f32::from_bits(c.r(828, 4) as u32),
             )
@@ -9538,7 +9538,7 @@ pub fn b_6002d532(c: &mut Machine) -> u32 {
     {
         // 0x6002d54e vfma.f32 s15,s13,s10
         let value = f32::from_bits(c.r(820, 4) as u32)
-            .mul_add(
+            .fast_mul_add(
                 f32::from_bits(c.r(808, 4) as u32),
                 f32::from_bits(c.r(828, 4) as u32),
             )
@@ -9585,7 +9585,7 @@ pub fn b_6002d55a(c: &mut Machine) -> u32 {
     {
         // 0x6002d566 vfma.f32 s15,s14,s14
         let value = f32::from_bits(c.r(824, 4) as u32)
-            .mul_add(
+            .fast_mul_add(
                 f32::from_bits(c.r(824, 4) as u32),
                 f32::from_bits(c.r(828, 4) as u32),
             )
@@ -9817,7 +9817,7 @@ pub fn b_6002d59a(c: &mut Machine) -> u32 {
     {
         // 0x6002d5ae vfma.f32 s15,s11,s9
         let value = f32::from_bits(c.r(812, 4) as u32)
-            .mul_add(
+            .fast_mul_add(
                 f32::from_bits(c.r(804, 4) as u32),
                 f32::from_bits(c.r(828, 4) as u32),
             )
@@ -9833,7 +9833,7 @@ pub fn b_6002d59a(c: &mut Machine) -> u32 {
     {
         // 0x6002d5b6 vfma.f32 s15,s13,s10
         let value = f32::from_bits(c.r(820, 4) as u32)
-            .mul_add(
+            .fast_mul_add(
                 f32::from_bits(c.r(808, 4) as u32),
                 f32::from_bits(c.r(828, 4) as u32),
             )
@@ -9912,7 +9912,7 @@ pub fn b_6002d5c2(c: &mut Machine) -> u32 {
     {
         // 0x6002d5da vfma.f32 s15,s14,s14
         let value = f32::from_bits(c.r(824, 4) as u32)
-            .mul_add(
+            .fast_mul_add(
                 f32::from_bits(c.r(824, 4) as u32),
                 f32::from_bits(c.r(828, 4) as u32),
             )
@@ -10281,7 +10281,7 @@ pub fn b_6002d62e(c: &mut Machine) -> u32 {
     {
         // 0x6002d65e vfma.f32 s8,s0,s10
         let value = f32::from_bits(c.r(768, 4) as u32)
-            .mul_add(
+            .fast_mul_add(
                 f32::from_bits(c.r(808, 4) as u32),
                 f32::from_bits(c.r(800, 4) as u32),
             )
@@ -13578,7 +13578,7 @@ pub fn b_6002d96c(c: &mut Machine) -> u32 {
     {
         // 0x6002d988 vfma.f32 s13,s0,s12
         let value = f32::from_bits(c.r(768, 4) as u32)
-            .mul_add(
+            .fast_mul_add(
                 f32::from_bits(c.r(816, 4) as u32),
                 f32::from_bits(c.r(820, 4) as u32),
             )
@@ -13909,7 +13909,7 @@ pub fn b_6002d9c8(c: &mut Machine) -> u32 {
     {
         // 0x6002d9d4 vfms.f32 s13,s13,s13
         let value = (-f32::from_bits(c.r(820, 4) as u32))
-            .mul_add(
+            .fast_mul_add(
                 f32::from_bits(c.r(820, 4) as u32),
                 f32::from_bits(c.r(820, 4) as u32),
             )
@@ -14323,7 +14323,7 @@ pub fn b_6002da3c(c: &mut Machine) -> u32 {
     {
         // 0x6002da48 vfms.f32 s13,s13,s13
         let value = (-f32::from_bits(c.r(820, 4) as u32))
-            .mul_add(
+            .fast_mul_add(
                 f32::from_bits(c.r(820, 4) as u32),
                 f32::from_bits(c.r(820, 4) as u32),
             )
@@ -15545,7 +15545,7 @@ pub fn b_6002dbac(c: &mut Machine) -> u32 {
     {
         // 0x6002dbc0 vfma.f32 s14,s12,s10
         let value = f32::from_bits(c.r(816, 4) as u32)
-            .mul_add(
+            .fast_mul_add(
                 f32::from_bits(c.r(808, 4) as u32),
                 f32::from_bits(c.r(824, 4) as u32),
             )
@@ -15561,7 +15561,7 @@ pub fn b_6002dbac(c: &mut Machine) -> u32 {
     {
         // 0x6002dbc8 vfma.f32 s14,s13,s11
         let value = f32::from_bits(c.r(820, 4) as u32)
-            .mul_add(
+            .fast_mul_add(
                 f32::from_bits(c.r(812, 4) as u32),
                 f32::from_bits(c.r(824, 4) as u32),
             )
@@ -15595,7 +15595,7 @@ pub fn b_6002dbac(c: &mut Machine) -> u32 {
     {
         // 0x6002dbdc vfma.f32 s15,s12,s4
         let value = f32::from_bits(c.r(816, 4) as u32)
-            .mul_add(
+            .fast_mul_add(
                 f32::from_bits(c.r(784, 4) as u32),
                 f32::from_bits(c.r(828, 4) as u32),
             )
@@ -15610,7 +15610,7 @@ pub fn b_6002dbac(c: &mut Machine) -> u32 {
     {
         // 0x6002dbe4 vfma.f32 s14,s12,s4
         let value = f32::from_bits(c.r(816, 4) as u32)
-            .mul_add(
+            .fast_mul_add(
                 f32::from_bits(c.r(784, 4) as u32),
                 f32::from_bits(c.r(824, 4) as u32),
             )
@@ -15633,7 +15633,7 @@ pub fn b_6003005c(c: &mut Machine) -> u32 {
     {
         // 0x60030060 vfma.f32 s0,s1,s2
         let value = f32::from_bits(c.r(772, 4) as u32)
-            .mul_add(
+            .fast_mul_add(
                 f32::from_bits(c.r(776, 4) as u32),
                 f32::from_bits(c.r(768, 4) as u32),
             )
@@ -16234,7 +16234,7 @@ pub fn b_60040c82(c: &mut Machine) -> u32 {
     {
         // 0x60040cb8 vfma.f64 d6,d4,d7
         let value = f64::from_bits(c.r(800, 8) as u64)
-            .mul_add(
+            .fast_mul_add(
                 f64::from_bits(c.r(824, 8) as u64),
                 f64::from_bits(c.r(816, 8) as u64),
             )
@@ -16318,7 +16318,7 @@ pub fn b_60040c82(c: &mut Machine) -> u32 {
     {
         // 0x60040cc8 vfma.f64 d0,d5,d7
         let value = f64::from_bits(c.r(808, 8) as u64)
-            .mul_add(
+            .fast_mul_add(
                 f64::from_bits(c.r(824, 8) as u64),
                 f64::from_bits(c.r(768, 8) as u64),
             )
@@ -16344,7 +16344,7 @@ pub fn b_60040c82(c: &mut Machine) -> u32 {
     {
         // 0x60040cd0 vfma.f64 d0,d6,d4
         let value = f64::from_bits(c.r(816, 8) as u64)
-            .mul_add(
+            .fast_mul_add(
                 f64::from_bits(c.r(800, 8) as u64),
                 f64::from_bits(c.r(768, 8) as u64),
             )
@@ -17434,7 +17434,7 @@ pub fn b_60040e1e(c: &mut Machine) -> u32 {
     {
         // 0x60040e6c vfma.f64 d2,d8,d3
         let value = f64::from_bits(c.r(832, 8) as u64)
-            .mul_add(
+            .fast_mul_add(
                 f64::from_bits(c.r(792, 8) as u64),
                 f64::from_bits(c.r(784, 8) as u64),
             )
@@ -17463,7 +17463,7 @@ pub fn b_60040e1e(c: &mut Machine) -> u32 {
     {
         // 0x60040e78 vfma.f64 d7,d4,d2
         let value = f64::from_bits(c.r(800, 8) as u64)
-            .mul_add(
+            .fast_mul_add(
                 f64::from_bits(c.r(784, 8) as u64),
                 f64::from_bits(c.r(824, 8) as u64),
             )
@@ -17473,7 +17473,7 @@ pub fn b_60040e1e(c: &mut Machine) -> u32 {
     {
         // 0x60040e7c vfma.f64 d0,d5,d2
         let value = f64::from_bits(c.r(808, 8) as u64)
-            .mul_add(
+            .fast_mul_add(
                 f64::from_bits(c.r(784, 8) as u64),
                 f64::from_bits(c.r(768, 8) as u64),
             )
@@ -17483,7 +17483,7 @@ pub fn b_60040e1e(c: &mut Machine) -> u32 {
     {
         // 0x60040e80 vfma.f64 d7,d6,d3
         let value = f64::from_bits(c.r(816, 8) as u64)
-            .mul_add(
+            .fast_mul_add(
                 f64::from_bits(c.r(792, 8) as u64),
                 f64::from_bits(c.r(824, 8) as u64),
             )
@@ -17493,7 +17493,7 @@ pub fn b_60040e1e(c: &mut Machine) -> u32 {
     {
         // 0x60040e84 vfma.f64 d0,d3,d7
         let value = f64::from_bits(c.r(792, 8) as u64)
-            .mul_add(
+            .fast_mul_add(
                 f64::from_bits(c.r(824, 8) as u64),
                 f64::from_bits(c.r(768, 8) as u64),
             )

@@ -53,7 +53,7 @@ impl Rng {
 pub fn envelope_curve(x: f32, slope: f32) -> f32 {
     let s = slope.clamp(0.005, 0.995);
     let k = (2. * s - 1.) / (1. - s);
-    ((k + 1.) * x) / k.mul_add(x.abs(), 1.)
+    ((k + 1.) * x) / crate::fmaf(k, x.abs(), 1.)
 }
 
 #[derive(Clone, Copy)]
@@ -389,10 +389,11 @@ impl Voice {
             let tone =
                 self.oscillators[0].tick(1. - self.p[NOISE], width, None, || rng.next_u32() as i16);
             let transient = self.transient.tick() as f32;
-            parallel_input =
-                fw::sat16((transient + (noise as f32).mul_add(self.p[NOISE], tone as f32)) as i32);
+            parallel_input = fw::sat16(
+                (transient + crate::fmaf(noise as f32, self.p[NOISE], tone as f32)) as i32,
+            );
             let noise = self.filter_tick(noise, 0, sr) as f32;
-            transient + noise.mul_add(self.p[NOISE], tone as f32)
+            transient + crate::fmaf(noise, self.p[NOISE], tone as f32)
         } else {
             let m1 = self.oscillators[1].tick(fm, width, None, || rng.next_u32() as i16);
             let signal = if self.index >= 4 {

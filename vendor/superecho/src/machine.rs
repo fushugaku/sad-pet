@@ -3,6 +3,37 @@
 use std::fmt;
 
 pub const RETURN_PC: u32 = 0xffff_fff0;
+
+/// Correctly rounded fused multiply-add without the software `fmaf` call on
+/// every firmware VFMA. The float64 product of two float32 values is exact, so
+/// one float64 addition and the float32 conversion give the correctly rounded
+/// result whenever that conversion is not a halfway case; the remaining cases
+/// take the library routine. Both paths return the unique correctly rounded
+/// value, so the samples are identical. (Same test as musl's fmaf.)
+pub trait FastFma {
+    fn fast_mul_add(self, y: Self, z: Self) -> Self;
+}
+impl FastFma for f32 {
+    #[inline(always)]
+    fn fast_mul_add(self, y: f32, z: f32) -> f32 {
+        let xy = self as f64 * y as f64;
+        let result = xy + z as f64;
+        let bits = result.to_bits();
+        if (bits & 0x1fff_ffff) != 0x1000_0000
+            || (bits >> 52) & 0x7ff == 0x7ff
+            || (result - xy == z as f64 && result - z as f64 == xy)
+        {
+            return result as f32;
+        }
+        self.mul_add(y, z)
+    }
+}
+impl FastFma for f64 {
+    #[inline(always)]
+    fn fast_mul_add(self, y: f64, z: f64) -> f64 {
+        self.mul_add(y, z)
+    }
+}
 pub const FLASH_BASE: u32 = 0x6002_0000;
 pub const ROM: &[u8] = include_bytes!("../firmware/echolocator-1.05.bin");
 pub type Result<T> = std::result::Result<T, Fault>;
@@ -226,11 +257,17 @@ impl Machine {
             if self.ticks >= self.budget {
                 return Err(self.fault("instruction budget exceeded"));
             }
+            #[cfg(test)]
+            let fused = !self.reference_dispatch;
+            #[cfg(not(test))]
+            let fused = true;
+            if fused && self.pc < 0x3500 {
+                // No host call lives in ITCM, so its blocks step straight
+                // through the fused table.
+                self.pc = crate::fused::itcm(self, self.pc)?;
+                continue;
+            }
             if !self.host_call()? {
-                #[cfg(test)]
-                let fused = !self.reference_dispatch;
-                #[cfg(not(test))]
-                let fused = true;
                 self.pc = if fused {
                     crate::fused::step(self, self.pc)?
                 } else {

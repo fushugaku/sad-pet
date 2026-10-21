@@ -8,7 +8,7 @@ match pc {
 _ => Err(m.fault(format!("missing translated block 0x{pc:08x}"))),
 }
 }
-fn b_60057370(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60057370(m: &mut Machine) -> Result<u32> {
 m.ticks += 6;
 // 0x60057370: push {r3,r4,r5,r6,r7,lr}
 #[cfg(debug_assertions)] { m.pc = 0x60057370; }
@@ -72,7 +72,7 @@ return Ok(((m.reg(92, 4)) as u32) & !1);
 }
 Ok(0x6005737c)
 }
-fn b_6005737c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6005737c(m: &mut Machine) -> Result<u32> {
 m.ticks += 6;
 // 0x6005737c: push {r3,r4,r5,r6,r7,lr}
 #[cfg(debug_assertions)] { m.pc = 0x6005737c; }

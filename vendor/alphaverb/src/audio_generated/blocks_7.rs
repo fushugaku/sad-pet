@@ -6,7 +6,7 @@
     unused_mut,
     unused_comparisons
 )]
-use crate::machine::{signed, signed_overflow, Machine};
+use crate::machine::{signed, signed_overflow, FastFma, Machine};
 pub fn b_6002bb02(c: &mut Machine) -> u32 {
     {
         // 0x6002bb02 lsls r0,r1,#0x2
@@ -9760,7 +9760,7 @@ pub fn b_6002cb04(c: &mut Machine) -> u32 {
     {
         // 0x6002cb14 vfma.f32 s15,s13,s10
         let value = f32::from_bits(c.r(820, 4) as u32)
-            .mul_add(
+            .fast_mul_add(
                 f32::from_bits(c.r(808, 4) as u32),
                 f32::from_bits(c.r(828, 4) as u32),
             )
@@ -9776,7 +9776,7 @@ pub fn b_6002cb04(c: &mut Machine) -> u32 {
     {
         // 0x6002cb1c vfma.f32 s15,s13,s11
         let value = f32::from_bits(c.r(820, 4) as u32)
-            .mul_add(
+            .fast_mul_add(
                 f32::from_bits(c.r(812, 4) as u32),
                 f32::from_bits(c.r(828, 4) as u32),
             )

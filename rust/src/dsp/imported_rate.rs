@@ -81,16 +81,28 @@ impl Resampler {
         let p = (phase.floor() as usize).min(PHASES - 1);
         let f = phase - p as f64;
         let mut sum = [0.; 2];
-        for tap in 0..TAPS {
-            let i = center + tap as i64 - (HALF - 1) as i64;
-            if i < 0 || i >= self.count || self.count - i > HISTORY as i64 {
-                continue;
+        let first = center - (HALF - 1) as i64;
+        let (lower, upper) = (&self.coefficients[p], &self.coefficients[p + 1]);
+        if first >= (self.count - HISTORY as i64).max(0) && first + TAPS as i64 <= self.count {
+            // Steady state: every tap is inside the history, so the per-tap
+            // window test is hoisted; the taps, order and arithmetic are the same.
+            for tap in 0..TAPS {
+                let c = lower[tap] as f64 + (upper[tap] as f64 - lower[tap] as f64) * f;
+                let s = self.history[(first + tap as i64) as usize % HISTORY];
+                sum[0] += s[0] as f64 * c;
+                sum[1] += s[1] as f64 * c;
             }
-            let c = self.coefficients[p][tap] as f64
-                + (self.coefficients[p + 1][tap] as f64 - self.coefficients[p][tap] as f64) * f;
-            let s = self.history[i as usize % HISTORY];
-            sum[0] += s[0] as f64 * c;
-            sum[1] += s[1] as f64 * c;
+        } else {
+            for tap in 0..TAPS {
+                let i = first + tap as i64;
+                if i < 0 || i >= self.count || self.count - i > HISTORY as i64 {
+                    continue;
+                }
+                let c = lower[tap] as f64 + (upper[tap] as f64 - lower[tap] as f64) * f;
+                let s = self.history[i as usize % HISTORY];
+                sum[0] += s[0] as f64 * c;
+                sum[1] += s[1] as f64 * c;
+            }
         }
         self.next += self.step;
         Some([sum[0] as f32, sum[1] as f32])

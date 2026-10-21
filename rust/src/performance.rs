@@ -716,9 +716,13 @@ impl Performance {
         }
     }
 
+    /// Whether `tick` can advance or emit anything; an idle tick is a no-op.
+    pub fn ticking(&self) -> bool {
+        self.running && !matches!(self.mode(), Mode::Keys | Mode::Hold)
+    }
     pub fn tick(&mut self, sample_rate: u32, bpm: f32) -> TickActions {
         let mut actions = [None; MAX_STEP_NOTES * 2];
-        if !self.running || matches!(self.mode(), Mode::Keys | Mode::Hold) {
+        if !self.ticking() {
             return actions;
         }
         if self.active.len > 0 && self.beat + 1e-10 >= self.off_at {

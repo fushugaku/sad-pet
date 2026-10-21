@@ -3,6 +3,37 @@
 use std::cell::Cell;
 
 pub const RETURN: u32 = 0xfffffff0;
+
+/// Correctly rounded fused multiply-add without the software `fmaf` call on
+/// every firmware VFMA. The float64 product of two float32 values is exact, so
+/// one float64 addition and the float32 conversion give the correctly rounded
+/// result whenever that conversion is not a halfway case; the remaining cases
+/// take the library routine. Both paths return the unique correctly rounded
+/// value, so the samples are identical. (Same test as musl's fmaf.)
+pub trait FastFma {
+    fn fast_mul_add(self, y: Self, z: Self) -> Self;
+}
+impl FastFma for f32 {
+    #[inline(always)]
+    fn fast_mul_add(self, y: f32, z: f32) -> f32 {
+        let xy = self as f64 * y as f64;
+        let result = xy + z as f64;
+        let bits = result.to_bits();
+        if (bits & 0x1fff_ffff) != 0x1000_0000
+            || (bits >> 52) & 0x7ff == 0x7ff
+            || (result - xy == z as f64 && result - z as f64 == xy)
+        {
+            return result as f32;
+        }
+        self.mul_add(y, z)
+    }
+}
+impl FastFma for f64 {
+    #[inline(always)]
+    fn fast_mul_add(self, y: f64, z: f64) -> f64 {
+        self.mul_add(y, z)
+    }
+}
 const FLASH: &[u8] = include_bytes!("../assets/flash.bin");
 
 pub struct Machine {
@@ -164,7 +195,12 @@ impl Machine {
                 0x600414d0 => {
                     pc = self.r(88, 4) as u32 & !1;
                 }
-                _ => pc = crate::generated::step(self, pc),
+                _ => {
+                    pc = match crate::fused::ITCM.get((pc >> 1) as usize) {
+                        Some(Some(block)) if fused => block(self),
+                        _ => crate::generated::step(self, pc),
+                    }
+                }
             }
             if let Some(address) = self.fault.get() {
                 return Err(address);

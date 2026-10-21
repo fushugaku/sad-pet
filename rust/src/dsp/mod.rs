@@ -1964,13 +1964,15 @@ impl Engine {
                 }
                 self.update_modulation();
             }
-            for action in self
-                .performance
-                .tick(self.sample_rate, self.modulated.params.bpm)
-                .into_iter()
-                .flatten()
-            {
-                self.apply_midi(action);
+            if self.performance.ticking() {
+                for action in self
+                    .performance
+                    .tick(self.sample_rate, self.modulated.params.bpm)
+                    .into_iter()
+                    .flatten()
+                {
+                    self.apply_midi(action);
+                }
             }
         }
         let sr = self.sample_rate as f32;
@@ -2056,6 +2058,13 @@ impl Engine {
             .live_input
             .as_ref()
             .map_or(&*self.sample, |i| &i.sample);
+        // Loop invariants, hoisted out of the per-grain path: default fades
+        // return a gain of exactly 1.0, and a whole-file region reads the mip
+        // level directly, as read_region_level would decide for every grain.
+        let fading = file_source && self.fades != Fades::default();
+        let antialiasing = self.preset.params.antialiasing;
+        let whole_file = !source_effects && range.start == 0 && range.end == sample.len();
+        let top_level = sample.active_levels() - 1;
         let mut pending = self.live_grains;
         while pending != 0 {
             let slot = pending.trailing_zeros() as usize;
@@ -2063,12 +2072,10 @@ impl Engine {
             let grain = &mut self.grains[slot];
             let phase = 2.0 * grain.age as f32 / (grain.duration - 1) as f32;
             let amplitude = tables::grain_window(phase, grain.shape);
-            let level = if self.preset.params.antialiasing {
-                grain.read_level
-            } else {
-                0
-            };
-            let mut frame = if source_effects {
+            let level = if antialiasing { grain.read_level } else { 0 };
+            let mut frame = if whole_file {
+                sample.read_level(grain.position, level.min(top_level))
+            } else if source_effects {
                 source_fx::read(
                     &self.sample,
                     &self.processed_source,
@@ -2081,7 +2088,7 @@ impl Engine {
             } else {
                 sample.read_region_level(grain.position, level, &range)
             };
-            if file_source {
+            if fading {
                 let gain = self.fades.gain(grain.position, sample.sample_rate, &range);
                 frame = frame.map(|v| v * gain);
             }

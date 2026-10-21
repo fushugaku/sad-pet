@@ -24,6 +24,23 @@ pub(crate) fn flush(x: f32) -> f32 {
         x
     }
 }
+/// Correctly rounded float32 multiply-add without a software `fmaf` call on
+/// every sample: the float64 product is exact and one float64 addition rounds
+/// correctly unless the float32 conversion is a halfway case, which takes the
+/// library routine. Both give the unique correctly rounded value.
+#[inline(always)]
+pub(crate) fn fmaf(x: f32, y: f32, z: f32) -> f32 {
+    let xy = x as f64 * y as f64;
+    let result = xy + z as f64;
+    let bits = result.to_bits();
+    if (bits & 0x1fff_ffff) != 0x1000_0000
+        || (bits >> 52) & 0x7ff == 0x7ff
+        || (result - xy == z as f64 && result - z as f64 == xy)
+    {
+        return result as f32;
+    }
+    x.mul_add(y, z)
+}
 /// Main stereo pair followed by seven stereo drum outputs.
 pub const OUTPUT_CHANNELS: usize = 16;
 
