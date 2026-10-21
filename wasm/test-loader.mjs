@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { compileEngine } from "./web/compile.mjs";
 
 const wasm = Uint8Array.of(0, 97, 115, 109, 1, 0, 0, 0);
+// Node 22's undici compiles its own HTTP parser through WebAssembly.compile on
+// first use. Load it before counting, so only the loader's calls are counted.
+await WebAssembly.compileStreaming(new Response(wasm, { headers: { "content-type": "application/wasm" } }));
 const originalFetch = globalThis.fetch;
 const streaming = WebAssembly.compileStreaming;
 const compile = WebAssembly.compile;
