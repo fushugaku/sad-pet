@@ -311,7 +311,7 @@ match pc {
 _ => Err(m.fault(format!("missing translated block 0x{pc:08x}"))),
 }
 }
-fn b_60037000(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037000(m: &mut Machine) -> Result<u32> {
 m.ticks += 6;
 // 0x60037000: ldr r2,[0x600372bc]
 #[cfg(debug_assertions)] { m.pc = 0x60037000; }
@@ -377,7 +377,7 @@ m.set_reg(101, 1, (((m.reg(60, 4)) == (0u64)) as u64) & 255u64);
 }
 Ok(0x60037010)
 }
-fn b_60037010(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037010(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037010: ldr r2,[0x600372c0]
 #[cfg(debug_assertions)] { m.pc = 0x60037010; }
@@ -412,7 +412,7 @@ m.set_reg(101, 1, (((m.reg(60, 4)) == (0u64)) as u64) & 255u64);
 }
 Ok(0x60037016)
 }
-fn b_60037016(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037016(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037016: cmp r6,#0x0
 #[cfg(debug_assertions)] { m.pc = 0x60037016; }
@@ -457,7 +457,7 @@ m.set_reg(101, 1, (((m.reg(56, 4)) == (0u64)) as u64) & 255u64);
 }
 Ok(0x6003701e)
 }
-fn b_6003701e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003701e(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x6003701e: str r2,[sp,#0x0]
 #[cfg(debug_assertions)] { m.pc = 0x6003701e; }
@@ -489,7 +489,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037198u32) & !1); }
 }
 Ok(0x60037026)
 }
-fn b_60037026(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037026(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037026: mov r2,r4
 #[cfg(debug_assertions)] { m.pc = 0x60037026; }
@@ -517,7 +517,7 @@ m.set_reg(72, 4, (m.reg(48, 4)) & 4294967295u64);
 }
 Ok(0x6003702e)
 }
-fn b_6003702e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003702e(m: &mut Machine) -> Result<u32> {
 m.ticks += 9;
 // 0x6003702e: ldrh.w r12,[r5,#0xa]
 #[cfg(debug_assertions)] { m.pc = 0x6003702e; }
@@ -594,7 +594,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x600370c0u32) & !1); }
 }
 Ok(0x6003704c)
 }
-fn b_6003704c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003704c(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x6003704c: ldrh.w r8,[r5,#0x0]
 #[cfg(debug_assertions)] { m.pc = 0x6003704c; }
@@ -630,7 +630,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x600370c0u32) & !1); }
 }
 Ok(0x60037054)
 }
-fn b_60037054(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037054(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037054: ldrh r4,[r5,#0x2]
 #[cfg(debug_assertions)] { m.pc = 0x60037054; }
@@ -666,7 +666,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x600370c0u32) & !1); }
 }
 Ok(0x6003705a)
 }
-fn b_6003705a(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003705a(m: &mut Machine) -> Result<u32> {
 m.ticks += 7;
 // 0x6003705a: sxth.w r4,r12
 #[cfg(debug_assertions)] { m.pc = 0x6003705a; }
@@ -732,7 +732,7 @@ if ((u2 >> 0) as u64 & 255u64) != 0 { return Ok((0x600370c0u32) & !1); }
 }
 Ok(0x6003706e)
 }
-fn b_6003706e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003706e(m: &mut Machine) -> Result<u32> {
 m.ticks += 6;
 // 0x6003706e: ldr r6,[sp,#0x0]
 #[cfg(debug_assertions)] { m.pc = 0x6003706e; }
@@ -791,7 +791,7 @@ if ((u2 >> 0) as u64 & 255u64) != 0 { return Ok((0x600370c0u32) & !1); }
 }
 Ok(0x6003707e)
 }
-fn b_6003707e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003707e(m: &mut Machine) -> Result<u32> {
 m.ticks += 5;
 // 0x6003707e: ldr r6,[sp,#0x0]
 #[cfg(debug_assertions)] { m.pc = 0x6003707e; }
@@ -841,7 +841,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x600370c0u32) & !1); }
 }
 Ok(0x6003708c)
 }
-fn b_6003708c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003708c(m: &mut Machine) -> Result<u32> {
 m.ticks += 5;
 // 0x6003708c: ldr r6,[sp,#0x0]
 #[cfg(debug_assertions)] { m.pc = 0x6003708c; }
@@ -891,7 +891,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x600370c0u32) & !1); }
 }
 Ok(0x60037098)
 }
-fn b_60037098(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037098(m: &mut Machine) -> Result<u32> {
 m.ticks += 9;
 // 0x60037098: asrs r4,r4,#0x3
 #[cfg(debug_assertions)] { m.pc = 0x60037098; }
@@ -1015,7 +1015,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x6003721eu32) & !1); }
 }
 Ok(0x600370b8)
 }
-fn b_600370b8(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600370b8(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x600370b8: bic.w lr,lr,r8
 #[cfg(debug_assertions)] { m.pc = 0x600370b8; }
@@ -1040,7 +1040,7 @@ m.store((((u0 >> 0) as u64 & 4294967295u64)) as u32, 1, ((u1 >> 0) as u64 & 255u
 }
 Ok(0x600370c0)
 }
-fn b_600370c0(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600370c0(m: &mut Machine) -> Result<u32> {
 m.ticks += 9;
 // 0x600370c0: sub.w r0,r0,r9
 #[cfg(debug_assertions)] { m.pc = 0x600370c0; }
@@ -1131,7 +1131,7 @@ m.set_reg(36, 4, (m.reg(44, 4)) & 4294967295u64);
 }
 Ok(0x600370d6)
 }
-fn b_600370d6(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600370d6(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x600370d6: cmp r10,r2
 #[cfg(debug_assertions)] { m.pc = 0x600370d6; }
@@ -1156,7 +1156,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037192u32) & !1); }
 }
 Ok(0x600370da)
 }
-fn b_600370da(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600370da(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x600370da: mov r3,r1
 #[cfg(debug_assertions)] { m.pc = 0x600370da; }
@@ -1170,7 +1170,7 @@ return Ok((0x6003702eu32) & !1);
 }
 Ok(0x600370de)
 }
-fn b_600370de(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600370de(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x600370de: cmp r0,r1
 #[cfg(debug_assertions)] { m.pc = 0x600370de; }
@@ -1195,7 +1195,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x600372a0u32) & !1); }
 }
 Ok(0x600370e4)
 }
-fn b_600370e4(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600370e4(m: &mut Machine) -> Result<u32> {
 m.ticks += 10;
 // 0x600370e4: rsb.w r12,r2,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x600370e4; }
@@ -1281,7 +1281,7 @@ m.set_reg(101, 1, (((m.reg(52, 4)) == (0u64)) as u64) & 255u64);
 }
 Ok(0x600370fe)
 }
-fn b_600370fe(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600370fe(m: &mut Machine) -> Result<u32> {
 m.ticks += 1;
 // 0x600370fe: asrs r5,r5,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x600370fe; }
@@ -1312,7 +1312,7 @@ m.set_reg(96, 1, (m.reg(100, 1)) & 255u64);
 }
 Ok(0x60037100)
 }
-fn b_60037100(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037100(m: &mut Machine) -> Result<u32> {
 m.ticks += 10;
 // 0x60037100: ldrh r2,[r6,#0xa]
 #[cfg(debug_assertions)] { m.pc = 0x60037100; }
@@ -1394,7 +1394,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x6003717eu32) & !1); }
 }
 Ok(0x60037118)
 }
-fn b_60037118(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037118(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037118: ldrh.w r8,[r6,#0x0]
 #[cfg(debug_assertions)] { m.pc = 0x60037118; }
@@ -1428,7 +1428,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x6003717eu32) & !1); }
 }
 Ok(0x60037120)
 }
-fn b_60037120(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037120(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037120: ldrh r7,[r6,#0x2]
 #[cfg(debug_assertions)] { m.pc = 0x60037120; }
@@ -1464,7 +1464,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x6003717eu32) & !1); }
 }
 Ok(0x60037126)
 }
-fn b_60037126(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037126(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037126: sxth r7,r3
 #[cfg(debug_assertions)] { m.pc = 0x60037126; }
@@ -1506,7 +1506,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x6003715au32) & !1); }
 }
 Ok(0x60037130)
 }
-fn b_60037130(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037130(m: &mut Machine) -> Result<u32> {
 m.ticks += 5;
 // 0x60037130: sxth r7,r2
 #[cfg(debug_assertions)] { m.pc = 0x60037130; }
@@ -1558,7 +1558,7 @@ if ((u2 >> 0) as u64 & 255u64) != 0 { return Ok((0x6003717eu32) & !1); }
 }
 Ok(0x6003713c)
 }
-fn b_6003713c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003713c(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x6003713c: ldrsh.w r1,[r10,#0x2]
 #[cfg(debug_assertions)] { m.pc = 0x6003713c; }
@@ -1603,7 +1603,7 @@ if ((u2 >> 0) as u64 & 255u64) != 0 { return Ok((0x6003717eu32) & !1); }
 }
 Ok(0x60037146)
 }
-fn b_60037146(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037146(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037146: ldrsh.w r1,[r10,#0x4]
 #[cfg(debug_assertions)] { m.pc = 0x60037146; }
@@ -1646,7 +1646,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x6003717eu32) & !1); }
 }
 Ok(0x60037150)
 }
-fn b_60037150(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037150(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037150: ldrsh.w r1,[r10,#0x6]
 #[cfg(debug_assertions)] { m.pc = 0x60037150; }
@@ -1689,7 +1689,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x6003717eu32) & !1); }
 }
 Ok(0x6003715a)
 }
-fn b_6003715a(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003715a(m: &mut Machine) -> Result<u32> {
 m.ticks += 11;
 // 0x6003715a: sxth r1,r3
 #[cfg(debug_assertions)] { m.pc = 0x6003715a; }
@@ -1822,7 +1822,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037216u32) & !1); }
 }
 Ok(0x60037178)
 }
-fn b_60037178(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037178(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037178: orr.w r3,r3,r8
 #[cfg(debug_assertions)] { m.pc = 0x60037178; }
@@ -1845,7 +1845,7 @@ m.store((((u0 >> 0) as u64 & 4294967295u64)) as u32, 1, ((u1 >> 0) as u64 & 255u
 }
 Ok(0x6003717e)
 }
-fn b_6003717e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003717e(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x6003717e: cmp r5,#0x0
 #[cfg(debug_assertions)] { m.pc = 0x6003717e; }
@@ -1870,7 +1870,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x6003718au32) & !1); }
 }
 Ok(0x60037182)
 }
-fn b_60037182(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037182(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037182: add r5,r12
 #[cfg(debug_assertions)] { m.pc = 0x60037182; }
@@ -1898,7 +1898,7 @@ m.set_reg(52, 4, (signed(((u0 >> 0) as u64 & 65535u64), 2) as u64) & 4294967295u
 }
 Ok(0x6003718a)
 }
-fn b_6003718a(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003718a(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x6003718a: adds r0,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x6003718a; }
@@ -1945,7 +1945,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037100u32) & !1); }
 }
 Ok(0x60037192)
 }
-fn b_60037192(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037192(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037192: add sp,#0xc
 #[cfg(debug_assertions)] { m.pc = 0x60037192; }
@@ -1985,7 +1985,7 @@ return Ok(((m.reg(92, 4)) as u32) & !1);
 }
 Ok(0x60037198)
 }
-fn b_60037198(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037198(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037198: cmp.w r11,#0x0
 #[cfg(debug_assertions)] { m.pc = 0x60037198; }
@@ -2013,7 +2013,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037228u32) & !1); }
 }
 Ok(0x6003719e)
 }
-fn b_6003719e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003719e(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x6003719e: mov r12,r11
 #[cfg(debug_assertions)] { m.pc = 0x6003719e; }
@@ -2037,7 +2037,7 @@ return Ok((0x600371a8u32) & !1);
 }
 Ok(0x600371a6)
 }
-fn b_600371a6(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600371a6(m: &mut Machine) -> Result<u32> {
 m.ticks += 1;
 // 0x600371a6: mov r3,r1
 #[cfg(debug_assertions)] { m.pc = 0x600371a6; }
@@ -2046,7 +2046,7 @@ m.set_reg(44, 4, (m.reg(36, 4)) & 4294967295u64);
 }
 Ok(0x600371a8)
 }
-fn b_600371a8(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600371a8(m: &mut Machine) -> Result<u32> {
 m.ticks += 15;
 // 0x600371a8: ldrh.w r8,[r5,#0xa]
 #[cfg(debug_assertions)] { m.pc = 0x600371a8; }
@@ -2182,7 +2182,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037208u32) & !1); }
 }
 Ok(0x600371d6)
 }
-fn b_600371d6(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600371d6(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x600371d6: ldrh.w lr,[r5,#0x0]
 #[cfg(debug_assertions)] { m.pc = 0x600371d6; }
@@ -2216,7 +2216,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037208u32) & !1); }
 }
 Ok(0x600371de)
 }
-fn b_600371de(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600371de(m: &mut Machine) -> Result<u32> {
 m.ticks += 8;
 // 0x600371de: sbfx r4,r3,#0x3,#0xd
 #[cfg(debug_assertions)] { m.pc = 0x600371de; }
@@ -2319,7 +2319,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037208u32) & !1); }
 }
 Ok(0x600371f8)
 }
-fn b_600371f8(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600371f8(m: &mut Machine) -> Result<u32> {
 m.ticks += 5;
 // 0x600371f8: ldr r3,[r5,#0x4]
 #[cfg(debug_assertions)] { m.pc = 0x600371f8; }
@@ -2367,7 +2367,7 @@ m.store((((u0 >> 0) as u64 & 4294967295u64)) as u32, 1, ((u1 >> 0) as u64 & 255u
 }
 Ok(0x60037208)
 }
-fn b_60037208(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037208(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037208: bics.w r1,r1,r12, asr #32
 #[cfg(debug_assertions)] { m.pc = 0x60037208; }
@@ -2407,7 +2407,7 @@ m.set_reg(36, 4, (m.reg(32, 4)) & 4294967295u64);
 }
 Ok(0x60037210)
 }
-fn b_60037210(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037210(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037210: cmp r9,r2
 #[cfg(debug_assertions)] { m.pc = 0x60037210; }
@@ -2432,7 +2432,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x600371a6u32) & !1); }
 }
 Ok(0x60037214)
 }
-fn b_60037214(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037214(m: &mut Machine) -> Result<u32> {
 m.ticks += 1;
 // 0x60037214: b 0x60037192
 #[cfg(debug_assertions)] { m.pc = 0x60037214; }
@@ -2441,7 +2441,7 @@ return Ok((0x60037192u32) & !1);
 }
 Ok(0x60037216)
 }
-fn b_60037216(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037216(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037216: bic.w r3,r3,r8
 #[cfg(debug_assertions)] { m.pc = 0x60037216; }
@@ -2471,7 +2471,7 @@ return Ok((0x6003717eu32) & !1);
 }
 Ok(0x6003721e)
 }
-fn b_6003721e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003721e(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x6003721e: orr.w lr,lr,r8
 #[cfg(debug_assertions)] { m.pc = 0x6003721e; }
@@ -2499,7 +2499,7 @@ return Ok((0x600370c0u32) & !1);
 }
 Ok(0x60037228)
 }
-fn b_60037228(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037228(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037228: mov r12,r2
 #[cfg(debug_assertions)] { m.pc = 0x60037228; }
@@ -2523,7 +2523,7 @@ return Ok((0x60037232u32) & !1);
 }
 Ok(0x60037230)
 }
-fn b_60037230(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037230(m: &mut Machine) -> Result<u32> {
 m.ticks += 1;
 // 0x60037230: mov r3,r1
 #[cfg(debug_assertions)] { m.pc = 0x60037230; }
@@ -2532,7 +2532,7 @@ m.set_reg(44, 4, (m.reg(36, 4)) & 4294967295u64);
 }
 Ok(0x60037232)
 }
-fn b_60037232(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037232(m: &mut Machine) -> Result<u32> {
 m.ticks += 15;
 // 0x60037232: ldrh.w lr,[r5,#0xa]
 #[cfg(debug_assertions)] { m.pc = 0x60037232; }
@@ -2667,7 +2667,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037292u32) & !1); }
 }
 Ok(0x60037260)
 }
-fn b_60037260(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037260(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037260: ldrh.w r8,[r5,#0x0]
 #[cfg(debug_assertions)] { m.pc = 0x60037260; }
@@ -2701,7 +2701,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037292u32) & !1); }
 }
 Ok(0x60037268)
 }
-fn b_60037268(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037268(m: &mut Machine) -> Result<u32> {
 m.ticks += 8;
 // 0x60037268: sbfx r4,r3,#0x3,#0xd
 #[cfg(debug_assertions)] { m.pc = 0x60037268; }
@@ -2804,7 +2804,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037292u32) & !1); }
 }
 Ok(0x60037282)
 }
-fn b_60037282(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037282(m: &mut Machine) -> Result<u32> {
 m.ticks += 5;
 // 0x60037282: ldr r3,[r5,#0x4]
 #[cfg(debug_assertions)] { m.pc = 0x60037282; }
@@ -2850,7 +2850,7 @@ m.store((((u0 >> 0) as u64 & 4294967295u64)) as u32, 1, ((u1 >> 0) as u64 & 255u
 }
 Ok(0x60037292)
 }
-fn b_60037292(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037292(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037292: bics.w r1,r1,r12, asr #32
 #[cfg(debug_assertions)] { m.pc = 0x60037292; }
@@ -2890,7 +2890,7 @@ m.set_reg(36, 4, (m.reg(32, 4)) & 4294967295u64);
 }
 Ok(0x6003729a)
 }
-fn b_6003729a(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003729a(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x6003729a: cmp r9,r2
 #[cfg(debug_assertions)] { m.pc = 0x6003729a; }
@@ -2915,7 +2915,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037230u32) & !1); }
 }
 Ok(0x6003729e)
 }
-fn b_6003729e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003729e(m: &mut Machine) -> Result<u32> {
 m.ticks += 1;
 // 0x6003729e: b 0x60037192
 #[cfg(debug_assertions)] { m.pc = 0x6003729e; }
@@ -2924,7 +2924,7 @@ return Ok((0x60037192u32) & !1);
 }
 Ok(0x600372a0)
 }
-fn b_600372a0(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600372a0(m: &mut Machine) -> Result<u32> {
 m.ticks += 10;
 // 0x600372a0: ldr r3,[0x600372bc]
 #[cfg(debug_assertions)] { m.pc = 0x600372a0; }
@@ -3018,7 +3018,7 @@ return Ok((0x60037100u32) & !1);
 }
 Ok(0x600372ba)
 }
-fn b_600372c4(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600372c4(m: &mut Machine) -> Result<u32> {
 m.ticks += 6;
 // 0x600372c4: push {r4,r5,r6,r7,r8,r9,r10,r11,lr}
 #[cfg(debug_assertions)] { m.pc = 0x600372c4; }
@@ -3096,7 +3096,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037378u32) & !1); }
 }
 Ok(0x600372d4)
 }
-fn b_600372d4(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600372d4(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x600372d4: adds r4,r3,r1
 #[cfg(debug_assertions)] { m.pc = 0x600372d4; }
@@ -3134,7 +3134,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037378u32) & !1); }
 }
 Ok(0x600372da)
 }
-fn b_600372da(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600372da(m: &mut Machine) -> Result<u32> {
 m.ticks += 6;
 // 0x600372da: ldr r3,[0x60037454]
 #[cfg(debug_assertions)] { m.pc = 0x600372da; }
@@ -3183,7 +3183,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037388u32) & !1); }
 }
 Ok(0x600372e8)
 }
-fn b_600372e8(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600372e8(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x600372e8: mov.w r10,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x600372e8; }
@@ -3204,7 +3204,7 @@ m.store((((u0 >> 0) as u64 & 4294967295u64)) as u32, 4, m.reg(68, 4))?;
 }
 Ok(0x600372f0)
 }
-fn b_600372f0(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600372f0(m: &mut Machine) -> Result<u32> {
 m.ticks += 1;
 // 0x600372f0: mov r3,r1
 #[cfg(debug_assertions)] { m.pc = 0x600372f0; }
@@ -3213,7 +3213,7 @@ m.set_reg(44, 4, (m.reg(36, 4)) & 4294967295u64);
 }
 Ok(0x600372f2)
 }
-fn b_600372f2(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600372f2(m: &mut Machine) -> Result<u32> {
 m.ticks += 9;
 // 0x600372f2: ldrh.w r5,[lr,#0xa]
 #[cfg(debug_assertions)] { m.pc = 0x600372f2; }
@@ -3290,7 +3290,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037368u32) & !1); }
 }
 Ok(0x6003730c)
 }
-fn b_6003730c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003730c(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x6003730c: ldrh.w r12,[lr,#0x0]
 #[cfg(debug_assertions)] { m.pc = 0x6003730c; }
@@ -3324,7 +3324,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037368u32) & !1); }
 }
 Ok(0x60037314)
 }
-fn b_60037314(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037314(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037314: ldrh.w r8,[lr,#0x2]
 #[cfg(debug_assertions)] { m.pc = 0x60037314; }
@@ -3360,7 +3360,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037368u32) & !1); }
 }
 Ok(0x6003731c)
 }
-fn b_6003731c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003731c(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x6003731c: sxth.w r8,r5
 #[cfg(debug_assertions)] { m.pc = 0x6003731c; }
@@ -3405,7 +3405,7 @@ if ((u2 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037368u32) & !1); }
 }
 Ok(0x60037328)
 }
-fn b_60037328(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037328(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037328: sxth.w r9,r2
 #[cfg(debug_assertions)] { m.pc = 0x60037328; }
@@ -3450,7 +3450,7 @@ if ((u2 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037368u32) & !1); }
 }
 Ok(0x60037334)
 }
-fn b_60037334(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037334(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037334: ldrsh.w r11,[r7,#0x4]
 #[cfg(debug_assertions)] { m.pc = 0x60037334; }
@@ -3486,7 +3486,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037368u32) & !1); }
 }
 Ok(0x6003733c)
 }
-fn b_6003733c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003733c(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x6003733c: ldrsh.w r8,[r7,#0x6]
 #[cfg(debug_assertions)] { m.pc = 0x6003733c; }
@@ -3522,7 +3522,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037368u32) & !1); }
 }
 Ok(0x60037344)
 }
-fn b_60037344(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037344(m: &mut Machine) -> Result<u32> {
 m.ticks += 8;
 // 0x60037344: and r2,r2,#0x7
 #[cfg(debug_assertions)] { m.pc = 0x60037344; }
@@ -3616,7 +3616,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x6003737eu32) & !1); }
 }
 Ok(0x60037360)
 }
-fn b_60037360(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037360(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037360: orr.w r5,r5,r8
 #[cfg(debug_assertions)] { m.pc = 0x60037360; }
@@ -3639,7 +3639,7 @@ m.store((((u0 >> 0) as u64 & 4294967295u64)) as u32, 1, ((u1 >> 0) as u64 & 255u
 }
 Ok(0x60037368)
 }
-fn b_60037368(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037368(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037368: adds r3,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037368; }
@@ -3684,7 +3684,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x600372f2u32) & !1); }
 }
 Ok(0x60037370)
 }
-fn b_60037370(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037370(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037370: adds r0,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037370; }
@@ -3729,7 +3729,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x600372f0u32) & !1); }
 }
 Ok(0x60037378)
 }
-fn b_60037378(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037378(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037378: add sp,#0xc
 #[cfg(debug_assertions)] { m.pc = 0x60037378; }
@@ -3769,7 +3769,7 @@ return Ok(((m.reg(92, 4)) as u32) & !1);
 }
 Ok(0x6003737e)
 }
-fn b_6003737e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003737e(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x6003737e: bic.w r5,r5,r8
 #[cfg(debug_assertions)] { m.pc = 0x6003737e; }
@@ -3799,7 +3799,7 @@ return Ok((0x60037368u32) & !1);
 }
 Ok(0x60037388)
 }
-fn b_60037388(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037388(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037388: cmp.w r9,#0x0
 #[cfg(debug_assertions)] { m.pc = 0x60037388; }
@@ -3827,7 +3827,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x600373f0u32) & !1); }
 }
 Ok(0x6003738e)
 }
-fn b_6003738e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003738e(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x6003738e: movs r5,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x6003738e; }
@@ -3845,7 +3845,7 @@ m.set_reg(60, 4, (m.reg(32, 4)) & 4294967295u64);
 }
 Ok(0x60037392)
 }
-fn b_60037392(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037392(m: &mut Machine) -> Result<u32> {
 m.ticks += 1;
 // 0x60037392: mov r3,r1
 #[cfg(debug_assertions)] { m.pc = 0x60037392; }
@@ -3854,7 +3854,7 @@ m.set_reg(44, 4, (m.reg(36, 4)) & 4294967295u64);
 }
 Ok(0x60037394)
 }
-fn b_60037394(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037394(m: &mut Machine) -> Result<u32> {
 m.ticks += 9;
 // 0x60037394: ldrh.w r0,[lr,#0xa]
 #[cfg(debug_assertions)] { m.pc = 0x60037394; }
@@ -3931,7 +3931,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x600373deu32) & !1); }
 }
 Ok(0x600373ae)
 }
-fn b_600373ae(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600373ae(m: &mut Machine) -> Result<u32> {
 m.ticks += 7;
 // 0x600373ae: ldrh.w r9,[lr,#0x0]
 #[cfg(debug_assertions)] { m.pc = 0x600373ae; }
@@ -4025,7 +4025,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x600373deu32) & !1); }
 }
 Ok(0x600373c6)
 }
-fn b_600373c6(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600373c6(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x600373c6: ldrh.w r0,[lr,#0x2]
 #[cfg(debug_assertions)] { m.pc = 0x600373c6; }
@@ -4061,7 +4061,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x600373deu32) & !1); }
 }
 Ok(0x600373ce)
 }
-fn b_600373ce(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600373ce(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x600373ce: ldr.w r0,[lr,#0x4]
 #[cfg(debug_assertions)] { m.pc = 0x600373ce; }
@@ -4100,7 +4100,7 @@ m.store((((u0 >> 0) as u64 & 4294967295u64)) as u32, 1, ((u1 >> 0) as u64 & 255u
 }
 Ok(0x600373de)
 }
-fn b_600373de(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600373de(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x600373de: adds r3,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x600373de; }
@@ -4149,7 +4149,7 @@ if ((u2 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037394u32) & !1); }
 }
 Ok(0x600373e6)
 }
-fn b_600373e6(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600373e6(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x600373e6: adds r7,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x600373e6; }
@@ -4198,7 +4198,7 @@ if ((u2 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037392u32) & !1); }
 }
 Ok(0x600373ee)
 }
-fn b_600373ee(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600373ee(m: &mut Machine) -> Result<u32> {
 m.ticks += 1;
 // 0x600373ee: b 0x60037378
 #[cfg(debug_assertions)] { m.pc = 0x600373ee; }
@@ -4207,7 +4207,7 @@ return Ok((0x60037378u32) & !1);
 }
 Ok(0x600373f0)
 }
-fn b_600373f0(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600373f0(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x600373f0: movs r7,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x600373f0; }
@@ -4225,7 +4225,7 @@ m.set_reg(80, 4, (m.reg(32, 4)) & 4294967295u64);
 }
 Ok(0x600373f4)
 }
-fn b_600373f4(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600373f4(m: &mut Machine) -> Result<u32> {
 m.ticks += 1;
 // 0x600373f4: mov r0,r1
 #[cfg(debug_assertions)] { m.pc = 0x600373f4; }
@@ -4234,7 +4234,7 @@ m.set_reg(32, 4, (m.reg(36, 4)) & 4294967295u64);
 }
 Ok(0x600373f6)
 }
-fn b_600373f6(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600373f6(m: &mut Machine) -> Result<u32> {
 m.ticks += 12;
 // 0x600373f6: mov r3,r0
 #[cfg(debug_assertions)] { m.pc = 0x600373f6; }
@@ -4349,7 +4349,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037440u32) & !1); }
 }
 Ok(0x60037414)
 }
-fn b_60037414(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037414(m: &mut Machine) -> Result<u32> {
 m.ticks += 7;
 // 0x60037414: ldrh.w r9,[lr,#0x0]
 #[cfg(debug_assertions)] { m.pc = 0x60037414; }
@@ -4443,7 +4443,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037440u32) & !1); }
 }
 Ok(0x6003742c)
 }
-fn b_6003742c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003742c(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x6003742c: ldrh.w r2,[lr,#0x2]
 #[cfg(debug_assertions)] { m.pc = 0x6003742c; }
@@ -4479,7 +4479,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037440u32) & !1); }
 }
 Ok(0x60037434)
 }
-fn b_60037434(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037434(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037434: ldr.w r2,[lr,#0x4]
 #[cfg(debug_assertions)] { m.pc = 0x60037434; }
@@ -4520,7 +4520,7 @@ m.store((((u0 >> 0) as u64 & 4294967295u64)) as u32, 1, ((u1 >> 0) as u64 & 255u
 }
 Ok(0x60037440)
 }
-fn b_60037440(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037440(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037440: cmp r0,r4
 #[cfg(debug_assertions)] { m.pc = 0x60037440; }
@@ -4545,7 +4545,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x600373f6u32) & !1); }
 }
 Ok(0x60037444)
 }
-fn b_60037444(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037444(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037444: add.w r12,r12,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037444; }
@@ -4593,7 +4593,7 @@ if ((u2 >> 0) as u64 & 255u64) != 0 { return Ok((0x600373f4u32) & !1); }
 }
 Ok(0x60037450)
 }
-fn b_60037450(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037450(m: &mut Machine) -> Result<u32> {
 m.ticks += 1;
 // 0x60037450: b 0x60037378
 #[cfg(debug_assertions)] { m.pc = 0x60037450; }
@@ -4602,7 +4602,7 @@ return Ok((0x60037378u32) & !1);
 }
 Ok(0x60037452)
 }
-fn b_6003745c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003745c(m: &mut Machine) -> Result<u32> {
 m.ticks += 6;
 // 0x6003745c: push {r4,r5,r6,r7,r8,r9,r10,r11,lr}
 #[cfg(debug_assertions)] { m.pc = 0x6003745c; }
@@ -4676,7 +4676,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x6003750eu32) & !1); }
 }
 Ok(0x6003746a)
 }
-fn b_6003746a(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003746a(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x6003746a: adds r1,r3,r1
 #[cfg(debug_assertions)] { m.pc = 0x6003746a; }
@@ -4714,7 +4714,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x6003750eu32) & !1); }
 }
 Ok(0x60037470)
 }
-fn b_60037470(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037470(m: &mut Machine) -> Result<u32> {
 m.ticks += 6;
 // 0x60037470: ldr r3,[0x6003757c]
 #[cfg(debug_assertions)] { m.pc = 0x60037470; }
@@ -4766,7 +4766,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037514u32) & !1); }
 }
 Ok(0x60037482)
 }
-fn b_60037482(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037482(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037482: mov.w r10,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037482; }
@@ -4785,7 +4785,7 @@ m.set_reg(56, 4, (m.reg(48, 4)) & 4294967295u64);
 }
 Ok(0x60037488)
 }
-fn b_60037488(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037488(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037488: mov r3,r5
 #[cfg(debug_assertions)] { m.pc = 0x60037488; }
@@ -4801,7 +4801,7 @@ m.store((((u0 >> 0) as u64 & 4294967295u64)) as u32, 4, m.reg(52, 4))?;
 }
 Ok(0x6003748c)
 }
-fn b_6003748c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003748c(m: &mut Machine) -> Result<u32> {
 m.ticks += 12;
 // 0x6003748c: mov r4,r3
 #[cfg(debug_assertions)] { m.pc = 0x6003748c; }
@@ -4916,7 +4916,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037500u32) & !1); }
 }
 Ok(0x600374ac)
 }
-fn b_600374ac(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600374ac(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x600374ac: ldrh.w r4,[lr,#0x0]
 #[cfg(debug_assertions)] { m.pc = 0x600374ac; }
@@ -4957,7 +4957,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037500u32) & !1); }
 }
 Ok(0x600374b6)
 }
-fn b_600374b6(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600374b6(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x600374b6: ldrh.w r9,[lr,#0x2]
 #[cfg(debug_assertions)] { m.pc = 0x600374b6; }
@@ -5000,7 +5000,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037500u32) & !1); }
 }
 Ok(0x600374c2)
 }
-fn b_600374c2(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600374c2(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x600374c2: ldrsh.w r9,[r8,#0x0]
 #[cfg(debug_assertions)] { m.pc = 0x600374c2; }
@@ -5038,7 +5038,7 @@ if ((u2 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037500u32) & !1); }
 }
 Ok(0x600374ca)
 }
-fn b_600374ca(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600374ca(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x600374ca: ldrsh.w r9,[r8,#0x2]
 #[cfg(debug_assertions)] { m.pc = 0x600374ca; }
@@ -5076,7 +5076,7 @@ if ((u2 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037500u32) & !1); }
 }
 Ok(0x600374d2)
 }
-fn b_600374d2(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600374d2(m: &mut Machine) -> Result<u32> {
 m.ticks += 7;
 // 0x600374d2: ldrsh.w r5,[r8,#0x4]
 #[cfg(debug_assertions)] { m.pc = 0x600374d2; }
@@ -5172,7 +5172,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037500u32) & !1); }
 }
 Ok(0x600374ea)
 }
-fn b_600374ea(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600374ea(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x600374ea: ldrsh.w r4,[r8,#0x6]
 #[cfg(debug_assertions)] { m.pc = 0x600374ea; }
@@ -5208,7 +5208,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037500u32) & !1); }
 }
 Ok(0x600374f2)
 }
-fn b_600374f2(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600374f2(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x600374f2: ldr.w r4,[lr,#0x4]
 #[cfg(debug_assertions)] { m.pc = 0x600374f2; }
@@ -5246,7 +5246,7 @@ m.store((((u0 >> 0) as u64 & 4294967295u64)) as u32, 1, ((u1 >> 0) as u64 & 255u
 }
 Ok(0x60037500)
 }
-fn b_60037500(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037500(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037500: cmp r3,r1
 #[cfg(debug_assertions)] { m.pc = 0x60037500; }
@@ -5271,7 +5271,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x6003748cu32) & !1); }
 }
 Ok(0x60037504)
 }
-fn b_60037504(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037504(m: &mut Machine) -> Result<u32> {
 m.ticks += 5;
 // 0x60037504: adds r0,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037504; }
@@ -5323,7 +5323,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037488u32) & !1); }
 }
 Ok(0x6003750e)
 }
-fn b_6003750e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003750e(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x6003750e: add sp,#0xc
 #[cfg(debug_assertions)] { m.pc = 0x6003750e; }
@@ -5363,7 +5363,7 @@ return Ok(((m.reg(92, 4)) as u32) & !1);
 }
 Ok(0x60037514)
 }
-fn b_60037514(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037514(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037514: movs r7,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037514; }
@@ -5381,7 +5381,7 @@ m.set_reg(56, 4, (m.reg(32, 4)) & 4294967295u64);
 }
 Ok(0x60037518)
 }
-fn b_60037518(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037518(m: &mut Machine) -> Result<u32> {
 m.ticks += 1;
 // 0x60037518: mov r3,r5
 #[cfg(debug_assertions)] { m.pc = 0x60037518; }
@@ -5390,7 +5390,7 @@ m.set_reg(44, 4, (m.reg(52, 4)) & 4294967295u64);
 }
 Ok(0x6003751a)
 }
-fn b_6003751a(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003751a(m: &mut Machine) -> Result<u32> {
 m.ticks += 9;
 // 0x6003751a: ldrh.w r0,[lr,#0xa]
 #[cfg(debug_assertions)] { m.pc = 0x6003751a; }
@@ -5467,7 +5467,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037564u32) & !1); }
 }
 Ok(0x60037534)
 }
-fn b_60037534(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037534(m: &mut Machine) -> Result<u32> {
 m.ticks += 7;
 // 0x60037534: ldrh.w r9,[lr,#0x0]
 #[cfg(debug_assertions)] { m.pc = 0x60037534; }
@@ -5561,7 +5561,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037564u32) & !1); }
 }
 Ok(0x6003754c)
 }
-fn b_6003754c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003754c(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x6003754c: ldrh.w r0,[lr,#0x2]
 #[cfg(debug_assertions)] { m.pc = 0x6003754c; }
@@ -5597,7 +5597,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037564u32) & !1); }
 }
 Ok(0x60037554)
 }
-fn b_60037554(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037554(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037554: ldr.w r0,[lr,#0x4]
 #[cfg(debug_assertions)] { m.pc = 0x60037554; }
@@ -5636,7 +5636,7 @@ m.store((((u0 >> 0) as u64 & 4294967295u64)) as u32, 1, ((u1 >> 0) as u64 & 255u
 }
 Ok(0x60037564)
 }
-fn b_60037564(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037564(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037564: adds r3,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037564; }
@@ -5685,7 +5685,7 @@ if ((u2 >> 0) as u64 & 255u64) != 0 { return Ok((0x6003751au32) & !1); }
 }
 Ok(0x6003756c)
 }
-fn b_6003756c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003756c(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x6003756c: adds r6,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x6003756c; }
@@ -5734,7 +5734,7 @@ if ((u2 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037518u32) & !1); }
 }
 Ok(0x60037574)
 }
-fn b_60037574(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037574(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037574: add sp,#0xc
 #[cfg(debug_assertions)] { m.pc = 0x60037574; }
@@ -5774,7 +5774,7 @@ return Ok(((m.reg(92, 4)) as u32) & !1);
 }
 Ok(0x6003757a)
 }
-fn b_60037584(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037584(m: &mut Machine) -> Result<u32> {
 m.ticks += 21;
 // 0x60037584: push {r4,r5,r6,r7,r8,r9,r10,r11,lr}
 #[cfg(debug_assertions)] { m.pc = 0x60037584; }
@@ -5983,7 +5983,7 @@ return Ok((0x600368e8u32) & !1);
 }
 Ok(0x600375bc)
 }
-fn b_600375bc(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600375bc(m: &mut Machine) -> Result<u32> {
 m.ticks += 7;
 // 0x600375bc: add.w r3,r9,r4
 #[cfg(debug_assertions)] { m.pc = 0x600375bc; }
@@ -6042,7 +6042,7 @@ return Ok((0x600368e8u32) & !1);
 }
 Ok(0x600375d0)
 }
-fn b_600375d0(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600375d0(m: &mut Machine) -> Result<u32> {
 m.ticks += 11;
 // 0x600375d0: ldr r0,[sp,#0x10]
 #[cfg(debug_assertions)] { m.pc = 0x600375d0; }
@@ -6121,7 +6121,7 @@ return Ok((0x600368e8u32) & !1);
 }
 Ok(0x600375ea)
 }
-fn b_600375ea(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600375ea(m: &mut Machine) -> Result<u32> {
 m.ticks += 9;
 // 0x600375ea: add.w r2,r10,r11
 #[cfg(debug_assertions)] { m.pc = 0x600375ea; }
@@ -6197,7 +6197,7 @@ return Ok((0x600368e8u32) & !1);
 }
 Ok(0x60037600)
 }
-fn b_60037600(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037600(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037600: cmp r6,#0x0
 #[cfg(debug_assertions)] { m.pc = 0x60037600; }
@@ -6224,7 +6224,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037796u32) & !1); }
 }
 Ok(0x60037606)
 }
-fn b_60037606(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037606(m: &mut Machine) -> Result<u32> {
 m.ticks += 11;
 // 0x60037606: ldr r0,[sp,#0x10]
 #[cfg(debug_assertions)] { m.pc = 0x60037606; }
@@ -6315,7 +6315,7 @@ m.store((((u0 >> 0) as u64 & 4294967295u64)) as u32, 4, m.reg(48, 4))?;
 }
 Ok(0x60037620)
 }
-fn b_60037620(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037620(m: &mut Machine) -> Result<u32> {
 m.ticks += 9;
 // 0x60037620: add.w r5,r10,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037620; }
@@ -6402,7 +6402,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037642u32) & !1); }
 }
 Ok(0x6003763a)
 }
-fn b_6003763a(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003763a(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x6003763a: subs r6,r7,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x6003763a; }
@@ -6436,7 +6436,7 @@ m.set_reg(60, 4, (signed(((u0 >> 0) as u64 & 65535u64), 2) as u64) & 4294967295u
 }
 Ok(0x60037642)
 }
-fn b_60037642(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037642(m: &mut Machine) -> Result<u32> {
 m.ticks += 5;
 // 0x60037642: sub.w r0,r8,r6
 #[cfg(debug_assertions)] { m.pc = 0x60037642; }
@@ -6499,7 +6499,7 @@ return Ok((0x60036850u32) & !1);
 }
 Ok(0x60037652)
 }
-fn b_60037652(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037652(m: &mut Machine) -> Result<u32> {
 m.ticks += 6;
 // 0x60037652: sub.w r1,r9,r6
 #[cfg(debug_assertions)] { m.pc = 0x60037652; }
@@ -6555,7 +6555,7 @@ return Ok((0x60036850u32) & !1);
 }
 Ok(0x60037664)
 }
-fn b_60037664(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037664(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037664: cmp r10,r7
 #[cfg(debug_assertions)] { m.pc = 0x60037664; }
@@ -6580,7 +6580,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037620u32) & !1); }
 }
 Ok(0x60037668)
 }
-fn b_60037668(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037668(m: &mut Machine) -> Result<u32> {
 m.ticks += 12;
 // 0x60037668: ldr r2,[sp,#0x10]
 #[cfg(debug_assertions)] { m.pc = 0x60037668; }
@@ -6687,7 +6687,7 @@ m.store((((u0 >> 0) as u64 & 4294967295u64)) as u32, 4, m.reg(44, 4))?;
 }
 Ok(0x60037686)
 }
-fn b_60037686(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037686(m: &mut Machine) -> Result<u32> {
 m.ticks += 10;
 // 0x60037686: ldr r3,[sp,#0xc]
 #[cfg(debug_assertions)] { m.pc = 0x60037686; }
@@ -6772,7 +6772,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x600376acu32) & !1); }
 }
 Ok(0x600376a0)
 }
-fn b_600376a0(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600376a0(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x600376a0: add.w r6,r11,#0xffffffff
 #[cfg(debug_assertions)] { m.pc = 0x600376a0; }
@@ -6805,7 +6805,7 @@ m.set_reg(76, 4, (signed(((u0 >> 0) as u64 & 65535u64), 2) as u64) & 4294967295u
 }
 Ok(0x600376ac)
 }
-fn b_600376ac(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600376ac(m: &mut Machine) -> Result<u32> {
 m.ticks += 5;
 // 0x600376ac: sub.w r1,r9,r6
 #[cfg(debug_assertions)] { m.pc = 0x600376ac; }
@@ -6868,7 +6868,7 @@ return Ok((0x60036850u32) & !1);
 }
 Ok(0x600376bc)
 }
-fn b_600376bc(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600376bc(m: &mut Machine) -> Result<u32> {
 m.ticks += 7;
 // 0x600376bc: ldr r3,[sp,#0x8]
 #[cfg(debug_assertions)] { m.pc = 0x600376bc; }
@@ -6932,7 +6932,7 @@ return Ok((0x60036850u32) & !1);
 }
 Ok(0x600376ce)
 }
-fn b_600376ce(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600376ce(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x600376ce: cmp r5,r11
 #[cfg(debug_assertions)] { m.pc = 0x600376ce; }
@@ -6957,7 +6957,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037686u32) & !1); }
 }
 Ok(0x600376d2)
 }
-fn b_600376d2(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600376d2(m: &mut Machine) -> Result<u32> {
 m.ticks += 9;
 // 0x600376d2: ldr r3,[sp,#0x1c]
 #[cfg(debug_assertions)] { m.pc = 0x600376d2; }
@@ -7036,7 +7036,7 @@ m.store((((u1 >> 0) as u64 & 4294967295u64)) as u32, 4, m.reg(56, 4))?;
 }
 Ok(0x600376ec)
 }
-fn b_600376ec(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600376ec(m: &mut Machine) -> Result<u32> {
 m.ticks += 10;
 // 0x600376ec: ldr r3,[sp,#0xc]
 #[cfg(debug_assertions)] { m.pc = 0x600376ec; }
@@ -7121,7 +7121,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037712u32) & !1); }
 }
 Ok(0x60037706)
 }
-fn b_60037706(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037706(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037706: add.w r6,r11,#0xffffffff
 #[cfg(debug_assertions)] { m.pc = 0x60037706; }
@@ -7154,7 +7154,7 @@ m.set_reg(76, 4, (signed(((u0 >> 0) as u64 & 65535u64), 2) as u64) & 4294967295u
 }
 Ok(0x60037712)
 }
-fn b_60037712(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037712(m: &mut Machine) -> Result<u32> {
 m.ticks += 5;
 // 0x60037712: add.w r1,r9,r6
 #[cfg(debug_assertions)] { m.pc = 0x60037712; }
@@ -7217,7 +7217,7 @@ return Ok((0x60036850u32) & !1);
 }
 Ok(0x60037722)
 }
-fn b_60037722(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037722(m: &mut Machine) -> Result<u32> {
 m.ticks += 7;
 // 0x60037722: ldr r3,[sp,#0x8]
 #[cfg(debug_assertions)] { m.pc = 0x60037722; }
@@ -7281,7 +7281,7 @@ return Ok((0x60036850u32) & !1);
 }
 Ok(0x60037734)
 }
-fn b_60037734(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037734(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037734: cmp r5,r11
 #[cfg(debug_assertions)] { m.pc = 0x60037734; }
@@ -7306,7 +7306,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x600376ecu32) & !1); }
 }
 Ok(0x60037738)
 }
-fn b_60037738(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037738(m: &mut Machine) -> Result<u32> {
 m.ticks += 7;
 // 0x60037738: str r7,[sp,#0x8]
 #[cfg(debug_assertions)] { m.pc = 0x60037738; }
@@ -7362,7 +7362,7 @@ m.set_reg(56, 4, (m.load((((u0 >> 0) as u64 & 4294967295u64)) as u32, 4)?) & 429
 }
 Ok(0x6003774a)
 }
-fn b_6003774a(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003774a(m: &mut Machine) -> Result<u32> {
 m.ticks += 8;
 // 0x6003774a: add.w r11,r5,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x6003774a; }
@@ -7444,7 +7444,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x6003776eu32) & !1); }
 }
 Ok(0x60037762)
 }
-fn b_60037762(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037762(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037762: add.w r10,r10,#0xffffffff
 #[cfg(debug_assertions)] { m.pc = 0x60037762; }
@@ -7477,7 +7477,7 @@ m.set_reg(60, 4, (signed(((u0 >> 0) as u64 & 65535u64), 2) as u64) & 4294967295u
 }
 Ok(0x6003776e)
 }
-fn b_6003776e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003776e(m: &mut Machine) -> Result<u32> {
 m.ticks += 5;
 // 0x6003776e: sub.w r0,r8,r10
 #[cfg(debug_assertions)] { m.pc = 0x6003776e; }
@@ -7540,7 +7540,7 @@ return Ok((0x60036850u32) & !1);
 }
 Ok(0x6003777e)
 }
-fn b_6003777e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003777e(m: &mut Machine) -> Result<u32> {
 m.ticks += 7;
 // 0x6003777e: add.w r1,r9,r10
 #[cfg(debug_assertions)] { m.pc = 0x6003777e; }
@@ -7601,7 +7601,7 @@ return Ok((0x60036850u32) & !1);
 }
 Ok(0x60037792)
 }
-fn b_60037792(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037792(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037792: cmp r5,r7
 #[cfg(debug_assertions)] { m.pc = 0x60037792; }
@@ -7626,7 +7626,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x6003774au32) & !1); }
 }
 Ok(0x60037796)
 }
-fn b_60037796(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037796(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037796: add sp,#0x2c
 #[cfg(debug_assertions)] { m.pc = 0x60037796; }
@@ -7666,7 +7666,7 @@ return Ok(((m.reg(92, 4)) as u32) & !1);
 }
 Ok(0x6003779c)
 }
-fn b_6003779c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003779c(m: &mut Machine) -> Result<u32> {
 m.ticks += 18;
 // 0x6003779c: push {r4,r5,r6,r7,r8,r9,r10,r11,lr}
 #[cfg(debug_assertions)] { m.pc = 0x6003779c; }
@@ -7843,7 +7843,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x6003788cu32) & !1); }
 }
 Ok(0x600377cc)
 }
-fn b_600377cc(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600377cc(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x600377cc: adds r7,r1,r6
 #[cfg(debug_assertions)] { m.pc = 0x600377cc; }
@@ -7881,7 +7881,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x6003788cu32) & !1); }
 }
 Ok(0x600377d2)
 }
-fn b_600377d2(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600377d2(m: &mut Machine) -> Result<u32> {
 m.ticks += 6;
 // 0x600377d2: ldr r3,[0x60037a84]
 #[cfg(debug_assertions)] { m.pc = 0x600377d2; }
@@ -7933,7 +7933,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x600379b8u32) & !1); }
 }
 Ok(0x600377e4)
 }
-fn b_600377e4(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600377e4(m: &mut Machine) -> Result<u32> {
 m.ticks += 7;
 // 0x600377e4: mov.w r11,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x600377e4; }
@@ -7991,7 +7991,7 @@ m.set_reg(80, 4, (m.reg(40, 4)) & 4294967295u64);
 }
 Ok(0x600377fa)
 }
-fn b_600377fa(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600377fa(m: &mut Machine) -> Result<u32> {
 m.ticks += 1;
 // 0x600377fa: ldr r3,[sp,#0x8]
 #[cfg(debug_assertions)] { m.pc = 0x600377fa; }
@@ -8002,7 +8002,7 @@ m.set_reg(44, 4, (m.load((((u0 >> 0) as u64 & 4294967295u64)) as u32, 4)?) & 429
 }
 Ok(0x600377fc)
 }
-fn b_600377fc(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600377fc(m: &mut Machine) -> Result<u32> {
 m.ticks += 9;
 // 0x600377fc: ldrh r1,[r4,#0xa]
 #[cfg(debug_assertions)] { m.pc = 0x600377fc; }
@@ -8092,7 +8092,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037868u32) & !1); }
 }
 Ok(0x60037810)
 }
-fn b_60037810(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037810(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037810: ldrh r6,[r4,#0x0]
 #[cfg(debug_assertions)] { m.pc = 0x60037810; }
@@ -8126,7 +8126,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037868u32) & !1); }
 }
 Ok(0x60037816)
 }
-fn b_60037816(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037816(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037816: ldrh.w lr,[r4,#0x2]
 #[cfg(debug_assertions)] { m.pc = 0x60037816; }
@@ -8162,7 +8162,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037868u32) & !1); }
 }
 Ok(0x6003781e)
 }
-fn b_6003781e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003781e(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x6003781e: sxth.w r8,r1
 #[cfg(debug_assertions)] { m.pc = 0x6003781e; }
@@ -8207,7 +8207,7 @@ if ((u2 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037868u32) & !1); }
 }
 Ok(0x6003782a)
 }
-fn b_6003782a(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003782a(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x6003782a: sxth.w lr,r2
 #[cfg(debug_assertions)] { m.pc = 0x6003782a; }
@@ -8252,7 +8252,7 @@ if ((u2 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037868u32) & !1); }
 }
 Ok(0x60037836)
 }
-fn b_60037836(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037836(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037836: ldrsh.w r10,[r9,#0x4]
 #[cfg(debug_assertions)] { m.pc = 0x60037836; }
@@ -8288,7 +8288,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037868u32) & !1); }
 }
 Ok(0x6003783e)
 }
-fn b_6003783e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003783e(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x6003783e: ldrsh.w r8,[r9,#0x6]
 #[cfg(debug_assertions)] { m.pc = 0x6003783e; }
@@ -8324,7 +8324,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037868u32) & !1); }
 }
 Ok(0x60037846)
 }
-fn b_60037846(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037846(m: &mut Machine) -> Result<u32> {
 m.ticks += 8;
 // 0x60037846: asr.w lr,lr, asr #0x3
 #[cfg(debug_assertions)] { m.pc = 0x60037846; }
@@ -8425,7 +8425,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x600379aeu32) & !1); }
 }
 Ok(0x60037862)
 }
-fn b_60037862(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037862(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037862: orrs r1,r2
 #[cfg(debug_assertions)] { m.pc = 0x60037862; }
@@ -8447,7 +8447,7 @@ m.store((((u0 >> 0) as u64 & 4294967295u64)) as u32, 1, ((u1 >> 0) as u64 & 255u
 }
 Ok(0x60037868)
 }
-fn b_60037868(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037868(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037868: adds r3,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037868; }
@@ -8492,7 +8492,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x600377fcu32) & !1); }
 }
 Ok(0x60037870)
 }
-fn b_60037870(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037870(m: &mut Machine) -> Result<u32> {
 m.ticks += 5;
 // 0x60037870: adds r5,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037870; }
@@ -8544,7 +8544,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x600377fau32) & !1); }
 }
 Ok(0x6003787a)
 }
-fn b_6003787a(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003787a(m: &mut Machine) -> Result<u32> {
 m.ticks += 6;
 // 0x6003787a: mov r2,r12
 #[cfg(debug_assertions)] { m.pc = 0x6003787a; }
@@ -8588,7 +8588,7 @@ m.set_reg(80, 4, (m.load((((u0 >> 0) as u64 & 4294967295u64)) as u32, 4)?) & 429
 }
 Ok(0x6003788c)
 }
-fn b_6003788c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003788c(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x6003788c: ldr r5,[sp,#0x18]
 #[cfg(debug_assertions)] { m.pc = 0x6003788c; }
@@ -8622,7 +8622,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x600379a8u32) & !1); }
 }
 Ok(0x60037894)
 }
-fn b_60037894(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037894(m: &mut Machine) -> Result<u32> {
 m.ticks += 17;
 // 0x60037894: subs r2,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037894; }
@@ -8783,7 +8783,7 @@ m.store((((u1 >> 0) as u64 & 4294967295u64)) as u32, 4, m.reg(48, 4))?;
 }
 Ok(0x600378c6)
 }
-fn b_600378c6(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600378c6(m: &mut Machine) -> Result<u32> {
 m.ticks += 12;
 // 0x600378c6: add.w r6,r10,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x600378c6; }
@@ -8908,7 +8908,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x600378f4u32) & !1); }
 }
 Ok(0x600378e8)
 }
-fn b_600378e8(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600378e8(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x600378e8: add.w r4,r11,#0xffffffff
 #[cfg(debug_assertions)] { m.pc = 0x600378e8; }
@@ -8943,7 +8943,7 @@ m.set_reg(76, 4, (signed(((u0 >> 0) as u64 & 65535u64), 2) as u64) & 4294967295u
 }
 Ok(0x600378f4)
 }
-fn b_600378f4(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600378f4(m: &mut Machine) -> Result<u32> {
 m.ticks += 11;
 // 0x600378f4: adds r3,r7,r4
 #[cfg(debug_assertions)] { m.pc = 0x600378f4; }
@@ -9030,7 +9030,7 @@ return Ok((0x600368e8u32) & !1);
 }
 Ok(0x6003790c)
 }
-fn b_6003790c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003790c(m: &mut Machine) -> Result<u32> {
 m.ticks += 12;
 // 0x6003790c: ldr r3,[sp,#0x10]
 #[cfg(debug_assertions)] { m.pc = 0x6003790c; }
@@ -9131,7 +9131,7 @@ return Ok((0x600368e8u32) & !1);
 }
 Ok(0x60037928)
 }
-fn b_60037928(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037928(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037928: cmp r10,r11
 #[cfg(debug_assertions)] { m.pc = 0x60037928; }
@@ -9156,7 +9156,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x600378c6u32) & !1); }
 }
 Ok(0x6003792c)
 }
-fn b_6003792c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003792c(m: &mut Machine) -> Result<u32> {
 m.ticks += 7;
 // 0x6003792c: ldr.w r12,[sp,#0x24]
 #[cfg(debug_assertions)] { m.pc = 0x6003792c; }
@@ -9211,7 +9211,7 @@ m.set_reg(48, 4, (m.reg(80, 4)) & 4294967295u64);
 }
 Ok(0x60037942)
 }
-fn b_60037942(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037942(m: &mut Machine) -> Result<u32> {
 m.ticks += 11;
 // 0x60037942: add.w r5,r11,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037942; }
@@ -9338,7 +9338,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x6003796eu32) & !1); }
 }
 Ok(0x60037964)
 }
-fn b_60037964(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037964(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037964: subs r4,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037964; }
@@ -9374,7 +9374,7 @@ m.set_reg(68, 4, (signed(((u0 >> 0) as u64 & 65535u64), 2) as u64) & 4294967295u
 }
 Ok(0x6003796e)
 }
-fn b_6003796e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_6003796e(m: &mut Machine) -> Result<u32> {
 m.ticks += 10;
 // 0x6003796e: adds r3,r7,r4
 #[cfg(debug_assertions)] { m.pc = 0x6003796e; }
@@ -9454,7 +9454,7 @@ return Ok((0x600368e8u32) & !1);
 }
 Ok(0x60037984)
 }
-fn b_60037984(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037984(m: &mut Machine) -> Result<u32> {
 m.ticks += 14;
 // 0x60037984: ldr r3,[sp,#0xc]
 #[cfg(debug_assertions)] { m.pc = 0x60037984; }
@@ -9567,7 +9567,7 @@ return Ok((0x600368e8u32) & !1);
 }
 Ok(0x600379a4)
 }
-fn b_600379a4(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600379a4(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x600379a4: cmp r11,r9
 #[cfg(debug_assertions)] { m.pc = 0x600379a4; }
@@ -9592,7 +9592,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037942u32) & !1); }
 }
 Ok(0x600379a8)
 }
-fn b_600379a8(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600379a8(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x600379a8: add sp,#0x2c
 #[cfg(debug_assertions)] { m.pc = 0x600379a8; }
@@ -9632,7 +9632,7 @@ return Ok(((m.reg(92, 4)) as u32) & !1);
 }
 Ok(0x600379ae)
 }
-fn b_600379ae(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600379ae(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x600379ae: bic.w r1,r1,r2
 #[cfg(debug_assertions)] { m.pc = 0x600379ae; }
@@ -9662,7 +9662,7 @@ return Ok((0x60037868u32) & !1);
 }
 Ok(0x600379b8)
 }
-fn b_600379b8(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600379b8(m: &mut Machine) -> Result<u32> {
 m.ticks += 7;
 // 0x600379b8: mov.w r9,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x600379b8; }
@@ -9727,7 +9727,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037a38u32) & !1); }
 }
 Ok(0x600379cc)
 }
-fn b_600379cc(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600379cc(m: &mut Machine) -> Result<u32> {
 m.ticks += 1;
 // 0x600379cc: mov r1,r6
 #[cfg(debug_assertions)] { m.pc = 0x600379cc; }
@@ -9736,7 +9736,7 @@ m.set_reg(36, 4, (m.reg(56, 4)) & 4294967295u64);
 }
 Ok(0x600379ce)
 }
-fn b_600379ce(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600379ce(m: &mut Machine) -> Result<u32> {
 m.ticks += 12;
 // 0x600379ce: mov r3,r1
 #[cfg(debug_assertions)] { m.pc = 0x600379ce; }
@@ -9851,7 +9851,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037a10u32) & !1); }
 }
 Ok(0x600379e8)
 }
-fn b_600379e8(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_600379e8(m: &mut Machine) -> Result<u32> {
 m.ticks += 7;
 // 0x600379e8: ldrh.w r8,[r4,#0x0]
 #[cfg(debug_assertions)] { m.pc = 0x600379e8; }
@@ -9945,7 +9945,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037a10u32) & !1); }
 }
 Ok(0x60037a00)
 }
-fn b_60037a00(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037a00(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037a00: ldrh r0,[r4,#0x2]
 #[cfg(debug_assertions)] { m.pc = 0x60037a00; }
@@ -9981,7 +9981,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037a10u32) & !1); }
 }
 Ok(0x60037a06)
 }
-fn b_60037a06(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037a06(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037a06: ldr r0,[r4,#0x4]
 #[cfg(debug_assertions)] { m.pc = 0x60037a06; }
@@ -10022,7 +10022,7 @@ m.store((((u0 >> 0) as u64 & 4294967295u64)) as u32, 1, ((u1 >> 0) as u64 & 255u
 }
 Ok(0x60037a10)
 }
-fn b_60037a10(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037a10(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037a10: cmp r7,r1
 #[cfg(debug_assertions)] { m.pc = 0x60037a10; }
@@ -10051,7 +10051,7 @@ if ((u2 >> 0) as u64 & 255u64) != 0 { return Ok((0x600379ceu32) & !1); }
 }
 Ok(0x60037a14)
 }
-fn b_60037a14(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037a14(m: &mut Machine) -> Result<u32> {
 m.ticks += 5;
 // 0x60037a14: add.w r11,r11,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037a14; }
@@ -10106,7 +10106,7 @@ if ((u2 >> 0) as u64 & 255u64) != 0 { return Ok((0x600379ccu32) & !1); }
 }
 Ok(0x60037a22)
 }
-fn b_60037a22(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037a22(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037a22: ldr r0,[sp,#0x1c]
 #[cfg(debug_assertions)] { m.pc = 0x60037a22; }
@@ -10132,7 +10132,7 @@ return Ok((0x6003788cu32) & !1);
 }
 Ok(0x60037a2a)
 }
-fn b_60037a2a(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037a2a(m: &mut Machine) -> Result<u32> {
 m.ticks += 5;
 // 0x60037a2a: add.w r11,r11,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037a2a; }
@@ -10185,7 +10185,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037a22u32) & !1); }
 }
 Ok(0x60037a38)
 }
-fn b_60037a38(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037a38(m: &mut Machine) -> Result<u32> {
 m.ticks += 1;
 // 0x60037a38: mov r3,r6
 #[cfg(debug_assertions)] { m.pc = 0x60037a38; }
@@ -10194,7 +10194,7 @@ m.set_reg(44, 4, (m.reg(56, 4)) & 4294967295u64);
 }
 Ok(0x60037a3a)
 }
-fn b_60037a3a(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037a3a(m: &mut Machine) -> Result<u32> {
 m.ticks += 9;
 // 0x60037a3a: ldrh r0,[r4,#0xa]
 #[cfg(debug_assertions)] { m.pc = 0x60037a3a; }
@@ -10284,7 +10284,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037a78u32) & !1); }
 }
 Ok(0x60037a4e)
 }
-fn b_60037a4e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037a4e(m: &mut Machine) -> Result<u32> {
 m.ticks += 7;
 // 0x60037a4e: ldrh.w r8,[r4,#0x0]
 #[cfg(debug_assertions)] { m.pc = 0x60037a4e; }
@@ -10378,7 +10378,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037a78u32) & !1); }
 }
 Ok(0x60037a66)
 }
-fn b_60037a66(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037a66(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037a66: ldrh r0,[r4,#0x2]
 #[cfg(debug_assertions)] { m.pc = 0x60037a66; }
@@ -10414,7 +10414,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037a78u32) & !1); }
 }
 Ok(0x60037a6c)
 }
-fn b_60037a6c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037a6c(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037a6c: ldr r1,[r4,#0x4]
 #[cfg(debug_assertions)] { m.pc = 0x60037a6c; }
@@ -10453,7 +10453,7 @@ m.store((((u0 >> 0) as u64 & 4294967295u64)) as u32, 1, ((u1 >> 0) as u64 & 255u
 }
 Ok(0x60037a78)
 }
-fn b_60037a78(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037a78(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037a78: adds r3,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037a78; }
@@ -10502,7 +10502,7 @@ if ((u2 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037a3au32) & !1); }
 }
 Ok(0x60037a80)
 }
-fn b_60037a80(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037a80(m: &mut Machine) -> Result<u32> {
 m.ticks += 1;
 // 0x60037a80: b 0x60037a2a
 #[cfg(debug_assertions)] { m.pc = 0x60037a80; }
@@ -10511,7 +10511,7 @@ return Ok((0x60037a2au32) & !1);
 }
 Ok(0x60037a82)
 }
-fn b_60037a8c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037a8c(m: &mut Machine) -> Result<u32> {
 m.ticks += 11;
 // 0x60037a8c: push {r4,r5,r6,r7,r8,r9,r10,r11,lr}
 #[cfg(debug_assertions)] { m.pc = 0x60037a8c; }
@@ -10607,7 +10607,7 @@ return Ok((0x60036850u32) & !1);
 }
 Ok(0x60037aa6)
 }
-fn b_60037aa6(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037aa6(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037aa6: sub.w r1,r9,r6
 #[cfg(debug_assertions)] { m.pc = 0x60037aa6; }
@@ -10642,7 +10642,7 @@ return Ok((0x60036850u32) & !1);
 }
 Ok(0x60037ab2)
 }
-fn b_60037ab2(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037ab2(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037ab2: add.w r0,r6,r10
 #[cfg(debug_assertions)] { m.pc = 0x60037ab2; }
@@ -10677,7 +10677,7 @@ return Ok((0x60036850u32) & !1);
 }
 Ok(0x60037abe)
 }
-fn b_60037abe(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037abe(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037abe: sub.w r0,r10,r6
 #[cfg(debug_assertions)] { m.pc = 0x60037abe; }
@@ -10712,7 +10712,7 @@ return Ok((0x60036850u32) & !1);
 }
 Ok(0x60037aca)
 }
-fn b_60037aca(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037aca(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037aca: ldr r3,[sp,#0x4]
 #[cfg(debug_assertions)] { m.pc = 0x60037aca; }
@@ -10744,7 +10744,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037b82u32) & !1); }
 }
 Ok(0x60037ad0)
 }
-fn b_60037ad0(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037ad0(m: &mut Machine) -> Result<u32> {
 m.ticks += 6;
 // 0x60037ad0: rsb r1,r6,r6, lsl #0xf
 #[cfg(debug_assertions)] { m.pc = 0x60037ad0; }
@@ -10829,7 +10829,7 @@ m.store((((u0 >> 0) as u64 & 4294967295u64)) as u32, 4, m.reg(36, 4))?;
 }
 Ok(0x60037ae2)
 }
-fn b_60037ae2(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037ae2(m: &mut Machine) -> Result<u32> {
 m.ticks += 9;
 // 0x60037ae2: add.w r4,r11,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037ae2; }
@@ -10919,7 +10919,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037b08u32) & !1); }
 }
 Ok(0x60037b00)
 }
-fn b_60037b00(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037b00(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037b00: subs r5,r3,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037b00; }
@@ -10955,7 +10955,7 @@ m.set_reg(44, 4, (signed(((u0 >> 0) as u64 & 65535u64), 2) as u64) & 4294967295u
 }
 Ok(0x60037b08)
 }
-fn b_60037b08(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037b08(m: &mut Machine) -> Result<u32> {
 m.ticks += 8;
 // 0x60037b08: add.w r7,r9,r5
 #[cfg(debug_assertions)] { m.pc = 0x60037b08; }
@@ -11035,7 +11035,7 @@ return Ok((0x60036850u32) & !1);
 }
 Ok(0x60037b1e)
 }
-fn b_60037b1e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037b1e(m: &mut Machine) -> Result<u32> {
 m.ticks += 6;
 // 0x60037b1e: sub.w r0,r10,r4
 #[cfg(debug_assertions)] { m.pc = 0x60037b1e; }
@@ -11082,7 +11082,7 @@ return Ok((0x60036850u32) & !1);
 }
 Ok(0x60037b2e)
 }
-fn b_60037b2e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037b2e(m: &mut Machine) -> Result<u32> {
 m.ticks += 5;
 // 0x60037b2e: sub.w r1,r9,r5
 #[cfg(debug_assertions)] { m.pc = 0x60037b2e; }
@@ -11122,7 +11122,7 @@ return Ok((0x60036850u32) & !1);
 }
 Ok(0x60037b3e)
 }
-fn b_60037b3e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037b3e(m: &mut Machine) -> Result<u32> {
 m.ticks += 8;
 // 0x60037b3e: mov r0,r7
 #[cfg(debug_assertions)] { m.pc = 0x60037b3e; }
@@ -11198,7 +11198,7 @@ return Ok((0x60036850u32) & !1);
 }
 Ok(0x60037b58)
 }
-fn b_60037b58(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037b58(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037b58: mov r0,r7
 #[cfg(debug_assertions)] { m.pc = 0x60037b58; }
@@ -11221,7 +11221,7 @@ return Ok((0x60036850u32) & !1);
 }
 Ok(0x60037b62)
 }
-fn b_60037b62(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037b62(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037b62: sxth.w r1,r8
 #[cfg(debug_assertions)] { m.pc = 0x60037b62; }
@@ -11246,7 +11246,7 @@ return Ok((0x60036850u32) & !1);
 }
 Ok(0x60037b6c)
 }
-fn b_60037b6c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037b6c(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037b6c: mov r0,r7
 #[cfg(debug_assertions)] { m.pc = 0x60037b6c; }
@@ -11269,7 +11269,7 @@ return Ok((0x60036850u32) & !1);
 }
 Ok(0x60037b74)
 }
-fn b_60037b74(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037b74(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037b74: sxth r1,r4
 #[cfg(debug_assertions)] { m.pc = 0x60037b74; }
@@ -11294,7 +11294,7 @@ return Ok((0x60036850u32) & !1);
 }
 Ok(0x60037b7c)
 }
-fn b_60037b7c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037b7c(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037b7c: ldr r3,[sp,#0x4]
 #[cfg(debug_assertions)] { m.pc = 0x60037b7c; }
@@ -11330,7 +11330,7 @@ if ((u2 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037ae2u32) & !1); }
 }
 Ok(0x60037b82)
 }
-fn b_60037b82(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037b82(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037b82: add sp,#0x14
 #[cfg(debug_assertions)] { m.pc = 0x60037b82; }
@@ -11370,7 +11370,7 @@ return Ok(((m.reg(92, 4)) as u32) & !1);
 }
 Ok(0x60037b88)
 }
-fn b_60037b88(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037b88(m: &mut Machine) -> Result<u32> {
 m.ticks += 17;
 // 0x60037b88: push {r4,r5,r6,r7,r8,r9,r10,r11,lr}
 #[cfg(debug_assertions)] { m.pc = 0x60037b88; }
@@ -11534,7 +11534,7 @@ return Ok((0x600368e8u32) & !1);
 }
 Ok(0x60037bae)
 }
-fn b_60037bae(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037bae(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037bae: cmp r6,#0x0
 #[cfg(debug_assertions)] { m.pc = 0x60037bae; }
@@ -11561,7 +11561,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037d26u32) & !1); }
 }
 Ok(0x60037bb4)
 }
-fn b_60037bb4(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037bb4(m: &mut Machine) -> Result<u32> {
 m.ticks += 7;
 // 0x60037bb4: rsbs r3,r4
 #[cfg(debug_assertions)] { m.pc = 0x60037bb4; }
@@ -11627,7 +11627,7 @@ m.store((((u0 >> 0) as u64 & 4294967295u64)) as u32, 4, m.reg(44, 4))?;
 }
 Ok(0x60037bc4)
 }
-fn b_60037bc4(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037bc4(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037bc4: ldr r3,[sp,#0x18]
 #[cfg(debug_assertions)] { m.pc = 0x60037bc4; }
@@ -11659,7 +11659,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037bd8u32) & !1); }
 }
 Ok(0x60037bca)
 }
-fn b_60037bca(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037bca(m: &mut Machine) -> Result<u32> {
 m.ticks += 7;
 // 0x60037bca: ldr r2,[sp,#0x20]
 #[cfg(debug_assertions)] { m.pc = 0x60037bca; }
@@ -11722,7 +11722,7 @@ m.store((((u0 >> 0) as u64 & 4294967295u64)) as u32, 4, m.reg(36, 4))?;
 }
 Ok(0x60037bd8)
 }
-fn b_60037bd8(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037bd8(m: &mut Machine) -> Result<u32> {
 m.ticks += 21;
 // 0x60037bd8: ldr r4,[sp,#0x10]
 #[cfg(debug_assertions)] { m.pc = 0x60037bd8; }
@@ -11924,7 +11924,7 @@ return Ok((0x600368e8u32) & !1);
 }
 Ok(0x60037c0e)
 }
-fn b_60037c0e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037c0e(m: &mut Machine) -> Result<u32> {
 m.ticks += 13;
 // 0x60037c0e: ldr r3,[sp,#0x14]
 #[cfg(debug_assertions)] { m.pc = 0x60037c0e; }
@@ -12022,7 +12022,7 @@ return Ok((0x600368e8u32) & !1);
 }
 Ok(0x60037c2e)
 }
-fn b_60037c2e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037c2e(m: &mut Machine) -> Result<u32> {
 m.ticks += 8;
 // 0x60037c2e: sub.w r2,r10,r4
 #[cfg(debug_assertions)] { m.pc = 0x60037c2e; }
@@ -12085,7 +12085,7 @@ return Ok((0x600368e8u32) & !1);
 }
 Ok(0x60037c46)
 }
-fn b_60037c46(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037c46(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037c46: sub.w r0,r10,r5
 #[cfg(debug_assertions)] { m.pc = 0x60037c46; }
@@ -12129,7 +12129,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037d2cu32) & !1); }
 }
 Ok(0x60037c50)
 }
-fn b_60037c50(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037c50(m: &mut Machine) -> Result<u32> {
 m.ticks += 7;
 // 0x60037c50: ldr r3,[0x60037eec]
 #[cfg(debug_assertions)] { m.pc = 0x60037c50; }
@@ -12190,7 +12190,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037ee4u32) & !1); }
 }
 Ok(0x60037c64)
 }
-fn b_60037c64(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037c64(m: &mut Machine) -> Result<u32> {
 m.ticks += 1;
 // 0x60037c64: mov.w lr,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037c64; }
@@ -12204,7 +12204,7 @@ m.set_reg(101, 1, (((m.reg(88, 4)) == (0u64)) as u64) & 255u64);
 }
 Ok(0x60037c68)
 }
-fn b_60037c68(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037c68(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037c68: cmp.w r12,#0x0
 #[cfg(debug_assertions)] { m.pc = 0x60037c68; }
@@ -12248,7 +12248,7 @@ m.set_reg(101, 1, (((m.reg(80, 4)) == (0u64)) as u64) & 255u64);
 }
 Ok(0x60037c72)
 }
-fn b_60037c72(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037c72(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037c72: cmp.w r11,#0x0
 #[cfg(debug_assertions)] { m.pc = 0x60037c72; }
@@ -12276,7 +12276,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037df0u32) & !1); }
 }
 Ok(0x60037c7a)
 }
-fn b_60037c7a(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037c7a(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037c7a: mov r3,r0
 #[cfg(debug_assertions)] { m.pc = 0x60037c7a; }
@@ -12308,7 +12308,7 @@ m.store((((u0 >> 0) as u64 & 4294967295u64)) as u32, 4, m.reg(72, 4))?;
 }
 Ok(0x60037c84)
 }
-fn b_60037c84(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037c84(m: &mut Machine) -> Result<u32> {
 m.ticks += 10;
 // 0x60037c84: ldrh r4,[r7,#0xa]
 #[cfg(debug_assertions)] { m.pc = 0x60037c84; }
@@ -12390,7 +12390,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037cfcu32) & !1); }
 }
 Ok(0x60037c9c)
 }
-fn b_60037c9c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037c9c(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037c9c: ldrh.w r8,[r7,#0x0]
 #[cfg(debug_assertions)] { m.pc = 0x60037c9c; }
@@ -12426,7 +12426,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037cfcu32) & !1); }
 }
 Ok(0x60037ca4)
 }
-fn b_60037ca4(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037ca4(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037ca4: ldrh.w r9,[r7,#0x2]
 #[cfg(debug_assertions)] { m.pc = 0x60037ca4; }
@@ -12462,7 +12462,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037cfcu32) & !1); }
 }
 Ok(0x60037cac)
 }
-fn b_60037cac(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037cac(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037cac: sxth.w r10,r4
 #[cfg(debug_assertions)] { m.pc = 0x60037cac; }
@@ -12507,7 +12507,7 @@ if ((u2 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037cfcu32) & !1); }
 }
 Ok(0x60037cb8)
 }
-fn b_60037cb8(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037cb8(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037cb8: sxth.w r9,r1
 #[cfg(debug_assertions)] { m.pc = 0x60037cb8; }
@@ -12552,7 +12552,7 @@ if ((u2 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037cfcu32) & !1); }
 }
 Ok(0x60037cc4)
 }
-fn b_60037cc4(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037cc4(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037cc4: ldrsh.w r0,[r11,#0x4]
 #[cfg(debug_assertions)] { m.pc = 0x60037cc4; }
@@ -12588,7 +12588,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037cfcu32) & !1); }
 }
 Ok(0x60037ccc)
 }
-fn b_60037ccc(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037ccc(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037ccc: ldrsh.w r10,[r11,#0x6]
 #[cfg(debug_assertions)] { m.pc = 0x60037ccc; }
@@ -12624,7 +12624,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037cfcu32) & !1); }
 }
 Ok(0x60037cd4)
 }
-fn b_60037cd4(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037cd4(m: &mut Machine) -> Result<u32> {
 m.ticks += 10;
 // 0x60037cd4: movs r0,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037cd4; }
@@ -12741,7 +12741,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037de8u32) & !1); }
 }
 Ok(0x60037cf4)
 }
-fn b_60037cf4(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037cf4(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037cf4: bic.w r4,r4,r1
 #[cfg(debug_assertions)] { m.pc = 0x60037cf4; }
@@ -12766,7 +12766,7 @@ m.store((((u0 >> 0) as u64 & 4294967295u64)) as u32, 1, ((u1 >> 0) as u64 & 255u
 }
 Ok(0x60037cfc)
 }
-fn b_60037cfc(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037cfc(m: &mut Machine) -> Result<u32> {
 m.ticks += 9;
 // 0x60037cfc: sub.w r5,r5,r12
 #[cfg(debug_assertions)] { m.pc = 0x60037cfc; }
@@ -12857,7 +12857,7 @@ m.set_reg(56, 4, (m.reg(40, 4)) & 4294967295u64);
 }
 Ok(0x60037d12)
 }
-fn b_60037d12(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037d12(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037d12: ldr r2,[sp,#0xc]
 #[cfg(debug_assertions)] { m.pc = 0x60037d12; }
@@ -12889,7 +12889,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037c84u32) & !1); }
 }
 Ok(0x60037d18)
 }
-fn b_60037d18(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037d18(m: &mut Machine) -> Result<u32> {
 m.ticks += 1;
 // 0x60037d18: ldr.w r10,[sp,#0x24]
 #[cfg(debug_assertions)] { m.pc = 0x60037d18; }
@@ -12900,7 +12900,7 @@ m.set_reg(72, 4, (m.load((((u0 >> 0) as u64 & 4294967295u64)) as u32, 4)?) & 429
 }
 Ok(0x60037d1c)
 }
-fn b_60037d1c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037d1c(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037d1c: ldr r3,[sp,#0x10]
 #[cfg(debug_assertions)] { m.pc = 0x60037d1c; }
@@ -12939,7 +12939,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037bc4u32) & !1); }
 }
 Ok(0x60037d26)
 }
-fn b_60037d26(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037d26(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037d26: add sp,#0x2c
 #[cfg(debug_assertions)] { m.pc = 0x60037d26; }
@@ -12979,7 +12979,7 @@ return Ok(((m.reg(92, 4)) as u32) & !1);
 }
 Ok(0x60037d2c)
 }
-fn b_60037d2c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037d2c(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037d2c: cmp r6,r9
 #[cfg(debug_assertions)] { m.pc = 0x60037d2c; }
@@ -13006,7 +13006,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037ecau32) & !1); }
 }
 Ok(0x60037d32)
 }
-fn b_60037d32(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037d32(m: &mut Machine) -> Result<u32> {
 m.ticks += 7;
 // 0x60037d32: ldr r3,[0x60037eec]
 #[cfg(debug_assertions)] { m.pc = 0x60037d32; }
@@ -13069,7 +13069,7 @@ m.set_reg(64, 4, (m.load((((u0 >> 0) as u64 & 4294967295u64)) as u32, 4)?) & 429
 }
 Ok(0x60037d46)
 }
-fn b_60037d46(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037d46(m: &mut Machine) -> Result<u32> {
 m.ticks += 10;
 // 0x60037d46: ldrh r2,[r5,#0xa]
 #[cfg(debug_assertions)] { m.pc = 0x60037d46; }
@@ -13151,7 +13151,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037dc2u32) & !1); }
 }
 Ok(0x60037d5e)
 }
-fn b_60037d5e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037d5e(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037d5e: ldrh.w r12,[r5,#0x0]
 #[cfg(debug_assertions)] { m.pc = 0x60037d5e; }
@@ -13185,7 +13185,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037dc2u32) & !1); }
 }
 Ok(0x60037d66)
 }
-fn b_60037d66(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037d66(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037d66: ldrh.w lr,[r5,#0x2]
 #[cfg(debug_assertions)] { m.pc = 0x60037d66; }
@@ -13221,7 +13221,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037dc2u32) & !1); }
 }
 Ok(0x60037d6e)
 }
-fn b_60037d6e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037d6e(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037d6e: sxth.w lr,r3
 #[cfg(debug_assertions)] { m.pc = 0x60037d6e; }
@@ -13256,7 +13256,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037d9cu32) & !1); }
 }
 Ok(0x60037d78)
 }
-fn b_60037d78(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037d78(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037d78: sxth.w r10,r2
 #[cfg(debug_assertions)] { m.pc = 0x60037d78; }
@@ -13301,7 +13301,7 @@ if ((u2 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037dc2u32) & !1); }
 }
 Ok(0x60037d84)
 }
-fn b_60037d84(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037d84(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037d84: ldrsh.w r11,[r8,#0x2]
 #[cfg(debug_assertions)] { m.pc = 0x60037d84; }
@@ -13339,7 +13339,7 @@ if ((u2 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037dc2u32) & !1); }
 }
 Ok(0x60037d8c)
 }
-fn b_60037d8c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037d8c(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037d8c: ldrsh.w r11,[r8,#0x4]
 #[cfg(debug_assertions)] { m.pc = 0x60037d8c; }
@@ -13375,7 +13375,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037dc2u32) & !1); }
 }
 Ok(0x60037d94)
 }
-fn b_60037d94(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037d94(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037d94: ldrsh.w r10,[r8,#0x6]
 #[cfg(debug_assertions)] { m.pc = 0x60037d94; }
@@ -13411,7 +13411,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037dc2u32) & !1); }
 }
 Ok(0x60037d9c)
 }
-fn b_60037d9c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037d9c(m: &mut Machine) -> Result<u32> {
 m.ticks += 9;
 // 0x60037d9c: asr.w lr,lr, asr #0x3
 #[cfg(debug_assertions)] { m.pc = 0x60037d9c; }
@@ -13514,7 +13514,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037ddeu32) & !1); }
 }
 Ok(0x60037dba)
 }
-fn b_60037dba(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037dba(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037dba: orr.w r2,r2,r10
 #[cfg(debug_assertions)] { m.pc = 0x60037dba; }
@@ -13537,7 +13537,7 @@ m.store((((u0 >> 0) as u64 & 4294967295u64)) as u32, 1, ((u1 >> 0) as u64 & 255u
 }
 Ok(0x60037dc2)
 }
-fn b_60037dc2(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037dc2(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037dc2: cmp r4,#0x0
 #[cfg(debug_assertions)] { m.pc = 0x60037dc2; }
@@ -13562,7 +13562,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037dccu32) & !1); }
 }
 Ok(0x60037dc6)
 }
-fn b_60037dc6(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037dc6(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037dc6: add r4,r7
 #[cfg(debug_assertions)] { m.pc = 0x60037dc6; }
@@ -13591,7 +13591,7 @@ m.set_reg(48, 4, (signed(((u0 >> 0) as u64 & 65535u64), 2) as u64) & 4294967295u
 }
 Ok(0x60037dcc)
 }
-fn b_60037dcc(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037dcc(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037dcc: add.w r9,r9,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037dcc; }
@@ -13637,7 +13637,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037d46u32) & !1); }
 }
 Ok(0x60037dd8)
 }
-fn b_60037dd8(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037dd8(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037dd8: ldr.w r10,[sp,#0xc]
 #[cfg(debug_assertions)] { m.pc = 0x60037dd8; }
@@ -13653,7 +13653,7 @@ return Ok((0x60037d1cu32) & !1);
 }
 Ok(0x60037dde)
 }
-fn b_60037dde(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037dde(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037dde: bic.w r2,r2,r10
 #[cfg(debug_assertions)] { m.pc = 0x60037dde; }
@@ -13683,7 +13683,7 @@ return Ok((0x60037dc2u32) & !1);
 }
 Ok(0x60037de8)
 }
-fn b_60037de8(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037de8(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037de8: orrs r4,r1
 #[cfg(debug_assertions)] { m.pc = 0x60037de8; }
@@ -13710,7 +13710,7 @@ return Ok((0x60037cfcu32) & !1);
 }
 Ok(0x60037df0)
 }
-fn b_60037df0(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037df0(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037df0: ldr r4,[sp,#0x8]
 #[cfg(debug_assertions)] { m.pc = 0x60037df0; }
@@ -13728,7 +13728,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037e5eu32) & !1); }
 }
 Ok(0x60037df4)
 }
-fn b_60037df4(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037df4(m: &mut Machine) -> Result<u32> {
 m.ticks += 1;
 // 0x60037df4: mov r2,r0
 #[cfg(debug_assertions)] { m.pc = 0x60037df4; }
@@ -13737,7 +13737,7 @@ m.set_reg(40, 4, (m.reg(32, 4)) & 4294967295u64);
 }
 Ok(0x60037df6)
 }
-fn b_60037df6(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037df6(m: &mut Machine) -> Result<u32> {
 m.ticks += 15;
 // 0x60037df6: ldrh.w r8,[r7,#0xc]
 #[cfg(debug_assertions)] { m.pc = 0x60037df6; }
@@ -13879,7 +13879,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037e50u32) & !1); }
 }
 Ok(0x60037e20)
 }
-fn b_60037e20(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037e20(m: &mut Machine) -> Result<u32> {
 m.ticks += 8;
 // 0x60037e20: mov.w r11,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037e20; }
@@ -13983,7 +13983,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037e50u32) & !1); }
 }
 Ok(0x60037e3c)
 }
-fn b_60037e3c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037e3c(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037e3c: ldrh r1,[r7,#0x2]
 #[cfg(debug_assertions)] { m.pc = 0x60037e3c; }
@@ -14019,7 +14019,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037e50u32) & !1); }
 }
 Ok(0x60037e42)
 }
-fn b_60037e42(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037e42(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037e42: ldr r1,[r7,#0x4]
 #[cfg(debug_assertions)] { m.pc = 0x60037e42; }
@@ -14060,7 +14060,7 @@ m.store((((u0 >> 0) as u64 & 4294967295u64)) as u32, 1, ((u1 >> 0) as u64 & 255u
 }
 Ok(0x60037e50)
 }
-fn b_60037e50(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037e50(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037e50: bics.w r6,r6,r4, asr #32
 #[cfg(debug_assertions)] { m.pc = 0x60037e50; }
@@ -14100,7 +14100,7 @@ m.set_reg(56, 4, (m.reg(52, 4)) & 4294967295u64);
 }
 Ok(0x60037e58)
 }
-fn b_60037e58(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037e58(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037e58: cmp r0,r2
 #[cfg(debug_assertions)] { m.pc = 0x60037e58; }
@@ -14125,7 +14125,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037df6u32) & !1); }
 }
 Ok(0x60037e5c)
 }
-fn b_60037e5c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037e5c(m: &mut Machine) -> Result<u32> {
 m.ticks += 1;
 // 0x60037e5c: b 0x60037d1c
 #[cfg(debug_assertions)] { m.pc = 0x60037e5c; }
@@ -14134,7 +14134,7 @@ return Ok((0x60037d1cu32) & !1);
 }
 Ok(0x60037e5e)
 }
-fn b_60037e5e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037e5e(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037e5e: mov r4,r11
 #[cfg(debug_assertions)] { m.pc = 0x60037e5e; }
@@ -14148,7 +14148,7 @@ m.set_reg(40, 4, (m.reg(32, 4)) & 4294967295u64);
 }
 Ok(0x60037e62)
 }
-fn b_60037e62(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037e62(m: &mut Machine) -> Result<u32> {
 m.ticks += 15;
 // 0x60037e62: ldrh.w r8,[r7,#0xc]
 #[cfg(debug_assertions)] { m.pc = 0x60037e62; }
@@ -14290,7 +14290,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037ebcu32) & !1); }
 }
 Ok(0x60037e8c)
 }
-fn b_60037e8c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037e8c(m: &mut Machine) -> Result<u32> {
 m.ticks += 8;
 // 0x60037e8c: mov.w r11,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037e8c; }
@@ -14394,7 +14394,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037ebcu32) & !1); }
 }
 Ok(0x60037ea8)
 }
-fn b_60037ea8(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037ea8(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037ea8: ldrh r1,[r7,#0x2]
 #[cfg(debug_assertions)] { m.pc = 0x60037ea8; }
@@ -14430,7 +14430,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037ebcu32) & !1); }
 }
 Ok(0x60037eae)
 }
-fn b_60037eae(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037eae(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037eae: ldr r3,[r7,#0x4]
 #[cfg(debug_assertions)] { m.pc = 0x60037eae; }
@@ -14469,7 +14469,7 @@ m.store((((u0 >> 0) as u64 & 4294967295u64)) as u32, 1, ((u1 >> 0) as u64 & 255u
 }
 Ok(0x60037ebc)
 }
-fn b_60037ebc(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037ebc(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037ebc: bics.w r6,r6,r4, asr #32
 #[cfg(debug_assertions)] { m.pc = 0x60037ebc; }
@@ -14509,7 +14509,7 @@ m.set_reg(56, 4, (m.reg(52, 4)) & 4294967295u64);
 }
 Ok(0x60037ec4)
 }
-fn b_60037ec4(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037ec4(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037ec4: cmp r2,r0
 #[cfg(debug_assertions)] { m.pc = 0x60037ec4; }
@@ -14536,7 +14536,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037e62u32) & !1); }
 }
 Ok(0x60037ec8)
 }
-fn b_60037ec8(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037ec8(m: &mut Machine) -> Result<u32> {
 m.ticks += 1;
 // 0x60037ec8: b 0x60037d1c
 #[cfg(debug_assertions)] { m.pc = 0x60037ec8; }
@@ -14545,7 +14545,7 @@ return Ok((0x60037d1cu32) & !1);
 }
 Ok(0x60037eca)
 }
-fn b_60037eca(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037eca(m: &mut Machine) -> Result<u32> {
 m.ticks += 10;
 // 0x60037eca: mov r3,r9
 #[cfg(debug_assertions)] { m.pc = 0x60037eca; }
@@ -14615,7 +14615,7 @@ return Ok((0x60037d46u32) & !1);
 }
 Ok(0x60037ee4)
 }
-fn b_60037ee4(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037ee4(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037ee4: movw lr,#0xffff
 #[cfg(debug_assertions)] { m.pc = 0x60037ee4; }
@@ -14631,7 +14631,7 @@ return Ok((0x60037c68u32) & !1);
 }
 Ok(0x60037eea)
 }
-fn b_60037ef4(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037ef4(m: &mut Machine) -> Result<u32> {
 m.ticks += 11;
 // 0x60037ef4: push {r4,r5,r6,r7,r8,r9,r10,r11,lr}
 #[cfg(debug_assertions)] { m.pc = 0x60037ef4; }
@@ -14738,7 +14738,7 @@ if ((u1 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037f2cu32) & !1); }
 }
 Ok(0x60037f10)
 }
-fn b_60037f10(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037f10(m: &mut Machine) -> Result<u32> {
 m.ticks += 1;
 // 0x60037f10: tbh [pc,r7]
 #[cfg(debug_assertions)] { m.pc = 0x60037f10; }
@@ -14759,7 +14759,7 @@ return Ok(((m.reg(92, 4)) as u32) & !1);
 }
 Ok(0x60037f14)
 }
-fn b_60037f1e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037f1e(m: &mut Machine) -> Result<u32> {
 m.ticks += 5;
 // 0x60037f1e: add.w r10,r10,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037f1e; }
@@ -14816,7 +14816,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037f40u32) & !1); }
 }
 Ok(0x60037f2c)
 }
-fn b_60037f2c(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037f2c(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037f2c: add sp,#0xc
 #[cfg(debug_assertions)] { m.pc = 0x60037f2c; }
@@ -14856,7 +14856,7 @@ return Ok(((m.reg(92, 4)) as u32) & !1);
 }
 Ok(0x60037f32)
 }
-fn b_60037f32(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037f32(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037f32: cmp r5,#0x0
 #[cfg(debug_assertions)] { m.pc = 0x60037f32; }
@@ -14881,7 +14881,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037f2cu32) & !1); }
 }
 Ok(0x60037f36)
 }
-fn b_60037f36(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037f36(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037f36: cmp r6,#0x0
 #[cfg(debug_assertions)] { m.pc = 0x60037f36; }
@@ -14906,7 +14906,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037f2cu32) & !1); }
 }
 Ok(0x60037f3a)
 }
-fn b_60037f3a(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037f3a(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037f3a: mov r7,r0
 #[cfg(debug_assertions)] { m.pc = 0x60037f3a; }
@@ -14925,7 +14925,7 @@ m.set_reg(101, 1, (((m.reg(72, 4)) == (0u64)) as u64) & 255u64);
 }
 Ok(0x60037f40)
 }
-fn b_60037f40(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037f40(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037f40: movs r4,#0x0
 #[cfg(debug_assertions)] { m.pc = 0x60037f40; }
@@ -14950,7 +14950,7 @@ return Ok((0x60037f50u32) & !1);
 }
 Ok(0x60037f48)
 }
-fn b_60037f48(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037f48(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037f48: adds r4,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037f48; }
@@ -14995,7 +14995,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037f1eu32) & !1); }
 }
 Ok(0x60037f50)
 }
-fn b_60037f50(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037f50(m: &mut Machine) -> Result<u32> {
 m.ticks += 6;
 // 0x60037f50: cmp r4,#0x0
 #[cfg(debug_assertions)] { m.pc = 0x60037f50; }
@@ -15060,7 +15060,7 @@ m.set_reg(101, 1, (((m.reg(44, 4)) == (0u64)) as u64) & 255u64);
 }
 Ok(0x60037f60)
 }
-fn b_60037f60(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037f60(m: &mut Machine) -> Result<u32> {
 m.ticks += 6;
 // 0x60037f60: rsbs.w r12,r4,#0x0
 #[cfg(debug_assertions)] { m.pc = 0x60037f60; }
@@ -15142,7 +15142,7 @@ m.set_reg(101, 1, (((m.reg(36, 4)) == (0u64)) as u64) & 255u64);
 }
 Ok(0x60037f76)
 }
-fn b_60037f76(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037f76(m: &mut Machine) -> Result<u32> {
 m.ticks += 7;
 // 0x60037f76: uxtb r3,r3
 #[cfg(debug_assertions)] { m.pc = 0x60037f76; }
@@ -15239,7 +15239,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037f48u32) & !1); }
 }
 Ok(0x60037f88)
 }
-fn b_60037f88(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037f88(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037f88: add.w r1,r11,r4
 #[cfg(debug_assertions)] { m.pc = 0x60037f88; }
@@ -15274,7 +15274,7 @@ return Ok((0x60036850u32) & !1);
 }
 Ok(0x60037f94)
 }
-fn b_60037f94(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037f94(m: &mut Machine) -> Result<u32> {
 m.ticks += 1;
 // 0x60037f94: b 0x60037f48
 #[cfg(debug_assertions)] { m.pc = 0x60037f94; }
@@ -15283,7 +15283,7 @@ return Ok((0x60037f48u32) & !1);
 }
 Ok(0x60037f96)
 }
-fn b_60037f96(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037f96(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037f96: cmp r5,#0x0
 #[cfg(debug_assertions)] { m.pc = 0x60037f96; }
@@ -15308,7 +15308,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037f2cu32) & !1); }
 }
 Ok(0x60037f9a)
 }
-fn b_60037f9a(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037f9a(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037f9a: cmp r6,#0x0
 #[cfg(debug_assertions)] { m.pc = 0x60037f9a; }
@@ -15333,7 +15333,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037f2cu32) & !1); }
 }
 Ok(0x60037f9e)
 }
-fn b_60037f9e(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037f9e(m: &mut Machine) -> Result<u32> {
 m.ticks += 3;
 // 0x60037f9e: str.w r8,[sp,#0x0]
 #[cfg(debug_assertions)] { m.pc = 0x60037f9e; }
@@ -15358,7 +15358,7 @@ m.set_reg(64, 4, (m.reg(32, 4)) & 4294967295u64);
 }
 Ok(0x60037fa6)
 }
-fn b_60037fa6(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037fa6(m: &mut Machine) -> Result<u32> {
 m.ticks += 5;
 // 0x60037fa6: ldr r3,[sp,#0x0]
 #[cfg(debug_assertions)] { m.pc = 0x60037fa6; }
@@ -15402,7 +15402,7 @@ return Ok((0x60037fbcu32) & !1);
 }
 Ok(0x60037fb4)
 }
-fn b_60037fb4(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037fb4(m: &mut Machine) -> Result<u32> {
 m.ticks += 4;
 // 0x60037fb4: adds r4,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037fb4; }
@@ -15447,7 +15447,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037ffau32) & !1); }
 }
 Ok(0x60037fbc)
 }
-fn b_60037fbc(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037fbc(m: &mut Machine) -> Result<u32> {
 m.ticks += 5;
 // 0x60037fbc: cmp r4,#0x0
 #[cfg(debug_assertions)] { m.pc = 0x60037fbc; }
@@ -15500,7 +15500,7 @@ m.set_reg(101, 1, (((m.reg(44, 4)) == (0u64)) as u64) & 255u64);
 }
 Ok(0x60037fc8)
 }
-fn b_60037fc8(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037fc8(m: &mut Machine) -> Result<u32> {
 m.ticks += 6;
 // 0x60037fc8: rsbs r0,r4
 #[cfg(debug_assertions)] { m.pc = 0x60037fc8; }
@@ -15567,7 +15567,7 @@ m.set_reg(101, 1, (((m.reg(36, 4)) == (0u64)) as u64) & 255u64);
 }
 Ok(0x60037fda)
 }
-fn b_60037fda(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037fda(m: &mut Machine) -> Result<u32> {
 m.ticks += 5;
 // 0x60037fda: ldrb.w r3,[r9,r3]
 #[cfg(debug_assertions)] { m.pc = 0x60037fda; }
@@ -15650,7 +15650,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037fb4u32) & !1); }
 }
 Ok(0x60037fe6)
 }
-fn b_60037fe6(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037fe6(m: &mut Machine) -> Result<u32> {
 m.ticks += 6;
 // 0x60037fe6: add.w r1,r11,r4
 #[cfg(debug_assertions)] { m.pc = 0x60037fe6; }
@@ -15705,7 +15705,7 @@ return Ok((0x60036850u32) & !1);
 }
 Ok(0x60037ff6)
 }
-fn b_60037ff6(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037ff6(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037ff6: cmp r4,r6
 #[cfg(debug_assertions)] { m.pc = 0x60037ff6; }
@@ -15730,7 +15730,7 @@ if ((u0 >> 0) as u64 & 255u64) != 0 { return Ok((0x60037fbcu32) & !1); }
 }
 Ok(0x60037ffa)
 }
-fn b_60037ffa(m: &mut Machine) -> Result<u32> {
+pub(crate) fn b_60037ffa(m: &mut Machine) -> Result<u32> {
 m.ticks += 2;
 // 0x60037ffa: adds r7,#0x1
 #[cfg(debug_assertions)] { m.pc = 0x60037ffa; }

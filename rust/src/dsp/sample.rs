@@ -477,6 +477,10 @@ impl SampleBuffer {
     pub fn prepared_levels(&self) -> &[Vec<Stereo>] {
         &self.levels[..self.active_levels]
     }
+    /// Number of readable mip levels, including the original PCM.
+    pub(crate) fn active_levels(&self) -> usize {
+        self.active_levels
+    }
 
     pub fn from_prepared(
         name: String,
@@ -534,14 +538,16 @@ impl SampleBuffer {
         }
     }
 
+    /// Read one mip level over the whole file; `level` must be an active level.
     #[inline(always)]
-    fn read_level(&self, position: f64, level: usize) -> Stereo {
+    pub(crate) fn read_level(&self, position: f64, level: usize) -> Stereo {
         if !position.is_finite() {
             return [0.0; 2];
         }
         let data = &self.levels[level];
         // Keep indices in f64: f32 loses sub-sample precision on long recordings.
-        let p = wrap_position(position, self.len() as f64) / (1_usize << level) as f64;
+        // Scaling by 2^-level is exact, like the division by 2^level it replaces.
+        let p = wrap_position(position, self.len() as f64) * level_scale(level);
         let base = p.floor() as i64;
         let fraction = (p - p.floor()) as f32;
         let [a, b, c, d] = interpolation_frames(data, base, &(0..data.len()));
@@ -655,14 +661,21 @@ impl SampleBuffer {
     }
 }
 
+/// 2^-level as an exact float64, for levels below 64.
+#[inline(always)]
+pub(crate) fn level_scale(level: usize) -> f64 {
+    f64::from_bits((1023 - level as u64) << 52)
+}
+
 #[inline(always)]
 fn interpolation_frames(data: &[Stereo], base: i64, range: &std::ops::Range<usize>) -> [Stereo; 4] {
     // Most grain reads are inside the region. Boundary reads retain the exact
     // wrap used for tiny selections, negative positions and reverse grains.
     if base > range.start as i64 && base + 2 < range.end as i64 {
         let i = base as usize;
-        if i + 2 < data.len() {
-            return [data[i - 1], data[i], data[i + 1], data[i + 2]];
+        // One bounds check for the four frames instead of one per frame.
+        if let Some(frames) = data.get(i - 1..i + 3) {
+            return [frames[0], frames[1], frames[2], frames[3]];
         }
         let i = i % data.len();
         if i > 0 && i + 2 < data.len() {

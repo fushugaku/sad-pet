@@ -94,6 +94,146 @@ impl EnvSource {
     }
 }
 
+/// Filters 3 and up, added by the user after Filter 1 and 2.
+pub const MAX_FILTER_SLOTS: usize = 16;
+
+/// Where an added filter sits. Positions inside a note's path run one filter
+/// per voice with its own envelope and key tracking; the others are shared.
+/// Filters after a Resynth oscillator follow its sync/ring taps, so they shape
+/// only what that oscillator adds to the output.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FilterPosition {
+    AfterGrains,
+    AfterOsc1,
+    AfterOsc2,
+    AfterOsc3,
+    AfterOsc4,
+    AfterResynth,
+    BeforeFilters,
+    #[default]
+    AfterFilters,
+    AfterFx,
+}
+impl FilterPosition {
+    pub const ALL: [Self; 9] = [
+        Self::AfterGrains,
+        Self::AfterOsc1,
+        Self::AfterOsc2,
+        Self::AfterOsc3,
+        Self::AfterOsc4,
+        Self::AfterResynth,
+        Self::BeforeFilters,
+        Self::AfterFilters,
+        Self::AfterFx,
+    ];
+    /// One filter per voice, with the note's envelope and key tracking.
+    pub fn per_voice(self) -> bool {
+        matches!(
+            self,
+            Self::AfterGrains | Self::BeforeFilters | Self::AfterFilters
+        )
+    }
+    /// The Resynth oscillator (0..4) whose output this position follows.
+    pub fn oscillator(self) -> Option<usize> {
+        match self {
+            Self::AfterOsc1 => Some(0),
+            Self::AfterOsc2 => Some(1),
+            Self::AfterOsc3 => Some(2),
+            Self::AfterOsc4 => Some(3),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct FilterSlot {
+    pub id: u32,
+    pub enabled: bool,
+    pub position: FilterPosition,
+    pub model: FilterModel,
+    pub kind: FilterType,
+    pub cutoff: f32,
+    pub resonance: f32,
+    pub drive: f32,
+    pub morph: f32,
+    pub env: EnvSource,
+    pub env_depth: f32,
+    pub keytrack: f32,
+}
+impl Default for FilterSlot {
+    fn default() -> Self {
+        Self {
+            id: 0,
+            enabled: true,
+            position: FilterPosition::default(),
+            model: FilterModel::Legacy,
+            kind: FilterType::LowPass,
+            cutoff: 0.7,
+            resonance: 0.12,
+            drive: 0.0,
+            morph: 0.0,
+            env: EnvSource::default(),
+            env_depth: 0.0,
+            keytrack: 0.0,
+        }
+    }
+}
+impl FilterSlot {
+    pub fn sanitize(&mut self) {
+        let d = Self::default();
+        finite_clamp(&mut self.cutoff, 0.0, 1.0, d.cutoff);
+        finite_clamp(&mut self.resonance, 0.0, 1.0, d.resonance);
+        finite_clamp(&mut self.drive, 0.0, 1.0, d.drive);
+        finite_clamp(&mut self.morph, 0.0, 1.0, d.morph);
+        finite_clamp(&mut self.env_depth, -1.0, 1.0, d.env_depth);
+        finite_clamp(&mut self.keytrack, 0.0, 1.0, d.keytrack);
+    }
+    /// A modulatable control with its range.
+    pub fn parameter_mut(&mut self, parameter: FilterSlotParameter) -> (&mut f32, f32, f32) {
+        match parameter {
+            FilterSlotParameter::Cutoff => (&mut self.cutoff, 0.0, 1.0),
+            FilterSlotParameter::Resonance => (&mut self.resonance, 0.0, 1.0),
+            FilterSlotParameter::Drive => (&mut self.drive, 0.0, 1.0),
+            FilterSlotParameter::Morph => (&mut self.morph, 0.0, 1.0),
+            FilterSlotParameter::EnvDepth => (&mut self.env_depth, -1.0, 1.0),
+            FilterSlotParameter::Keytrack => (&mut self.keytrack, 0.0, 1.0),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FilterSlotParameter {
+    Cutoff,
+    Resonance,
+    Drive,
+    Morph,
+    EnvDepth,
+    Keytrack,
+}
+impl FilterSlotParameter {
+    pub const ALL: [Self; 6] = [
+        Self::Cutoff,
+        Self::Resonance,
+        Self::Drive,
+        Self::Morph,
+        Self::EnvDepth,
+        Self::Keytrack,
+    ];
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Cutoff => "cutoff",
+            Self::Resonance => "resonance",
+            Self::Drive => "drive",
+            Self::Morph => "morph",
+            Self::EnvDepth => "env_depth",
+            Self::Keytrack => "keytrack",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum SaturatorType {
@@ -188,6 +328,11 @@ pub enum Destination {
     /// Stable index in the append-only numeric parameter catalog.
     Control {
         index: u16,
+    },
+    /// An added filter, addressed by its stable slot id.
+    FilterSlot {
+        slot: u32,
+        parameter: FilterSlotParameter,
     },
 }
 
@@ -484,6 +629,10 @@ pub struct Preset {
     #[serde(skip)]
     pub imported_effects: crate::imported_fx::PreparedEffects,
     pub matrix: Vec<crate::matrix::Route>,
+    /// Filters 3 and up, in processing order within each position.
+    pub filter_slots: Vec<FilterSlot>,
+    #[serde(skip)]
+    pub filter_banks: crate::dsp::filter_slots::Prepared,
 }
 impl Default for Preset {
     fn default() -> Self {
@@ -512,6 +661,8 @@ impl Default for Preset {
             fx_chain_version: 1,
             imported_effects: Default::default(),
             matrix: Vec::new(),
+            filter_slots: Vec::new(),
+            filter_banks: Default::default(),
         }
     }
 }
@@ -537,6 +688,7 @@ impl<'de> Deserialize<'de> for Preset {
             color_chain: Option<Vec<crate::color::ColorSlot>>,
             fx_chain_version: u8,
             matrix: Vec<crate::matrix::Route>,
+            filter_slots: Vec<FilterSlot>,
         }
         impl Default for Data {
             fn default() -> Self {
@@ -559,6 +711,7 @@ impl<'de> Deserialize<'de> for Preset {
                     color_chain: None,
                     fx_chain_version: 0,
                     matrix: Vec::new(),
+                    filter_slots: Vec::new(),
                 }
             }
         }
@@ -679,6 +832,8 @@ impl<'de> Deserialize<'de> for Preset {
             fx_chain_version: 1,
             imported_effects: Default::default(),
             matrix,
+            filter_slots: d.filter_slots,
+            filter_banks: Default::default(),
         })
     }
 }
@@ -718,6 +873,7 @@ impl Preset {
             ],
             rate,
         );
+        self.filter_banks.prepare(&self.filter_slots, rate);
     }
     /// Synchronous owners know exactly which histories are still available.
     /// Queued native updates use prepared_clone_for instead, so a future slot
@@ -756,6 +912,15 @@ impl Preset {
         self.color_chain.truncate(crate::color::MAX_COLOR_SLOTS);
         self.pre_color_chain.truncate(crate::color::MAX_COLOR_SLOTS);
         self.source_color_chain.truncate(1);
+        self.filter_slots.truncate(MAX_FILTER_SLOTS);
+        let mut filter_ids: Vec<u32> = Vec::new();
+        for slot in &mut self.filter_slots {
+            if slot.id == 0 || filter_ids.contains(&slot.id) {
+                slot.id = (1..).find(|id| !filter_ids.contains(id)).unwrap();
+            }
+            filter_ids.push(slot.id);
+            slot.sanitize();
+        }
         let mut reserved: Vec<u32> = self
             .color_chain
             .iter()
@@ -810,6 +975,11 @@ impl Preset {
             }
             if let Destination::Color { slot, .. } = *route
                 && (!used.contains(&slot) || source_id == Some(slot))
+            {
+                *route = Destination::None;
+            }
+            if let Destination::FilterSlot { slot, .. } = *route
+                && !filter_ids.contains(&slot)
             {
                 *route = Destination::None;
             }

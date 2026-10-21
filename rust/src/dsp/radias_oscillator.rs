@@ -177,8 +177,10 @@ impl Controller {
             self.parameters = Some(parameters);
             self.inputs = inputs;
         }
-        let mut parameters = self.parameters.unwrap();
-        match &mut parameters {
+        // Patch the slewed control in place: the field is rewritten before
+        // every use, so the stored parameters stay equivalent to a fresh copy.
+        let parameters = self.parameters.as_mut().unwrap();
+        match parameters {
             PrimaryParameters::Triangle(p) => p.edge_gain = self.current,
             PrimaryParameters::Sine(p) => p.modulation_gain = self.current,
             PrimaryParameters::Cross(p) => p.modulation_gain = self.current,
@@ -216,7 +218,7 @@ impl Controller {
             });
             oscillator.control_feedback = 0;
         }
-        oscillator.next_with_modulator(waveform, parameters, modulator)
+        oscillator.next_with_modulator(waveform, *parameters, modulator)
     }
 }
 

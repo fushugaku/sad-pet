@@ -117,6 +117,44 @@ enum Target {
     SynthOsc(usize, usize),
     SynthGrain,
     SynthBuffer,
+    /// An added filter by list position: a FILTER_SLOT_FIELDS index.
+    FilterSlot(usize, usize),
+}
+
+/// Host controls of each added filter, in host order.
+const FILTER_SLOT_FIELDS: [(&str, &str, f32, f32); 8] = [
+    ("cutoff", "cutoff", 0.0, 1.0),
+    ("resonance", "resonance", 0.0, 1.0),
+    ("drive", "drive", 0.0, 1.0),
+    ("morph", "morph", 0.0, 1.0),
+    ("env_depth", "envelope", -1.0, 1.0),
+    ("keytrack", "key tracking", 0.0, 1.0),
+    ("model", "model", 0.0, 19.0),
+    ("response", "response", 0.0, 3.0),
+];
+fn filter_slot_get(slot: &crate::preset::FilterSlot, field: usize) -> f32 {
+    match field {
+        0 => slot.cutoff,
+        1 => slot.resonance,
+        2 => slot.drive,
+        3 => slot.morph,
+        4 => slot.env_depth,
+        5 => slot.keytrack,
+        6 => slot.model as u8 as f32,
+        _ => slot.kind as u8 as f32,
+    }
+}
+fn filter_slot_set(slot: &mut crate::preset::FilterSlot, field: usize, value: f32) {
+    match field {
+        0 => slot.cutoff = value,
+        1 => slot.resonance = value,
+        2 => slot.drive = value,
+        3 => slot.morph = value,
+        4 => slot.env_depth = value,
+        5 => slot.keytrack = value,
+        6 => slot.model = crate::preset::FilterModel::ALL[value.round() as usize],
+        _ => slot.kind = crate::preset::FilterType::ALL[value.round() as usize],
+    }
 }
 
 #[derive(Serialize)]
@@ -149,6 +187,9 @@ impl Spec {
             | Target::SynthBuffer => return None,
             Target::ResynthOsc(i, field) => oscillator_get(m.resynth.oscillators[i], field),
             Target::SynthOsc(i, field) => oscillator_get(m.synth.oscillators[i], field),
+            Target::FilterSlot(i, field) => {
+                filter_slot_get(m.filter_slots[..m.filter_len].get(i)?, field)
+            }
             Target::Lfo(i, field) => match field {
                 0 => m.lfos[i].rate_hz,
                 1 => m.lfos[i].depth,
@@ -221,6 +262,11 @@ impl Spec {
                 oscillator_set(&mut m.resynth.oscillators[i], field, value)
             }
             Target::SynthOsc(i, field) => oscillator_set(&mut m.synth.oscillators[i], field, value),
+            Target::FilterSlot(i, field) => {
+                if let Some(slot) = m.filter_slots[..m.filter_len].get_mut(i) {
+                    filter_slot_set(slot, field, value);
+                }
+            }
             Target::Lfo(i, field) => {
                 *match field {
                     0 => &mut m.lfos[i].rate_hz,
@@ -272,6 +318,10 @@ impl Spec {
                 .synth
                 .as_ref()
                 .map_or(self.default, |s| oscillator_get(s.oscillators[i], field)),
+            Target::FilterSlot(i, field) => preset
+                .filter_slots
+                .get(i)
+                .map_or(self.default, |slot| filter_slot_get(slot, field)),
             Target::Drum(i, field) => preset
                 .drums
                 .as_ref()
@@ -354,6 +404,11 @@ impl Spec {
             Target::DrumBuffer => {
                 if let Some(d) = &mut preset.drums {
                     d.buffer_seconds = value;
+                }
+            }
+            Target::FilterSlot(i, field) => {
+                if let Some(slot) = preset.filter_slots.get_mut(i) {
+                    filter_slot_set(slot, field, value);
                 }
             }
             Target::DrumGrain => {
@@ -940,6 +995,20 @@ pub fn specs() -> &'static [Spec] {
             default: 8.,
             target: Target::DrumBuffer,
         });
+        // Added filters by list position, numbered after Filter 1 and 2.
+        let slot = crate::preset::FilterSlot::default();
+        for i in 0..crate::preset::MAX_FILTER_SLOTS {
+            for (field, (key, name, min, max)) in FILTER_SLOT_FIELDS.into_iter().enumerate() {
+                result.push(Spec {
+                    id: format!("filter{}_{key}", i + 3),
+                    name: format!("Filter {} {name}", i + 3),
+                    min,
+                    max,
+                    default: filter_slot_get(&slot, field),
+                    target: Target::FilterSlot(i, field),
+                });
+            }
+        }
         let synth = crate::synth::Settings::default();
         result.push(Spec {
             id: "synth_count".into(),

@@ -5,7 +5,7 @@ use crate::{
     preset::{FilterModel, FilterRouting, FilterType, Params},
 };
 
-struct Filter {
+pub(crate) struct Filter {
     sample_rate: f32,
     kind: FilterType,
     configured: bool,
@@ -24,7 +24,7 @@ struct Filter {
     morph: f32,
 }
 impl Filter {
-    fn new(sample_rate: u32) -> Self {
+    pub(crate) fn new(sample_rate: u32) -> Self {
         Self {
             sample_rate: sample_rate as f32,
             kind: FilterType::LowPass,
@@ -44,12 +44,12 @@ impl Filter {
             morph: 0.0,
         }
     }
-    fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.state = [[0.0; 2]; 2];
         self.comb.clear();
         self.rustias.clear();
     }
-    fn configure(
+    pub(crate) fn configure(
         &mut self,
         model: FilterModel,
         kind: FilterType,
@@ -94,7 +94,7 @@ impl Filter {
         self.band_gain = self.k.sqrt();
         self.delay = self.sample_rate / hz;
     }
-    fn process(&mut self, frame: Stereo) -> Stereo {
+    pub(crate) fn process(&mut self, frame: Stereo) -> Stereo {
         if self.model != FilterModel::Legacy {
             return self.rustias.process(frame);
         }
@@ -149,40 +149,49 @@ pub fn cutoff_hz(kind: FilterType, value: f32) -> f32 {
 /// Cutoff modulation in logarithmic frequency space. C4 is the tracking pivot;
 /// 100% tracking shifts the cutoff by one octave per octave played, including bend.
 pub fn voice_cutoffs<const N: usize>(p: &Params, note: f32, envs: [f32; N]) -> [f32; 2] {
+    [
+        tracked_cutoff(
+            p.filter_model,
+            p.vcf_type,
+            p.filter,
+            envs[p.filter_env.index()],
+            p.filter_env_depth,
+            note,
+            p.filter_keytrack,
+        ),
+        tracked_cutoff(
+            p.filter2_model,
+            p.vcf2_type,
+            p.filter2,
+            envs[p.filter2_env.index()],
+            p.filter2_env_depth,
+            note,
+            p.filter2_keytrack,
+        ),
+    ]
+}
+
+/// One filter's cutoff with its envelope and key tracking applied.
+pub fn tracked_cutoff(
+    model: FilterModel,
+    kind: FilterType,
+    base: f32,
+    envelope: f32,
+    depth: f32,
+    note: f32,
+    tracking: f32,
+) -> f32 {
     // ln(200) and ln(1000) once, from the same libm call as before, instead of
     // a logarithm per voice and filter on every control block.
     static SPAN_LN: std::sync::LazyLock<[f32; 2]> =
         std::sync::LazyLock::new(|| [200.0_f32.ln(), 1000.0_f32.ln()]);
-    let span_ln = *SPAN_LN;
-    let tracked = |model, kind, base: f32, depth: f32, source: usize, tracking: f32| {
-        let span_ln = if model != FilterModel::Legacy || kind == FilterType::Comb {
-            span_ln[0]
-        } else {
-            span_ln[1]
-        };
-        (base
-            + envs[source] * depth
-            + (note - 60.0) * tracking * std::f32::consts::LN_2 / (12.0 * span_ln))
-            .clamp(0.0, 1.0)
+    let span_ln = if model != FilterModel::Legacy || kind == FilterType::Comb {
+        SPAN_LN[0]
+    } else {
+        SPAN_LN[1]
     };
-    [
-        tracked(
-            p.filter_model,
-            p.vcf_type,
-            p.filter,
-            p.filter_env_depth,
-            p.filter_env.index(),
-            p.filter_keytrack,
-        ),
-        tracked(
-            p.filter2_model,
-            p.vcf2_type,
-            p.filter2,
-            p.filter2_env_depth,
-            p.filter2_env.index(),
-            p.filter2_keytrack,
-        ),
-    ]
+    (base + envelope * depth + (note - 60.0) * tracking * std::f32::consts::LN_2 / (12.0 * span_ln))
+        .clamp(0.0, 1.0)
 }
 
 pub struct FilterBank {

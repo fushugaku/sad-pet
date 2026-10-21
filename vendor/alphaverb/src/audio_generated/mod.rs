@@ -1,14 +1,14 @@
-mod blocks_0;
-mod blocks_1;
-mod blocks_10;
-mod blocks_2;
-mod blocks_3;
-mod blocks_4;
-mod blocks_5;
-mod blocks_6;
-mod blocks_7;
-mod blocks_8;
-mod blocks_9;
+pub(crate) mod blocks_0;
+pub(crate) mod blocks_1;
+pub(crate) mod blocks_10;
+pub(crate) mod blocks_2;
+pub(crate) mod blocks_3;
+pub(crate) mod blocks_4;
+pub(crate) mod blocks_5;
+pub(crate) mod blocks_6;
+pub(crate) mod blocks_7;
+pub(crate) mod blocks_8;
+pub(crate) mod blocks_9;
 use crate::machine::Machine;
 pub fn step(c: &mut Machine, pc: u32) -> u32 {
     match pc {
