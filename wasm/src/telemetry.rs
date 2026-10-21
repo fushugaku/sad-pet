@@ -129,8 +129,8 @@ impl Host {
                     &sample.name
                 },
                 id: &sample.library_id,
-                seconds: sample.duration(),
-                frames: sample.len(),
+                seconds: self.engine.source_duration(),
+                frames: self.engine.source_frames(),
                 region: self.engine.region,
                 fades: self.engine.fades,
                 live: self.engine.live_input.is_some(),
@@ -236,6 +236,8 @@ impl Host {
         state["drums"] = json!(v.drums);
         if self.engine.preset.drums.is_some() {
             state["playing"] = json!(v.drums.playing);
+            state["sample_frames"] = json!(self.engine.source_frames());
+            state["sample_seconds"] = json!(self.engine.source_duration());
         }
         state["lfos"] = json!(v.lfos);
         state["envs"] = json!(v.envs);

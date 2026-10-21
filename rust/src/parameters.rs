@@ -113,6 +113,7 @@ enum Target {
     ResynthOsc(usize, usize),
     Drum(usize, usize),
     DrumGrain,
+    DrumBuffer,
 }
 
 #[derive(Serialize)]
@@ -128,7 +129,7 @@ pub struct Spec {
 
 impl Spec {
     pub(crate) fn can_sequence(&self) -> bool {
-        !matches!(self.target, Target::DrumGrain)
+        !matches!(self.target, Target::DrumGrain | Target::DrumBuffer)
             && self.id != "bpm"
             && !matches!(self.target, Target::SourceFx(_) | Target::Performance(3..))
     }
@@ -136,7 +137,7 @@ impl Spec {
         Some(match self.target {
             Target::Core { frame_get, .. } => frame_get(m),
             Target::Drum(i, field) => m.drums.0[i][field],
-            Target::SourceFx(_) | Target::DrumGrain => return None,
+            Target::SourceFx(_) | Target::DrumGrain | Target::DrumBuffer => return None,
             Target::ResynthOsc(i, field) => oscillator_get(m.resynth.oscillators[i], field),
             Target::Lfo(i, field) => match field {
                 0 => m.lfos[i].rate_hz,
@@ -201,7 +202,7 @@ impl Spec {
                 m.drums.0[i][field] =
                     sad_pet_dxm088::params::constrain(field, value).unwrap_or(self.default);
             }
-            Target::SourceFx(_) | Target::DrumGrain => {}
+            Target::SourceFx(_) | Target::DrumGrain | Target::DrumBuffer => {}
             Target::ResynthOsc(i, field) => {
                 oscillator_set(&mut m.resynth.oscillators[i], field, value)
             }
@@ -248,6 +249,7 @@ impl Spec {
     pub fn get(&self, preset: &Preset) -> f32 {
         match self.target {
             Target::DrumGrain => f32::from(preset.drums.as_ref().is_some_and(|d| d.granular)),
+            Target::DrumBuffer => preset.drums.as_ref().map_or(8., |d| d.buffer_seconds),
             Target::Drum(i, field) => preset
                 .drums
                 .as_ref()
@@ -327,6 +329,11 @@ impl Spec {
             self.default
         };
         match self.target {
+            Target::DrumBuffer => {
+                if let Some(d) = &mut preset.drums {
+                    d.buffer_seconds = value;
+                }
+            }
             Target::DrumGrain => {
                 if let Some(d) = &mut preset.drums {
                     d.granular = value >= 0.5;
@@ -887,6 +894,14 @@ pub fn specs() -> &'static [Spec] {
             max: 1.,
             default: 0.,
             target: Target::DrumGrain,
+        });
+        result.push(Spec {
+            id: "drum_buffer_seconds".into(),
+            name: "Drum granular buffer seconds".into(),
+            min: 0.125,
+            max: 32.,
+            default: 8.,
+            target: Target::DrumBuffer,
         });
         result
     })

@@ -1133,3 +1133,37 @@ fn drum_audition_rings_out_while_the_daw_transport_is_stopped() {
     }));
     assert_ne!(state["waveform"], state["file_source"]["waveform"]);
 }
+
+#[test]
+fn native_drum_buffer_choices_use_reserved_history_without_audio_heap_work() {
+    let mut control = Controller::new(false);
+    control.meta.mix.muted = true;
+    call(&mut control, "/api/timbres/add", json!({"kind":"drums"}));
+    let mut audio = control.prepare(8000);
+    call(
+        &mut control,
+        "/api/drums/trigger",
+        json!({"track":0,"velocity":1}),
+    );
+    for seconds in [0.125, 32., 0.5, 16., 1.] {
+        call(
+            &mut control,
+            "/api/parameters",
+            json!({"drum_buffer_seconds":seconds,"drum_granular":1}),
+        );
+        let values = control.values();
+        no_heap(|| {
+            audio.begin(&values, 120., Some(0.), false, 2048);
+            render(&mut audio, 2048, [0.; 2]);
+        });
+        let state = call(&mut control, "/api/state", Value::Null);
+        assert_eq!(state["sample_seconds"], seconds);
+        assert_eq!(state["sample_frames"], (seconds * 8000.) as usize);
+        let engine = &audio.parts.as_ref().unwrap().audio.engine;
+        assert_eq!(
+            engine.live_input.as_ref().unwrap().window_frames(),
+            (seconds * 8000.) as usize
+        );
+        assert_eq!(engine.source_sample().len(), 32 * 8000);
+    }
+}

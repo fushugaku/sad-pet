@@ -107,6 +107,24 @@ assert.equal(
   memory,
   "Rendering grew WASM memory",
 );
+const pcmCapacity = imported.wasm.memory.buffer.byteLength;
+for (const seconds of [0.125, 32, 0.5, 16, 1]) {
+  imported.request("/api/parameters", { drum_buffer_seconds: seconds });
+  for (let i = 0; i < 8; i++)
+    assert.ok(imported.process(128).every(Number.isFinite));
+  const resized = imported.request("/api/state");
+  assert.equal(resized.sample_seconds, seconds);
+  assert.equal(resized.sample_frames, seconds * 8000);
+  assert.ok(resized.center >= 0 && resized.center < 1);
+  assert.ok(resized.grains.every(g => g.position >= 0 && g.position <= 1));
+  assert.equal(imported.wasm.memory.buffer.byteLength, pcmCapacity, "Changing drum history grew WASM memory");
+}
+utility.call("sad_scene_load", imported.call("sad_scene_pack"));
+const withBuffer = utility.json("sad_scene_document");
+assert.equal(withBuffer.timbres[0].preset.drums.buffer_seconds, 1);
+const recalled = new Core(module, 8000);
+recalled.call("sad_scene_load", utility.call("sad_scene_prepare", withBuffer));
+assert.equal(recalled.request("/api/state").sample_seconds, 1);
 imported.request("/api/timbres/remove", { id: 1 });
 assert.equal(
   imported.request("/api/timbres/add", { kind: "granular" }).active,

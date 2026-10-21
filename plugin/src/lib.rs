@@ -297,12 +297,9 @@ impl Controller {
             },
             sample,
             live: (source != Source::File || preset.drums.is_some()).then(|| {
-                let mut input = LiveInput::new(
-                    self.rate,
-                    preset
-                        .drums
-                        .as_ref()
-                        .map_or(source == Source::Effects, |d| !d.granular),
+                let mut input = preset.drums.as_ref().map_or_else(
+                    || LiveInput::new(self.rate, source == Source::Effects),
+                    |d| LiveInput::for_drums(self.rate, !d.granular, d.buffer_seconds),
                 );
                 input.sample.name = if preset.drums.is_some() {
                     "Drum machine"
@@ -405,6 +402,11 @@ impl Controller {
         let live = self.source != Source::File;
         let drums = self.preset.drums.is_some();
         let buffered = live || drums;
+        let buffer_frames = self
+            .preset
+            .drums
+            .as_ref()
+            .map_or(self.rate as usize * 8, |d| d.buffer_frames(self.rate));
         let knobs = sad_pet::dsp::telemetry::knob_states_from_view(&self.preset, view);
         let mut reduction: std::collections::BTreeMap<_, _> = view
             .gain_reduction
@@ -426,8 +428,8 @@ impl Controller {
             "preset":displayed_preset,"sample_name":if drums { "Drum machine" } else if live { "DAW input" } else { &self.sample.name },
             "preset_selection":self.selection,
             "sample_id":if buffered { None } else { self.sample.library_id.as_ref() },
-            "sample_seconds":if buffered { 8.0 } else { self.sample.duration() },
-            "sample_frames":if buffered { self.rate as usize * 8 } else { self.sample.len() },
+            "sample_seconds":if buffered { buffer_frames as f64 / self.rate as f64 } else { self.sample.duration() },
+            "sample_frames":if buffered { buffer_frames } else { self.sample.len() },
             "file_source":{"sample_name":self.sample.name,"sample_id":self.sample.library_id,"sample_seconds":self.sample.duration(),"sample_frames":self.sample.len(),"waveform":self.sample.waveform},
             "waveform":if buffered { &view.waveform[..view.waveform_len] } else { &self.sample.waveform },
             "region":self.region,"fades":self.fades,"center":view.center,

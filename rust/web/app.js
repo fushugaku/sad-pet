@@ -440,6 +440,12 @@ function setParam(key, value) {
   else if (key === "loop_one_bar") scheduleParameter(key, Number(value));
   else schedulePreset();
 }
+function grainSeconds(value) {
+  const span = preset?.drums
+    ? Math.min(2, Math.max(0, (preset.drums.buffer_seconds ?? 8) - 0.01))
+    : 2;
+  return 0.01 + span * Math.abs(value * 2 - 1) ** 3;
+}
 const grainSchema = [
   ["position", "POSITION", (v) => percent(v)],
   ["grains", "GRAINS", (v) => `${(128 * v ** 3).toFixed(1)} /s`],
@@ -447,7 +453,7 @@ const grainSchema = [
     "grain_size",
     "SIZE",
     (v) =>
-      `${v < 0.5 ? "←" : "→"} ${Math.round((0.01 + 2 * Math.abs(v * 2 - 1) ** 3) * 1000)} ms`,
+      `${v < 0.5 ? "←" : "→"} ${Math.round(grainSeconds(v) * 1000)} ms`,
   ],
   [
     "pitch",
@@ -812,7 +818,7 @@ function syncTimbreRouting() {
   $("wave").setAttribute("aria-label", drums
     ? "Live drum waveform and grains"
     : "Sample waveform. Drag to select a loop, click to change position");
-  $("wave").title = drums ? "Live drum signal · last 8 seconds"
+  $("wave").title = drums ? `Live drum signal · last ${preset.drums.buffer_seconds ?? 8} seconds`
     : "Drag to select a loop · drag the handles to adjust it";
   const waveSlot = document.querySelector(".drum-wave-slot");
   if (drums && waveSlot && samplePanel.parentElement !== waveSlot)
@@ -827,6 +833,7 @@ function syncTimbreRouting() {
   else if (!drums && $("grain-engine-home").nextElementSibling !== grains)
     $("grain-engine-home").after(grains);
   $("drum-grain-count").hidden = !drums;
+  syncControl("grain_size");
   const transport = document.querySelector(".transport");
   if (drums && transport.nextElementSibling !== $("drum-machine"))
     $("drum-machine").before(transport);
@@ -3496,7 +3503,7 @@ async function poll() {
     $("sample-name").textContent = next.sample_name;
     presetLibrary?.observe(next, pending > 0);
     fileLibrary?.observe(next);
-    $("sample-info").textContent = `${next.sample_seconds.toFixed(2)} s`;
+    $("sample-info").textContent = `${next.sample_seconds.toFixed(next.preset?.drums && next.sample_seconds < 1 ? 3 : 2)} s`;
     syncInput(next.input);
     updateResynthMeter(next.resynth);
     neuroEditor?.update(next.sequencer, next.playing);

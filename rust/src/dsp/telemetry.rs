@@ -186,7 +186,7 @@ impl Engine {
         self.peak = [0.0; 2];
         view.input_peak = self.live_input.as_ref().map_or([0.0; 2], |i| i.peak);
         view.input_seconds = self.live_input.as_ref().map_or(0.0, |i| i.seconds());
-        view.center = self.center() / self.source_sample().len() as f64;
+        view.center = self.source_position(self.center());
         view.bar_beats = self.bar_beats();
         view.playing = self.playing;
         view.midi_gate = self.midi_gate;
@@ -237,8 +237,7 @@ impl Engine {
         view.grain_count = 0;
         for grain in self.grains.iter().filter(|g| g.active) {
             view.grains[view.grain_count] = super::GrainView {
-                position: (grain.position.rem_euclid(self.source_sample().len() as f64)
-                    / self.source_sample().len() as f64) as f32,
+                position: self.source_position(grain.position) as f32,
                 age: grain.age as f32 / grain.duration as f32,
                 pan: (grain.pan[1] - grain.pan[0] + 1.0) * 0.5,
             };

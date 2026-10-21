@@ -47,8 +47,12 @@ Audition plays a single drum even while DAW transport is stopped.
 
 Enable **Granular** in the drum heading to send its live mix through Grain Engine.
 Its controls and live grain count appear directly below the switch. Selecting a
-drum timbre also shows the shared waveform display: eight seconds of live drum
-audio and its grain positions, in both direct and granular modes. Selecting a
+drum timbre also shows the shared waveform display and its grain positions, in
+both direct and granular modes. **Buffer** selects 125 ms–32 s of history (8 s
+by default). Position and Cloud follow that duration; Size uses the full knob
+range up to the shorter buffer length, with a 10 ms minimum. Changing duration
+retains captured sound and Freeze without allocating audio buffers or restarting
+the pattern. Each timbre saves its own duration in presets and DAW projects. Selecting a
 drum track or step also selects its sound editor, and voice knobs repaint during
 the drag without waiting for the next engine-state poll.
 Source FX processes the drum audio before capture; pre-filter FX, filters, Resynth

@@ -189,6 +189,7 @@ pub struct Settings {
     pub params: Controls,
     pub tracks: Vec<Track>,
     pub granular: bool,
+    pub buffer_seconds: f32,
     pub swing: f32,
     pub master: f32,
 }
@@ -203,6 +204,7 @@ impl Default for Settings {
                 })
                 .collect(),
             granular: false,
+            buffer_seconds: 8.,
             swing: 0.,
             master: 0.8,
         }
@@ -216,7 +218,19 @@ fn finite(v: f32, min: f32, max: f32, fallback: f32) -> f32 {
     }
 }
 impl Settings {
+    pub fn buffer_frames(&self, rate: u32) -> usize {
+        (self.buffer_seconds.clamp(0.125, 32.0) * rate as f32).round() as usize
+    }
+    pub fn grain_seconds(&self, size: f32) -> f32 {
+        let seconds = crate::tables::grain_duration(size);
+        if self.buffer_seconds >= 2.01 {
+            seconds
+        } else {
+            0.01 + (seconds - 0.01) * ((self.buffer_seconds - 0.01).max(0.0) / 2.0)
+        }
+    }
     pub fn sanitize(&mut self) {
+        self.buffer_seconds = finite(self.buffer_seconds, 0.125, 32., 8.);
         for row in &mut self.params.0 {
             for (p, v) in row.iter_mut().enumerate() {
                 *v = params::constrain(p, *v).unwrap_or(params::MIN[p]);
@@ -290,7 +304,7 @@ impl Prepared {
                 copy_track(&mut engine, i, track);
             }
             engine.configure_params(&s.params.0);
-            let mut input = LiveInput::new(rate, !s.granular);
+            let mut input = LiveInput::for_drums(rate, !s.granular, s.buffer_seconds);
             input.sample.name = "Drum machine".into();
             Box::new(Runtime {
                 engine,

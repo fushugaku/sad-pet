@@ -72,6 +72,25 @@ assert.equal(view.voice, 3);
 assert.equal(view.track, 3);
 assert.equal(view.step, 7);
 
+const drumPreset = { drums: { buffer_seconds: 8 } };
+const routingEdits = [];
+const drumRoot = new Element("div");
+const drumEditor = new panels.window.SadDrums(drumRoot, { controls: [] }, {
+  read: () => drumPreset, parameter: (...edit) => routingEdits.push(edit), routing() {},
+});
+drumEditor.buffer.value = "0.125";
+drumEditor.buffer.onchange();
+assert.equal(drumPreset.drums.buffer_seconds, 0.125);
+assert.deepEqual(routingEdits, [["drum_buffer_seconds", 0.125]], "Buffer choice must send a scalar edit");
+const sizeContext = vm.createContext({ preset: drumPreset });
+vm.runInContext(app.slice(app.indexOf("function grainSeconds("), app.indexOf("const grainSchema")), sizeContext);
+assert.equal(sizeContext.grainSeconds(0.5), 0.01);
+assert.equal(sizeContext.grainSeconds(1), 0.125);
+drumPreset.drums.buffer_seconds = 32;
+assert.equal(sizeContext.grainSeconds(1), 2.01);
+sizeContext.preset = { params: {} };
+assert.equal(sizeContext.grainSeconds(1), 2.01);
+
 const ids = new Map();
 const state = {
   lfo_count: 4, env_count: 4,

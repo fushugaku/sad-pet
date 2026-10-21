@@ -1,7 +1,13 @@
 SAD PET instrument and SAD PET FX, with native Rust DSP and an embedded editor.
 
+**Selectable drum granular buffer.** The drum heading's **Buffer** selector sets
+125 ms–32 s of captured history per timbre, with 8 s as the compatible default.
+The waveform, Position and Cloud use that duration; Size scales its full range
+to short buffers. Changing duration retains audio and Freeze, uses preallocated
+memory and leaves the drum clock running. Presets and DAW projects recall it.
+
 **Live drum waveform.** Drum timbres now show the same waveform and grain display
-as sample timbres, directly above Grain Engine. It reads the real eight-second
+as sample timbres, directly above Grain Engine. It reads the selected live
 drum input history in both direct and granular modes. Native editors publish
 the drum buffer instead of the unrelated file waveform. File selection controls
 and fades return when switching back to a sample timbre.
@@ -95,8 +101,13 @@ are supplied individually and in `SHA256SUMS.txt`.
 ---
 
 В обоих установщиках есть инструмент **SAD PET** и эффект **SAD PET FX**.
+**Buffer** на странице драм-машины выбирает от 125 мс до 32 с истории звука.
+Волна, Position и Cloud масштабируются под буфер, а Size использует весь ход
+ручки и на коротких буферах. При смене длительности захваченный звук и Freeze
+сохраняются, паттерн продолжает играть, память в аудиопотоке не выделяется.
+Длительность сохраняется отдельно для каждого тембра в пресетах и проектах DAW.
 На странице драм-машины есть такая же волна, как у обычного тембра: реальная
-восьмисекундная история барабанного сигнала с позициями гранул. Она доступна
+история барабанного сигнала выбранной длины с позициями гранул. Она доступна
 с Granular и без него, в web и нативных плагинах.
 Ручки барабанов обновляются при движении, выбор дорожки или шага выбирает тот же
 звук. При включении Granular его ручки и счётчик гранул находятся сразу под

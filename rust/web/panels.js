@@ -299,13 +299,20 @@
       this.views = new Map();
       this.knobs = [];
       defs.forEach((d, i) => Object.assign(d, catalog.controls[i]));
-      root.innerHTML = `<div class="section-heading"><h2>Drum machine <span>DXM-088</span></h2><div class="drum-global"><label class="check"><input type="checkbox" aria-label="Drum granular processing">Granular</label></div></div><div class="drum-wave-slot"></div><div class="drum-grain-slot"></div><div class="drum-pages" role="tablist" aria-label="Drum pattern pages"></div><div class="drum-pattern-scroll"><div class="drum-pattern" role="group" aria-label="Drum steps"></div></div><div class="drum-track-settings"></div><div class="drum-step-panel"><div class="drum-step-title"></div><div class="drum-step-knobs knob-grid"></div><div class="drum-step-extras"></div></div><div class="drum-voice-tabs" role="tablist" aria-label="Drum voices"></div><div class="drum-voice-controls"></div>`;
+      root.innerHTML = `<div class="section-heading"><h2>Drum machine <span>DXM-088</span></h2><div class="drum-global"><label class="drum-buffer">Buffer<select aria-label="Drum granular buffer duration">${[0.125, 0.25, 0.5, 1, 2, 4, 8, 16, 32].map((seconds) => `<option value="${seconds}">${seconds < 1 ? `${seconds * 1000} ms` : `${seconds} s`}</option>`).join("")}</select></label><label class="check"><input type="checkbox" aria-label="Drum granular processing">Granular</label></div></div><div class="drum-wave-slot"></div><div class="drum-grain-slot"></div><div class="drum-pages" role="tablist" aria-label="Drum pattern pages"></div><div class="drum-pattern-scroll"><div class="drum-pattern" role="group" aria-label="Drum steps"></div></div><div class="drum-track-settings"></div><div class="drum-step-panel"><div class="drum-step-title"></div><div class="drum-step-knobs knob-grid"></div><div class="drum-step-extras"></div></div><div class="drum-voice-tabs" role="tablist" aria-label="Drum voices"></div><div class="drum-voice-controls"></div>`;
       this.granular = root.querySelector(
         '[aria-label="Drum granular processing"]',
       );
       this.granular.onchange = () => {
         this.settings().granular = this.granular.checked;
         hooks.parameter("drum_granular", Number(this.granular.checked));
+        hooks.routing();
+      };
+      this.buffer = root.querySelector('[aria-label="Drum granular buffer duration"]');
+      this.buffer.onchange = () => {
+        const seconds = Number(this.buffer.value);
+        this.settings().buffer_seconds = seconds;
+        hooks.parameter("drum_buffer_seconds", seconds);
         hooks.routing();
       };
       this.pages = root.querySelector(".drum-pages");
@@ -796,6 +803,16 @@
         this.buildEditor();
       }
       this.granular.checked = settings.granular;
+      const seconds = settings.buffer_seconds ?? 8;
+      this.buffer.querySelector('[data-custom]')?.remove();
+      if (![...this.buffer.options].some((o) => Number(o.value) === seconds)) {
+        const custom = document.createElement("option");
+        custom.value = seconds;
+        custom.textContent = `${Number(seconds.toFixed(3))} s`;
+        custom.dataset.custom = "true";
+        this.buffer.append(custom);
+      }
+      this.buffer.value = String(seconds);
       for (const tab of this.pages.children)
         tab.setAttribute(
           "aria-selected",
