@@ -44,11 +44,16 @@ for (let i = 0; i < 148; i++)
 state = core.request("/api/state");
 assert.ok(state.drums.positions[0] >= 126);
 assert.ok(peak > 0.001, "The 128th drum step did not sound");
+assert.equal(state.sample_name, "Drum machine");
+assert.equal(state.sample_seconds, 8);
+assert.ok(state.waveform.some(bin => bin.some(value => Math.abs(value) > 0.001)),
+  "The live drum waveform is missing in direct mode");
 const before = state.drums.positions[0];
 core.request("/api/parameters", { drum1_0: 91 });
 core.process(64);
+state = core.request("/api/state");
 assert.equal(
-  core.request("/api/state").drums.positions[0],
+  state.drums.positions[0],
   before,
   "A scalar parameter restarted the drum clock",
 );
@@ -59,6 +64,8 @@ let size = core.snapshot(packet),
 assert.ok(size > 0);
 const decoded = utility.json("sad_snapshot_import", packet.slice(0, size));
 assert.equal(decoded.state.timbres.active, 1);
+assert.equal(decoded.state.sample_name, "Drum machine");
+assert.deepEqual(decoded.state.waveform, state.waveform);
 assert.equal(decoded.state.preset.drums.tracks[0].steps.length, 128);
 core.request("/api/timbres/select", { id: 0 });
 core.wasm.sad_snapshot_ack(sequence, 1); // Ack must still reach the previous active part.
@@ -91,6 +98,10 @@ for (let i = 0; i < 80; i++)
     wet = Math.max(wet, Math.abs(x));
   }
 assert.ok(wet > 0.001, "Drums did not reach the granular engine");
+const granular = imported.request("/api/state");
+assert.ok(granular.active_grains > 0);
+assert.ok(granular.waveform.some(bin => bin.some(value => Math.abs(value) > 0.001)),
+  "The live drum waveform is missing in granular mode");
 assert.equal(
   imported.wasm.memory.buffer.byteLength,
   memory,

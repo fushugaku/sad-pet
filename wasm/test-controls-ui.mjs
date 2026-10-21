@@ -99,4 +99,33 @@ assert.equal(state.matrix[0].source, "lfo1");
 remove.removeModulator("lfo");
 remove.removeModulator("env");
 assert.equal(edits, 2, "The three original generators must not be removed");
+
+const selectionNodes = new Map();
+const selectionContext = vm.createContext({
+  window: {}, performance: { now: () => 1000 },
+  document: { activeElement: null, getElementById: id => {
+    if (!selectionNodes.has(id)) selectionNodes.set(id, new Element("div"));
+    return selectionNodes.get(id);
+  } },
+});
+vm.runInContext(await readFile(new URL("../rust/web/selection.js", import.meta.url), "utf8"), selectionContext);
+const selection = Object.create(selectionContext.window.SadSampleSelection.prototype);
+selection.actions = { library: () => ({ ready: true }), params: () => ({}) };
+const drumState = {
+  preset: { drums: {} }, input: { active: false }, sample_id: null,
+  sample_seconds: 8, sample_frames: 64000, sample_rate: 8000,
+  region: { start: 0.25, end: 0.75 }, fades: { fade_in: 1, fade_out: 1 },
+};
+selection.sync(drumState);
+assert.equal(selection.available(), false, "Native drums exposed file selection handles");
+assert.equal(selectionNodes.get("sample-selection").hidden, true);
+assert.equal(selectionNodes.get("region-start-handle").hidden, true);
+assert.equal(selection.gainAt(0.25), 1, "The old sample's fade dimmed the drum waveform");
+let selectionDraws = 0;
+selection.draw({ fillRect() { selectionDraws++; } }, 400, 130);
+assert.equal(selectionDraws, 0);
+selection.sync({ ...drumState, preset: {} });
+assert.equal(selection.available(), true);
+assert.equal(selectionNodes.get("sample-selection").hidden, false);
+assert.equal(selection.gainAt(0.25), 0, "Returning to the sample lost its fade display");
 console.log("Controls: immediate drum-knob paint, linked track/voice selection and extra LFO/ENV removal passed.");

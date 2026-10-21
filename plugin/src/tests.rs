@@ -1120,4 +1120,16 @@ fn drum_audition_rings_out_while_the_daw_transport_is_stopped() {
             .drum_view()
             .playing
     );
+    let state = call(&mut control, "/api/state", Value::Null);
+    assert_eq!(state["sample_name"], "Drum machine");
+    assert_eq!(state["sample_seconds"], 8.0);
+    assert_eq!(state["sample_frames"], 64000);
+    assert!(state["sample_id"].is_null());
+    assert!(state["waveform"].as_array().unwrap().iter().any(|bin| {
+        bin.as_array()
+            .unwrap()
+            .iter()
+            .any(|value| value.as_f64().unwrap().abs() > 0.001)
+    }));
+    assert_ne!(state["waveform"], state["file_source"]["waveform"]);
 }

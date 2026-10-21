@@ -805,7 +805,20 @@ function changeTimbre(path, data, scalar = false) {
 function syncTimbreRouting() {
   const drums = !!preset?.drums;
   $("load-wav").hidden = drums;
-  document.querySelector(".sample-panel").hidden = drums;
+  const samplePanel = document.querySelector(".sample-panel");
+  samplePanel.classList.toggle("drum-waveform", drums);
+  samplePanel.setAttribute("aria-label", drums ? "Drum waveform and grains" : "Sample and grains");
+  $("drum-source-name").hidden = !drums;
+  $("wave").setAttribute("aria-label", drums
+    ? "Live drum waveform and grains"
+    : "Sample waveform. Drag to select a loop, click to change position");
+  $("wave").title = drums ? "Live drum signal · last 8 seconds"
+    : "Drag to select a loop · drag the handles to adjust it";
+  const waveSlot = document.querySelector(".drum-wave-slot");
+  if (drums && waveSlot && samplePanel.parentElement !== waveSlot)
+    waveSlot.append(samplePanel);
+  else if (!drums && $("sample-panel-home").nextElementSibling !== samplePanel)
+    $("sample-panel-home").after(samplePanel);
   const grains = $("grain-engine");
   grains.hidden = drums && !preset.drums.granular;
   const grainSlot = document.querySelector(".drum-grain-slot");
@@ -3179,18 +3192,19 @@ function bind() {
   for (const type of ["dragenter", "dragover"])
     drop.addEventListener(type, (e) => {
       e.preventDefault();
-      drop.classList.add("drag");
+      if (!preset?.drums) drop.classList.add("drag");
     });
   for (const type of ["dragleave", "drop"])
     drop.addEventListener(type, (e) => {
       e.preventDefault();
       drop.classList.remove("drag");
     });
-  drop.addEventListener("drop", (e) =>
+  drop.addEventListener("drop", (e) => {
+    if (preset?.drums) return;
     fileLibrary
       .importFiles([...e.dataTransfer.files])
-      .catch((error) => notify(error.message, true)),
-  );
+      .catch((error) => notify(error.message, true));
+  });
   $("midi-refresh").onclick = () => refreshMidi(true);
   $("midi").onchange = async (e) => {
     try {
@@ -3416,7 +3430,8 @@ function syncInput(input) {
     $("render").disabled = false;
   $("render").dataset.liveDisabled = String(active);
   $("render").title = active ? "Use Record to save the live output" : "";
-  const effectsOnly = active && input.mode === "effects";
+  const effectsOnly = preset?.drums
+    ? !preset.drums.granular : active && input.mode === "effects";
   $("grain-controls").inert = effectsOnly;
   $("grain-controls").classList.toggle("inactive", effectsOnly);
   $("antialias").disabled = effectsOnly;

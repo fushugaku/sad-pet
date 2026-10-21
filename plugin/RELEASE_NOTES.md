@@ -1,5 +1,11 @@
 SAD PET instrument and SAD PET FX, with native Rust DSP and an embedded editor.
 
+**Live drum waveform.** Drum timbres now show the same waveform and grain display
+as sample timbres, directly above Grain Engine. It reads the real eight-second
+drum input history in both direct and granular modes. Native editors publish
+the drum buffer instead of the unrelated file waveform. File selection controls
+and fades return when switching back to a sample timbre.
+
 **Responsive drum controls and visible granular processing.** Voice knobs repaint
 during each drag instead of waiting for engine telemetry. Selecting a sequencer
 track or step also selects its sound editor. With Granular enabled, the drum page
@@ -89,6 +95,9 @@ are supplied individually and in `SHA256SUMS.txt`.
 ---
 
 В обоих установщиках есть инструмент **SAD PET** и эффект **SAD PET FX**.
+На странице драм-машины есть такая же волна, как у обычного тембра: реальная
+восьмисекундная история барабанного сигнала с позициями гранул. Она доступна
+с Granular и без него, в web и нативных плагинах.
 Ручки барабанов обновляются при движении, выбор дорожки или шага выбирает тот же
 звук. При включении Granular его ручки и счётчик гранул находятся сразу под
 переключателем. LFO/ENV меняют Time Ratio плавно, без ступеней таблицы и без

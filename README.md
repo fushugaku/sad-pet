@@ -67,7 +67,9 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   sequencer. **Granular** routes the drum mix through the shared Grain Engine;
   turn it off for direct processing through the remaining filter/FX chain.
   Grain controls appear directly below the Granular switch, with a live grain
-  count. Selecting a sequencer track or step also selects that drum's sound;
+  count. The same waveform display shows the drum mix's eight-second live history
+  and active grains, in both the browser and native plug-ins.
+  Selecting a sequencer track or step also selects that drum's sound;
   voice knobs repaint immediately while dragging.
   The firmware clock, original stereo DSP and host-rate resampler are preserved.
 - Two filters with single, serial and parallel routing, envelope depth and key tracking.

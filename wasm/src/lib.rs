@@ -94,7 +94,7 @@ impl Host {
             "sample_rate": self.rate, "audio_device": "Web Audio", "audio_error": null,
             "audio_enabled": false, "playing": e.playing, "frozen": e.frozen,
             "bypass": e.bypass, "midi_gate": e.midi_gate, "preset": e.preset,
-            "sample_name": sample.name, "sample_id": sample.library_id,
+            "sample_name": if e.preset.drums.is_some() { "Drum machine" } else { &sample.name }, "sample_id": sample.library_id,
             "sample_seconds": sample.duration(), "waveform": sample.waveform,
             "sample_frames": sample.len(),
             "region": e.region,

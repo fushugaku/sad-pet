@@ -3656,6 +3656,15 @@ input[type="range"] {
   margin: 8px 0 20px;
   padding-block: 16px;
 }
+.drum-wave-slot > .sample-panel {
+  margin: 8px 0 20px;
+}
+.drum-waveform :is(.input-source, #sample-select, #live-source-name, #library-toggle, .file-library, .drop-hint) {
+  display: none;
+}
+.drum-waveform .wave-wrap {
+  cursor: default;
+}
 .drum-pages,
 .drum-voice-tabs {
   display: flex;

@@ -17,10 +17,13 @@
       this.changedAt = 0;
       this.bind();
     }
+    live(state = this.state) {
+      return !!(state?.input?.active || state?.preset?.drums);
+    }
     available() {
       return (
         !!this.state?.region &&
-        !this.state.input?.active &&
+        !this.live() &&
         !this.state.input?.pending &&
         this.actions.library()?.ready &&
         !this.actions.library()?.loading &&
@@ -41,7 +44,7 @@
       );
     }
     sync(state) {
-      const key = state.input?.active
+      const key = this.live(state)
         ? "live"
         : `${state.sample_id}:${state.sample_name}:${state.sample_seconds}`;
       if (this.key !== key) {
@@ -68,7 +71,7 @@
     render() {
       const available = this.available();
       $("sample-selection").hidden =
-        !this.state?.region || !!this.state?.input?.active;
+        !this.state?.region || this.live();
       for (const edge of ["start", "end"]) {
         const input = $(`region-${edge}`),
           handle = $(`region-${edge}-handle`);
@@ -307,7 +310,7 @@
     gainAt(position) {
       if (
         !this.state ||
-        this.state.input?.active ||
+        this.live() ||
         position < this.region.start ||
         position > this.region.end
       )
@@ -337,7 +340,7 @@
       );
     }
     draw(context, width, height) {
-      if (!this.state?.region || this.state.input?.active) return;
+      if (!this.state?.region || this.live()) return;
       const start = this.region.start * width,
         end = this.region.end * width;
       context.fillStyle = "#0d140db3";

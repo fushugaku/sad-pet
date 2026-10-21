@@ -123,7 +123,11 @@ impl Host {
             },
             configuration: changed.then_some(Configuration {
                 preset: &self.engine.preset,
-                name: &sample.name,
+                name: if self.engine.preset.drums.is_some() {
+                    "Drum machine"
+                } else {
+                    &sample.name
+                },
                 id: &sample.library_id,
                 seconds: sample.duration(),
                 frames: sample.len(),
