@@ -602,4 +602,329 @@
   }
   window.SadPresetLibrary = PresetLibrary;
   window.SadPresetFile = { encode, decode };
+
+  const FX_MAGIC = Uint8Array.of(83, 65, 68, 70, 88, 1, 0, 0);
+  const FX_MIME = "application/x-sad-pet-effect-preset";
+  async function encodeEffect(record) {
+    const body = new Blob([JSON.stringify(record)]).stream()
+      .pipeThrough(new CompressionStream("gzip"));
+    return new Blob([FX_MAGIC, await new Response(body).blob()], { type: FX_MIME });
+  }
+  async function decodeEffect(file) {
+    if (file.size > 65536) throw new Error("The effect preset exceeds 64 KB.");
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (!FX_MAGIC.every((b, i) => bytes[i] === b))
+      throw new Error("Use a SAD PET effect preset (.sadfx).");
+    const reader = new Blob([bytes.subarray(8)]).stream()
+      .pipeThrough(new DecompressionStream("gzip")).getReader();
+    const chunks = [];
+    let size = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > 1048576) {
+        await reader.cancel();
+        throw new Error("The effect preset is too large.");
+      }
+      chunks.push(value);
+    }
+    const record = JSON.parse(await new Blob(chunks).text());
+    if (record.format !== "sad-pet-effect-v1" || !/^[a-f0-9]{32}$/i.test(record.id))
+      throw new Error("Invalid effect preset data.");
+    title(record.name);
+    return record;
+  }
+  const fxPrefix = (kind) => (kind === "lcr_delay" ? "lcr" : kind) + "_";
+  const closeValue = (a, b) => typeof a === "number" && typeof b === "number"
+    ? Math.abs(a - b) < 0.000001 : a === b;
+  class EffectPresets {
+    constructor(actions, store, defaults, types, choices) {
+      this.actions = actions;
+      this.store = store;
+      this.defaults = defaults;
+      this.types = types;
+      this.choices = choices;
+      this.records = [];
+      this.views = new Set();
+      this.selections = new Map();
+      this.ready = false;
+      this.busy = false;
+      this.revision = 0;
+      this.makeDialog();
+      if (typeof BroadcastChannel !== "undefined") {
+        this.channel = new BroadcastChannel("sad-pet-effect-presets");
+        this.channel.onmessage = () => this.refresh().catch(() => {});
+      }
+    }
+    async initialize() {
+      await this.refresh();
+      this.ready = true;
+      this.sync();
+    }
+    validate(data) {
+      if (data.format !== "sad-pet-effect-v1" ||
+          !this.types.some(([kind]) => kind === data.kind) ||
+          !Number.isFinite(data.mix) || data.mix < 0 || data.mix > 1 ||
+          !data.settings || typeof data.settings !== "object")
+        throw new Error("Invalid effect preset data.");
+      const settings = structuredClone(this.defaults.settings);
+      for (const [key, initial] of Object.entries(settings)) {
+        const value = data.settings[key];
+        if (value === undefined) continue;
+        if (typeof value !== typeof initial ||
+            (typeof value === "number" && (!Number.isFinite(value) || value < 0 || value > 1)) ||
+            (this.choices[key] && !this.choices[key].includes(value)))
+          throw new Error("Invalid effect setting: " + key);
+        settings[key] = value;
+      }
+      return { format: "sad-pet-effect-v1", name: title(data.name),
+        kind: data.kind, mix: data.mix, settings };
+    }
+    async refresh() {
+      const records = this.actions.native
+        ? await this.actions.request("/api/effect-presets")
+        : (await this.store.read("settings"))
+          .filter((r) => r.key.startsWith("effect-preset:"))
+          .map((r) => r.value).filter((r) => !r.trashed_at);
+      records.sort((a, b) => a.name.localeCompare(b.name));
+      const signature = JSON.stringify(records);
+      if (signature !== this.recordsSignature) {
+        this.records = records;
+        this.recordsSignature = signature;
+        this.revision++;
+      }
+      this.refreshed = Date.now();
+      this.sync();
+    }
+    label(kind) { return this.types.find(([k]) => k === kind)?.[1] || kind; }
+    matches(slot, record) {
+      return slot?.kind === record.kind && closeValue(slot.mix, record.mix) &&
+        Object.keys(this.defaults.settings).filter((k) => k.startsWith(fxPrefix(slot.kind)))
+          .every((k) => closeValue(slot.settings[k], record.settings[k] ?? this.defaults.settings[k]));
+    }
+    current(view) {
+      const slot = view.get();
+      if (!slot || (view.card && !view.card.isConnected))
+        throw new Error("The effect slot changed. Select it again.");
+      return slot;
+    }
+    match(view) {
+      if (this.selections.has(view.key)) {
+        const id = this.selections.get(view.key);
+        return this.records.find((r) => r.id === id && this.matches(view.get(), r));
+      }
+      return this.records.find((r) => this.matches(view.get(), r));
+    }
+    attach(card, label, get, key) {
+      const bar = document.createElement("div");
+      bar.className = "effect-presets";
+      bar.innerHTML = '<select aria-label="' + label + ' preset"></select><button class="effect-save" aria-label="Save ' + label + ' preset">Save</button><details class="effect-preset-menu"><summary aria-label="' + label + ' preset options" title="Preset options">⋯</summary><div><button data-action="import">Import…</button><button data-action="export">Export…</button><button data-action="delete">Delete</button><button data-action="undo">Undo delete</button></div></details>';
+      const view = { card, bar, get, key, select: bar.querySelector("select"), revision: -1 };
+      this.views.add(view);
+      card.querySelector(".color-title").after(bar);
+      view.select.onchange = () => {
+        const id = view.select.value;
+        if (!id) return;
+        this.run(async () => {
+          const slot = this.current(view);
+          const record = id === "init"
+            ? { ...this.defaults, kind: slot.kind, mix: slot.kind === "compressor" ? 1 : this.defaults.mix }
+            : this.records.find((r) => r.id === id);
+          if (!record || record.kind !== slot.kind) throw new Error("Choose a preset of the same effect type.");
+          this.selections.set(view.key, id === "init" ? null : id);
+          await this.actions.apply(slot.id, record);
+        });
+      };
+      view.select.onfocus = () => {
+        if (this.ready && Date.now() - this.refreshed > 1000)
+          this.refresh().catch((e) => this.actions.notify(e.message, true));
+      };
+      bar.querySelector(".effect-save").onclick = () =>
+        this.run(async () => { await this.refresh(); this.openSave(view); });
+      for (const button of bar.querySelectorAll("[data-action]"))
+        button.onclick = () => {
+          bar.querySelector("details").open = false;
+          this.run(() => this[button.dataset.action](view));
+        };
+      this.paint(view);
+    }
+    sync() {
+      for (const view of this.views) {
+        if (!view.card.isConnected) this.views.delete(view);
+        else this.paint(view);
+      }
+    }
+    paint(view) {
+      const slot = view.get();
+      if (!slot) return;
+      if (view.revision !== this.revision) {
+        view.select.replaceChildren(new Option("Custom", ""), new Option("Init", "init"),
+          ...this.records.filter((r) => r.kind === slot.kind).map((r) => new Option(r.name, r.id)));
+        view.revision = this.revision;
+      }
+      const match = this.match(view);
+      if (match) this.selections.set(view.key, match.id);
+      if (document.activeElement !== view.select) {
+        const initial = this.matches(slot, {
+          ...this.defaults, kind: slot.kind,
+          mix: slot.kind === "compressor" ? 1 : this.defaults.mix,
+        }) && !this.selections.get(view.key);
+        view.select.value = match?.id || (initial ? "init" : "");
+      }
+      for (const input of view.bar.querySelectorAll("select,button"))
+        input.disabled = !this.ready || this.busy;
+      for (const action of ["export", "delete"])
+        view.bar.querySelector('[data-action="' + action + '"]').disabled = !this.ready || this.busy || !match;
+      view.bar.querySelector('[data-action="undo"]').disabled = !this.ready || this.busy || !this.deleted;
+    }
+    async run(action) {
+      if (this.busy || !this.ready) return;
+      this.busy = true;
+      this.sync();
+      try { await action(); }
+      catch (e) { this.error.textContent = e.message; this.actions.notify(e.message, true); }
+      finally {
+        this.busy = false;
+        this.sync();
+        this.focusAfterSave?.focus();
+        this.focusAfterSave = null;
+      }
+    }
+    makeDialog() {
+      this.modal = document.createElement("div");
+      this.modal.className = "effect-preset-modal";
+      this.modal.hidden = true;
+      this.modal.setAttribute("role", "dialog");
+      this.modal.setAttribute("aria-modal", "true");
+      this.modal.setAttribute("aria-labelledby", "effect-save-title");
+      this.modal.innerHTML = '<form><h2 id="effect-save-title">Save effect preset</h2><label>Name<input aria-label="Effect preset name" maxlength="80" autocomplete="off" required></label><p class="effect-preset-error" role="alert"></p><div class="effect-save-actions"><button type="button" data-save="cancel">Cancel</button><button type="button" data-save="new">Save as new</button><button type="submit">Save</button></div></form>';
+      document.body.append(this.modal);
+      this.name = this.modal.querySelector("input");
+      this.error = this.modal.querySelector(".effect-preset-error");
+      this.modal.querySelector("form").onsubmit = (e) => { e.preventDefault(); this.run(() => this.save(false)); };
+      this.modal.querySelector('[data-save="new"]').onclick = () => this.run(() => this.save(true));
+      this.modal.querySelector('[data-save="cancel"]').onclick = () => this.closeSave();
+      this.modal.onclick = (e) => { if (e.target === this.modal) this.closeSave(); };
+      document.addEventListener("keydown", (e) => {
+        if (this.modal.hidden) return;
+        if (e.key === "Escape") { e.preventDefault(); this.closeSave(); }
+        if (e.key === "Tab") {
+          const controls = [...this.modal.querySelectorAll("input,button")].filter((x) => !x.disabled && !x.hidden);
+          const first = controls[0], last = controls.at(-1);
+          if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+          if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        }
+        e.stopImmediatePropagation();
+      }, true);
+    }
+    openSave(view) {
+      const slot = this.current(view);
+      this.saving = view;
+      this.previous = this.records.find((r) => r.id === this.selections.get(view.key) && r.kind === slot.kind);
+      this.modal.querySelector("h2").textContent = "Save " + this.label(slot.kind) + " preset";
+      this.name.value = this.previous?.name || this.label(slot.kind);
+      this.modal.querySelector('[data-save="new"]').hidden = !this.previous;
+      this.error.textContent = "";
+      this.modal.hidden = false;
+      this.name.focus();
+      this.name.select();
+    }
+    closeSave() {
+      if (this.busy) return;
+      this.modal.hidden = true;
+      this.saving?.bar.querySelector(".effect-save").focus();
+    }
+    async write(preset, id) {
+      preset = this.validate(preset);
+      if (this.actions.native)
+        return this.actions.request("/api/effect-presets/save", { preset, id });
+      if (this.records.some((r) => r.id !== id && r.kind === preset.kind &&
+          r.name.toLocaleLowerCase() === preset.name.toLocaleLowerCase()))
+        throw new Error("An effect preset named “" + preset.name + "” already exists.");
+      const previous = id ? await this.store.setting("effect-preset:" + id) : null;
+      if (id && (!previous || previous.trashed_at)) throw new Error("This preset was removed. Use Save as new.");
+      if (previous && previous.kind !== preset.kind)
+        throw new Error("Choose a preset of the same effect type.");
+      const record = { ...preset, id: id || crypto.randomUUID().replaceAll("-", ""),
+        created_at: previous?.created_at || Date.now(), modified_at: Date.now() };
+      await this.store.setting("effect-preset:" + record.id, record);
+      return record;
+    }
+    async changed() {
+      await this.refresh();
+      this.channel?.postMessage("changed");
+    }
+    async save(asNew) {
+      const slot = this.current(this.saving);
+      const preset = { format: "sad-pet-effect-v1", name: this.name.value,
+        kind: slot.kind, mix: slot.mix, settings: structuredClone(slot.settings) };
+      await this.actions.flush();
+      const record = await this.write(preset, asNew ? undefined : this.previous?.id);
+      this.selections.set(this.saving.key, record.id);
+      await this.changed();
+      this.modal.hidden = true;
+      this.focusAfterSave = this.saving.bar.querySelector(".effect-save");
+      this.actions.notify("Saved “" + record.name + "”");
+    }
+    async export(view) {
+      const record = this.match(view);
+      if (!record) return;
+      const blob = this.actions.native
+        ? await (await this.actions.api("/api/effect-presets/export", { id: record.id })).blob()
+        : await encodeEffect(record);
+      this.actions.download(blob, filename(record.name).replace(/\.sadpet$/, ".sadfx"));
+    }
+    async import(view) {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".sadfx";
+      input.onchange = () => this.run(async () => {
+        const file = input.files[0];
+        if (!file) return;
+        if (file.size > 65536) throw new Error("The effect preset exceeds 64 KB.");
+        const kind = this.current(view).kind;
+        let record;
+        if (this.actions.native)
+          record = await this.actions.request("/api/effect-presets/import", {
+            base64: base64(new Uint8Array(await file.arrayBuffer())),
+            kind,
+          });
+        else {
+          const preset = this.validate(await decodeEffect(file));
+          if (preset.kind !== kind) throw new Error("Choose a preset of the same effect type.");
+          const base = preset.name;
+          let suffix = 2;
+          while (this.records.some((r) => r.kind === preset.kind && r.name.toLocaleLowerCase() === preset.name.toLocaleLowerCase()))
+            preset.name = [...base].slice(0, 70).join("") + " (" + suffix++ + ")";
+          record = await this.write(preset);
+        }
+        await this.changed();
+        const slot = this.current(view);
+        await this.actions.apply(slot.id, record);
+      });
+      input.click();
+    }
+    async delete(view) {
+      const record = this.match(view);
+      if (!record) return;
+      if (this.actions.native) await this.actions.request("/api/effect-presets/delete", { id: record.id });
+      else await this.store.setting("effect-preset:" + record.id, { ...record, trashed_at: Date.now() });
+      this.deleted = record;
+      await this.changed();
+      this.actions.notify("Deleted “" + record.name + "”");
+    }
+    async undo() {
+      if (!this.deleted) return;
+      if (this.records.some((r) => r.kind === this.deleted.kind &&
+          r.name.toLocaleLowerCase() === this.deleted.name.toLocaleLowerCase()))
+        throw new Error("A preset with this name already exists. Rename it before undoing the deletion.");
+      if (this.actions.native) await this.actions.request("/api/effect-presets/restore", { id: this.deleted.id });
+      else await this.store.setting("effect-preset:" + this.deleted.id, { ...this.deleted, trashed_at: null });
+      this.deleted = null;
+      await this.changed();
+    }
+  }
+  window.SadEffectPresets = EffectPresets;
+  window.SadEffectPresetFile = { encode: encodeEffect, decode: decodeEffect };
 })();

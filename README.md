@@ -11,6 +11,11 @@ recording buffers are reused. No backend
 or installation is required. Click Play or a keyboard key to enable sound.
 The desktop version uses the system audio output and a local browser panel.
 
+Each effect has its own named preset selector and Save button. Effect presets
+are shared across the three FX racks and all timbres of the same effect type.
+Portable `.sadfx` import/export moves settings between the web and native
+plug-ins, including modes, tempo sync, Smooth and Mix.
+
 - Thirty built-in audio sources, WAV import and an IndexedDB file library, including
   Matrix POV video audio and a 42.67-second Harvest Dawn harp/chamber-string cover
   loop: 16 bars at 90 BPM, with the recognizable eight-bar introduction played

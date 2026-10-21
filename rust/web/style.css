@@ -490,6 +490,86 @@ h2 {
   border-radius: 8px;
   padding: 12px 14px 16px;
 }
+.effect-presets {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 36px;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 8px;
+}
+.effect-presets > select { width: 100%; min-width: 0; }
+.effect-preset-menu { position: relative; }
+.effect-preset-menu > summary {
+  display: grid;
+  place-items: center;
+  height: 36px;
+  width: 36px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--overlay);
+  cursor: pointer;
+  font-size: 20px;
+  list-style: none;
+}
+.effect-preset-menu > summary::-webkit-details-marker { display: none; }
+.effect-preset-menu > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.effect-preset-menu > div {
+  position: absolute;
+  z-index: 20;
+  top: 42px;
+  right: 0;
+  width: 156px;
+  padding: 6px;
+  display: grid;
+  gap: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px #0008;
+}
+.effect-preset-menu button { text-align: left; }
+.effect-preset-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: #0009;
+}
+.effect-preset-modal[hidden] { display: none; }
+.effect-preset-modal form {
+  width: min(100%, 440px);
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 20px 80px #0009;
+}
+.effect-preset-modal h2 {
+  margin: 0 0 20px;
+  font-size: 17px;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text);
+}
+.effect-preset-modal label { display: grid; gap: 8px; color: var(--muted); }
+.effect-preset-modal input { width: 100%; height: 36px; }
+.effect-preset-error { min-height: 18px; color: var(--error); }
+.effect-save-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.effect-save-actions button[type="submit"] {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
 .resynth-actions {
   display: flex;
   align-items: center;

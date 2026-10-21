@@ -1,5 +1,6 @@
 //! Native plugin boundary. Only Audio is touched by the host's audio callback.
 //! Controller prepares files/presets and reclaims retired allocations off-thread.
+mod effect_presets;
 mod parameters;
 mod preset_library;
 mod timbres;

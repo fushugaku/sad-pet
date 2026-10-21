@@ -51,6 +51,7 @@ jobs:
           cargo test -p sad-pet --no-default-features --test modulators --locked
           cargo test -p sad-pet --no-default-features --test rustias_filters --locked
           node wasm/test-presets.mjs
+          node wasm/test-effect-presets.mjs
           node wasm/test-parameters.mjs
           node wasm/test-sequencer-ui.mjs
           cargo test -p sad-pet --no-default-features --test imported_fx --locked

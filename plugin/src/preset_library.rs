@@ -38,13 +38,13 @@ pub(super) struct Record {
 fn gzip() -> String {
     "gzip".into()
 }
-fn timestamp() -> u64 {
+pub(super) fn timestamp() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64
 }
-fn unique_id() -> String {
+pub(super) fn unique_id() -> String {
     let time = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -56,7 +56,7 @@ fn unique_id() -> String {
         NONCE.fetch_add(1, Ordering::Relaxed) as u32
     )
 }
-fn name(value: &str) -> Result<String, String> {
+pub(super) fn name(value: &str) -> Result<String, String> {
     let name = value.trim();
     if name.is_empty() {
         return Err("Enter a preset name.".into());
@@ -66,7 +66,7 @@ fn name(value: &str) -> Result<String, String> {
     }
     Ok(name.into())
 }
-fn valid_id(id: &str) -> bool {
+pub(super) fn valid_id(id: &str) -> bool {
     id.len() == 32 && id.bytes().all(|c| c.is_ascii_hexdigit())
 }
 fn read_header(input: &mut impl Read) -> Result<Record, String> {
@@ -161,7 +161,7 @@ impl Library {
             });
         Self { root }
     }
-    fn root(&self) -> Result<&std::path::Path, String> {
+    pub(super) fn root(&self) -> Result<&std::path::Path, String> {
         self.root
             .as_deref()
             .ok_or_else(|| "The user preset folder is unavailable.".into())

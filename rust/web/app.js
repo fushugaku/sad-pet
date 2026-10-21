@@ -15,6 +15,7 @@ const controls = new Map(),
 let noteChain = Promise.resolve();
 let fileLibrary = null;
 let presetLibrary = null;
+let effectPresetLibrary = null;
 let presetWrites = Promise.resolve();
 let presetWriteCount = 0;
 let structuralPending = false;
@@ -244,6 +245,7 @@ async function flushPreset() {
   await refreshPresetState();
 }
 async function preparePresetRecall() {
+  effectPresetLibrary?.selections.clear();
   if (drumEditor) {
     drumEditor.views.clear();
     drumEditor.signature = "";
@@ -1942,6 +1944,11 @@ function syncColors() {
         );
       card.querySelector(".color-knobs").dataset.count = schema.length;
       $(rack.element).append(card);
+      const timbreId = state?.timbres?.active ?? 0;
+      effectPresetLibrary?.attach(card, `${rack.label} ${number}`, () =>
+        (state?.timbres?.active ?? 0) === timbreId ? findColor(id) : null,
+        `${timbreId}:${id}:${slot.kind}`,
+      );
       for (const [parameter, label, format] of schema) {
         const key = `color:${id}:${parameter}`;
         const getSlot = () => findColor(id);
@@ -2051,6 +2058,7 @@ function syncColors() {
     $(rack.add).disabled =
       preset[rack.key].length >= (rack.max || colorDefaults.max_slots);
   for (const [key, update] of controls) if (key.startsWith("color:")) update();
+  effectPresetLibrary?.sync();
   syncGainReduction(state);
 }
 function syncGainReduction(next) {
@@ -3547,11 +3555,37 @@ async function init() {
       },
       fileLibrary,
     );
+    effectPresetLibrary = new window.SadEffectPresets(
+      {
+        native: Boolean(state.plugin),
+        request, api, notify, download, flush: flushPreset,
+        apply: async (id, saved) => {
+          const slot = findColor(id);
+          if (!slot || slot.kind !== saved.kind)
+            throw new Error("The effect slot changed. Select it again.");
+          const prefix = (slot.kind === "lcr_delay" ? "lcr" : slot.kind) + "_";
+          for (const key of Object.keys(slot.settings))
+            if (key.startsWith(prefix))
+              slot.settings[key] = saved.settings[key] ?? colorDefaults.slot.settings[key];
+          slot.mix = saved.mix;
+          editColorChain();
+          await flushPreset();
+        },
+      },
+      fileLibrary.store, colorDefaults.slot, COLOR_TYPES,
+      {
+        reverb_type: REVERB_TYPES.map(([value]) => value),
+        waveshaper_type: WAVESHAPER_TYPES.map(([value]) => value),
+      },
+    );
+    colorSignature = "";
+    syncColors();
     Promise.resolve(state)
       .then(async (native) => {
         sampleSelection.sync(native);
         if (native.plugin) await presetLibrary.initialize(native, presets);
         await fileLibrary.initialize(native, presets);
+        await effectPresetLibrary.initialize();
         if (native.plugin) await presetLibrary.migrate();
         else await presetLibrary.initialize(native, presets);
       })

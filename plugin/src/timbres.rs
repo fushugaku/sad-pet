@@ -77,6 +77,9 @@ impl Controller {
         self.drain();
         let path = request["path"].as_str().ok_or("Missing command")?;
         let data = &request["data"];
+        if path.starts_with("/api/effect-presets") {
+            return self.effect_presets_request(path, request["method"] == "POST", data);
+        }
         if path.starts_with("/api/timbres") {
             match path {
                 "/api/timbres" => {}

@@ -1,5 +1,12 @@
 SAD PET instrument and SAD PET FX, with native Rust DSP and an embedded editor.
 
+**Presets for every effect.** Each Source FX, pre-filter and post-filter slot has
+its own named preset selector and Save button. Presets are shared across slots
+and timbres of the same effect type, including all modes, tempo sync, Smooth and
+Mix. Save, overwrite or save as new; import/export portable `.sadfx` files.
+Deleting a preset supports Undo. Plug-ins share a disk library across instances;
+the web version stores its effect presets in the browser.
+
 **Multiple timbres, DXM-088 drums and eight modulators per bank.** Add Granular
 or Drum machine timbres as top tabs; they mix simultaneously and retain their own
 source, Resynth, filter/FX chains, LFO/ENV banks and Neuropolis program. Each has

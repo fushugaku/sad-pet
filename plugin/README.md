@@ -8,6 +8,20 @@ the plug-in window; it does not launch a separate browser, audio device or serve
 | SAD PET | MIDI instrument with imported or built-in samples | VST3, AU instrument | VST3 |
 | SAD PET FX | Stereo input through filters/effects or an eight-second granular buffer; also receives MIDI | VST3, AU MIDI-controlled effect | VST3 |
 
+## Effect presets
+
+Every Source FX, pre-filter FX and post-filter FX slot has a preset selector and
+**Save**. Presets are shared across all slots and timbres of the same effect type.
+They store the effect's controls, modes, tempo sync, Smooth and Mix; applying one
+keeps the slot identity, bypass state, modulation routes and other effects.
+
+Save updates the selected preset after edits; **Save as new** creates a separate
+entry. The **⋯** menu imports/exports portable `.sadfx` files and deletes saved
+entries with **Undo delete**. **Init** restores the algorithm's default settings.
+Plug-in instances share the disk library in the **Effects** subfolder of the
+User preset folder. The web version keeps its bank in IndexedDB; use `.sadfx`
+to transfer an effect preset between browsers, macOS and Windows.
+
 ## Timbres and drum machine
 
 Use the top **Timbres** bank: choose Granular or Drum machine, then **+ Timbre**.
