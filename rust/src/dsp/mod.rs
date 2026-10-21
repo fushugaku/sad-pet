@@ -56,23 +56,27 @@ struct Grain {
 #[derive(Clone, Copy, Debug, Default)]
 struct Voice {
     owner: u32,
-    envelopes: [Envelope; 3],
+    envelopes: [Envelope; crate::preset::MODULATORS],
     note: u8,
     channel: u8,
     velocity: f32,
     held: bool,
     sustained: bool,
     value: f32,
-    env_values: [f32; 3],
+    env_values: [f32; crate::preset::MODULATORS],
     loop_phase: f64,
 }
 impl Voice {
-    fn on(&mut self) {
+    fn on(&mut self, count: usize) {
         self.loop_phase = 0.0;
-        self.env_values = [0.0; 3];
+        self.env_values = [0.0; crate::preset::MODULATORS];
         self.value = 0.0;
-        for env in &mut self.envelopes {
-            env.on();
+        for (i, env) in self.envelopes.iter_mut().enumerate() {
+            if i < count {
+                env.on();
+            } else {
+                env.kill();
+            }
         }
     }
     fn off(&mut self) {
@@ -105,10 +109,13 @@ pub(crate) struct Modulated {
     pub(crate) color_len: usize,
     pub(crate) pre_color_slots: [ColorSlot; MAX_COLOR_SLOTS],
     pub(crate) pre_color_len: usize,
-    pub(crate) lfos: [Lfo; 3],
-    pub(crate) envs: [Env; 3],
+    pub(crate) lfos: [Lfo; crate::preset::MODULATORS],
+    pub(crate) envs: [Env; crate::preset::MODULATORS],
+    pub(crate) lfo_count: usize,
+    pub(crate) env_count: usize,
     pub(crate) performance: crate::performance::Modulation,
     pub(crate) resynth: crate::resynth::Settings,
+    pub(crate) drums: crate::drums::Controls,
 }
 impl Modulated {
     fn from_preset(preset: &Preset) -> Self {
@@ -121,8 +128,14 @@ impl Modulated {
             pre_color_len: preset.pre_color_chain.len(),
             lfos: preset.lfos,
             envs: preset.envs,
+            lfo_count: preset.lfo_count as usize,
+            env_count: preset.env_count as usize,
             performance: crate::performance::Modulation::from_settings(&preset.performance),
             resynth: preset.resynth,
+            drums: preset
+                .drums
+                .as_ref()
+                .map_or_else(Default::default, |d| d.params),
         };
         result.color_slots[..result.color_len].copy_from_slice(&preset.color_chain);
         result.pre_color_slots[..result.pre_color_len].copy_from_slice(&preset.pre_color_chain);
@@ -130,6 +143,15 @@ impl Modulated {
     }
     fn route(&mut self, destination: Destination, value: f32) {
         if value == 0.0 {
+            return;
+        }
+        if let Destination::Control { index } = destination {
+            if let Some(spec) = crate::parameters::specs().get(index as usize)
+                && spec.can_sequence()
+                && let Some(base) = spec.frame_get(self)
+            {
+                spec.frame_set(self, base + value * (spec.max - spec.min));
+            }
             return;
         }
         use matrix::{
@@ -157,7 +179,9 @@ impl Modulated {
                     P::MinGrains => (&mut p.min_grains, 0.0, 1.0, false),
                 })
             }
-            Destination::Env { index, parameter } if index < 3 => {
+            Destination::Env { index, parameter }
+                if (index as usize) < crate::preset::MODULATORS =>
+            {
                 let e = &mut self.envs[index as usize];
                 Some(match parameter {
                     E::Attack => (&mut e.attack, 0.0, 1.0, false),
@@ -168,7 +192,9 @@ impl Modulated {
                     E::ExtraDepth => (&mut e.extra_depth, -1.0, 1.0, false),
                 })
             }
-            Destination::Lfo { index, parameter } if index < 3 => {
+            Destination::Lfo { index, parameter }
+                if (index as usize) < crate::preset::MODULATORS =>
+            {
                 let l = &mut self.lfos[index as usize];
                 Some(match parameter {
                     L::Rate => (&mut l.rate_hz, 0.01, 40.0, true),
@@ -294,13 +320,14 @@ pub struct Engine {
     sequence_running: bool,
     grains: [Grain; MAX_GRAINS],
     voices: [Voice; VOICES],
-    oscillators: [Oscillator; 3],
-    pub lfo_values: [f32; 3],
-    pub env_values: [f32; 3],
+    oscillators: [Oscillator; crate::preset::MODULATORS],
+    pub lfo_values: [f32; crate::preset::MODULATORS],
+    pub env_values: [f32; crate::preset::MODULATORS],
     color_rack: ColorRack,
     pre_color_rack: ColorRack,
     source_color: color::ColorProcessor,
     resynth: resynth::Resynth,
+    drums: Option<Box<crate::drums::Runtime>>,
     pub processed_source: Option<Arc<source_fx::ProcessedSource>>,
     previous_source: Option<Arc<source_fx::ProcessedSource>>,
     source_fade_remaining: u32,
@@ -365,12 +392,13 @@ impl Engine {
             oscillators: std::array::from_fn(|i| {
                 Oscillator::new(0x853c49e6748fea9b_u64.wrapping_add(i as u64 * 0x12345679))
             }),
-            lfo_values: [0.0; 3],
-            env_values: [0.0; 3],
+            lfo_values: [0.0; crate::preset::MODULATORS],
+            env_values: [0.0; crate::preset::MODULATORS],
             color_rack: ColorRack::new(sr),
             pre_color_rack: ColorRack::new(sr),
             source_color: color::ColorProcessor::new(sr),
             resynth: resynth::Resynth::new(sr),
+            drums: None,
             processed_source: None,
             previous_source: None,
             source_fade_remaining: 0,
@@ -424,12 +452,27 @@ impl Engine {
     pub fn set_preset(&mut self, mut preset: Preset) {
         preset.sanitize();
         preset.prepare_imported_effects();
+        preset
+            .drum_runtime
+            .prepare(preset.drums.as_deref(), self.sample_rate);
         self.exchange_preset(&mut preset);
     }
 
     /// Exchange a sanitized preset without allocating or destroying its buffers.
     /// The caller retires the previous preset away from the audio callback.
     pub fn exchange_preset(&mut self, preset: &mut Preset) {
+        if let Some(next) = &mut preset.drum_runtime.0 {
+            if let Some(old) = &mut self.drums {
+                next.engine.take_audio(&mut old.engine);
+                next.engine.inherit_clock(&old.engine);
+                std::mem::swap(&mut next.live, &mut old.live);
+            } else {
+                std::mem::swap(&mut self.live_input, &mut next.live);
+            }
+        } else if let Some(old) = &mut self.drums {
+            std::mem::swap(&mut self.live_input, &mut old.live);
+        }
+        std::mem::swap(&mut self.drums, &mut preset.drum_runtime.0);
         if let (Some(next), Some(old)) = (
             &mut preset.sequencer.runtime,
             &mut self.preset.sequencer.runtime,
@@ -619,6 +662,11 @@ impl Engine {
             self.preset.params.bpm = bpm;
         }
         if restart {
+            if let Some(drums) = &mut self.drums {
+                drums
+                    .engine
+                    .seek_clock(beat.filter(|b| b.is_finite()).unwrap_or(0.));
+            }
             if self.performance.mode() != Mode::Keys {
                 self.release_notes();
             } else {
@@ -663,7 +711,7 @@ impl Engine {
                 self.voices[0].note = 60;
                 self.voices[0].held = true;
                 self.filters[0].clear();
-                self.voices[0].on();
+                self.voices[0].on(self.preset.env_count as usize);
                 self.mod_note_on(0, 60, 127);
                 self.configure_voice_filter(0);
             }
@@ -719,6 +767,13 @@ impl Engine {
             return;
         }
         self.sequence_running = running;
+        if let Some(drums) = &mut self.drums {
+            if running {
+                drums.engine.play();
+            } else {
+                drums.engine.stop();
+            }
+        }
         self.release_sequence_notes();
         if let Some(runtime) = &mut self.preset.sequencer.runtime {
             runtime.start(running && self.preset.sequencer.enabled);
@@ -812,6 +867,13 @@ impl Engine {
     }
     pub fn set_playing(&mut self, playing: bool) {
         self.playing = playing;
+        if let Some(drums) = &mut self.drums {
+            if playing && self.sequence_running {
+                drums.engine.play();
+            } else {
+                drums.engine.stop();
+            }
+        }
         if let Some(runtime) = &mut self.preset.sequencer.runtime {
             runtime.start(self.preset.sequencer.enabled && playing && self.sequence_running);
         }
@@ -842,7 +904,7 @@ impl Engine {
                 self.voices[0].note = 60;
                 self.voices[0].held = true;
                 self.filters[0].clear();
-                self.voices[0].on();
+                self.voices[0].on(self.preset.env_count as usize);
                 self.mod_note_on(0, 60, 127);
                 self.configure_voice_filter(0);
             }
@@ -875,7 +937,7 @@ impl Engine {
             self.voices[0].velocity = 1.0;
             self.voices[0].held = true;
             self.filters[0].clear();
-            self.voices[0].on();
+            self.voices[0].on(self.preset.env_count as usize);
             self.mod_note_on(0, 60, 127);
             self.configure_voice_filter(0);
         }
@@ -1018,6 +1080,44 @@ impl Engine {
     }
 
     pub fn midi(&mut self, message: Message) {
+        if self.preset.drums.is_some() {
+            // Scene and drum patches are recalled by the host, not the legacy sample-preset bank.
+            if matches!(message, Message::Program { .. }) {
+                return;
+            }
+            if let Message::NoteOn {
+                note,
+                velocity: 1..=127,
+                ..
+            } = message
+            {
+                if let Message::NoteOn { velocity, .. } = message {
+                    let track = self
+                        .preset
+                        .drums
+                        .as_ref()
+                        .unwrap()
+                        .tracks
+                        .iter()
+                        .position(|t| t.midi_note == note);
+                    if let Some(track) = track {
+                        self.trigger_drum(track, velocity as f32 / 127.);
+                    }
+                }
+                return;
+            }
+            if matches!(
+                message,
+                Message::Reset
+                    | Message::Control {
+                        controller: 120 | 123,
+                        ..
+                    }
+            ) && let Some(drums) = &mut self.drums
+            {
+                drums.engine.panic();
+            }
+        }
         if self.capture_step_note(message) {
             return;
         }
@@ -1139,7 +1239,7 @@ impl Engine {
                 v.velocity = velocity as f32 / 127.0;
                 v.held = true;
                 v.sustained = false;
-                v.on();
+                v.on(self.preset.env_count as usize);
                 self.mod_note_on(channel, note, velocity);
                 self.configure_voice_filter(index);
                 self.grain_clock = 1.0;
@@ -1318,9 +1418,19 @@ impl Engine {
             Source::Lfo1 => self.lfo_values[0],
             Source::Lfo2 => self.lfo_values[1],
             Source::Lfo3 => self.lfo_values[2],
+            Source::Lfo4 => self.lfo_values[3],
+            Source::Lfo5 => self.lfo_values[4],
+            Source::Lfo6 => self.lfo_values[5],
+            Source::Lfo7 => self.lfo_values[6],
+            Source::Lfo8 => self.lfo_values[7],
             Source::Env1 => self.env_values[0],
             Source::Env2 => self.env_values[1],
             Source::Env3 => self.env_values[2],
+            Source::Env4 => self.env_values[3],
+            Source::Env5 => self.env_values[4],
+            Source::Env6 => self.env_values[5],
+            Source::Env7 => self.env_values[6],
+            Source::Env8 => self.env_values[7],
             Source::Velocity => self.source_velocity,
             Source::KeyTrack => ((self.source_note as f32 - 60.0) / 48.0).clamp(-1.0, 1.0),
             Source::ModWheel => self.wheel[channel],
@@ -1375,10 +1485,10 @@ impl Engine {
         for i in 0..target_count {
             m.route(targets[i], amounts[i]);
         }
-        for (i, lfo) in m.lfos.into_iter().enumerate() {
+        for (i, lfo) in m.lfos.into_iter().take(m.lfo_count).enumerate() {
             m.route(lfo.destination, self.lfo_values[i] * lfo.depth * 0.5);
         }
-        for (i, env) in m.envs.into_iter().enumerate() {
+        for (i, env) in m.envs.into_iter().take(m.env_count).enumerate() {
             m.route(env.destination, self.env_values[i] * env.depth);
             m.route(env.extra_destination, self.env_values[i] * env.extra_depth);
         }
@@ -1418,7 +1528,26 @@ impl Engine {
         self.pre_color_rack.set_pitch(shaper_note);
         self.color_rack.set_pitch(shaper_note);
         self.performance.modulate(m.performance);
+        if let (Some(drums), Some(settings)) = (&mut self.drums, &self.preset.drums) {
+            let transpose = if settings.granular {
+                0.
+            } else {
+                (m.params.pitch * 2. - 1.) * m.params.pitch_range
+                    + m.params.sample_tune_semis
+                    + m.params.sample_tune_cents * 0.01
+            };
+            drums.configure(settings, m.drums, m.params.bpm, transpose);
+        }
         for (i, env) in m.envs.iter().enumerate() {
+            if i >= m.env_count {
+                if i < self.modulated.env_count {
+                    for voice in &mut self.voices {
+                        voice.envelopes[i].kill();
+                        voice.env_values[i] = 0.0;
+                    }
+                }
+                continue;
+            }
             if *env != self.modulated.envs[i] {
                 for voice in &mut self.voices {
                     voice.envelopes[i].configure(self.sample_rate as f32, env);
@@ -1459,10 +1588,10 @@ impl Engine {
     pub fn modulated_pre_color_slots(&self) -> &[ColorSlot] {
         &self.modulated.pre_color_slots[..self.modulated.pre_color_len]
     }
-    pub fn modulated_envs(&self) -> [Env; 3] {
+    pub fn modulated_envs(&self) -> [Env; crate::preset::MODULATORS] {
         self.modulated.envs
     }
-    pub fn modulated_lfos(&self) -> [Lfo; 3] {
+    pub fn modulated_lfos(&self) -> [Lfo; crate::preset::MODULATORS] {
         self.modulated.lfos
     }
 
@@ -1540,7 +1669,47 @@ impl Engine {
         self.process_input_frame([0.0; 2])
     }
 
+    pub fn apply_drum_edits(&mut self, edits: &[crate::drums::Edit]) {
+        if let Some(settings) = &mut self.preset.drums {
+            settings.edit(edits);
+            if let Some(runtime) = &mut self.drums {
+                runtime.sync_tracks(settings);
+            }
+        }
+    }
+    pub fn trigger_drum(&mut self, track: usize, velocity: f32) {
+        if let Some(drums) = &mut self.drums {
+            drums.engine.trigger(track, velocity.clamp(0., 1.), 0);
+        }
+        if !self.playing {
+            self.midi_gate = false;
+            // Audition does not start the drum pattern.
+            let gate = self.drums.as_ref().is_some_and(|d| d.engine.playing);
+            self.set_playing(true);
+            if !gate && let Some(drums) = &mut self.drums {
+                drums.engine.stop();
+            }
+        }
+    }
+    pub fn drum_view(&self) -> crate::drums::View {
+        self.drums
+            .as_ref()
+            .map_or_else(Default::default, |d| crate::drums::View {
+                positions: d.engine.positions,
+                levels: d.engine.meters,
+                playing: d.engine.playing,
+            })
+    }
+
     pub fn process_input_frame(&mut self, input: Stereo) -> Stereo {
+        let input = if let Some(drums) = &mut self.drums {
+            drums.frame()
+        } else {
+            input
+        };
+        if let (Some(settings), Some(live)) = (&self.preset.drums, &mut self.live_input) {
+            live.effects_only = !settings.granular;
+        }
         let effects_only = self.live_input.as_ref().is_some_and(|i| i.effects_only);
         let source_input = if self.live_input.is_some() {
             self.source_color.process(input.map(|x| {
@@ -1653,7 +1822,8 @@ impl Engine {
             } else {
                 0.00015
             };
-        for i in 0..3 {
+        self.lfo_values.fill(0.0);
+        for i in 0..self.modulated.lfo_count {
             self.lfo_values[i] = self.oscillators[i].next_sample(
                 &self.modulated.lfos[i],
                 sr,
@@ -1661,11 +1831,16 @@ impl Engine {
                 self.follower.min(1.0),
             );
         }
-        self.env_values = [0.0; 3];
+        self.env_values = [0.0; crate::preset::MODULATORS];
         let mut loudest_voice = 0.0_f32;
         let mut voice_sum = 0.0_f32;
         for v in &mut self.voices {
-            for (i, env) in v.envelopes.iter_mut().enumerate() {
+            for (i, env) in v
+                .envelopes
+                .iter_mut()
+                .take(self.modulated.env_count)
+                .enumerate()
+            {
                 let value = env.next_sample();
                 v.env_values[i] = value;
                 self.env_values[i] = self.env_values[i].max(value);

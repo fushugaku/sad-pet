@@ -26,13 +26,13 @@ fn preset() -> Preset {
     p.params.filter_env_depth = 0.0;
     p.params.filter_resonance = 0.0;
     p.params.master_volume = 0.65;
-    p.envs = [Env {
+    p.envs.fill(Env {
         attack: 0.0,
         decay: 0.0,
         sustain: 1.0,
         release: 0.0,
         ..Env::default()
-    }; 3];
+    });
     p
 }
 fn sample() -> Arc<SampleBuffer> {

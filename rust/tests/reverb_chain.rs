@@ -268,13 +268,13 @@ fn per_reverb_envelopes_and_lfos_keep_their_targets_when_moved_or_deleted() {
         color_chain: vec![a, b],
         ..Preset::default()
     };
-    p.envs = [Env {
+    p.envs.fill(Env {
         attack: 0.0,
         decay: 0.0,
         sustain: 1.0,
         release: 0.0,
         ..Env::default()
-    }; 3];
+    });
     p.envs[0].destination = Destination::Color {
         slot: 11,
         parameter: P::ReverbDecay,

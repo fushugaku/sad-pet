@@ -251,7 +251,8 @@
       this.render();
     }
     currentName() {
-      return this.actions.read().preset?.name || "Init";
+      const current = this.actions.read();
+      return current.state?.timbres?.name || current.preset?.name || "Init";
     }
     markDirty() {
       this.selection.dirty = true;
@@ -378,6 +379,25 @@
     }
     async snapshot(preset = this.actions.read().preset) {
       const current = this.actions.read().state;
+      if (current.timbres?.timbres) {
+        const override = preset !== this.actions.read().preset;
+        const scene = await this.actions.request("/api/scene");
+        if (override) {
+          scene.preset = structuredClone(preset);
+          scene.timbres = [];
+          scene.active_timbre = 0;
+          scene.meta = {
+            id: 0,
+            name: "Granular 1",
+            kind: "granular",
+            gain: 1,
+            muted: false,
+            solo: false,
+            channel: 0,
+          };
+        }
+        return scene;
+      }
       const audio = await this.files.store.read("files", this.files.currentId);
       const blob =
         audio?.blob ||
@@ -438,8 +458,15 @@
       const record = this.native
         ? await this.actions.request("/api/preset-library/save", { name, id })
         : await this.browserWrite(name, id, await this.snapshot());
-      if (!this.native)
-        await this.actions.applyPreset({ ...this.actions.read().preset, name });
+      if (!this.native) {
+        if (this.actions.read().state?.timbres?.timbres)
+          await this.actions.request("/api/scene/name", { name });
+        else
+          await this.actions.applyPreset({
+            ...this.actions.read().preset,
+            name,
+          });
+      }
       await this.actions.refresh();
       this.selection = { id: record.id, dirty: false };
       await this.remember();
@@ -454,6 +481,12 @@
         await this.files.store.setting("preset-selection", this.selection);
     }
     async applyBrowser(state) {
+      if (state.meta || Array.isArray(state.timbres)) {
+        await this.actions.request("/api/scene", state);
+        return;
+      }
+      if (this.actions.read().state?.timbres?.timbres)
+        await this.actions.request("/api/timbres/reset", {});
       if (state.sample_wav) {
         const blob = new Blob([unbase64(state.sample_wav)], {
           type: "audio/wav",
@@ -480,6 +513,8 @@
           id.startsWith("factory:") ? { index: Number(id.slice(8)) } : { id },
         );
       } else if (id.startsWith("factory:")) {
+        if (this.actions.read().state?.timbres?.timbres)
+          await this.actions.request("/api/timbres/reset", {});
         await this.actions.applyPreset(
           structuredClone(this.factory[Number(id.slice(8))]),
         );

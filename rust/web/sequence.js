@@ -711,6 +711,26 @@ window.SadNeuropolis = class {
     };
     header.append(name, target, duplicate, remove);
     editor.append(header);
+    if (track.target.kind === "main_pitch") {
+      const routing = document.createElement("div");
+      routing.className = "neuro-pitch-routing";
+      const label = document.createElement("span");
+      label.textContent = "Main pitch →";
+      routing.append(label);
+      for (let i = 0; i < 4; i++) {
+        const check = document.createElement("label");
+        check.className = "check";
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.dataset.config = 49 + i;
+        input.setAttribute("aria-label", `Main pitch affects OSC ${i + 1}`);
+        input.onchange = () =>
+          this.edit(track.id, null, 49 + i, Number(input.checked));
+        check.append(input, `OSC ${i + 1}`);
+        routing.append(check);
+      }
+      editor.append(routing);
+    }
     const controls = document.createElement("div");
     controls.className = "neuro-controls";
     this.configControl(
@@ -755,26 +775,6 @@ window.SadNeuropolis = class {
         "checkbox",
       );
     editor.append(controls);
-    if (track.target.kind === "main_pitch") {
-      const routing = document.createElement("div");
-      routing.className = "neuro-pitch-routing";
-      const label = document.createElement("span");
-      label.textContent = "Pitch →";
-      routing.append(label);
-      for (let i = 0; i < 4; i++) {
-        const check = document.createElement("label");
-        check.className = "check";
-        const input = document.createElement("input");
-        input.type = "checkbox";
-        input.dataset.config = 49 + i;
-        input.setAttribute("aria-label", `Main pitch affects OSC ${i + 1}`);
-        input.onchange = () =>
-          this.edit(track.id, null, 49 + i, Number(input.checked));
-        check.append(input, `OSC ${i + 1}`);
-        routing.append(check);
-      }
-      editor.append(routing);
-    }
     this.buildStages(editor, track);
     const advanced = document.createElement("details");
     advanced.className = "neuro-advanced";

@@ -1,0 +1,36 @@
+{
+  "source": "/Users/georgy/Projects/Erika/lxr-02-rs",
+  "commit": "21fc4eddcde8f00efe29fdae6f12599095c5508a",
+  "changes": [
+    "Omit standalone C/WASM entry points and UI",
+    "Expand per-track sequencer storage from 64 to 128 steps",
+    "Allow the existing host-rate resampler through 384 kHz",
+    "Add batched numeric control frames with one original DSP coefficient refresh",
+    "Allow FM depth through 2 so the original factory value 1.8 survives preset validation",
+    "Add a shared pitch multiplier so the SAD PET main-pitch lane can transpose drum voices"
+  ],
+  "original_files": {
+    "src/data/drive-rom.bin": "1af02ed8abc07c00325cc88bc1e1f21ae4b649f6a0c28e0fe1a611bac42c9889",
+    "src/data/dsp-rom-provenance.json": "8a2b063ae93fc80e06db6c0781a0e7b37f1858f123f7427d262429b999f4005e",
+    "src/data/lxr02-waves.bin": "214e0d5fe3995aea0b143aa6f8545efa1e0eace533952f2430fbc681f2c63bf5",
+    "src/data/math-rom.bin": "93152f585d9fd86f3f969faae0336a85bc54928c34226a74c6854e9ea0045cb5",
+    "src/data/provenance.json": "f6d5dde7155f8ad18e54722875bd3416d86402f268ade5a0303a57dc3ad9d919",
+    "src/data/transients.i8": "f120c68fcb1bbc3afaa778f989712078d6a99e474202aaabd75cd34f82ab0c4c",
+    "src/data/wave-guards.bin": "390b16451b5cb5e64404a4eb0bc86af3f50faaaa5bf5cfc16b63106a45c16a4d",
+    "src/dsp.rs": "5f5008ddba95b06a86c183d06d778d678e7e1e6c4dc9ad8eee6ce97d375a64e4",
+    "src/firmware/delay.rs": "9ded1281ac6b52bdba0c128668ccd236e5057e4d727cbf623f93501956c70def",
+    "src/firmware/effects.rs": "5cc328a7896d7cb516c07b07826ab0f4c5e2d6d1f23c3d57a07130d74b13ecf2",
+    "src/firmware/envelope.rs": "d5a89713ec85e40daa646e1e694b95327d74720695ec853bea86e15050c68ce2",
+    "src/firmware/filter.rs": "5e2bbd1933542e9c1421ee296472277265b80300baa345f2b53204772d516dee",
+    "src/firmware/math.rs": "06e8b81c22b43a3b479d00da1bfe2a11ccb888cf372067e360321217d4ea0341",
+    "src/firmware/mod.rs": "9ac19479798c0ec5a4dfe7b351caf707ce0cab18e3af814b9eb6052b9f35ac28",
+    "src/firmware/oscillator.rs": "6463a73ef8b7344a449be7dffd174d688b81877091c479be5632a51c75d6a89f",
+    "src/firmware/transient.rs": "eaae56cb5701e263acf324f90645a4c22e6c9c76fa17a54cc63ec29fe2aca19a",
+    "src/lib.rs": "0a2e3967be059052e0c68b10dff9e7e79efd42b46e779e1fac6450174eff5552",
+    "src/params.rs": "915d17787f10e540b077b9421658bf6e36741397fd668d358acbb084129f13d7",
+    "src/performance.rs": "6b624b78e2bd5c156f255291d6a61634d089a4d21c7ce649d1bd4671b3f603e2",
+    "src/resampler.rs": "2ce4157945a2b6976a3ef3f868986b15c19112ede03ddb012487ae280ae3951c",
+    "src/rustias_filter.rs": "c89d9679d97cb805ce4e2e25d9a13468333c64b59b2a094c11072c9402436dd3",
+    "src/sequencer.rs": "34a42aadfeaab08bf86596a4ccafd6c78b9bab5e1c0a9a150bd7bc1e7000fb89"
+  }
+}

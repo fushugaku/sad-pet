@@ -294,13 +294,13 @@ fn envelopes_and_lfos_follow_slot_ids_through_reordering_and_deleted_targets_are
         ],
         ..Preset::default()
     };
-    p.envs = [Env {
+    p.envs.fill(Env {
         attack: 0.0,
         decay: 0.0,
         sustain: 1.0,
         release: 0.0,
         ..Env::default()
-    }; 3];
+    });
     p.envs[0].destination = Destination::Color {
         slot: 11,
         parameter: P::FlangerRate,

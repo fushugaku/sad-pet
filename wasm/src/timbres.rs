@@ -1,0 +1,701 @@
+//! One WASM memory, independently running parts and a fixed audio mix buffer.
+use super::*;
+use sad_pet::timbres::{Context, Kind, Meta};
+
+pub(super) struct Part {
+    pub meta: Meta,
+    pub host: Host,
+    pub gain: f32,
+}
+pub(super) struct Registry {
+    pub parts: Vec<Part>,
+    pub selected: usize,
+    pub target: Option<usize>,
+    pub revision: u64,
+    next_id: u32,
+    pub sequence: u32,
+    pub snapshot_part: usize,
+    pub unacked: [Option<(u32, u32, u32)>; 3],
+}
+impl Registry {
+    pub fn new(rate: u32) -> Self {
+        let mut r = Self {
+            parts: vec![Part {
+                meta: Meta::default(),
+                host: Host::new(rate),
+                gain: 1.,
+            }],
+            selected: 0,
+            target: None,
+            revision: 0,
+            next_id: 1,
+            sequence: 0,
+            snapshot_part: 0,
+            unacked: [None; 3],
+        };
+        r.refresh_context();
+        r
+    }
+    pub fn index(&self) -> usize {
+        self.target.unwrap_or(self.selected)
+    }
+    pub fn context(&self) -> Context {
+        Context {
+            name: self.parts[0].host.engine.preset.name.clone(),
+            active: self.parts[self.selected].meta.id,
+            revision: self.revision,
+            timbres: self.parts.iter().map(|p| p.meta.clone()).collect(),
+        }
+    }
+    fn refresh_context(&mut self) {
+        let context = self.context();
+        for p in &mut self.parts {
+            p.host.context = context.clone();
+        }
+    }
+    pub fn adopt_context(&mut self, context: Context) -> Result<(), String> {
+        if context.timbres.is_empty() || context.revision < self.revision {
+            return Ok(());
+        }
+        let rate = self.parts[0].host.rate;
+        for meta in &context.timbres {
+            if !self.parts.iter().any(|p| p.meta.id == meta.id) {
+                let mut host = Host::new(rate);
+                host.engine
+                    .set_sample(self.parts[0].host.engine.sample.clone());
+                host.file_generation = self.parts[0].host.file_generation;
+                self.parts.push(Part {
+                    meta: meta.clone(),
+                    host,
+                    gain: meta.mix.gain,
+                });
+            } else {
+                self.parts
+                    .iter_mut()
+                    .find(|p| p.meta.id == meta.id)
+                    .unwrap()
+                    .meta = meta.clone();
+            }
+        }
+        self.parts
+            .retain(|p| context.timbres.iter().any(|m| m.id == p.meta.id));
+        self.selected = self
+            .parts
+            .iter()
+            .position(|p| p.meta.id == context.active)
+            .ok_or("Unknown timbre")?;
+        self.next_id = self.next_id.max(
+            self.parts
+                .iter()
+                .map(|p| p.meta.id)
+                .max()
+                .unwrap_or(0)
+                .saturating_add(1),
+        );
+        self.revision = context.revision;
+        self.refresh_context();
+        Ok(())
+    }
+    pub fn command(&mut self, request: Value) -> Result<Value, String> {
+        let path = request["path"].as_str().ok_or("Missing command")?;
+        let data = &request["data"];
+        if path.starts_with("/api/timbres") {
+            match path {
+                "/api/timbres" => {}
+                "/api/timbres/context" => {
+                    self.adopt_context(
+                        serde_json::from_value(data.clone()).map_err(|e| e.to_string())?,
+                    )?;
+                    return Ok(json!(self.context()));
+                }
+                "/api/timbres/add" => {
+                    let kind: Kind =
+                        serde_json::from_value(data["kind"].clone()).map_err(|e| e.to_string())?;
+                    let id = self.next_id;
+                    let next_id = id.checked_add(1).ok_or("Timbre identity overflow")?;
+                    let count = self.parts.iter().filter(|p| p.meta.kind == kind).count() + 1;
+                    let mut host = Host::new(self.parts[0].host.rate);
+                    let primary = &self.parts[0].host;
+                    host.engine.set_sample(primary.engine.sample.clone());
+                    host.engine.set_midi_gate(primary.engine.midi_gate);
+                    host.file_generation = primary.file_generation;
+                    if kind == Kind::Drums {
+                        let preset = Preset {
+                            name: "Drums".into(),
+                            drums: Some(Box::default()),
+                            ..Preset::default()
+                        };
+                        host.engine.set_preset(preset);
+                        host.engine.set_midi_gate(false);
+                        host.resize_snapshot();
+                    }
+                    host.engine.set_playing(primary.engine.playing);
+                    host.reserve_source_buffers();
+                    self.parts.push(Part {
+                        meta: Meta {
+                            id,
+                            kind,
+                            name: format!(
+                                "{} {count}",
+                                if kind == Kind::Drums {
+                                    "Drums"
+                                } else {
+                                    "Granular"
+                                }
+                            ),
+                            ..Meta::default()
+                        },
+                        host,
+                        gain: 1.,
+                    });
+                    self.selected = self.parts.len() - 1;
+                    self.next_id = next_id;
+                }
+                "/api/timbres/reset" => {
+                    self.parts.retain(|p| p.meta.id == 0);
+                    self.selected = 0;
+                    self.parts[0].meta = Meta::default();
+                    self.parts[0].gain = 1.;
+                }
+                "/api/timbres/select" => {
+                    let id = data["id"].as_u64().ok_or("Choose a timbre")? as u32;
+                    self.selected = self
+                        .parts
+                        .iter()
+                        .position(|p| p.meta.id == id)
+                        .ok_or("Unknown timbre")?;
+                    self.parts[self.selected].host.sent_revision = None;
+                }
+                "/api/timbres/update" => {
+                    let id = data["id"].as_u64().ok_or("Choose a timbre")? as u32;
+                    let part = self
+                        .parts
+                        .iter_mut()
+                        .find(|p| p.meta.id == id)
+                        .ok_or("Unknown timbre")?;
+                    let mut value = json!(part.meta);
+                    for key in ["name", "gain", "muted", "solo", "channel"] {
+                        if let Some(v) = data.get(key) {
+                            value[key] = v.clone();
+                        }
+                    }
+                    let mut meta: Meta =
+                        serde_json::from_value(value).map_err(|e| e.to_string())?;
+                    meta.sanitize();
+                    if meta.mix.channel != part.meta.mix.channel
+                        && part.host.engine.preset.drums.is_none()
+                    {
+                        part.host.engine.midi(Message::Reset);
+                    }
+                    part.meta = meta;
+                }
+                "/api/timbres/remove" => {
+                    let id = data["id"].as_u64().ok_or("Choose a timbre")? as u32;
+                    if id == 0 {
+                        return Err("Keep the first timbre for DAW automation".into());
+                    }
+                    let active = self.parts[self.selected].meta.id;
+                    self.parts.retain(|p| p.meta.id != id);
+                    self.selected = self
+                        .parts
+                        .iter()
+                        .position(|p| p.meta.id == active)
+                        .unwrap_or(0);
+                }
+                _ => return Err("Unknown timbre command".into()),
+            }
+            self.target = None;
+            self.revision = self.revision.wrapping_add(1);
+            self.refresh_context();
+            return Ok(json!(self.context()));
+        }
+        if path == "/api/scene/name" {
+            let name = data["name"].as_str().ok_or("Enter a preset name")?.trim();
+            if name.is_empty() || name.chars().count() > 80 || name.chars().any(char::is_control) {
+                return Err("Use a preset name of up to 80 characters".into());
+            }
+            self.parts[0].host.engine.preset.name = name.into();
+            self.parts[0].host.config_revision = self.parts[0].host.config_revision.wrapping_add(1);
+            self.refresh_context();
+            return Ok(json!({"ok":true}));
+        }
+        if path == "/api/midi-bytes" && !data.is_null() {
+            // Each parser keeps running status across packets; filtering follows decoding.
+            for part in &mut self.parts {
+                let before = part.host.engine.preset.params;
+                let mut program = false;
+                for byte in data.as_array().ok_or("Invalid MIDI packet")? {
+                    let byte = byte
+                        .as_u64()
+                        .filter(|v| *v <= 255)
+                        .ok_or("Invalid MIDI byte")? as u8;
+                    if let Some(message) = part.host.midi.feed(byte)
+                        && part.meta.mix.accepts(message)
+                    {
+                        program |= matches!(message, Message::Program { .. });
+                        part.host.engine.midi(message);
+                    }
+                }
+                if before != part.host.engine.preset.params || program {
+                    part.host.config_revision = part.host.config_revision.wrapping_add(1);
+                    part.host.resize_snapshot();
+                    if program {
+                        part.host.parameter_edits.clear();
+                        part.host.sequence_edits.clear();
+                        part.host.drum_edits.clear();
+                    }
+                }
+            }
+            return Ok(json!({"ok":true}));
+        }
+        if path == "/api/transport" && !data.is_null() {
+            let mut shared = serde_json::Map::new();
+            for key in ["playing", "midi_gate", "clear_hold"] {
+                if let Some(v) = data.get(key) {
+                    shared.insert(key.into(), v.clone());
+                }
+            }
+            if !shared.is_empty() {
+                for part in &mut self.parts {
+                    part.host.command(json!({"path":path,"data":shared}))?;
+                }
+            }
+        }
+        let index = self.index();
+        let state = path == "/api/state";
+        let preset_changed = path == "/api/preset" && !data.is_null();
+        let mut result = self.parts[index].host.command(request)?;
+        if preset_changed {
+            self.refresh_context();
+        }
+        if state {
+            result["timbres"] = json!(self.context());
+        }
+        Ok(result)
+    }
+    pub fn process(&mut self, count: usize) -> *const Stereo {
+        let solo = self.parts.iter().any(|p| p.meta.mix.solo);
+        for i in 0..count.min(BLOCK) {
+            let input = self.parts[0].host.audio_input[i];
+            let mut frame = [0.; 2];
+            for part in &mut self.parts {
+                let mix = part.meta.mix;
+                let target = if !mix.muted && (!solo || mix.solo) {
+                    mix.gain
+                } else {
+                    0.
+                };
+                part.gain += (target - part.gain) * 0.004;
+                let out = part.host.engine.process_input_frame(input);
+                for c in 0..2 {
+                    frame[c] += out[c] * part.gain;
+                }
+            }
+            self.parts[0].host.frames[i] = frame;
+        }
+        self.parts[0].host.frames.as_ptr()
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct PartState {
+    generation: u32,
+    processed: Option<sad_pet::dsp::source_fx::Recipe>,
+    meta: Meta,
+    preset: Preset,
+    region: sad_pet::dsp::Region,
+    fades: sad_pet::dsp::Fades,
+    playing: bool,
+    midi_gate: bool,
+    frozen: bool,
+    bypass: bool,
+    live: bool,
+    effects_only: bool,
+}
+#[derive(Serialize, Deserialize)]
+struct Header {
+    context: Context,
+    parts: Vec<PartState>,
+}
+impl Registry {
+    pub fn pack(&self) -> Result<Vec<u8>, String> {
+        let header = Header {
+            context: self.context(),
+            parts: self
+                .parts
+                .iter()
+                .map(|p| PartState {
+                    generation: p.host.file_generation,
+                    processed: p
+                        .host
+                        .engine
+                        .processed_source
+                        .as_ref()
+                        .filter(|_| !p.host.engine.source_effects_pending())
+                        .map(|_| sad_pet::dsp::source_fx::Recipe::from_engine(&p.host.engine)),
+                    meta: p.meta.clone(),
+                    preset: p.host.engine.preset.clone(),
+                    region: p.host.engine.region,
+                    fades: p.host.engine.fades,
+                    playing: p.host.engine.playing,
+                    midi_gate: p.host.engine.midi_gate,
+                    frozen: p.host.engine.frozen,
+                    bypass: p.host.engine.bypass,
+                    live: p.host.engine.live_input.is_some(),
+                    effects_only: p
+                        .host
+                        .engine
+                        .live_input
+                        .as_ref()
+                        .is_some_and(|i| i.effects_only),
+                })
+                .collect(),
+        };
+        let header = serde_json::to_vec(&header).map_err(|e| e.to_string())?;
+        let mut bytes = b"SADSCN01".to_vec();
+        bytes.extend_from_slice(&(header.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&header);
+        for part in &self.parts {
+            let sample = super::pack(&part.host.engine.sample);
+            bytes.extend_from_slice(&(sample.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(&sample);
+            if let Some(cache) = &part.host.engine.processed_source
+                && !part.host.engine.source_effects_pending()
+            {
+                let sample = super::pack(&cache.sample);
+                bytes.extend_from_slice(&(sample.len() as u32).to_le_bytes());
+                bytes.extend_from_slice(&sample);
+            }
+        }
+        Ok(bytes)
+    }
+    pub fn unpack(&mut self, bytes: &[u8], advance: bool) -> Result<(), String> {
+        if bytes.len() < 12 || &bytes[..8] != b"SADSCN01" {
+            return Err("Invalid scene".into());
+        }
+        let size = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
+        let header: Header =
+            serde_json::from_slice(bytes.get(12..12 + size).ok_or("Incomplete scene")?)
+                .map_err(|e| e.to_string())?;
+        if header.parts.is_empty() {
+            return Err("The scene has no timbres".into());
+        }
+        let mut tail = &bytes[12 + size..];
+        let rate = self.parts[0].host.rate;
+        let mut parts = Vec::new();
+        let mut ids = std::collections::BTreeSet::new();
+        for state in header.parts {
+            if !ids.insert(state.meta.id) {
+                return Err("Duplicate timbre identity".into());
+            }
+            let length = u32::from_le_bytes(
+                tail.get(..4)
+                    .ok_or("Incomplete scene audio")?
+                    .try_into()
+                    .unwrap(),
+            ) as usize;
+            let sample = super::unpack(tail.get(4..4 + length).ok_or("Incomplete scene audio")?)?;
+            tail = &tail[4 + length..];
+            let mut host = Host::new(rate);
+            host.engine.set_sample(Arc::new(sample));
+            host.engine.set_preset(state.preset);
+            if host.engine.preset.drums.is_none() {
+                host.engine.set_live_input(state.live, state.effects_only);
+            }
+            if host.engine.live_input.is_none() {
+                host.engine.set_region(state.region)?;
+                host.engine.set_fades(state.fades)?;
+            }
+            host.engine.set_midi_gate(state.midi_gate);
+            host.engine.set_playing(state.playing);
+            host.engine.set_frozen(state.frozen);
+            host.engine.bypass = state.bypass;
+            host.file_generation = state.generation;
+            if let Some(recipe) = state.processed {
+                let length = u32::from_le_bytes(
+                    tail.get(..4)
+                        .ok_or("Incomplete Source FX")?
+                        .try_into()
+                        .unwrap(),
+                ) as usize;
+                let sample = super::unpack(tail.get(4..4 + length).ok_or("Incomplete Source FX")?)?;
+                tail = &tail[4 + length..];
+                let range = recipe.region.bounds(host.engine.sample.len())?;
+                if sample.len() != range.len() || host.engine.live_input.is_some() {
+                    return Err("Invalid Source FX cache".into());
+                }
+                let mut cache = Some(Arc::new(sad_pet::dsp::source_fx::ProcessedSource {
+                    original: host.engine.sample.clone(),
+                    sample,
+                    range,
+                    slot: recipe.slot.ok_or("Missing Source FX")?,
+                    bpm: recipe.bpm,
+                    root: recipe.root,
+                }));
+                host.engine.exchange_processed_source(&mut cache);
+            }
+            host.reserve_source_buffers();
+            host.resize_snapshot();
+            parts.push(Part {
+                meta: state.meta,
+                host,
+                gain: 1.,
+            });
+        }
+        if !tail.is_empty() || parts[0].meta.id != 0 {
+            return Err("Invalid scene layout".into());
+        }
+        self.next_id = self.next_id.max(
+            parts
+                .iter()
+                .map(|p| p.meta.id)
+                .max()
+                .unwrap_or(0)
+                .saturating_add(1),
+        );
+        self.parts = parts;
+        self.selected = self
+            .parts
+            .iter()
+            .position(|p| p.meta.id == header.context.active)
+            .unwrap_or(0);
+        self.target = None;
+        self.revision = if advance {
+            self.revision.max(header.context.revision).wrapping_add(1)
+        } else {
+            header.context.revision
+        };
+        self.unacked.fill(None);
+        self.refresh_context();
+        Ok(())
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_timbre_target(id: u32) -> u32 {
+    registry(|r| {
+        let previous = r.parts[r.index()].meta.id;
+        if let Some(index) = r.parts.iter().position(|p| p.meta.id == id) {
+            r.target = Some(index);
+            previous
+        } else {
+            u32::MAX
+        }
+    })
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_scene_pack() -> u32 {
+    registry(|r| {
+        let result = r.pack();
+        let index = r.index();
+        r.parts[index].host.finish(result)
+    })
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_scene_load() -> u32 {
+    registry(|r| {
+        let index = r.index();
+        let bytes = std::mem::take(&mut r.parts[index].host.input);
+        let result = r
+            .unpack(&bytes, true)
+            .and_then(|_| serde_json::to_vec(&json!({"ok":true})).map_err(|e| e.to_string()));
+        let index = r.index();
+        r.parts[index].host.finish(result)
+    })
+}
+
+impl Registry {
+    fn document(&self) -> Result<Value, String> {
+        use base64::Engine as _;
+        let mut states = Vec::new();
+        for p in &self.parts {
+            let e = &p.host.engine;
+            states.push(json!({"version":1,"meta":p.meta,"preset":e.preset,"sample_name":e.sample.name,"sample_id":e.sample.library_id,"sample_wav":base64::engine::general_purpose::STANDARD.encode(wav::bytes(e.sample.sample_rate,e.sample.frames())?),"source":if e.preset.drums.is_some() || e.live_input.is_none() {"file"} else if e.live_input.as_ref().is_some_and(|i|i.effects_only) {"effects"} else {"grains"},"region":e.region,"fades":e.fades,"sync":true,"frozen":false,"bypass":e.bypass,"midi_gate":e.midi_gate,"playing":false,"timbres":[],"active_timbre":0}));
+        }
+        let mut root = states.remove(0);
+        root["timbres"] = json!(states);
+        root["active_timbre"] = json!(self.parts[self.selected].meta.id);
+        Ok(root)
+    }
+    fn prepare_document(&mut self, mut value: Value) -> Result<(), String> {
+        use base64::Engine as _;
+        if value["version"] != 1 {
+            return Err("Unsupported scene version".into());
+        }
+        let others = value["timbres"].as_array().cloned().unwrap_or_default();
+        let active = value["active_timbre"].as_u64().unwrap_or(0) as u32;
+        value["timbres"] = json!([]);
+        let mut states = vec![value];
+        states.extend(others);
+        let rate = self.parts[0].host.rate;
+        let mut parts = Vec::new();
+        let mut ids = std::collections::BTreeSet::new();
+        for (i, state) in states.into_iter().enumerate() {
+            if state["version"] != 1 || state["timbres"].as_array().is_some_and(|a| !a.is_empty()) {
+                return Err("Invalid timbre state".into());
+            }
+            let mut meta: Meta =
+                serde_json::from_value(state.get("meta").cloned().unwrap_or_else(|| {
+                    json!(Meta {
+                        id: i as u32,
+                        ..Meta::default()
+                    })
+                }))
+                .map_err(|e| e.to_string())?;
+            if (i == 0 && meta.id != 0) || !ids.insert(meta.id) {
+                return Err("Invalid timbre identities".into());
+            }
+            meta.sanitize();
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(state["sample_wav"].as_str().ok_or("Missing saved audio")?)
+                .map_err(|e| e.to_string())?;
+            if bytes.len() > 128 * 1024 * 1024 {
+                return Err("Saved sample exceeds 128 MB".into());
+            }
+            let mut sample = wav::decode(
+                Cursor::new(bytes),
+                state["sample_name"].as_str().unwrap_or("Sample.wav").into(),
+            )?;
+            sample.library_id = state["sample_id"].as_str().map(str::to_string);
+            let preset: Preset =
+                serde_json::from_value(state["preset"].clone()).map_err(|e| e.to_string())?;
+            meta.kind = if preset.drums.is_some() {
+                Kind::Drums
+            } else {
+                Kind::Granular
+            };
+            let mut host = Host::new(rate);
+            host.engine = Box::new(Engine::new(rate, Arc::new(sample), preset));
+            if host.engine.preset.drums.is_none() {
+                {
+                    host.engine.set_region(
+                        serde_json::from_value(state["region"].clone())
+                            .map_err(|e| e.to_string())?,
+                    )?;
+                    host.engine.set_fades(
+                        serde_json::from_value(
+                            state.get("fades").cloned().unwrap_or_else(|| json!({})),
+                        )
+                        .map_err(|e| e.to_string())?,
+                    )?;
+                    host.engine.prepare_source_effects()?;
+                }
+            }
+            host.engine
+                .set_midi_gate(state["midi_gate"].as_bool().unwrap_or(true));
+            host.engine.set_playing(false);
+            host.engine.bypass = state["bypass"] == true;
+            host.reserve_source_buffers();
+            host.resize_snapshot();
+            parts.push(Part {
+                meta,
+                host,
+                gain: 1.,
+            });
+        }
+        self.next_id = self.next_id.max(
+            parts
+                .iter()
+                .map(|p| p.meta.id)
+                .max()
+                .unwrap_or(0)
+                .saturating_add(1),
+        );
+        self.parts = parts;
+        self.selected = self
+            .parts
+            .iter()
+            .position(|p| p.meta.id == active)
+            .unwrap_or(0);
+        self.target = None;
+        self.revision = self.revision.wrapping_add(1);
+        self.refresh_context();
+        Ok(())
+    }
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_scene_document() -> u32 {
+    registry(|r| {
+        let result = r
+            .document()
+            .and_then(|v| serde_json::to_vec(&v).map_err(|e| e.to_string()));
+        let i = r.index();
+        r.parts[i].host.finish(result)
+    })
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_scene_prepare() -> u32 {
+    registry(|r| {
+        let i = r.index();
+        let result = serde_json::from_slice::<Value>(&r.parts[i].host.input)
+            .map_err(|e| e.to_string())
+            .and_then(|v| r.prepare_document(v))
+            .and_then(|_| r.pack());
+        let i = r.index();
+        r.parts[i].host.finish(result)
+    })
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_scene_render(seconds: f64) -> u32 {
+    registry(|r| {
+        let result = (|| {
+            if !seconds.is_finite() || !(0.1..=120.).contains(&seconds) {
+                return Err("Render duration must be 0.1–120 seconds".into());
+            }
+            for part in &mut r.parts {
+                part.host.engine.set_midi_gate(false);
+                part.host.engine.set_playing(true);
+            }
+            let rate = r.parts[0].host.rate;
+            let mut frames = vec![[0.; 2]; (seconds * rate as f64).round() as usize];
+            for chunk in frames.chunks_mut(BLOCK) {
+                r.process(chunk.len());
+                chunk.copy_from_slice(&r.parts[0].host.frames[..chunk.len()]);
+            }
+            wav::bytes(rate, &frames)
+        })();
+        let i = r.index();
+        r.parts[i].host.finish(result)
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_scene_adopt() -> u32 {
+    registry(|r| {
+        let i = r.index();
+        let bytes = std::mem::take(&mut r.parts[i].host.input);
+        let result = r
+            .unpack(&bytes, false)
+            .and_then(|_| serde_json::to_vec(&json!({"ok":true})).map_err(|e| e.to_string()));
+        let i = r.index();
+        r.parts[i].host.finish(result)
+    })
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_scene_render_document() -> u32 {
+    registry(|r| {
+        let i = r.index();
+        let result = (|| {
+            let data: Value =
+                serde_json::from_slice(&r.parts[i].host.input).map_err(|e| e.to_string())?;
+            let seconds = data["seconds"].as_f64().ok_or("Missing render duration")?;
+            if !seconds.is_finite() || !(0.1..=120.).contains(&seconds) {
+                return Err("Render duration must be 0.1–120 seconds".into());
+            }
+            let rate = r.parts[0].host.rate;
+            let mut renderer = Registry::new(rate);
+            renderer.prepare_document(data["scene"].clone())?;
+            for part in &mut renderer.parts {
+                part.host.engine.set_midi_gate(false);
+                part.host.engine.set_playing(true);
+            }
+            let mut frames = vec![[0.; 2]; (seconds * rate as f64).round() as usize];
+            for chunk in frames.chunks_mut(BLOCK) {
+                renderer.process(chunk.len());
+                chunk.copy_from_slice(&renderer.parts[0].host.frames[..chunk.len()]);
+            }
+            wav::bytes(rate, &frames)
+        })();
+        r.parts[i].host.finish(result)
+    })
+}

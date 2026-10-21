@@ -35,13 +35,13 @@ fn preset() -> Preset {
     p.params.filter2_env_depth = 0.0;
     p.params.master_volume = 0.5;
     p.color_chain.clear();
-    p.envs = [Env {
+    p.envs.fill(Env {
         attack: 0.0,
         decay: 0.0,
         sustain: 1.0,
         release: 0.0,
         ..Env::default()
-    }; 3];
+    });
     p
 }
 fn render(p: Preset, scale: f32) -> Vec<Stereo> {

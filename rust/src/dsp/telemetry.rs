@@ -9,6 +9,10 @@ use std::collections::BTreeMap;
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct RealtimeView {
     pub sequencer: crate::sequence::View,
+    #[serde(default)]
+    pub drums: crate::drums::View,
+    #[serde(default)]
+    pub drum_controls: crate::drums::Controls,
     pub peak: [f32; 2],
     pub input_peak: [f32; 2],
     pub input_seconds: f64,
@@ -18,8 +22,14 @@ pub struct RealtimeView {
     pub midi_gate: bool,
     pub frozen: bool,
     pub bypass: bool,
-    pub lfos: [f32; 3],
-    pub envs: [f32; 3],
+    pub lfos: [f32; crate::preset::MODULATORS],
+    pub envs: [f32; crate::preset::MODULATORS],
+    #[serde(default)]
+    pub modulated_resynth: crate::resynth::Settings,
+    #[serde(default)]
+    pub modulated_lfos: [crate::preset::Lfo; crate::preset::MODULATORS],
+    #[serde(default)]
+    pub modulated_envs: [crate::preset::Env; crate::preset::MODULATORS],
     pub matrix: [f32; crate::matrix::MAX_ROUTES],
     pub notes: [u8; 8],
     pub note_count: usize,
@@ -57,6 +67,8 @@ impl Default for RealtimeView {
     fn default() -> Self {
         Self {
             sequencer: crate::sequence::View::default(),
+            drums: crate::drums::View::default(),
+            drum_controls: crate::drums::Controls::default(),
             peak: [0.0; 2],
             input_peak: [0.0; 2],
             input_seconds: 0.0,
@@ -66,8 +78,11 @@ impl Default for RealtimeView {
             midi_gate: true,
             frozen: false,
             bypass: false,
-            lfos: [0.0; 3],
-            envs: [0.0; 3],
+            lfos: [0.0; crate::preset::MODULATORS],
+            envs: [0.0; crate::preset::MODULATORS],
+            modulated_resynth: Default::default(),
+            modulated_lfos: [crate::preset::Lfo::default(); crate::preset::MODULATORS],
+            modulated_envs: [crate::preset::Env::default(); crate::preset::MODULATORS],
             matrix: [0.0; crate::matrix::MAX_ROUTES],
             notes: [0; 8],
             note_count: 0,
@@ -134,6 +149,11 @@ fn source_range(source: Source) -> [f32; 2] {
         Source::Lfo1
         | Source::Lfo2
         | Source::Lfo3
+        | Source::Lfo4
+        | Source::Lfo5
+        | Source::Lfo6
+        | Source::Lfo7
+        | Source::Lfo8
         | Source::KeyTrack
         | Source::PitchBend
         | Source::RandomNote => [-1.0, 1.0],
@@ -154,6 +174,8 @@ fn apply(low: &mut Modulated, high: &mut Modulated, destination: Destination, ra
 
 impl Engine {
     pub fn realtime_view(&mut self, view: &mut RealtimeView) {
+        view.drums = self.drum_view();
+        view.drum_controls = self.modulated.drums;
         view.sequencer = self
             .preset
             .sequencer
@@ -174,6 +196,9 @@ impl Engine {
         view.envs = self.env_values;
         view.matrix = self.matrix_values;
         view.params = self.modulated.params;
+        view.modulated_resynth = self.modulated.resynth;
+        view.modulated_lfos = self.modulated.lfos;
+        view.modulated_envs = self.modulated.envs;
         view.filter_cutoffs = self.current_filter_cutoffs();
         view.resynth_bands = self.resynth.levels();
         view.resynth_frequencies = self.resynth.frequencies();
@@ -242,8 +267,40 @@ impl Engine {
         meters
     }
 
+    pub fn knob_states(&self) -> BTreeMap<String, KnobState> {
+        ControlFeedback {
+            preset: &self.preset,
+        }
+        .knob_states_at(&self.modulated, self.current_filter_cutoffs())
+    }
+
+    pub fn knob_states_from_view(&self, view: &RealtimeView) -> BTreeMap<String, KnobState> {
+        knob_states_from_view(&self.preset, view)
+    }
+
+    fn current_filter_cutoffs(&self) -> [f32; 2] {
+        let m = self.modulated.params;
+        let voice = self
+            .voices
+            .iter()
+            .find(|v| v.active() && v.note == self.source_note && v.channel == self.source_channel)
+            .or_else(|| self.voices.iter().find(|v| v.active()));
+        let (note, envs) = voice.map_or((60.0, [0.0; crate::preset::MODULATORS]), |v| {
+            (
+                v.note as f32 + self.bend[v.channel as usize] * m.midi_pitchbend_range,
+                v.env_values,
+            )
+        });
+        filter::voice_cutoffs(&m, note, envs)
+    }
+}
+
+struct ControlFeedback<'a> {
+    preset: &'a crate::preset::Preset,
+}
+impl ControlFeedback<'_> {
     fn control_limits(&self) -> (Modulated, Modulated) {
-        let mut low = Modulated::from_preset(&self.preset);
+        let mut low = Modulated::from_preset(self.preset);
         let mut high = low;
         // Equal and opposite routes from the same source cancel before bounds.
         let mut terms: Vec<(Destination, Source, f32)> = Vec::new();
@@ -278,13 +335,25 @@ impl Engine {
         // Match the order and snapshot boundaries in update_modulation().
         let low_lfos = low.lfos;
         let high_lfos = high.lfos;
-        for (i, lfo) in self.preset.lfos.iter().enumerate() {
+        for (i, lfo) in self
+            .preset
+            .lfos
+            .iter()
+            .take(self.preset.lfo_count as usize)
+            .enumerate()
+        {
             let range = product_range([-0.5, 0.5], [low_lfos[i].depth, high_lfos[i].depth]);
             apply(&mut low, &mut high, lfo.destination, range);
         }
         let low_envs = low.envs;
         let high_envs = high.envs;
-        for (i, env) in self.preset.envs.iter().enumerate() {
+        for (i, env) in self
+            .preset
+            .envs
+            .iter()
+            .take(self.preset.env_count as usize)
+            .enumerate()
+        {
             for (destination, depths) in [
                 (env.destination, [low_envs[i].depth, high_envs[i].depth]),
                 (
@@ -302,34 +371,6 @@ impl Engine {
         }
         (low, high)
     }
-    pub fn knob_states(&self) -> BTreeMap<String, KnobState> {
-        self.knob_states_at(&self.modulated, self.current_filter_cutoffs())
-    }
-
-    pub fn knob_states_from_view(&self, view: &RealtimeView) -> BTreeMap<String, KnobState> {
-        let mut m = Modulated::from_preset(&self.preset);
-        m.params = view.params;
-        m.color_slots = view.color;
-        m.pre_color_slots = view.pre_color;
-        self.knob_states_at(&m, view.filter_cutoffs)
-    }
-
-    fn current_filter_cutoffs(&self) -> [f32; 2] {
-        let m = self.modulated.params;
-        let voice = self
-            .voices
-            .iter()
-            .find(|v| v.active() && v.note == self.source_note && v.channel == self.source_channel)
-            .or_else(|| self.voices.iter().find(|v| v.active()));
-        let (note, envs) = voice.map_or((60.0, [0.0; 3]), |v| {
-            (
-                v.note as f32 + self.bend[v.channel as usize] * m.midi_pitchbend_range,
-                v.env_values,
-            )
-        });
-        filter::voice_cutoffs(&m, note, envs)
-    }
-
     fn knob_states_at(
         &self,
         modulated: &Modulated,
@@ -427,6 +468,38 @@ impl Engine {
                 );
             }
         }
+        let base_frame = Modulated::from_preset(self.preset);
+        for spec in crate::parameters::specs().iter().filter(|s| {
+            s.id.starts_with("resynth_")
+                || s.id.starts_with("lfo")
+                || s.id.starts_with("env")
+                || (self.preset.drums.is_some() && s.id.starts_with("drum"))
+        }) {
+            if let (Some(base), Some(current), Some(min), Some(max)) = (
+                spec.frame_get(&base_frame),
+                spec.frame_get(modulated),
+                spec.frame_get(&low),
+                spec.frame_get(&high),
+            ) {
+                result
+                    .entry(spec.id.clone())
+                    .or_insert_with(|| KnobState::new(base, current, min, max));
+            }
+        }
         result
     }
+}
+pub fn knob_states_from_view(
+    preset: &crate::preset::Preset,
+    view: &RealtimeView,
+) -> BTreeMap<String, KnobState> {
+    let mut m = Modulated::from_preset(preset);
+    m.params = view.params;
+    m.color_slots = view.color;
+    m.pre_color_slots = view.pre_color;
+    m.resynth = view.modulated_resynth;
+    m.lfos = view.modulated_lfos;
+    m.envs = view.modulated_envs;
+    m.drums = view.drum_controls;
+    ControlFeedback { preset }.knob_states_at(&m, view.filter_cutoffs)
 }

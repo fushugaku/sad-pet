@@ -3145,17 +3145,19 @@ input[type="range"] {
   align-items: center;
   flex-wrap: wrap;
   gap: 12px 20px;
-  margin-top: 16px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--line);
+  margin: 12px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
 }
 .neuro-pitch-routing > span {
-  color: var(--muted);
+  color: var(--text);
   font-size: 12px;
 }
 .neuro-pitch-routing .check {
   margin: 0;
-  min-height: 24px;
+  min-height: 36px;
 }
 .neuro-live {
   margin-left: auto;
@@ -3402,6 +3404,30 @@ input[type="range"] {
   gap: 12px;
   margin: 0 0 22px;
 }
+.mod-bank-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 24px 0 12px;
+  gap: 12px;
+}
+.mod-bank-tools strong {
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--muted);
+}
+.mod-bank-tools span {
+  margin-left: 8px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.mod-bank-tools button {
+  height: 32px;
+}
+.lfo-card[hidden],
+.env-card[hidden] {
+  display: none;
+}
 .color-import-options label {
   display: grid;
   gap: 6px;
@@ -3426,5 +3452,282 @@ input[type="range"] {
   }
   .color-import-options {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Independent timbre editors share the instrument's controls and spacing. */
+#timbres {
+  margin: 0 0 20px;
+  min-width: 0;
+}
+#timbres[hidden],
+.drum-bank[hidden] {
+  display: none;
+}
+.timbre-top {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 8px;
+}
+.timbre-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  flex: 1;
+  min-width: 0;
+}
+.timbre-tabs button {
+  white-space: nowrap;
+  border-radius: 7px 7px 0 0;
+  min-height: 40px;
+}
+.timbre-tabs [aria-selected="true"],
+.drum-pages [aria-selected="true"],
+.drum-voice-tabs [aria-selected="true"] {
+  background: #34462b;
+  border-color: #79965a;
+  color: var(--accent);
+}
+.timbre-add,
+.timbre-mix {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.timbre-add select,
+.timbre-add button,
+.timbre-mix > input,
+.timbre-mix button,
+.timbre-mix select {
+  height: 36px;
+  min-height: 36px;
+}
+.timbre-mix {
+  padding-top: 10px;
+  flex-wrap: wrap;
+}
+.timbre-mix > input {
+  width: 160px;
+  min-width: 0;
+}
+.timbre-mix label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.timbre-mix input[type="range"] {
+  width: 100px;
+}
+.timbre-mix > button:last-child {
+  margin-left: auto;
+}
+.drum-global {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.drum-pages,
+.drum-voice-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+.drum-pages button,
+.drum-voice-tabs button {
+  min-height: 36px;
+  white-space: nowrap;
+  flex: 1;
+}
+.drum-pattern-scroll {
+  overflow-x: auto;
+  padding: 4px 0 12px;
+  scrollbar-color: #526b42 #1b2119;
+}
+.drum-pattern {
+  display: grid;
+  grid-template-columns: 112px repeat(16, minmax(36px, 1fr));
+  gap: 4px;
+  min-width: 816px;
+}
+.drum-track-label {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  display: flex;
+  background: var(--bg);
+  gap: 2px;
+}
+.drum-track-label button:first-child {
+  min-width: 0;
+  flex: 1;
+  padding: 0 4px;
+  text-align: left;
+  font-size: 11px;
+}
+.drum-track-label button:last-child {
+  padding: 0 5px;
+}
+.drum-step-number {
+  text-align: center;
+  font:
+    10px ui-monospace,
+    monospace;
+  color: var(--muted);
+  padding: 4px 0;
+}
+.drum-hit {
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  position: relative;
+}
+.drum-hit[aria-pressed="true"] {
+  background: #34462b;
+  border-color: #79965a;
+}
+.drum-hit[aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  background: var(--accent);
+  border-radius: 3px;
+  opacity: calc(0.3 + var(--velocity) * 0.7);
+}
+.drum-hit.selected {
+  outline: 1px solid var(--text);
+  outline-offset: -3px;
+}
+.drum-hit.playing {
+  box-shadow: inset 0 3px 0 var(--accent);
+}
+.drum-hit.outside {
+  opacity: 0.35;
+}
+.drum-track-settings,
+.drum-step-extras {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin: 12px 0;
+}
+.drum-track-settings label,
+.drum-step-extras label,
+.drum-voice-controls label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  font-size: 10px;
+  color: var(--muted);
+}
+.drum-track-settings input,
+.drum-track-settings select,
+.drum-track-settings button,
+.drum-step-extras input,
+.drum-step-extras select,
+.drum-voice-controls select {
+  height: 36px;
+  min-height: 36px;
+  min-width: 72px;
+}
+.drum-track-settings input,
+.drum-step-extras input {
+  width: 100px;
+}
+.drum-step-panel {
+  padding: 16px 0;
+  margin-bottom: 16px;
+  border-block: 1px solid var(--line);
+}
+.drum-step-title {
+  font-size: 12px;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+.drum-step-knobs {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+.drum-control-group {
+  border-bottom: 1px solid var(--line);
+  padding: 12px 0;
+}
+.drum-control-group summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 8px 0;
+}
+.drum-control-group .knob-grid {
+  margin-top: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  align-items: center;
+}
+.drum-voice-controls label {
+  padding: 0 8px;
+}
+@media (max-width: 600px) {
+  .timbre-top {
+    flex-wrap: wrap;
+  }
+  .timbre-tabs {
+    flex-basis: 100%;
+  }
+  .timbre-add {
+    width: 100%;
+  }
+  .timbre-add select {
+    flex: 1;
+  }
+  .timbre-mix {
+    gap: 8px;
+  }
+  .timbre-mix > input {
+    flex: 1;
+    width: 120px;
+  }
+  .timbre-mix label:last-of-type {
+    flex: 1;
+  }
+  .timbre-mix input[type="range"] {
+    min-width: 60px;
+    flex: 1;
+  }
+  .drum-step-knobs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .drum-track-settings label {
+    flex: 1 1 100px;
+  }
+  .drum-track-settings input {
+    width: 100%;
+  }
+  .drum-step-extras {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .drum-step-extras input,
+  .drum-step-extras select {
+    width: 100%;
+  }
+}
+.timbre-mix > input,
+.drum-track-settings input,
+.drum-step-extras input {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 6px 8px;
+  font: inherit;
+}
+@media (max-width: 600px) {
+  .timbre-mix > input {
+    flex: 1 1 140px;
+    min-width: 140px;
   }
 }

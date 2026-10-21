@@ -22,6 +22,10 @@ let editGeneration = 0;
 const parameterEdits = new Map();
 const sequenceEdits = new Map();
 let neuroEditor = null;
+let timbreEditor = null,
+  drumEditor = null,
+  timbreBusy = false;
+const drumEdits = new Map();
 let sequenceCatalog = null;
 let sampleSelection = null;
 let recordingBusy = false,
@@ -86,6 +90,8 @@ async function request(path, data) {
       "/api/preset",
       "/api/parameters",
       "/api/sequencer/edit",
+      "/api/drums/edit",
+      "/api/scene",
       "/api/input",
       "/api/region",
       "/api/fades",
@@ -151,7 +157,10 @@ function enqueuePresetWrite(path, value) {
     if (
       !presetWriteCount &&
       commitTimer === null &&
-      (structuralPending || parameterEdits.size || sequenceEdits.size)
+      (structuralPending ||
+        parameterEdits.size ||
+        sequenceEdits.size ||
+        drumEdits.size)
     )
       armPresetWrite(16);
   });
@@ -163,13 +172,16 @@ function writePreset(value) {
 function commitEdits() {
   if (
     !structuralPending &&
-    ((!parameterEdits.size && !sequenceEdits.size) || presetWriteCount)
+    ((!parameterEdits.size && !sequenceEdits.size && !drumEdits.size) ||
+      presetWriteCount)
   )
     return presetWrites;
   const version = pending;
   const full = structuralPending;
   const values = Object.fromEntries(parameterEdits);
   const seqValues = [...sequenceEdits.values()];
+  const drumValues = [...drumEdits.values()];
+  drumEdits.clear();
   structuralPending = false;
   parameterEdits.clear();
   sequenceEdits.clear();
@@ -180,6 +192,8 @@ function commitEdits() {
     writes.push(enqueuePresetWrite("/api/parameters", values));
   if (sequenceValues.length)
     writes.push(enqueuePresetWrite("/api/sequencer/edit", sequenceValues));
+  if (!full && drumValues.length)
+    writes.push(enqueuePresetWrite("/api/drums/edit", drumValues));
   const write = Promise.all(writes);
   return write.then(
     () => {
@@ -195,6 +209,11 @@ function commitEdits() {
           if (!sequenceEdits.has(key)) sequenceEdits.set(key, edit);
         }
       }
+      if (!full)
+        for (const edit of drumValues) {
+          const key = `${edit.track}:${edit.step}:${edit.field}`;
+          if (!drumEdits.has(key)) drumEdits.set(key, edit);
+        }
       if (full)
         for (const edit of sequenceValues) {
           const key = `${edit.track}:${edit.stage}:${edit.field}`;
@@ -213,6 +232,7 @@ async function flushEdits() {
     structuralPending ||
     parameterEdits.size ||
     sequenceEdits.size ||
+    drumEdits.size ||
     presetWriteCount
   );
   clearTimeout(commitTimer);
@@ -224,11 +244,18 @@ async function flushPreset() {
   await refreshPresetState();
 }
 async function preparePresetRecall() {
+  if (drumEditor) {
+    drumEditor.views.clear();
+    drumEditor.signature = "";
+    drumEditor.page = "";
+  }
+  releaseKeyboard();
   clearTimeout(commitTimer);
   commitTimer = null;
   structuralPending = false;
   parameterEdits.clear();
   sequenceEdits.clear();
+  drumEdits.clear();
   pending = 0;
   await presetWrites.catch(() => {});
   // A failed in-flight write may have restored its unsent changes.
@@ -237,6 +264,7 @@ async function preparePresetRecall() {
   structuralPending = false;
   parameterEdits.clear();
   sequenceEdits.clear();
+  drumEdits.clear();
   await queueStepEntry(null, true);
 }
 async function refreshPresetState() {
@@ -466,6 +494,8 @@ function createKnob(
   dial.setAttribute("aria-valuemin", String(min * ariaScale));
   dial.setAttribute("aria-valuemax", String(max * ariaScale));
   const clamp = (v) => Math.max(min, Math.min(max, v));
+  const toUnit = binding?.normalize || ((v) => (v - min) / (max - min));
+  const fromUnit = binding?.denormalize || ((v) => min + v * (max - min));
   let drag = null;
   const modulation = (feedback) => {
     const base = get();
@@ -487,7 +517,7 @@ function createKnob(
     const current = clamp(feedback.current),
       low = clamp(feedback.min),
       high = clamp(feedback.max);
-    const unit = (v) => (v - min) / (max - min);
+    const unit = toUnit;
     const point = (v) => {
       const angle = ((-135 + 270 * unit(v)) * Math.PI) / 180;
       return [38.5 + 31 * Math.sin(angle), 38.5 - 31 * Math.cos(angle)];
@@ -521,11 +551,11 @@ function createKnob(
   const update = () => {
     if (!preset) return;
     const v = get();
-    const unit = (v - min) / (max - min);
+    const unit = toUnit(v);
     value.textContent = format(v);
     pointer.style.transform = `rotate(${-135 + 270 * unit}deg)`;
     arc.style.strokeDasharray = `${Math.max(0.01, 117.81 * unit)} 157.08`;
-    dial.setAttribute("aria-valuenow", String(Math.round(v * ariaScale)));
+    dial.setAttribute("aria-valuenow", String(v * ariaScale));
     dial.setAttribute("aria-valuetext", format(v));
     modulation(state?.knobs?.[key]);
   };
@@ -543,7 +573,7 @@ function createKnob(
   dial.addEventListener("pointermove", (e) => {
     if (!drag) return;
     const delta = (drag.y - e.clientY + (e.clientX - drag.x) * 0.45) / 180;
-    set(clamp(drag.value + delta * (max - min)));
+    set(clamp(fromUnit(toUnit(drag.value) + delta)));
   });
   const release = () => {
     if (drag) {
@@ -557,9 +587,13 @@ function createKnob(
   dial.addEventListener("lostpointercapture", release);
   dial.addEventListener("keydown", (e) => {
     let v = get();
-    const step = binding?.step ?? (e.shiftKey ? 0.05 : 0.005) * (max - min);
-    if (e.key === "ArrowUp" || e.key === "ArrowRight") v += step;
-    else if (e.key === "ArrowDown" || e.key === "ArrowLeft") v -= step;
+    const step = binding?.step ?? null;
+    const change = (direction) =>
+      step === null
+        ? fromUnit(toUnit(v) + direction * (e.shiftKey ? 0.05 : 0.005))
+        : v + direction * step;
+    if (e.key === "ArrowUp" || e.key === "ArrowRight") v = change(1);
+    else if (e.key === "ArrowDown" || e.key === "ArrowLeft") v = change(-1);
     else if (e.key === "Home") v = min;
     else if (e.key === "End") v = max;
     else return;
@@ -574,8 +608,15 @@ function createKnob(
     (e) => {
       if (document.activeElement !== dial) return;
       e.preventDefault();
-      const step = binding?.step ?? 0.005 * (max - min);
-      set(clamp(get() - Math.sign(e.deltaY) * step));
+      const step = binding?.step;
+      const direction = -Math.sign(e.deltaY);
+      set(
+        clamp(
+          step === undefined
+            ? fromUnit(toUnit(get()) + direction * 0.005)
+            : get() + direction * step,
+        ),
+      );
     },
     { passive: false },
   );
@@ -708,7 +749,72 @@ function syncFilters() {
     controls.get(prefix)?.();
   }
 }
+function scheduleDrum(edit) {
+  editGeneration++;
+  pending++;
+  presetLibrary?.markDirty();
+  drumEdits.set(`${edit.track}:${edit.step}:${edit.field}`, edit);
+  if (commitTimer === null && !presetWriteCount) armPresetWrite(16);
+}
+let timbreWrites = Promise.resolve();
+function changeTimbre(path, data, scalar = false) {
+  timbreWrites = timbreWrites
+    .catch(() => {})
+    .then(async () => {
+      timbreBusy = true;
+      try {
+        await flushEdits();
+        await sampleSelection?.flush();
+        await noteChain;
+        const context = await request(path, data);
+        if (scalar) {
+          state.timbres = context;
+          timbreEditor?.sync(context);
+          return;
+        }
+        const old = state?.timbres?.active;
+        const next = await request("/api/state");
+        state = next;
+        if (!scalar || old !== context.active) {
+          preset = structuredClone(next.preset);
+          if (neuroEditor) {
+            neuroEditor.signature = "";
+            neuroEditor.selected = preset.sequencer.tracks[0]?.id ?? 0;
+          }
+          drumEditor && (drumEditor.signature = "");
+          syncAll();
+          sampleSelection?.sync(next);
+          fileLibrary?.observe(next);
+        } else timbreEditor?.sync(context);
+      } catch (e) {
+        notify(e.message);
+      } finally {
+        timbreBusy = false;
+      }
+    });
+  return timbreWrites;
+}
+function syncTimbreRouting() {
+  const drums = !!preset?.drums;
+  $("load-wav").hidden = drums;
+  document.querySelector(".sample-panel").hidden = drums;
+  $("grain-controls").closest("section").hidden =
+    drums && !preset.drums.granular;
+  const transport = document.querySelector(".transport");
+  if (drums && transport.nextElementSibling !== $("drum-machine"))
+    $("drum-machine").before(transport);
+  else if (
+    !drums &&
+    document.querySelector(".sample-panel").nextElementSibling !== transport
+  )
+    document.querySelector(".sample-panel").after(transport);
+  const performance = $("performance-mode").closest("section");
+  if (performance) performance.hidden = drums;
+  timbreEditor?.sync(state?.timbres);
+  drumEditor?.sync();
+}
 function syncAll() {
+  syncTimbreRouting();
   syncColors();
   syncResynth();
   for (const update of controls.values()) update();
@@ -1899,6 +2005,9 @@ function syncColors() {
     colorRoutesSignature = "";
   }
   const routesSignature = JSON.stringify([
+    preset.lfo_count,
+    preset.env_count,
+    !!preset.drums,
     preset.lfos.map((l) => l.destination),
     preset.envs.map((e) => [e.destination, e.extra_destination]),
   ]);
@@ -2050,32 +2159,34 @@ function modulationGroups() {
       ],
     ],
   ];
-  for (let index = 0; index < 3; index++) {
-    groups.push([
-      `LFO ${index + 1}`,
-      [
-        ["rate", "Rate"],
-        ["depth", "Depth"],
-        ["division", "Sync division"],
-      ].map(([key, label]) => [
-        { lfo: { index, parameter: key } },
-        `LFO ${index + 1} · ${label}`,
-      ]),
-    ]);
-    groups.push([
-      `ENV ${index + 1}`,
-      [
-        ["attack", "Attack"],
-        ["decay", "Decay"],
-        ["sustain", "Sustain"],
-        ["release", "Release"],
-        ["depth", "Route 1 depth"],
-        ["extra_depth", "Route 2 depth"],
-      ].map(([key, label]) => [
-        { env: { index, parameter: key } },
-        `ENV ${index + 1} · ${label}`,
-      ]),
-    ]);
+  for (let index = 0; index < 8; index++) {
+    if (index < (preset.lfo_count || 3))
+      groups.push([
+        `LFO ${index + 1}`,
+        [
+          ["rate", "Rate"],
+          ["depth", "Depth"],
+          ["division", "Sync division"],
+        ].map(([key, label]) => [
+          { lfo: { index, parameter: key } },
+          `LFO ${index + 1} · ${label}`,
+        ]),
+      ]);
+    if (index < (preset.env_count || 3))
+      groups.push([
+        `ENV ${index + 1}`,
+        [
+          ["attack", "Attack"],
+          ["decay", "Decay"],
+          ["sustain", "Sustain"],
+          ["release", "Release"],
+          ["depth", "Route 1 depth"],
+          ["extra_depth", "Route 2 depth"],
+        ].map(([key, label]) => [
+          { env: { index, parameter: key } },
+          `ENV ${index + 1} · ${label}`,
+        ]),
+      ]);
   }
   groups.push([
     "Performance",
@@ -2110,15 +2221,65 @@ function modulationGroups() {
       parameter("min_grains", "Minimum grains"),
     ],
   ]);
+  const extra = new Map();
+  for (const spec of sequenceCatalog?.modulation || []) {
+    if (spec.id.startsWith("drum") && !preset.drums) continue;
+    if (/^(pre_)?fx\d+_/.test(spec.id) || /^(lfo|env)\d+_/.test(spec.id))
+      continue;
+    // Existing named routes keep their serialized identities. The catalog adds
+    // oscillator controls and any numeric control absent from those groups.
+    if (
+      DESTINATIONS.some(([id]) => id === spec.id) ||
+      [
+        "master_volume",
+        "sample_tune_semis",
+        "sample_tune_cents",
+        "in_gain",
+        "out_gain",
+        "pitch_range",
+        "midi_pitchbend_range",
+        "min_grains",
+        "arp_rate",
+        "arp_gate",
+        "arp_octaves",
+        "sequence_rate",
+        "sequence_gate",
+        "sequence_length",
+        "filter_env_depth",
+        "filter_keytrack",
+        "filter2_env_depth",
+        "filter2_keytrack",
+        "filter_drive",
+        "filter_morph",
+        "filter2_drive",
+        "filter2_morph",
+      ].includes(spec.id)
+    )
+      continue;
+    const osc = /^resynth_osc(\d+)_/.exec(spec.id);
+    const drum = /^drum(\d+)_/.exec(spec.id);
+    const group = drum
+      ? `Drum ${drum[1]}`
+      : osc
+        ? `OSC ${osc[1]}`
+        : spec.id.startsWith("resynth_")
+          ? "Resynth"
+          : "Other controls";
+    if (!extra.has(group)) extra.set(group, []);
+    extra.get(group).push([{ control: { index: spec.index } }, spec.name]);
+  }
+  groups.push(...extra);
   return groups;
 }
 const MOD_SOURCES = [
   ["lfo1", "LFO 1"],
   ["lfo2", "LFO 2"],
   ["lfo3", "LFO 3"],
+  ...Array.from({ length: 5 }, (_, i) => [`lfo${i + 4}`, `LFO ${i + 4}`]),
   ["env1", "ENV 1 · Amp"],
   ["env2", "ENV 2"],
   ["env3", "ENV 3"],
+  ...Array.from({ length: 5 }, (_, i) => [`env${i + 4}`, `ENV ${i + 4}`]),
   ["velocity", "Velocity"],
   ["key_track", "Key track"],
   ["mod_wheel", "Mod wheel · CC 1"],
@@ -2243,7 +2404,14 @@ const DESTINATIONS = [
   ["volume", "Volume"],
 ];
 function buildLfos() {
-  for (let i = 0; i < 3; i++) {
+  $("lfo-add").onclick = () => {
+    if ((preset.lfo_count || 3) >= 8) return;
+    preset.lfo_count = (preset.lfo_count || 3) + 1;
+    syncLfos();
+    refreshColorDestinations();
+    schedulePreset();
+  };
+  for (let i = 0; i < 8; i++) {
     const card = document.createElement("div");
     card.className = "lfo-card";
     card.innerHTML = `<div class="lfo-title"><strong>LFO ${i + 1}</strong><canvas class="lfo-scope" width="144" height="40"></canvas></div><div class="lfo-row"><select aria-label="LFO ${i + 1} waveform" class="waveform"></select><select aria-label="LFO ${i + 1} destination" class="destination"></select></div><div class="lfo-row"><label>RATE<input aria-label="LFO ${i + 1} rate" class="rate" type="number" min="0.01" max="40" step="0.01"></label><label>DEPTH<input aria-label="LFO ${i + 1} depth" class="depth" type="range" min="-1" max="1" step="0.01"></label></div><div class="lfo-row"><label class="check"><input type="checkbox" class="sync">Tempo sync</label><select class="division" aria-label="LFO ${i + 1} tempo division"><option value="0.25">1/16</option><option value="0.5">1/8</option><option value="1">1/4</option><option value="2">1/2</option><option value="4">1 bar</option><option value="8">2 bars</option><option value="16">4 bars</option><option value="32">8 bars</option></select></div>`;
@@ -2282,9 +2450,14 @@ function buildLfos() {
   }
 }
 function syncLfos() {
-  for (let i = 0; i < 3; i++) {
+  const count = preset.lfo_count || 3;
+  $("lfo-count").textContent = `${count} / 8`;
+  $("lfo-add").disabled = count >= 8;
+  for (let i = 0; i < scopes.length; i++) {
     const card = scopes[i].card,
       l = preset.lfos[i];
+    card.hidden = i >= count;
+    if (!l) continue;
     for (const [field, selector] of [
       ["waveform", ".waveform"],
       ["destination", ".destination"],
@@ -2312,7 +2485,14 @@ const envTime = (seconds) =>
 const signedPercent = (value) =>
   `${value > 0 ? "+" : ""}${Math.round(value * 100)}%`;
 function buildEnvs() {
-  for (let i = 0; i < 3; i++) {
+  $("env-add").onclick = () => {
+    if ((preset.env_count || 3) >= 8) return;
+    preset.env_count = (preset.env_count || 3) + 1;
+    syncEnvs();
+    refreshColorDestinations();
+    schedulePreset();
+  };
+  for (let i = 0; i < 8; i++) {
     const card = document.createElement("div");
     card.className = "env-card";
     card.innerHTML = `<div class="env-title"><strong>ENV ${i + 1}</strong>${i === 0 ? '<span class="env-role">AMP</span>' : ""}<output class="env-level">0%</output></div><canvas class="env-scope" width="288" height="64" aria-label="ENV ${i + 1} envelope"></canvas><div class="env-controls"></div>`;
@@ -2364,9 +2544,14 @@ function buildEnvs() {
 }
 function syncEnvs() {
   if (!preset?.envs) return;
+  const count = preset.env_count || 3;
+  $("env-count").textContent = `${count} / 8`;
+  $("env-add").disabled = count >= 8;
   for (let i = 0; i < envCards.length; i++) {
     const { card, routes } = envCards[i],
       env = preset.envs[i];
+    card.hidden = i >= count;
+    if (!env) continue;
     for (let j = 0; j < ENV_FIELDS.length; j++) {
       const field = ENV_FIELDS[j],
         label = card.querySelectorAll(".env-parameter")[j],
@@ -3184,7 +3369,9 @@ function syncInput(input) {
 async function poll() {
   try {
     const generation = editGeneration;
+    if (timbreBusy) return;
     const next = await request("/api/state");
+    if (timbreBusy) return;
     const initial = state === null;
     state = next;
     connected = true;
@@ -3222,6 +3409,8 @@ async function poll() {
     syncInput(next.input);
     updateResynthMeter(next.resynth);
     neuroEditor?.update(next.sequencer, next.playing);
+    timbreEditor?.sync(next.timbres);
+    drumEditor?.update(next.drums);
     sampleSelection?.sync(next);
     $("sample-end").textContent = formatTime(next.sample_seconds);
     $("position-info").textContent = formatTime(
@@ -3256,12 +3445,12 @@ async function poll() {
       saveCompletedRecording(next.recording);
     $("cpu").textContent = `DSP ${next.cpu_percent.toFixed(1)}%`;
     if (next.audio_error) notify(next.audio_error, true);
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < scopes.length; i++) {
       const a = scopes[i].values;
-      a.push(next.lfos[i]);
+      a.push(next.lfos[i] || 0);
       if (a.length > 80) a.shift();
       envCards[i].card.querySelector(".env-level").textContent = percent(
-        next.envs[i],
+        next.envs[i] || 0,
       );
     }
     for (const key of document.querySelectorAll(".key"))
@@ -3303,6 +3492,25 @@ async function init() {
     buildEnvs();
     buildMatrix();
     buildSequence();
+    timbreEditor = new window.SadTimbres($("timbres"), {
+      change: changeTimbre,
+    });
+    if (state.timbres?.timbres) {
+      const drumCatalog = await request("/api/drums/catalog");
+      drumEditor = new window.SadDrums($("drum-machine"), drumCatalog, {
+        read: () => preset,
+        context: () => state?.timbres,
+        edit: scheduleDrum,
+        parameter: scheduleParameter,
+        structure: schedulePreset,
+        knob: createKnob,
+        routing: syncTimbreRouting,
+        trigger: (track) =>
+          request("/api/drums/trigger", { track, velocity: 1 }).catch((e) =>
+            notify(e.message),
+          ),
+      });
+    }
     buildKeyboard();
     bind();
     sampleSelection = new window.SadSampleSelection({

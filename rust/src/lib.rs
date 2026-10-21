@@ -2,6 +2,7 @@
 #[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
 pub mod audio;
 pub mod color;
+pub mod drums;
 pub mod dsp;
 pub mod firmware;
 pub mod imported_fx;
@@ -19,6 +20,7 @@ pub mod sequence;
 #[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
 pub mod server;
 pub mod tables;
+pub mod timbres;
 pub mod wav;
 
 pub type Stereo = [f32; 2];

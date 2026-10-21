@@ -96,6 +96,16 @@ async function handle(message) {
         core = new Core(data.module, data.rate);
         result = true;
         break;
+      case "scene-document":
+        core.call("sad_scene_adopt", data);
+        result = core.json("sad_scene_document");
+        break;
+      case "scene-prepare":
+        result = core.call("sad_scene_prepare", data);
+        break;
+      case "scene-render":
+        result = core.call("sad_scene_render_document", data);
+        break;
       case "request":
         result = core.request(message.path, data);
         break;
@@ -106,29 +116,41 @@ async function handle(message) {
         core.call("sad_prepare", data.wav);
         core.call("sad_sample_name", { name: data.name, id: data.libraryId });
         sourceGeneration = data.generation ?? sourceGeneration + 1;
+        core.wasm.sad_source_generation(sourceGeneration);
         result = {
           prepared: core.call("sad_pack"),
           info: core.request("/sample-info"),
         };
         break;
       case "source-fx": {
-        if (data.generation !== sourceGeneration) {
-          result = { stale: true };
-          break;
+        const previous =
+          data.timbre === undefined
+            ? null
+            : core.wasm.sad_timbre_target(data.timbre);
+        try {
+          if (
+            previous === 0xffffffff ||
+            data.generation !== core.wasm.sad_source_current_generation()
+          ) {
+            result = { stale: true };
+            break;
+          }
+          const prepared = data.recipe.slot
+            ? core.call("sad_source_prepare", data.recipe)
+            : null;
+          let header = null,
+            offset = 0;
+          if (prepared) {
+            const length = new DataView(prepared).getUint32(8, true);
+            header = JSON.parse(
+              new TextDecoder().decode(new Uint8Array(prepared, 12, length)),
+            );
+            offset = 12 + length;
+          }
+          result = { prepared, header, offset, recipe: data.recipe };
+        } finally {
+          if (previous !== null) core.wasm.sad_timbre_target(previous);
         }
-        const prepared = data.recipe.slot
-          ? core.call("sad_source_prepare", data.recipe)
-          : null;
-        let header = null,
-          offset = 0;
-        if (prepared) {
-          const length = new DataView(prepared).getUint32(8, true);
-          header = JSON.parse(
-            new TextDecoder().decode(new Uint8Array(prepared, 12, length)),
-          );
-          offset = 12 + length;
-        }
-        result = { prepared, header, offset, recipe: data.recipe };
         break;
       }
       case "sample":

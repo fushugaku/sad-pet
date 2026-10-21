@@ -167,18 +167,33 @@ Object.assign(exporting, {
   microphone: { active: false },
   state: { region: { start: 0, end: 1 } },
   audio: {
-    async call(type, data, transfers, path) {
-      assert.equal(path, "/api/state");
-      return { region: freshRegion, preset: {}, bypass: false, frozen: false };
+    async call(type) {
+      assert.equal(type, "scene-pack");
+      return new ArrayBuffer(8);
     },
   },
   worker: {
     async call(type, data) {
-      assert.equal(type, "render");
+      if (type === "scene-document") {
+        assert.equal(data.byteLength, 8);
+        return {
+          region: freshRegion,
+          preset: {},
+          timbres: [{ region: freshRegion }],
+          bypass: false,
+          frozen: false,
+        };
+      }
+      assert.equal(type, "scene-render");
       assert.deepEqual(
-        data.region,
+        data.scene.region,
         freshRegion,
         "render must use the acknowledged region instead of a delayed UI snapshot",
+      );
+      assert.deepEqual(
+        data.scene.timbres[0].region,
+        freshRegion,
+        "render must include every timbre from the same acknowledged scene",
       );
       return new ArrayBuffer(0);
     },

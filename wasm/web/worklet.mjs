@@ -45,7 +45,10 @@ class SadPetProcessor extends AudioWorkletProcessor {
       }
       try {
         let result;
-        if (type === "load") {
+        if (type === "scene-pack") result = this.core.call("sad_scene_pack");
+        else if (type === "scene-load")
+          result = this.core.json("sad_scene_load", data);
+        else if (type === "load") {
           if (this.sourceTransfer)
             this.port.postMessage({
               type: "source-ready",
@@ -61,11 +64,19 @@ class SadPetProcessor extends AudioWorkletProcessor {
           this.sourceGeneration =
             data.generation ?? (this.sourceGeneration || 0) + 1;
         } else if (type === "source-load") {
-          result = this.core.json("sad_source_begin", {
-            recipe: data.recipe,
-            header: data.header,
-            generation: data.generation,
-          });
+          const previous =
+            data.timbre === undefined
+              ? null
+              : this.core.wasm.sad_timbre_target(data.timbre);
+          result =
+            previous === 0xffffffff
+              ? { started: false }
+              : this.core.json("sad_source_begin", {
+                  recipe: data.recipe,
+                  header: data.header,
+                  generation: data.generation,
+                });
+          if (previous !== null) this.core.wasm.sad_timbre_target(previous);
           if (result.started) {
             if (this.sourceTransfer)
               this.port.postMessage({
@@ -80,6 +91,7 @@ class SadPetProcessor extends AudioWorkletProcessor {
                 : new Uint8Array(0),
               offset: 0,
               key: data.key,
+              timbre: data.timbre,
               generation: data.generation,
             };
           }
@@ -115,6 +127,8 @@ class SadPetProcessor extends AudioWorkletProcessor {
             "/api/midi-bytes",
             "/api/parameters",
             "/api/sequencer/edit",
+            "/api/drums/edit",
+            "/api/drums/trigger",
           ].includes(message.path)
         )
           this.snapshot();
@@ -174,7 +188,15 @@ class SadPetProcessor extends AudioWorkletProcessor {
       const count = channels[0].length;
       if (this.sourceTransfer) {
         const stage = this.sourceTransfer;
-        const status = this.core.sourceChunk(stage.bytes, stage.offset);
+        const previous =
+          stage.timbre === undefined
+            ? null
+            : this.core.wasm.sad_timbre_target(stage.timbre);
+        const status =
+          previous === 0xffffffff
+            ? 2
+            : this.core.sourceChunk(stage.bytes, stage.offset);
+        if (previous !== null) this.core.wasm.sad_timbre_target(previous);
         stage.offset += this.core.sourceCopied;
         if (status !== 0) {
           this.port.postMessage({

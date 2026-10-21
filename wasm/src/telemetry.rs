@@ -24,6 +24,17 @@ impl Serialize for Edits<'_> {
     }
 }
 
+struct DrumEdits<'a>(&'a [(u64, sad_pet::drums::Edit)]);
+impl Serialize for DrumEdits<'_> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut list = s.serialize_seq(Some(self.0.len()))?;
+        for (_, edit) in self.0 {
+            list.serialize_element(edit)?;
+        }
+        list.end()
+    }
+}
 #[derive(Serialize)]
 struct Configuration<'a> {
     preset: &'a Preset,
@@ -48,8 +59,11 @@ struct OwnedConfiguration {
 }
 #[derive(Serialize)]
 struct Packet<'a> {
+    source_generation: u32,
+    context: &'a sad_pet::timbres::Context,
     parameter_edits: Parameters<'a>,
     sequence_edits: Edits<'a>,
+    drum_edits: DrumEdits<'a>,
     revision: u64,
     view: &'a RealtimeView,
     waveform: &'a [[f32; 2]],
@@ -60,8 +74,14 @@ struct Packet<'a> {
 }
 #[derive(Deserialize)]
 struct OwnedPacket {
+    #[serde(default)]
+    source_generation: u32,
+    #[serde(default)]
+    context: sad_pet::timbres::Context,
     parameter_edits: Value,
     sequence_edits: Vec<sad_pet::sequence::Edit>,
+    #[serde(default)]
+    drum_edits: Vec<sad_pet::drums::Edit>,
     revision: u64,
     view: RealtimeView,
     waveform: Vec<[f32; 2]>,
@@ -86,8 +106,11 @@ impl Host {
         let sample = self.engine.source_sample();
         let changed = self.sent_revision != Some(self.config_revision);
         let packet = Packet {
+            source_generation: self.file_generation,
+            context: &self.context,
             parameter_edits: Parameters(&self.parameter_edits),
             sequence_edits: Edits(&self.sequence_edits),
+            drum_edits: DrumEdits(&self.drum_edits),
             revision: self.config_revision,
             view: &self.view,
             grains: &self.view.grains[..self.view.grain_count],
@@ -150,6 +173,9 @@ impl Host {
         }
         let mut v = packet.view;
         self.engine.preset.sequencer.edit(&packet.sequence_edits);
+        if let Some(drums) = &mut self.engine.preset.drums {
+            drums.edit(&packet.drum_edits);
+        }
         let parameters = sad_pet::parameters::parse(&packet.parameter_edits)?;
         sad_pet::parameters::apply(&mut self.engine.preset, &parameters);
         if v.grain_count > sad_pet::dsp::MAX_GRAINS
@@ -200,6 +226,12 @@ impl Host {
         state["step_edits"] = json!(v.step_edits);
         state["performance"] = json!({"mode":self.engine.preset.performance.mode,"step":v.step,"arp_index":v.arp_index,"chord":&v.chord[..v.chord_len],"gate":v.gate,"beat":v.beat});
         state["sequencer"] = json!(v.sequencer);
+        state["timbres"] = json!(packet.context);
+        state["source_generation"] = json!(packet.source_generation);
+        state["drums"] = json!(v.drums);
+        if self.engine.preset.drums.is_some() {
+            state["playing"] = json!(v.drums.playing);
+        }
         state["lfos"] = json!(v.lfos);
         state["envs"] = json!(v.envs);
         state["matrix_values"] = json!(v.matrix);
@@ -225,56 +257,115 @@ impl Host {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn sad_snapshot() -> usize {
-    host(Host::publish_snapshot)
+    registry(|r| {
+        let Some(slot) = r.unacked.iter().position(Option::is_none) else {
+            return 0;
+        };
+        let index = r.selected;
+        let length = r.parts[index].host.publish_snapshot();
+        if length > 0 {
+            r.sequence = r.sequence.wrapping_add(1).max(1);
+            r.unacked[slot] = Some((
+                r.sequence,
+                r.parts[index].meta.id,
+                r.parts[index].host.snapshot_sequence,
+            ));
+            r.snapshot_part = index;
+        }
+        length
+    })
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn sad_snapshot_pointer() -> *const u8 {
-    host(|h| h.snapshot_buffer.as_ptr())
+    registry(|r| {
+        r.parts[r.snapshot_part.min(r.parts.len() - 1)]
+            .host
+            .snapshot_buffer
+            .as_ptr()
+    })
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn sad_snapshot_capacity() -> usize {
-    host(|h| h.snapshot_buffer.len())
+    registry(|r| {
+        r.parts
+            .iter()
+            .map(|p| p.host.snapshot_buffer.len())
+            .max()
+            .unwrap_or(131072)
+    })
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn sad_snapshot_import() -> u32 {
-    host(|h| {
-        let result = h
-            .import_snapshot()
-            .and_then(|v| serde_json::to_vec(&v).map_err(|e| e.to_string()));
-        h.finish(result)
+    registry(|r| {
+        let index = r.index();
+        let bytes = std::mem::take(&mut r.parts[index].host.input);
+        #[derive(Deserialize)]
+        struct Envelope {
+            #[serde(default)]
+            context: sad_pet::timbres::Context,
+        }
+        let result = (|| {
+            let envelope: Envelope = rmp_serde::from_slice(&bytes).map_err(|e| e.to_string())?;
+            let id = envelope.context.active;
+            r.adopt_context(envelope.context)?;
+            let index = r
+                .parts
+                .iter()
+                .position(|p| p.meta.id == id)
+                .ok_or("Obsolete timbre snapshot")?;
+            r.parts[index].host.input = bytes;
+            r.parts[index].host.import_snapshot()
+        })()
+        .and_then(|v| serde_json::to_vec(&v).map_err(|e| e.to_string()));
+        let index = r.index();
+        r.parts[index].host.finish(result)
     })
 }
-
 #[unsafe(no_mangle)]
 pub extern "C" fn sad_snapshot_sequence() -> u32 {
-    host(|h| h.snapshot_sequence)
+    registry(|r| r.sequence)
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn sad_snapshot_ack(sequence: u32, success: u32) {
-    host(|h| {
-        if let Some(index) = h
+    registry(|r| {
+        if let Some(index) = r
+            .unacked
+            .iter()
+            .position(|e| e.is_some_and(|e| e.0 == sequence))
+        {
+            let (_, id, local) = r.unacked[index].take().unwrap();
+            if let Some(part) = r.parts.iter_mut().find(|p| p.meta.id == id) {
+                part.host.ack_snapshot(local, success);
+            }
+        }
+    })
+}
+impl Host {
+    pub(super) fn ack_snapshot(&mut self, sequence: u32, success: u32) {
+        if let Some(index) = self
             .unacked_peaks
             .iter()
             .position(|p| p.is_some_and(|p| p.0 == sequence))
         {
-            let (_, peak, input_peak) = h.unacked_peaks[index].take().unwrap();
-            if let Some((_, revision)) = h.sent_edit_revisions[index].take()
+            let (_, peak, input_peak) = self.unacked_peaks[index].take().unwrap();
+            if let Some((_, revision)) = self.sent_edit_revisions[index].take()
                 && success != 0
             {
-                h.sequence_edits.retain(|(r, _)| *r > revision);
-                h.parameter_edits.retain(|(r, _, _)| *r > revision);
+                self.sequence_edits.retain(|(r, _)| *r > revision);
+                self.drum_edits.retain(|(r, _)| *r > revision);
+                self.parameter_edits.retain(|(r, _, _)| *r > revision);
             }
             if success == 0 {
-                h.sent_revision = None;
+                self.sent_revision = None;
                 for (c, value) in peak.iter().enumerate() {
-                    h.engine.peak[c] = h.engine.peak[c].max(*value);
+                    self.engine.peak[c] = self.engine.peak[c].max(*value);
                 }
-                if let Some(input) = &mut h.engine.live_input {
+                if let Some(input) = &mut self.engine.live_input {
                     for (c, value) in input_peak.iter().enumerate() {
                         input.peak[c] = input.peak[c].max(*value);
                     }
                 }
             }
         }
-    });
+    }
 }

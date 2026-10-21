@@ -38,7 +38,23 @@ The desktop version uses the system audio output and a local browser panel.
   Velocity are available together. Main pitch can also target any combination
   of OSC 1–4; their own tracks add −24…+24 semitones to that pitch, at independent
   clocks. Double-click a step's Gate knob to inherit the track's Gate setting.
-- Three LFOs with tempo sync up to 8 bars, three ADSR envelopes and eight modulation routes.
+- In the browser and DAW plug-ins, add independent **Granular** and **Drum machine**
+  timbres as tabs across the top. They run together, with per-timbre level, mute,
+  solo and MIDI channel. Each owns its source, effects, Resynth, envelopes, LFOs
+  and Neuropolis program. Save/recall includes the entire scene and all sources.
+- Up to **8 LFOs** with tempo sync up to 8 bars and **8 ADSR envelopes** per timbre,
+  plus eight modulation-matrix routes. OSC 1–4 shape, mode, tuning, level, pan,
+  Ring/Sync and other realtime numeric controls are available as destinations.
+  Existing three-modulator patches retain their sound and routing.
+- **DXM-088 / LXR-02 drum timbres**, using the original Rust synthesis engine:
+  three drum voices, snare, clap/cymbal and shared closed/open hi-hat. All 56 voice
+  controls are available, including FM, transients, envelopes and both filters.
+  Each drum track has 1–128 steps, its own clock, swing/groove, MIDI note, level,
+  mute and solo. Steps expose velocity, chance, pitch, ratchet, microtiming,
+  conditions and two parameter locks. The drum page has its own Neuropolis mod
+  sequencer. **Granular** routes the drum mix through the shared Grain Engine;
+  turn it off for direct processing through the remaining filter/FX chain.
+  The firmware clock, original stereo DSP and host-rate resampler are preserved.
 - Two filters with single, serial and parallel routing, envelope depth and key tracking.
 - All **18 Rustias filter models** in either slot: RADIAS, Ladder LP/HP/BP24,
   MS-20 LP/HP12, Pro LP24, SEM, Multi Filter, M/Poly LP24 and Linear LP/HP/BP/Notch

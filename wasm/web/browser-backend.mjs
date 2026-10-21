@@ -261,7 +261,8 @@ export class BrowserBackend {
       bpm: p.params.bpm,
       root: p.params.sample_root_note ?? 60,
     };
-    const key = JSON.stringify([this.sourceGeneration, recipe]);
+    const timbre = state.timbres?.active ?? 0;
+    const key = JSON.stringify([timbre, this.sourceGeneration, recipe]);
     if (key === this.sourceFailedKey) {
       state.source_fx = {
         ...state.source_fx,
@@ -279,7 +280,12 @@ export class BrowserBackend {
       return;
     this.sourceRecipeKey = key;
     this.sourceFailedKey = null;
-    this.queuedSource = { key, generation: this.sourceGeneration, recipe };
+    this.queuedSource = {
+      key,
+      timbre,
+      generation: this.sourceGeneration,
+      recipe,
+    };
     this.prepareSourceEffects();
   }
   async freshState() {
@@ -326,7 +332,12 @@ export class BrowserBackend {
           ) {
             const started = await this.audio.call(
               "source-load",
-              { ...result, key: job.key, generation: job.generation },
+              {
+                ...result,
+                key: job.key,
+                timbre: job.timbre,
+                generation: job.generation,
+              },
               result.prepared ? [result.prepared] : [],
             );
             if (started.started) this.sourceUploadingKey = job.key;
@@ -351,7 +362,7 @@ export class BrowserBackend {
       recording: { ...this.recording },
       input: {
         ...this.state?.input,
-        ...this.microphone.snapshot(),
+        ...(this.state?.preset?.drums ? {} : this.microphone.snapshot()),
         // A release is asynchronous: keep the live source visible until the
         // worklet confirms it has restored the file, including for Library.
         active: this.microphone.active || !!this.state?.input?.active,
@@ -442,6 +453,39 @@ export class BrowserBackend {
       if (route === "/api/state") {
         await this.freshState();
         result = this.snapshot();
+      } else if (route === "/api/scene") {
+        if (data) {
+          const prepared = await this.worker.call("scene-prepare", data);
+          result = await this.audio.call("scene-load", prepared, [prepared]);
+          this.sourceRecipeKey = null;
+          this.state = await this.audio.call("request", null, [], "/api/state");
+          this.viewStamp = this.audio.stamp || 0;
+          this.sourceGeneration = this.state.source_generation ?? 0;
+          this.queuedSource = null;
+          await this.worker.call(
+            "request",
+            this.state.timbres,
+            [],
+            "/api/timbres/context",
+          );
+        } else {
+          const packed = await this.audio.call("scene-pack");
+          result = await this.worker.call("scene-document", packed, [packed]);
+        }
+      } else if (route.startsWith("/api/timbres")) {
+        await this.sourceLoadTail;
+        result = await this.audio.call("request", data, [], route);
+        if (route === "/api/timbres/update") {
+          this.state.timbres = result;
+        } else {
+          await this.worker.call("request", result, [], "/api/timbres/context");
+          this.queuedSource = null;
+          this.sourceRecipeKey = null;
+          this.state = await this.audio.call("request", null, [], "/api/state");
+          this.sourceGeneration =
+            this.state.source_generation ?? this.sourceGeneration;
+        }
+        this.viewStamp = this.audio.stamp || 0;
       } else if (route === "/api/input")
         result = data
           ? data.active === false
@@ -526,14 +570,13 @@ export class BrowserBackend {
           throw new Error(
             "Use Record to save the live output, or switch to File before rendering.",
           );
-        const state = await this.audio.call("request", null, [], "/api/state");
-        result = await this.worker.call("render", {
+        const packed = await this.audio.call("scene-pack");
+        const scene = await this.worker.call("scene-document", packed, [
+          packed,
+        ]);
+        result = await this.worker.call("scene-render", {
           seconds: data.seconds,
-          preset: state.preset,
-          bypass: state.bypass,
-          frozen: state.frozen,
-          region: state.region,
-          fades: state.fades,
+          scene,
         });
         mime = "audio/wav";
       } else if (route === "/api/recording") {
@@ -586,6 +629,7 @@ export class BrowserBackend {
           "/api/samples",
           "/api/color-defaults",
           "/api/sequencer/catalog",
+          "/api/drums/catalog",
         ].includes(route)
       ) {
         result = await this.worker.call("request", data, [], route);

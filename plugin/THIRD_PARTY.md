@@ -96,3 +96,14 @@ texts or the repository's existing source and sample notices.
   These firmware-derived components do not assert a blanket open-source license
   over manufacturer material. Renaming does not grant additional rights or imply
   manufacturer affiliation. Both notices are included in native and web packages.
+
+- **DXM-088 / LXR-02 Rust drum engine**, ported from the local `lxr-02-rs`
+  revision `21fc4eddcde8f00efe29fdae6f12599095c5508a`. The six synthesis voices,
+  shared closed/open hi-hat, oscillators, envelopes, transients, filters, internal
+  master effects, fixed firmware clock and original host-rate resampler are in
+  `vendor/dxm088`. SAD PET supplies its own editor, timbre mixer, parameter and
+  modulation routing, and expands drum tracks to 128 steps. Original file hashes
+  and adapter changes are recorded in `vendor/dxm088/UPSTREAM.json`; original
+  attribution and ownership notices are included as `dxm088-NOTICE.md`. This
+  integration does not assert a new license grant for that source or its ROM
+  tables. The browser uses the same Rust DSP compiled to WASM.

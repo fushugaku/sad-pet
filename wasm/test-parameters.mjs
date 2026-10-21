@@ -46,6 +46,7 @@ function editor() {
   vm.runInContext(source.slice(0, boundary) + `
     function syncControl() {}
     function syncAll() {}
+    function releaseKeyboard() {}
     ${source.slice(stepStart, stepEnd)}
     preset = ${JSON.stringify(stored)};
   `, context);

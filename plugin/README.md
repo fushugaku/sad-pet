@@ -8,6 +8,42 @@ the plug-in window; it does not launch a separate browser, audio device or serve
 | SAD PET | MIDI instrument with imported or built-in samples | VST3, AU instrument | VST3 |
 | SAD PET FX | Stereo input through filters/effects or an eight-second granular buffer; also receives MIDI | VST3, AU MIDI-controlled effect | VST3 |
 
+## Timbres and drum machine
+
+Use the top **Timbres** bank: choose Granular or Drum machine, then **+ Timbre**.
+Tabs select the editor; every timbre continues running. Each has independent
+level, mute, solo and MIDI-channel selection (All, or 1–16). Existing host parameter
+IDs continue to automate the first timbre; every timbre supports its own numeric
+editor updates, LFO/ENV/matrix routes and Neuropolis modulation tracks. DAW project
+state and User presets save the complete scene, including all source files.
+
+The drum timbre uses the native DXM-088 / LXR-02 Rust engine, with seven tracks
+(three drums, snare, clap/cymbal, closed and open hats sharing one voice) and all
+56 voice controls. Length is 1–128 steps per track; the eight pattern-page buttons
+show 16 steps at a time. Tracks retain independent clocks, swing, groove and mix.
+Click a step to toggle a hit and edit it below; Shift-click selects without
+changing its velocity. Velocity, chance, pitch, ratchet and microtiming have
+rotary controls. Conditions and two parameter locks remain visible alongside.
+Audition plays a single drum even while DAW transport is stopped.
+
+Enable **Granular** in the drum heading to send its live mix through Grain Engine.
+Source FX processes the drum audio before capture; pre-filter FX, filters, Resynth
+and post-filter FX remain available on the selected timbre. Main pitch transposes
+the drum voices in direct mode and the grains in granular mode. The drum page's
+Neuropolis editor is independent of every other timbre's program.
+
+Use **+ LFO** / **+ ENV** to add up to eight of each per timbre. Destination menus
+include every Resynth oscillator's realtime numeric controls and all drum voice
+controls. Knob edits, drum steps and the Granular switch use sparse commands;
+they preserve clocks, voice histories and other timbres. Three-modulator patches
+migrate without changing the original routes or existing host parameter IDs.
+
+On a **Main track pitch** lane, the **Main pitch → OSC 1–4** checkboxes sit directly
+below its destination selector. An oscillator's own pitch lane uses signed
+−24…+24 semitone offsets relative to the selected main pitch. Pulses and Ratchet
+have integer 1–8 knobs: drag, focus and scroll, or use arrow keys; double-click
+resets to 1. Gate remains a separate percent knob.
+
 ## Install
 
 [Download the macOS and Windows installers](https://github.com/fushugaku/sad-pet/releases/latest).

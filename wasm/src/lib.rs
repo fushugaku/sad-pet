@@ -4,6 +4,7 @@
 mod allocation_tests;
 mod source_fx;
 mod telemetry;
+mod timbres;
 use sad_pet::{
     Stereo,
     dsp::{Engine, SampleBuffer},
@@ -19,7 +20,8 @@ const MAX_INPUT: usize = 300 * 1024 * 1024;
 const BLOCK: usize = 4096;
 
 struct Host {
-    engine: Engine,
+    context: sad_pet::timbres::Context,
+    engine: Box<Engine>,
     midi: sad_pet::midi::Parser,
     rate: u32,
     input: Vec<u8>,
@@ -30,6 +32,7 @@ struct Host {
     view: sad_pet::dsp::telemetry::RealtimeView,
     snapshot_buffer: Vec<u8>,
     sequence_edits: Vec<(u64, sad_pet::sequence::Edit)>,
+    drum_edits: Vec<(u64, sad_pet::drums::Edit)>,
     parameter_edits: Vec<(u64, String, f32)>,
     edit_revision: u64,
     sent_edit_revisions: [Option<(u32, u64)>; 3],
@@ -50,7 +53,8 @@ impl Host {
         sad_pet::parameters::specs();
         let sample = SampleBuffer::new("Loading…".into(), rate, vec![[0.0; 2]; 2]).unwrap();
         Self {
-            engine: Engine::new(rate, Arc::new(sample), Preset::default()),
+            context: sad_pet::timbres::Context::default(),
+            engine: Box::new(Engine::new(rate, Arc::new(sample), Preset::default())),
             midi: sad_pet::midi::Parser::default(),
             rate,
             input: Vec::new(),
@@ -61,6 +65,7 @@ impl Host {
             view: sad_pet::dsp::telemetry::RealtimeView::default(),
             snapshot_buffer: vec![0; 131072],
             sequence_edits: Vec::new(),
+            drum_edits: Vec::new(),
             parameter_edits: Vec::new(),
             edit_revision: 0,
             sent_edit_revisions: [None; 3],
@@ -77,10 +82,14 @@ impl Host {
         }
     }
 
+    fn resize_snapshot(&mut self) {
+        let size = rmp_serde::to_vec_named(&self.engine.preset).map_or(0, |v| v.len()) + 131072;
+        self.snapshot_buffer.resize(size, 0);
+    }
     fn state(&self) -> Value {
         let e = &self.engine;
         let sample = e.source_sample();
-        json!({
+        let mut state = json!({
             "version": env!("CARGO_PKG_VERSION"), "instance_id": "browser",
             "sample_rate": self.rate, "audio_device": "Web Audio", "audio_error": null,
             "audio_enabled": false, "playing": e.playing, "frozen": e.frozen,
@@ -101,10 +110,15 @@ impl Host {
             "sequencer": e.sequence_view(),
             "matrix_values": e.matrix_values, "knobs": e.knob_states(), "peak": e.peak,
             "gain_reduction": e.gain_reduction(),
-            "resynth": e.resynth_meter(),
+            "resynth": e.resynth_meter(), "drums":e.drum_view(),
             "cpu_percent": 0, "underruns": 0,
             "source_fx":{"pending":e.source_effects_pending(),"recipe":sad_pet::dsp::source_fx::Recipe::from_engine(e)},
-        })
+        });
+        state["source_generation"] = json!(self.file_generation);
+        if self.engine.preset.drums.is_some() {
+            state["playing"] = json!(self.engine.drum_view().playing);
+        }
+        state
     }
 
     fn command(&mut self, request: Value) -> Result<Value, String> {
@@ -122,6 +136,8 @@ impl Host {
                     | "/api/sequencer/edit"
                     | "/api/sequencer/view"
                     | "/api/parameters"
+                    | "/api/drums/edit"
+                    | "/api/drums/trigger"
             )
         {
             self.config_revision = self.config_revision.wrapping_add(1);
@@ -152,7 +168,11 @@ impl Host {
                     self.snapshot_buffer.resize(size, 0);
                 }
                 self.sequence_edits.clear();
+                self.drum_edits.clear();
                 self.parameter_edits.clear();
+                // Reserve the control-message high-water mark while preparing a
+                // patch. First-time metadata must not grow memory after a scalar edit.
+                let _ = serde_json::to_vec(&self.state());
                 Ok(json!(self.engine.preset))
             }
             "/api/parameters" => {
@@ -172,6 +192,29 @@ impl Host {
                 Ok(json!({"ok":true}))
             }
             "/api/sequencer/catalog" => Ok(sad_pet::sequence::catalog()),
+            "/api/drums/catalog" => Ok(sad_pet::drums::catalog()),
+            "/api/drums/edit" => {
+                let edits = sad_pet::drums::parse_edits(data)?;
+                self.engine.apply_drum_edits(&edits);
+                self.edit_revision = self.edit_revision.wrapping_add(1);
+                for edit in edits {
+                    if let Some(entry) = self.drum_edits.iter_mut().find(|(_, e)| {
+                        e.track == edit.track && e.step == edit.step && e.field == edit.field
+                    }) {
+                        *entry = (self.edit_revision, edit);
+                    } else {
+                        self.drum_edits.push((self.edit_revision, edit));
+                    }
+                }
+                Ok(json!({"ok":true}))
+            }
+            "/api/drums/trigger" => {
+                self.engine.trigger_drum(
+                    data["track"].as_u64().unwrap_or(0).min(6) as usize,
+                    data["velocity"].as_f64().unwrap_or(1.) as f32,
+                );
+                Ok(json!({"ok":true}))
+            }
             "/api/sequencer/view" => {
                 self.engine
                     .set_sequence_view(data["offset"].as_u64().unwrap_or(0) as usize);
@@ -278,9 +321,13 @@ impl Host {
         {
             self.config_revision = self.config_revision.wrapping_add(1);
         }
-        if matches!(path, "/api/sequencer/edit" | "/api/parameters") {
+        if matches!(
+            path,
+            "/api/sequencer/edit" | "/api/parameters" | "/api/drums/edit"
+        ) {
             let capacity = 131072
                 + self.sequence_edits.len() * 80
+                + self.drum_edits.len() * 80
                 + self
                     .parameter_edits
                     .iter()
@@ -378,14 +425,20 @@ fn unpack(bytes: &[u8]) -> Result<SampleBuffer, String> {
     SampleBuffer::from_prepared(header.name, header.library_id, header.sample_rate, levels)
 }
 
-thread_local! { static HOST: RefCell<Option<Host>> = const { RefCell::new(None) }; }
-fn host<T>(f: impl FnOnce(&mut Host) -> T) -> T {
+thread_local! { static HOST: RefCell<Option<timbres::Registry>> = const { RefCell::new(None) }; }
+fn registry<T>(f: impl FnOnce(&mut timbres::Registry) -> T) -> T {
     HOST.with(|h| f(h.borrow_mut().as_mut().expect("Call sad_init first")))
+}
+fn host<T>(f: impl FnOnce(&mut Host) -> T) -> T {
+    registry(|r| {
+        let index = r.index();
+        f(&mut r.parts[index].host)
+    })
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn sad_init(rate: u32) {
-    HOST.with(|h| *h.borrow_mut() = Some(Host::new(rate.clamp(8_000, 384_000))));
+    HOST.with(|h| *h.borrow_mut() = Some(timbres::Registry::new(rate.clamp(8_000, 384_000))));
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn sad_input(length: usize) -> *mut u8 {
@@ -407,27 +460,23 @@ pub extern "C" fn sad_output_len() -> usize {
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn sad_command() -> u32 {
-    host(|h| {
-        let result = serde_json::from_slice::<Value>(&h.input)
+    registry(|r| {
+        let index = r.index();
+        let result = serde_json::from_slice::<Value>(&r.parts[index].host.input)
             .map_err(|e| e.to_string())
-            .and_then(|v| h.command(v))
+            .and_then(|v| r.command(v))
             .and_then(|v| serde_json::to_vec(&v).map_err(|e| e.to_string()));
-        h.finish(result)
+        let index = r.index();
+        r.parts[index].host.finish(result)
     })
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn sad_process(count: usize) -> *const Stereo {
-    host(|h| {
-        let count = count.min(BLOCK);
-        for (output, input) in h.frames[..count].iter_mut().zip(&h.audio_input[..count]) {
-            *output = h.engine.process_input_frame(*input);
-        }
-        h.frames.as_ptr()
-    })
+    registry(|r| r.process(count))
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn sad_audio_input() -> *mut Stereo {
-    host(|h| h.audio_input.as_mut_ptr())
+    registry(|r| r.parts[0].host.audio_input.as_mut_ptr())
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn sad_input_wav() -> u32 {

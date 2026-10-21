@@ -83,7 +83,7 @@ for (const rate of [44100, 48000, 96000]) {
     const memory = core.wasm.memory.buffer;
     for (let f = 0; f < 64; f++)
       assert.ok(core.process(128).every(Number.isFinite));
-    assert.equal(core.wasm.memory.buffer, memory, "Audio grew WASM memory");
+    assert.ok(core.wasm.memory.buffer === memory, "Audio grew WASM memory");
     core.request("/api/parameters", {
       filter_drive: 0.71,
       filter2_morph: 0.24,
@@ -96,9 +96,8 @@ for (const rate of [44100, 48000, 96000]) {
     assert.equal(state.preset.params.filter2_model, models[19 - i]);
     assert.ok(Math.abs(state.preset.params.filter_drive - 0.71) < 1e-6);
     assert.ok(Math.abs(state.preset.params.filter2_morph - 0.24) < 1e-6);
-    assert.equal(
-      core.wasm.memory.buffer,
-      memory,
+    assert.ok(
+      core.wasm.memory.buffer === memory,
       "Scalar filter edit grew WASM memory",
     );
   }

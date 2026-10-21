@@ -147,7 +147,7 @@ pub fn cutoff_hz(kind: FilterType, value: f32) -> f32 {
 
 /// Cutoff modulation in logarithmic frequency space. C4 is the tracking pivot;
 /// 100% tracking shifts the cutoff by one octave per octave played, including bend.
-pub fn voice_cutoffs(p: &Params, note: f32, envs: [f32; 3]) -> [f32; 2] {
+pub fn voice_cutoffs<const N: usize>(p: &Params, note: f32, envs: [f32; N]) -> [f32; 2] {
     let tracked = |model, kind, base: f32, depth: f32, source: usize, tracking: f32| {
         let span: f32 = if model != FilterModel::Legacy || kind == FilterType::Comb {
             200.0
@@ -193,7 +193,7 @@ impl FilterBank {
     pub fn clear(&mut self) {
         self.filters.iter_mut().for_each(Filter::clear);
     }
-    pub fn configure(&mut self, p: &Params, note: f32, envs: [f32; 3]) {
+    pub fn configure<const N: usize>(&mut self, p: &Params, note: f32, envs: [f32; N]) {
         if self.routing != p.filter_routing {
             self.clear();
         }

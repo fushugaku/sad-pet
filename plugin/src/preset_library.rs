@@ -279,6 +279,13 @@ impl Library {
 }
 
 fn validate(state: &SavedState) -> Result<(), String> {
+    let mut ids = std::collections::BTreeSet::new();
+    for part in &state.timbres {
+        if part.meta.id == 0 || !ids.insert(part.meta.id) || !part.timbres.is_empty() {
+            return Err("Invalid timbre identities".into());
+        }
+        validate(part)?;
+    }
     if state.version != 1 || state.preset.format != "evil-pet-rust-v1" {
         return Err("Unsupported SAD PET preset version.".into());
     }
@@ -328,6 +335,9 @@ impl Controller {
                 };
                 if !self.effect {
                     state.source = Source::File;
+                    for part in &mut state.timbres {
+                        part.source = Source::File;
+                    }
                 }
                 state.frozen = false;
                 state.bypass = self.bypass;
@@ -342,7 +352,28 @@ impl Controller {
                     .filter(|n| *n < 5)
                     .ok_or("Unknown factory preset.")?;
                 let preset = Preset::builtin(index as usize);
-                self.enqueue(Command::Preset(Box::new(preset.prepared_clone())))?;
+                let source = self.prepared_source_for(
+                    self.sample.clone(),
+                    self.source,
+                    self.region,
+                    self.fades,
+                    &preset,
+                );
+                self.enqueue(Command::Restore(Box::new(super::Restore {
+                    parts: None,
+                    mix: Default::default(),
+                    preset: preset.prepared_clone_for(self.rate),
+                    source,
+                    sync: self.sync,
+                    frozen: self.frozen,
+                    bypass: self.bypass,
+                    midi_gate: self.midi_gate,
+                    playing: self.playing,
+                })))?;
+                self.parts.clear();
+                self.active = 0;
+                self.meta = sad_pet::timbres::Meta::default();
+                self.scene_revision = self.scene_revision.wrapping_add(1);
                 self.preset = preset;
                 self.selection = Selection {
                     id: format!("factory:{index}"),
@@ -404,6 +435,9 @@ impl Controller {
                     }
                     let mut state = self.snapshot()?;
                     state.preset = serde_json::from_value(value).map_err(|e| e.to_string())?;
+                    state.timbres.clear();
+                    state.active_timbre = 0;
+                    state.meta = sad_pet::timbres::Meta::default();
                     state
                 };
                 validate(&state)?;

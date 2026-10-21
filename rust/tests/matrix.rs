@@ -190,12 +190,12 @@ fn all_lfos_envelopes_and_follower_produce_live_source_values() {
     for lfo in &mut p.lfos {
         lfo.waveform = Waveform::Square;
     }
-    p.envs = [Env {
+    p.envs.fill(Env {
         attack: 0.0,
         decay: 0.0,
         sustain: 1.0,
         ..Env::default()
-    }; 3];
+    });
     let sources = [
         Source::Lfo1,
         Source::Lfo2,

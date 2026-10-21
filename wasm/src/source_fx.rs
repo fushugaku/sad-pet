@@ -186,3 +186,8 @@ impl Host {
         }
     }
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_source_current_generation() -> u32 {
+    host(|h| h.file_generation)
+}

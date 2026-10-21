@@ -24,6 +24,16 @@ pub enum Source {
     RandomNote,
     Gate,
     Follower,
+    Lfo4,
+    Lfo5,
+    Lfo6,
+    Lfo7,
+    Lfo8,
+    Env4,
+    Env5,
+    Env6,
+    Env7,
+    Env8,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -106,7 +116,12 @@ pub enum StepParameter {
 
 pub fn valid(destination: Destination) -> bool {
     match destination {
-        Destination::Env { index, .. } | Destination::Lfo { index, .. } => index < 3,
+        Destination::Env { index, .. } | Destination::Lfo { index, .. } => {
+            (index as usize) < crate::preset::MODULATORS
+        }
+        Destination::Control { index } => crate::parameters::specs()
+            .get(index as usize)
+            .is_some_and(|s| s.can_sequence()),
         Destination::Step { index, .. } => index < 16,
         _ => true,
     }

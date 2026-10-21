@@ -358,6 +358,7 @@ pub fn catalog() -> serde_json::Value {
         "scales":metropolix_core::scale::FACTORY_SCALES.iter().map(|s|s.name).collect::<Vec<_>>(),
         "ranges":TRACK_RANGES.as_slice(),
         "parameters":crate::parameters::specs().iter().filter(|s|s.can_sequence()).collect::<Vec<_>>(),
+        "modulation":crate::parameters::specs().iter().enumerate().filter(|(_,s)|s.can_sequence()).map(|(index,s)|serde_json::json!({"index":index,"id":s.id,"name":s.name})).collect::<Vec<_>>(),
     })
 }
 

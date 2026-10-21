@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+pub const MODULATORS: usize = 8;
+
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum FilterType {
@@ -183,6 +185,10 @@ pub enum Destination {
         index: u8,
         parameter: crate::matrix::StepParameter,
     },
+    /// Stable index in the append-only numeric parameter catalog.
+    Control {
+        index: u16,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -254,24 +260,24 @@ impl Env {
         finite_clamp(&mut self.extra_depth, -1.0, 1.0, 0.0);
     }
 }
-fn default_envs() -> [Env; 3] {
-    [
-        Env::default(),
-        Env {
+fn default_envs() -> [Env; crate::preset::MODULATORS] {
+    std::array::from_fn(|i| match i {
+        1 => Env {
             attack: 0.12,
             decay: 0.35,
             sustain: 0.35,
             release: 0.3,
             ..Env::default()
         },
-        Env {
+        2 => Env {
             attack: 0.3,
             decay: 0.3,
             sustain: 0.5,
             release: 0.4,
             ..Env::default()
         },
-    ]
+        _ => Env::default(),
+    })
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
@@ -456,11 +462,16 @@ pub struct Preset {
     pub format: String,
     pub name: String,
     pub params: Params,
-    pub lfos: [Lfo; 3],
-    pub envs: [Env; 3],
+    pub lfos: [Lfo; crate::preset::MODULATORS],
+    pub envs: [Env; crate::preset::MODULATORS],
+    pub lfo_count: u8,
+    pub env_count: u8,
     pub performance: crate::performance::Settings,
     pub sequencer: crate::sequence::Program,
     pub resynth: crate::resynth::Settings,
+    pub drums: Option<Box<crate::drums::Settings>>,
+    #[serde(skip)]
+    pub drum_runtime: crate::drums::Prepared,
     pub pre_color_chain: Vec<crate::color::ColorSlot>,
     pub source_color_chain: Vec<crate::color::ColorSlot>,
     pub color_chain: Vec<crate::color::ColorSlot>,
@@ -478,9 +489,13 @@ impl Default for Preset {
             params: Params::default(),
             lfos: std::array::from_fn(|_| Lfo::default()),
             envs: default_envs(),
+            lfo_count: 3,
+            env_count: 3,
             performance: crate::performance::Settings::default(),
             sequencer: crate::sequence::Program::default(),
             resynth: crate::resynth::Settings::default(),
+            drums: None,
+            drum_runtime: Default::default(),
             pre_color_chain: Vec::new(),
             source_color_chain: Vec::new(),
             color_chain: vec![
@@ -501,11 +516,14 @@ impl<'de> Deserialize<'de> for Preset {
             format: String,
             name: String,
             params: Option<serde_json::Value>,
-            lfos: [Lfo; 3],
-            envs: Option<[Env; 3]>,
+            lfos: Vec<Lfo>,
+            envs: Option<Vec<Env>>,
+            lfo_count: u8,
+            env_count: u8,
             performance: crate::performance::Settings,
             sequencer: Option<crate::sequence::Program>,
             resynth: crate::resynth::Settings,
+            drums: Option<Box<crate::drums::Settings>>,
             pre_color_chain: Vec<crate::color::ColorSlot>,
             source_color_chain: Vec<crate::color::ColorSlot>,
             color_chain: Option<Vec<crate::color::ColorSlot>>,
@@ -519,11 +537,14 @@ impl<'de> Deserialize<'de> for Preset {
                     format: p.format,
                     name: p.name,
                     params: None,
-                    lfos: p.lfos,
+                    lfos: p.lfos.to_vec(),
                     envs: None,
+                    lfo_count: p.lfo_count,
+                    env_count: p.env_count,
                     performance: p.performance,
                     sequencer: None,
                     resynth: p.resynth,
+                    drums: None,
                     pre_color_chain: Vec::new(),
                     source_color_chain: Vec::new(),
                     color_chain: None,
@@ -541,14 +562,23 @@ impl<'de> Deserialize<'de> for Preset {
             None => Params::default(),
         };
         let had_envs = d.envs.is_some();
-        let mut envs = d.envs.unwrap_or_else(|| {
-            let mut envs = default_envs();
-            envs[0].attack = params.adsr_attack;
-            envs[0].decay = params.adsr_decay;
-            envs[0].sustain = params.adsr_sustain;
-            envs[0].release = params.adsr_release;
-            envs
-        });
+        let mut envs = d.envs.map_or_else(
+            || {
+                let mut envs = default_envs();
+                envs[0].attack = params.adsr_attack;
+                envs[0].decay = params.adsr_decay;
+                envs[0].sustain = params.adsr_sustain;
+                envs[0].release = params.adsr_release;
+                envs
+            },
+            |values| {
+                let mut envs = default_envs();
+                for (to, from) in envs.iter_mut().zip(values) {
+                    *to = from;
+                }
+                envs
+            },
+        );
         if legacy_filter {
             // Move the old default ENV 2 → filter route into its dedicated control.
             // Presets predating envelopes keep an unmodulated filter.
@@ -565,7 +595,10 @@ impl<'de> Deserialize<'de> for Preset {
                 params.saturation,
             )]
         });
-        let mut lfos = d.lfos;
+        let mut lfos = [Lfo::default(); MODULATORS];
+        for (to, from) in lfos.iter_mut().zip(d.lfos) {
+            *to = from;
+        }
         let mut matrix = d.matrix;
         if d.fx_chain_version == 0 && !color_chain.iter().any(|s| s.kind == SaturatorType::Reverb) {
             // v0.6 and earlier always process the shared reverb after the Color rack.
@@ -622,9 +655,13 @@ impl<'de> Deserialize<'de> for Preset {
             params,
             lfos,
             envs,
+            lfo_count: d.lfo_count,
+            env_count: d.env_count,
             performance,
             sequencer,
             resynth: d.resynth,
+            drums: d.drums,
+            drum_runtime: Default::default(),
             pre_color_chain: d.pre_color_chain,
             source_color_chain: d.source_color_chain,
             color_chain,
@@ -637,9 +674,13 @@ impl<'de> Deserialize<'de> for Preset {
 impl Preset {
     /// Prepare the audio owner's copy on the control thread.
     pub fn prepared_clone(&self) -> Self {
+        self.prepared_clone_for(48_000)
+    }
+    pub fn prepared_clone_for(&self, rate: u32) -> Self {
         let mut preset = self.clone();
         preset.sanitize();
         preset.prepare_imported_effects();
+        preset.drum_runtime.prepare(preset.drums.as_deref(), rate);
         preset
     }
     pub fn prepare_imported_effects(&mut self) {
@@ -653,7 +694,12 @@ impl Preset {
     pub fn sanitize(&mut self) {
         self.fx_chain_version = 1;
         self.params.sanitize();
+        self.lfo_count = self.lfo_count.clamp(1, MODULATORS as u8);
+        self.env_count = self.env_count.clamp(1, MODULATORS as u8);
         self.resynth.sanitize();
+        if let Some(drums) = &mut self.drums {
+            drums.sanitize();
+        }
         self.sequencer.sanitize();
         self.matrix.truncate(crate::matrix::MAX_ROUTES);
         self.color_chain.truncate(crate::color::MAX_COLOR_SLOTS);

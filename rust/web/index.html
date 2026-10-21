@@ -9,6 +9,7 @@
     <script src="./selection.js" defer></script>
     <script src="./presets.js" defer></script>
     <script src="./sequence.js" defer></script>
+    <script src="./panels.js" defer></script>
     <script src="./app.js" defer></script>
   </head>
   <body>
@@ -141,6 +142,13 @@
         </form>
       </div>
       <div id="notice" role="status" hidden></div>
+      <section id="timbres" aria-label="Timbres" hidden></section>
+      <section
+        id="drum-machine"
+        class="bank drum-bank"
+        aria-label="Drum machine"
+        hidden
+      ></section>
       <section class="sample-panel" aria-label="Sample and grains">
         <div class="input-source" id="browser-input" hidden>
           <div class="source-tabs" role="group" aria-label="Input source">
@@ -551,7 +559,15 @@
             /><span>BPM</span></label
           >
         </div>
+        <div class="mod-bank-tools">
+          <strong>LFO <span id="lfo-count">3 / 8</span></strong
+          ><button id="lfo-add">+ LFO</button>
+        </div>
         <div id="lfos" class="lfo-grid"></div>
+        <div class="mod-bank-tools">
+          <strong>ENV <span id="env-count">3 / 8</span></strong
+          ><button id="env-add">+ ENV</button>
+        </div>
         <div id="envs" class="env-grid"></div>
       </section>
       <section class="bank matrix-bank" aria-label="Modulation matrix">
@@ -624,7 +640,11 @@
           <button id="clear-hold">Clear hold</button>
         </div>
       </section>
-      <section class="bank neuro-bank" id="neuropolis" aria-label="Neuropolis sequencer"></section>
+      <section
+        class="bank neuro-bank"
+        id="neuropolis"
+        aria-label="Neuropolis sequencer"
+      ></section>
       <section class="keyboard-section" id="keyboard-section">
         <div class="keyboard-head">
           <div>

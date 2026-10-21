@@ -54,7 +54,7 @@ fn preset() -> Preset {
     p.params.reverb = 0.0;
     p.color_chain[1].mix = 0.0;
     p.params.grains = 0.75;
-    p.envs = [fast_env(); 3];
+    p.envs.fill(fast_env());
     p
 }
 
@@ -99,7 +99,7 @@ fn three_envelopes_have_independent_times_and_share_note_gates() {
     p.envs[2].attack = 1.0;
     let mut engine = Engine::new(8000, sample(), p);
     run(&mut engine, 32);
-    assert_eq!(engine.env_values, [0.0; 3]);
+    assert_eq!(engine.env_values, [0.0; sad_pet::preset::MODULATORS]);
     engine.midi(on(0, 60));
     run(&mut engine, 800);
     assert!((engine.env_values[0] - 1.0).abs() < 0.00001);
@@ -107,7 +107,7 @@ fn three_envelopes_have_independent_times_and_share_note_gates() {
     assert!(engine.env_values[2] > 0.012 && engine.env_values[2] < 0.013);
     engine.midi(off(0, 60));
     run(&mut engine, 100);
-    assert_eq!(engine.env_values, [0.0; 3]);
+    assert_eq!(engine.env_values, [0.0; sad_pet::preset::MODULATORS]);
 }
 
 #[test]
@@ -118,7 +118,7 @@ fn amp_envelope_stays_polyphonic_and_sustain_defers_all_three_releases() {
     run(&mut engine, 300);
     engine.midi(off(0, 60));
     run(&mut engine, 100);
-    assert_eq!(engine.env_values, [1.0; 3]);
+    assert_eq!(engine.env_values[..3], [1.0; 3]);
     engine.midi(Message::Control {
         channel: 1,
         controller: 64,
@@ -126,14 +126,14 @@ fn amp_envelope_stays_polyphonic_and_sustain_defers_all_three_releases() {
     });
     engine.midi(off(1, 64));
     run(&mut engine, 100);
-    assert_eq!(engine.env_values, [1.0; 3]);
+    assert_eq!(engine.env_values[..3], [1.0; 3]);
     engine.midi(Message::Control {
         channel: 1,
         controller: 64,
         value: 0,
     });
     run(&mut engine, 100);
-    assert_eq!(engine.env_values, [0.0; 3]);
+    assert_eq!(engine.env_values, [0.0; sad_pet::preset::MODULATORS]);
     engine.midi(on(0, 62));
     run(&mut engine, 100);
     engine.midi(Message::Control {
@@ -142,7 +142,7 @@ fn amp_envelope_stays_polyphonic_and_sustain_defers_all_three_releases() {
         value: 0,
     });
     run(&mut engine, 1);
-    assert_eq!(engine.env_values, [0.0; 3]);
+    assert_eq!(engine.env_values, [0.0; sad_pet::preset::MODULATORS]);
 }
 
 #[test]
@@ -292,6 +292,6 @@ fn envelopes_retrigger_in_hold_arp_and_sequence_and_render_is_block_independent(
         assert!(actual.iter().flatten().any(|x| x.abs() > 0.01));
         a.set_playing(false);
         run(&mut a, 100);
-        assert_eq!(a.env_values, [0.0; 3]);
+        assert_eq!(a.env_values, [0.0; sad_pet::preset::MODULATORS]);
     }
 }

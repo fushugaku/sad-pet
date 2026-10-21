@@ -147,7 +147,12 @@ fn handle(
                     include_bytes!("../web/sequence.js").to_vec(),
                     "application/javascript",
                 )),
+                "/panels.js" => Ok((
+                    include_bytes!("../web/panels.js").to_vec(),
+                    "application/javascript",
+                )),
                 "/api/sequencer/catalog" => json(&crate::sequence::catalog()),
+                "/api/drums/catalog" => json(&crate::drums::catalog()),
                 "/favicon.ico" => Ok((Vec::new(), "image/x-icon")),
                 "/api/state" => json(&*state.lock().map_err(|e| e.to_string())?),
                 "/api/preset" => json(&state.lock().map_err(|e| e.to_string())?.preset),

@@ -287,3 +287,48 @@ fn source_pcm_and_mips_upload_without_allocating_or_restarting_the_audio() {
         assert!(!h.engine.source_effects_pending());
     });
 }
+
+#[test]
+fn drum_step_edits_and_granular_routing_publish_sparse_views_without_heap_work() {
+    let mut host = Host::new(8000);
+    let preset = Preset {
+        drums: Some(Box::default()),
+        ..Preset::default()
+    };
+    host.command(json!({"path":"/api/preset","data":preset}))
+        .unwrap();
+    host.engine.set_playing(true);
+    let first = host.publish_snapshot();
+    assert!(first > 0);
+    host.ack_snapshot(host.snapshot_sequence, 1);
+    let revision = host.config_revision;
+    host.command(json!({"path":"/api/drums/edit","data":[{"track":0,"step":127,"field":0,"value":0.8},{"track":0,"step":null,"field":0,"value":128}]})).unwrap();
+    host.command(json!({"path":"/api/parameters","data":{"drum_granular":1,"drum1_0":72}}))
+        .unwrap();
+    assert_eq!(
+        host.config_revision, revision,
+        "A drum gesture resent the whole patch"
+    );
+    let mut size = 0;
+    no_heap(|| {
+        for _ in 0..2048 {
+            host.engine.process_frame();
+        }
+        size = host.publish_snapshot();
+    });
+    assert!(
+        size > 0 && size < 40000,
+        "Expected only sparse drum edits and fixed telemetry"
+    );
+    let mut worker = Host::new(8000);
+    worker.engine.preset = host.engine.preset.clone();
+    worker
+        .input
+        .extend_from_slice(&host.snapshot_buffer[..size]);
+    let view = worker.import_snapshot().unwrap();
+    assert_eq!(
+        view["state"]["preset"]["drums"]["tracks"][0]["steps"][127]["velocity"],
+        json!(0.8_f32)
+    );
+    assert_eq!(view["state"]["preset"]["drums"]["granular"], true);
+}

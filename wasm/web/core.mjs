@@ -1,6 +1,9 @@
 // This bridge also runs in AudioWorkletGlobalScope, where TextEncoder and
 // TextDecoder are not available in every browser.
+const encoder = typeof TextEncoder === "function" ? new TextEncoder() : null;
+const decoder = typeof TextDecoder === "function" ? new TextDecoder() : null;
 function encode(text) {
+  if (encoder) return encoder.encode(text);
   const bytes = [];
   for (const char of text) {
     const c = char.codePointAt(0);
@@ -19,6 +22,7 @@ function encode(text) {
   return new Uint8Array(bytes);
 }
 function decode(bytes) {
+  if (decoder) return decoder.decode(bytes);
   let text = "";
   for (let i = 0; i < bytes.length;) {
     const a = bytes[i++];

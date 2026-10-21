@@ -100,13 +100,13 @@ fn realtime_dry_and_bypass_loop_through_fades_and_new_files_reset_them() {
         p.params.min_grains = 0.0;
         p.params.master_volume = 0.5;
         p.color_chain.clear();
-        p.envs = [Env {
+        p.envs.fill(Env {
             attack: 0.0,
             decay: 0.0,
             sustain: 1.0,
             release: 0.0,
             ..Env::default()
-        }; 3];
+        });
         let mut e = Engine::new(8000, sample.clone(), p);
         e.set_region(Region {
             start: 0.25,

@@ -1,26 +1,31 @@
 SAD PET instrument and SAD PET FX, with native Rust DSP and an embedded editor.
 
-**Pulses and Ratchet rotary controls.** Each step now has dedicated integer
-knobs from 1 to 8. Drag to turn; focus a knob and use the mouse wheel or arrow
-keys to change one value at a time. Double-click resets to 1. Edits retain
-running clocks and other step values.
+**Multiple timbres, DXM-088 drums and eight modulators per bank.** Add Granular
+or Drum machine timbres as top tabs; they mix simultaneously and retain their own
+source, Resynth, filter/FX chains, LFO/ENV banks and Neuropolis program. Each has
+level, mute, solo and MIDI-channel controls. Named presets and DAW projects save
+the whole scene and all source files; old single-timbre presets remain compatible.
 
-**Neuropolis step controls and oscillator pitch routing.** Each step now shows
-Pitch/value, a Gate length knob, gate type, Pulses, Ratchet, Slide, Chance and
-Velocity together. Double-click Gate to inherit the track's Gate setting.
-Advanced overrides and accumulation remain available in their own disclosure.
+The drum timbre uses the native Rust DXM-088 / LXR-02 DSP: seven tracks, all 56
+voice controls, two filters, independent clocks and up to 128 steps per track.
+Velocity, chance, pitch, ratchet, microtiming, conditions and parameter locks are
+editable. **Granular** optionally routes its live mix through Grain Engine; its
+own Neuropolis mod sequencer can address drum and processing parameters.
 
-Pitch handlers resolve the current track by stable ID after telemetry updates.
-Editing another step no longer restores an earlier slider's old value. Numeric
-edits remain sparse and preserve running clocks, notes and audio histories.
+Add up to **8 LFOs and 8 ENV** per timbre. Destinations include OSC 1–4 controls,
+tuning, level/pan, Ring/Sync and the drum voices. Numeric edits, drum steps and
+routing toggles use sparse updates without rebuilding running modulation or DSP.
+The drum adapter is checked against the original engine's stereo samples.
 
-**Main pitch → OSC 1–4** checkboxes select which Resynth layers follow the main
-sample-pitch sequence. Each oscillator's own track adds a −24…+24 semitone offset
-at an independent speed, length and play order. Contributions are summed before
-clamping; tuning, routing, step gates and assignments save in presets and DAW
-projects. All processing uses the same native Rust / WASM implementation.
+**Main pitch → OSC 1–4** checkboxes are directly below the track destination.
+Oscillator lanes add −24…+24 semitone offsets to main pitch. Every step keeps
+Gate, Pulses, Ratchet, Slide, Chance and Velocity visible together. Pulses and
+Ratchet use integer 1–8 knobs; drag, focus and scroll, or use arrow keys.
+Double-click resets them to 1; Gate resets to the track's inherited length.
 
-SuperEcho, AlphaVerb and Delay Smooth from 0.9.0 remain included.
+All sound processing is native Rust in the plug-ins. The web version compiles
+the same engine to WASM. SuperEcho, AlphaVerb, Delay Smooth, Rustias filters and
+four-oscillator Resynth remain included.
 
 | System | Installer | Plug-in formats |
 | --- | --- | --- |
@@ -52,13 +57,12 @@ are supplied individually and in `SHA256SUMS.txt`.
 ---
 
 В обоих установщиках есть инструмент **SAD PET** и эффект **SAD PET FX**.
-Pulses и Ratchet теперь управляются ручками от 1 до 8: перетаскиванием,
-колесом мыши после фокуса или стрелками. Двойной щелчок сбрасывает в 1.
-В секвенсоре Pitch, ручка Gate, Pulses, Ratchet, Slide, Chance и Velocity видны
-одновременно. Исправлен откат ранее изменённых ползунков после обновления
-состояния. У Main Pitch добавлен выбор OSC 1–4; отдельные дорожки осцилляторов
-задают смещение −24…+24 полутона с независимой скоростью. Настройки сохраняются
-в пресетах и проектах DAW. SuperEcho, AlphaVerb и Smooth также входят в выпуск.
-macOS: AU и VST3 для Apple silicon и Intel. Windows: VST3 x64.
-Закройте DAW перед установкой, затем обновите список плагинов.
+Добавлены вкладки независимых тембров, драм-машина DXM-088 с дорожками до 128
+шагов, отдельным mod sequencer и переключателем Granular. В каждом тембре можно
+добавить до 8 LFO и 8 ENV; доступны параметры осцилляторов и барабанных голосов.
+Пресеты и проекты DAW сохраняют всю сцену. Галочки OSC 1–4 находятся сразу под
+выбором Main Pitch; дорожки осцилляторов задают относительные −24…+24 полутона.
+Pulses и Ratchet управляются ручками от 1 до 8. Параметры передаются отдельно,
+без пересборки работающего DSP. macOS: AU и VST3 для Apple silicon и Intel.
+Windows: VST3 x64. Закройте DAW перед установкой и затем обновите список плагинов.
 Пользовательские пресеты сохраняются при обновлении и удалении.

@@ -2,6 +2,7 @@
 //! Controller prepares files/presets and reclaims retired allocations off-thread.
 mod parameters;
 mod preset_library;
+mod timbres;
 use sad_pet::dsp::source_fx_worker as source_fx;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
@@ -54,6 +55,11 @@ enum Command {
     Parameters(Box<[parameters::Change]>),
     Sequence(Box<[sad_pet::sequence::Edit]>),
     SequenceView(usize),
+    Drums(Box<[sad_pet::drums::Edit]>),
+    DrumTrigger(usize, f32),
+    AddPart(Option<Box<timbres::PartAudio>>),
+    RemovePart(u32, Option<Box<timbres::PartAudio>>),
+    PartMix(u32, sad_pet::timbres::Mix),
     Source(Box<PreparedSource>),
     Restore(Box<Restore>),
     Transport(Transport),
@@ -68,6 +74,8 @@ enum Command {
 }
 
 struct Restore {
+    mix: sad_pet::timbres::Mix,
+    parts: Option<Box<timbres::PartAudio>>,
     preset: Preset,
     source: PreparedSource,
     sync: bool,
@@ -89,6 +97,11 @@ struct Feedback {
 }
 
 pub struct Controller {
+    meta: sad_pet::timbres::Meta,
+    parts: Vec<Controller>,
+    active: u32,
+    scene_revision: u64,
+    next_timbre_id: u32,
     commands: Producer<Update>,
     retired: Consumer<Update>,
     feedback: Consumer<Feedback>,
@@ -113,7 +126,11 @@ pub struct Controller {
 }
 
 pub struct Audio {
-    engine: Engine,
+    meta: sad_pet::timbres::Meta,
+    parts: Option<Box<timbres::PartAudio>>,
+    audible: bool,
+    smooth_part_gain: f32,
+    engine: Box<Engine>,
     commands: Consumer<Update>,
     retired: Producer<Update>,
     feedback: Producer<Feedback>,
@@ -131,6 +148,12 @@ pub struct Audio {
 
 #[derive(Serialize, Deserialize)]
 struct SavedState {
+    #[serde(default)]
+    meta: sad_pet::timbres::Meta,
+    #[serde(default)]
+    timbres: Vec<SavedState>,
+    #[serde(default)]
+    active_timbre: u32,
     version: u32,
     preset: Preset,
     sample_name: String,
@@ -156,6 +179,11 @@ impl Controller {
         let mut preset = Preset::default();
         preset.sanitize();
         Self {
+            meta: sad_pet::timbres::Meta::default(),
+            parts: Vec::new(),
+            active: 0,
+            scene_revision: 0,
+            next_timbre_id: 1,
             commands,
             retired,
             feedback,
@@ -254,9 +282,20 @@ impl Controller {
                 None
             },
             sample,
-            live: (source != Source::File).then(|| {
-                let mut input = LiveInput::new(self.rate, source == Source::Effects);
-                input.sample.name = "DAW input".into();
+            live: (source != Source::File || preset.drums.is_some()).then(|| {
+                let mut input = LiveInput::new(
+                    self.rate,
+                    preset
+                        .drums
+                        .as_ref()
+                        .map_or(source == Source::Effects, |d| !d.granular),
+                );
+                input.sample.name = if preset.drums.is_some() {
+                    "Drum machine"
+                } else {
+                    "DAW input"
+                }
+                .into();
                 input
             }),
             region,
@@ -273,7 +312,11 @@ impl Controller {
         self.commands = commands;
         self.retired = retired;
         self.feedback = feedback;
-        let mut engine = Engine::new(self.rate, self.sample.clone(), self.preset.clone());
+        let mut engine = Box::new(Engine::new(
+            self.rate,
+            self.sample.clone(),
+            self.preset.clone(),
+        ));
         engine.set_midi_gate(self.midi_gate);
         let mut source =
             self.prepared_source(self.sample.clone(), self.source, self.region, self.fades);
@@ -291,6 +334,14 @@ impl Controller {
         engine.bypass = self.bypass;
         let source_renderer = source_fx::Renderer::new(&engine);
         Audio {
+            meta: self.meta.clone(),
+            parts: self.prepare_parts(self.rate),
+            audible: !self.meta.mix.muted,
+            smooth_part_gain: if self.meta.mix.muted {
+                0.
+            } else {
+                self.meta.mix.gain
+            },
             engine,
             commands: receiver,
             retired: retire,
@@ -333,36 +384,7 @@ impl Controller {
         }
         let view = &self.view;
         let live = self.source != Source::File;
-        let mut knobs = serde_json::Map::new();
-        let base = serde_json::to_value(self.preset.params).unwrap_or_default();
-        let current = serde_json::to_value(view.params).unwrap_or_default();
-        if let (Some(base), Some(current)) = (base.as_object(), current.as_object()) {
-            for (key, value) in base.iter().filter(|(_, v)| v.is_number()) {
-                let now = current.get(key).unwrap_or(value);
-                knobs.insert(key.clone(), json!({"base": value, "current": now, "min": value, "max": now, "modulated": value != now}));
-            }
-        }
-        for slot in self
-            .preset
-            .color_chain
-            .iter()
-            .chain(&self.preset.pre_color_chain)
-            .chain(&self.preset.source_color_chain)
-        {
-            for &parameter in slot.control_parameters() {
-                let mut copy = *slot;
-                let base = *copy.parameter_mut(parameter);
-                let current = view.color[..view.color_len]
-                    .iter()
-                    .chain(view.pre_color[..view.pre_color_len].iter())
-                    .find(|s| s.id == slot.id)
-                    .map_or(base, |s| {
-                        let mut copy = *s;
-                        *copy.parameter_mut(parameter)
-                    });
-                knobs.insert(format!("color:{}:{}", slot.id, parameter.key()), json!({"base":base,"current":current,"min":base.min(current),"max":base.max(current),"modulated":(base-current).abs()>0.00001}));
-            }
-        }
+        let knobs = sad_pet::dsp::telemetry::knob_states_from_view(&self.preset, view);
         let mut reduction: std::collections::BTreeMap<_, _> = view
             .gain_reduction
             .iter()
@@ -400,6 +422,10 @@ impl Controller {
         state["resynth"] =
             json!({"bands":view.resynth_bands,"frequencies":view.resynth_frequencies});
         state["sequencer"] = json!(view.sequencer);
+        state["drums"] = json!(view.drums);
+        if self.preset.drums.is_some() {
+            state["playing"] = json!(view.drums.playing);
+        }
         state
     }
 
@@ -407,6 +433,13 @@ impl Controller {
         self.drain();
         let sample_wav = BASE64.encode(wav::bytes(self.sample.sample_rate, self.sample.frames())?);
         Ok(SavedState {
+            meta: self.meta.clone(),
+            timbres: self
+                .parts
+                .iter_mut()
+                .map(Controller::snapshot)
+                .collect::<Result<Vec<_>, _>>()?,
+            active_timbre: self.active,
             version: 1,
             preset: self.preset.clone(),
             sample_name: self.sample.name.clone(),
@@ -441,6 +474,15 @@ impl Controller {
         if saved.source != Source::File && !self.effect {
             return Err("Use SAD PET FX for audio input".into());
         }
+        if saved.meta.id != self.meta.id {
+            return Err("Invalid timbre identity".into());
+        }
+        saved.meta.sanitize();
+        saved.meta.kind = if saved.preset.drums.is_some() {
+            sad_pet::timbres::Kind::Drums
+        } else {
+            sad_pet::timbres::Kind::Granular
+        };
         saved.preset.sanitize();
         let decoded = BASE64
             .decode(&saved.sample_wav)
@@ -460,8 +502,11 @@ impl Controller {
             saved.fades,
             &saved.preset,
         );
+        let (parts, part_audio) = self.restore_parts(std::mem::take(&mut saved.timbres))?;
         self.enqueue(Command::Restore(Box::new(Restore {
-            preset: saved.preset.prepared_clone(),
+            parts: part_audio,
+            mix: saved.meta.mix,
+            preset: saved.preset.prepared_clone_for(self.rate),
             source,
             sync: saved.sync,
             frozen: saved.frozen,
@@ -469,6 +514,22 @@ impl Controller {
             midi_gate: saved.midi_gate,
             playing: saved.playing,
         })))?;
+        self.next_timbre_id = self.next_timbre_id.max(
+            parts
+                .iter()
+                .map(|p| p.meta.id)
+                .max()
+                .unwrap_or(0)
+                .saturating_add(1),
+        );
+        self.parts = parts;
+        self.meta = saved.meta;
+        self.active = if self.parts.iter().any(|c| c.meta.id == saved.active_timbre) {
+            saved.active_timbre
+        } else {
+            0
+        };
+        self.scene_revision = self.scene_revision.wrapping_add(1);
         self.preset = saved.preset;
         self.sample = sample;
         self.source = saved.source;
@@ -484,6 +545,12 @@ impl Controller {
     }
 
     fn request(&mut self, request: &Value) -> Result<Value, String> {
+        if self.meta.id == 0 {
+            return self.scene_request(request);
+        }
+        self.request_part(request)
+    }
+    fn request_part(&mut self, request: &Value) -> Result<Value, String> {
         self.drain();
         let url = request["path"].as_str().ok_or("Missing request path")?;
         let path = url.split('?').next().unwrap_or(url);
@@ -516,7 +583,9 @@ impl Controller {
                 let mut preset: Preset =
                     serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
                 preset.sanitize();
-                self.enqueue(Command::Preset(Box::new(preset.prepared_clone())))?;
+                self.enqueue(Command::Preset(Box::new(
+                    preset.prepared_clone_for(self.rate),
+                )))?;
                 self.preset = preset;
                 Ok(json!(self.preset))
             }
@@ -527,7 +596,7 @@ impl Controller {
                 let extra: Box<[_]> = changes
                     .iter()
                     .copied()
-                    .filter(|change| change.host_index().is_none())
+                    .filter(|change| self.meta.id != 0 || change.host_index().is_none())
                     .collect();
                 if !extra.is_empty() {
                     self.enqueue(Command::Parameters(extra))?;
@@ -538,6 +607,24 @@ impl Controller {
                 Ok(ok())
             }
             ("/api/sequencer/catalog", false) => Ok(sad_pet::sequence::catalog()),
+            ("/api/drums/catalog", false) => Ok(sad_pet::drums::catalog()),
+            ("/api/drums/edit", true) => {
+                let edits = sad_pet::drums::parse_edits(data)?;
+                if self.preset.drums.is_none() {
+                    return Err("Choose a drum timbre".into());
+                }
+                self.enqueue(Command::Drums(edits.clone().into_boxed_slice()))?;
+                self.preset.drums.as_mut().unwrap().edit(&edits);
+                self.selection.dirty = true;
+                Ok(ok())
+            }
+            ("/api/drums/trigger", true) => {
+                self.enqueue(Command::DrumTrigger(
+                    data["track"].as_u64().unwrap_or(0).min(6) as usize,
+                    data["velocity"].as_f64().unwrap_or(1.) as f32,
+                ))?;
+                Ok(ok())
+            }
             ("/api/sequencer/edit", true) => {
                 let edits = sad_pet::sequence::parse_edits(data)?;
                 self.enqueue(Command::Sequence(edits.clone().into_boxed_slice()))?;
@@ -729,6 +816,20 @@ impl Audio {
                 break;
             };
             match &mut update.command {
+                Command::Drums(edits) => self.engine.apply_drum_edits(edits),
+                Command::DrumTrigger(track, velocity) => {
+                    self.engine.trigger_drum(*track, *velocity)
+                }
+                Command::AddPart(part) => {
+                    if let Some(mut part) = part.take() {
+                        part.next = self.parts.take();
+                        self.parts = Some(part);
+                    }
+                }
+                Command::RemovePart(id, retired) => {
+                    timbres::remove_part(&mut self.parts, *id, retired)
+                }
+                Command::PartMix(id, mix) => self.set_part_mix(*id, *mix),
                 Command::Preset(preset) => {
                     self.engine.exchange_preset(preset);
                     preset_changed = true;
@@ -740,6 +841,8 @@ impl Audio {
                 Command::SequenceView(offset) => self.engine.set_sequence_view(*offset),
                 Command::Source(source) => self.source(source),
                 Command::Restore(state) => {
+                    std::mem::swap(&mut self.parts, &mut state.parts);
+                    self.meta.mix = state.mix;
                     self.engine.midi(Message::Reset);
                     self.engine.exchange_preset(&mut state.preset);
                     self.source(&mut state.source);
@@ -822,6 +925,7 @@ impl Audio {
                     .is_some_and(|(now, expected)| (now - expected).abs() > 0.02);
             let started = playing && !self.host_playing;
             let sequence_started = self.engine.preset.sequencer.enabled && !sequence_was_enabled;
+            let drums = self.engine.preset.drums.is_some();
             let performance = self.engine.preset.performance.mode != Mode::Keys;
             if performance
                 && (playing != self.host_playing
@@ -832,13 +936,13 @@ impl Audio {
                 self.engine.set_playing(playing);
             }
             self.engine.set_sequence_transport(playing);
-            if self.engine.preset.sequencer.enabled && playing && !self.engine.playing {
+            if (self.engine.preset.sequencer.enabled || drums) && playing && !self.engine.playing {
                 self.engine.set_playing(true);
             }
             self.engine.host_transport(
                 bpm,
                 beat,
-                (performance || self.engine.preset.sequencer.enabled)
+                (performance || drums || self.engine.preset.sequencer.enabled)
                     && (started || jumped || preset_changed || sequence_started),
             );
         } else {
@@ -857,8 +961,26 @@ impl Audio {
             }
         });
         self.source_renderer.update(&mut self.engine);
+        let mut part = self.parts.as_mut();
+        let mut solo = self.meta.mix.solo;
+        while let Some(p) = part {
+            p.audio.begin(&[], bpm, beat, playing, frames);
+            solo |= p.audio.meta.mix.solo;
+            part = p.next.as_mut();
+        }
+        self.audible = !self.meta.mix.muted && (!solo || self.meta.mix.solo);
+        let mut part = self.parts.as_mut();
+        while let Some(p) = part {
+            p.audio.audible = !p.audio.meta.mix.muted && (!solo || p.audio.meta.mix.solo);
+            part = p.next.as_mut();
+        }
     }
     fn end(&mut self, frames: usize) {
+        let mut part = self.parts.as_mut();
+        while let Some(p) = part {
+            p.audio.end(frames);
+            part = p.next.as_mut();
+        }
         self.frames_since_feedback += frames;
         if self.frames_since_feedback >= self.engine.sample_rate as usize / 30
             && self.feedback.slots() > 0
@@ -1044,7 +1166,7 @@ pub unsafe extern "C" fn sad_audio_time_signature(
     denominator: u32,
 ) {
     if let Some(audio) = unsafe { audio.as_mut() } {
-        audio.engine.set_time_signature(numerator, denominator);
+        audio.time_signature(numerator, denominator);
     }
 }
 /// # Safety
@@ -1057,7 +1179,7 @@ pub unsafe extern "C" fn sad_audio_midi(audio: *mut Audio, data: *const u8, len:
     let audio = unsafe { &mut *audio };
     for &byte in unsafe { std::slice::from_raw_parts(data, len) } {
         if let Some(message) = audio.parser.feed(byte) {
-            audio.engine.midi(message);
+            audio.midi(message);
         }
     }
 }
@@ -1090,7 +1212,7 @@ pub unsafe extern "C" fn sad_audio_process(
                 unsafe { *right.add(i) }
             },
         ];
-        let frame = audio.engine.process_input_frame(input);
+        let frame = audio.process_frame(input);
         unsafe {
             *out_left.add(i) = frame[0];
             *out_right.add(i) = frame[1];

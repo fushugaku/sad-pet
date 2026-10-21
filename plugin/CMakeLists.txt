@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(SadPetPlugins VERSION 0.10.1 LANGUAGES C CXX)
+project(SadPetPlugins VERSION 0.11.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -65,6 +65,7 @@ juce_add_binary_data(SadPetResources SOURCES
     "${SAD_PET_ROOT}/rust/web/style.css" "${SAD_PET_ROOT}/rust/web/app.js"
     "${SAD_PET_ROOT}/rust/web/library.js" "${SAD_PET_ROOT}/rust/web/selection.js"
     "${SAD_PET_ROOT}/rust/web/presets.js" "${SAD_PET_ROOT}/rust/web/sequence.js"
+    "${SAD_PET_ROOT}/rust/web/panels.js"
     web/plugin-backend.js web/plugin.css
     "${JUCE_MODULES_DIR}/juce_gui_extra/native/javascript/index.js"
     "${JUCE_MODULES_DIR}/juce_gui_extra/native/javascript/check_native_interop.js")

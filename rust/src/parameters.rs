@@ -111,6 +111,8 @@ enum Target {
     SourceFx(ColorParameter),
     Performance(usize),
     ResynthOsc(usize, usize),
+    Drum(usize, usize),
+    DrumGrain,
 }
 
 #[derive(Serialize)]
@@ -126,12 +128,15 @@ pub struct Spec {
 
 impl Spec {
     pub(crate) fn can_sequence(&self) -> bool {
-        self.id != "bpm" && !matches!(self.target, Target::SourceFx(_) | Target::Performance(3..))
+        !matches!(self.target, Target::DrumGrain)
+            && self.id != "bpm"
+            && !matches!(self.target, Target::SourceFx(_) | Target::Performance(3..))
     }
     pub(crate) fn frame_get(&self, m: &crate::dsp::Modulated) -> Option<f32> {
         Some(match self.target {
             Target::Core { frame_get, .. } => frame_get(m),
-            Target::SourceFx(_) => return None,
+            Target::Drum(i, field) => m.drums.0[i][field],
+            Target::SourceFx(_) | Target::DrumGrain => return None,
             Target::ResynthOsc(i, field) => oscillator_get(m.resynth.oscillators[i], field),
             Target::Lfo(i, field) => match field {
                 0 => m.lfos[i].rate_hz,
@@ -174,7 +179,11 @@ impl Spec {
         let value = value.clamp(self.min, self.max);
         match self.target {
             Target::Core { frame_set, .. } => frame_set(m, value),
-            Target::SourceFx(_) => {}
+            Target::Drum(i, field) => {
+                m.drums.0[i][field] =
+                    sad_pet_dxm088::params::constrain(field, value).unwrap_or(self.default);
+            }
+            Target::SourceFx(_) | Target::DrumGrain => {}
             Target::ResynthOsc(i, field) => {
                 oscillator_set(&mut m.resynth.oscillators[i], field, value)
             }
@@ -220,6 +229,11 @@ impl Spec {
     }
     pub fn get(&self, preset: &Preset) -> f32 {
         match self.target {
+            Target::DrumGrain => f32::from(preset.drums.as_ref().is_some_and(|d| d.granular)),
+            Target::Drum(i, field) => preset
+                .drums
+                .as_ref()
+                .map_or(self.default, |d| d.params.0[i][field]),
             Target::SourceFx(field) => *preset
                 .source_color_chain
                 .first()
@@ -295,6 +309,17 @@ impl Spec {
             self.default
         };
         match self.target {
+            Target::DrumGrain => {
+                if let Some(d) = &mut preset.drums {
+                    d.granular = value >= 0.5;
+                }
+            }
+            Target::Drum(i, field) => {
+                if let Some(d) = &mut preset.drums {
+                    d.params.0[i][field] =
+                        sad_pet_dxm088::params::constrain(field, value).unwrap_or(self.default);
+                }
+            }
             Target::ResynthOsc(i, field) => {
                 let o = &mut preset.resynth.oscillators[i];
                 match field {
@@ -418,6 +443,50 @@ fn oscillator_set(o: &mut crate::resynth::Oscillator, field: usize, value: f32) 
     }
 }
 
+fn append_modulators(result: &mut Vec<Spec>, preset: &Preset, i: usize) {
+    for (field, (id, name, min, max)) in [
+        ("rate", "rate", 0.01, 40.0),
+        ("depth", "depth", -1.0, 1.0),
+        ("division", "division", 0.0625, 32.0),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut spec = Spec {
+            id: format!("lfo{}_{}", i + 1, id),
+            name: format!("LFO {} {name}", i + 1),
+            min,
+            max,
+            default: 0.0,
+            target: Target::Lfo(i, field),
+        };
+        spec.default = spec.get(preset);
+        result.push(spec);
+    }
+    for (field, id) in [
+        "attack",
+        "decay",
+        "sustain",
+        "release",
+        "depth",
+        "extra_depth",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut spec = Spec {
+            id: format!("env{}_{}", i + 1, id),
+            name: format!("ENV {} {}", i + 1, id.replace('_', " ")),
+            min: if field >= 4 { -1.0 } else { 0.0 },
+            max: 1.0,
+            default: 0.0,
+            target: Target::Env(i, field),
+        };
+        spec.default = spec.get(preset);
+        result.push(spec);
+    }
+}
+
 pub fn specs() -> &'static [Spec] {
     static SPECS: OnceLock<Vec<Spec>> = OnceLock::new();
     SPECS.get_or_init(|| {
@@ -467,47 +536,7 @@ pub fn specs() -> &'static [Spec] {
         core!(min_grains, "Minimum grains", 0.0, 1.0);
         core!(bpm, "Tempo", 20.0, 300.0);
         for i in 0..3 {
-            for (field, (id, name, min, max)) in [
-                ("rate", "rate", 0.01, 40.0),
-                ("depth", "depth", -1.0, 1.0),
-                ("division", "division", 0.0625, 32.0),
-            ]
-            .into_iter()
-            .enumerate()
-            {
-                let mut spec = Spec {
-                    id: format!("lfo{}_{}", i + 1, id),
-                    name: format!("LFO {} {name}", i + 1),
-                    min,
-                    max,
-                    default: 0.0,
-                    target: Target::Lfo(i, field),
-                };
-                spec.default = spec.get(&preset);
-                result.push(spec);
-            }
-            for (field, id) in [
-                "attack",
-                "decay",
-                "sustain",
-                "release",
-                "depth",
-                "extra_depth",
-            ]
-            .into_iter()
-            .enumerate()
-            {
-                let mut spec = Spec {
-                    id: format!("env{}_{}", i + 1, id),
-                    name: format!("ENV {} {}", i + 1, id.replace('_', " ")),
-                    min: if field >= 4 { -1.0 } else { 0.0 },
-                    max: 1.0,
-                    default: 0.0,
-                    target: Target::Env(i, field),
-                };
-                spec.default = spec.get(&preset);
-                result.push(spec);
-            }
+            append_modulators(&mut result, &preset, i);
         }
         for (field, (id, name, min, max)) in [
             ("arp_rate", "Arp rate", 0.0625, 8.0),
@@ -813,6 +842,34 @@ pub fn specs() -> &'static [Spec] {
                 }
             }
         }
+        for i in 3..crate::preset::MODULATORS {
+            append_modulators(&mut result, &preset, i);
+        }
+        let drums = sad_pet_dxm088::params::kit(0);
+        for (i, row) in drums.iter().enumerate() {
+            for (field, default) in row.iter().enumerate() {
+                result.push(Spec {
+                    id: format!("drum{}_{}", i + 1, field),
+                    name: format!(
+                        "{} · {}",
+                        crate::drums::NAMES[i],
+                        crate::drums::PARAM_NAMES[field]
+                    ),
+                    min: sad_pet_dxm088::params::MIN[field],
+                    max: sad_pet_dxm088::params::MAX[field],
+                    default: *default,
+                    target: Target::Drum(i, field),
+                });
+            }
+        }
+        result.push(Spec {
+            id: "drum_granular".into(),
+            name: "Drum granular processing".into(),
+            min: 0.,
+            max: 1.,
+            default: 0.,
+            target: Target::DrumGrain,
+        });
         result
     })
 }

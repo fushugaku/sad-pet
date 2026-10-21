@@ -52,7 +52,7 @@ fn call(control: &mut Controller, path: &str, data: Value) -> Value {
 fn render(audio: &mut Audio, frames: usize, input: Stereo) -> f32 {
     let mut peak = 0.0_f32;
     for _ in 0..frames {
-        let sample = audio.engine.process_input_frame(input);
+        let sample = audio.process_frame(input);
         assert!(sample.iter().all(|x| x.is_finite()));
         peak = peak.max(sample[0].abs());
     }
@@ -860,4 +860,177 @@ fn queue_backpressure_never_frees_or_blocks_on_the_audio_thread() {
     });
     control.drain();
     no_heap(|| audio.begin(&values, 120.0, None, false, 128));
+}
+
+#[test]
+fn drum_timbres_mix_independently_save_all_parts_and_edit_without_audio_allocations() {
+    let mut control = Controller::new(false);
+    let context = call(&mut control, "/api/timbres/add", json!({"kind":"drums"}));
+    assert_eq!(context["active"], 1);
+    call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":0,"muted":true}),
+    );
+    call(
+        &mut control,
+        "/api/drums/edit",
+        json!([
+            {"track":0,"step":0,"field":0,"value":0.9},
+            {"track":0,"step":127,"field":0,"value":0.8},
+            {"track":0,"step":null,"field":0,"value":128}
+        ]),
+    );
+    call(
+        &mut control,
+        "/api/parameters",
+        json!({"drum1_0":63.0,"drum1_12":6200.0}),
+    );
+    let mut audio = control.prepare(48000);
+    let values = control.values();
+    no_heap(|| {
+        audio.begin(&values, 120., Some(0.), true, 8192);
+        assert!(render(&mut audio, 8192, [0.; 2]) > 0.001);
+    });
+    let state = call(&mut control, "/api/state", Value::Null);
+    assert_eq!(state["timbres"]["timbres"].as_array().unwrap().len(), 2);
+    assert_eq!(state["preset"]["drums"]["tracks"][0]["length"], 128);
+    assert_eq!(state["preset"]["drums"]["params"][0][0], 63.0);
+    call(
+        &mut control,
+        "/api/drums/edit",
+        json!([{ "track":0,"step":2,"field":3,"value":4 }]),
+    );
+    call(&mut control, "/api/parameters", json!({"drum1_0":81.0}));
+    no_heap(|| {
+        audio.begin(&values, 120., Some(8192. / 24000.), true, 4096);
+        render(&mut audio, 4096, [0.; 2]);
+    });
+    let saved = control.save().unwrap();
+    let mut restored = Controller::new(false);
+    restored.restore(&saved).unwrap();
+    let state = call(&mut restored, "/api/state", Value::Null);
+    assert_eq!(state["timbres"]["active"], 1);
+    assert_eq!(
+        state["preset"]["drums"]["tracks"][0]["steps"][127]["velocity"],
+        json!(0.8_f32)
+    );
+    assert_eq!(
+        state["preset"]["drums"]["tracks"][0]["steps"][2]["ratchet"],
+        4
+    );
+    assert_eq!(state["preset"]["drums"]["params"][0][0], 81.0);
+    call(&mut restored, "/api/timbres/select", json!({"id":0}));
+    assert!(call(&mut restored, "/api/state", Value::Null)["preset"]["drums"].is_null());
+}
+
+#[test]
+fn new_and_removed_timbres_are_adopted_and_retired_away_from_audio() {
+    let mut control = Controller::new(false);
+    control.meta.mix.muted = true;
+    let mut audio = control.prepare(8000);
+    let values = control.values();
+    call(&mut control, "/api/timbres/add", json!({"kind":"drums"}));
+    no_heap(|| {
+        audio.begin(&values, 120., None, false, 256);
+        render(&mut audio, 256, [0.; 2]);
+    });
+    assert_eq!(audio.parts.as_ref().unwrap().audio.meta.id, 1);
+    call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":1,"channel":10}),
+    );
+    no_heap(|| {
+        audio.begin(&values, 120., None, false, 4096);
+        audio.midi(Message::NoteOn {
+            channel: 0,
+            note: 36,
+            velocity: 127,
+        });
+        assert_eq!(render(&mut audio, 4096, [0.; 2]), 0.);
+        audio.midi(Message::NoteOn {
+            channel: 9,
+            note: 36,
+            velocity: 127,
+        });
+        assert!(render(&mut audio, 4096, [0.; 2]) > 0.001);
+    });
+    call(&mut control, "/api/timbres/remove", json!({"id":1}));
+    no_heap(|| {
+        audio.begin(&values, 120., None, false, 256);
+        render(&mut audio, 256, [0.; 2]);
+    });
+    assert!(audio.parts.is_none());
+    control.drain();
+}
+
+#[test]
+fn factory_recall_replaces_the_scene_and_a_drum_route_toggle_does_not_rebuild_audio() {
+    let mut control = Controller::new(false);
+    call(&mut control, "/api/timbres/add", json!({"kind":"drums"}));
+    let mut audio = control.prepare(8000);
+    let values = control.values();
+    call(&mut control, "/api/parameters", json!({"drum_granular":1}));
+    no_heap(|| {
+        audio.begin(&values, 120., None, true, 1024);
+        render(&mut audio, 1024, [0.; 2]);
+    });
+    assert!(
+        !audio
+            .parts
+            .as_ref()
+            .unwrap()
+            .audio
+            .engine
+            .live_input
+            .as_ref()
+            .unwrap()
+            .effects_only
+    );
+    call(
+        &mut control,
+        "/api/preset-library/factory",
+        json!({"index":0}),
+    );
+    let recalled = control.values();
+    no_heap(|| {
+        audio.begin(&recalled, 120., None, false, 1024);
+    });
+    // Parameter collection itself belongs to Controller; never do that on audio.
+    assert!(audio.parts.is_none());
+    assert_eq!(
+        call(&mut control, "/api/state", Value::Null)["timbres"]["active"],
+        0
+    );
+}
+
+#[test]
+fn drum_audition_rings_out_while_the_daw_transport_is_stopped() {
+    let mut control = Controller::new(false);
+    control.meta.mix.muted = true;
+    call(&mut control, "/api/timbres/add", json!({"kind":"drums"}));
+    let mut audio = control.prepare(8000);
+    let values = control.values();
+    call(
+        &mut control,
+        "/api/drums/trigger",
+        json!({"track":0,"velocity":1}),
+    );
+    no_heap(|| {
+        audio.begin(&values, 120., Some(0.), false, 128);
+        assert!(render(&mut audio, 128, [0.; 2]) > 0.001);
+        audio.begin(&values, 120., Some(0.), false, 2048);
+        assert!(render(&mut audio, 2048, [0.; 2]) > 0.001);
+    });
+    assert!(
+        !audio
+            .parts
+            .as_ref()
+            .unwrap()
+            .audio
+            .engine
+            .drum_view()
+            .playing
+    );
 }
