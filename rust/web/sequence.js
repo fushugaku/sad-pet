@@ -123,7 +123,8 @@ window.SadNeuropolis = class {
     else if (field >= 49 && field <= 52) {
       track.pitch_oscillators ??= [false, false, false, false];
       track.pitch_oscillators[field - 49] = !!value;
-    } else if (field < 47)
+    } else if (field === 53) track.env_gate = !!value;
+    else if (field < 47)
       track[
         { 43: "amount", 44: "absolute", 45: "gate_output", 46: "root_note" }[
           field
@@ -174,16 +175,18 @@ window.SadNeuropolis = class {
   configValue(track, field) {
     return field < 43
       ? track.config[field]
-      : field >= 49
-        ? !!track.pitch_oscillators?.[field - 49]
-        : track[
-            {
-              43: "amount",
-              44: "absolute",
-              45: "gate_output",
-              46: "root_note",
-            }[field]
-          ];
+      : field === 53
+        ? !!track.env_gate
+        : field >= 49
+          ? !!track.pitch_oscillators?.[field - 49]
+          : track[
+              {
+                43: "amount",
+                44: "absolute",
+                45: "gate_output",
+                46: "root_note",
+              }[field]
+            ];
   }
   targetName(t) {
     return t.target.kind === "main_pitch"
@@ -829,6 +832,8 @@ window.SadNeuropolis = class {
         1,
         "checkbox",
       );
+    else if (track.target.kind === "main_pitch")
+      this.configControl(controls, "Gate ENV", 53, null, 0, 1, 1, "checkbox");
     editor.append(controls);
     const destinations = document.createElement("div");
     destinations.className = "neuro-destinations";

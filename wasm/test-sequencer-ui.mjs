@@ -215,6 +215,15 @@ for (let i = 0; i < 4; i++) {
   input.onchange();
 }
 assert.deepEqual(ui.track().pitch_oscillators, [true, false, true, false]);
+const envGate = control("Track gate env");
+assert.equal(envGate.type, "checkbox");
+envGate.value = "on";
+envGate.checked = true;
+envGate.oninput();
+preset = structuredClone(preset);
+assert.equal(ui.track().env_gate, true);
+assert.equal(ui.configValue(ui.track(), 53), true);
+assert.deepEqual({ ...edits.at(-1) }, { track: 1, stage: null, field: 53, value: 1 });
 assert.equal(structures, 0, "A scalar gesture rebuilt the sequencer");
 assert.ok(edits.some((e) => e.field === 49 && e.stage === null));
 assert.ok(edits.some((e) => e.field === 9 && e.stage === 0 && e.value === 27));
@@ -227,6 +236,10 @@ const destination = control("Track destination");
 destination.value = "osc:2";
 destination.onchange();
 ui.buildEditor();
+assert.ok(
+  !editor.all().some((e) => e.getAttribute("aria-label") === "Track gate env"),
+  "Gate ENV is a Main pitch option",
+);
 const offset = control("Stage 1 pitch offset");
 assert.equal(offset.min, -24);
 assert.equal(offset.max, 24);

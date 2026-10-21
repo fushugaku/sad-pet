@@ -513,3 +513,80 @@ fn opposite_tracks_cancel_before_clamping_and_unipolar_absolute_cv_uses_the_full
     frames(&mut e, 100);
     assert_eq!(view(&mut e).params.filter, 0.0);
 }
+
+#[test]
+fn main_pitch_steps_can_gate_envelopes_like_notes() {
+    use sad_pet::matrix::Source;
+    let mut p = Preset::default();
+    p.sequencer.enabled = true;
+    // 1/16 at 120 BPM is 1000 frames at 8 kHz; the 55% gate closes near 550.
+    p.sequencer.tracks = vec![track(1, 1, Target::MainPitch)];
+    for env in &mut p.envs {
+        env.release = 0.0;
+    }
+    let old = p.clone();
+    p.sequencer.tracks[0].env_gate = true;
+    let mut e = engine(p);
+    e.set_playing(true);
+    let mut starts = [0; 3];
+    let mut closed = [0; 3];
+    let mut previous = [0.0; 3];
+    no_heap(|| {
+        for frame in 0..4000 {
+            e.process_frame();
+            for env in 0..3 {
+                let value = e.env_values[env];
+                starts[env] += usize::from(previous[env] == 0.0 && value > 0.0);
+                closed[env] += usize::from(frame % 1000 > 700 && value == 0.0);
+                previous[env] = value;
+            }
+            let gate = e.modulation_source(Source::Gate);
+            match frame % 1000 {
+                0..500 => assert_eq!(gate, 1.0, "frame {frame}"),
+                701.. => assert_eq!(gate, 0.0, "frame {frame}"),
+                _ => {}
+            }
+        }
+    });
+    assert_eq!(starts, [4; 3], "ENV1-3 restart on every step");
+    assert_eq!(closed, [4 * 299; 3], "ENV1-3 release after each gate");
+
+    // Switching the gate off reopens the held voice without waiting a step.
+    frames(&mut e, 800);
+    assert_eq!(e.env_values[0], 0.0);
+    let edit = |value| Edit {
+        track: 1,
+        stage: None,
+        field: 53,
+        value,
+    };
+    e.apply_sequence_edits(&[edit(0.0)]);
+    assert!(!e.preset.sequencer.tracks[0].env_gate);
+    frames(&mut e, 40);
+    assert!(e.env_values[0] > 0.5);
+    frames(&mut e, 1000);
+    assert!(e.env_values[0] > 0.5, "The free voice was gated while off");
+    e.apply_sequence_edits(&[edit(1.0)]);
+    frames(&mut e, 1000);
+    assert_eq!(e.env_values[0], 0.0, "The gate did not resume");
+
+    // Without the option, Main pitch keeps the free voice droning as before.
+    let mut e = engine(old);
+    e.set_playing(true);
+    frames(&mut e, 100);
+    for _ in 0..4000 {
+        e.process_frame();
+        assert!(e.env_values[0] > 0.5);
+        assert_eq!(e.modulation_source(Source::Gate), 1.0);
+    }
+
+    let mut value = serde_json::to_value(Preset::default()).unwrap();
+    let saved = value["sequencer"]["tracks"][0].as_object_mut().unwrap();
+    assert_eq!(saved.remove("env_gate"), Some(serde_json::json!(false)));
+    let p: Preset = serde_json::from_value(value).unwrap();
+    assert!(!p.sequencer.tracks[0].env_gate);
+    let json = serde_json::json!([{"track":1,"field":53,"value":1}]);
+    assert_eq!(sad_pet::sequence::parse_edits(&json).unwrap()[0].field, 53);
+    let json = serde_json::json!([{"track":1,"field":54,"value":1}]);
+    assert!(sad_pet::sequence::parse_edits(&json).is_err());
+}

@@ -69,6 +69,8 @@ struct Voice {
     velocity: f32,
     held: bool,
     sustained: bool,
+    /// Still held, but a Main pitch track closed its ENV gate between steps.
+    gated: bool,
     value: f32,
     env_values: [f32; crate::preset::MODULATORS],
     loop_phase: f64,
@@ -78,6 +80,7 @@ struct Voice {
 impl Voice {
     fn on(&mut self, count: usize) {
         self.generation = self.generation.wrapping_add(1);
+        self.gated = false;
         self.loop_phase = 0.0;
         self.env_values = [0.0; crate::preset::MODULATORS];
         self.value = 0.0;
@@ -810,21 +813,34 @@ impl Engine {
                 .iter()
                 .any(|t| t.target == crate::sequence::Target::Notes && t.config[8] == 0)
     }
+    fn sequence_gates_envelopes(&self) -> bool {
+        self.sequence_running
+            && self.preset.sequencer.enabled
+            && self.preset.sequencer.tracks.iter().any(|t| {
+                t.target == crate::sequence::Target::MainPitch && t.env_gate && t.config[8] == 0
+            })
+    }
     fn refresh_sequence_free_voice(&mut self) {
         if self.playing && !self.midi_gate && self.performance.mode() == Mode::Keys {
             if self.sequence_has_notes() {
                 self.voices[0].held = false;
                 self.voices[0].off();
-            } else if !self.voices[0].held {
-                self.voices[0].velocity = 1.0;
-                self.voices[0].note = 60;
-                self.voices[0].held = true;
-                self.clear_voice_filters(0);
-                self.voices[0].on(self.preset.env_count as usize);
-                self.mod_note_on(0, 60, 127);
-                self.configure_voice_filter(0);
+            } else if !self.voices[0].held
+                || (self.voices[0].gated && !self.sequence_gates_envelopes())
+            {
+                self.start_free_voice();
             }
         }
+    }
+    /// Voice 0 is the note held while playing without keys or note tracks.
+    fn start_free_voice(&mut self) {
+        self.voices[0].velocity = 1.0;
+        self.voices[0].note = 60;
+        self.voices[0].held = true;
+        self.clear_voice_filters(0);
+        self.voices[0].on(self.preset.env_count as usize);
+        self.mod_note_on(0, 60, 127);
+        self.configure_voice_filter(0);
     }
     pub fn apply_parameters(&mut self, changes: &[crate::parameters::Change]) {
         if crate::parameters::apply(&mut self.preset, changes) {
@@ -1624,7 +1640,11 @@ impl Engine {
             Source::Expression => self.expression[channel],
             Source::RandomNote => self.source_random,
             Source::Gate => {
-                if self.voices.iter().any(|v| v.held || v.sustained) {
+                if self
+                    .voices
+                    .iter()
+                    .any(|v| (v.held && !v.gated) || v.sustained)
+                {
                     1.0
                 } else {
                     0.0
@@ -2073,6 +2093,23 @@ impl Engine {
                                 }
                             }
                         }
+                    }
+                }
+                // Main pitch steps can gate the free voice's ENV like notes.
+                if let Some((trigger, open)) = self
+                    .preset
+                    .sequencer
+                    .runtime
+                    .as_ref()
+                    .and_then(|r| r.env_gate())
+                    && self.voices[0].held
+                {
+                    if trigger {
+                        self.start_free_voice();
+                        self.grain_clock = 1.0;
+                    } else if !open && !self.voices[0].gated {
+                        self.voices[0].off();
+                        self.voices[0].gated = true;
                     }
                 }
                 self.update_modulation();
