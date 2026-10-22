@@ -12,6 +12,7 @@ import zipfile
 
 from package_macos import build_pkg
 from package_windows import build_exe
+from pgo import profile_guided
 
 PLUGIN = Path(__file__).resolve().parents[1]
 ROOT = PLUGIN.parent
@@ -46,18 +47,31 @@ def webview2_options():
     return ["-A", "x64", "-DSAD_PET_CARGO_TARGET=x86_64-pc-windows-msvc", f"-DJUCE_WEBVIEW2_PACKAGE_LOCATION={package_root}"]
 
 
-def universal_rust(build, cargo, rust_env):
+def universal_rust(build, cargo, rust_env, pgo=None):
     """Builds the engine for arm64 and x86_64 and returns the combined archive."""
     rust = build / "universal-rust"
     archives = []
     run("rustup", "target", "add", "aarch64-apple-darwin", "x86_64-apple-darwin")
     for target in ("aarch64-apple-darwin", "x86_64-apple-darwin"):
-        run(cargo, "build", "-p", "sad-pet-plugin", "--release", "--locked", "--target", target,
-            env={**rust_env, "CARGO_TARGET_DIR": str(rust)})
-        archives.append(rust / target / "release/libsad_pet_plugin.a")
+        archive = pgo and profile_guided(build, cargo, rust_env, target, pgo)
+        if not archive:
+            run(cargo, "build", "-p", "sad-pet-plugin", "--release", "--locked", "--target", target,
+                env={**rust_env, "CARGO_TARGET_DIR": str(rust)})
+            archive = rust / target / "release/libsad_pet_plugin.a"
+        archives.append(archive)
+    rust.mkdir(parents=True, exist_ok=True)
     universal = rust / "libsad_pet_plugin.a"
     run("lipo", "-create", *archives, "-output", universal)
     return ["-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64", f"-DSAD_PET_RUST_ARCHIVE={universal}"]
+
+
+def native_rust(build, cargo, rust_env, pgo):
+    """CMake options for a one-architecture engine: profile-guided with pgo, else built by CMake."""
+    # Windows builds the target webview2_options names; macOS builds for the host.
+    target = "x86_64-pc-windows-msvc" if platform.system() == "Windows" else None
+    archive = pgo and profile_guided(build, cargo, rust_env, target, pgo)
+    # Always set: a cached archive from an earlier configure would otherwise stick.
+    return [f"-DSAD_PET_RUST_ARCHIVE={archive or ''}"]
 
 
 def main():
@@ -65,6 +79,8 @@ def main():
     parser.add_argument("--build-dir", type=Path, default=ROOT / "target/plugins")
     parser.add_argument("--juce", type=Path, help="Use an existing JUCE checkout")
     parser.add_argument("--universal", action="store_true", help="Build macOS arm64 + x86_64")
+    parser.add_argument("--pgo", nargs="?", const="all", metavar="TARGETS",
+                        help="Profile-guide the engine (see pgo.py): every target, or these comma-separated triples")
     parser.add_argument("--package-only", action="store_true")
     parser.add_argument("--skip-tests", action="store_true")
     parser.add_argument("--jobs", type=int, default=min(os.cpu_count() or 2, 6))
@@ -83,7 +99,9 @@ def main():
     if args.universal and system != "Darwin":
         parser.error("--universal requires macOS")
     if args.universal and not args.package_only:
-        options += universal_rust(build, cargo, rust_env)
+        options += universal_rust(build, cargo, rust_env, args.pgo)
+    elif not args.package_only:
+        options += native_rust(build, cargo, rust_env, args.pgo)
     if not args.package_only:
         run("cmake", "-S", PLUGIN, "-B", build, *options, env=rust_env)
         run("cmake", "--build", build, "--config", "Release", "--parallel", args.jobs, env=rust_env)

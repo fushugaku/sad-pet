@@ -1,6 +1,10 @@
 //! Deterministic offline differential render and block timing. No audio device.
 //! cargo run -p sad-pet --no-default-features --release --example audio_benchmark -- capture target/perf/before
 //! Repeat with `compare` after a DSP change, using the same compiler/platform.
+//! For PGO, run it as the plug-in's `engine_benchmark` example: there the engine
+//! compiles exactly as the plug-in links it, so the plug-in's profile applies.
+//! CARGO_ENCODED_RUSTFLAGS=-Cprofile-use=<build>/pgo/<triple>/engine-<key>.profdata \
+//!   cargo run -p sad-pet-plugin --release --target <triple> --example engine_benchmark -- compare <dir>
 use sad_pet::{
     color::ColorSlot,
     dsp::{Engine, Region, SampleBuffer},
