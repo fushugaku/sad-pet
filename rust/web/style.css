@@ -4164,9 +4164,53 @@ input[type="range"] {
   font-weight: 600;
   color: var(--text);
 }
-.drum-module-head .idle,
-.drum-module.off .drum-module-knobs {
+.drum-module .idle,
+.drum-module.off :is(.drum-module-knobs, .drum-filter-graph) {
   opacity: 0.45;
+}
+.drum-filter-graph {
+  position: relative;
+  height: 112px;
+  margin: -2px 0 14px;
+}
+.drum-filter-graph svg {
+  display: block;
+  width: 100%;
+  height: calc(100% - 16px);
+  overflow: hidden;
+}
+.drum-filter-graph :is(line, path) {
+  vector-effect: non-scaling-stroke;
+}
+.drum-filter-graph .grid {
+  stroke: var(--line);
+}
+.drum-filter-graph .zero {
+  stroke: #4a5848;
+}
+.drum-filter-graph .fill {
+  fill: rgb(196 244 134 / 8%);
+}
+.drum-filter-graph .curve,
+.drum-filter-graph .sweep {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.drum-filter-graph .sweep {
+  stroke-width: 1.5;
+  stroke-opacity: 0.5;
+  stroke-dasharray: 4 4;
+}
+.drum-filter-graph span {
+  position: absolute;
+  bottom: 0;
+  transform: translateX(-50%);
+  color: var(--muted);
+  font:
+    9px ui-monospace,
+    monospace;
 }
 .drum-module-knobs {
   display: grid;
@@ -4186,6 +4230,9 @@ input[type="range"] {
 }
 .drum-voice.all .drum-module {
   padding-inline: 10px;
+}
+.drum-voice.all .drum-filter-graph {
+  height: 72px;
 }
 .drum-voice.all .drum-module-knobs {
   grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));

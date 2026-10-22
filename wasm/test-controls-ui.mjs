@@ -105,6 +105,20 @@ for (const [voice, count] of [[0, 55], [5, 56]]) {
   assert.equal(knobs.includes(`drum${voice + 1}_29`), voice === 5);
 }
 
+// Filter graphs follow each type: lows pass low-pass types, highs pass
+// high-pass types, notches dip at the cutoff and resonance lifts it.
+const gain = (kind, hz, resonance = 0, morph = 0) =>
+  20 * Math.log10(panels.window.SadDrums.filterGain(kind, hz, 1000, resonance, morph));
+for (const kind of [1, 7, 8, 9, 11, 12, 13, 16, 17, 18])
+  assert.ok(gain(kind, 50) > -3 && gain(kind, 15000) < -30, `Filter type ${kind} must be a low-pass`);
+for (const kind of [2, 10, 14, 19, 20])
+  assert.ok(gain(kind, 15000) > -3 && gain(kind, 50) < -30, `Filter type ${kind} must be a high-pass`);
+for (const kind of [5, 23, 24])
+  assert.ok(gain(kind, 1000) < -30 && gain(kind, 50) > -3, `Filter type ${kind} must be a notch`);
+assert.ok(gain(12, 1000, 0, 0.5) < -30, "SEM halfway must be a notch");
+assert.ok(gain(1, 1000, 0.9) > 10, "Resonance must lift the cutoff");
+assert.equal(gain(0, 1000), 0);
+
 const drumPreset = { drums: { buffer_seconds: 8 } };
 const routingEdits = [];
 const bufferNodes = new Map();

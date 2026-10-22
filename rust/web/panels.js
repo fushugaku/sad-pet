@@ -348,6 +348,109 @@
   };
   const show = (p, ...ids) =>
     ids.map((id) => format(defs[id], p[id])).join(" · ");
+
+  // Linear response of a voice filter from the engine's own topologies and
+  // prewarping (firmware/filter.rs, rustias_filter.rs). Drive and saturation
+  // are left out, so this is the shape at low levels.
+  const RATE = 48000;
+  const cx = (re) => [re, 0];
+  const plus = (...terms) => terms.reduce(([a, b], [c, d]) => [a + c, b + d]);
+  const times = (...terms) =>
+    terms.reduce(([a, b], [c, d]) => [a * c - b * d, a * d + b * c]);
+  const scale = ([a, b], k) => [a * k, b * k];
+  const over = ([a, b], [c, d]) => {
+    const n = c * c + d * d;
+    return [(a * c + b * d) / n, (b * c - a * d) / n];
+  };
+  function filterGain(kind, hz, cutoff, resonance, morph) {
+    if (!kind) return 1;
+    if (kind === 7) {
+      // LP2: two one-pole stages with resonant feedback, at the sample rate.
+      const a = Math.min(cutoff / RATE, 0.45) * 2.21,
+        q = resonance > 0.9 ? 0.98 : resonance,
+        feedback = q * 1.4 + q / (1 - a),
+        w = (2 * Math.PI * hz) / RATE,
+        delay = [Math.cos(w), -Math.sin(w)],
+        pole = plus(cx(1), scale(delay, a - 1));
+      return Math.hypot(...over(cx(a * a), plus(
+        times(pole, plus(pole, scale(delay, -a * feedback))),
+        scale(delay, a * a * feedback),
+      )));
+    }
+    if (kind < 7) {
+      // The LXR state-variable filter and its rational tan prewarp.
+      const f = Math.min(cutoff / RATE, 0.45),
+        r = f >= 0.4499 ? 1 : resonance > 0.9 ? 0.02 : 1 - resonance,
+        g = Math.PI * f,
+        w = Math.tan((Math.PI * hz) / RATE) / (((g * g - 15) * g) / 3 / (2 * g * g - 5)),
+        numerator = [[1, 0], [-w * w, 0], [0, w], [0, 2 * r * w], [1 - w * w, 0],
+          [1 + w * w, 0]][kind - 1];
+      return Math.hypot(...numerator) / Math.hypot(1 - w * w, 2 * r * w);
+    }
+    // Rustias models run at twice the sample rate.
+    const mode = kind - 7,
+      rate = RATE * 2,
+      fc = Math.min(Math.max(cutoff, 12), 20000, RATE * 0.45),
+      s = [0, Math.tan((Math.PI * hz) / rate) / Math.tan((Math.PI * fc) / rate)];
+    if ([1, 4, 7, 8, 9].includes(mode)) {
+      // Four one-pole stages inside one feedback loop.
+      const k = resonance * (mode === 4 ? 4.1 : 3.95),
+        g = over(cx(1), plus(cx(1), s)),
+        g2 = times(g, g),
+        g4 = times(g2, g2),
+        input = over(cx(1), plus(cx(1), scale(g4, k))),
+        rest = plus(cx(1), scale(g, -1));
+      return Math.hypot(...(mode === 7
+        ? plus(cx(1), scale(times(input, plus(scale(g, 4), scale(g2, -6),
+          scale(times(g2, g), 4), scale(g4, -1))), -1))
+        : mode === 8 ? scale(times(input, g2, rest, rest), 4)
+        : scale(times(input, g4), 1 + k * 0.2)));
+    }
+    const k = Math.max(2 - resonance * 1.98, 0.02),
+      denominator = plus(times(s, s), scale(s, k), cx(1)),
+      low = over(cx(1), denominator),
+      band = over(s, denominator),
+      high = over(times(s, s), denominator);
+    let h;
+    if (mode >= 10) {
+      h = [low, high, scale(band, k), plus(low, high)][(mode - 10) >> 1];
+      if (mode % 2) h = times(h, h);
+    } else if (mode === 2) h = plus(low, scale(band, resonance * 0.35));
+    else if (mode === 3) h = high;
+    else if (mode === 5)
+      h = morph < 0.5 ? plus(low, scale(high, morph * 2))
+        : plus(scale(low, 2 - morph * 2), high);
+    else {
+      const taps = [low, band, high, plus(low, high)],
+        i = Math.min(Math.floor(morph * 3), 2),
+        t = morph * 3 - i;
+      h = plus(scale(taps[i], 1 - t), scale(taps[i + 1], t));
+    }
+    return Math.hypot(...h);
+  }
+  // 20 Hz to 20 kHz across, +18 to −42 dB down.
+  const sweep = (gain) => {
+    let path = "";
+    for (let i = 0; i <= 150; i++) {
+      const db = 20 * Math.log10(gain(20 * 1000 ** (i / 150)) || 1e-9);
+      path += `${i ? "L" : "M"}${i * 4} ${((18 - Math.min(18, Math.max(-42, db))) * 5) / 3}`;
+    }
+    return path;
+  };
+  const GRAPH = `<svg viewBox="0 0 600 100" preserveAspectRatio="none" aria-hidden="true">${[100, 1000, 10000].map((hz) => `<line class="grid" x1="${(Math.log10(hz / 20) * 200).toFixed(1)}" x2="${(Math.log10(hz / 20) * 200).toFixed(1)}" y1="0" y2="100"/>`).join("")}<line class="grid zero" x1="0" x2="600" y1="30" y2="30"/><path class="fill"/><path class="sweep"/><path class="curve"/></svg>${[100, 1000, 10000].map((hz) => `<span style="left:${(Math.log10(hz / 20) * 100) / 3}%">${hz < 1000 ? hz : `${hz / 1000}k`}</span>`).join("")}`;
+  function drawGraph(graph, { kind, cutoff, resonance, morph, env }, p) {
+    const type = kind(p),
+      shape = [type, p[cutoff], p[resonance], p[morph], p[env]].join();
+    if (graph.dataset.shape === shape) return;
+    graph.dataset.shape = shape;
+    const gain = (fc) => (hz) => filterGain(type, hz, fc, p[resonance], p[morph]);
+    const curve = sweep(gain(p[cutoff]));
+    graph.querySelector(".curve").setAttribute("d", curve);
+    graph.querySelector(".fill").setAttribute("d", `${curve}L600 100L0 100Z`);
+    // Dashed: where the filter envelope's peak moves the cutoff.
+    graph.querySelector(".sweep").setAttribute("d", type && p[env]
+      ? sweep(gain(p[cutoff] * 2 ** (p[env] / 12))) : "");
+  }
   // Voice modules: sources, envelopes, filters and output, then modulation.
   // Three to a row in the All layout. Menus sit in the heading so knobs keep
   // the same places from module to module.
@@ -366,8 +469,13 @@
     // A modeled Filter 1 replaces the LXR type.
     { title: "Filter 1", menus: [55, 14], knobs: [12, 13, 36, 53, 42],
       idle: { 14: (p) => p[55] > 0 },
+      graph: { kind: (p) => (p[55] > 0 ? 7 + p[55] : p[14]), cutoff: 12,
+        resonance: 13, morph: 53, env: 42 },
       summary: (p) => show(p, p[55] > 0 ? 55 : 14, 12) },
+    // Balance crossfades the filters only when they run in parallel.
     { title: "Filter 2", menus: [46, 51], knobs: [47, 48, 49, 54, 50, 52],
+      idle: { 52: (p) => p[51] < 0.5 },
+      graph: { kind: (p) => p[46], cutoff: 47, resonance: 48, morph: 54, env: 50 },
       off: (p) => !p[46], summary: (p) => (p[46] ? show(p, 46, 47) : "Bypass") },
     { title: "Output", menus: [16], knobs: [15, 17, 18, 19],
       summary: (p) => show(p, 16, 15, 19) },
@@ -927,7 +1035,14 @@
           grid = el("div", "drum-module-knobs");
         panel.setAttribute("aria-label", `${name} ${module.title}`);
         heading.append(el("h3", "", module.title));
-        panel.append(heading, grid);
+        let graph = null;
+        if (module.graph) {
+          graph = el("div", "drum-filter-graph");
+          graph.setAttribute("role", "img");
+          graph.setAttribute("aria-label", `${name} ${module.title} response`);
+          graph.innerHTML = GRAPH;
+        }
+        panel.append(...[heading, graph, grid].filter(Boolean));
         panels.append(panel);
         const set = (id) => (v) => {
           const value = constrain(defs[id], v);
@@ -935,9 +1050,9 @@
           this.hooks.parameter(`drum${voice + 1}_${id}`, value);
           this.refreshVoice();
         };
-        const menus = {};
+        const controls = {};
         for (const id of module.menus ?? [])
-          menus[id] = this.select(
+          controls[id] = this.select(
             heading,
             `${name} ${defs[id].name}`,
             defs[id].options,
@@ -971,8 +1086,9 @@
               },
             ),
           );
+          controls[id] = grid.lastElementChild;
         }
-        return { module, tab, summary, panel, menus };
+        return { module, tab, summary, panel, controls, graph };
       });
       this.refreshVoice();
     }
@@ -985,7 +1101,7 @@
         this.voicePanel
           .querySelector(`.drum-voice-${layout}`)
           .setAttribute("aria-pressed", String(layout === this.layout));
-      this.parts.forEach(({ module, tab, summary, panel, menus }, index) => {
+      this.parts.forEach(({ module, tab, summary, panel, controls, graph }, index) => {
         const selected = index === this.module,
           off = !!module.off?.(params);
         summary.textContent = module.summary(params);
@@ -995,7 +1111,8 @@
         panel.classList.toggle("off", off);
         panel.hidden = !all && !selected;
         for (const [id, idle] of Object.entries(module.idle ?? {}))
-          menus[id].classList.toggle("idle", idle(params));
+          controls[id]?.classList.toggle("idle", idle(params));
+        if (graph) drawGraph(graph, module.graph, params);
       });
     }
     sync() {
@@ -1047,5 +1164,6 @@
     }
   }
   window.SadTimbres = Timbres;
+  Drums.filterGain = filterGain;
   window.SadDrums = Drums;
 })();
