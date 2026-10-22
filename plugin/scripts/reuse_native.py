@@ -16,7 +16,8 @@ VALIDATED = {
     "Windows-x64": (39474031573, "fa470c61288f8b87ef42c1bf046b8340813156bf"),
 }
 NATIVE_SOURCES = ["Cargo.toml", "Cargo.lock", "rust", "vendor", "plugin/Cargo.toml",
-                  "plugin/CMakeLists.txt", "plugin/src", "plugin/native", "plugin/web"]
+                  "plugin/CMakeLists.txt", "plugin/src", "plugin/native", "plugin/web",
+                  "plugin/examples", "plugin/scripts/pgo.py"]
 
 
 def main():

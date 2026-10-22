@@ -24,7 +24,8 @@ jobs:
         include:
           - platform: macOS-universal
             runner: macos-15
-            arguments: --universal --smoke
+            # Profile-guided only where measured; see plugin/README.md#build.
+            arguments: --universal --smoke --pgo aarch64-apple-darwin
           - platform: Windows-x64
             runner: windows-latest
             arguments: ''
@@ -34,7 +35,8 @@ jobs:
       - name: Set up Rust
         shell: bash
         run: |
-          rustup toolchain install stable --profile minimal
+          # llvm-tools: llvm-profdata from rustc's own LLVM, for build --pgo.
+          rustup toolchain install stable --profile minimal --component llvm-tools
           rustup default stable
       - name: Check the app's engine boundary
         shell: bash

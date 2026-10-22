@@ -15,3 +15,9 @@ serde_json = "1"
 base64 = "0.22"
 rtrb = "0.3"
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+
+# rust/examples/audio_benchmark.rs, compiled the way the plug-in links the engine,
+# so a PGO profile from pgo_training applies to it (see plugin/scripts/pgo.py).
+[[example]]
+name = "engine_benchmark"
+path = "../rust/examples/audio_benchmark.rs"

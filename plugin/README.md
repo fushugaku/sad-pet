@@ -360,6 +360,21 @@ python3 plugin/scripts/build.py
 python3 plugin/scripts/build.py --universal --build-dir target/plugins-universal
 ```
 
+`--pgo` builds the engine with profile-guided optimization: an instrumented build
+runs `plugin/examples/pgo_training.rs` (the plug-in, effect and app scenes plus every
+filter, effect, modulator and oscillator type), then the engine is rebuilt with that
+profile. It renders the same samples, which the build checks against the training
+run. `--pgo aarch64-apple-darwin` (comma-separated triples) limits it to those
+targets. It needs `llvm-profdata` from rustc's LLVM version (`rustup component add
+llvm-tools`, or `LLVM_PROFDATA`); without one, or for a target this machine cannot
+run (x86_64 needs Rosetta 2 on Apple silicon), that target builds without PGO and
+prints a warning. Profiles are cached in the build folder under a hash of the
+toolchain and every engine source, so any change trains a new one. On Apple silicon
+every case of the engine benchmark (see `rust/examples/audio_benchmark.rs`) runs
+1.5-17% faster, 8.8% on average. Under Rosetta the x86_64 build ran most cases ~20% faster but the Resynth
+scenes, including the first-open preset, ~10% slower, so CI profile-guides only the
+Apple silicon slice until x86_64 is measured on native hardware.
+
 Builds and native host integration tests run before packaging. ZIPs, a macOS
 `.pkg` installer, a Windows Setup `.exe` and SHA-256 checksums are written to `dist/plugins/`.
 `--package-only` packages an existing build without recompiling it; `--skip-tests`

@@ -15,7 +15,7 @@ import subprocess
 import tempfile
 import time
 
-from build import ROOT, PLUGIN, run, rust_toolchain, universal_rust, webview2_options
+from build import ROOT, PLUGIN, native_rust, run, rust_toolchain, universal_rust, webview2_options
 
 def smoke_test(executable):
     """Starts the app until its editor has polled the engine without errors."""
@@ -54,6 +54,8 @@ def main():
     parser.add_argument("--build-dir", type=Path, default=ROOT / "target/app")
     parser.add_argument("--juce", type=Path, help="Use an existing JUCE checkout")
     parser.add_argument("--universal", action="store_true", help="Build macOS arm64 + x86_64")
+    parser.add_argument("--pgo", nargs="?", const="all", metavar="TARGETS",
+                        help="Profile-guide the engine (see pgo.py): every target, or these comma-separated triples")
     parser.add_argument("--smoke", action="store_true", help="Launch the built app once and check its editor")
     parser.add_argument("--jobs", type=int, default=min(os.cpu_count() or 2, 6))
     args = parser.parse_args()
@@ -70,7 +72,9 @@ def main():
     if system == "Windows":
         options += webview2_options()
     if args.universal:
-        options += universal_rust(build, cargo, rust_env)
+        options += universal_rust(build, cargo, rust_env, args.pgo)
+    else:
+        options += native_rust(build, cargo, rust_env, args.pgo)
     run("cmake", "-S", PLUGIN, "-B", build, *options, env=rust_env)
     run("cmake", "--build", build, "--config", "Release", "--target", "SadPetApp_Standalone",
         "--parallel", args.jobs, env=rust_env)

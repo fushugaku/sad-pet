@@ -1,0 +1,56 @@
+name: Benchmark profile-guided engine
+
+# Measures build --pgo on native hardware: the profile-guided engine against a
+# normal build of the same commit (plugin/scripts/pgo_benchmark.py). Run by hand.
+on:
+  workflow_dispatch:
+    inputs:
+      rounds:
+        description: Runs of each build; every case keeps its fastest
+        type: number
+        default: 5
+  # Temporary: runs this branch's first measurement, as dispatch needs the file on main.
+  push:
+    branches: ['claude/epic-kepler-f1ebfd']
+    paths: ['.github/workflows/pgo-benchmark.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+          - target: x86_64-apple-darwin
+            runner: macos-15-intel
+          # Apple silicon, measured locally before: checks the runners against it.
+          - target: aarch64-apple-darwin
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Set up Rust
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal --component llvm-tools
+          rustup default stable
+          rustc -vV
+      - name: Train, build and compare
+        shell: bash
+        env:
+          ROUNDS: ${{ inputs.rounds || 5 }}
+        run: python plugin/scripts/pgo_benchmark.py --rounds "$ROUNDS" --build-dir target/pgo-benchmark
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: pgo-benchmark-${{ matrix.target }}
+          path: |
+            target/pgo-benchmark/results.*
+            target/pgo-benchmark/pgo/*/engine-*.hashes
+          if-no-files-found: warn

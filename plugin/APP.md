@@ -78,7 +78,8 @@ python plugin/scripts/build_app.py --smoke               # Windows x64
 ```
 
 The archive is written to `dist/app/`. `--smoke` launches the built app once
-and checks that its editor connects to the engine without errors.
+and checks that its editor connects to the engine without errors. `--pgo`
+profile-guides the engine as the [plug-in build](README.md#build) describes.
 
 For editor QA without the native build, `python3 plugin/scripts/preview.py`
 serves the app editor at `/?app` against the real engine library; native file
