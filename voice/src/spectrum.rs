@@ -17,6 +17,9 @@ pub const AP_BANDS: usize = AP_EDGES.len() - 1;
 pub const FRAME_SECONDS: f32 = 0.005;
 /// Below every real envelope: silence.
 pub const FLOOR_DB: f32 = -210.0;
+/// The vowel level (`Frame::level`) every voice sings at by default: about
+/// -18 dBFS RMS, leaving room for loud Dynamics.
+pub const SINGING_LEVEL: f32 = -54.5;
 
 pub fn mel(hz: f32) -> f32 {
     1127.0 * (1.0 + hz / 700.0).ln()
@@ -34,6 +37,14 @@ pub fn grid_hz(i: usize) -> f32 {
 pub fn grid_position(hz: f32) -> f32 {
     (mel(hz.clamp(0.0, ENV_MAX_HZ)) / mel(ENV_MAX_HZ) * (ENV_POINTS - 1) as f32)
         .clamp(0.0, (ENV_POINTS - 1) as f32)
+}
+
+/// Mean of an envelope over 150 Hz – 6 kHz, where a vowel's color lies;
+/// subtracting it leaves the envelope's shape.
+pub fn color_level(env: &[f32]) -> f32 {
+    let lo = grid_position(150.0) as usize;
+    let hi = grid_position(6000.0) as usize;
+    env[lo..=hi].iter().sum::<f32>() / (hi - lo + 1) as f32
 }
 
 pub type Envelope = [f32; ENV_POINTS];

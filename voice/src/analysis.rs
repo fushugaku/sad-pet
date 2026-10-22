@@ -88,6 +88,68 @@ fn at(x: &[f32], i: isize) -> f32 {
     }
 }
 
+/// Mean log-spectral distance (dB) between two signals on 64 mel bands from
+/// 80 Hz to 8 kHz over 25 ms frames, overall and over the louder half of the
+/// frames, plus the level difference `b - a` in dB.
+pub fn spectral_distance(a: &[f32], b: &[f32], rate: u32) -> (f32, f32, f32) {
+    let n = 2048usize.min(((0.025 * rate as f32) as usize).next_power_of_two() * 2);
+    let window = (0.025 * rate as f32) as usize;
+    let hop = window / 2;
+    let mut fft = Transform::new(n);
+    let mut buffer = vec![Complex32::default(); n];
+    let (lo, hi) = (crate::spectrum::mel(80.0), crate::spectrum::mel(8000.0));
+    let edges: Vec<usize> = (0..=64)
+        .map(|i| {
+            let hz = crate::spectrum::mel_to_hz(lo + (hi - lo) * i as f32 / 64.0);
+            ((hz / rate as f32 * n as f32) as usize).min(n / 2)
+        })
+        .collect();
+    let mut bands = |x: &[f32], start: usize| -> ([f32; 64], f32) {
+        buffer.fill(Complex32::default());
+        for (i, b) in buffer.iter_mut().enumerate().take(window) {
+            let w = 0.5 - 0.5 * (std::f32::consts::TAU * i as f32 / window as f32).cos();
+            *b = Complex32::new(x.get(start + i).copied().unwrap_or(0.0) * w, 0.0);
+        }
+        fft.forward(&mut buffer);
+        let mut out = [0.0f32; 64];
+        let mut total = 0.0f32;
+        for (b, o) in out.iter_mut().enumerate() {
+            let (k0, k1) = (edges[b], edges[b + 1].max(edges[b] + 1));
+            let p: f32 =
+                buffer[k0..k1].iter().map(|c| c.norm_sqr()).sum::<f32>() / (k1 - k0) as f32;
+            total += p;
+            *o = 10.0 * (p + 1e-12).log10();
+        }
+        (out, 10.0 * (total + 1e-12).log10())
+    };
+    let mut rows = Vec::new();
+    let len = a.len().min(b.len());
+    let mut start = 0;
+    while start + window < len {
+        let (x, lx) = bands(a, start);
+        let (y, ly) = bands(b, start);
+        let d = (x.iter().zip(&y).map(|(p, q)| (p - q).powi(2)).sum::<f32>() / 64.0).sqrt();
+        rows.push((lx, d, ly - lx));
+        start += hop;
+    }
+    if rows.is_empty() {
+        return (0.0, 0.0, 0.0);
+    }
+    let loudest = rows.iter().map(|r| r.0).fold(f32::MIN, f32::max);
+    let audible: Vec<_> = rows.iter().filter(|r| r.0 > loudest - 40.0).collect();
+    let mut by_level: Vec<_> = audible.clone();
+    by_level.sort_by(|p, q| q.0.total_cmp(&p.0));
+    let top = &by_level[..by_level.len().div_ceil(2)];
+    let mean = |v: &[&(f32, f32, f32)], f: fn(&(f32, f32, f32)) -> f32| {
+        v.iter().map(|r| f(r)).sum::<f32>() / v.len().max(1) as f32
+    };
+    (
+        mean(&audible, |r| r.1),
+        mean(top, |r| r.1),
+        mean(top, |r| r.2),
+    )
+}
+
 // --- F0 ------------------------------------------------------------------
 
 #[derive(Clone, Copy, Debug)]
@@ -518,14 +580,32 @@ impl Periodicity {
         let bin_hz = self.rate / n as f32;
         let top = (4000.0 / bin_hz) as usize;
         // Correlation of the two spectra when the second is shifted by delta samples.
+        // Cross-spectrum once; shifting the second segment by delta rotates
+        // bin k by omega·k·delta, stepped as a phasor instead of sin/cos.
+        let cross_spectrum: Vec<Complex32> = first
+            .iter()
+            .zip(&second)
+            .take(half_n)
+            .map(|(a, b)| a * b.conj())
+            .collect();
+        let rotated_sum = |delta: f32, upto: usize, mut add: Box<dyn FnMut(usize, f32) + '_>| {
+            let step = (-(omega as f64) * delta as f64).sin_cos();
+            let step = rustfft::num_complex::Complex64::new(step.1, step.0);
+            let mut z = step;
+            for (k, c) in cross_spectrum
+                .iter()
+                .enumerate()
+                .take(upto.min(half_n))
+                .skip(1)
+            {
+                add(k, (c.re as f64 * z.re - c.im as f64 * z.im) as f32);
+                z *= step;
+            }
+        };
         let correlate = |delta: f32, upto: usize| -> f32 {
-            (1..upto.min(half_n))
-                .map(|k| {
-                    let phase = omega * k as f32 * delta;
-                    let rotated = second[k] * Complex32::new(phase.cos(), phase.sin());
-                    (first[k] * rotated.conj()).re
-                })
-                .sum()
+            let mut sum = 0.0f32;
+            rotated_sum(delta, upto, Box::new(|_, v| sum += v));
+            sum
         };
         // Search the residual period offset within ±2 % and refine by parabola.
         let span = (period * 0.02).max(0.6);
@@ -568,12 +648,12 @@ impl Periodicity {
         for s in 0..=fine {
             let delta = center_delta + span * 0.5 * (2.0 * s as f32 / fine as f32 - 1.0);
             cross.fill(0.0);
-            for k in 1..half_n {
-                let b = self.band_of_bin[k] as usize;
-                let phase = omega * k as f32 * delta;
-                let rotated = second[k] * Complex32::new(phase.cos(), phase.sin());
-                cross[b] += (first[k] * rotated.conj()).re;
-            }
+            let bands = &self.band_of_bin;
+            rotated_sum(
+                delta,
+                half_n,
+                Box::new(|k, v| cross[bands[k] as usize] += v),
+            );
             for b in 0..AP_BANDS {
                 best_cross[b] = best_cross[b].max(cross[b]);
             }

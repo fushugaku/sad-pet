@@ -7,7 +7,7 @@ use crate::analysis::{self, Options};
 use crate::bank::{Info, Unit, Voicebank};
 use crate::g2p;
 use crate::phoneme::{Class, Language, Phoneme};
-use crate::spectrum::FRAME_SECONDS;
+use crate::spectrum::{FLOOR_DB, FRAME_SECONDS};
 use std::collections::BTreeMap;
 
 /// Where the files of a voicebank come from: a folder, or the contents of a
@@ -253,11 +253,12 @@ fn boundaries(
     let anchor = if phonemes[n - 1].is_nucleus() {
         n - 1
     } else {
-        // A VC alias: the consonant after the leading vowel starts at preutterance.
-        phonemes
-            .iter()
-            .position(|p| p.is_vowel())
-            .map_or(0, |v| (v + 1).min(n - 1))
+        // A VC alias: the consonant after the leading vowel starts at
+        // preutterance; a lone consonant (`-b`) starts there itself.
+        phonemes.iter().position(|p| p.is_vowel()).map_or_else(
+            || phonemes.iter().position(|p| !p.is_pause()).unwrap_or(0),
+            |v| (v + 1).min(n - 1),
+        )
     };
     let mut bounds = vec![0.0f32; n + 1];
     bounds[n] = end;
@@ -329,106 +330,200 @@ fn boundaries(
     Some(bounds)
 }
 
+/// What an import used and left out.
+#[derive(Clone, Debug, Default)]
+pub struct Report {
+    pub entries: usize,
+    pub units: usize,
+    /// Aliases that were not read as phonemes (some of them).
+    pub unread: Vec<String>,
+    pub unread_count: usize,
+    pub missing_files: Vec<String>,
+}
+
 /// Imports a UTAU voicebank. `progress(done, total)` reports analyzed files.
 pub fn import(
     files: &dyn Files,
     options: &ImportOptions,
     progress: &mut dyn FnMut(usize, usize),
 ) -> Result<Voicebank, String> {
-    let paths = files.paths();
-    let mut entries = Vec::new();
-    for path in &paths {
-        let name = path.rsplit('/').next().unwrap_or(path);
-        if !name.eq_ignore_ascii_case("oto.ini") {
-            continue;
+    import_with_report(files, options, progress).map(|(bank, _)| bank)
+}
+
+pub fn import_with_report(
+    files: &dyn Files,
+    options: &ImportOptions,
+    progress: &mut dyn FnMut(usize, usize),
+) -> Result<(Voicebank, Report), String> {
+    let mut importer = Importer::new(Box::new(files), options)?;
+    while importer.step() {
+        progress(importer.done(), importer.total());
+    }
+    importer.finish()
+}
+
+impl<T: Files + ?Sized> Files for &T {
+    fn paths(&self) -> Vec<String> {
+        (**self).paths()
+    }
+    fn read(&self, path: &str) -> Option<Vec<u8>> {
+        (**self).read(path)
+    }
+}
+
+/// One recording's oto entries with the phonemes each alias spells.
+type Entries = Vec<(OtoEntry, Vec<Phoneme>)>;
+
+/// An import that analyzes one recording per `step`, so a caller can show
+/// progress or stay responsive in between.
+pub struct Importer<'a> {
+    files: Box<dyn Files + 'a>,
+    /// Recordings still to analyze, last first.
+    queue: Vec<(String, Entries)>,
+    total: usize,
+    language: Language,
+    bank: Voicebank,
+    report: Report,
+}
+
+impl<'a> Importer<'a> {
+    /// Reads every oto.ini, character.txt and prefix.map and spells the aliases.
+    pub fn new(files: Box<dyn Files + 'a>, options: &ImportOptions) -> Result<Self, String> {
+        let mut report = Report::default();
+        let paths = files.paths();
+        let mut entries = Vec::new();
+        for path in &paths {
+            let name = path.rsplit('/').next().unwrap_or(path);
+            if !name.eq_ignore_ascii_case("oto.ini") {
+                continue;
+            }
+            let dir = path.rsplit_once('/').map_or("", |(d, _)| d);
+            let text = decode_text(&files.read(path).ok_or("oto.ini is unreadable")?);
+            entries.extend(parse_oto(&text, dir));
         }
-        let dir = path.rsplit_once('/').map_or("", |(d, _)| d);
-        let text = decode_text(&files.read(path).ok_or("oto.ini is unreadable")?);
-        entries.extend(parse_oto(&text, dir));
-    }
-    if entries.is_empty() {
-        return Err("No oto.ini with entries was found".into());
-    }
-    // The shallowest character.txt and prefix.map belong to the bank.
-    let root_file = |name: &str| {
-        paths
-            .iter()
-            .filter(|p| {
-                p.rsplit('/')
-                    .next()
-                    .is_some_and(|n| n.eq_ignore_ascii_case(name))
-            })
-            .min_by_key(|p| p.matches('/').count())
-            .and_then(|p| files.read(p))
-            .map(|b| decode_text(&b))
-    };
-    let mut name = options.name.clone().unwrap_or_default();
-    let mut author = String::new();
-    if let Some(character) = root_file("character.txt") {
-        for line in character.lines() {
-            if let Some((key, value)) = line.split_once('=') {
-                match key.trim().to_lowercase().as_str() {
-                    "name" if name.is_empty() => name = value.trim().to_string(),
-                    "author" => author = value.trim().to_string(),
-                    _ => {}
+        if entries.is_empty() {
+            return Err("No oto.ini with entries was found".into());
+        }
+        // The shallowest character.txt and prefix.map belong to the bank.
+        let root_file = |name: &str| {
+            paths
+                .iter()
+                .filter(|p| {
+                    p.rsplit('/')
+                        .next()
+                        .is_some_and(|n| n.eq_ignore_ascii_case(name))
+                })
+                .min_by_key(|p| p.matches('/').count())
+                .and_then(|p| files.read(p))
+                .map(|b| decode_text(&b))
+        };
+        let mut name = options.name.clone().unwrap_or_default();
+        let mut author = String::new();
+        if let Some(character) = root_file("character.txt") {
+            for line in character.lines() {
+                if let Some((key, value)) = line.split_once('=') {
+                    match key.trim().to_lowercase().as_str() {
+                        "name" if name.is_empty() => name = value.trim().to_string(),
+                        "author" => author = value.trim().to_string(),
+                        _ => {}
+                    }
                 }
             }
         }
-    }
-    let mut affixes: Vec<String> = Vec::new();
-    if let Some(map) = root_file("prefix.map") {
-        for line in map.lines() {
-            for field in line.split('\t').skip(1) {
-                let field = field.trim();
-                if !field.is_empty() && !affixes.iter().any(|a| a == field) {
-                    affixes.push(field.to_string());
+        let mut affixes: Vec<String> = Vec::new();
+        if let Some(map) = root_file("prefix.map") {
+            for line in map.lines() {
+                for field in line.split('\t').skip(1) {
+                    let field = field.trim();
+                    if !field.is_empty() && !affixes.iter().any(|a| a == field) {
+                        affixes.push(field.to_string());
+                    }
                 }
             }
         }
+        // Longer affixes first, so "_C#4" is removed before "4".
+        affixes.sort_by_key(|a| std::cmp::Reverse(a.len()));
+        let language = options.language.unwrap_or_else(|| {
+            guess_language(&entries.iter().map(|e| e.alias.as_str()).collect::<Vec<_>>())
+        });
+        if name.is_empty() {
+            name = "Imported voice".into();
+        }
+        let mut by_file: BTreeMap<String, Entries> = BTreeMap::new();
+        report.entries = entries.len();
+        for entry in entries {
+            if let Some(phonemes) = phonemes_of(language, &entry.alias, &affixes) {
+                by_file
+                    .entry(entry.file.clone())
+                    .or_default()
+                    .push((entry, phonemes));
+            } else {
+                report.unread_count += 1;
+                if report.unread.len() < 40 {
+                    report.unread.push(entry.alias);
+                }
+            }
+        }
+        if by_file.is_empty() {
+            return Err(format!(
+                "No alias could be read as {} phonemes",
+                language.code()
+            ));
+        }
+        let bank = Voicebank::new(Info {
+            name,
+            author,
+            language,
+            rate: 0,
+            description: "Imported from UTAU".into(),
+        });
+        let mut queue: Vec<_> = by_file.into_iter().collect();
+        queue.reverse();
+        Ok(Self {
+            files,
+            total: queue.len(),
+            queue,
+            language,
+            bank,
+            report,
+        })
     }
-    // Longer affixes first, so "_C#4" is removed before "4".
-    affixes.sort_by_key(|a| std::cmp::Reverse(a.len()));
-    let language = options.language.unwrap_or_else(|| {
-        guess_language(&entries.iter().map(|e| e.alias.as_str()).collect::<Vec<_>>())
-    });
-    if name.is_empty() {
-        name = "Imported voice".into();
+    pub fn total(&self) -> usize {
+        self.total
+    }
+    pub fn done(&self) -> usize {
+        self.total - self.queue.len()
+    }
+    /// Analyzes the next recording; false once all are done.
+    pub fn step(&mut self) -> bool {
+        let Some((file, list)) = self.queue.pop() else {
+            return false;
+        };
+        self.analyze(file, list);
+        true
+    }
+    pub fn finish(mut self) -> Result<(Voicebank, Report), String> {
+        while self.step() {}
+        if self.bank.units.is_empty() {
+            return Err("No usable oto entries".into());
+        }
+        self.bank.finish();
+        self.report.units = self.bank.units.len();
+        Ok((self.bank, self.report))
     }
 
-    let mut by_file: BTreeMap<String, Vec<(OtoEntry, Vec<Phoneme>)>> = BTreeMap::new();
-    for entry in entries {
-        if let Some(phonemes) = phonemes_of(language, &entry.alias, &affixes) {
-            by_file
-                .entry(entry.file.clone())
-                .or_default()
-                .push((entry, phonemes));
-        }
-    }
-    if by_file.is_empty() {
-        return Err(format!(
-            "No alias could be read as {} phonemes",
-            language.code()
-        ));
-    }
-    let mut bank = Voicebank::new(Info {
-        name,
-        author,
-        language,
-        rate: 0,
-        description: "Imported from UTAU".into(),
-    });
-    let total = by_file.len();
-    let options = Options::default();
-    for (done, (file, list)) in by_file.into_iter().enumerate() {
-        progress(done, total);
-        let Some(bytes) = files.read(&file) else {
-            continue;
+    fn analyze(&mut self, file: String, list: Entries) {
+        let options = Options::default();
+        let Some(audio) = self
+            .files
+            .read(&file)
+            .and_then(|b| crate::wav::read(&b).ok())
+        else {
+            self.report.missing_files.push(file);
+            return;
         };
-        let Ok(audio) = crate::wav::read(&bytes) else {
-            continue;
-        };
-        if bank.info.rate == 0 {
-            bank.info.rate = audio.rate;
+        if self.bank.info.rate == 0 {
+            self.bank.info.rate = audio.rate;
         }
         let file_ms = audio.samples.len() as f32 * 1000.0 / audio.rate as f32;
         // Analyze only what the entries use, with a margin.
@@ -446,12 +541,12 @@ pub fn import(
         let lo = (lo - 60.0).max(0.0);
         let hi = (hi + 60.0).min(file_ms);
         if hi <= lo {
-            continue;
+            return;
         }
         let a = (lo / 1000.0 * audio.rate as f32) as usize;
         let b = ((hi / 1000.0 * audio.rate as f32) as usize).min(audio.samples.len());
         let frames = analysis::analyze(&audio.samples[a..b], audio.rate, &options);
-        let first = bank.push_frames(&frames);
+        let first = self.bank.push_frames(&frames);
         let frame_ms = FRAME_SECONDS * 1000.0;
         let to_frame = |ms: f32| -> u32 {
             let local = ((ms - lo) / frame_ms)
@@ -487,8 +582,20 @@ pub fn import(
             } else {
                 [0, 0]
             };
-            let (pitch, level) = bank.measure(last_start, end);
-            bank.add_unit(Unit {
+            // Pitch and level come from the unit's vowel: a VC unit's final
+            // consonant is quieter and says nothing about the voice's level.
+            let (pitch, level) = match phonemes.iter().rposition(|p| p.is_vowel()) {
+                Some(v) => self.bank.measure(bounds[v], bounds[v + 1]),
+                None => (self.bank.measure(last_start, end).0, FLOOR_DB),
+            };
+            // Japanese banks record alternative takes under katakana aliases.
+            let variant = self.language == Language::Ja
+                && entry
+                    .alias
+                    .chars()
+                    .any(|c| ('\u{30A1}'..='\u{30F6}').contains(&c));
+            self.bank.add_unit(Unit {
+                source: entry.file.clone(),
                 alias: entry.alias,
                 phonemes,
                 bounds,
@@ -496,15 +603,10 @@ pub fn import(
                 stable,
                 pitch,
                 level,
+                variant,
             });
         }
     }
-    progress(total, total);
-    if bank.units.is_empty() {
-        return Err("No usable oto entries".into());
-    }
-    bank.finish();
-    Ok(bank)
 }
 
 #[cfg(test)]

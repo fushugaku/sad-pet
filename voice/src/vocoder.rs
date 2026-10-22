@@ -107,9 +107,10 @@ impl Vocoder {
                 let odd = if count % 2 == 1 { 1.0 } else { -1.0 };
                 period *= 1.0 + pulse.growl * 0.1 * odd;
                 amplitude *= 1.0 - pulse.growl * 0.4 * (0.5 + 0.5 * odd);
-                let jitter = 0.002 + pulse.jitter * 0.02;
-                period *= 1.0 + jitter * rng.uniform();
-                amplitude *= 1.0 + (0.02 + pulse.jitter * 0.15) * rng.uniform();
+                // Jitter and shimmer only as asked: a recording's own
+                // irregularity is already in its aperiodicity.
+                period *= 1.0 + pulse.jitter * 0.012 * rng.uniform();
+                amplitude *= 1.0 + pulse.jitter * 0.12 * rng.uniform();
             }
             let period = period.max(2.0);
             self.pulse(&frame, t, period, amplitude, voiced, &mut rng, &mut out);
