@@ -158,6 +158,55 @@
         aria-label="Drum machine"
         hidden
       ></section>
+      <section
+        id="synth-engine"
+        class="bank resynth-bank synth-bank"
+        aria-label="Synth engine"
+        hidden
+      >
+        <div class="section-heading">
+          <h2>Synth engine <span>Rustias OSC</span></h2>
+          <div class="resynth-actions">
+            <label class="drum-buffer"
+              >Buffer<select
+                id="synth-buffer"
+                aria-label="Synth granular buffer duration"
+              ></select
+            ></label>
+            <button id="synth-add">+ Oscillator</button>
+          </div>
+        </div>
+        <div id="synth-oscillators" class="resynth-oscillators"></div>
+      </section>
+      <section
+        id="bus-engine"
+        class="bank resynth-bank synth-bank bus-bank"
+        aria-label="Bus"
+        hidden
+      >
+        <div class="section-heading">
+          <h2 id="bus-title">Bus <span>sends from timbres</span></h2>
+          <div class="resynth-actions">
+            <label class="drum-buffer"
+              >Buffer<select
+                id="bus-buffer"
+                aria-label="Bus granular buffer duration"
+              ></select
+            ></label>
+            <label class="check"
+              ><input
+                id="bus-filters"
+                type="checkbox"
+                aria-label="Bus filters 1 and 2"
+              />Filters</label
+            >
+          </div>
+        </div>
+        <p id="bus-hint" class="muted bus-hint">
+          Everything is off, so the input passes through unchanged and uses almost
+          no CPU. Switch on Granular, Filters or Resynth, or add effects below.
+        </p>
+      </section>
       <div id="sample-panel-home" hidden></div>
       <section class="sample-panel" aria-label="Sample and grains">
         <div class="input-source" id="browser-input" hidden>
@@ -422,7 +471,13 @@
           </button>
         </div>
         <div class="output-controls">
-          <label
+          <label id="granular-toggle" class="check granular-toggle" hidden
+            ><input
+              id="history-granular"
+              type="checkbox"
+              aria-label="Granular processing of this timbre's live history"
+            />Granular</label
+          ><label
             >DRY / WET<input
               id="mix"
               title="Blend source audio and grains before filters and effects"
@@ -467,69 +522,6 @@
           </div>
         </section>
       </div>
-      <section
-        id="synth-engine"
-        class="bank resynth-bank synth-bank"
-        aria-label="Synth engine"
-        hidden
-      >
-        <div class="section-heading">
-          <h2>Synth engine <span>Rustias OSC</span></h2>
-          <div class="resynth-actions">
-            <label class="drum-buffer"
-              >Buffer<select
-                id="synth-buffer"
-                aria-label="Synth granular buffer duration"
-              ></select
-            ></label>
-            <button id="synth-add">+ Oscillator</button>
-            <label class="check"
-              ><input
-                id="synth-granular"
-                type="checkbox"
-                aria-label="Synth granular processing"
-              />Granular</label
-            >
-          </div>
-        </div>
-        <div id="synth-oscillators" class="resynth-oscillators"></div>
-      </section>
-      <section
-        id="bus-engine"
-        class="bank resynth-bank synth-bank bus-bank"
-        aria-label="Bus"
-        hidden
-      >
-        <div class="section-heading">
-          <h2 id="bus-title">Bus <span>sends from timbres</span></h2>
-          <div class="resynth-actions">
-            <label class="drum-buffer"
-              >Buffer<select
-                id="bus-buffer"
-                aria-label="Bus granular buffer duration"
-              ></select
-            ></label>
-            <label class="check"
-              ><input
-                id="bus-granular"
-                type="checkbox"
-                aria-label="Bus granular processing"
-              />Granular</label
-            >
-            <label class="check"
-              ><input
-                id="bus-filters"
-                type="checkbox"
-                aria-label="Bus filters 1 and 2"
-              />Filters</label
-            >
-          </div>
-        </div>
-        <p id="bus-hint" class="muted bus-hint">
-          Everything is off, so the input passes through unchanged and uses almost
-          no CPU. Switch on Granular, Filters or Resynth, or add effects below.
-        </p>
-      </section>
       <section class="bank color-bank" aria-label="Source effects">
         <div class="section-heading">
           <h2>

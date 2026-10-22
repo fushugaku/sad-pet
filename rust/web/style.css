@@ -332,6 +332,23 @@ kbd {
   accent-color: var(--accent);
   margin: 0;
 }
+.output-controls .granular-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--text);
+}
+.output-controls .granular-toggle[hidden] {
+  display: none;
+}
+.output-controls .granular-toggle input {
+  width: 16px;
+  height: 16px;
+}
+.output-controls input:disabled {
+  opacity: 0.4;
+}
 .output-controls output {
   grid-row: 2;
   grid-column: 2;
@@ -3727,13 +3744,6 @@ input[type="range"] {
   width: 94px;
   min-height: 36px;
   padding-block: 6px;
-}
-.drum-grain-slot > .bank {
-  margin: 8px 0 20px;
-  padding-block: 16px;
-}
-.drum-wave-slot > .sample-panel {
-  margin: 8px 0 20px;
 }
 .drum-waveform :is(.input-source, #sample-select, #live-source-name, #library-toggle, .file-library, .drop-hint) {
   display: none;

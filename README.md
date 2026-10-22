@@ -89,8 +89,9 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   conditions and two parameter locks. The drum page has its own Neuropolis mod
   sequencer. **Granular** routes the drum mix through the shared Grain Engine;
   turn it off for direct processing through the remaining filter/FX chain.
-  Grain controls appear directly below the Granular switch, with a live grain
-  count. **Buffer** selects 125 ms–32 s of live drum history (8 s by default).
+  Every engine keeps the Granular page order: its own section on top, then the
+  waveform, the transport row with the **Granular** switch beside Dry/Wet, Source
+  FX and Grain Engine with a live grain count. **Buffer** selects 125 ms–32 s of live drum history (8 s by default).
   The waveform, Position and Cloud use that duration; Size scales its full range
   to shorter buffers. Changing duration retains captured audio, including Freeze,
   and uses reserved memory without restarting the pattern or rebuilding DSP.

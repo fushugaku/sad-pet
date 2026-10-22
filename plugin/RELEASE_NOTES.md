@@ -1,5 +1,10 @@
 SAD PET instrument and SAD PET FX, with native Rust DSP and an embedded editor.
 
+**Same page order for every engine.** Drum machine, Synth engine, Bus and Master
+pages follow the Granular layout: their own section on top, then the waveform,
+the transport row, Source FX and Grain Engine. One **Granular** switch now sits
+beside Dry/Wet for every engine that has it; Dry/Wet is disabled while it is off.
+
 **Fix: Grain Engine on a Granular Bus or Master.** After switching Granular on,
 its knobs were dimmed and could not be turned. They now respond as on any timbre.
 
@@ -143,6 +148,9 @@ are supplied individually and in `SHA256SUMS.txt`.
 ---
 
 В обоих установщиках есть инструмент **SAD PET** и эффект **SAD PET FX**.
+Страницы драм-машины, Synth engine, Bus и Master устроены как у Granular: сверху
+свой раздел, затем волна, транспорт, Source FX и Grain Engine. Галочка **Granular**
+теперь одна и стоит рядом с Dry/Wet; пока она выключена, Dry/Wet неактивен.
 Исправлено: после включения Granular у Bus и Master ручки Grain Engine оставались
 затемнёнными и не крутились.
 В каждой сцене есть вкладка **Master**, в которую сводятся все тембры и шины, а

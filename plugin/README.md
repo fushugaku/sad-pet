@@ -55,8 +55,9 @@ changing its velocity. Velocity, chance, pitch, ratchet and microtiming have
 rotary controls. Conditions and two parameter locks remain visible alongside.
 Audition plays a single drum even while DAW transport is stopped.
 
-Enable **Granular** in the drum heading to send its live mix through Grain Engine.
-Its controls and live grain count appear directly below the switch. Selecting a
+Enable **Granular** beside Dry/Wet to send the drum mix through Grain Engine.
+Drum, Synth engine, Bus and Master pages keep the Granular page order: their own
+section on top, then the waveform, transport, Source FX and Grain Engine. Selecting a
 drum timbre also shows the shared waveform display and its grain positions, in
 both direct and granular modes. **Buffer** selects 125 ms–32 s of history (8 s
 by default). Position and Cloud follow that duration; Size uses the full knob
@@ -73,7 +74,7 @@ Neuropolis editor is independent of every other timbre's program.
 The Synth engine timbre reverses the granular order: up to four Rustias OSC1 /
 Wavefolder oscillators (the Resynth card set without Audio In) play each of the
 eight note voices from DAW MIDI, the arpeggiator or Neuropolis, then that note's
-filters, ENV/VCA and Pre-filter FX. **Granular** in its heading sends the mixed
+filters, ENV/VCA and Pre-filter FX. **Granular** beside Dry/Wet sends the mixed
 voices after the VCA into a 125 ms–32 s **Buffer** read by Grain Engine; Source FX
 processes that mix before capture, and Main pitch transposes the grains. A new
 synth timbre waits for notes (MIDI gate on) instead of droning with the transport.
