@@ -154,6 +154,78 @@
           </select></label
         >
       </div>
+      <div class="transport">
+        <div class="transport-buttons">
+          <button id="play" class="play" aria-pressed="false">
+            <span id="play-icon">▶</span><span id="play-label">Play</span
+            ><kbd>SPACE</kbd></button
+          ><button id="freeze" aria-pressed="false">Freeze</button
+          ><button id="reverse" aria-pressed="false">Reverse</button
+          ><button id="bypass" aria-pressed="false">Bypass</button>
+          <button
+            id="record"
+            aria-label="Start recording"
+            aria-pressed="false"
+            title="Record the audio output · up to 30 minutes / 512 MB per take"
+            disabled
+          >
+            <span class="record-dot" aria-hidden="true"></span>
+            <span id="record-label">Record</span>
+            <output id="record-time" hidden>00:00</output>
+          </button>
+        </div>
+        <div class="output-controls">
+          <label id="granular-toggle" class="check granular-toggle" hidden
+            ><input
+              id="history-granular"
+              type="checkbox"
+              aria-label="Granular processing of this timbre's live history"
+            />Granular</label
+          ><label
+            >DRY / WET<input
+              id="mix"
+              title="Blend source audio and grains before filters and effects"
+              type="range"
+              min="0"
+              max="1"
+              step="0.001"
+              value="1"
+            /><output id="mix-value">100%</output></label
+          ><label
+            >OUTPUT<input
+              id="volume"
+              type="range"
+              min="0"
+              max="1"
+              step="0.001"
+              value="0.65"
+            /><output id="volume-value">65%</output></label
+          >
+          <div class="meters" aria-label="Output level">
+            <i id="meter-l"></i><i id="meter-r"></i>
+          </div>
+        </div>
+      </div>
+      <div id="recording-result-slot">
+        <section
+          id="recording-result"
+          class="recording-result"
+          aria-label="Saved recording"
+          hidden
+        >
+          <div class="recording-result-info" role="status">
+            <strong id="recording-result-title">Recording saved</strong>
+            <span id="recording-result-info" class="muted"></span>
+          </div>
+          <div class="recording-result-actions">
+            <button id="recording-use" class="light">Use as sample</button>
+            <button id="recording-trim">Trim</button>
+            <button id="recording-wav">WAV ↓</button>
+            <button id="recording-mp3">MP3 ↓</button>
+            <button id="recording-library">Show in Library</button>
+          </div>
+        </section>
+      </div>
       <section
         id="drum-machine"
         class="bank drum-bank"
@@ -446,78 +518,6 @@
           <div id="library-list" class="library-list"></div>
         </section>
       </section>
-      <div class="transport">
-        <div class="transport-buttons">
-          <button id="play" class="play" aria-pressed="false">
-            <span id="play-icon">▶</span><span id="play-label">Play</span
-            ><kbd>SPACE</kbd></button
-          ><button id="freeze" aria-pressed="false">Freeze</button
-          ><button id="reverse" aria-pressed="false">Reverse</button
-          ><button id="bypass" aria-pressed="false">Bypass</button>
-          <button
-            id="record"
-            aria-label="Start recording"
-            aria-pressed="false"
-            title="Record the audio output · up to 30 minutes / 512 MB per take"
-            disabled
-          >
-            <span class="record-dot" aria-hidden="true"></span>
-            <span id="record-label">Record</span>
-            <output id="record-time" hidden>00:00</output>
-          </button>
-        </div>
-        <div class="output-controls">
-          <label id="granular-toggle" class="check granular-toggle" hidden
-            ><input
-              id="history-granular"
-              type="checkbox"
-              aria-label="Granular processing of this timbre's live history"
-            />Granular</label
-          ><label
-            >DRY / WET<input
-              id="mix"
-              title="Blend source audio and grains before filters and effects"
-              type="range"
-              min="0"
-              max="1"
-              step="0.001"
-              value="1"
-            /><output id="mix-value">100%</output></label
-          ><label
-            >OUTPUT<input
-              id="volume"
-              type="range"
-              min="0"
-              max="1"
-              step="0.001"
-              value="0.65"
-            /><output id="volume-value">65%</output></label
-          >
-          <div class="meters" aria-label="Output level">
-            <i id="meter-l"></i><i id="meter-r"></i>
-          </div>
-        </div>
-      </div>
-      <div id="recording-result-slot">
-        <section
-          id="recording-result"
-          class="recording-result"
-          aria-label="Saved recording"
-          hidden
-        >
-          <div class="recording-result-info" role="status">
-            <strong id="recording-result-title">Recording saved</strong>
-            <span id="recording-result-info" class="muted"></span>
-          </div>
-          <div class="recording-result-actions">
-            <button id="recording-use" class="light">Use as sample</button>
-            <button id="recording-trim">Trim</button>
-            <button id="recording-wav">WAV ↓</button>
-            <button id="recording-mp3">MP3 ↓</button>
-            <button id="recording-library">Show in Library</button>
-          </div>
-        </section>
-      </div>
       <section class="bank color-bank" aria-label="Source effects">
         <div class="section-heading">
           <h2>

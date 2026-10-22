@@ -303,6 +303,7 @@ button span + span {
   border: 1px solid #3c4939;
   border-radius: 10px;
   overflow: hidden;
+  margin-bottom: 20px;
 }
 .sample-top,
 .sample-bottom {
