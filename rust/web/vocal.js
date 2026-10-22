@@ -134,7 +134,14 @@
       this.languageSelect = el("select");
       this.languageSelect.setAttribute("aria-label", "Lyrics language");
       this.languageSelect.append(...LANGUAGES.map(([v, l]) => option(v, l)));
-      this.languageSelect.onchange = () => this.edit((s) => (s.language = this.languageSelect.value));
+      this.languageSelect.onchange = () =>
+        this.edit((s) => {
+          s.language = this.languageSelect.value;
+          // A voice that comes with SAD PET gives way to the one for the new language.
+          const current = this.voices?.find((v) => v.id === s.voice);
+          const pack = this.voices?.find((v) => v.bundled && v.language === s.language);
+          if (pack && current?.bundled) s.voice = pack.id;
+        });
       this.style = el("select");
       this.style.setAttribute("aria-label", "Singing style");
       this.style.append(...Object.keys(STYLES).map((name) => option(name, name)));
@@ -159,8 +166,19 @@
       for (const [value, label] of [[TPB, "1/4"], [TPB / 2, "1/8"], [TPB / 4, "1/16"], [TPB / 8, "1/32"], [TPB / 3, "1/8T"], [1, "Off"]])
         this.snapSelect.append(option(value, label));
       this.snapSelect.value = String(this.snap);
-      this.snapSelect.onchange = () => (this.snap = Number(this.snapSelect.value));
+      this.snapSelect.onchange = () => {
+        this.snap = Number(this.snapSelect.value);
+        this.syncControls();
+      };
       snapLabel.append(this.snapSelect);
+      const loopLabel = el("label", "vocal-field", "Steps");
+      loopLabel.title = "The score starts over after this many grid steps; empty sings it once. Drag the marker on the ruler to change it.";
+      this.loopSteps = el("input");
+      Object.assign(this.loopSteps, { type: "number", min: 0, max: 4096, step: 1, placeholder: "∞" });
+      this.loopSteps.setAttribute("aria-label", "Loop length in grid steps");
+      this.loopSteps.onchange = () =>
+        this.edit((s) => (s.loop_ticks = Math.round(clamp(Number(this.loopSteps.value) || 0, 0, 4096) * this.stepTicks())));
+      loopLabel.append(this.loopSteps);
       // Actions
       this.lyricsButton = el("button", "", "Lyrics…");
       this.lyricsButton.title = "Type lyrics for the selected notes (or all)";
@@ -178,7 +196,7 @@
       this.play = el("button", "vocal-play", "▶ Play");
       this.play.setAttribute("aria-pressed", "false");
       this.play.onclick = () => this.transport(!this.status.playing);
-      tools.append(this.voice, voiceMenu, this.languageSelect, this.style, tempoLabel, followLabel, snapLabel, this.lyricsButton, this.scoreButton, this.step, this.play);
+      tools.append(this.voice, voiceMenu, this.languageSelect, this.style, tempoLabel, followLabel, snapLabel, loopLabel, this.lyricsButton, this.scoreButton, this.step, this.play);
       // Canvas
       this.frame = el("div", "vocal-roll");
       this.canvas = el("canvas");
@@ -309,6 +327,13 @@
       const tempo = this.status.hostBpm || this.bpm();
       return (seconds * tempo * TPB) / 60;
     }
+    nearLoopEnd(x) {
+      return !!this.score?.loop_ticks && Math.abs(x - this.x(this.score.loop_ticks)) <= 7;
+    }
+    /** Ticks of one grid step (a 1/16 when the grid is off). */
+    stepTicks() {
+      return this.snap > 1 ? this.snap : TPB / 4;
+    }
     snapTick(tick) {
       return this.snap <= 1 ? Math.round(tick) : Math.round(tick / this.snap) * this.snap;
     }
@@ -421,23 +446,26 @@
       try {
         this.voices = await this.hooks.request("/api/vocal/voices");
       } catch {
-        this.voices = [{ id: "", name: "SAD PET (built-in)", builtin: true }];
+        this.voices = [{ id: "", name: "Synthetic (no voicebank)", builtin: true }];
       }
       this.syncControls();
     }
     syncControls() {
       const s = this.score;
       if (!s) return;
-      const voices = this.voices || [{ id: "", name: "SAD PET (built-in)" }];
+      const voices = this.voices || [{ id: "", name: "Synthetic (no voicebank)" }];
       const signature = JSON.stringify(voices.map((v) => [v.id, v.name]));
       if (signature !== this.voiceSignature) {
-        this.voice.replaceChildren(...voices.map((v) => option(v.id, v.language ? `${v.name} (${v.language})` : v.name)));
+        const label = (v) => (v.bundled || !v.language ? v.name : `${v.name} (${v.language})`);
+        this.voice.replaceChildren(...voices.map((v) => option(v.id, label(v))));
         this.voiceSignature = signature;
       }
       if (s.voice && !voices.some((v) => v.id === s.voice))
         this.voice.append(option(s.voice, `${s.voice} (missing)`));
       this.voice.value = s.voice || "";
       this.languageSelect.value = s.language || "ja";
+      if (document.activeElement !== this.loopSteps)
+        this.loopSteps.value = s.loop_ticks ? String(+(s.loop_ticks / this.stepTicks()).toFixed(2)) : "";
       this.style.value = STYLES[s.style?.name] ? s.style.name : "Natural";
       if (document.activeElement !== this.tempo) this.tempo.value = this.bpm();
       this.follow.checked = s.follow_host !== false;
@@ -519,8 +547,8 @@
     showStatus() {
       const p = this.status.progress;
       const voice = this.voices?.find((v) => v.id === (this.score?.voice || ""));
-      let text = voice ? voice.name : "Built-in voice";
-      if (p?.missing_voice) text = "Voicebank missing: the built-in voice sings";
+      let text = voice ? voice.name : "Synthetic voice";
+      if (p?.missing_voice) text = "Voicebank missing: the synthetic voice sings";
       if (p && p.rendered < p.phrases) text += ` · rendering ${p.rendered}/${p.phrases}`;
       else if (p?.phrases) text += ` · ${p.phrases} phrase${p.phrases === 1 ? "" : "s"} ready`;
       if (this.renderError) text += ` · ${this.renderError}`;
@@ -593,7 +621,7 @@
     }
     async exportVoice() {
       const id = this.score?.voice;
-      if (!id) throw new Error("The built-in voice has no file to export");
+      if (!id) throw new Error("The synthetic voice has no file to export");
       if (window.sadPetNative) {
         await window.sadPetNative.dialog("/api/vocal/export", { id }, { title: "Export voicebank", mode: "save", filename: `${id}.sadvoice`, patterns: "*.sadvoice" });
         return;
@@ -603,12 +631,14 @@
     }
     async removeVoice() {
       const id = this.score?.voice;
-      if (!id) throw new Error("The built-in voice cannot be removed");
+      if (!id) throw new Error("The synthetic voice cannot be removed");
+      if (this.voices?.find((v) => v.id === id)?.bundled) throw new Error("Voices that come with SAD PET cannot be removed");
       if (!confirm(`Remove the voicebank “${this.voice.selectedOptions[0]?.textContent}”?`)) return;
       await this.hooks.request("/api/vocal/voice/remove", { id });
       this.voices = null;
       await this.loadVoices();
-      this.edit((s) => (s.voice = ""));
+      const pack = this.voices?.find((v) => v.bundled && v.language === this.score.language);
+      this.edit((s) => (s.voice = pack?.id ?? ""));
     }
     async importScore() {
       let score;
@@ -846,6 +876,17 @@
           c.font = "11px Inter, sans-serif";
         }
       });
+      // Past the loop's end nothing is sung
+      const loopX = this.score.loop_ticks ? this.x(this.score.loop_ticks) : Infinity;
+      if (loopX < width) {
+        const x = Math.max(KEYS, loopX);
+        c.fillStyle = "rgba(10,12,10,0.55)";
+        c.fillRect(x, RULER, width - x, bottom - RULER);
+        if (loopX >= KEYS) {
+          c.fillStyle = blue;
+          c.fillRect(Math.round(loopX) - 1, RULER, 2, bottom - RULER);
+        }
+      }
       // Selection rectangle
       if (this.marquee) {
         const m = this.marquee;
@@ -863,6 +904,11 @@
       for (let bar = Math.floor(view.tick / (TPB * 4)); bar * TPB * 4 < view.tick + visible; bar++) {
         const x = this.x(bar * TPB * 4);
         if (x >= KEYS) c.fillText(String(bar + 1), x + 3, 14);
+      }
+      if (loopX >= KEYS && loopX < width) {
+        c.fillStyle = blue;
+        c.fillRect(Math.round(loopX) - 1, 4, 2, RULER - 4);
+        c.fillRect(Math.round(loopX) - 7, 4, 6, 8);
       }
       // Cursor (play start) and playhead
       const cursorX = this.x(this.cursor ?? 0);
@@ -935,6 +981,10 @@
         canvas.focus();
         const p = local(e);
         canvas.setPointerCapture(e.pointerId);
+        if (p.y < RULER && this.nearLoopEnd(p.x)) {
+          this.drag = { kind: "loop", before: JSON.stringify(this.score), moved: false };
+          return;
+        }
         if (p.y < RULER) {
           this.cursor = Math.max(0, this.snapTick(this.tickX(Math.max(KEYS, p.x))));
           this.hooks.request("/api/vocal/transport", { start: this.secondsAt(this.cursor) }).catch(() => {});
@@ -987,11 +1037,22 @@
           const p = local(e);
           const note = p.y > RULER && p.y < this.rollBottom ? this.noteAt(p.x, p.y) : null;
           const r = note && this.noteRect(note);
-          canvas.style.cursor = note ? (p.x > r.x + r.w - 6 ? "ew-resize" : "grab") : p.y < RULER ? "pointer" : "crosshair";
+          canvas.style.cursor = note
+            ? p.x > r.x + r.w - 6 ? "ew-resize" : "grab"
+            : p.y < RULER ? (this.nearLoopEnd(p.x) ? "ew-resize" : "pointer") : "crosshair";
           return;
         }
         const p = local(e);
         if (d.kind === "lane") return this.paintCurve(p);
+        if (d.kind === "loop") {
+          const step = this.stepTicks();
+          const ticks = Math.max(step, Math.round(this.tickX(Math.max(KEYS, p.x)) / step) * step);
+          d.moved ||= ticks !== this.score.loop_ticks;
+          this.score.loop_ticks = ticks;
+          this.syncControls();
+          this.draw();
+          return;
+        }
         if (d.kind === "marquee") {
           Object.assign(this.marquee, { x1: p.x, y1: p.y });
           const [x0, x1] = [Math.min(this.marquee.x0, p.x), Math.max(this.marquee.x0, p.x)];
@@ -1028,7 +1089,7 @@
           this.draw();
         }
         if (!d) return;
-        if ((d.kind === "move" || d.kind === "resize") && d.moved) {
+        if ((d.kind === "move" || d.kind === "resize" || d.kind === "loop") && d.moved) {
           this.undo.push(d.before);
           this.redo = [];
           this.commit();

@@ -118,6 +118,38 @@ const update = deliver()[0];
 assert.equal(update.fresh.length, 1);
 assert.equal(core.request("/api/vocal/state").clips, 2);
 
+// A loop of 1440 ticks (1.5 s): the third note lies past it, and the song
+// starts over, the position wrapping with it.
+score.loop_ticks = 1440;
+core.request("/api/vocal/score", { score });
+for (const job of jobs()) vocal.command(job);
+renderAll();
+assert.equal(deliver()[0].plan.length, 1, "Only the phrase inside the loop is planned");
+core.request("/api/vocal/transport", { start: 0, playing: true });
+const looped = levels(3.2);
+const loopAt = (s) => max(looped.slice(Math.floor((s * rate) / 128), Math.ceil(((s + 0.2) * rate) / 128)));
+assert.ok(loopAt(2.1) > 0.01, `The first note sings again: ${loopAt(2.1)}`);
+assert.ok(loopAt(2.6) > 0.01, `The second note sings again: ${loopAt(2.6)}`);
+const wrapped = core.request("/api/vocal/state").position;
+assert.ok(Math.abs(wrapped - (3.2 - 1.5 * 2)) < 0.02, `The position wraps: ${wrapped}`);
+core.request("/api/transport", { playing: false });
+delete score.loop_ticks;
+core.request("/api/vocal/score", { score });
+for (const job of jobs()) vocal.command(job);
+renderAll();
+deliver();
+
+// The voices that come with SAD PET: listed for the browser, and they load.
+{
+  const packs = JSON.parse(await readFile(resolve(folder, "voices/packs.json"), "utf8"));
+  assert.deepEqual(packs.map((p) => [p.id, p.language]), [["kasane-teto", "ja"], ["kasane-teto-en", "en"], ["kumi-ru", "ru"]]);
+  const bytes = await readFile(resolve(folder, "voices", packs[0].file));
+  assert.equal(bytes.length, packs[0].size);
+  vocal.addVoice("kasane-teto", bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length));
+  const listed = vocal.command({ type: "voices" });
+  assert.ok(listed.some((v) => v.id === "kasane-teto" && v.units > 1000), JSON.stringify(listed));
+}
+
 // A loaded preset keeps the role and the score; Granular and Filters work.
 core.request("/api/preset", utility.request("/api/preset"));
 const kept = core.request("/api/preset");
