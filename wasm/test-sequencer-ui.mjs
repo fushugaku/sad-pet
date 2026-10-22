@@ -453,3 +453,139 @@ document.activeElement = null;
 console.log(
   "Destination menus: one closed button, section → target cascade, keyboard, type-ahead, hover, phone drill-in and outside click passed.",
 );
+
+// Step selection, copy and paste.
+preset = {
+  ...preset,
+  sequencer: {
+    enabled: true,
+    tracks: [
+      { ...structuredClone(track), id: 1, root_note: 48 },
+      { ...structuredClone(track), id: 2, target: { kind: "oscillator", index: 0 } },
+    ],
+  },
+};
+const lane = (id) => preset.sequencer.tracks.find((t) => t.id === id);
+lane(1).steps.forEach((s, i) => {
+  s.pitch = 48 + i;
+  s.velocity = 10 + i;
+});
+lane(1).steps[2].slide = true;
+Object.assign(ui, {
+  root: { ...ui.root, getClientRects: () => [{}], contains: () => true },
+  selected: 1,
+  selection: new Set(),
+  anchor: null,
+  clipboard: null,
+  syncSelection: () => {},
+});
+const picked = () => [...ui.selection].sort((a, b) => a - b);
+const press = (stage, keys = {}) =>
+  ui.pickStart(stage, { button: 0, preventDefault() {}, currentTarget: {}, ...keys });
+press(0);
+ui.pickTo(3);
+ui.pickEnd();
+assert.deepEqual(picked(), [0, 1, 2, 3], "Dragging picks a run");
+press(5, { metaKey: true });
+ui.pickEnd();
+press(1, { ctrlKey: true });
+ui.pickEnd();
+assert.deepEqual(picked(), [0, 2, 3, 5], "Cmd/Ctrl adds and removes steps");
+press(7, { shiftKey: true });
+ui.pickEnd();
+assert.deepEqual(picked(), [1, 2, 3, 4, 5, 6, 7], "Shift extends from the last step picked");
+press(4);
+ui.pickEnd();
+assert.deepEqual(picked(), [4]);
+press(4);
+ui.pickEnd();
+assert.deepEqual(picked(), [], "Clicking the only selected step clears it");
+ui.pickKey(9, {});
+ui.pickKey(12, { shiftKey: true });
+assert.deepEqual(picked(), [9, 10, 11, 12], "Enter / Space picks with the keyboard");
+
+ui.select(new Set([0, 2]));
+ui.copy();
+assert.equal(ui.clipboard.steps.length, 3);
+assert.equal(ui.clipboard.steps[1], null, "The gap between picked steps is kept");
+lane(1).steps[0].pitch = 99;
+assert.equal(ui.clipboard.steps[0].pitch, 48, "The copy is a snapshot");
+edits.length = 0;
+ui.select(new Set([8]));
+ui.paste();
+assert.deepEqual(lane(1).steps.slice(8, 11).map((s) => s.pitch), [48, 57, 50]);
+assert.equal(lane(1).steps[10].slide, true);
+assert.equal(lane(1).steps[10].velocity, 12);
+assert.deepEqual(picked(), [8, 9, 10], "A lone step is where the whole copy starts");
+assert.ok(edits.every((e) => e.track === 1 && e.stage !== 9), "The gap was pasted over");
+assert.ok(!edits.some((e) => e.field === 1), "Unchanged fields were resent");
+
+lane(1).steps[1].pitch_override = 50;
+ui.select(new Set([0, 1]));
+ui.copy();
+ui.select(new Set([11, 12, 13, 14, 15]));
+ui.paste();
+assert.deepEqual(
+  lane(1).steps.slice(11).map((s) => s.pitch),
+  [99, 49, 99, 49, 99],
+  "A longer selection repeats the copy",
+);
+assert.deepEqual(lane(1).steps.slice(11).map((s) => s.pitch_override), [-1, 50, -1, 50, -1]);
+ui.select(new Set([15]));
+ui.paste();
+assert.deepEqual(picked(), [15], "A paste stops at step 16");
+ui.select(new Set([3, 4, 9]));
+ui.paste();
+assert.deepEqual(
+  [3, 4, 9, 10].map((i) => lane(1).steps[i].pitch),
+  [99, 49, 99, 49],
+  "Every selected region gets the copy",
+);
+
+// Main pitch (root C3) → oscillator offsets keep the intervals, within ±24 st.
+lane(1).steps[0].pitch = 52;
+lane(1).steps[1].pitch = 40;
+lane(1).steps[1].pitch_override = 50;
+lane(1).steps[2].pitch = 10;
+ui.select(new Set([0, 1, 2]));
+ui.copy();
+ui.selected = 2;
+ui.select(new Set([0]));
+ui.paste();
+assert.deepEqual(lane(2).steps.slice(0, 3).map((s) => s.pitch), [64, 52, 36]);
+assert.equal(lane(2).steps[1].pitch_override, 62);
+assert.equal(lane(1).steps[0].pitch, 52, "Pasting into one track changed another");
+ui.select(new Set([0]));
+ui.copy();
+ui.selected = 1;
+ui.select(new Set([5]));
+ui.paste();
+assert.equal(lane(1).steps[5].pitch, 52, "An oscillator offset pastes back onto the root");
+
+// ⌘C / Ctrl+C / ⌘V, also on a Russian layout, but never inside a number field.
+const keyEvent = (key, code, extra = {}) => {
+  let prevented = false;
+  ui.shortcut({
+    key,
+    code,
+    target: { matches: () => false },
+    preventDefault: () => (prevented = true),
+    ...extra,
+  });
+  return prevented;
+};
+lane(1).steps[6].pitch = 70;
+ui.select(new Set([6]));
+assert.ok(keyEvent("с", "KeyC", { metaKey: true }));
+assert.equal(ui.clipboard.steps[0].pitch, 70);
+ui.select(new Set([7]));
+assert.ok(keyEvent("v", "KeyV", { ctrlKey: true }));
+assert.equal(lane(1).steps[7].pitch, 70);
+assert.ok(!keyEvent("c", "KeyC", { metaKey: true, target: { matches: () => true } }));
+assert.ok(!keyEvent("c", "KeyC"), "C without a modifier is a keyboard note");
+keyEvent("Escape", "Escape");
+assert.deepEqual(picked(), []);
+assert.ok(!keyEvent("v", "KeyV", { metaKey: true }), "Paste with nothing selected");
+console.log(
+  "Sequencer steps: drag / Shift / Cmd selection, gap-keeping copy, start-point and repeating paste into every region, root-aware oscillator paste and layout-independent shortcuts passed.",
+);

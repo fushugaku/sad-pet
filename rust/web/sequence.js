@@ -358,6 +358,12 @@ window.SadNeuropolis = class {
     this.page = 0;
     this.knobs = [];
     this.signature = "";
+    // Stage indices stay selected across track switches, so a phrase copied
+    // from one track pastes into the same steps of another.
+    this.selection = new Set();
+    this.anchor = null;
+    this.clipboard = null;
+    document.addEventListener("keydown", (e) => this.shortcut(e));
     root.innerHTML = `<div class="section-heading"><h2>Neuropolis <span class="neuro-count"></span></h2><div class="neuro-actions"><label class="check"><input class="neuro-enabled" type="checkbox">Enabled</label><button class="neuro-restart" title="Restart all sequencer tracks">Restart</button><button class="neuro-add">+ Add track</button></div></div><div class="neuro-layout"><aside><div class="neuro-tracks" role="tablist" aria-label="Sequencer tracks"></div><div class="neuro-pages"><button class="neuro-prev" aria-label="Previous tracks">←</button><output></output><button class="neuro-next" aria-label="Next tracks">→</button></div></aside><div class="neuro-editor"></div></div>`;
     root.querySelector(".neuro-enabled").onchange = (e) =>
       this.edit(null, null, 0, Number(e.target.checked));
@@ -590,6 +596,178 @@ window.SadNeuropolis = class {
         .querySelector(".neuro-stage-number")
         .setAttribute("aria-pressed", String(!step.skip));
     });
+    this.syncSelection();
+  }
+  syncSelection() {
+    const selected = this.selection,
+      copied = this.clipboard?.steps.filter(Boolean).length ?? 0;
+    this.root.querySelectorAll(".neuro-stage, .neuro-detail-stage").forEach((card) =>
+      card.classList.toggle("selected", selected.has(Number(card.dataset.pick))),
+    );
+    for (const bar of this.root.querySelectorAll(".neuro-stage-pick"))
+      bar.setAttribute("aria-pressed", String(selected.has(Number(bar.dataset.pick))));
+    const copy = this.root.querySelector(".neuro-copy"),
+      paste = this.root.querySelector(".neuro-paste"),
+      status = this.root.querySelector(".neuro-selection");
+    if (!copy) return;
+    copy.disabled = !selected.size;
+    paste.disabled = !selected.size || !copied;
+    const steps = `${copied} ${copied === 1 ? "step" : "steps"} copied`;
+    status.textContent = selected.size
+      ? `${selected.size === 1 ? "Step" : "Steps"} ${this.stageRanges(selected)}${copied ? ` · ${steps}` : ""}`
+      : copied
+        ? `${steps} · select where to paste`
+        : "Drag over the bars above the steps to select";
+  }
+  stageRanges(stages) {
+    const sorted = [...stages].sort((a, b) => a - b),
+      parts = [];
+    for (let i = 0; i < sorted.length; i++) {
+      const start = sorted[i];
+      while (sorted[i + 1] === sorted[i] + 1) i++;
+      parts.push(start === sorted[i] ? `${start + 1}` : `${start + 1}–${sorted[i] + 1}`);
+    }
+    return parts.join(", ");
+  }
+  select(stages) {
+    this.selection = stages;
+    this.syncSelection();
+  }
+  // Click picks one step (again clears it), drag picks a run, Shift extends
+  // from the last step picked, and Cmd/Ctrl adds or removes steps.
+  pickStart(stage, e) {
+    if (e.button > 0) return;
+    e.preventDefault();
+    const additive = e.metaKey || e.ctrlKey,
+      selected = this.selection;
+    this.drag = {
+      from: e.shiftKey && this.anchor !== null ? this.anchor : stage,
+      base: additive ? new Set(selected) : new Set(),
+      remove: additive && !e.shiftKey && selected.has(stage),
+      clear: !additive && !e.shiftKey && selected.size === 1 && selected.has(stage),
+      last: null,
+    };
+    if (!e.shiftKey) this.anchor = stage;
+    // preventDefault keeps focus where it was, which could leave ⌘C in a
+    // number field; the bar takes it so the shortcuts reach the sequencer.
+    e.currentTarget.focus?.({ preventScroll: true });
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    this.pickTo(stage);
+  }
+  pickTo(stage) {
+    const drag = this.drag;
+    if (!drag || stage === null || drag.last === stage) return;
+    if (drag.last !== null) drag.clear = false;
+    drag.last = stage;
+    const next = new Set(drag.base);
+    for (let i = Math.min(drag.from, stage); i <= Math.max(drag.from, stage); i++)
+      drag.remove ? next.delete(i) : next.add(i);
+    this.select(next);
+  }
+  pickEnd() {
+    if (this.drag?.clear) this.select(new Set());
+    this.drag = null;
+  }
+  // Only the horizontal position counts while dragging along the bars.
+  pickAt(x) {
+    let stage = null,
+      distance = Infinity;
+    for (const bar of this.root.querySelectorAll(".neuro-stage-pick")) {
+      const r = bar.getBoundingClientRect(),
+        d = x < r.left ? r.left - x : x > r.right ? x - r.right : 0;
+      if (d < distance) {
+        distance = d;
+        stage = Number(bar.dataset.pick);
+      }
+    }
+    return stage;
+  }
+  pickKey(stage, e) {
+    const next = new Set(this.selection);
+    if (e.shiftKey && this.anchor !== null)
+      for (let i = Math.min(this.anchor, stage); i <= Math.max(this.anchor, stage); i++)
+        next.add(i);
+    else {
+      next.has(stage) ? next.delete(stage) : next.add(stage);
+      this.anchor = stage;
+    }
+    this.select(next);
+  }
+  copy() {
+    const track = this.track(),
+      stages = [...this.selection].sort((a, b) => a - b);
+    if (!track || !stages.length) return;
+    // Gaps between picked steps are kept, and pasting leaves them untouched.
+    this.clipboard = {
+      steps: Array.from({ length: stages.at(-1) - stages[0] + 1 }, (_, i) =>
+        this.selection.has(stages[0] + i) ? { ...track.steps[stages[0] + i] } : null,
+      ),
+      oscillator: track.target.kind === "oscillator",
+      root: track.target.kind === "oscillator" ? 60 : track.root_note,
+    };
+    this.sync();
+  }
+  // Each selected run is filled with the copied steps, repeating them when the
+  // run is longer; a lone selected step is where the whole copy starts.
+  paste() {
+    const track = this.track(),
+      clip = this.clipboard,
+      stages = [...this.selection].sort((a, b) => a - b);
+    if (!track || !clip || !stages.length) return;
+    const oscillator = track.target.kind === "oscillator",
+      shift =
+        oscillator === clip.oscillator
+          ? 0
+          : (oscillator ? 60 : track.root_note) - clip.root,
+      [lo, hi] = oscillator ? [36, 84] : [0, 127],
+      covered = new Set();
+    for (let i = 0; i < stages.length; i++) {
+      const start = stages[i];
+      while (stages[i + 1] === stages[i] + 1) i++;
+      const length = stages[i] > start ? stages[i] - start + 1 : clip.steps.length;
+      for (let k = 0; k < length && start + k < 16; k++) {
+        const step = clip.steps[k % clip.steps.length],
+          stage = start + k;
+        covered.add(stage);
+        if (!step) continue;
+        this.stepFields.forEach((key, f) => {
+          let value = Number(step[key]);
+          // Oscillator lanes count from 60; note lanes keep the interval to
+          // their root, so a copied phrase sounds the same on either kind.
+          if (f === 0 || (f === 8 && value >= 0))
+            value = Math.max(lo, Math.min(hi, value + shift));
+          if (Number(this.track(track.id).steps[stage][key]) !== value)
+            this.edit(track.id, stage, f, value, false);
+        });
+      }
+    }
+    this.selection = covered;
+    this.sync();
+  }
+  shortcut(e) {
+    if (
+      !this.selection.size ||
+      !this.root.getClientRects().length ||
+      (e.target !== document.body && !this.root.contains(e.target)) ||
+      e.target.matches(
+        "textarea,[contenteditable],input:not([type=range],[type=checkbox],[type=button])",
+      )
+    )
+      return;
+    if (e.key === "Escape" && !e.metaKey && !e.ctrlKey && !e.altKey)
+      return this.select(new Set());
+    if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+    // Non-Latin layouts (Russian, Greek…) report their own letter in e.key.
+    const key = /^[a-z]$/i.test(e.key)
+      ? e.key.toLowerCase()
+      : { KeyC: "c", KeyV: "v" }[e.code];
+    if (key === "c" && !String(window.getSelection?.() ?? "")) {
+      e.preventDefault();
+      this.copy();
+    } else if (key === "v" && this.clipboard) {
+      e.preventDefault();
+      this.paste();
+    }
   }
   buildTracks() {
     const p = this.program(),
@@ -802,10 +980,26 @@ window.SadNeuropolis = class {
         );
       this.sync();
     };
+    const copy = document.createElement("button");
+    copy.className = "neuro-copy";
+    copy.textContent = "Copy";
+    copy.title = "Copy the selected steps (⌘C / Ctrl+C)";
+    copy.setAttribute("aria-keyshortcuts", "Meta+C Control+C");
+    copy.onclick = () => this.copy();
+    const paste = document.createElement("button");
+    paste.className = "neuro-paste";
+    paste.textContent = "Paste";
+    paste.title =
+      "Paste into the selected steps (⌘V / Ctrl+V). A single selected step is where the copy starts; a longer selection is filled, repeating the copy.";
+    paste.setAttribute("aria-keyshortcuts", "Meta+V Control+V");
+    paste.onclick = () => this.paste();
+    const status = document.createElement("output");
+    status.className = "neuro-selection";
+    status.setAttribute("aria-live", "polite");
     const live = document.createElement("output");
     live.className = "neuro-live";
     live.textContent = "—";
-    toolbar.append(title, fill, live);
+    toolbar.append(title, fill, copy, paste, status, live);
     editor.append(toolbar);
     const scroll = document.createElement("div");
     scroll.className = "neuro-stage-scroll";
@@ -813,6 +1007,7 @@ window.SadNeuropolis = class {
     grid.className = "neuro-stages";
     grid.setAttribute("aria-label", "Neuropolis stages");
     this.rowLabels(grid, [
+      "Select",
       "Step",
       parameter ? "Value" : relative ? "Offset" : "Note",
       "",
@@ -830,6 +1025,20 @@ window.SadNeuropolis = class {
     for (let i = 0; i < 16; i++) {
       const card = document.createElement("div");
       card.className = "neuro-stage";
+      card.dataset.pick = i;
+      const pick = document.createElement("button");
+      pick.type = "button";
+      pick.className = "neuro-stage-pick";
+      pick.dataset.pick = i;
+      pick.setAttribute("aria-label", `Select stage ${i + 1}`);
+      pick.setAttribute("aria-pressed", "false");
+      pick.onpointerdown = (e) => this.pickStart(i, e);
+      pick.onpointermove = (e) => this.pickTo(this.pickAt(e.clientX));
+      pick.onpointerup = pick.onpointercancel = () => this.pickEnd();
+      // Pointer picks happen on pointerdown; this is Enter / Space.
+      pick.onclick = (e) => {
+        if (e.detail === 0) this.pickKey(i, e);
+      };
       const number = document.createElement("button");
       number.className = "neuro-stage-number";
       number.textContent = String(i + 1).padStart(2, "0");
@@ -858,7 +1067,7 @@ window.SadNeuropolis = class {
           field,
           Number(fader.value) + (relative ? 60 : 0),
         );
-      card.append(number, value, fader);
+      card.append(pick, number, value, fader);
       const gate = document.createElement("div");
       gate.className = "neuro-gate";
       this.knobs.push(
@@ -974,6 +1183,7 @@ window.SadNeuropolis = class {
     for (let i = 0; i < 16; i++) {
       const card = document.createElement("div");
       card.className = "neuro-detail-stage";
+      card.dataset.pick = i;
       const number = document.createElement("span");
       number.textContent = String(i + 1).padStart(2, "0");
       card.append(number);

@@ -70,6 +70,11 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   of OSC 1–4; their own tracks add −24…+24 semitones to that pitch, at independent
   clocks. With Gate ENV, Main pitch steps also restart and release the envelopes
   like notes. Double-click a step's Gate knob to inherit the track's Gate setting.
+  Select steps on the bar above each stage (drag for a run, Shift to extend,
+  ⌘/Ctrl to add or remove, Esc to clear), then **Copy** and **Paste** (⌘/Ctrl+C,
+  ⌘/Ctrl+V) within a track or into another one. A single selected step is where
+  the copy starts; a longer selection is filled, repeating the copy, and every
+  selected region gets it. Pasting between note and OSC lanes keeps the intervals.
 - In the browser and DAW plug-ins, add independent **Granular**, **Drum machine**
   and **Synth engine** timbres as tabs across the top. They run together, with per-timbre level, mute,
   solo and MIDI channel. Each owns its source, effects, Resynth, envelopes, LFOs

@@ -102,6 +102,12 @@ range). Values follow that track's own clock and play order, remain active for
 the whole step and are added to the saved base value. Muting the track removes
 all its contributions. Step edits use sparse commands and preserve playback.
 
+To copy steps, select them on the bar above each stage: drag for a run, Shift
+extends, ⌘/Ctrl adds or removes, Esc clears. **Copy** and **Paste** (or ⌘/Ctrl+C
+and ⌘/Ctrl+V, when the host passes them to the editor) work within a track and
+between tracks. A single selected step is where the copy starts; a longer
+selection is filled, repeating the copy, and every selected region gets it.
+
 Modulated knobs show the actual value with a moving cyan pointer and range;
 the small pale tick and green arc retain the saved base setting. This includes
 pre-filter and post-filter effects. LFO Depth displays its signed percentage.
