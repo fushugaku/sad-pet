@@ -387,7 +387,7 @@
       this.views = new Map();
       this.knobs = [];
       defs.forEach((d, i) => Object.assign(d, catalog.controls[i]));
-      root.innerHTML = `<div class="section-heading"><h2>Drum machine <span>DXM-088</span></h2></div><div class="drum-pages" role="tablist" aria-label="Drum pattern pages"></div><div class="drum-pattern-scroll"><div class="drum-pattern" role="group" aria-label="Drum steps"></div></div><div class="drum-track-settings"></div><div class="drum-step-panel"><div class="drum-step-title"></div><div class="drum-step-knobs knob-grid"></div><div class="drum-step-extras"></div></div><div class="drum-voice"><div class="drum-voice-head"><button class="drum-voice-name"></button><button class="drum-voice-previous" aria-label="Previous voice">‹</button><button class="drum-voice-next" aria-label="Next voice">›</button><span class="drum-voice-note"></span><span class="drum-voice-tools"><button class="drum-voice-copy">Copy</button><button class="drum-voice-paste" disabled>Paste</button></span><span class="drum-voice-layout" role="group" aria-label="Voice layout"><button class="drum-voice-chain" title="The signal chain beside one module">Chain</button><button class="drum-voice-all" title="Every module at once">All</button></span></div><div class="drum-voice-body"><div class="drum-chain" role="tablist" aria-label="Voice modules" aria-orientation="vertical"></div><div class="drum-modules"></div></div></div>`;
+      root.innerHTML = `<div class="section-heading"><h2>Drum machine <span>DXM-088</span></h2></div><div class="drum-pages" role="tablist" aria-label="Drum pattern pages"></div><div class="drum-pattern-scroll"><div class="drum-pattern" role="group" aria-label="Drum steps"></div></div><div class="drum-track-settings"></div><div class="drum-step-panel" role="dialog" aria-label="Step settings" hidden><div class="drum-step-head"><div class="drum-step-title"></div><button class="drum-step-close" aria-label="Close step settings">×</button></div><div class="drum-step-knobs knob-grid"></div><div class="drum-step-extras"></div></div><div class="drum-voice"><div class="drum-voice-head"><button class="drum-voice-name"></button><button class="drum-voice-previous" aria-label="Previous voice">‹</button><button class="drum-voice-next" aria-label="Next voice">›</button><span class="drum-voice-note"></span><span class="drum-voice-tools"><button class="drum-voice-copy">Copy</button><button class="drum-voice-paste" disabled>Paste</button></span><span class="drum-voice-layout" role="group" aria-label="Voice layout"><button class="drum-voice-chain" title="The signal chain beside one module">Chain</button><button class="drum-voice-all" title="Every module at once">All</button></span></div><div class="drum-voice-body"><div class="drum-chain" role="tablist" aria-label="Voice modules" aria-orientation="vertical"></div><div class="drum-modules"></div></div></div>`;
       this.voicePanel = root.querySelector(".drum-voice");
       this.module = 0;
       this.layout = "chain";
@@ -434,6 +434,15 @@
         this.module = (next + modules.length) % modules.length;
         this.refreshVoice();
         this.parts[this.module].tab.focus();
+      };
+      // Step settings open over the pattern from a step and close like a menu.
+      this.stepPanel = root.querySelector(".drum-step-panel");
+      this.stepPanel.querySelector(".drum-step-close").onclick = () =>
+        this.closeStep(true);
+      this.dismissStep = (e) => {
+        if (e.type === "keydown" && e.key !== "Escape") return;
+        if (e.type === "pointerdown" && this.stepPanel.contains(e.target)) return;
+        this.closeStep(e.type === "keydown");
       };
       this.pages = root.querySelector(".drum-pages");
       for (let p = 0; p < 8; p++) {
@@ -546,6 +555,7 @@
       return select;
     }
     buildPattern() {
+      this.closeStep();
       const grid = this.root.querySelector(".drum-pattern");
       grid.replaceChildren();
       const view = this.view();
@@ -574,11 +584,19 @@
         grid.append(title);
         for (let i = 0; i < 16; i++) {
           const step = view.page * 16 + i;
-          const hit = button("", `${name} step ${step + 1}`, (e) => {
+          // A right click, Shift or a long press opens the step's settings
+          // without toggling it.
+          const pick = (e) => {
+            if (e.type === "click" && this.pressed === hit) {
+              this.pressed = null;
+              return;
+            }
             this.view().track = t;
             this.view().voice = t;
             this.view().step = step;
-            if (!e.shiftKey) {
+            const settings = e.shiftKey || e.type === "contextmenu";
+            if (e.type === "contextmenu") e.preventDefault();
+            if (!settings) {
               const current = this.settings().tracks[t];
               if (step >= current.length) this.edit(t, null, 0, step + 1);
               this.edit(
@@ -590,7 +608,22 @@
             }
             this.signature = "";
             this.sync();
-          });
+            if (settings) this.openStep(hit);
+          };
+          const hit = button("", `${name} step ${step + 1}`, pick);
+          hit.oncontextmenu = pick;
+          hit.onpointerdown = (e) => {
+            this.pressed = null;
+            if (e.pointerType !== "touch") return;
+            clearTimeout(this.press);
+            this.press = setTimeout(() => {
+              this.pressed = hit;
+              pick({ type: "contextmenu", preventDefault() {} });
+            }, 500);
+          };
+          hit.onpointerup = hit.onpointercancel = hit.onpointerleave = () =>
+            clearTimeout(this.press);
+          hit.title = "Click to switch on or off · right-click for step settings";
           hit.className = "drum-hit";
           hit.dataset.track = t;
           hit.dataset.step = step;
@@ -598,6 +631,33 @@
           this.hits.push(hit);
         }
       });
+    }
+    // Below the step, or above it when the window has no room below.
+    openStep(hit) {
+      const panel = this.stepPanel;
+      this.stepHit = hit;
+      panel.hidden = false;
+      const box = this.root.getBoundingClientRect(),
+        cell = hit.getBoundingClientRect(),
+        { offsetWidth: width, offsetHeight: height } = panel,
+        below =
+          cell.bottom + 6 + height <= window.innerHeight || cell.top - 6 - height < 0;
+      panel.style.left = `${Math.max(0, Math.min(cell.left - box.left + cell.width / 2 - width / 2, box.width - width))}px`;
+      panel.style.top = `${below ? cell.bottom - box.top + 6 : cell.top - box.top - 6 - height}px`;
+      if (!this.stepOpen) {
+        this.stepOpen = true;
+        document.addEventListener("pointerdown", this.dismissStep, true);
+        document.addEventListener("keydown", this.dismissStep, true);
+      }
+      panel.querySelector('[role="slider"]')?.focus();
+    }
+    closeStep(refocus = false) {
+      if (!this.stepOpen) return;
+      this.stepOpen = false;
+      this.stepPanel.hidden = true;
+      document.removeEventListener("pointerdown", this.dismissStep, true);
+      document.removeEventListener("keydown", this.dismissStep, true);
+      if (refocus) this.stepHit?.focus();
     }
     buildEditor() {
       const view = this.view(),
@@ -941,7 +1001,7 @@
     sync() {
       const settings = this.settings();
       this.root.hidden = !settings;
-      if (!settings) return;
+      if (!settings) return this.closeStep();
       const v = this.view(),
         id = this.hooks.context()?.active ?? 0,
         signature = `${id}:${v.track}:${v.step}:${v.voice}`;

@@ -61,19 +61,28 @@ vm.runInContext(await readFile(new URL("../rust/web/panels.js", import.meta.url)
 const drums = Object.create(panels.window.SadDrums.prototype);
 const grid = new Element("div");
 const view = { page: 0, track: 0, voice: 0, step: 0 };
+const opened = [], stepEdits = [];
 Object.assign(drums, {
   root: { querySelector: () => grid }, view: () => view,
-  sync() {}, hooks: { trigger() {} },
+  sync() {}, hooks: { trigger() {} }, openStep: (hit) => opened.push(hit),
+  edit: (...edit) => stepEdits.push(edit),
 });
 drums.buildPattern();
 const control = label => grid.all().find(e => e.getAttribute("aria-label") === label);
 control("Open HH track").onclick();
 assert.equal(view.voice, 6);
 assert.equal(view.track, 6);
-control("Snare step 8").onclick({ shiftKey: true });
+control("Snare step 8").onclick({ type: "click", shiftKey: true });
 assert.equal(view.voice, 3);
 assert.equal(view.track, 3);
 assert.equal(view.step, 7);
+// Step settings open from a right click (or Shift) and leave the step as it was.
+let prevented = false;
+control("Clap / Cym step 2").oncontextmenu({ type: "contextmenu", preventDefault: () => (prevented = true) });
+assert.deepEqual([view.track, view.voice, view.step], [4, 4, 1]);
+assert.ok(prevented, "The browser's own menu must stay closed");
+assert.deepEqual(opened.map((hit) => hit.getAttribute("aria-label")), ["Snare step 8", "Clap / Cym step 2"]);
+assert.equal(stepEdits.length, 0, "Opening step settings must not toggle the step");
 
 // Every DXM-088 parameter appears once in the voice modules; only the hat
 // voice shows Open decay.

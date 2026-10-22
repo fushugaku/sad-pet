@@ -4016,15 +4016,46 @@ input[type="range"] {
 .drum-step-extras input {
   width: 100px;
 }
+/* A step's settings float over the pattern, opened from the step. */
+#drum-machine {
+  position: relative;
+}
 .drum-step-panel {
-  padding: 16px 0;
-  margin-bottom: 16px;
-  border-block: 1px solid var(--line);
+  position: absolute;
+  z-index: 20;
+  width: min(620px, 100%);
+  padding: 12px 16px 4px;
+  background: var(--panel);
+  border: 1px solid #526b42;
+  border-radius: 10px;
+  box-shadow: 0 14px 36px rgb(0 0 0 / 55%);
+}
+.drum-step-panel[hidden] {
+  display: none;
+}
+.drum-step-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
 }
 .drum-step-title {
   font-size: 12px;
   color: var(--text);
-  margin-bottom: 12px;
+}
+.drum-step-close {
+  min-height: 30px;
+  padding: 0 10px;
+}
+.drum-step-panel .drum-step-extras {
+  margin-bottom: 8px;
+}
+.drum-step-panel .drum-step-extras input {
+  width: 72px;
+}
+.drum-voice {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
 }
 .drum-step-knobs {
   grid-template-columns: repeat(5, minmax(0, 1fr));
