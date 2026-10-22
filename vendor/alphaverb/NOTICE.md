@@ -10,9 +10,10 @@ SHA-256: 61a77ea316a1d54637e84d642877b9d2be0a2fa63f893fac7c41a57490252d0b.
 SAD PET maps all 20 saved controls to AlphaVerb, with freeze off and the original
 default 50% mix.
 
-SAD PET's build joins the original blocks of the two hot delay-line routines
-with direct calls. Their arithmetic, state writes and error checks are retained;
-the original block dispatcher remains the differential-test reference.
+SAD PET's build fuses the original blocks of the two hot delay-line routines and
+of ITCM: chains of blocks become single functions that keep the emulated
+registers in local variables. Their arithmetic, state writes and error checks are
+retained; the original block dispatcher remains the differential-test reference.
 
 Dayverb is an unofficial software port of the digital processing in Erica Synths /
 112dB Nightverb firmware 1.02. This software is not affiliated with or endorsed by

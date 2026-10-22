@@ -4,51 +4,86 @@ use std::{cell::Cell, fmt};
 
 pub const RETURN_PC: u32 = 0xffff_fff0;
 
-/// Correctly rounded fused multiply-add without the software `fmaf` call on
-/// every firmware VFMA. The float64 product of two float32 values is exact, so
-/// one float64 addition and the float32 conversion give the correctly rounded
-/// result whenever that conversion is not a halfway case; the remaining cases
-/// take the library routine. Both paths return the unique correctly rounded
-/// value, so the samples are identical. (Same test as musl's fmaf.)
+/// The firmware's VFMA: a fused multiply-add, rounded once. Targets with a
+/// hardware FMA (every aarch64 CPU, x86 built with `+fma`) run the instruction
+/// itself; the others (wasm32, baseline x86) use the emulations below instead
+/// of the software `fmaf`/`fma` routines. Every path returns the unique
+/// correctly rounded value, so the samples are identical.
 pub trait FastFma {
     fn fast_mul_add(self, y: Self, z: Self) -> Self;
 }
 impl FastFma for f32 {
     #[inline(always)]
     fn fast_mul_add(self, y: f32, z: f32) -> f32 {
-        let xy = self as f64 * y as f64;
-        let result = xy + z as f64;
-        let bits = result.to_bits();
-        if (bits & 0x1fff_ffff) != 0x1000_0000
-            || (bits >> 52) & 0x7ff == 0x7ff
-            || (result - xy == z as f64 && result - z as f64 == xy)
-        {
-            return result as f32;
-        }
-        self.mul_add(y, z)
+        #[cfg(any(target_arch = "aarch64", target_feature = "fma"))]
+        return self.mul_add(y, z);
+        #[cfg(not(any(target_arch = "aarch64", target_feature = "fma")))]
+        fmaf32(self, y, z)
     }
 }
 impl FastFma for f64 {
     #[inline(always)]
     fn fast_mul_add(self, y: f64, z: f64) -> f64 {
-        #[cfg(target_arch = "wasm32")]
-        return fma64(self, y, z);
-        #[cfg(not(target_arch = "wasm32"))]
-        self.mul_add(y, z)
+        #[cfg(any(target_arch = "aarch64", target_feature = "fma"))]
+        return self.mul_add(y, z);
+        #[cfg(not(any(target_arch = "aarch64", target_feature = "fma")))]
+        fma64(self, y, z)
     }
 }
 
+/// Correctly rounded float32 fused multiply-add from float64 operations. The
+/// float64 product of two float32 values is exact, so one float64 addition
+/// and the float32 conversion round twice. That is still the correctly
+/// rounded result unless the addition was inexact and its result lies on a
+/// float32 rounding boundary: a halfway case of a normal float32 (musl's
+/// test), or any float32-subnormal result, whose rounding bit lies higher.
+/// Those sums are first rounded to odd with the exact error of the addition,
+/// after which the float32 conversion rounds once (Boldo and Melquiond).
+#[cfg_attr(
+    all(not(test), any(target_arch = "aarch64", target_feature = "fma")),
+    allow(dead_code)
+)]
+#[inline(always)]
+pub fn fmaf32(x: f32, y: f32, z: f32) -> f32 {
+    let xy = x as f64 * y as f64;
+    let addend = z as f64;
+    let sum = xy + addend;
+    let bits = sum.to_bits();
+    let exponent = (bits >> 52) & 0x7ff;
+    // Biased exponent 1023 - 126: the sum is at least the smallest normal
+    // float32. 0x7ff: NaN or infinity, which only infinite operands produce.
+    if ((bits & 0x1fff_ffff) != 0x1000_0000 && exponent >= 1023 - 126) || exponent == 0x7ff {
+        return sum as f32;
+    }
+    // Knuth's exact sum: xy + addend == sum + error.
+    let virtual_addend = sum - xy;
+    let error = (xy - (sum - virtual_addend)) + (addend - virtual_addend);
+    let odd = if error != 0.0 && bits & 1 == 0 {
+        if error > 0.0 {
+            sum.next_up()
+        } else {
+            sum.next_down()
+        }
+    } else {
+        sum
+    };
+    odd as f32
+}
+
 /// Correctly rounded float64 fused multiply-add from plain float64 operations,
-/// for targets without a hardware FMA (wasm32 calls a software routine that
-/// multiplies 128-bit integers). Boldo and Melquiond's emulated FMA: the exact
-/// product and the exact sum with the addend are split into two floats each,
-/// their low parts are added with rounding to odd, and one final rounding to
-/// nearest gives the correctly rounded result. The proof needs every
-/// intermediate value to stay normal, so operands outside a wide exponent
-/// window (and NaN/infinity) take the library routine; a zero factor or
-/// addend has an exact product or an exact sum and needs no fusion at all.
-/// Every path returns the unique correctly rounded value.
-#[cfg_attr(not(any(test, target_arch = "wasm32")), allow(dead_code))]
+/// for targets without a hardware FMA (their `fma` routine multiplies 128-bit
+/// integers). Boldo and Melquiond's emulated FMA: the exact product and the
+/// exact sum with the addend are split into two floats each, their low parts
+/// are added with rounding to odd, and one final rounding to nearest gives the
+/// correctly rounded result. The proof needs every intermediate value to stay
+/// normal, so operands outside a wide exponent window (and NaN/infinity) take
+/// the library routine; a zero factor or addend has an exact product or an
+/// exact sum and needs no fusion at all. Every path returns the unique
+/// correctly rounded value.
+#[cfg_attr(
+    all(not(test), any(target_arch = "aarch64", target_feature = "fma")),
+    allow(dead_code)
+)]
 #[inline(always)]
 pub fn fma64(a: f64, b: f64, c: f64) -> f64 {
     #[inline(always)]
@@ -100,7 +135,26 @@ pub fn fma64(a: f64, b: f64, c: f64) -> f64 {
     a.mul_add(b, c)
 }
 pub const FLASH_BASE: u32 = 0x6002_0000;
-pub const ROM: &[u8] = include_bytes!("../firmware/echolocator-1.05.bin");
+pub const ROM: &[u8; FLASH_SIZE] = include_bytes!("../firmware/echolocator-1.05.bin");
+const ITCM_SIZE: usize = 0x3500;
+const DTCM_SIZE: usize = 0x20000;
+const OCRAM_SIZE: usize = 0x80000;
+const FLASH_SIZE: usize = 0x3d000;
+const HEAP_SIZE: usize = 32 * 1024 * 1024;
+
+/// A zeroed region on the heap (a boxed array literal would be built on the stack).
+fn region<const N: usize>() -> Box<[u8; N]> {
+    vec![0; N].into_boxed_slice().try_into().unwrap()
+}
+
+/// The offset of `size` bytes at `address` in the region at `base`, if they
+/// lie inside it. For a constant width this is one unsigned comparison: an
+/// address below the base wraps around.
+#[inline(always)]
+fn offset(address: u32, base: u32, len: usize, size: usize) -> Option<usize> {
+    let off = address.wrapping_sub(base) as usize;
+    (off < len && size <= len - off).then_some(off)
+}
 pub type Result<T> = std::result::Result<T, Fault>;
 
 #[derive(Debug, Clone)]
@@ -140,10 +194,10 @@ pub struct Machine {
     #[cfg(test)]
     pub reference_dispatch: bool,
     pub registers: [u8; 2048],
-    pub itcm: Vec<u8>,
-    pub dtcm: Vec<u8>,
-    pub ocram: Vec<u8>,
-    pub heap: Vec<u8>,
+    pub itcm: Box<[u8; ITCM_SIZE]>,
+    pub dtcm: Box<[u8; DTCM_SIZE]>,
+    pub ocram: Box<[u8; OCRAM_SIZE]>,
+    pub heap: Box<[u8; HEAP_SIZE]>,
     pub pc: u32,
     pub ticks: u64,
     pub budget: u64,
@@ -163,17 +217,17 @@ impl Default for Machine {
 }
 impl Machine {
     pub fn new() -> Self {
-        let mut dtcm = vec![0; 0x20000];
+        let mut dtcm = region::<DTCM_SIZE>();
         dtcm[..0x1f60].copy_from_slice(&ROM[0x37398..0x392f8]);
         dtcm[0x1f60..0x2674].copy_from_slice(&ROM[0x3c7f8..0x3cf0c]);
         Self {
             #[cfg(test)]
             reference_dispatch: false,
             registers: [0; 2048],
-            itcm: ROM[0x392f8..0x3c7f8].to_vec(),
+            itcm: ROM[0x392f8..0x3c7f8].try_into().map(Box::new).unwrap(),
             dtcm,
-            ocram: vec![0; 0x80000],
-            heap: vec![0; 32 * 1024 * 1024],
+            ocram: region(),
+            heap: region(),
             pc: 0,
             ticks: 0,
             budget: 0,
@@ -310,33 +364,59 @@ impl Machine {
     // DSP loads have constant widths and often constant addresses. Keeping the
     // checked region selection beside each load lets LLVM remove redundant
     // mapping/width checks instead of calling this adapter for every sample.
+    // Each region is one comparison, the delay lines (heap) and the stack and
+    // state (DTCM) first. Regions are disjoint and none ends where another
+    // begins, so an access that crosses a region's end matches none of them.
     #[inline(always)]
     fn region(&self, address: u32, size: usize) -> Result<&[u8]> {
-        let (bytes, off): (&[u8], usize) = match address {
-            0x00000000..=0x000034ff => (&self.itcm, address as usize),
-            0x20000000..=0x2001ffff => (&self.dtcm, (address - 0x20000000) as usize),
-            0x20200000..=0x2027ffff => (&self.ocram, (address - 0x20200000) as usize),
-            0x60020000..=0x6005cfff => (ROM, (address - FLASH_BASE) as usize),
-            0x80000000..=0x81ffffff => (&self.heap, (address - 0x80000000) as usize),
-            _ => return Err(unmapped_memory(self.pc, address, size, "read")),
-        };
-        bytes
-            .get(off..off + size)
-            .ok_or_else(|| crossing_memory(self.pc, address, "read"))
+        if let Some(off) = offset(address, 0x80000000, HEAP_SIZE, size) {
+            return Ok(&self.heap[off..off + size]);
+        }
+        if let Some(off) = offset(address, 0x20000000, DTCM_SIZE, size) {
+            return Ok(&self.dtcm[off..off + size]);
+        }
+        if let Some(off) = offset(address, FLASH_BASE, FLASH_SIZE, size) {
+            return Ok(&ROM[off..off + size]);
+        }
+        if let Some(off) = offset(address, 0, ITCM_SIZE, size) {
+            return Ok(&self.itcm[off..off + size]);
+        }
+        if let Some(off) = offset(address, 0x20200000, OCRAM_SIZE, size) {
+            return Ok(&self.ocram[off..off + size]);
+        }
+        Err(self.region_fault(address, size, "read"))
     }
     #[inline(always)]
     fn region_mut(&mut self, address: u32, size: usize) -> Result<&mut [u8]> {
-        let pc = self.pc;
-        let (bytes, off): (&mut [u8], usize) = match address {
-            0x00000000..=0x000034ff => (&mut self.itcm, address as usize),
-            0x20000000..=0x2001ffff => (&mut self.dtcm, (address - 0x20000000) as usize),
-            0x20200000..=0x2027ffff => (&mut self.ocram, (address - 0x20200000) as usize),
-            0x80000000..=0x81ffffff => (&mut self.heap, (address - 0x80000000) as usize),
-            _ => return Err(unmapped_memory(pc, address, size, "write")),
-        };
-        bytes
-            .get_mut(off..off + size)
-            .ok_or_else(|| crossing_memory(pc, address, "write"))
+        if let Some(off) = offset(address, 0x80000000, HEAP_SIZE, size) {
+            return Ok(&mut self.heap[off..off + size]);
+        }
+        if let Some(off) = offset(address, 0x20000000, DTCM_SIZE, size) {
+            return Ok(&mut self.dtcm[off..off + size]);
+        }
+        if let Some(off) = offset(address, 0, ITCM_SIZE, size) {
+            return Ok(&mut self.itcm[off..off + size]);
+        }
+        if let Some(off) = offset(address, 0x20200000, OCRAM_SIZE, size) {
+            return Ok(&mut self.ocram[off..off + size]);
+        }
+        Err(self.region_fault(address, size, "write"))
+    }
+    /// An access outside every region: it starts in none (unmapped) or runs
+    /// past the end of the one it starts in. Flash is read-only.
+    #[cold]
+    #[inline(never)]
+    fn region_fault(&self, address: u32, size: usize, operation: &str) -> Fault {
+        let mapped = matches!(
+            address,
+            0x00000000..=0x000034ff | 0x20000000..=0x2001ffff | 0x20200000..=0x2027ffff
+                | 0x80000000..=0x81ffffff
+        ) || (operation == "read" && (0x60020000..=0x6005cfff).contains(&address));
+        if mapped {
+            crossing_memory(self.pc, address, operation)
+        } else {
+            unmapped_memory(self.pc, address, size, operation)
+        }
     }
     #[inline(always)]
     pub fn load(&self, address: u32, size: usize) -> Result<u64> {
@@ -550,7 +630,7 @@ mod dispatch_tests {
 
 #[cfg(test)]
 mod fma_tests {
-    use super::fma64;
+    use super::{fma64, fmaf32};
 
     struct Rng(u64);
     impl Rng {
@@ -648,6 +728,99 @@ mod fma_tests {
             check(zero, x, rng.float(0..=2047, false));
             check(x, zero, rng.float(0..=2047, false));
             check(x, rng.float(0..=2047, false), zero);
+        }
+    }
+
+    fn check32(a: f32, b: f32, c: f32) {
+        let want = a.mul_add(b, c);
+        let got = fmaf32(a, b, c);
+        assert!(
+            want.to_bits() == got.to_bits() || (want.is_nan() && got.is_nan()),
+            "fmaf({a:e}, {b:e}, {c:e}) = {want:e} ({:#010x}), emulated {got:e} ({:#010x})",
+            want.to_bits(),
+            got.to_bits()
+        );
+    }
+
+    #[test]
+    fn fmaf32_matches_the_fused_multiply_add_bit_for_bit() {
+        // A product just below 2^-150, half a subnormal step: the float64 sum
+        // rounds onto the float32 midpoint, which a plain conversion would
+        // round to even instead of down.
+        assert_eq!(
+            fmaf32(
+                f32::from_bits(0x1a00_0001),
+                f32::from_bits(0x19ff_fffe),
+                f32::from_bits(0x0040_0001)
+            )
+            .to_bits(),
+            0x0040_0001
+        );
+        let mut rng = Rng(0x2545_f491_4f6c_dd1d);
+        let specials = [
+            0.0,
+            -0.0,
+            1.0,
+            -1.0,
+            0.5,
+            f32::MIN_POSITIVE,
+            -f32::MIN_POSITIVE,
+            f32::from_bits(1),
+            f32::from_bits(0x8000_0001),
+            f32::MAX,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+            1.0 + f32::EPSILON,
+            3.0,
+            1e-30,
+            1e30,
+        ];
+        for &a in &specials {
+            for &b in &specials {
+                for &c in &specials {
+                    check32(a, b, c);
+                }
+            }
+        }
+        let float = |bits: u64, exponent: u64| {
+            f32::from_bits((bits as u32 & 0x807f_ffff) | ((exponent as u32 & 0xff) << 23))
+        };
+        for _ in 0..2_000_000 {
+            // Anything at all.
+            check32(
+                f32::from_bits(rng.next() as u32),
+                f32::from_bits(rng.next() as u32),
+                f32::from_bits(rng.next() as u32),
+            );
+            // Products around the subnormal range, subnormal or tiny addends.
+            let e = 20 + rng.next() % 100;
+            let a = float(rng.next(), e);
+            let b = float(rng.next(), 104 + rng.next() % 40 - e.min(104));
+            check32(a, b, float(rng.next(), rng.next() % 3));
+            // (1 + k) (1 - k) = 1 - k^2 just below a power of two, half a
+            // subnormal step or a halfway case against an odd addend.
+            let k = 1 + rng.next() % 1024;
+            let ea = 1 + rng.next() % 200;
+            let eb = 104 + rng.next() % 40 - ea.min(104);
+            let a = f32::from_bits(((ea as u32) << 23) | k as u32);
+            let b = f32::from_bits(((eb as u32 - 1) << 23) | (0x80_0000 - 2 * k as u32));
+            let c = f32::from_bits((rng.next() as u32 & 0x80ff_ffff) | 1);
+            check32(a, b, c);
+            check32(-a, b, c);
+            // Sparse mantissas: exact sums and halfway cases of normal results.
+            let e = 60 + rng.next() % 130;
+            let mut sparse = || rng.next() & rng.next() & rng.next();
+            let (a, b, c) = (sparse(), sparse(), sparse());
+            let (eb, ec) = (127 + rng.next() % 8, e + rng.next() % 40);
+            check32(float(a, e), float(b, eb), float(c, ec));
+            // Cancellation against the rounded product and its neighbours.
+            let a = float(rng.next(), 64 + rng.next() % 128);
+            let b = float(rng.next(), 64 + rng.next() % 128);
+            let p = -(a * b);
+            check32(a, b, p);
+            check32(a, b, p.next_up());
+            check32(a, b, p.next_down());
         }
     }
 }

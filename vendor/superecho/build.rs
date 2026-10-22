@@ -4,9 +4,12 @@
 //!
 //! * Every ITCM block gets a slot in a direct jump table indexed by its address,
 //!   replacing the two-level `match` dispatch for the hottest code.
-//! * A block whose only static predecessor branches forward to it is inlined
-//!   into that predecessor, so LLVM keeps emulated registers in locals across
-//!   the pair. Only forward edges are inlined, so no loop becomes recursion.
+//! * A block whose only static predecessor branches forward to it is pasted
+//!   into that predecessor, so a chain of blocks is one function. A forward
+//!   branch to any other block is a direct call of its wrapper. Backward
+//!   edges return to the dispatcher, so no loop becomes recursion.
+//! * Inside each function the emulated registers are locals (`promote`),
+//!   written back wherever the function exits.
 //!
 //! Every block still adds its own tick count, and all memory accesses, faults
 //! and dynamic jumps stay exactly as translated.
@@ -19,7 +22,11 @@
 //! every indirect call through wasm32 linear memory, and every `?` was an
 //! early exit before which each emulated register had to be written back.
 //! Without them LLVM keeps the registers of a whole fused chain in locals.
-use std::{collections::BTreeMap, env, fs, path::PathBuf};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    env, fs,
+    path::PathBuf,
+};
 
 const ITCM_END: u32 = 0x3500;
 /// Flash pages fused like ITCM: the pitch shifter and control code the audio
@@ -113,6 +120,198 @@ fn defuse(body: &str, tail_calls: bool) -> String {
     unwrapped
 }
 
+/// Static successor: a `return Ok((0x..u32) & !1);` branch or the tail
+/// `Ok(0x..)` fallthrough. Dynamic returns through a register stay dynamic.
+fn constant(text: &str) -> Option<u32> {
+    let text = text.trim();
+    let inner = text
+        .strip_prefix("return Ok(")
+        .or_else(|| text.strip_prefix("Ok("))?;
+    let inner = inner.trim_end_matches(';').strip_suffix(')')?;
+    let hex = inner
+        .strip_prefix("(0x")
+        .and_then(|rest| rest.strip_suffix("u32) & !1"))
+        .or_else(|| inner.strip_prefix("0x"))?;
+    u32::from_str_radix(hex, 16).ok().map(|pc| pc & !1)
+}
+
+/// Replace a line's branch (`return Ok(X);`, also inside `if cond { .. }`)
+/// or its tail `Ok(X)` with `with` (`return with;` or the tail `with`).
+fn retarget(line: &str, with: &str) -> String {
+    if let Some(start) = line.find("return Ok(") {
+        let end = start + line[start..].find(';').unwrap() + 1;
+        format!("{}return {with};{}", &line[..start], &line[end..])
+    } else {
+        let trimmed = line.trim();
+        debug_assert!(trimmed.starts_with("Ok("));
+        line.replacen(trimmed, with, 1)
+    }
+}
+
+struct Fusion<'a> {
+    blocks: &'a BTreeMap<u32, String>,
+    pasted: &'a BTreeSet<u32>,
+    tail_calls: bool,
+}
+
+impl Fusion<'_> {
+    /// The plain-`u32` body of a block with its forward branches linked: a
+    /// pasted successor's body (with `chain`) or a direct call of the
+    /// successor's wrapper. A direct call has no loop iteration, table lookup
+    /// or indirect call in between, and every forward path is finite, so the
+    /// call depth is bounded by the block count. Every exit is a `return`.
+    fn link(&self, address: u32, chain: bool) -> String {
+        let mut linked = String::new();
+        let mut pastes = Vec::new();
+        let mut reachable = true;
+        for line in self.blocks[&address].lines() {
+            let forward = constant(line)
+                .filter(|target| reachable && *target > address)
+                .filter(|target| self.blocks.contains_key(target));
+            let line = match forward {
+                Some(target) if chain && self.pasted.contains(&target) => {
+                    pastes.push(target);
+                    retarget(line, &format!("__paste_{target:08x}__"))
+                }
+                Some(target) => retarget(line, &format!("Ok(w_{target:08x}(m))")),
+                None => line.to_owned(),
+            };
+            if line.trim().starts_with("return ") {
+                reachable = false;
+            }
+            linked.push_str(&line);
+            linked.push('\n');
+        }
+        let defused = defuse(&linked, self.tail_calls);
+        // The tail expression leaves the function too.
+        let last = defused.trim_end().rfind('\n').map_or(0, |index| index + 1);
+        let mut body = format!("{}return {};\n", &defused[..last], defused[last..].trim());
+        for target in pastes {
+            body = body.replacen(
+                &format!("__paste_{target:08x}__"),
+                &format!("{{\n{}}}", self.link(target, true)),
+                1,
+            );
+        }
+        body
+    }
+}
+
+/// Keep the emulated registers of one fused function in local variables.
+/// Every translated register access is `m.reg(OFFSET, SIZE)` or a statement
+/// `m.set_reg(OFFSET, SIZE, value);` with constant operands: 4-byte core and
+/// single registers, 8-byte double registers (two singles) and 1-byte flags.
+/// Memory accesses never touch the register bytes, so the function reads each
+/// register once on entry and writes back every register it assigns before
+/// each `return` that leaves it (pasted bodies stay inside). LLVM cannot prove
+/// that firmware stores leave the register bytes alone; locals need no proof,
+/// so the registers stay in host registers.
+fn promote(body: &str) -> String {
+    // Offset -> width (4 or 1) of each local, and the ones assigned.
+    let mut locals = BTreeMap::<usize, usize>::new();
+    let mut written = BTreeSet::new();
+    let mut local = |offset: usize, width: usize| {
+        let previous = locals.insert(offset, width);
+        assert!(
+            previous.is_none_or(|w| w == width),
+            "register {offset} accessed as {width} bytes"
+        );
+        assert!(width == 1 || offset % 4 == 0, "unaligned register {offset}");
+        format!("r{offset}")
+    };
+    let mut reads = |line: &str| {
+        let mut out = String::new();
+        let mut rest = line;
+        while let Some(index) = rest.find("m.reg(") {
+            out.push_str(&rest[..index]);
+            let close = index + rest[index..].find(')').unwrap();
+            let (offset, size) = rest[index + 6..close].split_once(", ").unwrap();
+            let (offset, size): (usize, usize) = (offset.parse().unwrap(), size.parse().unwrap());
+            out.push_str(&match size {
+                1 | 4 => local(offset, size),
+                8 => format!("({} | {} << 32)", local(offset, 4), local(offset + 4, 4)),
+                _ => panic!("register read of {size} bytes"),
+            });
+            rest = &rest[close + 1..];
+        }
+        out.push_str(rest);
+        out
+    };
+    let mut code = String::new();
+    let mut writes = Vec::new();
+    for line in body.lines() {
+        let line = reads(line);
+        let Some(operands) = line.trim().strip_prefix("m.set_reg(") else {
+            assert!(
+                !line.contains("m.set_reg("),
+                "register write inside: {line}"
+            );
+            code.push_str(&line);
+            code.push('\n');
+            continue;
+        };
+        let operands = operands
+            .strip_suffix(");")
+            .expect("register write statement");
+        let (offset, rest) = operands.split_once(", ").unwrap();
+        let (size, value) = rest.split_once(", ").unwrap();
+        let (offset, size): (usize, usize) = (offset.parse().unwrap(), size.parse().unwrap());
+        writes.push((offset, size));
+        code.push_str(&match size {
+            1 => format!("r{offset} = ({value}) & 0xff;\n"),
+            4 => format!("r{offset} = ({value}) & 0xffff_ffff;\n"),
+            8 => format!(
+                "{{ let value: u64 = {value}; r{offset} = value & 0xffff_ffff; r{} = value >> 32; }}\n",
+                offset + 4
+            ),
+            _ => panic!("register write of {size} bytes"),
+        });
+    }
+    drop(reads);
+    for (offset, size) in writes {
+        if size == 8 {
+            local(offset, 4);
+            local(offset + 4, 4);
+            written.extend([offset, offset + 4]);
+        } else {
+            local(offset, size);
+            written.insert(offset);
+        }
+    }
+    // Flag bytes and register words never share bytes.
+    for (&offset, &width) in &locals {
+        if width == 1 {
+            assert!(locals.get(&(offset & !3)).is_none_or(|w| *w == 1));
+        }
+    }
+    let flush: String = written
+        .iter()
+        .map(|offset| format!("m.set_reg({offset}, {}, r{offset});\n", locals[offset]))
+        .collect();
+    let mut out: String = locals
+        .iter()
+        .map(|(offset, width)| format!("let mut r{offset} = m.reg({offset}, {width});\n"))
+        .collect();
+    for line in code.lines() {
+        match line.find("return ") {
+            Some(index) if !line[index + 7..].starts_with('{') => {
+                let end = index + line[index..].find(';').unwrap();
+                out.push_str(&format!(
+                    "{}{{\n{flush}{}; }}{}\n",
+                    &line[..index],
+                    &line[index..end],
+                    &line[end + 1..]
+                ));
+            }
+            _ => {
+                out.push_str(line);
+                out.push('\n');
+            }
+        }
+    }
+    out
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-env-changed=CARGO_CFG_TARGET_FEATURE");
@@ -162,38 +361,31 @@ fn main() {
         "The pinned ITCM translation changed; review the fusion"
     );
 
-    // Static successors: `return Ok((0x..u32) & !1);` branches and the tail
-    // `Ok(0x..)` fallthrough. Dynamic returns through a register stay dynamic.
-    let constant = |text: &str| -> Option<u32> {
-        let text = text.trim();
-        let inner = text
-            .strip_prefix("return Ok(")
-            .or_else(|| text.strip_prefix("Ok("))?;
-        let inner = inner.trim_end_matches(';').strip_suffix(')')?;
-        let hex = inner
-            .strip_prefix("(0x")
-            .and_then(|rest| rest.strip_suffix("u32) & !1"))
-            .or_else(|| inner.strip_prefix("0x"))?;
-        u32::from_str_radix(hex, 16).ok().map(|pc| pc & !1)
-    };
-    let mut incoming = BTreeMap::<u32, Vec<u32>>::new();
+    // Static predecessors from each block's reachable branches and
+    // fallthrough. The translator emits the fallthrough even after an
+    // unconditional branch or return (a call's continuation, which the
+    // callee's return reaches dynamically); that one is not an edge.
+    let mut predecessors = BTreeMap::<u32, Vec<u32>>::new();
     for (&address, body) in &blocks {
         for line in body.lines() {
             if let Some(target) = constant(line) {
-                incoming.entry(target).or_default().push(address);
+                predecessors.entry(target).or_default().push(address);
+            }
+            if line.trim().starts_with("return ") {
+                break;
             }
         }
     }
-    // A block is a chain continuation when exactly one ITCM block jumps to it
-    // and that block precedes it. It also keeps its own table entry: returns
-    // through a register may still enter it directly.
-    let chained = |target: u32| -> Option<u32> {
-        let sources = incoming.get(&target)?;
-        match sources.as_slice() {
-            [source] if *source < target && blocks.contains_key(&target) => Some(*source),
-            _ => None,
-        }
-    };
+    // A block whose only predecessor branches forward to it is pasted into
+    // that predecessor. Every other block is a root: its wrapper runs its
+    // whole chain of pasted blocks.
+    let pasted: BTreeSet<u32> = predecessors
+        .iter()
+        .filter(|(target, sources)| {
+            matches!(sources.as_slice(), [source] if source < target) && blocks.contains_key(target)
+        })
+        .map(|(target, _)| *target)
+        .collect();
 
     let mut output = String::from(
         "use crate::machine::*;\n\
@@ -205,61 +397,18 @@ fn main() {
          fn missing_page(m: &mut Machine) -> Result<u32> {\n\
          Err(m.fault(format!(\"missing translated block 0x{:08x}\", m.pc)))\n}\n",
     );
-    for (&address, body) in &blocks {
-        let mut fused = String::new();
-        for line in body.lines() {
-            let direct = constant(line)
-                .filter(|target| chained(*target) == Some(address))
-                .filter(|target| blocks.contains_key(target));
-            // A forward branch to a block that other blocks also reach is a
-            // direct call of that block's wrapper: no loop iteration, table
-            // lookup or indirect call in between. Backward edges still return
-            // to the dispatcher, so no loop can recurse, and every forward
-            // path is finite, so the call depth is bounded by the block count.
-            let forward = constant(line)
-                .filter(|_| direct.is_none())
-                .filter(|target| *target > address && blocks.contains_key(target));
-            if let Some(target) = forward {
-                let call = format!("w_{target:08x}(m)");
-                let rewritten = if let Some(start) = line.find("return Ok(") {
-                    let end = start + line[start..].find(';').unwrap() + 1;
-                    format!("{}return Ok({call});{}", &line[..start], &line[end..])
-                } else {
-                    let trimmed = line.trim();
-                    debug_assert!(trimmed.starts_with("Ok("));
-                    line.replacen(trimmed, &format!("Ok({call})"), 1)
-                };
-                fused.push_str(&rewritten);
-                fused.push('\n');
-                continue;
-            }
-            match direct {
-                Some(target) if line.trim().starts_with("return ") => {
-                    // `if cond { return Ok(X); }` keeps its braces around the call.
-                    let call = format!("return b_{target:08x}(m);");
-                    let rewritten = line.replacen(line.trim(), &call, 1);
-                    // The branch form is the only `return Ok(` on its line.
-                    let rewritten = if line.trim().starts_with("return Ok(") {
-                        rewritten
-                    } else {
-                        let start = line.find("return Ok(").unwrap();
-                        let end = start + line[start..].find(';').unwrap() + 1;
-                        format!("{}{}{}", &line[..start], call, &line[end..])
-                    };
-                    fused.push_str(&rewritten);
-                }
-                Some(target) => fused.push_str(&format!("b_{target:08x}(m)")),
-                None => fused.push_str(line),
-            }
-            fused.push('\n');
-        }
-        let fused = defuse(&fused, tail_calls);
-        // Chain continuations inline into their predecessor; every block also
-        // inlines into its own table wrapper.
+    let fusion = Fusion {
+        blocks: &blocks,
+        pasted: &pasted,
+        tail_calls,
+    };
+    for &address in blocks.keys() {
+        // A pasted block also keeps a table entry of its own (a dynamic jump
+        // could still enter it): the block alone, without its chain.
+        let body = fusion.link(address, !pasted.contains(&address));
         output.push_str(&format!(
-            "#[inline(always)]\nfn b_{address:08x}(m: &mut Machine) -> u32 {{\n{fused}}}\n\
-             #[inline(never)]\nfn w_{address:08x}(m: &mut Machine) -> u32 {{\n\
-             b_{address:08x}(m)\n}}\n"
+            "#[inline(never)]\nfn w_{address:08x}(m: &mut Machine) -> u32 {{\n{}}}\n",
+            promote(&body)
         ));
     }
     let slots = (ITCM_END / 2) as usize;
