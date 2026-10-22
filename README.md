@@ -130,6 +130,28 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   no grains, no history writes and no filters run. Solo selects timbres while
   buses and Master keep processing them; MIDI never reaches a bus. Scenes saved
   before buses existed open with a default Master and render unchanged.
+- **Vocal timbres** sing a score, in the manner of VOCALOID5 (browser, DAW
+  plug-ins and app). Draw notes in the piano roll, double-click one to type its
+  lyric (Tab moves on) or use **Lyrics…** for a whole line, in **Japanese**
+  (kana or romaji), **English** (dictionary plus letter-to-sound rules) or
+  **Russian** (palatalization, voicing and stress marks such as `при+вет`).
+  `-` holds the previous vowel, `+` or a trailing hyphen (`hap-`, `py`) spreads
+  one word over several notes, and each note can take explicit phonemes. The
+  twelve VOCALOID5 lanes — Dynamics, Breathiness, Brightness, Clearness,
+  Character, Exciter, Growl, Air, Mouth, Portamento timing, Pitch bend and its
+  sensitivity — draw with the mouse; notes have VEL, vibrato and Attack/Release
+  effects (scoop, bend, soft, accent, breathy, turn; fall, rise, soft, breathy,
+  swell), and **Styles** (Natural, Pop, Ballad, Rock, Whisper, Opera, Robot) set
+  how the pitch moves and the voice color. The built-in formant voice sings every
+  language without recordings; **Voices ▾** imports a UTAU voicebank (a folder,
+  a `.zip` or a `.sadvoice` file): its `oto.ini` units are analyzed into
+  spectral frames, then selected and joined in the spectral domain on the sung
+  pitch. **Import score…** reads Standard MIDI files with lyric events, UTAU
+  `.ust`, MusicXML/`.mxl` and VOCALOID5 `.vpr`. Phrases render off the audio
+  thread and only when they change; the timbre then runs like a Bus input, so
+  Granular, Filters, Resynth and every effect apply to the voice. Plug-ins play
+  the score at the DAW position and tempo; the browser and app play it with
+  **▶ Play** or the main transport. See [the voice engine](voice/README.md).
 - Two filters with single, serial and parallel routing, envelope depth and key tracking.
 - All **18 Rustias filter models** in either slot: RADIAS, Ladder LP/HP/BP24,
   MS-20 LP/HP12, Pro LP24, SEM, Multi Filter, M/Poly LP24 and Linear LP/HP/BP/Notch

@@ -118,6 +118,19 @@ RADIAS ratio positions in saved presets and host automation retain their mapping
 LFO/ENV/matrix modulation changes the physical Time Ratio continuously without
 the gesture's 0.25% quantization or the original ratio table's flat regions.
 
+### Vocal timbres
+
+**+ Timbre → Vocal** adds a singing part with its own score editor (see the main
+README). In the DAW the score plays at the host's song position and tempo while
+**DAW tempo** is on: start the transport where the notes are. Phrases render on
+a background thread as soon as the score changes and are ready long before
+playback; a phrase that is still rendering stays silent for that pass, so let
+the status line read *ready* before an offline bounce. The project saves the
+score, not the rendered audio. Imported voicebanks are stored as `.sadvoice`
+files in the **Voices** folder next to the User presets
+(`~/Library/Application Support/SAD PET/Voices`, `%APPDATA%\SAD PET\Voices`),
+so every instance and the app share them.
+
 ## Install
 
 [Download the macOS and Windows installers](https://github.com/fushugaku/sad-pet/releases/latest).

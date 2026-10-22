@@ -30,6 +30,8 @@ jobs:
           cargo test -p sad-pet-wasm --lib --locked
           cargo test -p sad-pet-alphaverb --release --lib --locked
           cargo test -p sad-pet-superecho --release --lib --locked
+          cargo test -p sad-pet-voice --release --locked
+          cargo clippy -p sad-pet-voice --all-targets --features cli --locked -- -D warnings
       - name: Build the standalone site
         run: python3 wasm/build.py
       - name: Exercise the compiled audio engine
@@ -57,6 +59,8 @@ jobs:
           node wasm/test-controls-ui.mjs
           node wasm/test-effect-presets.mjs
           node wasm/test-parameters.mjs
+          node wasm/test-vocal.mjs
+          node wasm/test-vocal-ui.mjs
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:

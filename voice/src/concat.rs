@@ -1,0 +1,688 @@
+//! Concatenative synthesis from a voicebank, VOCALOID-style. A dynamic
+//! program picks the units that cover the phrase's phonemes with the fewest
+//! and least audible joins, preferring units recorded near the sung pitch.
+//! Units overlap on a shared phoneme and cross-fade there in the spectral
+//! domain, so a join is a smooth change of envelope rather than a splice.
+//! Vowels stretch over their steady part (looping it back and forth for long
+//! notes); consonants keep their recorded speed.
+use crate::bank::{Unit, Voicebank};
+use crate::phoneme::{Class, Phoneme};
+use crate::spectrum::{ENV_POINTS, FLOOR_DB, FRAME_SECONDS, Frame, grid_position};
+use crate::timing::Segment;
+
+const FRAME: f64 = FRAME_SECONDS as f64;
+/// Cross-fade half-width at a join between two phonemes (a hard join).
+const EDGE: f64 = 0.012;
+/// Candidates kept per phrase range, by their own cost.
+const KEEP: usize = 6;
+
+/// One phoneme of the phrase as synthesis sees it.
+#[derive(Clone, Debug)]
+struct Item {
+    /// The bank phoneme matched against units; pauses become `sil`.
+    phoneme: Phoneme,
+    start: f64,
+    end: f64,
+    pause: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Candidate {
+    unit: Option<u32>,
+    /// First unit phoneme used.
+    first: usize,
+    /// Phrase range a..=b.
+    a: usize,
+    b: usize,
+    cost: f32,
+}
+
+fn items(bank: &Voicebank, segments: &[Segment]) -> Vec<Item> {
+    let mut out: Vec<Item> = Vec::new();
+    for s in segments {
+        let pause = s.phoneme.is_pause() || s.phoneme.class() == Class::Closure;
+        let phoneme = if pause {
+            Phoneme::SIL
+        } else {
+            bank.substitute(s.phoneme)
+        };
+        if pause && out.last().is_some_and(|i| i.pause) {
+            out.last_mut().unwrap().end = s.end;
+            continue;
+        }
+        out.push(Item {
+            phoneme,
+            start: s.start,
+            end: s.end,
+            pause,
+        });
+    }
+    out
+}
+
+fn target_pitch(pitch: &[f32], start: f64, end: f64) -> f32 {
+    let a = ((start / FRAME) as usize).min(pitch.len().saturating_sub(1));
+    let b = ((end / FRAME) as usize).clamp(a + 1, pitch.len().max(a + 1));
+    let slice = &pitch[a..b.min(pitch.len())];
+    if slice.is_empty() {
+        return 60.0;
+    }
+    let mut v = slice.to_vec();
+    v.sort_by(f32::total_cmp);
+    v[v.len() / 2]
+}
+
+fn candidates(bank: &Voicebank, items: &[Item], pitch: &[f32]) -> Vec<Candidate> {
+    let mut out = Vec::new();
+    // Phoneme → (unit, index) occurrences.
+    let mut occurrences: std::collections::HashMap<Phoneme, Vec<(u32, usize)>> =
+        std::collections::HashMap::new();
+    for (u, unit) in bank.units.iter().enumerate() {
+        for (k, &p) in unit.phonemes.iter().enumerate() {
+            occurrences.entry(p).or_default().push((u as u32, k));
+        }
+    }
+    for a in 0..items.len() {
+        if items[a].pause {
+            // Plain silence: a unit with a recorded onset or ending is better.
+            out.push(Candidate {
+                unit: None,
+                first: 0,
+                a,
+                b: a,
+                cost: 0.35,
+            });
+        }
+        let mut by_range: std::collections::HashMap<usize, Vec<Candidate>> =
+            std::collections::HashMap::new();
+        for &(u, k) in occurrences
+            .get(&items[a].phoneme)
+            .map_or(&[][..], Vec::as_slice)
+        {
+            let unit = &bank.units[u as usize];
+            let mut len = 0;
+            while k + len < unit.phonemes.len()
+                && a + len < items.len()
+                && unit.phonemes[k + len] == items[a + len].phoneme
+            {
+                len += 1;
+            }
+            // Every prefix of the match is a candidate.
+            for l in 1..=len {
+                let b = a + l - 1;
+                let cut_left = k > 0 && !unit.phonemes[k - 1].is_pause();
+                let cut_right = k + l < unit.phonemes.len() && !unit.phonemes[k + l].is_pause();
+                // A unit of only pauses adds nothing.
+                if unit.phonemes[k..k + l].iter().all(|p| p.is_pause()) {
+                    continue;
+                }
+                let main = (k..k + l)
+                    .rev()
+                    .find(|&i| unit.phonemes[i].is_vowel())
+                    .unwrap_or(k + l - 1);
+                let target =
+                    target_pitch(pitch, items[a + main - k].start, items[a + main - k].end);
+                let semitones = (unit.pitch - target).abs();
+                let pitch_cost =
+                    0.06 * (semitones - 1.0).max(0.0) + 0.08 * (semitones - 6.0).max(0.0);
+                let cost = 0.3
+                    + pitch_cost
+                    + if cut_left { 0.7 } else { 0.0 }
+                    + if cut_right { 0.7 } else { 0.0 };
+                by_range.entry(b).or_default().push(Candidate {
+                    unit: Some(u),
+                    first: k,
+                    a,
+                    b,
+                    cost,
+                });
+            }
+        }
+        for (_, mut list) in by_range {
+            list.sort_by(|x, y| x.cost.total_cmp(&y.cost));
+            list.truncate(KEEP);
+            out.extend(list);
+        }
+    }
+    out
+}
+
+/// Mean envelope difference (dB) of two frames over 100 Hz – 5 kHz.
+fn spectral_distance(x: &Frame, y: &Frame) -> f32 {
+    let lo = grid_position(100.0) as usize;
+    let hi = grid_position(5000.0) as usize;
+    (lo..=hi).map(|g| (x.env[g] - y.env[g]).abs()).sum::<f32>() / (hi - lo + 1) as f32
+}
+
+fn middle_frame(bank: &Voicebank, unit: &Unit, k: usize) -> Frame {
+    let (a, b) = unit.span(k);
+    bank.frame(((a + b) / 2) as usize)
+}
+
+fn join_cost(bank: &Voicebank, items: &[Item], p: &Candidate, c: &Candidate) -> Option<f32> {
+    match (p.unit, c.unit) {
+        (Some(pu), Some(cu)) if p.b == c.a => {
+            // Overlap on the shared phoneme: cheap in vowels, costly in bursts.
+            let (pu, cu) = (&bank.units[pu as usize], &bank.units[cu as usize]);
+            let class = items[c.a].phoneme.class().join_cost();
+            let x = middle_frame(bank, pu, p.first + (p.b - p.a));
+            let y = middle_frame(bank, cu, c.first);
+            Some(class + 0.03 * spectral_distance(&x, &y))
+        }
+        (_, _) if p.b == c.a => None,
+        (Some(_), Some(_)) if p.b + 1 == c.a => Some(1.4),
+        // Next to a pause, a cut is a natural onset or ending.
+        (_, _) if p.b + 1 == c.a => Some(0.25),
+        _ => None,
+    }
+}
+
+/// The cheapest chain of candidates covering every item.
+fn select(bank: &Voicebank, items: &[Item], cands: &[Candidate]) -> Vec<Candidate> {
+    let n = items.len();
+    let mut ending: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for (i, c) in cands.iter().enumerate() {
+        ending[c.b].push(i);
+    }
+    let mut order: Vec<usize> = (0..cands.len()).collect();
+    order.sort_by_key(|&i| (cands[i].a, cands[i].b));
+    let mut best = vec![f32::INFINITY; cands.len()];
+    let mut back = vec![usize::MAX; cands.len()];
+    for &i in &order {
+        let c = &cands[i];
+        if c.a == 0 {
+            best[i] = c.cost;
+            continue;
+        }
+        let mut predecessors: Vec<usize> = ending[c.a].clone();
+        predecessors.extend(&ending[c.a - 1]);
+        for p in predecessors {
+            if !best[p].is_finite() || p == i {
+                continue;
+            }
+            if let Some(j) = join_cost(bank, items, &cands[p], c) {
+                let total = best[p] + j + c.cost;
+                if total < best[i] {
+                    best[i] = total;
+                    back[i] = p;
+                }
+            }
+        }
+    }
+    let end = ending.get(n.wrapping_sub(1)).and_then(|list| {
+        list.iter()
+            .copied()
+            .filter(|&i| best[i].is_finite())
+            .min_by(|&x, &y| best[x].total_cmp(&best[y]))
+    });
+    let Some(mut i) = end else { return Vec::new() };
+    let mut chain = vec![cands[i]];
+    while back[i] != usize::MAX {
+        i = back[i];
+        chain.push(cands[i]);
+    }
+    chain.reverse();
+    chain
+}
+
+/// Maps target time to a fractional source frame.
+#[derive(Clone, Copy, Debug)]
+struct Placement {
+    t0: f64,
+    t1: f64,
+    s0: f64,
+    s1: f64,
+    /// Steady region that may stretch or loop.
+    stable: Option<(f64, f64)>,
+    /// Weight ramps: up over fade_in, down over fade_out (seconds).
+    fade_in: (f64, f64),
+    fade_out: (f64, f64),
+    /// Limits for extrapolating past the span at a hard join.
+    clamp: (f64, f64),
+    gain_db: f32,
+}
+
+impl Placement {
+    fn weight(&self, t: f64) -> f64 {
+        if t < self.fade_in.0 || t > self.fade_out.1 {
+            return 0.0;
+        }
+        let ramp = |x: f64, a: f64, b: f64| {
+            if b <= a {
+                1.0
+            } else {
+                ((x - a) / (b - a)).clamp(0.0, 1.0)
+            }
+        };
+        let up = ramp(t, self.fade_in.0, self.fade_in.1);
+        let down = 1.0 - ramp(t, self.fade_out.0, self.fade_out.1);
+        let w = up.min(down);
+        // Equal-power-ish raised cosine.
+        0.5 - 0.5 * (std::f64::consts::PI * w).cos()
+    }
+
+    fn source(&self, t: f64) -> f64 {
+        let span_t = (self.t1 - self.t0).max(1e-9);
+        let linear = |t: f64| self.s0 + (t - self.t0) / span_t * (self.s1 - self.s0);
+        let s = match self.stable {
+            Some((r0, r1)) if r1 - r0 >= 2.0 => {
+                let head = (r0 - self.s0).max(0.0) * FRAME;
+                let tail = (self.s1 - r1).max(0.0) * FRAME;
+                let middle = span_t - head - tail;
+                let natural = (r1 - r0) * FRAME;
+                if middle <= 0.0 {
+                    linear(t)
+                } else if t < self.t0 + head {
+                    self.s0 + (t - self.t0) / FRAME
+                } else if t > self.t1 - tail {
+                    r1 + (t - (self.t1 - tail)) / FRAME
+                } else if middle <= natural * 2.0 {
+                    r0 + (t - self.t0 - head) / middle * (r1 - r0)
+                } else {
+                    // Back and forth over the steady part, an odd number of
+                    // passes so the loop ends where the tail begins.
+                    let passes = ((middle / natural).round() as i64 | 1).max(1) as f64;
+                    let phase = (t - self.t0 - head) / (middle / passes);
+                    let n = phase.floor();
+                    let f = phase - n;
+                    let eased = 0.5 - 0.5 * (std::f64::consts::PI * f).cos();
+                    if (n as i64) % 2 == 0 {
+                        r0 + (r1 - r0) * eased
+                    } else {
+                        r1 - (r1 - r0) * eased
+                    }
+                }
+            }
+            _ => linear(t),
+        };
+        s.clamp(self.clamp.0, self.clamp.1)
+    }
+}
+
+fn place(bank: &Voicebank, items: &[Item], chain: &[Candidate]) -> Vec<Placement> {
+    let mut out = Vec::new();
+    let median = bank.median_level();
+    for (ci, c) in chain.iter().enumerate() {
+        let Some(u) = c.unit else { continue };
+        let unit = &bank.units[u as usize];
+        let previous = ci.checked_sub(1).map(|i| &chain[i]);
+        let next = chain.get(ci + 1);
+        let gain_db = ((median - unit.level) * 0.7).clamp(-12.0, 12.0);
+        for (j, item) in items.iter().enumerate().take(c.b + 1).skip(c.a) {
+            let k = c.first + (j - c.a);
+            let (s0, s1) = unit.span(k);
+            let (s0, s1) = (s0 as f64, s1 as f64);
+            let (t0, t1) = (item.start, item.end);
+            let length = t1 - t0;
+            let natural = (s1 - s0) * FRAME;
+            let phoneme = unit.phonemes[k];
+            let last = k + 1 == unit.phonemes.len();
+            let stable = if last && unit.stable[1] > unit.stable[0] {
+                Some((unit.stable[0] as f64, unit.stable[1] as f64))
+            } else if phoneme.class().sustainable() && !phoneme.is_pause() {
+                let q = (s1 - s0) * 0.25;
+                Some((s0 + q, s1 - q))
+            } else {
+                None
+            };
+            let incoming = j == c.a && previous.is_some_and(|p| p.b == j && p.unit.is_some());
+            let outgoing = j == c.b && next.is_some_and(|n| n.a == j && n.unit.is_some());
+            let hard_in = j == c.a && previous.is_some_and(|p| p.b + 1 == j)
+                || j == c.a && previous.is_none();
+            let hard_out =
+                j == c.b && next.is_some_and(|n| n.a == j + 1) || j == c.b && next.is_none();
+            let mut p = Placement {
+                t0,
+                t1,
+                s0,
+                s1,
+                stable,
+                fade_in: (t0, t0),
+                fade_out: (t1, t1),
+                clamp: (unit.start() as f64, unit.end().saturating_sub(1) as f64),
+                gain_db,
+            };
+            if phoneme.is_pause() {
+                // A recorded lead-in or tail: keep at most 150 ms of it, faded.
+                let keep = natural.min(0.15).min(length);
+                if k == 0 {
+                    p.t0 = t1 - keep;
+                    p.s0 = s1 - keep / FRAME;
+                    p.fade_in = (p.t0, p.t0 + keep * 0.6);
+                } else {
+                    p.t1 = t0 + keep;
+                    p.s1 = s0 + keep / FRAME;
+                    p.fade_out = (p.t1 - keep * 0.6, p.t1);
+                }
+                p.stable = None;
+                out.push(p);
+                continue;
+            }
+            if incoming {
+                // The incoming unit sings the end of the shared phoneme.
+                let own = natural.min(length * 0.6).max(FRAME * 2.0).min(length);
+                p.t0 = t1 - own;
+                p.stable = None;
+                p.fade_in = (p.t0, p.t0 + own * 0.5);
+            }
+            if outgoing {
+                // The outgoing unit sings the start and fades under the next.
+                let next_unit = &bank.units[next.unwrap().unit.unwrap() as usize];
+                let (n0, n1) = next_unit.span(next.unwrap().first);
+                let own_next = ((n1 - n0) as f64 * FRAME)
+                    .min(length * 0.6)
+                    .max(FRAME * 2.0)
+                    .min(length);
+                let fade_start = t1 - own_next;
+                let fade_end = t1 - own_next * 0.5;
+                p.t1 = fade_end;
+                p.fade_out = (fade_start, fade_end);
+                if stable.is_none() || !phoneme.class().sustainable() {
+                    // A consonant keeps its recorded speed.
+                    p.t1 = (p.t0 + natural).min(fade_end).max(p.t0 + FRAME);
+                    p.fade_out = (p.t1 - (fade_end - fade_start).min(p.t1 - p.t0), p.t1);
+                }
+            }
+            if !phoneme.class().sustainable() && !incoming && !outgoing {
+                // Consonants are not stretched: the target is the natural
+                // length, centered where the timing put it.
+                p.stable = None;
+            }
+            if hard_in && !incoming {
+                p.t0 -= EDGE;
+                p.s0 -= EDGE / FRAME;
+                p.fade_in = (p.t0, p.t0 + 2.0 * EDGE);
+            }
+            if hard_out && !outgoing {
+                p.t1 += EDGE;
+                p.s1 += EDGE / FRAME;
+                p.fade_out = (p.t1 - 2.0 * EDGE, p.t1);
+            }
+            out.push(p);
+        }
+    }
+    out
+}
+
+fn breath(bank: &Voicebank, progress: f64) -> Frame {
+    let mut f = Frame::SILENT;
+    let color = bank.color();
+    let fade = (std::f64::consts::PI * progress).sin().max(0.0) as f32;
+    let gain = 20.0 * fade.max(1e-4).log10();
+    for (g, e) in f.env.iter_mut().enumerate() {
+        let hz = crate::spectrum::grid_hz(g);
+        // Breath is the voice's color, quieter, with less low end.
+        let shape = if hz < 800.0 {
+            -12.0 * (1.0 - hz / 800.0)
+        } else {
+            0.0
+        };
+        *e = (color.get(g).copied().unwrap_or(-90.0) - 28.0 + shape + gain).max(FLOOR_DB);
+    }
+    f
+}
+
+/// Semitones a voiced source frame lies off its 100 ms neighbourhood.
+fn micro_pitch(bank: &Voicebank, position: f64, f0: f32) -> f32 {
+    let center = position.round() as isize;
+    let (mut sum, mut count) = (0.0f32, 0u32);
+    for i in center - 10..=center + 10 {
+        if i < 0 {
+            continue;
+        }
+        let f = bank.f0(i as usize);
+        if f > 0.0 {
+            sum += f.log2();
+            count += 1;
+        }
+    }
+    if count < 5 {
+        return 0.0;
+    }
+    12.0 * (f0.log2() - sum / count as f32)
+}
+
+/// Frames for laid-out phonemes from a voicebank. `pitch` is MIDI per frame;
+/// `modulation` (0–1) keeps that share of the recording's own pitch detail.
+pub fn frames(
+    bank: &Voicebank,
+    segments: &[Segment],
+    pitch: &[f32],
+    modulation: f32,
+) -> Vec<Frame> {
+    let count = pitch.len();
+    let mut out = vec![Frame::SILENT; count];
+    let items = items(bank, segments);
+    if items.is_empty() || bank.units.is_empty() {
+        return out;
+    }
+    let cands = candidates(bank, &items, pitch);
+    let chain = select(bank, &items, &cands);
+    let placements = place(bank, &items, &chain);
+    // Index placements by frame range for speed.
+    for (i, frame) in out.iter_mut().enumerate() {
+        let t = i as f64 * FRAME;
+        let mut weight = 0.0f64;
+        let mut env = [0.0f64; ENV_POINTS];
+        let mut ap = [0.0f64; crate::spectrum::AP_BANDS];
+        let mut voiced = 0.0f64;
+        let mut detail = 0.0f64;
+        let mut detail_weight = 0.0f64;
+        for p in &placements {
+            let w = p.weight(t);
+            if w <= 0.0 {
+                continue;
+            }
+            let s = p.source(t);
+            let f = bank.frame_at(s as f32);
+            for (e, v) in env.iter_mut().zip(&f.env) {
+                *e += w * (*v + p.gain_db) as f64;
+            }
+            for (a, v) in ap.iter_mut().zip(&f.ap) {
+                *a += w * *v as f64;
+            }
+            if f.voiced() {
+                voiced += w;
+                // Only the recording's fast pitch detail (jitter, the dip at a
+                // voiced consonant) carries over, not its slow intonation.
+                let semitones = micro_pitch(bank, s, f.f0);
+                detail += w * semitones.clamp(-1.0, 1.0) as f64;
+                detail_weight += w;
+            }
+            weight += w;
+        }
+        if weight <= 1e-6 {
+            continue;
+        }
+        let presence = weight.min(1.0);
+        let fade_db = 20.0 * presence.max(1e-4).log10();
+        for (o, e) in frame.env.iter_mut().zip(&env) {
+            *o = ((e / weight) + fade_db).max(FLOOR_DB as f64) as f32;
+        }
+        for (o, a) in frame.ap.iter_mut().zip(&ap) {
+            *o = (a / weight).clamp(0.0, 1.0) as f32;
+        }
+        if voiced / weight >= 0.5 {
+            let micro = if detail_weight > 0.0 {
+                detail / detail_weight
+            } else {
+                0.0
+            } * modulation as f64;
+            let midi = pitch[i] as f64 + micro;
+            frame.f0 = (440.0 * 2f64.powf((midi - 69.0) / 12.0)) as f32;
+        } else {
+            frame.f0 = 0.0;
+        }
+    }
+    // Breaths in pauses: from the timing's own breath segments.
+    for s in segments.iter().filter(|s| s.phoneme == Phoneme::BREATH) {
+        let a = (s.start / FRAME) as usize;
+        let b = ((s.end / FRAME) as usize).min(count);
+        for (i, frame) in out.iter_mut().enumerate().take(b).skip(a) {
+            let progress = (i - a) as f64 / (b - a).max(1) as f64;
+            if frame.level() < -150.0 {
+                *frame = breath(bank, progress);
+            }
+        }
+    }
+    out
+}
+
+/// Which unit aliases a phrase would use (for tests and the editor).
+pub fn describe(bank: &Voicebank, segments: &[Segment], pitch: &[f32]) -> Vec<String> {
+    let items = items(bank, segments);
+    let cands = candidates(bank, &items, pitch);
+    select(bank, &items, &cands)
+        .iter()
+        .map(|c| match c.unit {
+            Some(u) => {
+                let unit = &bank.units[u as usize];
+                let used = &unit.phonemes[c.first..c.first + (c.b - c.a) + 1];
+                if used.len() == unit.phonemes.len() {
+                    unit.alias.clone()
+                } else {
+                    format!(
+                        "{}[{}]",
+                        unit.alias,
+                        used.iter()
+                            .map(|p| p.symbol())
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    )
+                }
+            }
+            None => "·".into(),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bank::Info;
+    use crate::phoneme::Language;
+    use crate::timing::Role;
+
+    /// A bank whose frames encode (unit, phoneme) in f0 so mapping is visible.
+    fn bank(aliases: &[(&str, &str)]) -> Voicebank {
+        let mut bank = Voicebank::new(Info {
+            language: Language::Ja,
+            rate: 44_100,
+            ..Default::default()
+        });
+        for (alias, phonemes) in aliases {
+            let phonemes = Phoneme::parse_list(Language::Ja, phonemes).unwrap();
+            let mut bounds = Vec::new();
+            for p in &phonemes {
+                let mut f = Frame::SILENT;
+                f.f0 = if p.voiced() && !p.is_pause() {
+                    220.0
+                } else {
+                    0.0
+                };
+                f.env = [-90.0; ENV_POINTS];
+                let len = if p.is_vowel() { 40 } else { 14 };
+                bounds.push(bank.push_frames(&vec![f; len]));
+            }
+            bounds.push(bank.frame_count() as u32);
+            let last = *bounds.last().unwrap();
+            bank.add_unit(Unit {
+                alias: alias.to_string(),
+                phonemes,
+                fixed: bounds[0],
+                stable: [last - 30, last - 5],
+                bounds,
+                pitch: 57.0,
+                level: -80.0,
+            });
+        }
+        bank.finish();
+        bank
+    }
+
+    fn segments(list: &[(&str, f64, f64)]) -> Vec<Segment> {
+        list.iter()
+            .map(|&(p, a, b)| Segment {
+                phoneme: Phoneme::parse(Language::Ja, p).unwrap(),
+                start: a,
+                end: b,
+                role: Role::Nucleus,
+                note: Some(0),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn vcv_banks_overlap_on_vowels() {
+        let b = bank(&[
+            ("- ka", "sil k a"),
+            ("a ki", "a k i"),
+            ("i -", "i sil"),
+            ("ka", "k a"),
+            ("ki", "k i"),
+        ]);
+        let s = segments(&[
+            ("sil", 0.0, 0.3),
+            ("k", 0.3, 0.37),
+            ("a", 0.37, 0.8),
+            ("k", 0.8, 0.87),
+            ("i", 0.87, 1.3),
+            ("sil", 1.3, 1.5),
+        ]);
+        let pitch = vec![57.0; 300];
+        assert_eq!(describe(&b, &s, &pitch), ["- ka", "a ki", "i -"]);
+    }
+
+    #[test]
+    fn cv_banks_join_at_boundaries() {
+        let b = bank(&[("ka", "k a"), ("ki", "k i")]);
+        let s = segments(&[
+            ("sil", 0.0, 0.3),
+            ("k", 0.3, 0.37),
+            ("a", 0.37, 0.8),
+            ("k", 0.8, 0.87),
+            ("i", 0.87, 1.3),
+            ("sil", 1.3, 1.5),
+        ]);
+        let pitch = vec![57.0; 300];
+        assert_eq!(describe(&b, &s, &pitch), ["·", "ka", "ki", "·"]);
+        let f = frames(&b, &s, &pitch, 0.0);
+        // Silent before the phrase, voiced in the vowels at the sung pitch.
+        assert_eq!(f[10].f0, 0.0);
+        assert!((f[120].f0 - 220.0).abs() < 0.5);
+        assert!(f[120].level() > -100.0);
+        assert!(f[290].level() < -150.0);
+    }
+
+    #[test]
+    fn missing_sounds_use_parts_of_units() {
+        // No unit has "s" + "t"; parts of others cover it.
+        let b = bank(&[("sa", "s a"), ("to", "t o"), ("a s", "a s")]);
+        let s = segments(&[
+            ("sil", 0.0, 0.2),
+            ("s", 0.2, 0.3),
+            ("t", 0.3, 0.37),
+            ("o", 0.37, 0.8),
+            ("sil", 0.8, 1.0),
+        ]);
+        let pitch = vec![57.0; 200];
+        let used = describe(&b, &s, &pitch);
+        assert!(used.contains(&"to".to_string()), "{used:?}");
+        assert!(used.iter().any(|u| u.contains("[s]")), "{used:?}");
+    }
+
+    #[test]
+    fn long_vowels_loop_their_steady_part() {
+        let b = bank(&[("ka", "k a")]);
+        let s = segments(&[
+            ("sil", 0.0, 0.1),
+            ("k", 0.1, 0.17),
+            ("a", 0.17, 3.0),
+            ("sil", 3.0, 3.2),
+        ]);
+        let pitch = vec![57.0; 640];
+        let f = frames(&b, &s, &pitch, 0.0);
+        let voiced = f.iter().filter(|f| f.voiced()).count();
+        assert!(voiced > 540, "{voiced}");
+    }
+}

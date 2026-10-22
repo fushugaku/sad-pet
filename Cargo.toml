@@ -1,5 +1,5 @@
 [workspace]
-members = ["rust", "wasm", "plugin"]
+members = ["rust", "voice", "wasm", "plugin"]
 default-members = ["rust"]
 exclude = ["vendor/superecho", "vendor/alphaverb", "vendor/dxm088"]
 resolver = "2"

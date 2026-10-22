@@ -151,6 +151,14 @@ fn handle(
                     include_bytes!("../web/panels.js").to_vec(),
                     "application/javascript",
                 )),
+                "/vocal.js" => Ok((
+                    include_bytes!("../web/vocal.js").to_vec(),
+                    "application/javascript",
+                )),
+                "/vocal.css" => Ok((
+                    include_bytes!("../web/vocal.css").to_vec(),
+                    "text/css; charset=utf-8",
+                )),
                 "/api/sequencer/catalog" => json(&crate::sequence::catalog()),
                 "/api/drums/catalog" => json(&crate::drums::catalog()),
                 "/favicon.ico" => Ok((Vec::new(), "image/x-icon")),
@@ -269,8 +277,9 @@ fn handle(
                 }
                 let mut preset: Preset =
                     serde_json::from_value(value).map_err(|e| format!("Preset: {e}"))?;
-                // The desktop app has one engine and no buses to feed one.
+                // The desktop app has one engine and no buses or voices to feed one.
                 preset.bus = None;
+                preset.vocal = None;
                 preset.sanitize();
                 let rate = state.lock().map_err(|e| e.to_string())?.sample_rate;
                 let (reply, result) = std::sync::mpsc::sync_channel(1);

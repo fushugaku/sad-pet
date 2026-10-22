@@ -5,6 +5,7 @@ mod effect_presets;
 mod parameters;
 mod preset_library;
 mod timbres;
+mod vocal;
 use sad_pet::dsp::source_fx_worker as source_fx;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
@@ -68,6 +69,11 @@ enum Command {
     Region(Region),
     Fades(Fades),
     Midi(Message),
+    /// Play or stop the song clock that Vocal timbres follow without a host.
+    VocalTransport {
+        playing: Option<bool>,
+        start: Option<u64>,
+    },
     Step {
         index: Option<usize>,
         reset: bool,
@@ -96,6 +102,9 @@ struct Feedback {
     view: RealtimeView,
     bpm: f32,
     host_playing: bool,
+    /// The song clock or the host's song position, for Vocal timbres.
+    song_playing: bool,
+    song_position: u64,
 }
 
 /// The editor polls /api/state about twelve times a second. The preset and
@@ -189,6 +198,12 @@ pub struct Controller {
     files: audio_library::Files,
     /// The scene's last /api/state answer, for delta answers.
     sent: SentState,
+    /// Present while this part is a Vocal timbre.
+    vocal: Option<Arc<sad_pet::vocal::Mailbox>>,
+    /// The render thread, shared by every part and started on first use.
+    voices: Arc<std::sync::OnceLock<vocal::Service>>,
+    song_playing: bool,
+    song_position: u64,
 }
 
 pub struct Audio {
@@ -214,6 +229,58 @@ pub struct Audio {
     frames_since_feedback: usize,
     view: RealtimeView,
     source_renderer: source_fx::Renderer,
+    vocal: Option<Box<VocalAudio>>,
+    /// The scene's song clock, used when the host has no transport.
+    clock: sad_pet::vocal::Clock,
+    /// This block's song state: playing, position in frames.
+    song: (bool, u64),
+}
+
+/// A Vocal part's audio side: rendered clips, read a chunk at a time.
+struct VocalAudio {
+    track: sad_pet::vocal::Track,
+    buffer: [f32; 256],
+    index: usize,
+    position: u64,
+    playing: bool,
+}
+impl VocalAudio {
+    fn new(mailbox: Arc<sad_pet::vocal::Mailbox>) -> Box<Self> {
+        Box::new(Self {
+            track: sad_pet::vocal::Track::new(mailbox),
+            buffer: [0.0; 256],
+            index: 256,
+            position: 0,
+            playing: false,
+        })
+    }
+    /// Starts a block at a song position.
+    fn begin(&mut self, position: u64, playing: bool, bpm: Option<f32>) {
+        self.position = position;
+        self.playing = playing;
+        self.index = self.buffer.len();
+        self.track.update();
+        if let Some(mailbox) = &self.track.mailbox {
+            let bits = bpm.map_or(0, f32::to_bits);
+            mailbox
+                .host_bpm
+                .store(bits, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+    fn next(&mut self) -> f32 {
+        if self.index == self.buffer.len() {
+            if self.playing {
+                self.track.fill(self.position, &mut self.buffer);
+            } else {
+                self.buffer.fill(0.0);
+            }
+            self.position += self.buffer.len() as u64;
+            self.index = 0;
+        }
+        let sample = self.buffer[self.index];
+        self.index += 1;
+        sample
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -301,6 +368,10 @@ impl Controller {
             standalone: false,
             files: audio_library::Files::standard(),
             sent: SentState::default(),
+            vocal: None,
+            voices: Arc::new(std::sync::OnceLock::new()),
+            song_playing: false,
+            song_position: 0,
         }
     }
 
@@ -309,6 +380,7 @@ impl Controller {
         let mut part = Self::new(self.effect);
         part.standalone = self.standalone;
         part.sync = self.sync;
+        part.voices = self.voices.clone();
         part
     }
 
@@ -330,6 +402,8 @@ impl Controller {
             self.view = feedback.view;
             self.host_bpm = feedback.bpm;
             self.host_playing = feedback.host_playing;
+            self.song_playing = feedback.song_playing;
+            self.song_position = feedback.song_position;
             if feedback.revision == self.revision {
                 self.playing = self.view.playing;
                 self.midi_gate = self.view.midi_gate;
@@ -450,6 +524,7 @@ impl Controller {
         engine.set_frozen(self.frozen && self.source == Source::File);
         engine.bypass = self.bypass;
         let source_renderer = source_fx::Renderer::new(&engine);
+        let vocal = self.sync_vocal().map(VocalAudio::new);
         Audio {
             meta: self.meta.clone(),
             parts: self.prepare_parts(self.rate),
@@ -475,6 +550,40 @@ impl Controller {
             frames_since_feedback: 0,
             view: RealtimeView::default(),
             source_renderer,
+            vocal,
+            clock: Default::default(),
+            song: (false, 0),
+        }
+    }
+
+    pub(crate) fn voice_service(&self) -> &vocal::Service {
+        self.voices.get_or_init(vocal::Service::new)
+    }
+    /// Gives a Vocal part its mailbox and sends its score to the render
+    /// thread; any other part drops both.
+    fn sync_vocal(&mut self) -> Option<Arc<sad_pet::vocal::Mailbox>> {
+        let vocal = self
+            .preset
+            .vocal
+            .as_deref()
+            .filter(|_| self.meta.kind == sad_pet::timbres::Kind::Vocal)
+            .cloned();
+        match vocal {
+            Some(settings) => {
+                let mailbox = self
+                    .vocal
+                    .get_or_insert_with(sad_pet::vocal::Mailbox::new)
+                    .clone();
+                self.voice_service()
+                    .submit(self.meta.id, &settings, self.rate, &mailbox);
+                Some(mailbox)
+            }
+            None => {
+                if self.vocal.take().is_some() {
+                    self.voice_service().forget(self.meta.id);
+                }
+                None
+            }
         }
     }
 
@@ -691,13 +800,17 @@ impl Controller {
         let data = &request["data"];
         let post = request["method"] == "POST";
         if post
-            && self.meta.kind.routing()
+            && self.meta.kind.keeps_role()
             && matches!(
                 path,
                 "/api/wav" | "/api/input" | "/api/region" | "/api/fades"
             )
         {
-            return Err("A bus takes its input from the other timbres".into());
+            return Err(if self.meta.kind == sad_pet::timbres::Kind::Vocal {
+                "A Vocal timbre sings its score".into()
+            } else {
+                "A bus takes its input from the other timbres".into()
+            });
         }
         let ok = || json!({"ok":true});
         let binary = |bytes: Vec<u8>| json!({"binary":BASE64.encode(bytes),"mime":"audio/wav"});
@@ -742,6 +855,7 @@ impl Controller {
                 // A loaded preset can change the timbre's engine type.
                 self.meta.kind = sad_pet::timbres::Kind::of(&preset);
                 self.preset = preset;
+                self.sync_vocal();
                 Ok(json!(self.preset))
             }
             ("/api/parameters", true) => {
@@ -760,6 +874,32 @@ impl Controller {
                     self.selection.dirty = true;
                 }
                 Ok(ok())
+            }
+            ("/api/vocal/score", true) => {
+                let settings = self
+                    .preset
+                    .vocal
+                    .as_deref_mut()
+                    .ok_or("Select a Vocal timbre")?;
+                let mut score: sad_pet::vocal::voice::score::Score =
+                    serde_json::from_value(data["score"].clone()).map_err(|e| e.to_string())?;
+                score.sanitize();
+                settings.score = score;
+                let reply = json!({"ok":true,"score":settings.score});
+                self.sync_vocal();
+                self.selection.dirty = true;
+                Ok(reply)
+            }
+            ("/api/vocal/state", _) => {
+                let progress = self.voice_service().progress(self.meta.id);
+                Ok(json!({
+                    "playing": self.song_playing,
+                    "position": self.song_position as f64 / self.rate as f64,
+                    "clips": progress.rendered,
+                    "rate": self.rate,
+                    "progress": progress,
+                    "host": self.sync && !self.standalone,
+                }))
             }
             ("/api/sequencer/catalog", false) => Ok(sad_pet::sequence::catalog()),
             ("/api/drums/catalog", false) => Ok(sad_pet::drums::catalog()),
@@ -1017,6 +1157,7 @@ impl Audio {
                     }
                     if let Some(v) = t.playing {
                         self.engine.set_playing(v);
+                        self.clock.play(v);
                     }
                     if let Some(v) = t.frozen {
                         self.engine.set_frozen(v);
@@ -1035,6 +1176,17 @@ impl Audio {
                     let _ = self.engine.set_fades(*fades);
                 }
                 Command::Midi(message) => self.engine.midi(*message),
+                Command::VocalTransport { playing, start } => {
+                    if let Some(start) = start {
+                        self.clock.start = *start;
+                        if !self.clock.playing {
+                            self.clock.position = *start;
+                        }
+                    }
+                    if let Some(playing) = playing {
+                        self.clock.play(*playing);
+                    }
+                }
                 Command::Step {
                     index,
                     reset,
@@ -1115,11 +1267,28 @@ impl Audio {
             }
         });
         self.source_renderer.update(&mut self.engine);
+        // Vocal timbres play at the DAW's song position, or at the scene's
+        // own clock in the app and while a host has no transport.
+        let (song_playing, song_position, song_bpm) = match beat.filter(|_| self.sync) {
+            Some(beat) => (
+                playing,
+                (beat.max(0.0) * 60.0 / bpm as f64 * self.engine.sample_rate as f64).round() as u64,
+                Some(bpm),
+            ),
+            None => (self.clock.playing, self.clock.position, None),
+        };
+        self.song = (song_playing, song_position);
+        if let Some(vocal) = &mut self.vocal {
+            vocal.begin(song_position, song_playing, song_bpm);
+        }
         let mut part = self.parts.as_mut();
         let mut solo = self.meta.mix.solo;
         let mut buses = false;
         while let Some(p) = part {
             p.audio.begin(&[], bpm, beat, playing, frames);
+            if let Some(vocal) = &mut p.audio.vocal {
+                vocal.begin(song_position, song_playing, song_bpm);
+            }
             let kind = p.audio.meta.kind;
             solo |= p.audio.meta.mix.solo && !kind.routing();
             buses |= kind == sad_pet::timbres::Kind::Bus;
@@ -1141,6 +1310,7 @@ impl Audio {
             p.audio.end(frames);
             part = p.next.as_mut();
         }
+        self.clock.advance(frames);
         self.frames_since_feedback += frames;
         if self.frames_since_feedback >= self.engine.sample_rate as usize / 30
             && self.feedback.slots() > 0
@@ -1151,6 +1321,8 @@ impl Audio {
                 view: self.view,
                 bpm: self.host_bpm,
                 host_playing: self.host_playing,
+                song_playing: self.song.0,
+                song_position: self.song.1,
             });
             debug_assert!(result.is_ok());
             self.frames_since_feedback = 0;

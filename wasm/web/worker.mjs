@@ -1,4 +1,4 @@
-import { Core, TelemetryCore } from "./core.mjs";
+import { Core, TelemetryCore, VocalCore } from "./core.mjs";
 
 
 let core,
@@ -71,6 +71,41 @@ async function mp3(chunks, rate) {
   return bytes.buffer;
 }
 
+// Vocal rendering: one phrase per task, so new jobs and the playhead are
+// seen between phrases; each finished phrase goes straight to the worklet.
+let vocalNear = 0,
+  vocalPumping = false;
+function postVocalUpdates() {
+  const updates = core.updates();
+  const transfer = [];
+  for (const update of updates) {
+    update.clips = update.fresh.map((key) => {
+      const data = core.clip(key);
+      transfer.push(data);
+      const entry = update.plan.find((p) => p[0] === key);
+      return { key, start: entry ? entry[1] : 0, data };
+    });
+    delete update.fresh;
+  }
+  if (updates.length) self.postMessage({ type: "vocal-update", updates }, transfer);
+}
+function pumpVocal() {
+  if (vocalPumping) return;
+  vocalPumping = true;
+  const step = () => {
+    let rendered = 0;
+    try {
+      rendered = core.step(vocalNear);
+      if (rendered) postVocalUpdates();
+    } catch (error) {
+      self.postMessage({ type: "vocal-error", error: error.message });
+    }
+    if (rendered) setTimeout(step, 0);
+    else vocalPumping = false;
+  };
+  setTimeout(step, 0);
+}
+
 async function handle(message) {
   const { id, type, data } = message;
   try {
@@ -93,6 +128,43 @@ async function handle(message) {
         );
         return;
       }
+      case "vocal-init":
+        core = new VocalCore(data.module, data.rate);
+        result = true;
+        break;
+      case "vocal-jobs":
+        for (const job of data) core.command(job);
+        postVocalUpdates();
+        pumpVocal();
+        result = true;
+        break;
+      case "vocal":
+        result = core.command(data);
+        if (data.type === "voice-remove") {
+          postVocalUpdates();
+          pumpVocal();
+        }
+        break;
+      case "vocal-near":
+        vocalNear = Number(data) || 0;
+        pumpVocal();
+        result = true;
+        break;
+      case "vocal-voice":
+        result = core.addVoice(data.id, data.bytes);
+        postVocalUpdates();
+        pumpVocal();
+        break;
+      case "vocal-import": {
+        core.command({
+          type: "import-begin",
+          language: data.language || null,
+          name: data.name || null,
+        });
+        for (const file of data.files) core.importFile(file.path, file.data);
+        result = core.importFinish();
+        break;
+      }
       case "init":
         core = data.telemetry
           ? new TelemetryCore(data.module, data.rate)
@@ -106,9 +178,33 @@ async function handle(message) {
       case "scene-prepare":
         result = core.call("sad_scene_prepare", data);
         break;
-      case "scene-render":
-        result = core.call("sad_scene_render_document", data);
+      case "scene-render": {
+        // Rendered Vocal phrases arrive from the vocal worker.
+        const wasm = core.wasm;
+        for (const song of data.vocal || [])
+          for (const clip of song.clips) {
+            const samples = new Float32Array(clip.data);
+            const pointer = wasm.sad_render_clip(song.id, clip.start, samples.length);
+            new Float32Array(wasm.memory.buffer, pointer, samples.length).set(samples);
+          }
+        result = core.call("sad_scene_render_document", {
+          seconds: data.seconds,
+          scene: data.scene,
+        });
         break;
+      }
+      case "vocal-songs": {
+        const songs = core.json("sad_vocal_songs");
+        const transfer = [];
+        for (const song of songs)
+          song.clips = song.clips.map(([key, start]) => {
+            const data = core.clip(key);
+            transfer.push(data);
+            return { start, data };
+          });
+        self.postMessage({ id, result: songs }, transfer);
+        return;
+      }
       case "startup": {
         const scene = core.request("/api/startup");
         core.request("/api/timbres/reset", {});

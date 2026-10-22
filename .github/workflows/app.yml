@@ -3,9 +3,9 @@ name: Build standalone app
 on:
   push:
     branches: [main, 'codex/daw-plugins']
-    paths: ['plugin/**', 'rust/**', 'vendor/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/app.yml']
+    paths: ['plugin/**', 'rust/**', 'voice/**', 'vendor/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/app.yml']
   pull_request:
-    paths: ['plugin/**', 'rust/**', 'vendor/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/app.yml']
+    paths: ['plugin/**', 'rust/**', 'voice/**', 'vendor/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/app.yml']
   workflow_dispatch:
 
 permissions:

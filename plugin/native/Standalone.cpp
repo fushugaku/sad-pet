@@ -210,7 +210,9 @@ void Services::choose(const juce::var& request, juce::WebBrowserComponent::Nativ
     chooser = std::make_unique<juce::FileChooser>(dialog["title"].toString(),
         save && suggested.isNotEmpty() ? folder.getChildFile(suggested) : folder,
         dialog["patterns"].toString());
-    int flags = juce::FileBrowserComponent::canSelectFiles;
+    // A voicebank import may ask for a folder (a UTAU voicebank) instead of a file.
+    int flags = static_cast<bool>(dialog["folders"]) ? juce::FileBrowserComponent::canSelectDirectories
+                                                     : juce::FileBrowserComponent::canSelectFiles;
     if (save) flags |= juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting;
     else flags |= juce::FileBrowserComponent::openMode;
     if (!save && static_cast<bool>(dialog["multiple"])) flags |= juce::FileBrowserComponent::canSelectMultipleItems;

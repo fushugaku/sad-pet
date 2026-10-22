@@ -32,7 +32,7 @@ pub(super) fn ensure_master_in(
 /// A Bus or Master keeps its role when a preset loads into it; any other
 /// timbre ignores bus settings.
 pub(super) fn keep_role(preset: &mut Preset, current: &Preset, kind: Kind) {
-    if kind.routing() {
+    if kind.keeps_role() {
         if preset.bus.is_none() {
             preset.bus = current.bus.clone();
         }
@@ -41,6 +41,14 @@ pub(super) fn keep_role(preset: &mut Preset, current: &Preset, kind: Kind) {
         }
     } else {
         preset.bus = None;
+    }
+    // A Vocal timbre keeps its score; nothing else gains one.
+    if kind == Kind::Vocal {
+        if preset.vocal.is_none() {
+            preset.vocal = current.vocal.clone();
+        }
+    } else {
+        preset.vocal = None;
     }
 }
 
@@ -160,6 +168,9 @@ impl Controller {
         }
         if path.starts_with("/api/effect-presets") {
             return self.effect_presets_request(path, request["method"] == "POST", data);
+        }
+        if let Some(result) = self.vocal_scene_request(path, request["method"] == "POST", data) {
+            return result;
         }
         if path.starts_with("/api/timbres") {
             match path {
@@ -287,6 +298,9 @@ impl Controller {
                         }
                     }
                     self.enqueue(Command::RemovePart(id, None))?;
+                    if removed.kind == Kind::Vocal {
+                        self.voice_service().forget(id);
+                    }
                     self.parts.retain(|p| p.meta.id != id);
                     if self.active == id {
                         self.active = 0;
@@ -376,6 +390,10 @@ impl Audio {
     ) -> Stereo {
         let target = if self.audible { self.meta.mix.gain } else { 0. };
         self.smooth_part_gain += (target - self.smooth_part_gain) * 0.004;
+        let input = match &mut self.vocal {
+            Some(vocal) => [vocal.next(); 2],
+            None => input,
+        };
         let out = self.engine.process_input_frame(input);
         if buses {
             self.sends
@@ -420,7 +438,7 @@ impl Audio {
         }
     }
     pub(super) fn midi(&mut self, message: Message) {
-        if !self.meta.kind.routing() && self.meta.mix.accepts(message) {
+        if self.meta.kind.takes_midi() && self.meta.mix.accepts(message) {
             self.engine.midi(message);
         }
         let mut part = self.parts.as_mut();

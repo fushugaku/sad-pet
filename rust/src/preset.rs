@@ -684,6 +684,10 @@ pub struct Preset {
     pub bus: Option<Box<crate::bus::Settings>>,
     #[serde(skip)]
     pub bus_runtime: crate::bus::Prepared,
+    /// Present only in Vocal timbres, which also carry Bus settings: their
+    /// engine processes the sung voice the way a bus processes its input.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vocal: Option<Box<crate::vocal::Settings>>,
     pub pre_color_chain: Vec<crate::color::ColorSlot>,
     pub source_color_chain: Vec<crate::color::ColorSlot>,
     pub color_chain: Vec<crate::color::ColorSlot>,
@@ -716,6 +720,7 @@ impl Default for Preset {
             synth_runtime: Default::default(),
             bus: None,
             bus_runtime: Default::default(),
+            vocal: None,
             pre_color_chain: Vec::new(),
             source_color_chain: Vec::new(),
             color_chain: vec![
@@ -748,6 +753,7 @@ impl<'de> Deserialize<'de> for Preset {
             drums: Option<Box<crate::drums::Settings>>,
             synth: Option<Box<crate::synth::Settings>>,
             bus: Option<Box<crate::bus::Settings>>,
+            vocal: Option<Box<crate::vocal::Settings>>,
             pre_color_chain: Vec<crate::color::ColorSlot>,
             source_color_chain: Vec<crate::color::ColorSlot>,
             color_chain: Option<Vec<crate::color::ColorSlot>>,
@@ -772,6 +778,7 @@ impl<'de> Deserialize<'de> for Preset {
                     drums: None,
                     synth: None,
                     bus: None,
+                    vocal: None,
                     pre_color_chain: Vec::new(),
                     source_color_chain: Vec::new(),
                     color_chain: None,
@@ -894,6 +901,7 @@ impl<'de> Deserialize<'de> for Preset {
             synth_runtime: Default::default(),
             bus: d.bus,
             bus_runtime: Default::default(),
+            vocal: d.vocal,
             pre_color_chain: d.pre_color_chain,
             source_color_chain: d.source_color_chain,
             color_chain,
@@ -971,6 +979,12 @@ impl Preset {
         self.lfo_count = self.lfo_count.clamp(1, MODULATORS as u8);
         self.env_count = self.env_count.clamp(1, MODULATORS as u8);
         self.resynth.sanitize();
+        if let Some(vocal) = &mut self.vocal {
+            // A Vocal timbre's engine is a bus fed by its voice, never Master.
+            vocal.sanitize();
+            let bus = self.bus.get_or_insert_with(Default::default);
+            bus.master = false;
+        }
         if let Some(bus) = &mut self.bus {
             // A bus takes its sound from other timbres, never its own engine.
             bus.sanitize();

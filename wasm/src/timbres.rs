@@ -10,6 +10,8 @@ pub(super) struct Part {
     pub host: Host,
     pub gain: f32,
     pub sends: SendGains,
+    /// Present while the part is a Vocal timbre.
+    pub vocal: Option<Box<super::vocal::VocalPart>>,
 }
 impl Part {
     /// A Bus or Master starts with everything off. It keeps the host's tiny
@@ -33,6 +35,7 @@ impl Part {
             host,
             gain: 1.,
             sends: SendGains::default(),
+            vocal: None,
         }
     }
 }
@@ -53,6 +56,11 @@ pub(super) struct Registry {
     pub sequence: u32,
     pub snapshot_part: usize,
     pub unacked: [Option<(u32, u32, u32)>; 3],
+    /// The song clock that Vocal timbres play at.
+    pub clock: sad_pet::vocal::Clock,
+    /// Render-worker messages waiting for the worklet to post them.
+    pub vocal_jobs: Vec<Value>,
+    pub vocal_ids: Vec<u32>,
 }
 impl Registry {
     pub fn new(rate: u32) -> Self {
@@ -63,6 +71,7 @@ impl Registry {
                 host: Host::new(rate),
                 gain: 1.,
                 sends: SendGains::default(),
+                vocal: None,
             }],
             selected: 0,
             target: None,
@@ -71,6 +80,9 @@ impl Registry {
             sequence: 0,
             snapshot_part: 0,
             unacked: [None; 3],
+            clock: Default::default(),
+            vocal_jobs: Vec::new(),
+            vocal_ids: Vec::new(),
         };
         r.ensure_master();
         r.refresh_context();
@@ -127,7 +139,7 @@ impl Registry {
         for meta in &context.timbres {
             if !self.parts.iter().any(|p| p.meta.id == meta.id) {
                 let mut host = Host::new(rate);
-                if !meta.kind.routing() {
+                if !meta.kind.keeps_role() {
                     host.engine
                         .set_sample(self.parts[0].host.engine.sample.clone());
                 }
@@ -137,6 +149,7 @@ impl Registry {
                     host,
                     gain: meta.mix.gain,
                     sends: SendGains::default(),
+                    vocal: None,
                 });
             } else {
                 self.parts
@@ -212,7 +225,7 @@ impl Registry {
                     .synth_runtime
                     .prepare_engine(preset.synth.as_deref(), rate);
             }
-            3 if pending.kind != Kind::Granular && !pending.kind.routing() => {
+            3 if pending.kind != Kind::Granular && !pending.kind.keeps_role() => {
                 let preset = pending.preset.as_mut().unwrap();
                 let history = preset.history().unwrap();
                 let input = pending.live.get_or_insert_with(|| {
@@ -245,7 +258,7 @@ impl Registry {
             _ => {
                 let mut host = pending.host.take().unwrap();
                 let primary = &self.parts[0].host;
-                if !pending.kind.routing() {
+                if !pending.kind.keeps_role() {
                     host.engine.set_sample(primary.engine.sample.clone());
                 }
                 host.engine.set_midi_gate(primary.engine.midi_gate);
@@ -289,6 +302,7 @@ impl Registry {
                         host,
                         gain: 1.,
                         sends: SendGains::default(),
+                        vocal: None,
                     },
                 );
                 self.selected = at;
@@ -319,6 +333,7 @@ impl Registry {
                         serde_json::from_value(data["kind"].clone()).map_err(|e| e.to_string())?;
                     self.begin_part(kind)?;
                     while !self.prepare_part()? {}
+                    self.sync_vocal();
                     return Ok(json!(self.context()));
                 }
                 "/api/timbres/reset" => {
@@ -392,6 +407,7 @@ impl Registry {
             self.target = None;
             self.revision = self.revision.wrapping_add(1);
             self.refresh_context();
+            self.sync_vocal();
             return Ok(json!(self.context()));
         }
         if path == "/api/scene/name" {
@@ -407,7 +423,7 @@ impl Registry {
         if path == "/api/midi-bytes" && !data.is_null() {
             // Each parser keeps running status across packets; filtering follows decoding.
             for part in &mut self.parts {
-                if part.meta.kind.routing() {
+                if !part.meta.kind.takes_midi() {
                     continue;
                 }
                 let before = part.host.engine.preset.params;
@@ -436,7 +452,13 @@ impl Registry {
             }
             return Ok(json!({"ok":true}));
         }
+        if path.starts_with("/api/vocal/") {
+            return self.vocal_command(path, data);
+        }
         if path == "/api/transport" && !data.is_null() {
+            if let Some(playing) = data["playing"].as_bool() {
+                self.clock.play(playing);
+            }
             let mut shared = serde_json::Map::new();
             for key in ["playing", "midi_gate", "clear_hold"] {
                 if let Some(v) = data.get(key) {
@@ -457,12 +479,8 @@ impl Registry {
             // A Bus or Master keeps its role when a preset loads into it;
             // any other timbre ignores bus settings.
             let engine = &self.parts[index].host.engine;
-            if let Some(bus) = engine
-                .preset
-                .bus
-                .as_deref()
-                .filter(|_| self.parts[index].meta.kind.routing())
-            {
+            let kind = self.parts[index].meta.kind;
+            if let Some(bus) = engine.preset.bus.as_deref().filter(|_| kind.keeps_role()) {
                 let mut settings = data.get("bus").cloned().unwrap_or(Value::Null);
                 if settings.is_null() {
                     settings = json!(bus);
@@ -473,6 +491,22 @@ impl Registry {
                 data.remove("synth");
             } else {
                 data.remove("bus");
+            }
+            // A Vocal timbre keeps its score; nothing else gains one.
+            match engine
+                .preset
+                .vocal
+                .as_deref()
+                .filter(|_| kind == Kind::Vocal)
+            {
+                Some(vocal) => {
+                    if data.get("vocal").is_none_or(Value::is_null) {
+                        data.insert("vocal".into(), json!(vocal));
+                    }
+                }
+                None => {
+                    data.remove("vocal");
+                }
             }
         }
         let mut result = self.parts[index].host.command(request)?;
@@ -485,6 +519,7 @@ impl Registry {
         if state {
             result["timbres"] = json!(self.context());
         }
+        self.sync_vocal();
         Ok(result)
     }
     /// Timbres sum into Master and send to buses; buses then feed Master,
@@ -502,7 +537,19 @@ impl Registry {
             part.gain = sad_pet::dsp::fast::flush(part.gain + (target - part.gain) * 0.004);
             part.gain
         };
-        for i in 0..count.min(BLOCK) {
+        let count = count.min(BLOCK);
+        for part in &mut self.parts {
+            if let Some(vocal) = &mut part.vocal {
+                let out = &mut vocal.buffer[..count];
+                if self.clock.playing {
+                    vocal.song.fill(self.clock.position, out);
+                } else {
+                    out.fill(0.0);
+                }
+            }
+        }
+        self.clock.advance(count);
+        for i in 0..count {
             let input = self.parts[0].host.audio_input[i];
             let mut frame = [0.; 2];
             let mut sends = [[0.; 2]; MAX_BUSES];
@@ -513,7 +560,11 @@ impl Registry {
                 let mix = part.meta.mix;
                 let audible = !mix.muted && (!solo || mix.solo);
                 let level = gain(part, audible);
-                let out = part.host.engine.process_input_frame(input);
+                let source = match &part.vocal {
+                    Some(vocal) => [vocal.buffer[i]; 2],
+                    None => input,
+                };
+                let out = part.host.engine.process_input_frame(source);
                 for c in 0..2 {
                     frame[c] += out[c] * level;
                 }
@@ -695,6 +746,7 @@ impl Registry {
                 host,
                 gain: 1.,
                 sends: SendGains::default(),
+                vocal: None,
             });
         }
         if !tail.is_empty() || parts[0].meta.id != 0 {
@@ -724,6 +776,7 @@ impl Registry {
         self.number_buses();
         self.ensure_master();
         self.refresh_context();
+        self.sync_vocal();
         Ok(())
     }
 }
@@ -846,6 +899,7 @@ impl Registry {
                 host,
                 gain: 1.,
                 sends: SendGains::default(),
+                vocal: None,
             });
         }
         self.next_id = self.next_id.max(
@@ -942,6 +996,7 @@ pub extern "C" fn sad_scene_render_document() -> u32 {
             let rate = r.parts[0].host.rate;
             let mut renderer = Registry::new(rate);
             renderer.prepare_document(data["scene"].clone())?;
+            renderer.adopt_render_clips();
             for part in &mut renderer.parts {
                 part.host.engine.set_midi_gate(false);
                 part.host.engine.set_playing(true);
@@ -974,6 +1029,9 @@ pub extern "C" fn sad_timbre_prepare_begin() -> u32 {
 pub extern "C" fn sad_timbre_prepare_step() -> u32 {
     registry(|r| {
         let result = r.prepare_part().and_then(|done| {
+            if done {
+                r.sync_vocal();
+            }
             serde_json::to_vec(&json!({"done":done,"context":done.then(||r.context())}))
                 .map_err(|e| e.to_string())
         });
