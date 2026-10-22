@@ -83,13 +83,16 @@ drumEditor.buffer.onchange();
 assert.equal(drumPreset.drums.buffer_seconds, 0.125);
 assert.deepEqual(routingEdits, [["drum_buffer_seconds", 0.125]], "Buffer choice must send a scalar edit");
 const sizeContext = vm.createContext({ preset: drumPreset });
-vm.runInContext(app.slice(app.indexOf("function grainSeconds("), app.indexOf("const grainSchema")), sizeContext);
+vm.runInContext(app.slice(app.indexOf("const historySettings"), app.indexOf("const grainSchema")), sizeContext);
 assert.equal(sizeContext.grainSeconds(0.5), 0.01);
 assert.equal(sizeContext.grainSeconds(1), 0.125);
 drumPreset.drums.buffer_seconds = 32;
 assert.equal(sizeContext.grainSeconds(1), 2.01);
 sizeContext.preset = { params: {} };
 assert.equal(sizeContext.grainSeconds(1), 2.01);
+// A Granular bus scales grain size by its own history like the drums.
+sizeContext.preset = { params: {}, bus: { granular: true, buffer_seconds: 0.125 } };
+assert.equal(sizeContext.grainSeconds(1), 0.125);
 
 const ids = new Map();
 const state = {

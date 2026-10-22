@@ -442,9 +442,11 @@ function setParam(key, value) {
   else if (key === "loop_one_bar") scheduleParameter(key, Number(value));
   else schedulePreset();
 }
+/** Drum, Synth, Bus and Master timbres keep their sound in a windowed history. */
+const historySettings = () => preset?.drums ?? preset?.synth ?? preset?.bus;
 function grainSeconds(value) {
-  // Drum and Synth timbres share the windowed history's grain scaling.
-  const history = preset?.drums ?? preset?.synth;
+  // They share the windowed history's grain scaling.
+  const history = historySettings();
   const span = history
     ? Math.min(2, Math.max(0, (history.buffer_seconds ?? 8) - 0.01))
     : 2;
@@ -3819,7 +3821,7 @@ function bind() {
       drop.classList.remove("drag");
     });
   drop.addEventListener("drop", (e) => {
-    if (preset?.drums || preset?.synth) return;
+    if (historySettings()) return;
     fileLibrary
       .importFiles([...e.dataTransfer.files])
       .catch((error) => notify(error.message, true));
@@ -4101,7 +4103,7 @@ function syncInput(input) {
     $("render").disabled = false;
   $("render").dataset.liveDisabled = String(active);
   $("render").title = active ? "Use Record to save the live output" : "";
-  const history = preset?.drums ?? preset?.synth;
+  const history = historySettings();
   const effectsOnly = history
     ? !history.granular : active && input.mode === "effects";
   $("grain-controls").inert = effectsOnly;
