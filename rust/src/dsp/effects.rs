@@ -33,6 +33,7 @@ impl Delay {
         debug_assert!(self.frames.is_empty());
         self.frames = frames;
     }
+    #[inline(always)]
     pub fn push(&mut self, frame: Stereo) {
         self.frames[self.cursor] = frame;
         // The cursor is always inside the buffer: wrapping by comparison is the
@@ -42,6 +43,7 @@ impl Delay {
             self.cursor = 0;
         }
     }
+    #[inline(always)]
     pub fn read(&self, samples: f32) -> Stereo {
         let len = self.frames.len();
         // The fractional delay splits into its ceiling and the distance to it.

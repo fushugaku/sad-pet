@@ -21,35 +21,43 @@ use radias_synth_domain::{
 };
 use std::{f32::consts::PI, ops::Range};
 
-#[derive(Clone, Copy, Default)]
-struct Band {
-    g: f32,
-    a: f32,
-    z: [[f32; 2]; 2],
+/// Sixteen analysis band-pass filters of one input, stored by field so each
+/// band is one vector lane. Every lane runs the per-band filter arithmetic
+/// unchanged; only the memory layout differs.
+#[derive(Clone, Copy)]
+struct Bands {
+    g: [f32; BANDS],
+    a: [f32; BANDS],
+    /// [channel][state][band]
+    z: [[[f32; BANDS]; 2]; 2],
 }
 
-impl Band {
-    fn new(hz: f32, sr: f32) -> Self {
-        let g = (PI * hz / sr).tan();
+impl Bands {
+    fn new(frequencies: &[f32; BANDS], sr: f32) -> Self {
+        let g = frequencies.map(|hz| (PI * hz / sr).tan());
         Self {
             g,
-            a: 1.0 / (1.0 + g * (g + 1.0 / 2.8)),
-            ..Self::default()
+            a: g.map(|g| 1.0 / (1.0 + g * (g + 1.0 / 2.8))),
+            z: [[[0.0; BANDS]; 2]; 2],
         }
     }
-    fn next(&mut self, input: Stereo) -> Stereo {
-        std::array::from_fn(|c| {
-            let v3 = input[c] - self.z[c][1];
-            let v1 = self.a * (self.z[c][0] + self.g * v3);
-            let v2 = self.z[c][1] + self.g * v1;
-            self.z[c] = [2.0 * v1 - self.z[c][0], 2.0 * v2 - self.z[c][1]];
-            for z in &mut self.z[c] {
-                if z.abs() < 1e-20 {
-                    *z = 0.0;
-                }
+    fn clear(&mut self) {
+        self.z = [[[0.0; BANDS]; 2]; 2];
+    }
+    #[inline]
+    fn next(&mut self, input: Stereo) -> [Stereo; BANDS] {
+        let mut out = [[0.0; 2]; BANDS];
+        for (c, [z0, z1]) in self.z.iter_mut().enumerate() {
+            for i in 0..BANDS {
+                let v3 = input[c] - z1[i];
+                let v1 = self.a[i] * (z0[i] + self.g[i] * v3);
+                let v2 = z1[i] + self.g[i] * v1;
+                z0[i] = super::fast::flush(2.0 * v1 - z0[i]);
+                z1[i] = super::fast::flush(2.0 * v2 - z1[i]);
+                out[i][c] = v1 / 2.8;
             }
-            v1 / 2.8
-        })
+        }
+        out
     }
 }
 
@@ -78,14 +86,9 @@ impl Lowpass {
         std::array::from_fn(|c| {
             let y = self.b[0] * input[c] + self.z[c][0];
             self.z[c] = [
-                self.b[1] * input[c] - self.a[0] * y + self.z[c][1],
-                self.b[2] * input[c] - self.a[1] * y,
+                super::fast::flush(self.b[1] * input[c] - self.a[0] * y + self.z[c][1]),
+                super::fast::flush(self.b[2] * input[c] - self.a[1] * y),
             ];
-            for z in &mut self.z[c] {
-                if z.abs() < 1e-20 {
-                    *z = 0.0;
-                }
-            }
             y
         })
     }
@@ -211,9 +214,9 @@ pub struct Resynth {
     sample_rate: f32,
     oversample: usize,
     frequencies: [f32; BANDS],
-    bands: [Band; BANDS],
-    source_bands: [Band; BANDS],
-    grain_bands: [Band; BANDS],
+    bands: Bands,
+    source_bands: Bands,
+    grain_bands: Bands,
     source_signs: [i8; BANDS],
     grain_signs: [i8; BANDS],
     analysis_signs: [i8; BANDS],
@@ -253,9 +256,9 @@ impl Resynth {
             sample_rate: sr as f32,
             oversample: oversample(sr) as usize,
             frequencies,
-            bands: frequencies.map(|hz| Band::new(hz, sr as f32)),
-            source_bands: frequencies.map(|hz| Band::new(hz, sr as f32)),
-            grain_bands: frequencies.map(|hz| Band::new(hz, sr as f32)),
+            bands: Bands::new(&frequencies, sr as f32),
+            source_bands: Bands::new(&frequencies, sr as f32),
+            grain_bands: Bands::new(&frequencies, sr as f32),
             source_signs: [0; BANDS],
             grain_signs: [0; BANDS],
             analysis_signs: [0; BANDS],
@@ -287,14 +290,9 @@ impl Resynth {
         }
     }
     pub fn clear(&mut self) {
-        for band in self
-            .bands
-            .iter_mut()
-            .chain(&mut self.source_bands)
-            .chain(&mut self.grain_bands)
-        {
-            band.z = [[0.0; 2]; 2];
-        }
+        self.bands.clear();
+        self.source_bands.clear();
+        self.grain_bands.clear();
         self.envelopes.levels.fill(0);
         self.levels.fill(0.0);
         self.gains.fill(0.0);
@@ -550,18 +548,18 @@ impl Resynth {
         } else {
             grains
         };
-        let analyzed: [Stereo; BANDS] = std::array::from_fn(|i| self.bands[i].next(input));
+        let analyzed = self.bands.next(input);
         let source_bands = if self.settings.input == Input::Source {
             analyzed
         } else if self.external_taps[0] {
-            std::array::from_fn(|i| self.source_bands[i].next(source))
+            self.source_bands.next(source)
         } else {
             [[0.0; 2]; BANDS]
         };
         let grain_bands = if self.settings.input == Input::Grains {
             analyzed
         } else if self.external_taps[1] {
-            std::array::from_fn(|i| self.grain_bands[i].next(grains))
+            self.grain_bands.next(grains)
         } else {
             [[0.0; 2]; BANDS]
         };
@@ -769,17 +767,19 @@ pub(crate) fn oversample(sample_rate: u32) -> u32 {
 fn mono(x: Stereo) -> f32 {
     (x[0] + x[1]) * 0.5
 }
+/// Band signs cross zero at the band frequency, so this stays branch-free:
+/// above +1e-5 the sign becomes 1, below -1e-5 it becomes -1, otherwise
+/// (including NaN) it holds; a wrap is a rise from -1 to 1.
 fn zero_crossings(input: &[Stereo; BANDS], signs: &mut [i8; BANDS]) -> [bool; BANDS] {
-    std::array::from_fn(|i| {
-        let sample = mono(input[i]);
-        let previous = signs[i];
-        if sample > 1e-5 {
-            signs[i] = 1;
-        } else if sample < -1e-5 {
-            signs[i] = -1;
-        }
-        previous == -1 && signs[i] == 1
-    })
+    let mut wraps = [false; BANDS];
+    for ((x, sign), wrap) in input.iter().zip(signs.iter_mut()).zip(&mut wraps) {
+        let sample = mono(*x);
+        let (up, down) = (sample > 1e-5, sample < -1e-5);
+        let previous = *sign;
+        *sign = up as i8 - down as i8 + previous * !(up | down) as i8;
+        *wrap = up & (previous == -1);
+    }
+    wraps
 }
 
 #[cfg(test)]
