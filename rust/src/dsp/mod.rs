@@ -1852,7 +1852,9 @@ impl Engine {
         }
         let slots = &m.filter_slots[..m.filter_len];
         self.filter_masks = filter_slots::masks(slots, &self.filter_banks);
-        filter_slots::configure_shared(slots, &mut self.filter_banks);
+        let last_note = self.source_note as f32
+            + self.bend[self.source_channel as usize] * m.params.midi_pitchbend_range;
+        filter_slots::configure_shared(slots, &mut self.filter_banks, last_note, self.env_values);
         let bus = self.preset.bus.is_some();
         for (i, voice) in self.voices.iter().enumerate() {
             if !voice.envelopes[0].active() && !(bus && i == 0) {

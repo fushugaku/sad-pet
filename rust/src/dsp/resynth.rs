@@ -1058,7 +1058,12 @@ mod tests {
         }];
         let mut banks = crate::dsp::filter_slots::Prepared::default();
         banks.prepare(&slots, 48000);
-        crate::dsp::filter_slots::configure_shared(&slots, &mut banks.0);
+        crate::dsp::filter_slots::configure_shared(
+            &slots,
+            &mut banks.0,
+            60.0,
+            [0.0; crate::preset::MODULATORS],
+        );
         let range = 0..sample.len();
         let mut changed = false;
         for n in 0..12_000 {

@@ -98,7 +98,8 @@ impl EnvSource {
 pub const MAX_FILTER_SLOTS: usize = 16;
 
 /// Where an added filter sits. Positions inside a note's path run one filter
-/// per voice with its own envelope and key tracking; the others are shared.
+/// per voice with its own envelope and key tracking; the others are shared and
+/// follow the loudest voice's envelope and the last note.
 /// Filters after a Resynth oscillator follow its sync/ring taps, so they shape
 /// only what that oscillator adds to the output.
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]

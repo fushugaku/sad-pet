@@ -5,8 +5,8 @@ use sad_pet::{
     midi::Message,
     parameters,
     preset::{
-        Destination, FilterModel, FilterPosition, FilterSlot, FilterSlotParameter, FilterType,
-        MAX_FILTER_SLOTS, Preset,
+        Destination, EnvSource, FilterModel, FilterPosition, FilterSlot, FilterSlotParameter,
+        FilterType, MAX_FILTER_SLOTS, Preset,
     },
 };
 use std::{
@@ -64,14 +64,18 @@ fn dark(id: u32, position: FilterPosition) -> FilterSlot {
 }
 
 /// The first-open scene: grains, four Resynth oscillators, Pre FX and FX.
-fn engine(slots: &[FilterSlot]) -> Engine {
+fn scene(slots: &[FilterSlot]) -> Preset {
     let mut preset = sad_pet::startup::preset();
     preset.filter_slots = slots.to_vec();
+    preset
+}
+
+fn play(preset: Preset, notes: [u8; 3]) -> Engine {
     let mut e = Engine::new(RATE, sad_pet::startup::sample(), preset);
     e.set_fades(sad_pet::startup::FADES).unwrap();
     e.set_midi_gate(true);
     e.set_playing(true);
-    for note in [48, 60, 67] {
+    for note in notes {
         e.midi(Message::NoteOn {
             channel: 0,
             note,
@@ -80,6 +84,16 @@ fn engine(slots: &[FilterSlot]) -> Engine {
     }
     e
 }
+
+fn engine(slots: &[FilterSlot]) -> Engine {
+    play(scene(slots), [48, 60, 67])
+}
+
+const SHARED: [FilterPosition; 3] = [
+    FilterPosition::AfterOsc1,
+    FilterPosition::AfterResynth,
+    FilterPosition::AfterFx,
+];
 
 fn render(e: &mut Engine, frames: usize) -> Vec<u32> {
     let mut out = vec![[0.0; 2]; frames];
@@ -229,6 +243,65 @@ fn modulation_routes_reach_added_filters() {
         render(&mut e, frames)
     };
     assert_ne!(routed(0.8), routed(0.0));
+}
+
+#[test]
+fn shared_filters_follow_the_loudest_envelope_like_an_env_route() {
+    let frames = 24_000;
+    for position in SHARED {
+        let render_with = |env_depth: f32, routed: f32| {
+            let mut preset = scene(&[FilterSlot {
+                env: EnvSource::Env1,
+                env_depth,
+                ..dark(1, position)
+            }]);
+            preset.envs[0].extra_destination = Destination::FilterSlot {
+                slot: 1,
+                parameter: FilterSlotParameter::Cutoff,
+            };
+            preset.envs[0].extra_depth = routed;
+            render(&mut play(preset, [48, 60, 67]), frames)
+        };
+        let opened = render_with(0.8, 0.0);
+        assert_ne!(
+            opened,
+            render_with(0.0, 0.0),
+            "{position:?} ignored ENV DEPTH"
+        );
+        assert_eq!(
+            opened,
+            render_with(0.0, 0.8),
+            "{position:?} ENV DEPTH differs from routing the ENV to its cutoff"
+        );
+    }
+}
+
+#[test]
+fn shared_filters_track_the_last_note() {
+    let frames = 24_000;
+    for position in SHARED {
+        let render_with = |notes: [u8; 3], keytrack: f32| {
+            let mut preset = scene(&[FilterSlot {
+                keytrack,
+                ..dark(1, position)
+            }]);
+            // Sequencer steps are notes too; keep the chord's last note last.
+            preset.sequencer.enabled = false;
+            render(&mut play(preset, notes), frames)
+        };
+        // Ending on C4, full tracking adds nothing; ending a fifth above, it
+        // opens the filter although C4 is still held.
+        assert_eq!(
+            render_with([48, 67, 60], 1.0),
+            render_with([48, 67, 60], 0.0),
+            "{position:?} tracked a note other than the last"
+        );
+        assert_ne!(
+            render_with([48, 60, 67], 1.0),
+            render_with([48, 60, 67], 0.0),
+            "{position:?} ignored KEYTRACK"
+        );
+    }
 }
 
 #[test]

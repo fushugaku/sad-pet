@@ -96,8 +96,28 @@ pub(crate) fn masks(slots: &[FilterSlot], banks: &[Box<Bank>]) -> [u16; POSITION
     masks
 }
 
+/// The slot's cutoff after its envelope and key tracking.
+fn cutoff(slot: &FilterSlot, note: f32, envs: [f32; MODULATORS]) -> f32 {
+    tracked_cutoff(
+        slot.model,
+        slot.kind,
+        slot.cutoff,
+        envs[slot.env.index()],
+        slot.env_depth,
+        note,
+        slot.keytrack,
+    )
+}
+
 /// Control-rate coefficients for the shared and oscillator-rate filters.
-pub(crate) fn configure_shared(slots: &[FilterSlot], banks: &mut [Box<Bank>]) {
+/// Without a note of their own they follow each envelope's loudest voice, as
+/// an ENV routed to a destination does, and track the last note played.
+pub(crate) fn configure_shared(
+    slots: &[FilterSlot],
+    banks: &mut [Box<Bank>],
+    note: f32,
+    envs: [f32; MODULATORS],
+) {
     for (slot, bank) in slots.iter().zip(banks) {
         if slot.id != bank.id || slot.position.per_voice() {
             continue;
@@ -110,7 +130,7 @@ pub(crate) fn configure_shared(slots: &[FilterSlot], banks: &mut [Box<Bank>]) {
         filter.configure(
             slot.model,
             slot.kind,
-            slot.cutoff,
+            cutoff(slot, note, envs),
             slot.resonance,
             slot.drive,
             slot.morph,
@@ -130,19 +150,10 @@ pub(crate) fn configure_voice(
         if slot.id != bank.id || !slot.position.per_voice() {
             continue;
         }
-        let cutoff = tracked_cutoff(
-            slot.model,
-            slot.kind,
-            slot.cutoff,
-            envs[slot.env.index()],
-            slot.env_depth,
-            note,
-            slot.keytrack,
-        );
         bank.voices[voice].configure(
             slot.model,
             slot.kind,
-            cutoff,
+            cutoff(slot, note, envs),
             slot.resonance,
             slot.drive,
             slot.morph,

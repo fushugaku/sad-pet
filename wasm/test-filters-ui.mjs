@@ -191,10 +191,11 @@ position.value = "after_osc2";
 position.onchange();
 assert.equal(preset.filter_slots[0].position, "after_osc2");
 assert.equal(presetWrites, 2);
-assert.equal(dial("env_depth").getAttribute("aria-disabled"), "true");
-assert.equal(dial("keytrack").getAttribute("aria-disabled"), "true");
+// A shared position keeps its envelope and key tracking.
+assert.equal(dial("env_depth").getAttribute("aria-disabled"), "false");
+assert.equal(dial("keytrack").getAttribute("aria-disabled"), "false");
 card = list.querySelector('[data-id="1"]');
-assert.equal(card.querySelector(".added-filter-env").hidden, true);
+assert.notEqual(card.querySelector(".added-filter-env").hidden, true);
 const type = card.querySelector(".added-filter-type");
 type.value = "ladder_lp24";
 type.onchange();

@@ -772,7 +772,8 @@ function syncFilters() {
   syncAddedFilters();
 }
 // Filters 3 and up. Positions inside a note's path run one filter per voice
-// with its own envelope and key tracking; the others are one shared filter.
+// with its own envelope and key tracking; the others are one shared filter
+// that follows the loudest voice's envelope and the last note.
 const FILTER_POSITIONS = [
   ["after_grains", "After grains"],
   ["after_osc1", "After OSC 1"],
@@ -783,11 +784,6 @@ const FILTER_POSITIONS = [
   ["before_filters", "Before Filter 1·2"],
   ["after_filters", "After Filter 1·2"],
   ["after_fx", "After FX"],
-];
-const PER_VOICE_FILTER_POSITIONS = [
-  "after_grains",
-  "before_filters",
-  "after_filters",
 ];
 const MAX_FILTER_SLOTS = 16;
 const FILTER_SLOT_DEFAULT = {
@@ -895,8 +891,7 @@ function syncAddedFilters() {
 }
 function addedFilterCard(index, slot) {
   const number = index + 3,
-    id = slot.id,
-    perVoice = PER_VOICE_FILTER_POSITIONS.includes(slot.position);
+    id = slot.id;
   const card = document.createElement("div");
   card.className = "filter-card added-filter-card";
   card.classList.toggle("inactive", !slot.enabled);
@@ -923,7 +918,6 @@ function addedFilterCard(index, slot) {
     editAddedFilters();
   };
   const env = card.querySelector(".added-filter-env");
-  env.hidden = !perVoice;
   env.onchange = () => {
     findFilterSlot(id).env = env.value;
     schedulePreset();
@@ -966,19 +960,15 @@ function addedFilterCard(index, slot) {
       },
     );
     const active =
-      field === "env_depth" || field === "keytrack"
-        ? perVoice
-        : field === "drive"
-          ? slot.model !== "legacy"
-          : field === "morph"
-            ? ["radias", "sem", "multi_filter"].includes(slot.model)
-            : true;
+      field === "drive"
+        ? slot.model !== "legacy"
+        : field === "morph"
+          ? ["radias", "sem", "multi_filter"].includes(slot.model)
+          : true;
     const dial = container.querySelector(`[data-control-key="${key}"]`);
     dial.closest(".knob").classList.toggle("filter-unused", !active);
     dial.setAttribute("aria-disabled", String(!active));
     dial.tabIndex = active ? 0 : -1;
-    if (!perVoice && (field === "env_depth" || field === "keytrack"))
-      dial.closest(".knob").title = "Per-note positions only";
   }
   return card;
 }
@@ -2607,12 +2597,9 @@ function fillDestination(select, destination) {
     });
   }
   for (const [index, slot] of (preset.filter_slots || []).entries()) {
-    const perVoice = PER_VOICE_FILTER_POSITIONS.includes(slot.position);
     groups.push({
       label: `Filter ${index + 3}`,
-      choices: FILTER_SLOT_CONTROLS.filter(
-        ([field]) => perVoice || (field !== "env_depth" && field !== "keytrack"),
-      ).map(([parameter, label]) => [
+      choices: FILTER_SLOT_CONTROLS.map(([parameter, label]) => [
         destinationValue({ filter_slot: { slot: slot.id, parameter } }),
         `Filter ${index + 3} · ${label.charAt(0) + label.slice(1).toLowerCase()}`,
       ]),
