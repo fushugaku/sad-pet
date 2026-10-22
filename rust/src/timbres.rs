@@ -9,6 +9,8 @@ pub enum Kind {
     Granular,
     Drums,
     Synth,
+    /// Sings a score; its voice runs through the chain like a Bus input.
+    Vocal,
     /// Processes the sends of other timbres and feeds Master.
     Bus,
     /// Always present: the sum of every timbre and bus, then the output.
@@ -20,6 +22,7 @@ impl Kind {
             Kind::Granular => "Granular",
             Kind::Drums => "Drums",
             Kind::Synth => "Synth",
+            Kind::Vocal => "Vocal",
             Kind::Bus => "Bus",
             Kind::Master => "Master",
         }
@@ -28,8 +31,18 @@ impl Kind {
     pub fn routing(self) -> bool {
         matches!(self, Kind::Bus | Kind::Master)
     }
+    /// Plays notes from MIDI and the keyboard; a Vocal timbre sings its score.
+    pub fn takes_midi(self) -> bool {
+        !self.routing() && self != Kind::Vocal
+    }
+    /// Keeps its engine role when a preset loads into it.
+    pub fn keeps_role(self) -> bool {
+        self.routing() || self == Kind::Vocal
+    }
     pub fn of(preset: &crate::preset::Preset) -> Self {
-        if let Some(bus) = &preset.bus {
+        if preset.vocal.is_some() {
+            Kind::Vocal
+        } else if let Some(bus) = &preset.bus {
             if bus.master { Kind::Master } else { Kind::Bus }
         } else if preset.drums.is_some() {
             Kind::Drums
@@ -50,7 +63,7 @@ impl Kind {
             Kind::Granular => return None,
             Kind::Drums => preset.drums = Some(Box::default()),
             Kind::Synth => preset.synth = Some(Box::default()),
-            Kind::Bus | Kind::Master => {
+            Kind::Bus | Kind::Master | Kind::Vocal => {
                 // Everything off: the input passes at unity and costs nothing.
                 preset.bus = Some(Box::new(crate::bus::Settings {
                     master: self == Kind::Master,
@@ -59,6 +72,9 @@ impl Kind {
                 preset.params.master_volume = 1.0;
                 preset.params.mix = 0.5;
                 preset.color_chain.clear();
+                if self == Kind::Vocal {
+                    preset.vocal = Some(Box::default());
+                }
             }
         }
         Some(preset)

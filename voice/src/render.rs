@@ -138,7 +138,8 @@ pub fn plan(
             hash.json(&(param, &curve[a..b]));
         }
         phrases.push(Phrase {
-            key: hash.0,
+            // 53 bits: exact in JavaScript numbers.
+            key: hash.0 & ((1 << 53) - 1),
             start,
             end,
             notes: current.clone(),

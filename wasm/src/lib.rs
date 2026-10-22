@@ -5,6 +5,7 @@ mod allocation_tests;
 mod source_fx;
 mod telemetry;
 mod timbres;
+mod vocal;
 use sad_pet::{
     Stereo,
     dsp::{Engine, SampleBuffer},

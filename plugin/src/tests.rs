@@ -1601,3 +1601,89 @@ fn standalone_renders_the_scene_and_keeps_recordings_in_the_library() {
         2
     );
 }
+
+fn wait_for_vocal(control: &mut Controller) {
+    let started = std::time::Instant::now();
+    loop {
+        let state = call(control, "/api/vocal/state", Value::Null);
+        let progress = &state["progress"];
+        if progress["phrases"].as_u64() > Some(0) && progress["phrases"] == progress["rendered"] {
+            return;
+        }
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(30),
+            "vocal phrases did not render: {state}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn vocal_timbres_sing_at_the_daw_position_and_survive_project_recall() {
+    let voices = PresetDirectory::new();
+    // SAFETY: tests that read the variable set the same value.
+    unsafe { std::env::set_var("SAD_PET_VOICE_DIR", &voices.0) };
+    let mut control = Controller::new(false);
+    control.meta.mix.muted = true;
+    let mut audio = control.prepare(8000);
+    let values = control.values();
+    let context = call(&mut control, "/api/timbres/add", json!({"kind":"vocal"}));
+    let id = context["timbres"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["kind"] == "vocal")
+        .unwrap()["id"]
+        .as_u64()
+        .unwrap();
+    call(&mut control, "/api/timbres/select", json!({ "id": id }));
+    let score = json!({"score":{"language":"ja","style":{"auto_breath":false},"notes":[
+        {"id":1,"start":480,"length":480,"key":64,"lyric":"ら"},
+        {"id":2,"start":960,"length":480,"key":67,"lyric":"ら"}]}});
+    assert_eq!(
+        call(&mut control, "/api/vocal/score", score.clone())["score"]["notes"][1]["key"],
+        67
+    );
+    wait_for_vocal(&mut control);
+    // The DAW plays from beat 1 (0.5 s at 120 BPM): the first note sings.
+    no_heap(|| {
+        audio.begin(&values, 120., Some(0.0), false, 256);
+        render(&mut audio, 256, [0.; 2]);
+        audio.begin(&values, 120., Some(1.0), true, 2048);
+        assert!(render(&mut audio, 2048, [0.; 2]) > 0.01);
+        // Before the phrase, and while the transport is stopped: silence.
+        audio.begin(&values, 120., Some(0.0), true, 1024);
+        assert!(render(&mut audio, 1024, [0.; 2]) < 1e-3);
+        audio.begin(&values, 120., Some(1.0), false, 1024);
+        assert!(render(&mut audio, 1024, [0.; 2]) < 1e-3);
+    });
+    // A Vocal timbre does not take a file or MIDI.
+    assert!(
+        control
+            .request(&json!({"path":"/api/region","method":"POST","data":{"start":0,"end":1}}))
+            .is_err()
+    );
+
+    // Project recall renders the saved score again in a new instance.
+    let saved = control.save().unwrap();
+    let mut recalled = Controller::new(false);
+    recalled.restore(&saved).unwrap();
+    let mut recalled_audio = recalled.prepare(8000);
+    call(&mut recalled, "/api/timbres/select", json!({ "id": id }));
+    wait_for_vocal(&mut recalled);
+    recalled_audio.begin(&values, 120., Some(1.0), true, 2048);
+    let _ = render(&mut recalled_audio, 1, [0.; 2]);
+    recalled_audio.begin(&values, 120., Some(1.0), true, 2048);
+    assert!(render(&mut recalled_audio, 2048, [0.; 2]) > 0.01);
+
+    // The app's own song clock plays without a host transport.
+    call(
+        &mut control,
+        "/api/vocal/transport",
+        json!({"start": 0.5, "playing": true}),
+    );
+    audio.begin(&values, 0., None, false, 2048);
+    assert!(render(&mut audio, 2048, [0.; 2]) > 0.01);
+    control.drain();
+    recalled.drain();
+}

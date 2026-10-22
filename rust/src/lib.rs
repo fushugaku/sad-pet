@@ -25,6 +25,7 @@ pub mod startup;
 pub mod synth;
 pub mod tables;
 pub mod timbres;
+pub mod vocal;
 pub mod wav;
 
 pub type Stereo = [f32; 2];

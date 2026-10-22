@@ -840,6 +840,7 @@ dependencies = [
  "sad-pet-alphaverb",
  "sad-pet-dxm088",
  "sad-pet-superecho",
+ "sad-pet-voice",
  "serde",
  "serde_json",
  "tiny_http",
