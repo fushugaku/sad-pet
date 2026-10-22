@@ -1,5 +1,14 @@
 SAD PET instrument and SAD PET FX, with native Rust DSP and an embedded editor.
 
+**Bus and Master.** Every scene now has a **Master** tab that sums all timbres
+and buses into the output, and **+ Timbre** adds up to eight **Bus** timbres.
+Each timbre's mixer row sets its level into Master and a send to every bus. A bus
+or Master runs the granular engine on its input with switchable **Granular** and
+**Filters**, plus Resynth, all effect racks, added filters, LFOs and the matrix.
+Everything starts switched off, and then the input passes through untouched at
+almost no CPU cost. Existing projects open with a default Master and sound the
+same.
+
 **Synth engine timbre.** A third timbre type next to Granular and Drum machine
 plays up to four Rustias oscillators per note (Saw, Pulse, Triangle and Sine in
 Wave/Cross/Unison/VPM, Formant, Noise, or PCM of the loaded file) with Ring/Sync
@@ -131,6 +140,13 @@ are supplied individually and in `SHA256SUMS.txt`.
 ---
 
 В обоих установщиках есть инструмент **SAD PET** и эффект **SAD PET FX**.
+В каждой сцене есть вкладка **Master**, в которую сводятся все тембры и шины, а
+**+ Timbre** добавляет до восьми тембров **Bus**. В строке микшера тембра задаётся
+уровень в Master и посыл в каждую шину. Bus и Master обрабатывают свой вход
+гранулярным движком с отключаемыми **Granular** и **Filters**, Resynth, рэками
+эффектов, добавленными фильтрами, LFO и матрицей. По умолчанию всё выключено,
+и вход проходит без изменений почти без нагрузки на процессор. Старые проекты
+открываются с Master по умолчанию и звучат так же.
 Новый тип тембра **Synth engine**: до четырёх осцилляторов Rustias на каждую ноту
 (Saw, Pulse, Triangle и Sine в режимах Wave/Cross/Unison/VPM, Formant, Noise или
 PCM загруженного файла) со связями Ring/Sync и Cross, затем фильтры, ENV/VCA, LFO
