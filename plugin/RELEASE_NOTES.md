@@ -1,5 +1,8 @@
 SAD PET instrument and SAD PET FX, with native Rust DSP and an embedded editor.
 
+**Fix: Grain Engine on a Granular Bus or Master.** After switching Granular on,
+its knobs were dimmed and could not be turned. They now respond as on any timbre.
+
 **Bus and Master.** Every scene now has a **Master** tab that sums all timbres
 and buses into the output, and **+ Timbre** adds up to eight **Bus** timbres.
 Each timbre's mixer row sets its level into Master and a send to every bus. A bus
@@ -140,6 +143,8 @@ are supplied individually and in `SHA256SUMS.txt`.
 ---
 
 В обоих установщиках есть инструмент **SAD PET** и эффект **SAD PET FX**.
+Исправлено: после включения Granular у Bus и Master ручки Grain Engine оставались
+затемнёнными и не крутились.
 В каждой сцене есть вкладка **Master**, в которую сводятся все тембры и шины, а
 **+ Timbre** добавляет до восьми тембров **Bus**. В строке микшера тембра задаётся
 уровень в Master и посыл в каждую шину. Bus и Master обрабатывают свой вход
