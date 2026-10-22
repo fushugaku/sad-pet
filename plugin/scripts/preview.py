@@ -146,7 +146,8 @@ def main():
             request = json.loads(data)
             app = "app" in url.query
             controller, audio, values = instances[2 if app else 1 if "fx" in url.query else 0]
-            if request.get("path") == "/api/state":
+            polled = str(request.get("path", "")).split("?")[0] == "/api/state"
+            if polled:
                 lib.sad_control_get_parameters(controller, values, size)
                 lib.sad_audio_begin(audio, values, size, 120.0, 0.0, False, False, 2048)
                 live = incoming if "fx" in url.query or app else None
@@ -156,7 +157,7 @@ def main():
             if response is None:
                 encoded = json.dumps(request).encode()
                 response = take(lib.sad_control_request(controller, encoded, len(encoded)))
-                if app and request.get("path") == "/api/state" and response["status"] == 200:
+                if app and polled and response["status"] == 200:
                     response["data"]["recording"] = recording_state()
                     response["data"].update(audio_device=outputs["current"], audio_input=response["data"]["input"]["active"])
             body = json.dumps(response, separators=(",", ":")).encode()

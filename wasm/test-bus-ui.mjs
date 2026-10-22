@@ -21,6 +21,7 @@ class Element {
     this.parentElement = this;
   }
   setAttribute() {}
+  getAttribute() {}
   append() {}
   replaceChildren() {}
 }

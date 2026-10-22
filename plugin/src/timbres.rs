@@ -335,9 +335,11 @@ impl Controller {
                 .ok_or("Unknown timbre")?
                 .request_part(request)?
         };
-        if path == "/api/state" {
+        let (route, query) = path.split_once('?').unwrap_or((path, ""));
+        if route == "/api/state" {
             result["timbres"] = json!(self.context());
             result["preset_selection"] = json!(self.selection);
+            self.sent.answer(&mut result, query);
         } else if request["method"] == "POST"
             && !matches!(
                 path,

@@ -83,9 +83,31 @@ async function api(path, data, headers) {
   }
   return response;
 }
+// The native engine answers a poll that names the previous answer's token
+// with only what changed; omitted parts keep their objects, so the editor and
+// its waveform cache can tell they did not change.
+let stateCache = null;
+async function readState() {
+  if (window.sadPetState) return window.sadPetState();
+  const token = stateCache?.state_token;
+  const next = await (
+    await api(token ? `/api/state?since=${token}` : "/api/state")
+  ).json();
+  if (next.delta && stateCache)
+    for (const key of ["preset", "waveform", "file_source"])
+      if (!(key in next)) next[key] = stateCache[key];
+  if (next.knob_changes) {
+    next.knobs = { ...stateCache?.knobs };
+    for (const [key, value] of Object.entries(next.knob_changes))
+      if (value === null) delete next.knobs[key];
+      else next.knobs[key] = value;
+    delete next.knob_changes;
+  }
+  stateCache = next;
+  return next;
+}
 async function request(path, data) {
-  if (path === "/api/state" && data === undefined && window.sadPetState)
-    return window.sadPetState();
+  if (path === "/api/state" && data === undefined) return readState();
   const result = await (await api(path, data)).json();
   if (
     data !== undefined &&
@@ -516,9 +538,20 @@ function createKnob(
   const toUnit = binding?.normalize || ((v) => (v - min) / (max - min));
   const fromUnit = binding?.denormalize || ((v) => min + v * (max - min));
   let drag = null;
+  // Polls repeat the same feedback for most knobs; repainting them anyway
+  // costs a style and layout pass of the whole editor. update() repaints
+  // the knob directly, so it forgets what was shown.
+  let shown = null;
   const modulation = (feedback) => {
     const base = get();
     const active = Boolean(feedback?.modulated);
+    const signature = active
+      ? [base, feedback.current, feedback.min, feedback.max, !!drag,
+          document.activeElement === dial, format(base),
+          ...[feedback.current, feedback.min, feedback.max].map((v) => format(clamp(v)))].join("|")
+      : `${base}|${format(base)}`;
+    if (signature === shown) return;
+    shown = signature;
     box.classList.toggle("is-modulated", active);
     basePointer.style.transform = `rotate(${-135 + 270 * toUnit(base)}deg)`;
     pointer.style.transform = `rotate(${-135 + 270 * toUnit(active ? clamp(feedback.current) : base)}deg)`;
@@ -571,6 +604,7 @@ function createKnob(
   };
   const update = () => {
     if (!preset) return;
+    shown = null;
     const v = get();
     const unit = toUnit(v);
     value.textContent = format(v);
@@ -4011,6 +4045,15 @@ function resizeCanvas(canvas) {
   return [c, r.width, r.height];
 }
 
+// A complete state answer carries a new waveform array even when its points
+// did not change; rebuilding the background bitmap is the costly part.
+function sameWaveform(a, b) {
+  if (a === b) return true;
+  if (a?.length !== b?.length) return false;
+  for (let i = 0; i < a.length; i++)
+    if (a[i][0] !== b[i][0] || a[i][1] !== b[i][1]) return false;
+  return true;
+}
 function paintWaveform(context, w, h) {
   // Layout can report an empty canvas before the first resize.
   if (!w || !h) return;
@@ -4018,7 +4061,7 @@ function paintWaveform(context, w, h) {
   const key = [w, h, dpr, state.sample_frames, state.sample_seconds, state.input?.active,
     sampleSelection?.region.start, sampleSelection?.region.end,
     sampleSelection?.fades.fade_in, sampleSelection?.fades.fade_out].join(":");
-  if (!waveBackground || waveBackground.key !== key || waveBackground.waveform !== state.waveform) {
+  if (!waveBackground || waveBackground.key !== key || !sameWaveform(waveBackground.waveform, state.waveform)) {
     const bitmap = document.createElement("canvas");
     bitmap.width = Math.round(w * dpr);
     bitmap.height = Math.round(h * dpr);
@@ -4130,16 +4173,16 @@ let inputDevicesKey = "";
 function syncInput(input) {
   if (!input) return;
   const active = input.active;
-  $("source-file").setAttribute(
-    "aria-pressed",
-    String(!active && !input.pending),
+  setAttr($("source-file"), "aria-pressed", !active && !input.pending);
+  setAttr($("source-mic"), "aria-pressed", active || input.pending);
+  setText(
+    $("source-mic"),
+    input.pending
+      ? "Cancel microphone"
+      : window.sadPetPlugin
+        ? "DAW input"
+        : "Microphone",
   );
-  $("source-mic").setAttribute("aria-pressed", String(active || input.pending));
-  $("source-mic").textContent = input.pending
-    ? "Cancel microphone"
-    : window.sadPetPlugin
-      ? "DAW input"
-      : "Microphone";
   $("microphone-controls").hidden = !active;
   const recordSlot = active
     ? $("microphone-record-slot")
@@ -4150,23 +4193,24 @@ function syncInput(input) {
     : $("recording-result-slot");
   if ($("recording-result").parentElement !== resultSlot)
     resultSlot.append($("recording-result"));
-  $("input-listen").setAttribute("aria-pressed", String(!!input.monitor));
-  $("input-listen").textContent = input.monitor ? "Listen on" : "Listen off";
+  setAttr($("input-listen"), "aria-pressed", !!input.monitor);
+  setText($("input-listen"), input.monitor ? "Listen on" : "Listen off");
   $("sample-select").hidden = active;
   $("live-source-name").hidden = !active;
-  $("live-source-name").textContent = input.name || "Microphone";
+  setText($("live-source-name"), input.name || "Microphone");
   $("input-status").classList.toggle("live", active);
   const peak = Math.max(...(input.peak || [0, 0]));
   $("input-level").style.width = `${Math.min(1, peak) * 100}%`;
-  $("input-level").parentElement.setAttribute(
+  setAttr(
+    $("input-level").parentElement,
     "aria-valuenow",
-    String(Math.round(Math.min(1, peak) * 100)),
+    Math.round(Math.min(1, peak) * 100),
   );
   if (active) $("render").disabled = true;
   else if ($("render").dataset.liveDisabled === "true")
     $("render").disabled = false;
-  $("render").dataset.liveDisabled = String(active);
-  $("render").title = active ? "Use Record to save the live output" : "";
+  setAttr($("render"), "data-live-disabled", active);
+  setAttr($("render"), "title", active ? "Use Record to save the live output" : "");
   const history = historySettings();
   const effectsOnly = history
     ? !history.granular : active && input.mode === "effects";
@@ -4194,6 +4238,16 @@ function syncInput(input) {
     $("input-gain").value = input.gain;
     $("input-gain-value").textContent = percent(input.gain);
   }
+}
+// A poll repeats mostly unchanged values; equal writes would still make the
+// browser restyle and lay out the editor.
+function setText(element, text) {
+  text = String(text);
+  if (element.textContent !== text) element.textContent = text;
+}
+function setAttr(element, name, value) {
+  value = String(value);
+  if (element.getAttribute(name) !== value) element.setAttribute(name, value);
 }
 async function poll() {
   try {
@@ -4235,38 +4289,35 @@ async function poll() {
     if (generation === editGeneration && !pending && !editing
         && !document.activeElement?.matches("input,select,.sad-menu-layer *"))
       receivedPreset = next.preset;
-    $("sample-name").textContent = next.sample_name;
+    setText($("sample-name"), next.sample_name);
     presetLibrary?.observe(next, pending > 0);
     fileLibrary?.observe(next);
-    $("sample-info").textContent = `${next.sample_seconds.toFixed((next.preset?.drums || next.preset?.synth) && next.sample_seconds < 1 ? 3 : 2)} s`;
+    setText($("sample-info"), `${next.sample_seconds.toFixed((next.preset?.drums || next.preset?.synth) && next.sample_seconds < 1 ? 3 : 2)} s`);
     syncInput(next.input);
     updateResynthMeter(next.resynth);
     neuroEditor?.update(next.sequencer, next.playing);
     timbreEditor?.sync(next.timbres);
     drumEditor?.update(next.drums);
     sampleSelection?.sync(next);
-    $("sample-end").textContent = formatTime(next.sample_seconds);
-    $("position-info").textContent = formatTime(
-      next.center * next.sample_seconds,
-    );
-    $("grain-count").textContent = next.active_grains;
-    $("drum-grain-count").textContent = `${next.active_grains} grains`;
-    $("play").setAttribute("aria-pressed", String(next.playing));
-    $("play-icon").textContent = next.playing ? "Ⅱ" : "▶";
-    $("play-label").textContent = next.playing ? "Pause" : "Play";
+    setText($("sample-end"), formatTime(next.sample_seconds));
+    setText($("position-info"), formatTime(next.center * next.sample_seconds));
+    setText($("grain-count"), next.active_grains);
+    setText($("drum-grain-count"), `${next.active_grains} grains`);
+    setAttr($("play"), "aria-pressed", next.playing);
+    setText($("play-icon"), next.playing ? "Ⅱ" : "▶");
+    setText($("play-label"), next.playing ? "Pause" : "Play");
     for (const key of ["freeze", "bypass"])
-      $(key).setAttribute(
-        "aria-pressed",
-        String(next[key === "freeze" ? "frozen" : key]),
-      );
+      setAttr($(key), "aria-pressed", next[key === "freeze" ? "frozen" : key]);
     $("meter-l").style.width = `${Math.min(1, next.peak[0]) * 100}%`;
     $("meter-r").style.width = `${Math.min(1, next.peak[1]) * 100}%`;
     syncGainReduction(next);
-    $("audio-status").textContent =
+    setText(
+      $("audio-status"),
       window.sadPetAudio?.status() ||
-      (next.audio_enabled
-        ? `${(next.sample_rate / 1000).toFixed(1)} kHz · stereo`
-        : "Audio output disabled");
+        (next.audio_enabled
+          ? `${(next.sample_rate / 1000).toFixed(1)} kHz · stereo`
+          : "Audio output disabled"),
+    );
     $("audio-led").classList.toggle("off", !next.audio_enabled);
     syncRecording();
     if (
@@ -4277,15 +4328,13 @@ async function poll() {
       next.recording.id !== failedRecordingId
     )
       saveCompletedRecording(next.recording);
-    $("cpu").textContent = `DSP ${next.cpu_percent.toFixed(1)}%`;
+    setText($("cpu"), `DSP ${next.cpu_percent.toFixed(1)}%`);
     if (next.audio_error) notify(next.audio_error, true);
     for (let i = 0; i < scopes.length; i++) {
       const a = scopes[i].values;
       a.push(next.lfos[i] || 0);
       if (a.length > 80) a.shift();
-      envCards[i].card.querySelector(".env-level").textContent = percent(
-        next.envs[i] || 0,
-      );
+      setText(envCards[i].card.querySelector(".env-level"), percent(next.envs[i] || 0));
     }
     for (const key of document.querySelectorAll(".key"))
       key.classList.toggle(
@@ -4308,7 +4357,8 @@ async function poll() {
       syncGainReduction(null);
     }
   } finally {
-    setTimeout(poll, 80);
+    // A hidden editor still notices finished recordings and audio errors.
+    setTimeout(poll, document.hidden ? 500 : 80);
   }
 }
 async function init() {

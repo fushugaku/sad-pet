@@ -18,7 +18,7 @@ void sad_bytes_free(std::uint8_t*, std::size_t);
 void sad_control_set_parameters(SadController*, const float*, std::size_t);
 void sad_control_get_parameters(SadController*, float*, std::size_t);
 SadBytes sad_control_request(SadController*, const std::uint8_t*, std::size_t);
-SadBytes sad_control_save(SadController*);
+SadBytes sad_control_save(SadController*); // zlib stream of the scene
 bool sad_control_restore(SadController*, const std::uint8_t*, std::size_t);
 void sad_audio_begin(SadAudio*, const float*, std::size_t, float bpm, double beat,
                      bool hasBeat, bool playing, std::size_t frames);

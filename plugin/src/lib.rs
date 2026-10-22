@@ -98,6 +98,64 @@ struct Feedback {
     host_playing: bool,
 }
 
+/// The editor polls /api/state about twelve times a second. The preset and
+/// waveforms rarely change and most knobs are unmodulated, so an answer to
+/// `?since=<state_token>` of the previous answer leaves out the unchanged
+/// parts and lists only changed knobs in `knob_changes` (null = removed).
+#[derive(Default)]
+struct SentState {
+    token: u64,
+    preset: Value,
+    waveform: Value,
+    file_source: Value,
+    knobs: serde_json::Map<String, Value>,
+}
+impl SentState {
+    fn answer(&mut self, state: &mut Value, query: &str) {
+        let since = query
+            .split('&')
+            .find_map(|pair| pair.strip_prefix("since="))
+            .and_then(|token| token.parse::<u64>().ok());
+        let delta = self.token != 0 && since == Some(self.token);
+        let Some(state) = state.as_object_mut() else {
+            return;
+        };
+        for (key, sent) in [
+            ("preset", &mut self.preset),
+            ("waveform", &mut self.waveform),
+            ("file_source", &mut self.file_source),
+        ] {
+            let Some(value) = state.remove(key) else {
+                continue;
+            };
+            if !delta || value != *sent {
+                state.insert(key.into(), value.clone());
+                *sent = value;
+            }
+        }
+        if let Some(Value::Object(knobs)) = state.remove("knobs") {
+            if delta {
+                let mut changes = serde_json::Map::new();
+                for (key, value) in &knobs {
+                    if self.knobs.get(key) != Some(value) {
+                        changes.insert(key.clone(), value.clone());
+                    }
+                }
+                for key in self.knobs.keys().filter(|key| !knobs.contains_key(*key)) {
+                    changes.insert(key.clone(), Value::Null);
+                }
+                state.insert("knob_changes".into(), Value::Object(changes));
+            } else {
+                state.insert("knobs".into(), Value::Object(knobs.clone()));
+            }
+            self.knobs = knobs;
+        }
+        self.token = self.token.wrapping_add(1).max(1);
+        state.insert("state_token".into(), json!(self.token));
+        state.insert("delta".into(), json!(delta));
+    }
+}
+
 pub struct Controller {
     meta: sad_pet::timbres::Meta,
     parts: Vec<Controller>,
@@ -129,6 +187,8 @@ pub struct Controller {
     /// its own transport and sample files never cross the editor boundary.
     standalone: bool,
     files: audio_library::Files,
+    /// The scene's last /api/state answer, for delta answers.
+    sent: SentState,
 }
 
 pub struct Audio {
@@ -240,6 +300,7 @@ impl Controller {
             },
             standalone: false,
             files: audio_library::Files::standard(),
+            sent: SentState::default(),
         }
     }
 
@@ -1214,14 +1275,25 @@ pub unsafe extern "C" fn sad_control_request(
     };
     Bytes::new(serde_json::to_vec(&envelope).unwrap_or_default())
 }
+/// The scene as the zlib stream hosts store; setStateInformation inflates it.
 /// # Safety
 /// Controller must be live and exclusively held. Release the returned bytes with sad_bytes_free.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn sad_control_save(control: *mut Controller) -> Bytes {
+    use std::io::Write as _;
     if control.is_null() {
         return Bytes::new(Vec::new());
     }
-    Bytes::new(unsafe { &mut *control }.save().unwrap_or_default())
+    let Ok(state) = unsafe { &mut *control }.save() else {
+        return Bytes::new(Vec::new());
+    };
+    // Saved samples are base64 text that higher levels barely shrink, but
+    // they take several times longer on the host's message thread.
+    let mut compressed = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+    let result = compressed
+        .write_all(&state)
+        .and_then(|()| compressed.finish());
+    Bytes::new(result.unwrap_or_default())
 }
 /// # Safety
 /// Controller must be exclusively held; data must address len readable bytes for the call.

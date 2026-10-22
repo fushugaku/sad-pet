@@ -253,7 +253,8 @@ void Services::importDropped(const juce::StringArray& files, std::function<void(
 }
 
 void Services::finish(const juce::var& request, juce::var& result) {
-    if (request["path"].toString() != "/api/state" || static_cast<int>(result["status"]) != 200) return;
+    const auto path = request["path"].toString().upToFirstOccurrenceOf("?", false, false);
+    if (path != "/api/state" || static_cast<int>(result["status"]) != 200) return;
     auto* data = result["data"].getDynamicObject();
     if (data == nullptr) return;
     data->setProperty("recording", recorder.state());

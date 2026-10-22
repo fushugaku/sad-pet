@@ -285,14 +285,11 @@ void SadPetProcessor::getStateInformation(juce::MemoryBlock& destination) {
     const juce::ScopedLock lock(controlLock);
     readParameters(controlValues);
     sad_control_set_parameters(control, controlValues.data(), controlValues.size());
+    // Already zlib-compressed: Rust's encoder is several times faster than
+    // JUCE's on scenes that carry samples.
     const auto state = sad_control_save(control);
     if (state.len == 0) return;
-    destination.reset();
-    {
-        juce::MemoryOutputStream output(destination, false);
-        juce::GZIPCompressorOutputStream compressed(output, 6);
-        compressed.write(state.data, state.len);
-    }
+    destination.replaceAll(state.data, state.len);
     sad_bytes_free(state.data, state.len);
 }
 
