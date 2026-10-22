@@ -365,3 +365,19 @@ fn editor_responses_follow_each_models_shape() {
         assert!(response_request(&bad).is_err());
     }
 }
+
+#[test]
+fn radias_lp24_keeps_its_passband_at_every_cutoff() {
+    use sad_pet::dsp::filter::response;
+    // Morph 0 is LP24, morph 32/127 is LP12. Both pass lows near unity; the
+    // LP24 post stages once scaled the level with the cutoff instead.
+    for morph in [0.0, 32.0 / 127.0] {
+        for cutoff in [0.4, 0.7, 1.0] {
+            let low = response(M::Radias, FilterType::LowPass, cutoff, 0.0, morph)[0];
+            assert!(
+                low.abs() < 4.0,
+                "RADIAS morph {morph} cutoff {cutoff}: {low} dB at 20 Hz"
+            );
+        }
+    }
+}
