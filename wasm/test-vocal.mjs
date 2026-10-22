@@ -141,6 +141,31 @@ assert.equal(recalledJobs.length, 1);
 assert.equal(recalledJobs[0].fresh, true);
 assert.equal(recalledJobs[0].settings.score.notes[2].key, 72);
 
+// Render WAV: the utility worker renders the scene with the vocal worker's clips.
+{
+  const packed = core.call("sad_scene_pack");
+  const worker = new Core(module, rate);
+  worker.call("sad_scene_adopt", packed);
+  const scene = worker.json("sad_scene_document");
+  const songs = vocal.json("sad_vocal_songs");
+  assert.equal(songs.length, 1);
+  for (const song of songs)
+    for (const [key, start] of song.clips) {
+      const samples = new Float32Array(vocal.clip(key));
+      const pointer = worker.wasm.sad_render_clip(song.id, start, samples.length);
+      new Float32Array(worker.wasm.memory.buffer, pointer, samples.length).set(samples);
+    }
+  const wav = new DataView(worker.call("sad_scene_render_document", { seconds: 3, scene }));
+  let at = 12;
+  while (at + 8 <= wav.byteLength && String.fromCharCode(...new Uint8Array(wav.buffer, at, 4)) !== "data")
+    at += 8 + wav.getUint32(at + 4, true);
+  const end = at + 8 + wav.getUint32(at + 4, true);
+  let peak = 0;
+  for (let i = at + 8; i + 4 <= end; i += 4) peak = Math.max(peak, Math.abs(wav.getFloat32(i, true)));
+  assert.ok(peak < 1.5, `A float WAV: ${peak}`);
+  assert.ok(peak > 0.01, `The rendered WAV contains the voice: ${peak}`);
+}
+
 // Removing the timbre tells the worker to forget it.
 core.request("/api/timbres/remove", { id: part.id });
 assert.deepEqual(jobs(), [{ type: "forget", id: part.id }]);

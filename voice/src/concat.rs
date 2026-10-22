@@ -240,8 +240,6 @@ struct Placement {
     /// Limits for extrapolating past the span at a hard join.
     clamp: (f64, f64),
     gain_db: f32,
-    /// Source pitch reference (MIDI) for micro-prosody.
-    reference: f32,
 }
 
 impl Placement {
@@ -343,7 +341,6 @@ fn place(bank: &Voicebank, items: &[Item], chain: &[Candidate]) -> Vec<Placement
                 fade_out: (t1, t1),
                 clamp: (unit.start() as f64, unit.end().saturating_sub(1) as f64),
                 gain_db,
-                reference: unit.pitch,
             };
             if phoneme.is_pause() {
                 // A recorded lead-in or tail: keep at most 150 ms of it, faded.
@@ -425,6 +422,26 @@ fn breath(bank: &Voicebank, progress: f64) -> Frame {
     f
 }
 
+/// Semitones a voiced source frame lies off its 100 ms neighbourhood.
+fn micro_pitch(bank: &Voicebank, position: f64, f0: f32) -> f32 {
+    let center = position.round() as isize;
+    let (mut sum, mut count) = (0.0f32, 0u32);
+    for i in center - 10..=center + 10 {
+        if i < 0 {
+            continue;
+        }
+        let f = bank.f0(i as usize);
+        if f > 0.0 {
+            sum += f.log2();
+            count += 1;
+        }
+    }
+    if count < 5 {
+        return 0.0;
+    }
+    12.0 * (f0.log2() - sum / count as f32)
+}
+
 /// Frames for laid-out phonemes from a voicebank. `pitch` is MIDI per frame;
 /// `modulation` (0–1) keeps that share of the recording's own pitch detail.
 pub fn frames(
@@ -466,8 +483,10 @@ pub fn frames(
             }
             if f.voiced() {
                 voiced += w;
-                let cents = 12.0 * (f.f0 / 440.0).log2() + 69.0 - p.reference;
-                detail += w * cents.clamp(-1.5, 1.5) as f64;
+                // Only the recording's fast pitch detail (jitter, the dip at a
+                // voiced consonant) carries over, not its slow intonation.
+                let semitones = micro_pitch(bank, s, f.f0);
+                detail += w * semitones.clamp(-1.0, 1.0) as f64;
                 detail_weight += w;
             }
             weight += w;

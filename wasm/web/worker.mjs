@@ -178,9 +178,33 @@ async function handle(message) {
       case "scene-prepare":
         result = core.call("sad_scene_prepare", data);
         break;
-      case "scene-render":
-        result = core.call("sad_scene_render_document", data);
+      case "scene-render": {
+        // Rendered Vocal phrases arrive from the vocal worker.
+        const wasm = core.wasm;
+        for (const song of data.vocal || [])
+          for (const clip of song.clips) {
+            const samples = new Float32Array(clip.data);
+            const pointer = wasm.sad_render_clip(song.id, clip.start, samples.length);
+            new Float32Array(wasm.memory.buffer, pointer, samples.length).set(samples);
+          }
+        result = core.call("sad_scene_render_document", {
+          seconds: data.seconds,
+          scene: data.scene,
+        });
         break;
+      }
+      case "vocal-songs": {
+        const songs = core.json("sad_vocal_songs");
+        const transfer = [];
+        for (const song of songs)
+          song.clips = song.clips.map(([key, start]) => {
+            const data = core.clip(key);
+            transfer.push(data);
+            return { start, data };
+          });
+        self.postMessage({ id, result: songs }, transfer);
+        return;
+      }
       case "startup": {
         const scene = core.request("/api/startup");
         core.request("/api/timbres/reset", {});

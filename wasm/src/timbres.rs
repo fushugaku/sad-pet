@@ -996,6 +996,7 @@ pub extern "C" fn sad_scene_render_document() -> u32 {
             let rate = r.parts[0].host.rate;
             let mut renderer = Registry::new(rate);
             renderer.prepare_document(data["scene"].clone())?;
+            renderer.adopt_render_clips();
             for part in &mut renderer.parts {
                 part.host.engine.set_midi_gate(false);
                 part.host.engine.set_playing(true);

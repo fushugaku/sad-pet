@@ -672,10 +672,12 @@ export class BrowserBackend {
         const scene = await this.worker.call("scene-document", packed, [
           packed,
         ]);
-        result = await this.worker.call("scene-render", {
-          seconds: data.seconds,
-          scene,
-        });
+        const vocal = await this.vocal.call("vocal-songs");
+        result = await this.worker.call(
+          "scene-render",
+          { seconds: data.seconds, scene, vocal },
+          vocal.flatMap((song) => song.clips.map((clip) => clip.data)),
+        );
         mime = "audio/wav";
       } else if (route === "/api/recording") {
         if (data.active) {

@@ -168,10 +168,17 @@
       this.scoreButton = el("button", "", "Import score…");
       this.scoreButton.title = "MIDI, UST, MusicXML or VOCALOID5 .vpr";
       this.scoreButton.onclick = () => this.importScore();
+      this.step = el("button", "", "Step input");
+      this.step.title = "Keys you play add notes at the cursor, one grid step each";
+      this.step.setAttribute("aria-pressed", "false");
+      this.step.onclick = () => {
+        this.stepMode = !this.stepMode;
+        this.step.setAttribute("aria-pressed", String(this.stepMode));
+      };
       this.play = el("button", "vocal-play", "▶ Play");
       this.play.setAttribute("aria-pressed", "false");
       this.play.onclick = () => this.transport(!this.status.playing);
-      tools.append(this.voice, voiceMenu, this.languageSelect, this.style, tempoLabel, followLabel, snapLabel, this.lyricsButton, this.scoreButton, this.play);
+      tools.append(this.voice, voiceMenu, this.languageSelect, this.style, tempoLabel, followLabel, snapLabel, this.lyricsButton, this.scoreButton, this.step, this.play);
       // Canvas
       this.frame = el("div", "vocal-roll");
       this.canvas = el("canvas");
@@ -340,6 +347,7 @@
       this.commitTimer = setTimeout(() => this.post(), 180);
     }
     async post() {
+      this.commitTimer = null;
       const score = this.score;
       if (!score) return;
       try {
@@ -380,6 +388,16 @@
         return;
       }
       const incoming = JSON.stringify(vocal.score);
+      // Another Vocal timbre has its own score and history.
+      const part = this.hooks.context()?.active;
+      if (part !== this.part) {
+        this.part = part;
+        this.undo = [];
+        this.redo = [];
+        this.sent = null;
+        clearTimeout(this.commitTimer);
+        this.commitTimer = null;
+      }
       // Adopt the host's score when it changed elsewhere (presets, undo in
       // another window), never while our own edit is on its way.
       if (incoming !== this.sent && !this.commitTimer) {
@@ -619,6 +637,23 @@
         }
       });
       this.hooks.notify(`Imported ${score.notes.length} notes`);
+    }
+
+    /** Step input: a played key adds a note at the cursor and moves on. */
+    stepInput(key) {
+      if (!this.stepMode || this.root.hidden || !this.score) return;
+      const length = Math.max(this.snap, TPB / 4);
+      const start = this.cursor ?? 0;
+      const note = { id: this.nextId(), start, length, key, lyric: this.defaultLyric(), velocity: 64 };
+      this.edit((s) => {
+        s.notes = s.notes.filter((n) => n.start + n.length <= start || n.start >= start + length);
+        s.notes.push(note);
+      });
+      this.selected = new Set([note.id]);
+      this.cursor = start + length;
+      this.ensureVisible(note);
+      this.syncInspector();
+      this.draw();
     }
 
     // --- Lyrics -----------------------------------------------------------

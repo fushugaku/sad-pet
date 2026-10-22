@@ -61,6 +61,11 @@ User presets and effect presets share the plug-ins' folders, so a preset saved
 in the app opens in the DAW and the other way round. Quitting the app saves the
 whole scene, including its samples, and the next launch restores it.
 
+Voicebanks for Vocal timbres import through native dialogs — **Voices ▾ →
+Import UTAU folder…** or a `.zip`/`.sadvoice` file — and are kept in the shared
+**Voices** folder beside the presets. The app plays Vocal scores with **▶ Play**
+in the score editor or the main transport.
+
 ## Build from source
 
 Requires CMake 3.22+, Rust (rustup) and Xcode command-line tools or Visual

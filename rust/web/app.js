@@ -3518,6 +3518,7 @@ async function transport(data) {
 function noteOn(note) {
   if (held.has(note)) return;
   held.add(note);
+  vocalEditor?.stepInput(note);
   document.querySelector(`[data-note="${note}"]`)?.classList.add("active");
   noteChain = noteChain
     .then(() =>

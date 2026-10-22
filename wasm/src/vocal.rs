@@ -140,6 +140,71 @@ struct Staged {
 thread_local! {
     static STAGED: RefCell<Option<Staged>> = const { RefCell::new(None) };
     static PLAN: RefCell<Vec<f64>> = const { RefCell::new(Vec::new()) };
+    /// Clips for the next offline scene render, by part id.
+    static RENDER_CLIPS: RefCell<Vec<(u32, Clip)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Room for one rendered clip of the next offline scene render (Render WAV):
+/// the utility worker has no voicebanks, so the vocal worker's clips come in.
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_render_clip(part: u32, start: f64, length: usize) -> *mut f32 {
+    let mut samples: Arc<[f32]> = vec![0.0; length.min(64 << 20)].into();
+    let pointer = Arc::get_mut(&mut samples).map_or(std::ptr::null_mut(), |s| s.as_mut_ptr());
+    RENDER_CLIPS.with(|c| {
+        c.borrow_mut().push((
+            part,
+            Clip {
+                key: 0,
+                start: start as u64,
+                samples,
+            },
+        ))
+    });
+    pointer
+}
+
+impl super::timbres::Registry {
+    /// Gives an offline render's Vocal parts the uploaded clips and plays
+    /// the song from its start.
+    pub fn adopt_render_clips(&mut self) {
+        let clips = RENDER_CLIPS.with(|c| std::mem::take(&mut *c.borrow_mut()));
+        self.sync_vocal();
+        self.vocal_jobs.clear();
+        for part in &mut self.parts {
+            if let Some(vocal) = &mut part.vocal {
+                vocal.song = Song::new(
+                    clips
+                        .iter()
+                        .filter(|(id, _)| *id == part.meta.id)
+                        .map(|(_, c)| c.clone())
+                        .collect(),
+                );
+            }
+        }
+        self.clock = vocal::Clock {
+            playing: true,
+            position: 0,
+            start: 0,
+        };
+    }
+}
+
+/// Every rendered clip of every part: `[{id, clips: [[key, start, length]]}]`.
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_vocal_songs() -> u32 {
+    worker(|w| {
+        let songs: Vec<Value> = w
+            .jobs
+            .iter()
+            .map(|(id, (_, plan))| {
+                let song = w.renderer.song(plan);
+                json!({ "id": id, "clips": song.clips.iter()
+                    .map(|c| [c.key as f64, c.start as f64, c.samples.len() as f64]).collect::<Vec<_>>() })
+            })
+            .collect();
+        let result = serde_json::to_vec(&songs).map_err(|e| e.to_string());
+        reply(w, result)
+    })
 }
 
 /// Scratch for a plan of `count` clips: `[key, start, length]` triples.
