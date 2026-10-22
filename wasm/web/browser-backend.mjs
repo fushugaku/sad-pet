@@ -672,7 +672,7 @@ export class BrowserBackend {
         const scene = await this.worker.call("scene-document", packed, [
           packed,
         ]);
-        const vocal = await this.vocal.call("vocal-songs");
+        const vocal = (await this.vocal?.call("vocal-songs")) ?? [];
         result = await this.worker.call(
           "scene-render",
           { seconds: data.seconds, scene, vocal },
