@@ -49,7 +49,12 @@ marks where the final vowel (or a VC alias's consonant) begins, the overlap ends
 a VCV leading vowel and the consonant area stays unstretched. `analysis`
 measures F0 (YIN with a Viterbi path), the envelope (CheapTrick) and
 aperiodicity (period-to-period coherence per band). `bank` stores the result as
-a `.sadvoice` file: a JSON header and quantized frames, a few MB per bank.
+a `.sadvoice` file: a JSON header and quantized frames, deflated with each
+frame stored as its change from the one before (about 10 KB per second of
+recordings).
+
+`packs/` holds the voicebanks that come with SAD PET; see its README for
+their sources and how to rebuild them.
 
 ## Command line
 

@@ -246,7 +246,7 @@ pub fn frames(segments: &[Segment], pitch: &[f32]) -> Vec<Frame> {
             });
             let (pp, pn) = (10f32.powf(periodic / 10.0), 10f32.powf(noise / 10.0));
             // A little breath in the highest bands of every vowel.
-            let floor = 0.02 + 0.25 * ((hz - 3000.0) / 6000.0).clamp(0.0, 1.0);
+            let floor = 0.005 + 0.12 * ((hz - 3000.0) / 6000.0).clamp(0.0, 1.0);
             frame.ap[b] = if voiced {
                 (pn / (pp + pn)).max(floor)
             } else {

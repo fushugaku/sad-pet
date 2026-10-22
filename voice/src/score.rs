@@ -355,6 +355,8 @@ pub struct Score {
     pub voice: String,
     /// Semitones added to every note.
     pub transpose: i8,
+    /// Length in ticks after which the score starts over; 0 sings it once.
+    pub loop_ticks: u32,
 }
 impl Default for Score {
     fn default() -> Self {
@@ -371,6 +373,7 @@ impl Default for Score {
             style: Style::default(),
             voice: String::new(),
             transpose: 0,
+            loop_ticks: 0,
         }
     }
 }
@@ -410,6 +413,7 @@ impl Score {
                 .take(64)
                 .collect();
         }
+        self.loop_ticks = self.loop_ticks.min(TICKS_PER_BEAT * 4 * 1024);
         self.tempo.retain(|t| t.bpm.is_finite() && t.bpm > 0.0);
         self.tempo.sort_by_key(|t| t.tick);
         self.tempo.dedup_by_key(|t| t.tick);
@@ -430,6 +434,21 @@ impl Score {
             }
         }
         self.curves.retain(|_, c| !c.is_empty());
+    }
+
+    /// What one pass of a looping score sings: the notes that start before
+    /// the loop's end, cut at it. A score that does not loop stays whole.
+    pub fn one_pass(&self) -> std::borrow::Cow<'_, Score> {
+        let end = self.loop_ticks;
+        if end == 0 || self.notes.iter().all(|n| n.start + n.length <= end) {
+            return std::borrow::Cow::Borrowed(self);
+        }
+        let mut score = self.clone();
+        score.notes.retain(|n| n.start < end);
+        for n in &mut score.notes {
+            n.length = n.length.min(end - n.start);
+        }
+        std::borrow::Cow::Owned(score)
     }
 
     /// Tempo map with an optional host tempo replacing it.
@@ -540,6 +559,24 @@ mod tests {
         score.style.color.insert(Param::Brightness, 100.0);
         assert_eq!(score.param(Param::Brightness, 0.0), 127.0);
     }
+    #[test]
+    fn one_pass_cuts_the_score_at_the_loop() {
+        let note = |start, length| Note {
+            start,
+            length,
+            ..Default::default()
+        };
+        let mut score = Score {
+            notes: vec![note(0, 480), note(1440, 960), note(1920, 480)],
+            ..Default::default()
+        };
+        assert_eq!(score.one_pass().notes.len(), 3);
+        score.loop_ticks = 1920;
+        let pass = score.one_pass();
+        assert_eq!(pass.notes.len(), 2);
+        assert_eq!(pass.notes[1].length, 480);
+    }
+
     #[test]
     fn sanitize_orders_and_numbers_notes() {
         let mut score = Score {

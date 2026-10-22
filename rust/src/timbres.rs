@@ -73,7 +73,7 @@ impl Kind {
                 preset.params.mix = 0.5;
                 preset.color_chain.clear();
                 if self == Kind::Vocal {
-                    preset.vocal = Some(Box::default());
+                    preset.vocal = Some(Box::new(crate::vocal::Settings::new()));
                 }
             }
         }

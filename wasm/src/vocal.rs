@@ -47,6 +47,7 @@ impl super::timbres::Registry {
             // A new part has no clips yet: the worker sends all of them again.
             let fresh = part.vocal.is_none();
             let state = part.vocal.get_or_insert_with(VocalPart::new);
+            state.song.period = vocal::period(&settings.score, None, rate);
             if state.sent.as_ref() != Some(settings) || fresh {
                 state.sent = Some(settings.clone());
                 jobs.push(
@@ -99,13 +100,12 @@ impl super::timbres::Registry {
                 json!({ "ok": true })
             }
             "/api/vocal/state" => {
-                let clips = self.parts[index]
-                    .vocal
-                    .as_ref()
-                    .map_or(0, |v| v.song.clips.len());
+                let song = self.parts[index].vocal.as_ref().map(|v| &v.song);
+                let clips = song.map_or(0, |s| s.clips.len());
+                let position = song.map_or(self.clock.position, |s| s.wrap(self.clock.position));
                 json!({
                     "playing": self.clock.playing,
-                    "position": self.clock.position as f64 / rate,
+                    "position": position as f64 / rate,
                     "start": self.clock.start as f64 / rate,
                     "clips": clips,
                     "rate": rate,
@@ -250,7 +250,9 @@ pub extern "C" fn sad_vocal_plan_commit(part: u32, count: usize) -> usize {
             }
         }
         let missing = plan.len() - clips.len();
+        let period = state.song.period;
         state.song = Song::new(clips);
+        state.song.period = period;
         missing
     })
 }
@@ -541,9 +543,9 @@ pub extern "C" fn sad_vocal_import_finish() -> u32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn sad_vocal_step(near: f64) -> u32 {
     worker(|w| {
-        for (job, plan) in w.jobs.values() {
+        for (_, plan) in w.jobs.values() {
             let near = (near.max(0.0) * plan.rate as f64) as u64;
-            if w.renderer.render_next(job, plan, near) {
+            if w.renderer.render_next(plan, near) {
                 return 1;
             }
         }

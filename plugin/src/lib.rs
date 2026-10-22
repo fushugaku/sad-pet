@@ -892,9 +892,21 @@ impl Controller {
             }
             ("/api/vocal/state", _) => {
                 let progress = self.voice_service().progress(self.meta.id);
+                // Where a looping score is in its pass.
+                let host_bpm = self
+                    .vocal
+                    .as_ref()
+                    .map(|m| f32::from_bits(m.host_bpm.load(std::sync::atomic::Ordering::Relaxed)))
+                    .filter(|bpm| *bpm > 0.0);
+                let period = self
+                    .preset
+                    .vocal
+                    .as_deref()
+                    .and_then(|s| sad_pet::vocal::period(&s.score, host_bpm, self.rate));
+                let position = period.map_or(self.song_position, |p| self.song_position % p);
                 Ok(json!({
                     "playing": self.song_playing,
-                    "position": self.song_position as f64 / self.rate as f64,
+                    "position": position as f64 / self.rate as f64,
                     "clips": progress.rendered,
                     "rate": self.rate,
                     "progress": progress,

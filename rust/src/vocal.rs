@@ -12,6 +12,22 @@ use voice::bank::Voicebank;
 use voice::render::{self, Phrase, Voice};
 use voice::score::{Score, Timeline};
 
+/// Voicebanks that come with SAD PET, by id and language. The plug-in and
+/// the web build carry their files, from `voice/packs`.
+pub const PACKS: [(&str, voice::Language); 3] = [
+    ("kasane-teto", voice::Language::Ja),
+    ("kasane-teto-en", voice::Language::En),
+    ("kumi-ru", voice::Language::Ru),
+];
+
+/// The voicebank that comes with SAD PET for a language.
+pub fn pack(language: voice::Language) -> &'static str {
+    PACKS
+        .iter()
+        .find(|(_, l)| *l == language)
+        .map_or("", |(id, _)| id)
+}
+
 /// What a Vocal timbre saves with its preset.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -19,6 +35,13 @@ pub struct Settings {
     pub score: Score,
 }
 impl Settings {
+    /// A new timbre's score, sung by the voicebank that comes with SAD PET
+    /// for its language.
+    pub fn new() -> Self {
+        let mut score = Score::default();
+        score.voice = pack(score.language).to_string();
+        Self { score }
+    }
     pub fn sanitize(&mut self) {
         self.score.sanitize();
     }
@@ -37,19 +60,58 @@ impl Clip {
     }
 }
 
+/// Frames after which a score starts over, if it loops.
+pub fn period(score: &Score, host_bpm: Option<f32>, rate: u32) -> Option<u64> {
+    if score.loop_ticks == 0 {
+        return None;
+    }
+    let seconds = score.timeline(host_bpm).seconds(score.loop_ticks as f64);
+    Some((seconds * rate as f64).round() as u64).filter(|p| *p > 0)
+}
+
 /// Every clip of one timbre, sorted by start.
 #[derive(Clone, Debug, Default)]
 pub struct Song {
     pub clips: Vec<Clip>,
+    /// Frames after which the song starts over (the score's loop).
+    pub period: Option<u64>,
 }
 impl Song {
     pub fn new(mut clips: Vec<Clip>) -> Self {
         clips.sort_by_key(|c| c.start);
-        Self { clips }
+        Self {
+            clips,
+            period: None,
+        }
     }
-    /// Mixes the song into `out`, starting at `position`.
+    /// Where a song position falls in the song.
+    pub fn wrap(&self, position: u64) -> u64 {
+        self.period.map_or(position, |p| position % p)
+    }
+    /// Mixes the song into `out`, starting at `position`. A looping song
+    /// plays its first `period` frames over and over; what rings past the
+    /// end of a pass sounds over the start of the next.
     pub fn fill(&self, position: u64, out: &mut [f32]) {
         out.fill(0.0);
+        let Some(period) = self.period else {
+            self.mix(position, out);
+            return;
+        };
+        let mut done = 0;
+        while done < out.len() {
+            let at = position + done as u64;
+            let from = at % period;
+            let count = ((period - from) as usize).min(out.len() - done);
+            let block = &mut out[done..done + count];
+            self.mix(from, block);
+            if at >= period {
+                self.mix(from + period, block);
+            }
+            done += count;
+        }
+    }
+    /// Adds the clips over `out.len()` frames from `position` into `out`.
+    fn mix(&self, position: u64, out: &mut [f32]) {
         let end = position + out.len() as u64;
         // Clips are short and few; skip those that end before the block.
         let first = self
@@ -141,14 +203,16 @@ impl Track {
             }
         }
     }
-    /// Fills one block at a song position and reports the position.
+    /// Fills one block at a song position and reports where in the song
+    /// that is.
     pub fn fill(&mut self, position: u64, out: &mut [f32]) {
         self.update();
         self.song.fill(position, out);
         if let Some(mailbox) = &self.mailbox {
-            mailbox
-                .position
-                .store(position, std::sync::atomic::Ordering::Relaxed);
+            mailbox.position.store(
+                self.song.wrap(position),
+                std::sync::atomic::Ordering::Relaxed,
+            );
         }
     }
 }
@@ -202,6 +266,9 @@ pub struct Plan {
     pub timeline: Timeline,
     pub rate: u32,
     pub voice_id: String,
+    /// What the phrases sing: one pass of a looping score.
+    pub score: Score,
+    pub period: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -246,7 +313,8 @@ impl Renderer {
             .map_or(Voice::Formant, |b| Voice::Bank(b.clone()))
     }
     pub fn plan(&self, job: &Job) -> Plan {
-        let timeline = job.settings.score.timeline(job.host_bpm);
+        let score = job.settings.score.one_pass().into_owned();
+        let timeline = score.timeline(job.host_bpm);
         let voice_id = if self.voices.contains_key(&job.settings.score.voice) {
             job.settings.score.voice.clone()
         } else {
@@ -254,7 +322,7 @@ impl Renderer {
         };
         Plan {
             phrases: render::plan(
-                &job.settings.score,
+                &score,
                 &timeline,
                 &voice_id,
                 job.rate,
@@ -263,6 +331,8 @@ impl Renderer {
             timeline,
             rate: job.rate,
             voice_id,
+            period: period(&score, job.host_bpm, job.rate),
+            score,
         }
     }
     pub fn progress(&self, job: &Job, plan: &Plan) -> Progress {
@@ -278,9 +348,8 @@ impl Renderer {
     }
     /// Renders the missing phrase nearest after `near` (frames), else the
     /// nearest before it. Returns false when nothing is missing.
-    pub fn render_next(&mut self, job: &Job, plan: &Plan, near: u64) -> bool {
-        let rate = plan.rate as f64;
-        let near = near as f64 / rate;
+    pub fn render_next(&mut self, plan: &Plan, near: u64) -> bool {
+        let near = near as f64 / plan.rate as f64;
         let next = plan
             .phrases
             .iter()
@@ -297,23 +366,16 @@ impl Renderer {
             });
         let Some(phrase) = next else { return false };
         let voice = self.voice(&plan.voice_id);
-        let samples = render::render(
-            &job.settings.score,
-            &plan.timeline,
-            phrase,
-            &voice,
-            plan.rate,
-        );
+        let samples = render::render(&plan.score, &plan.timeline, phrase, &voice, plan.rate);
         self.cache.insert(phrase.key, samples.into());
-        let _ = rate;
         true
     }
-    pub fn render_all(&mut self, job: &Job, plan: &Plan) {
-        while self.render_next(job, plan, 0) {}
+    pub fn render_all(&mut self, plan: &Plan) {
+        while self.render_next(plan, 0) {}
     }
     /// The song of every rendered phrase of a plan.
     pub fn song(&self, plan: &Plan) -> Song {
-        Song::new(
+        let mut song = Song::new(
             plan.phrases
                 .iter()
                 .filter_map(|p| {
@@ -325,7 +387,9 @@ impl Renderer {
                     })
                 })
                 .collect(),
-        )
+        );
+        song.period = plan.period;
+        song
     }
     /// Forgets phrases no current plan uses.
     pub fn retain(&mut self, plans: &[&Plan]) {
@@ -370,12 +434,12 @@ mod tests {
         let mut renderer = Renderer::new();
         let plan = renderer.plan(&job);
         assert_eq!(plan.phrases.len(), 3);
-        assert!(renderer.render_next(&job, &plan, 24_000 * 3));
+        assert!(renderer.render_next(&plan, 24_000 * 3));
         // The phrase at 2.5 s (beat 5) renders first from a position of 3 s.
         let song = renderer.song(&plan);
         assert_eq!(song.clips.len(), 1);
         assert!(song.clips[0].start > 24_000);
-        renderer.render_all(&job, &plan);
+        renderer.render_all(&plan);
         assert_eq!(renderer.progress(&job, &plan).rendered, 3);
         // Moving one note re-renders only its phrase.
         let mut moved = job.clone();
@@ -406,6 +470,25 @@ mod tests {
         assert_eq!(out[5], 1.0);
         assert_eq!(out[10], 1.5);
         assert_eq!(out[19], 0.5);
+    }
+
+    #[test]
+    fn a_looping_song_repeats_and_rings_into_the_next_pass() {
+        let mut song = Song::new(vec![Clip {
+            key: 1,
+            start: 6,
+            samples: vec![1.0; 6].into(),
+        }]);
+        song.period = Some(10);
+        let mut out = [9.0; 30];
+        song.fill(0, &mut out);
+        let expected = [
+            0., 0., 0., 0., 0., 0., 1., 1., 1., 1., // first pass
+            1., 1., 0., 0., 0., 0., 1., 1., 1., 1., // the tail, then again
+            1., 1., 0., 0., 0., 0., 1., 1., 1., 1.,
+        ];
+        assert_eq!(out, expected);
+        assert_eq!(song.wrap(23), 3);
     }
 
     #[test]

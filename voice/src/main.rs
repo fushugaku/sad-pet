@@ -371,6 +371,13 @@ fn main() {
                     report.missing_files.join(", ")
                 );
             }
+            let mut bank = bank;
+            if let Some(author) = args.options.get("author") {
+                bank.info.author = author.clone();
+            }
+            if let Some(description) = args.options.get("description") {
+                bank.info.description = description.clone();
+            }
             let path = output(&args);
             let bytes = bank.to_bytes();
             std::fs::write(&path, &bytes).unwrap_or_else(|e| fail(e));
@@ -459,6 +466,75 @@ fn main() {
             write(&output(&args), rate, &samples);
         }
         "reconstruct" => reconstruct(&args),
+        "hnr" => {
+            // Harmonics-to-noise ratio of the voiced frames, from the
+            // normalized autocorrelation at the period (independent of the
+            // analysis' aperiodicity), full band and above ~2 kHz.
+            for path in &args.positional[1..] {
+                let audio = wav::read(&std::fs::read(path).unwrap_or_else(|e| fail(e)))
+                    .unwrap_or_else(|e| fail(e));
+                let frames =
+                    analysis::analyze(&audio.samples, audio.rate, &analysis::Options::default());
+                let x = &audio.samples;
+                let high: Vec<f32> = (0..x.len())
+                    .map(|i| {
+                        let at = |k: usize| x.get(i.wrapping_sub(k)).copied().unwrap_or(0.0);
+                        at(0) - 2.0 * at(1) + at(2)
+                    })
+                    .collect();
+                let rate = audio.rate as f32;
+                let ratio = |s: &[f32], center: usize, period: f32| {
+                    let n = (0.04 * rate) as usize;
+                    let start = center.saturating_sub(n / 2);
+                    let mut best = 0.0f32;
+                    let lo = (period * 0.9) as usize;
+                    let hi = (period * 1.1).ceil() as usize;
+                    for lag in lo.max(1)..=hi {
+                        if start + n + lag >= s.len() {
+                            return None;
+                        }
+                        let (mut xy, mut xx, mut yy) = (0.0f64, 0.0f64, 0.0f64);
+                        for i in start..start + n {
+                            let (a, b) = (s[i] as f64, s[i + lag] as f64);
+                            xy += a * b;
+                            xx += a * a;
+                            yy += b * b;
+                        }
+                        best = best.max((xy / (xx * yy).sqrt().max(1e-12)) as f32);
+                    }
+                    let r = best.clamp(1e-3, 0.9999);
+                    Some(10.0 * (r / (1.0 - r)).log10())
+                };
+                let loudest = frames.iter().map(|f| f.level()).fold(f32::MIN, f32::max);
+                let (mut full, mut top, mut count, mut voiced, mut loud) = (0.0, 0.0, 0, 0, 0);
+                for (i, f) in frames.iter().enumerate().step_by(4) {
+                    if f.level() < loudest - 30.0 {
+                        continue;
+                    }
+                    loud += 1;
+                    if !f.voiced() {
+                        continue;
+                    }
+                    voiced += 1;
+                    let center = (i as f32 * 0.005 * rate) as usize;
+                    let period = rate / f.f0;
+                    if let (Some(a), Some(b)) =
+                        (ratio(x, center, period), ratio(&high, center, period))
+                    {
+                        full += a;
+                        top += b;
+                        count += 1;
+                    }
+                }
+                let n = count.max(1) as f32;
+                println!(
+                    "{path}: HNR {:.1} dB, above 2 kHz {:.1} dB, voiced {:.0}% of loud frames",
+                    full / n,
+                    top / n,
+                    100.0 * voiced as f32 / loud.max(1) as f32
+                );
+            }
+        }
         "resynth" => {
             // Analysis and resynthesis of a recording at its own pitch, with
             // the log-spectral distance to the original as a fidelity measure.
