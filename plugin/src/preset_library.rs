@@ -373,7 +373,9 @@ impl Controller {
                 // A scene from the library starts with only its Master.
                 let mut parts = Vec::new();
                 let mut part_audio = None;
-                super::timbres::ensure_master_in(&mut parts, &mut part_audio, self, self.rate);
+                if self.meta.id == 0 {
+                    super::timbres::ensure_master_in(&mut parts, &mut part_audio, self, self.rate);
+                }
                 self.enqueue(Command::Restore(Box::new(super::Restore {
                     parts: part_audio,
                     mix: Default::default(),

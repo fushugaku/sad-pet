@@ -537,7 +537,10 @@ impl Controller {
             &saved.preset,
         );
         let (mut parts, mut part_audio) = self.restore_parts(std::mem::take(&mut saved.timbres))?;
-        timbres::ensure_master_in(&mut parts, &mut part_audio, self, self.rate);
+        // Restoration recurses into each part; only the scene owns a Master.
+        if self.meta.id == 0 {
+            timbres::ensure_master_in(&mut parts, &mut part_audio, self, self.rate);
+        }
         self.enqueue(Command::Restore(Box::new(Restore {
             parts: part_audio,
             mix: saved.meta.mix,

@@ -1305,3 +1305,64 @@ fn timbres_reach_master_directly_or_through_a_bus_without_audio_allocation() {
     let context = call(&mut control, "/api/timbres/remove", json!({"id":bus["id"]}));
     assert_eq!(context["timbres"][0]["sends"][0], 0.0);
 }
+
+#[test]
+fn projects_with_master_and_buses_survive_repeated_save_and_restore() {
+    let mut control = Controller::new_plugin(false);
+    call(&mut control, "/api/timbres/add", json!({"kind":"bus"}));
+    call(&mut control, "/api/timbres/add", json!({"kind":"drums"}));
+    for round in 0..3 {
+        let saved = control.save().unwrap();
+        let mut restored = Controller::new_plugin(false);
+        restored
+            .restore(&saved)
+            .unwrap_or_else(|e| panic!("round {round}: {e}"));
+        let kinds: Vec<String> = call(&mut restored, "/api/timbres", Value::Null)["timbres"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["kind"].as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(
+            kinds,
+            ["granular", "bus", "drums", "master"],
+            "round {round}"
+        );
+        // Parts never nest their own timbres, and only the scene has a Master.
+        assert!(
+            restored.parts.iter().all(|p| p.parts.is_empty()),
+            "round {round}"
+        );
+        control = restored;
+    }
+}
+
+#[test]
+fn user_preset_recall_survives_daw_state_with_a_master() {
+    // The native host test's path: a factory instance with its Master saves a
+    // user preset, recalls it, and a new instance restores the DAW state.
+    let folder = PresetDirectory::new();
+    let mut control = Controller::new_plugin(false);
+    control.library = preset_library::Library::at(folder.0.clone());
+    let _audio = control.prepare(48000);
+    let saved = call(
+        &mut control,
+        "/api/preset-library/save",
+        json!({"name":"Native patch"}),
+    );
+    let id = saved["id"].as_str().unwrap().to_owned();
+    call(&mut control, "/api/preset-library/load", json!({"id":id}));
+    let state = control.save().unwrap();
+    let mut restored = Controller::new_plugin(false);
+    restored.library = preset_library::Library::at(folder.0.clone());
+    restored.restore(&state).unwrap();
+    let state = call(&mut restored, "/api/state", Value::Null);
+    assert_eq!(state["preset_selection"]["id"], id);
+    let kinds: Vec<&str> = state["timbres"]["timbres"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(kinds, ["granular", "master"]);
+}
