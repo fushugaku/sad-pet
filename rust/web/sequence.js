@@ -1,50 +1,348 @@
 "use strict";
-// Keep large routing menus out of the live DOM until a pointer, keyboard or
-// accessibility focus opens them. The selected label remains a native option.
+// Routing and effect pickers: a button that opens a cascading section → target
+// menu, like a macOS plug-in menu. Menu nodes exist only while it is open, so a
+// closed picker is one button however many targets it routes to. The button
+// keeps a <select>'s value and fires the same input and change events.
 window.SadLazySelect = (() => {
   const models = new WeakMap();
-  const option = (value, label) => {
-    const node = document.createElement("option");
-    node.value = value;
-    node.textContent = label;
+  let menu = null,
+    pressed = null;
+  // [value, text, label?] is a target (label names it on the closed button);
+  // { label, choices } is a section.
+  const entry = (choice) =>
+    Array.isArray(choice)
+      ? { value: String(choice[0]), text: choice[1], label: choice[2] ?? choice[1] }
+      : { text: choice.label, items: entries(choice.choices) };
+  const entries = (choices) =>
+    choices.map(entry).filter((e) => !e.items || e.items.length);
+  const holds = (e, value) =>
+    e.items ? e.items.some((i) => holds(i, value)) : e.value === value;
+  function labels(items, map = new Map()) {
+    for (const e of items) e.items ? labels(e.items, map) : map.set(e.value, e.label);
+    return map;
+  }
+  function render(anchor, value) {
+    const label = models.get(anchor)?.labels.get(value) ?? `${value} · unavailable`;
+    anchor.value = value;
+    anchor.textContent = label;
+    anchor.title = label;
+  }
+  function show(anchor) {
+    hide(false);
+    const layer = document.createElement("div"),
+      view = viewport();
+    // Phones drill into a section in place instead of flying out.
+    menu = {
+      anchor, layer, levels: [], drill: view.right - view.left < 600,
+      timer: 0, pointer: null, hovered: null, typed: "", typedAt: 0,
+    };
+    layer.className = menu.drill ? "sad-menu-layer is-drill" : "sad-menu-layer";
+    layer.onkeydown = key;
+    layer.onclick = click;
+    layer.onpointermove = hover;
+    layer.onpointerleave = () => clearTimeout(menu?.timer);
+    layer.addEventListener("focusout", blurred);
+    document.body.append(layer);
+    anchor.setAttribute("aria-expanded", "true");
+    document.addEventListener("pointerdown", outside, true);
+    window.addEventListener("scroll", scrolled, true);
+    window.addEventListener("resize", dismiss);
+    window.addEventListener("blur", dismiss);
+    const root = level(models.get(anchor).items, anchor.getAttribute("aria-label") || "", 0);
+    menu.levels.push(root);
+    layer.append(root.list);
+    place(root.list);
+    focus(0, start(root));
+  }
+  function hide(refocus) {
+    if (!menu) return;
+    const { anchor, layer, timer } = menu;
+    menu = null;
+    clearTimeout(timer);
+    layer.remove();
+    anchor.setAttribute("aria-expanded", "false");
+    document.removeEventListener("pointerdown", outside, true);
+    window.removeEventListener("scroll", scrolled, true);
+    window.removeEventListener("resize", dismiss);
+    window.removeEventListener("blur", dismiss);
+    if (refocus && anchor.isConnected) anchor.focus({ preventScroll: true });
+  }
+  const dismiss = () => hide(false);
+  function outside(event) {
+    if (!menu.layer.contains(event.target) && !menu.anchor.contains(event.target)) hide(false);
+  }
+  function scrolled(event) {
+    if (!menu.layer.contains(event.target)) hide(false);
+  }
+  function blurred() {
+    setTimeout(() => {
+      const active = document.activeElement;
+      if (menu && !menu.layer.contains(active) && active !== menu.anchor) hide(false);
+    });
+  }
+  function level(items, title, depth) {
+    const rows = menu.drill && depth ? [{ back: true, text: title }, ...items] : items,
+      list = document.createElement("div");
+    list.className = "sad-menu";
+    list.tabIndex = -1;
+    list.setAttribute("role", "menu");
+    list.setAttribute("aria-label", title);
+    list.append(...rows.map(row));
+    return { list, rows, active: -1, from: -1 };
+  }
+  function row(e, index) {
+    const node = document.createElement("div"),
+      text = document.createElement("span"),
+      value = menu.anchor.value;
+    node.className = e.back ? "sad-menu-item sad-menu-back" : "sad-menu-item";
+    node.tabIndex = -1;
+    node.dataset.index = index;
+    node.setAttribute("role", e.items || e.back ? "menuitem" : "menuitemradio");
+    if (e.items) {
+      node.setAttribute("aria-haspopup", "menu");
+      node.setAttribute("aria-expanded", "false");
+    } else if (!e.back) node.setAttribute("aria-checked", String(e.value === value));
+    if (!e.back && holds(e, value)) node.classList.add("is-current");
+    text.textContent = e.text;
+    node.append(text);
     return node;
-  };
-  function render(select, expanded, value = select.value) {
-    const model = models.get(select);
-    if (!model) { select.value = value; return; }
-    model.expanded = expanded;
-    if (expanded) {
-      const nodes = model.groups.map(({ label, choices }) => {
-        if (!label) return choices.map(([v, text]) => option(v, text));
-        const group = document.createElement("optgroup");
-        group.label = label;
-        group.append(...choices.map(([v, text]) => option(v, text)));
-        return group;
-      }).flat();
-      if (!model.labels.has(value)) nodes.push(option(value, `${value} · unavailable`));
-      select.replaceChildren(...nodes);
+  }
+  function start({ rows }) {
+    const i = rows.findIndex((e) => !e.back && holds(e, menu.anchor.value));
+    return i >= 0 ? i : rows[0]?.back ? 1 : 0;
+  }
+  // The visible page: inside its scrollbars and, on a zoomed phone, the
+  // zoomed-in part.
+  function viewport() {
+    const v = window.visualViewport,
+      root = document.documentElement;
+    return v
+      ? { left: v.offsetLeft, top: v.offsetTop, right: v.offsetLeft + v.width, bottom: v.offsetTop + v.height }
+      : { left: 0, top: 0, right: root.clientWidth, bottom: root.clientHeight };
+  }
+  // Keep a menu on screen: below or above its button, or beside its section
+  // row, flipped left when the right side has no room.
+  function place(list, from) {
+    const gap = 8,
+      view = viewport(),
+      anchor = menu.anchor.getBoundingClientRect(),
+      style = list.style;
+    style.left = style.top = "0px";
+    style.maxHeight = `${view.bottom - view.top - 2 * gap}px`;
+    if (menu.drill) style.width = `${Math.min(view.right - view.left - 32, Math.max(anchor.width, 280))}px`;
+    else if (!from) style.minWidth = `max(180px, ${anchor.width}px)`;
+    const box = list.getBoundingClientRect(),
+      right = view.right - gap - box.width,
+      bottom = view.bottom - gap - box.height;
+    let left, top;
+    if (from) {
+      const item = from.getBoundingClientRect(),
+        side = from.parentNode.getBoundingClientRect();
+      left = side.right - 3;
+      if (left > right) left = side.left - box.width + 3;
+      if (left < view.left + gap) left = Math.max(view.left + gap, right);
+      top = Math.max(view.top + gap, Math.min(item.top - 5, bottom));
     } else {
-      select.replaceChildren(option(value, model.labels.get(value) ?? `${value} · unavailable`));
+      const edge = menu.drill ? 16 : gap,
+        below = view.bottom - gap - anchor.bottom - 4,
+        above = anchor.top - 4 - gap - view.top;
+      left = Math.max(view.left + edge, Math.min(anchor.left, view.right - edge - box.width));
+      if (box.height <= below || below >= above) {
+        top = anchor.bottom + 4;
+        if (box.height > below) style.maxHeight = `${Math.max(below, 0)}px`;
+      } else {
+        top = Math.max(view.top + gap, anchor.top - 4 - box.height);
+        if (box.height > above) style.maxHeight = `${above}px`;
+      }
     }
-    select.value = value;
+    style.left = `${left}px`;
+    style.top = `${top}px`;
+  }
+  function mark(level, index) {
+    level.list.children[level.active]?.classList.remove("is-active");
+    level.active = index;
+    level.list.children[index].classList.add("is-active");
+  }
+  function focus(depth, index) {
+    const level = menu.levels[depth],
+      count = level.rows.length,
+      list = level.list;
+    if (!count) return;
+    mark(level, ((index % count) + count) % count);
+    // The path to an open submenu stays lit, as in a macOS menu.
+    for (let d = depth; d > 0; d--) mark(menu.levels[d - 1], menu.levels[d].from);
+    const node = list.children[level.active];
+    node.focus({ preventScroll: true });
+    if (node.offsetTop < list.scrollTop) list.scrollTop = node.offsetTop - 4;
+    else if (node.offsetTop + node.offsetHeight > list.scrollTop + list.clientHeight)
+      list.scrollTop = node.offsetTop + node.offsetHeight - list.clientHeight + 4;
+  }
+  function expand(depth, index, enter) {
+    const parent = menu.levels[depth],
+      e = parent.rows[index];
+    if (!e?.items) return;
+    if (menu.levels[depth + 1]?.from !== index) {
+      truncate(depth);
+      const next = level(e.items, e.text, depth + 1),
+        from = parent.list.children[index];
+      next.from = index;
+      menu.levels.push(next);
+      from.setAttribute("aria-expanded", "true");
+      if (menu.drill) parent.list.replaceWith(next.list);
+      else menu.layer.append(next.list);
+      place(next.list, menu.drill ? null : from);
+    }
+    if (enter || menu.drill) focus(depth + 1, start(menu.levels[depth + 1]));
+  }
+  // Close every submenu below depth.
+  function truncate(depth) {
+    const levels = menu.levels;
+    if (levels.length <= depth + 1) return;
+    while (levels.length > depth + 1) {
+      const gone = levels.pop(),
+        parent = levels[levels.length - 1];
+      parent.list.children[gone.from].setAttribute("aria-expanded", "false");
+      if (menu.drill) gone.list.replaceWith(parent.list);
+      else gone.list.remove();
+    }
+    if (menu.drill) place(levels[depth].list);
+  }
+  function back(depth) {
+    if (!depth) return;
+    const from = menu.levels[depth].from;
+    truncate(depth - 1);
+    focus(depth - 1, from);
+  }
+  function activate(depth, index, enter) {
+    const e = menu.levels[depth].rows[index];
+    clearTimeout(menu.timer);
+    if (e.back) back(depth);
+    else if (e.items) expand(depth, index, enter);
+    else choose(e.value);
+  }
+  function choose(value) {
+    const anchor = menu.anchor;
+    hide(true);
+    if (!anchor.isConnected || value === anchor.value) return;
+    render(anchor, value);
+    for (const type of ["input", "change"])
+      anchor.dispatchEvent(new Event(type, { bubbles: true }));
+  }
+  const depthOf = (node) => menu.levels.findIndex((l) => l.list.contains(node));
+  function click(event) {
+    const node = event.target.closest(".sad-menu-item");
+    if (node) activate(depthOf(node), Number(node.dataset.index), event.detail === 0);
+  }
+  // Hovering a section opens it after a moment, so a diagonal path into its
+  // submenu can cross other rows without switching. A menu that opened under
+  // a resting pointer ignores it until it really moves.
+  function hover(event) {
+    if (menu.drill || event.pointerType === "touch") return;
+    const at = `${event.clientX},${event.clientY}`,
+      resting = !menu.pointer || menu.pointer === at;
+    menu.pointer = at;
+    if (resting) return;
+    const node = event.target.closest(".sad-menu-item");
+    if (!node || node === menu.hovered) return;
+    menu.hovered = node;
+    const depth = depthOf(node),
+      index = Number(node.dataset.index),
+      e = menu.levels[depth].rows[index];
+    focus(depth, index);
+    clearTimeout(menu.timer);
+    if (menu.levels[depth + 1]?.from === index || (!e.items && menu.levels.length === depth + 1)) return;
+    menu.timer = setTimeout(
+      () => menu?.hovered === node && (e.items ? expand(depth, index, false) : truncate(depth)),
+      e.items ? 120 : 250,
+    );
+  }
+  function key(event) {
+    // Menu keys never reach the editor's keyboard shortcuts.
+    event.stopPropagation();
+    const depth = Math.max(0, depthOf(event.target)),
+      at = menu.levels[depth].active,
+      e = menu.levels[depth].rows[at],
+      k = event.key;
+    if (k.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey && (k !== " " || Date.now() - menu.typedAt < 700)) {
+      find(depth, k);
+      event.preventDefault();
+      return;
+    }
+    // Any other key starts a new type-ahead word.
+    menu.typedAt = 0;
+    if (k === "ArrowDown") focus(depth, at + 1);
+    else if (k === "ArrowUp") focus(depth, at < 0 ? -1 : at - 1);
+    else if (k === "Home" || k === "PageUp") focus(depth, 0);
+    else if (k === "End" || k === "PageDown") focus(depth, -1);
+    else if (k === "ArrowRight") e?.items && expand(depth, at, true);
+    else if (k === "ArrowLeft") back(depth);
+    else if (k === "Enter" || k === " ") e && activate(depth, at, true);
+    else if (k === "Escape") hide(true);
+    else {
+      // Tab leaves from the button, to the next control.
+      if (k === "Tab") hide(true);
+      return;
+    }
+    event.preventDefault();
+  }
+  // Type-ahead within the open level; repeating one letter cycles its rows.
+  function find(depth, char) {
+    const level = menu.levels[depth],
+      rows = level.rows,
+      now = Date.now();
+    menu.typed = (now - menu.typedAt < 700 ? menu.typed : "") + char.toLowerCase();
+    menu.typedAt = now;
+    const typed = menu.typed,
+      passes = typed.length > 1 ? [[typed, level.active]] : [];
+    if ([...typed].every((c) => c === typed[0])) passes.push([typed[0], level.active + 1]);
+    for (const [prefix, from] of passes)
+      for (let k = 0; k < rows.length; k++) {
+        const i = (Math.max(from, 0) + k) % rows.length;
+        if (!rows[i].back && rows[i].text.toLowerCase().startsWith(prefix)) return focus(depth, i);
+      }
   }
   return {
-    configure(select, value, groups) {
-      if (!models.has(select)) {
-        const expand = () => {
-          if (!models.get(select).expanded) render(select, true);
+    configure(anchor, value, groups) {
+      if (!models.has(anchor)) {
+        anchor.type = "button";
+        anchor.classList.add("sad-select");
+        anchor.setAttribute("aria-haspopup", "menu");
+        anchor.setAttribute("aria-expanded", "false");
+        anchor.onpointerdown = () => {
+          pressed = menu?.anchor === anchor ? anchor : null;
         };
-        select.onpointerdown = expand;
-        select.onfocus = expand;
-        select.onkeydown = expand;
-        select.onblur = () => render(select, false);
+        // A press on the open picker's button closes its menu.
+        anchor.onclick = () => {
+          const close = pressed === anchor;
+          pressed = null;
+          close ? hide(true) : show(anchor);
+        };
+        anchor.onkeydown = (event) => {
+          if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+          event.preventDefault();
+          show(anchor);
+        };
       }
-      models.set(select, { groups, labels: new Map(groups.flatMap(g => g.choices)), expanded: false });
-      render(select, document.activeElement === select, String(value));
+      const items = entries(groups.flatMap((g) => (g.label ? [g] : g.choices)));
+      models.set(anchor, { items, labels: labels(items) });
+      render(anchor, String(value));
     },
-    setValue(select, value) {
+    setValue(anchor, value) {
       value = String(value);
-      if (select.value !== value) render(select, !!models.get(select)?.expanded, value);
+      if (anchor.value !== value) render(anchor, value);
+    },
+    // A section whose targets drop its name: "LFO 1 rate" reads "Rate" inside
+    // LFO 1 and keeps its full name on the closed button.
+    section(label, choices, prefix = label) {
+      return {
+        label,
+        choices: choices.map((choice) => {
+          if (!Array.isArray(choice)) return choice;
+          const [value, text, full = text] = choice,
+            rest = text.startsWith(prefix) && /^[\s·]+(.+)$/.exec(text.slice(prefix.length))?.[1];
+          return rest ? [value, rest.charAt(0).toUpperCase() + rest.slice(1), full] : choice;
+        }),
+      };
     },
   };
 })();
@@ -437,29 +735,47 @@ window.SadNeuropolis = class {
     }
     grid.append(labels);
   }
+  // Destination menu sections. Numbered filters, LFOs, envelopes, effect slots,
+  // oscillators and drum voices each get a submenu inside their family.
   parameterGroups(prefix = "") {
-    const preset = this.hooks.read(), groups = new Map();
+    const preset = this.hooks.read(), families = new Map(),
+      order = ["Main", "Filters", "LFO", "Envelopes", "Arpeggiator", "Pre-filter FX", "Post-filter FX", "Resynth", "Synth engine", "Drums"];
     for (const spec of this.catalog.parameters) {
-      const fx = /^(pre_)?fx(\d+)_/.exec(spec.id);
+      const id = spec.id, fx = /^(pre_)?fx(\d+)_/.exec(id);
+      let slot = null;
       if (fx) {
-        const slot = (fx[1] ? preset.pre_color_chain : preset.color_chain)[Number(fx[2]) - 1];
-        if (!slot || (this.hooks.fxParameters && !this.hooks.fxParameters(slot).includes(spec.id.slice(fx[0].length))))
+        slot = (fx[1] ? preset.pre_color_chain : preset.color_chain)[Number(fx[2]) - 1];
+        if (!slot || (this.hooks.fxParameters && !this.hooks.fxParameters(slot).includes(id.slice(fx[0].length))))
           continue;
       }
-      if (spec.id.startsWith("drum") && !preset.drums) continue;
-      const family = fx
-        ? `${fx[1] ? "Pre-filter" : "Post-filter"} FX ${fx[2]}`
-        : spec.id.startsWith("resynth_") ? "Resynth"
-        : spec.id.startsWith("drum") ? "Drums"
-        : spec.id.startsWith("env") ? "Envelopes"
-        : spec.id.startsWith("lfo") ? "LFO"
-        : spec.id.startsWith("arp_") ? "Arpeggiator" : "Main & filters";
-      if (!groups.has(family)) {
-        groups.set(family, { label: family, choices: [] });
+      if (id.startsWith("drum") && !preset.drums) continue;
+      const n = /\d+/.exec(id)?.[0], filter = /^(?:filter|vcf)(\d*)(?:_|$)/.exec(id),
+        slotName = fx && `${fx[1] ? "Pre FX" : "FX"} ${fx[2]}`, kind = slot && this.hooks.fxName?.(slot);
+      const [family, sub, strip = sub] = fx
+        ? [`${fx[1] ? "Pre-filter" : "Post-filter"} FX`, kind ? `${slotName} · ${kind}` : slotName, slotName]
+        : id.startsWith("resynth_osc") ? ["Resynth", `OSC ${n}`, `Resynth OSC ${n}`]
+        : id.startsWith("resynth_") ? ["Resynth"]
+        : id.startsWith("drum") ? ["Drums", spec.name.split(" · ")[0]]
+        : id.startsWith("env") ? ["Envelopes", `ENV ${n}`]
+        : id.startsWith("lfo") ? ["LFO", `LFO ${n}`]
+        : id.startsWith("arp_") ? ["Arpeggiator"]
+        : id.startsWith("synth_osc") ? ["Synth engine", `Synth OSC ${n}`]
+        : id.startsWith("synth_") ? ["Synth engine"]
+        : filter ? ["Filters", `Filter ${filter[1] || 1}`] : ["Main"];
+      if (!families.has(family)) families.set(family, { targets: [], subs: new Map() });
+      const { targets, subs } = families.get(family), choice = [`${prefix}${id}`, spec.name];
+      if (!sub) targets.push(choice);
+      else {
+        if (!subs.has(sub)) subs.set(sub, { strip, choices: [] });
+        subs.get(sub).choices.push(choice);
       }
-      groups.get(family).choices.push([`${prefix}${spec.id}`, spec.name]);
     }
-    return [...groups.values()];
+    const section = window.SadLazySelect.section;
+    return [...families]
+      .sort(([a], [b]) => order.indexOf(a) - order.indexOf(b))
+      .map(([family, { targets, subs }]) => section(family, [
+        ...targets, ...[...subs].map(([label, s]) => section(label, s.choices, s.strip)),
+      ]));
   }
   buildStages(editor, track) {
     const parameter = track.target.kind === "parameter",
@@ -721,7 +1037,7 @@ window.SadNeuropolis = class {
       this.hooks.structure();
       this.sync();
     };
-    const target = document.createElement("select");
+    const target = document.createElement("button");
     target.setAttribute("aria-label", "Track destination");
     window.SadLazySelect.configure(target,
       track.target.kind === "oscillator" ? `osc:${track.target.index}`
@@ -842,7 +1158,7 @@ window.SadNeuropolis = class {
       label.className = "neuro-control";
       const title = document.createElement("span");
       title.textContent = `DESTINATION ${i + 1}`;
-      const select = document.createElement("select");
+      const select = document.createElement("button");
       select.setAttribute("aria-label", `Track destination ${i + 1}`);
       window.SadLazySelect.configure(select, track.destinations?.[i] || "", [
         { choices: [["", "Unassigned"]] }, ...this.parameterGroups(),

@@ -22,6 +22,11 @@ const start = source.indexOf("const COLOR_TYPES ="),
   end = source.indexOf("const destinationValue =");
 assert.ok(start > 0 && end > start);
 vm.runInContext(source.slice(start, end), context);
+assert.deepEqual(
+  [...vm.runInContext("colorTypeGroups().flatMap((g) => g.choices.map(([kind]) => kind))", context)].sort(),
+  [...vm.runInContext("COLOR_TYPES.map(([kind]) => kind)", context)].sort(),
+  "Every effect type sits in exactly one section of the effect menus",
+);
 for (const [kind, title, count] of [
   ["super_echo", "SuperEcho", 14],
   ["alpha_verb", "AlphaVerb", 19],

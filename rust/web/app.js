@@ -1776,6 +1776,20 @@ const COLOR_TYPES = [
   ["super_echo", "SuperEcho"],
   ["alpha_verb", "AlphaVerb"],
 ];
+// Sections of the effect menus, as in a DAW's plug-in menu.
+const COLOR_SECTIONS = [
+  ["Distortion", ["distortion", "waveshaper", "crusher", "reducer"]],
+  ["Modulation", ["chorus", "flanger"]],
+  ["Delay", ["lcr_delay", "mod_delay", "super_echo"]],
+  ["Reverb", ["reverb", "alpha_verb"]],
+  ["Dynamics", ["compressor"]],
+  ["Imaging", ["binaural"]],
+];
+const colorTypeGroups = () =>
+  COLOR_SECTIONS.map(([label, kinds]) => ({
+    label,
+    choices: kinds.map((kind) => COLOR_TYPES.find(([k]) => k === kind)),
+  }));
 const COLOR_RACKS = [
   {
     key: "source_color_chain",
@@ -2240,8 +2254,10 @@ function moveColor(id, delta) {
 }
 function buildColors() {
   for (const rack of COLOR_RACKS) {
-    $(`${rack.add}-type`).replaceChildren(
-      ...COLOR_TYPES.map(([value, label]) => option(value, label)),
+    window.SadLazySelect.configure(
+      $(`${rack.add}-type`),
+      COLOR_TYPES[0][0],
+      colorTypeGroups(),
     );
     $(rack.add).onclick = () => {
       if (preset[rack.key].length >= (rack.max || colorDefaults.max_slots))
@@ -2288,15 +2304,16 @@ function syncColors() {
       const card = document.createElement("div");
       card.className = "color-card";
       card.dataset.id = id;
-      card.innerHTML = `<div class="color-title"><strong class="color-order">${String(number).padStart(2, "0")}</strong><select aria-label="${rack.label} ${number} type"></select><div class="color-actions"><button class="color-bypass" aria-label="Bypass ${rack.label} ${number}" title="Bypass" aria-pressed="false">⏻</button><button class="color-up" aria-label="Move ${rack.label} ${number} up" title="Move up">↑</button><button class="color-down" aria-label="Move ${rack.label} ${number} down" title="Move down">↓</button><button class="color-remove" aria-label="Remove ${rack.label} ${number}" title="Remove">×</button></div></div><div id="color-${id}-knobs" class="knob-grid color-knobs"></div>`;
-      const select = card.querySelector("select");
-      select.replaceChildren(
-        ...COLOR_TYPES.map(([value, label]) => option(value, label)),
-      );
-      select.value = slot.kind;
+      card.innerHTML = `<div class="color-title"><strong class="color-order">${String(number).padStart(2, "0")}</strong><button class="color-type" aria-label="${rack.label} ${number} type"></button><div class="color-actions"><button class="color-bypass" aria-label="Bypass ${rack.label} ${number}" title="Bypass" aria-pressed="false">⏻</button><button class="color-up" aria-label="Move ${rack.label} ${number} up" title="Move up">↑</button><button class="color-down" aria-label="Move ${rack.label} ${number} down" title="Move down">↓</button><button class="color-remove" aria-label="Remove ${rack.label} ${number}" title="Remove">×</button></div></div><div id="color-${id}-knobs" class="knob-grid color-knobs"></div>`;
+      const select = card.querySelector(".color-type");
+      window.SadLazySelect.configure(select, slot.kind, colorTypeGroups());
       select.onchange = () => {
+        const focused = document.activeElement === select;
         findColor(id).kind = select.value;
         editColorChain();
+        // The card is rebuilt for its new type; keep keyboard focus on it.
+        if (focused)
+          document.querySelector(`.color-card[data-id="${id}"] .color-type`)?.focus();
       };
       if (slot.kind === "reverb") {
         const title = card.querySelector(".color-title");
@@ -2585,30 +2602,69 @@ function syncGainReduction(next) {
     );
   }
 }
+// Destination menus: sections, then a submenu per filter, LFO, envelope,
+// effect slot, oscillator, drum voice or sequencer step.
 function fillDestination(select, destination) {
-  const groups = [{ choices: DESTINATIONS }, ...modulationGroups().map(([label, choices]) => ({
-    label, choices: choices.map(([value, text]) => [destinationValue(value), text]),
-  }))];
-  for (const { rack, index, slot } of colorEntries().filter(e => e.rack.key !== "source_color_chain")) {
-    groups.push({
-      label: `${rack.label} ${index + 1} · ${COLOR_TYPES.find(([k]) => k === slot.kind)[1]}`,
-      choices: colorDestinationSchema(slot.kind).map(([parameter, label]) => [
+  const section = window.SadLazySelect.section,
+    sentence = (label) => label.charAt(0) + label.slice(1).toLowerCase(),
+    named = new Map(modulationGroups().map(([label, choices]) => [
+      label,
+      choices.map(([value, text]) => [destinationValue(value), text]),
+    ])),
+    take = (label) => {
+      const choices = named.get(label) || [];
+      named.delete(label);
+      return choices;
+    },
+    pull = (pattern) =>
+      [...named.keys()].filter((label) => pattern.test(label)).map((label) => [label, take(label)]),
+    routes = [...DESTINATIONS.filter(([id]) => id.startsWith("filter")), ...take("Filter controls")],
+    filters = [1, 2].map((n) =>
+      section(`Filter ${n}`, routes.filter(([, text]) => text.startsWith(`Filter ${n} `))),
+    ),
+    steps = take("Sequencer steps");
+  for (const [index, slot] of (preset.filter_slots || []).entries())
+    filters.push(section(`Filter ${index + 3}`, FILTER_SLOT_CONTROLS.map(([parameter, label]) => [
+      destinationValue({ filter_slot: { slot: slot.id, parameter } }),
+      `Filter ${index + 3} · ${sentence(label)}`,
+    ])));
+  const effects = (key) =>
+    colorEntries().filter((e) => e.rack.key === key).map(({ rack, index, slot }) => section(
+      `${rack.label} ${index + 1} · ${COLOR_TYPES.find(([k]) => k === slot.kind)[1]}`,
+      colorDestinationSchema(slot.kind).map(([parameter, label]) => [
         destinationValue({ color: { slot: slot.id, parameter } }),
-        `${rack.label} ${index + 1} · ${label.charAt(0) + label.slice(1).toLowerCase()}`,
+        `${rack.label} ${index + 1} · ${sentence(label)}`,
       ]),
-    });
-  }
-  for (const [index, slot] of (preset.filter_slots || []).entries()) {
-    groups.push({
-      label: `Filter ${index + 3}`,
-      choices: FILTER_SLOT_CONTROLS.map(([parameter, label]) => [
-        destinationValue({ filter_slot: { slot: slot.id, parameter } }),
-        `Filter ${index + 3} · ${label.charAt(0) + label.slice(1).toLowerCase()}`,
-      ]),
-    });
-  }
-  const value = destinationValue(destination);
-  if (typeof destination !== "string" && !groups.some(g => g.choices.some(([v]) => v === value))) {
+      `${rack.label} ${index + 1}`,
+    ));
+  const groups = [
+    { choices: [DESTINATIONS[0]] },
+    { label: "Main", choices: DESTINATIONS.slice(1).filter(([id]) => !id.startsWith("filter")) },
+    { label: "Filters", choices: filters },
+    { label: "LFO", choices: pull(/^LFO \d+$/).map(([label, choices]) => section(label, choices)) },
+    { label: "Envelopes", choices: pull(/^ENV \d+$/).map(([label, choices]) => section(label, choices)) },
+    { label: "Pre-filter FX", choices: effects("pre_color_chain") },
+    { label: "Post-filter FX", choices: effects("color_chain") },
+    section("Resynth", [
+      ...take("Resynth"),
+      ...pull(/^OSC \d+$/).map(([label, choices]) => section(label, choices, `Resynth ${label}`)),
+    ]),
+    { label: "Synth engine", choices: [
+      ...take("Synth engine"),
+      ...pull(/^Synth OSC \d+$/).map(([label, choices]) => section(label, choices)),
+    ] },
+    // Drum voices go by their kit names ("Closed HH · Decay").
+    { label: "Drums", choices: pull(/^Drum \d+$/).map(([, choices]) =>
+      section(choices[0][1].split(" · ")[0], choices)) },
+    { label: "Performance", choices: take("Performance") },
+    { label: "Sequencer steps", choices: Array.from({ length: 16 }, (_, i) =>
+      section(`Step ${i + 1}`, steps.filter(([, text]) => text.startsWith(`Step ${i + 1} ·`)))) },
+    { label: "Global controls", choices: take("Global controls") },
+    ...[...named].map(([label, choices]) => ({ label, choices })),
+  ];
+  const value = destinationValue(destination),
+    listed = (choices) => choices.some((c) => (Array.isArray(c) ? c[0] === value : listed(c.choices)));
+  if (typeof destination !== "string" && !listed(groups)) {
     if (destination.filter_slot) {
       const index = (preset.filter_slots || []).findIndex(s => s.id === destination.filter_slot.slot);
       const label = destination.filter_slot.parameter.replaceAll("_", " ");
@@ -2840,7 +2896,7 @@ function syncMatrix() {
       const row = document.createElement("div");
       row.className = "matrix-row";
       const number = i + 1;
-      row.innerHTML = `<strong class="matrix-order">${String(number).padStart(2, "0")}<i class="matrix-signal" aria-hidden="true"></i></strong><select class="matrix-source" aria-label="Modulation ${number} source"></select><select class="matrix-destination" aria-label="Modulation ${number} destination"></select><label class="matrix-depth"><input type="range" min="-1" max="1" step="0.005" aria-label="Modulation ${number} depth"><output></output></label><div class="matrix-actions"><button class="matrix-bypass" title="Bypass" aria-label="Bypass modulation ${number}" aria-pressed="false">⏻</button><button class="matrix-remove" title="Remove" aria-label="Remove modulation ${number}">×</button></div>`;
+      row.innerHTML = `<strong class="matrix-order">${String(number).padStart(2, "0")}<i class="matrix-signal" aria-hidden="true"></i></strong><select class="matrix-source" aria-label="Modulation ${number} source"></select><button class="matrix-destination" aria-label="Modulation ${number} destination"></button><label class="matrix-depth"><input type="range" min="-1" max="1" step="0.005" aria-label="Modulation ${number} depth"><output></output></label><div class="matrix-actions"><button class="matrix-bypass" title="Bypass" aria-label="Bypass modulation ${number}" aria-pressed="false">⏻</button><button class="matrix-remove" title="Remove" aria-label="Remove modulation ${number}">×</button></div>`;
       const source = row.querySelector(".matrix-source"),
         dest = row.querySelector(".matrix-destination"),
         depth = row.querySelector("input");
@@ -2956,11 +3012,9 @@ function buildLfos() {
   for (let i = 0; i < 8; i++) {
     const card = document.createElement("div");
     card.className = "lfo-card";
-    card.innerHTML = `<div class="lfo-title"><strong>LFO ${i + 1}</strong><canvas class="lfo-scope" width="144" height="40"></canvas></div><div class="lfo-row"><select aria-label="LFO ${i + 1} waveform" class="waveform"></select><select aria-label="LFO ${i + 1} destination" class="destination"></select></div><div class="lfo-row"><label>RATE<input aria-label="LFO ${i + 1} rate" class="rate" type="number" min="0.01" max="40" step="0.01"></label><label class="lfo-depth">DEPTH<input aria-label="LFO ${i + 1} depth" class="depth" type="range" min="-1" max="1" step="0.01"><output class="depth-value" aria-label="LFO ${i + 1} depth value"></output></label></div><div class="lfo-row"><label class="check"><input type="checkbox" class="sync">Tempo sync</label><select class="division" aria-label="LFO ${i + 1} tempo division"><option value="0.25">1/16</option><option value="0.5">1/8</option><option value="1">1/4</option><option value="2">1/2</option><option value="4">1 bar</option><option value="8">2 bars</option><option value="16">4 bars</option><option value="32">8 bars</option></select></div>`;
+    card.innerHTML = `<div class="lfo-title"><strong>LFO ${i + 1}</strong><canvas class="lfo-scope" width="144" height="40"></canvas></div><div class="lfo-row"><select aria-label="LFO ${i + 1} waveform" class="waveform"></select><button aria-label="LFO ${i + 1} destination" class="destination"></button></div><div class="lfo-row"><label>RATE<input aria-label="LFO ${i + 1} rate" class="rate" type="number" min="0.01" max="40" step="0.01"></label><label class="lfo-depth">DEPTH<input aria-label="LFO ${i + 1} depth" class="depth" type="range" min="-1" max="1" step="0.01"><output class="depth-value" aria-label="LFO ${i + 1} depth value"></output></label></div><div class="lfo-row"><label class="check"><input type="checkbox" class="sync">Tempo sync</label><select class="division" aria-label="LFO ${i + 1} tempo division"><option value="0.25">1/16</option><option value="0.5">1/8</option><option value="1">1/4</option><option value="2">1/2</option><option value="4">1 bar</option><option value="8">2 bars</option><option value="16">4 bars</option><option value="32">8 bars</option></select></div>`;
     for (const [value, label] of WAVEFORMS)
       card.querySelector(".waveform").append(option(value, label));
-    for (const [value, label] of DESTINATIONS)
-      card.querySelector(".destination").append(option(value, label));
     for (const [field, selector] of [
       ["waveform", ".waveform"],
       ["destination", ".destination"],
@@ -3131,11 +3185,9 @@ function buildEnvs() {
     for (let j = 0; j < 2; j++) {
       const row = document.createElement("div");
       row.className = "env-route";
-      row.innerHTML = `<select aria-label="ENV ${i + 1} destination ${j + 1}"></select><label><input type="range" min="-1" max="1" step="0.01" aria-label="ENV ${i + 1} depth ${j + 1}"><output></output></label>`;
-      const select = row.querySelector("select"),
+      row.innerHTML = `<button aria-label="ENV ${i + 1} destination ${j + 1}"></button><label><input type="range" min="-1" max="1" step="0.01" aria-label="ENV ${i + 1} depth ${j + 1}"><output></output></label>`;
+      const select = row.querySelector("button"),
         input = row.querySelector("input");
-      for (const [value, label] of DESTINATIONS)
-        select.append(option(value, label));
       const destination = j === 0 ? "destination" : "extra_destination",
         depth = j === 0 ? "depth" : "extra_depth";
       select.oninput = () => {
@@ -3374,6 +3426,7 @@ function buildSequence() {
     edit: scheduleSequence,
     structure: schedulePreset,
     fxParameters: (slot) => colorDestinationSchema(slot.kind).map(([key]) => key),
+    fxName: (slot) => COLOR_TYPES.find(([kind]) => kind === slot.kind)?.[1],
     knob: (schema, container, binding) =>
       createKnob(schema, container, binding),
     view: (offset) =>
@@ -3880,7 +3933,7 @@ function bind() {
       e.ctrlKey ||
       e.metaKey ||
       e.altKey ||
-      e.target.matches("input,select,textarea,[role=slider]") ||
+      e.target.matches("input,select,textarea,[role=slider],.sad-select") ||
       e.target.closest(".sample-selection,.recording-result") ||
       e.target.closest(".file-library,.sample-top")
     )
@@ -4172,7 +4225,7 @@ async function poll() {
       (generation === editGeneration &&
         !pending &&
         !editing &&
-        !document.activeElement?.matches("input,select") &&
+        !document.activeElement?.matches("input,select,.sad-menu-layer *") &&
         next.preset !== receivedPreset &&
         JSON.stringify(preset) !== JSON.stringify(next.preset))
     ) {
@@ -4180,7 +4233,7 @@ async function poll() {
       syncAll();
     }
     if (generation === editGeneration && !pending && !editing
-        && !document.activeElement?.matches("input,select"))
+        && !document.activeElement?.matches("input,select,.sad-menu-layer *"))
       receivedPreset = next.preset;
     $("sample-name").textContent = next.sample_name;
     presetLibrary?.observe(next, pending > 0);

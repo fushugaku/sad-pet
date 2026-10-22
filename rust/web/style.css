@@ -89,6 +89,122 @@ select {
   background-size: 5px 5px;
   background-repeat: no-repeat;
 }
+/* Cascading pickers (SadLazySelect in sequence.js): a button drawn as a
+   select, and its section → target menus. */
+.sad-select,
+.sad-select:hover {
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 13px) 50%,
+    calc(100% - 8px) 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
+.sad-select {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+.sad-select,
+.neuro-edit-head .sad-select {
+  padding-right: 27px;
+}
+.sad-select[aria-expanded="true"] {
+  border-color: #78965b;
+}
+.sad-menu-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+}
+.sad-menu {
+  position: fixed;
+  min-width: 180px;
+  max-width: min(340px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+  background: #1e231e;
+  border: 1px solid #3a453a;
+  border-radius: 8px;
+  box-shadow: 0 12px 36px #000a;
+  font-size: 12px;
+  outline: none;
+}
+.sad-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px 0 4px;
+  border-radius: 5px;
+  color: var(--text);
+  white-space: nowrap;
+  cursor: default;
+  outline: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.sad-menu-item > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sad-menu-item::before {
+  content: "";
+  flex: none;
+  width: 14px;
+  text-align: center;
+  color: var(--accent);
+}
+.sad-menu-item[aria-checked="true"]::before {
+  content: "✓";
+}
+.sad-menu-item.is-current[aria-haspopup]::before {
+  content: "•";
+}
+.sad-menu-item[aria-haspopup]::after {
+  content: "›";
+  margin-left: 14px;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+}
+.sad-menu-item.is-active {
+  background: #3b5130;
+  color: #f4fbee;
+}
+.sad-menu-item.is-active::before,
+.sad-menu-item.is-active::after {
+  color: inherit;
+}
+.sad-menu-back {
+  position: relative;
+  margin-bottom: 5px;
+  color: var(--muted);
+}
+.sad-menu-back::before {
+  content: "‹";
+  font-size: 16px;
+}
+.sad-menu-back::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: -3px;
+  border-top: 1px solid var(--line);
+}
+.is-drill .sad-menu-item {
+  height: 38px;
+  font-size: 13px;
+}
 header {
   display: flex;
   align-items: center;
@@ -517,6 +633,7 @@ h2 {
   gap: 7px;
 }
 .color-add select,
+.color-add .sad-select,
 .color-add button {
   height: 31px;
   font-size: 11px;
@@ -782,7 +899,8 @@ h2 {
   width: 20px;
   flex-shrink: 0;
 }
-.color-title select {
+.color-title select,
+.color-title .sad-select {
   height: 31px;
   min-width: 0;
   width: 170px;
@@ -950,7 +1068,8 @@ h2 {
   background: var(--accent);
   opacity: 0.15;
 }
-.matrix-row select {
+.matrix-row select,
+.matrix-row .sad-select {
   width: 100%;
   min-width: 0;
   height: 31px;
@@ -991,6 +1110,7 @@ h2 {
   background: #283423;
 }
 .matrix-row.is-bypassed select,
+.matrix-row.is-bypassed .sad-select,
 .matrix-row.is-bypassed .matrix-depth {
   opacity: 0.5;
 }
@@ -1021,7 +1141,7 @@ h2 {
   .color-title.has-delay-options {
     grid-template-columns: 20px minmax(0, 1fr) auto;
   }
-  .color-title.has-options > select:first-of-type {
+  .color-title.has-options > .color-type {
     width: 100%;
   }
   .color-title.has-options .color-actions {
@@ -1042,7 +1162,8 @@ h2 {
     width: auto;
     flex: 1;
   }
-  .color-title select {
+  .color-title select,
+  .color-title .sad-select {
     flex: 1;
     max-width: 170px;
   }
@@ -1278,7 +1399,8 @@ h2 {
   gap: 7px;
   margin-top: 8px;
 }
-.lfo-row select {
+.lfo-row select,
+.lfo-row .sad-select {
   height: 29px;
   padding: 0 27px 0 7px;
   font-size: 11px;
@@ -1430,7 +1552,8 @@ h2 {
   align-items: center;
   margin-top: 8px;
 }
-.env-route select {
+.env-route select,
+.env-route .sad-select {
   width: 100%;
   min-width: 0;
   height: 29px;
@@ -1826,7 +1949,8 @@ input[type="range"] {
   .lfo-row {
     gap: 12px;
   }
-  .lfo-row select {
+  .lfo-row select,
+  .lfo-row .sad-select {
     height: 32px;
   }
   .lfo-row label {
@@ -3285,7 +3409,8 @@ input[type="range"] {
   white-space: nowrap;
 }
 .neuro-control input,
-.neuro-control select {
+.neuro-control select,
+.neuro-control .sad-select {
   min-width: 0;
   width: 100%;
   height: 32px;
@@ -3293,6 +3418,9 @@ input[type="range"] {
   padding: 4px 7px;
   font-size: 12px;
   letter-spacing: 0;
+}
+.neuro-control .sad-select {
+  padding-right: 24px;
 }
 .neuro-control input[type="checkbox"] {
   width: 20px;
@@ -3546,7 +3674,8 @@ input[type="range"] {
   .neuro-edit-head {
     grid-template-columns: 1fr 1fr;
   }
-  .neuro-edit-head > select {
+  .neuro-edit-head > select,
+  .neuro-edit-head > .sad-select {
     grid-column: 1 / 3;
     grid-row: 2;
   }

@@ -11,12 +11,68 @@ class Element {
     this.dataset = {};
     this.attributes = new Map();
     this.value = "";
+    this.style = {};
+    this.classes = new Set();
+    this.listeners = {};
+  }
+  get className() {
+    return [...this.classes].join(" ");
+  }
+  set className(value) {
+    this.classes = new Set(String(value).split(" ").filter(Boolean));
+  }
+  get classList() {
+    const classes = this.classes;
+    return {
+      add: (name) => classes.add(name),
+      remove: (name) => classes.delete(name),
+      contains: (name) => classes.has(name),
+    };
   }
   append(...nodes) {
+    for (const node of nodes) if (node instanceof Element) node.parentNode = this;
     this.children.push(...nodes);
   }
   replaceChildren(...nodes) {
-    this.children = nodes;
+    this.children = [];
+    this.append(...nodes);
+  }
+  remove() {
+    this.parentNode?.children.splice(this.parentNode.children.indexOf(this), 1);
+    this.parentNode = null;
+  }
+  replaceWith(node) {
+    const parent = this.parentNode;
+    parent.children[parent.children.indexOf(this)] = node;
+    node.parentNode = parent;
+    this.parentNode = null;
+  }
+  contains(node) {
+    for (let n = node; n; n = n.parentNode) if (n === this) return true;
+    return false;
+  }
+  closest(selector) {
+    for (let n = this; n; n = n.parentNode)
+      if (n.classes.has(selector.slice(1))) return n;
+    return null;
+  }
+  get isConnected() {
+    let n = this;
+    while (n.parentNode) n = n.parentNode;
+    return !!n.connected;
+  }
+  focus() {
+    document.activeElement = this;
+  }
+  getBoundingClientRect() {
+    return { left: 40, top: 300, right: 240, bottom: 330, width: 200, height: 30 };
+  }
+  addEventListener(type, callback) {
+    this.listeners[type] = callback;
+  }
+  dispatchEvent(event) {
+    this[`on${event.type}`]?.(event);
+    this.listeners[event.type]?.(event);
   }
   setAttribute(key, value) {
     this.attributes.set(key, String(value));
@@ -35,9 +91,28 @@ const source = await readFile(
   process.argv[2] ?? new URL("../rust/web/sequence.js", import.meta.url),
   "utf8",
 );
+const globalListeners = {},
+  listen = (type, callback) => (globalListeners[type] = callback),
+  forget = (type) => delete globalListeners[type],
+  timers = [];
+const document = {
+  body: Object.assign(new Element("body"), { connected: true }),
+  documentElement: { clientWidth: 1280, clientHeight: 800 },
+  activeElement: null,
+  createElement: (tag) => new Element(tag),
+  addEventListener: listen,
+  removeEventListener: forget,
+};
 const context = vm.createContext({
-  window: {},
-  document: { createElement: (tag) => new Element(tag) },
+  window: { addEventListener: listen, removeEventListener: forget },
+  document,
+  setTimeout: (callback) => timers.push(callback),
+  clearTimeout: () => {},
+  Event: class {
+    constructor(type) {
+      this.type = type;
+    }
+  },
 });
 vm.runInContext(source, context);
 const step = {
@@ -276,12 +351,105 @@ console.log(
   "Sequencer editor: snapshot/reorder-safe pitch, 96 step knobs, integer Pulses/Ratchet, scalar OSC routing and ±24 st offsets passed.",
 );
 
-const lazy = control("Track destination");
-const selectedValue = lazy.value;
-assert.equal(lazy.all().filter(n => n.tagName === "OPTION").length, 1);
-lazy.onfocus();
-assert.ok(lazy.all().filter(n => n.tagName === "OPTION").length > 1);
-assert.equal(lazy.value, selectedValue);
-lazy.onblur();
-assert.equal(lazy.all().filter(n => n.tagName === "OPTION").length, 1);
-assert.equal(lazy.value, selectedValue);
+// Destination pickers: a closed picker is one button. Its section → target
+// menu exists only while open, and works by keyboard and pointer.
+const catalog = ui.catalog;
+editor.connected = true;
+preset.sequencer.tracks = [{ ...structuredClone(track), target: { kind: "oscillator", index: 2 } }];
+ui.catalog = {
+  ...catalog,
+  parameters: [
+    ["position", "Position"],
+    ["filter", "Filter 1 cutoff"],
+    ["filter_resonance", "Filter 1 resonance"],
+    ["filter10_cutoff", "Filter 10 cutoff"],
+    ["lfo1_rate", "LFO 1 rate"],
+    ["resynth_mix", "Resynth mix"],
+    ["resynth_osc2_level", "Resynth OSC 2 level"],
+  ].map(([id, name]) => ({ id, name })),
+};
+ui.buildEditor();
+const picker = control("Track destination"),
+  menuLayer = () => document.body.children[0],
+  menuRows = (depth) =>
+    menuLayer().children[depth].children.map((row) => row.children[0].textContent),
+  menuFocus = () => document.activeElement.children[0]?.textContent,
+  menuKey = (key) =>
+    menuLayer().onkeydown({
+      key,
+      target: document.activeElement,
+      preventDefault() {},
+      stopPropagation() {},
+    });
+assert.equal(picker.tagName, "BUTTON");
+assert.equal(picker.getAttribute("aria-haspopup"), "menu");
+assert.equal(picker.value, "osc:2");
+assert.equal(picker.textContent, "OSC 3 pitch offset");
+assert.equal(picker.children.length, 0, "A closed picker builds no menu");
+picker.onclick();
+assert.equal(picker.getAttribute("aria-expanded"), "true");
+assert.deepEqual(menuRows(0), ["Pitch & notes", "Main", "Filters", "LFO", "Resynth"]);
+assert.equal(menuFocus(), "Pitch & notes", "The menu opens on the value's section");
+menuKey("ArrowRight");
+assert.equal(menuFocus(), "OSC 3 pitch offset");
+assert.equal(document.activeElement.getAttribute("aria-checked"), "true");
+menuKey("ArrowUp");
+menuKey("Enter");
+assert.equal(menuLayer(), undefined, "Picking closes the menu");
+assert.equal(document.activeElement, picker);
+assert.deepEqual({ ...ui.track().target }, { kind: "oscillator", index: 1 });
+picker.onclick();
+menuKey("f");
+assert.equal(menuFocus(), "Filters", "Type-ahead");
+menuKey("ArrowRight");
+assert.deepEqual(menuRows(1), ["Filter 1", "Filter 10"]);
+menuKey("ArrowDown");
+menuKey("ArrowRight");
+assert.equal(menuLayer().children[2].getAttribute("aria-label"), "Filter 10");
+assert.deepEqual(menuRows(2), ["Cutoff"], "Filter 10 is not Filter 1");
+menuKey("ArrowLeft");
+assert.equal(menuLayer().children.length, 2);
+assert.equal(menuFocus(), "Filter 10");
+menuKey("ArrowLeft");
+menuKey("r");
+assert.equal(menuFocus(), "Resynth");
+menuKey("ArrowRight");
+assert.deepEqual(menuRows(1), ["Mix", "OSC 2"]);
+menuKey("Escape");
+assert.equal(menuLayer(), undefined);
+assert.equal(picker.getAttribute("aria-expanded"), "false");
+assert.equal(document.activeElement, picker);
+assert.equal(picker.value, "osc:1", "Escape keeps the value");
+picker.onclick();
+for (const clientY of [5, 5, 6]) {
+  menuLayer().onpointermove({ target: menuLayer().children[0].children[2].children[0], pointerType: "mouse", clientX: 5, clientY });
+  assert.equal(menuFocus(), clientY < 6 ? "Pitch & notes" : "Filters", "A resting pointer does not steal the keyboard's row");
+}
+timers.splice(0).forEach((callback) => callback());
+assert.deepEqual(menuRows(1), ["Filter 1", "Filter 10"], "Hovering a section opens it");
+menuLayer().onclick({ target: menuLayer().children[1].children[0], detail: 1 });
+assert.deepEqual(menuRows(2), ["Cutoff", "Resonance"]);
+menuLayer().onclick({ target: menuLayer().children[2].children[1], detail: 1 });
+assert.deepEqual({ ...ui.track().target }, { kind: "parameter", parameter: "filter_resonance" });
+assert.equal(picker.textContent, "Filter 1 resonance");
+document.documentElement.clientWidth = 375;
+picker.onclick();
+assert.equal(menuLayer().className, "sad-menu-layer is-drill");
+assert.equal(menuFocus(), "Filters");
+menuKey("ArrowUp");
+menuKey("Enter");
+assert.equal(menuLayer().children.length, 1, "Phones drill into a section in place");
+assert.deepEqual(menuRows(0), ["Main", "Position"]);
+assert.equal(menuFocus(), "Position");
+menuKey("ArrowLeft");
+assert.deepEqual(menuRows(0).slice(0, 2), ["Pitch & notes", "Main"]);
+assert.equal(menuFocus(), "Main");
+globalListeners.pointerdown({ target: editor });
+assert.equal(menuLayer(), undefined, "A click elsewhere closes the menu");
+assert.equal(globalListeners.scroll, undefined);
+document.documentElement.clientWidth = 1280;
+ui.catalog = catalog;
+document.activeElement = null;
+console.log(
+  "Destination menus: one closed button, section → target cascade, keyboard, type-ahead, hover, phone drill-in and outside click passed.",
+);
