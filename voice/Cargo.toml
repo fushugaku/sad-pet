@@ -21,6 +21,8 @@ rustfft = "6.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 encoding_rs = "0.8"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+roxmltree = "0.20"
 hound = { version = "3.5", optional = true }
 
 [dev-dependencies]

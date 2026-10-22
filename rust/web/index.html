@@ -5,11 +5,13 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>SAD PET</title>
     <link rel="stylesheet" href="./style.css" />
+    <link rel="stylesheet" href="./vocal.css" />
     <script src="./library.js" defer></script>
     <script src="./selection.js" defer></script>
     <script src="./presets.js" defer></script>
     <script src="./sequence.js" defer></script>
     <script src="./panels.js" defer></script>
+    <script src="./vocal.js" defer></script>
     <script src="./app.js" defer></script>
   </head>
   <body>
@@ -178,6 +180,12 @@
         </div>
         <div id="synth-oscillators" class="resynth-oscillators"></div>
       </section>
+      <section
+        id="vocal-editor"
+        class="bank vocal-bank"
+        aria-label="Vocal score"
+        hidden
+      ></section>
       <section
         id="bus-engine"
         class="bank resynth-bank synth-bank bus-bank"

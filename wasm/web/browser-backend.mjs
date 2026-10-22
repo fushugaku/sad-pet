@@ -217,6 +217,8 @@ export class BrowserBackend {
     }
     if (route === "/api/vocal/phonemes")
       return this.vocal.call("vocal", { type: "phonemes", ...data });
+    if (route === "/api/vocal/import-score")
+      return this.vocal.call("vocal", { type: "import-score", ...data });
     if (route === "/api/vocal/voice/remove") {
       await removeVoice(data.id);
       return this.vocal.call("vocal", { type: "voice-remove", id: data.id });

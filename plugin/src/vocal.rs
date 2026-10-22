@@ -290,7 +290,11 @@ impl super::Controller {
                 } else if data.get("voice").is_some() {
                     voice::bank::Voicebank::from_bytes(&decode(&data["voice"])?)?
                 } else if data.get("zip").is_some() {
-                    voice::utau::import(&unzip(&decode(&data["zip"])?)?, &options, &mut |_, _| {})?
+                    voice::utau::import(
+                        &voice::zip::unzip(&decode(&data["zip"])?)?,
+                        &options,
+                        &mut |_, _| {},
+                    )?
                 } else {
                     let mut files = voice::utau::MemoryFiles::default();
                     for file in data["files"].as_array().ok_or("Choose a voicebank")? {
@@ -332,6 +336,26 @@ impl super::Controller {
                         json!({"binary": base64.encode(bytes), "mime": "application/octet-stream"}),
                     ),
                 }
+            })(),
+            ("/api/vocal/import-score", true) => (|| {
+                let language = data["language"]
+                    .as_str()
+                    .and_then(voice::Language::parse)
+                    .unwrap_or_default();
+                let (name, bytes) = match data["path"].as_str() {
+                    Some(path) => (
+                        path.to_string(),
+                        std::fs::read(path).map_err(|e| format!("Cannot read {path}: {e}"))?,
+                    ),
+                    None => (
+                        data["name"].as_str().unwrap_or("score").to_string(),
+                        base64
+                            .decode(data["base64"].as_str().unwrap_or(""))
+                            .map_err(|e| e.to_string())?,
+                    ),
+                };
+                let score = voice::import::score(&name, &bytes, language)?;
+                Ok(json!({ "score": score }))
             })(),
             ("/api/vocal/progress", _) => {
                 let service = self.voice_service();
@@ -454,73 +478,10 @@ pub fn import_path(
         return voice::bank::Voicebank::from_bytes(&bytes);
     }
     if bytes.starts_with(b"PK") {
-        let files = unzip(&bytes)?;
+        let files = voice::zip::unzip(&bytes)?;
         return voice::utau::import(&files, options, &mut |_, _| {});
     }
     Err("Choose a UTAU voicebank folder, a .zip of one, or a .sadvoice file".into())
-}
-
-/// The files of a zip archive (stored or deflated entries).
-pub fn unzip(bytes: &[u8]) -> Result<voice::utau::MemoryFiles, String> {
-    use std::io::Read;
-    let u16_at = |i: usize| {
-        bytes
-            .get(i..i + 2)
-            .map(|b| u16::from_le_bytes([b[0], b[1]]) as usize)
-    };
-    let u32_at = |i: usize| {
-        bytes
-            .get(i..i + 4)
-            .map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize)
-    };
-    let end = (0..bytes.len().saturating_sub(21))
-        .rev()
-        .find(|&i| u32_at(i) == Some(0x0605_4b50))
-        .ok_or("Not a zip file")?;
-    let count = u16_at(end + 10).ok_or("Damaged zip file")?;
-    let mut at = u32_at(end + 16).ok_or("Damaged zip file")?;
-    let mut files = voice::utau::MemoryFiles::default();
-    for _ in 0..count {
-        if u32_at(at) != Some(0x0201_4b50) {
-            return Err("Damaged zip file".into());
-        }
-        let flags = u16_at(at + 8).unwrap_or(0);
-        let method = u16_at(at + 10).unwrap_or(0);
-        let size = u32_at(at + 20).ok_or("Damaged zip file")?;
-        let name_length = u16_at(at + 28).unwrap_or(0);
-        let extra = u16_at(at + 30).unwrap_or(0);
-        let comment = u16_at(at + 32).unwrap_or(0);
-        let local = u32_at(at + 42).ok_or("Damaged zip file")?;
-        let raw = bytes
-            .get(at + 46..at + 46 + name_length)
-            .ok_or("Damaged zip file")?;
-        // Japanese voicebanks are often zipped with Shift-JIS names.
-        let name = if flags & 0x800 != 0 {
-            String::from_utf8_lossy(raw).into_owned()
-        } else {
-            voice::utau::decode_text(raw)
-        };
-        at += 46 + name_length + extra + comment;
-        if name.ends_with('/') {
-            continue;
-        }
-        let start = local + 30 + u16_at(local + 26).unwrap_or(0) + u16_at(local + 28).unwrap_or(0);
-        let data = bytes.get(start..start + size).ok_or("Damaged zip file")?;
-        let content = match method {
-            0 => data.to_vec(),
-            8 => {
-                let mut out = Vec::new();
-                flate2::read::DeflateDecoder::new(data)
-                    .take(256 << 20)
-                    .read_to_end(&mut out)
-                    .map_err(|e| format!("{name}: {e}"))?;
-                out
-            }
-            _ => continue,
-        };
-        files.0.insert(name.replace('\\', "/"), content);
-    }
-    Ok(files)
 }
 
 #[cfg(test)]
@@ -597,7 +558,7 @@ mod tests {
         zip.extend_from_slice(&size.to_le_bytes());
         zip.extend_from_slice(&central.to_le_bytes());
         zip.extend_from_slice(&[0, 0]);
-        let files = unzip(&zip).unwrap();
+        let files = voice::zip::unzip(&zip).unwrap();
         assert_eq!(files.0.get("bank/oto.ini").unwrap(), &content);
     }
 }

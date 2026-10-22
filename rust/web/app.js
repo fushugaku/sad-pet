@@ -25,6 +25,7 @@ const sequenceEdits = new Map();
 let neuroEditor = null;
 let timbreEditor = null,
   drumEditor = null,
+  vocalEditor = null,
   timbreBusy = false;
 const drumEdits = new Map();
 let sequenceCatalog = null;
@@ -1034,8 +1035,8 @@ function syncTimbreRouting() {
   samplePanel.setAttribute("aria-label", drums ? "Drum waveform and grains"
     : synth ? "Synth waveform and grains" : "Sample and grains");
   $("drum-source-name").hidden = !history;
-  $("drum-source-name").textContent = bus
-    ? bus.master ? "Master input" : "Bus input"
+  $("drum-source-name").textContent = preset?.vocal ? "Vocal"
+    : bus ? bus.master ? "Master input" : "Bus input"
     : synth ? "Synth engine" : "Drum machine";
   $("wave").setAttribute("aria-label", drums
     ? "Live drum waveform and grains"
@@ -1073,6 +1074,7 @@ function syncTimbreRouting() {
   syncEngineType();
   timbreEditor?.sync(state?.timbres);
   drumEditor?.sync();
+  vocalEditor?.sync();
   syncSynth();
 }
 function syncAll() {
@@ -1395,11 +1397,13 @@ function syncBus() {
   $("bus-engine").hidden = !bus;
   if (!bus) return;
   const title = $("bus-title");
-  title.firstChild.textContent = bus.master ? "Master " : "Bus ";
+  const vocal = !!preset.vocal;
+  title.firstChild.textContent = bus.master ? "Master " : vocal ? "Voice chain " : "Bus ";
   title.querySelector("span").textContent = bus.master
     ? "every timbre and bus, then the output"
+    : vocal ? "the sung voice, then Master"
     : "sends from timbres, then Master";
-  $("bus-engine").setAttribute("aria-label", bus.master ? "Master" : "Bus");
+  $("bus-engine").setAttribute("aria-label", bus.master ? "Master" : vocal ? "Voice chain" : "Bus");
   $("bus-filters").checked = !!bus.filters;
   const buffer = $("bus-buffer");
   if (document.activeElement !== buffer)
@@ -4293,6 +4297,16 @@ async function init() {
           ),
       });
     }
+    if (window.SadVocal && state.timbres?.timbres)
+      vocalEditor = new window.SadVocal($("vocal-editor"), {
+        read: () => preset,
+        context: () => state?.timbres,
+        host: () => state?.plugin,
+        request,
+        api,
+        notify,
+        download,
+      });
     buildKeyboard();
     bind();
     sampleSelection = new window.SadSampleSelection({

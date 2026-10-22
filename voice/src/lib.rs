@@ -8,6 +8,7 @@ pub mod bank;
 pub mod concat;
 pub mod formant;
 pub mod g2p;
+pub mod import;
 pub mod params;
 pub mod phoneme;
 pub mod pitch;
@@ -18,5 +19,6 @@ pub mod timing;
 pub mod utau;
 pub mod vocoder;
 pub mod wav;
+pub mod zip;
 
 pub use phoneme::{Language, Phoneme, Syllable};

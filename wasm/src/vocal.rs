@@ -371,6 +371,19 @@ fn worker_command(w: &mut Worker, request: Value) -> Result<Value, String> {
                     .collect::<Vec<_>>()
             ))
         }
+        "import-score" => {
+            use base64::Engine as _;
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(request["base64"].as_str().unwrap_or(""))
+                .map_err(|e| e.to_string())?;
+            let language = request["language"]
+                .as_str()
+                .and_then(voice::Language::parse)
+                .unwrap_or_default();
+            let score =
+                voice::import::score(request["name"].as_str().unwrap_or(""), &bytes, language)?;
+            Ok(json!({ "score": score }))
+        }
         "import-begin" => {
             w.import = Some(Import {
                 files: Default::default(),
