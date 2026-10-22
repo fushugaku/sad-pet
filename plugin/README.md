@@ -371,10 +371,10 @@ run (x86_64 needs Rosetta 2 on Apple silicon), that target builds without PGO an
 prints a warning. Profiles are cached in the build folder under a hash of the
 toolchain and every engine source, so any change trains a new one. On an M5 Max
 every case of the engine benchmark (see `rust/examples/audio_benchmark.rs`) runs
-1.5-17% faster, 8.8% on average. Native x86_64 runs most cases faster as well (8.8%
-on average on GitHub's Windows runner, 12.7% on its Intel Mac), but on Windows the
-scenes that play Resynth layers, including the first-open preset, run up to 14% slower,
-so CI profile-guides only the Apple silicon slice. `python3 plugin/scripts/pgo_benchmark.py`
+1.8-23% faster, 9.0% on average. Native x86_64 runs most cases faster as well (6.3%
+on average on GitHub's AMD EPYC Windows runner, 9.3% on its Intel Mac), but on Windows
+the scenes that play Resynth layers, including the first-open preset, run up to 21%
+slower, so CI profile-guides only the Apple silicon slice. `python3 plugin/scripts/pgo_benchmark.py`
 repeats the comparison on this machine, alternating normal and PGO builds and failing
 if a sample changes; the **Benchmark profile-guided engine** workflow runs it on
 Windows x64, an Intel Mac and Apple silicon.
