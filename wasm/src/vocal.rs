@@ -223,7 +223,9 @@ pub extern "C" fn sad_vocal_plan(count: usize) -> *mut f64 {
 pub extern "C" fn sad_vocal_plan_commit(part: u32, count: usize) -> usize {
     let plan: Vec<(u64, u64)> = PLAN.with(|p| {
         p.borrow()
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .take(count)
             .map(|t| (t[0] as u64, t[1] as u64))
             .collect()
