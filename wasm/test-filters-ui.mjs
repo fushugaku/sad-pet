@@ -69,6 +69,8 @@ const preset = {
 const context = {
   preset,
   $: get,
+  window: {},
+  requestAnimationFrame: () => 1,
   percent: (v) => `${v * 100}%`,
   signedPercent: (v) => `${v * 100}%`,
   controls: new Map(),

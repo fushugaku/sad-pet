@@ -461,6 +461,7 @@ const filterChoices = {
 function setParam(key, value) {
   preset.params[key] = value;
   syncControl(key);
+  if (/^(filter2?|vcf2?_type)(_|$)/.test(key)) refreshFilterGraphs();
   if (typeof value === "number") scheduleParameter(key, value);
   else if (filterChoices[key])
     scheduleParameter(key, filterChoices[key].indexOf(value));
@@ -720,9 +721,14 @@ function buildFilters() {
       .slice(1, -1)
       .map(([id, label]) => `<option value="${id}">${label}</option>`)
       .join("");
-    card.innerHTML = `<div class="filter-title"><strong>Filter ${number}</strong><select id="${prefix}-type" aria-label="Filter ${number} model"><optgroup label="SAD PET">${responses("legacy")}</optgroup><optgroup label="Rustias">${models}</optgroup><optgroup label="RADIAS Filter 2">${responses("radias2")}</optgroup></select><select id="${prefix}-env" aria-label="Filter ${number} envelope"><option value="env1">ENV 1</option><option value="env2">ENV 2</option><option value="env3">ENV 3</option></select></div><div id="${prefix}-controls" class="knob-grid filter-controls"></div>`;
+    card.innerHTML = `<div class="filter-title"><strong>Filter ${number}</strong><select id="${prefix}-type" aria-label="Filter ${number} model"><optgroup label="SAD PET">${responses("legacy")}</optgroup><optgroup label="Rustias">${models}</optgroup><optgroup label="RADIAS Filter 2">${responses("radias2")}</optgroup></select><select id="${prefix}-env" aria-label="Filter ${number} envelope"><option value="env1">ENV 1</option><option value="env2">ENV 2</option><option value="env3">ENV 3</option></select></div>${filterGraphMarkup(number)}<div id="${prefix}-controls" class="knob-grid filter-controls"></div>`;
     $("filters").append(card);
     const type = i === 0 ? "vcf_type" : "vcf2_type";
+    card.querySelector(".filter-graph").spec = () => {
+      const p = preset?.params;
+      return p && filterGraphSpec(p[`${prefix}_model`] ?? "legacy", p[type], p[prefix],
+        p[`${prefix}_env_depth`], p[`${prefix}_resonance`], p[`${prefix}_morph`]);
+    };
     $(`${prefix}-type`).onchange = (e) => {
       const [model, response] = e.target.value.split(":");
       setParam(`${prefix}_model`, model);
@@ -761,6 +767,39 @@ function buildFilters() {
   $("filter-routing").onchange = (e) =>
     setParam("filter_routing", e.target.value);
   $("add-filter").onclick = addFilter;
+}
+// Filter cards plot the engine's own response: it rings an impulse through
+// the real filter, one request per card at a time.
+const filterGraphMarkup = (number) =>
+  `<div class="filter-graph" role="img" aria-label="Filter ${number} response">${window.SadFilterGraph?.markup ?? ""}</div>`;
+// The dashed curve is the cutoff at the envelope's peak.
+const filterGraphSpec = (model, kind, cutoff, depth, resonance, morph) => ({
+  model, kind, resonance, morph,
+  cutoffs: depth ? [cutoff, Math.min(1, Math.max(0, cutoff + depth))] : [cutoff],
+});
+let filterGraphFrame = 0;
+function refreshFilterGraphs() {
+  if (filterGraphFrame) return;
+  filterGraphFrame = requestAnimationFrame(() => {
+    filterGraphFrame = 0;
+    document.querySelectorAll(".filter-card .filter-graph").forEach(drawFilterGraph);
+  });
+}
+async function drawFilterGraph(graph) {
+  const spec = graph.spec?.(),
+    shape = JSON.stringify(spec);
+  if (!spec || graph.busy || graph.dataset.shape === shape) return;
+  graph.busy = true;
+  try {
+    window.SadFilterGraph.draw(graph, (await request("/api/filter/response", spec)).curves);
+    graph.dataset.shape = shape;
+  } catch {
+    // An engine without the route keeps the card as it was.
+    return;
+  } finally {
+    graph.busy = false;
+  }
+  if (graph.isConnected && JSON.stringify(graph.spec()) !== shape) drawFilterGraph(graph);
 }
 function syncFilters() {
   if (!preset) return;
@@ -807,6 +846,7 @@ function syncFilters() {
     controls.get(prefix)?.();
   }
   syncAddedFilters();
+  refreshFilterGraphs();
 }
 // Filters 3 and up. Positions inside a note's path run one filter per voice
 // with its own envelope and key tracking; the others are one shared filter
@@ -925,6 +965,7 @@ function syncAddedFilters() {
     for (const [field] of FILTER_SLOT_CONTROLS)
       controls.get(`filter_slot:${slot.id}:${field}`)?.();
   }
+  refreshFilterGraphs();
 }
 function addedFilterCard(index, slot) {
   const number = index + 3,
@@ -933,7 +974,11 @@ function addedFilterCard(index, slot) {
   card.className = "filter-card added-filter-card";
   card.classList.toggle("inactive", !slot.enabled);
   card.dataset.id = id;
-  card.innerHTML = `<div class="filter-title added-filter-title"><strong>Filter ${number}</strong><select class="added-filter-position" aria-label="Filter ${number} position"></select><select class="added-filter-type" aria-label="Filter ${number} model">${filterModelOptions()}</select><select class="added-filter-env" aria-label="Filter ${number} envelope"><option value="env1">ENV 1</option><option value="env2">ENV 2</option><option value="env3">ENV 3</option></select><div class="color-actions"><button class="color-bypass" aria-label="Bypass Filter ${number}" title="Bypass" aria-pressed="${!slot.enabled}">⏻</button><button class="color-up" aria-label="Move Filter ${number} up" title="Move up">↑</button><button class="color-down" aria-label="Move Filter ${number} down" title="Move down">↓</button><button class="color-remove" aria-label="Remove Filter ${number}" title="Remove">×</button></div></div><div id="filter-slot-${id}-controls" class="knob-grid filter-controls"></div>`;
+  card.innerHTML = `<div class="filter-title added-filter-title"><strong>Filter ${number}</strong><select class="added-filter-position" aria-label="Filter ${number} position"></select><select class="added-filter-type" aria-label="Filter ${number} model">${filterModelOptions()}</select><select class="added-filter-env" aria-label="Filter ${number} envelope"><option value="env1">ENV 1</option><option value="env2">ENV 2</option><option value="env3">ENV 3</option></select><div class="color-actions"><button class="color-bypass" aria-label="Bypass Filter ${number}" title="Bypass" aria-pressed="${!slot.enabled}">⏻</button><button class="color-up" aria-label="Move Filter ${number} up" title="Move up">↑</button><button class="color-down" aria-label="Move Filter ${number} down" title="Move down">↓</button><button class="color-remove" aria-label="Remove Filter ${number}" title="Remove">×</button></div></div>${filterGraphMarkup(number)}<div id="filter-slot-${id}-controls" class="knob-grid filter-controls"></div>`;
+  card.querySelector(".filter-graph").spec = () => {
+    const s = findFilterSlot(id);
+    return s && filterGraphSpec(s.model, s.kind, s.cutoff, s.env_depth, s.resonance, s.morph);
+  };
   const position = card.querySelector(".added-filter-position");
   position.replaceChildren(
     ...FILTER_POSITIONS.map(([value, label]) => option(value, label)),
@@ -992,6 +1037,7 @@ function addedFilterCard(index, slot) {
           s[field] = value;
           controls.get(key)?.();
           scheduleParameter(`filter${number}_${field}`, value);
+          refreshFilterGraphs();
         },
         reset: () => FILTER_SLOT_DEFAULT[field],
       },

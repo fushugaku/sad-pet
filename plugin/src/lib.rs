@@ -903,6 +903,7 @@ impl Controller {
             }
             ("/api/sequencer/catalog", false) => Ok(sad_pet::sequence::catalog()),
             ("/api/drums/catalog", false) => Ok(sad_pet::drums::catalog()),
+            ("/api/filter/response", true) => sad_pet::dsp::filter::response_request(data),
             ("/api/drums/edit", true) => {
                 let edits = sad_pet::drums::parse_edits(data)?;
                 if self.preset.drums.is_none() {

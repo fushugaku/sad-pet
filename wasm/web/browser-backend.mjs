@@ -731,6 +731,8 @@ export class BrowserBackend {
           "/api/effect-presets/factory",
           "/api/sequencer/catalog",
           "/api/drums/catalog",
+          // Rings an impulse through a filter: off the audio thread.
+          "/api/filter/response",
         ].includes(route)
       ) {
         result = await this.worker.call("request", data, [], route);

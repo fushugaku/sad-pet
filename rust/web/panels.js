@@ -428,28 +428,33 @@
     }
     return Math.hypot(...h);
   }
-  // 20 Hz to 20 kHz across, +18 to −42 dB down.
-  const sweep = (gain) => {
-    let path = "";
-    for (let i = 0; i <= 150; i++) {
-      const db = 20 * Math.log10(gain(20 * 1000 ** (i / 150)) || 1e-9);
-      path += `${i ? "L" : "M"}${i * 4} ${((18 - Math.min(18, Math.max(-42, db))) * 5) / 3}`;
-    }
-    return path;
-  };
+  // Response graphs, shared with the instrument's filter cards: dB values
+  // spaced evenly in octaves from 20 Hz to 20 kHz, drawn from +18 to −42 dB.
+  const curvePath = (db) =>
+    db.map((v, i) =>
+      `${i ? "L" : "M"}${((i * 600) / (db.length - 1)).toFixed(1)} ${(((18 - Math.min(18, Math.max(-42, v))) * 5) / 3).toFixed(1)}`,
+    ).join("");
+  // Dashed: where the envelope's peak moves the cutoff.
+  function drawResponse(graph, [curve, sweep]) {
+    const path = curvePath(curve);
+    graph.querySelector(".curve").setAttribute("d", path);
+    graph.querySelector(".fill").setAttribute("d", `${path}L600 100L0 100Z`);
+    graph.querySelector(".sweep").setAttribute("d", sweep ? curvePath(sweep) : "");
+  }
   const GRAPH = `<svg viewBox="0 0 600 100" preserveAspectRatio="none" aria-hidden="true">${[100, 1000, 10000].map((hz) => `<line class="grid" x1="${(Math.log10(hz / 20) * 200).toFixed(1)}" x2="${(Math.log10(hz / 20) * 200).toFixed(1)}" y1="0" y2="100"/>`).join("")}<line class="grid zero" x1="0" x2="600" y1="30" y2="30"/><path class="fill"/><path class="sweep"/><path class="curve"/></svg>${[100, 1000, 10000].map((hz) => `<span style="left:${(Math.log10(hz / 20) * 100) / 3}%">${hz < 1000 ? hz : `${hz / 1000}k`}</span>`).join("")}`;
   function drawGraph(graph, { kind, cutoff, resonance, morph, env }, p) {
     const type = kind(p),
       shape = [type, p[cutoff], p[resonance], p[morph], p[env]].join();
     if (graph.dataset.shape === shape) return;
     graph.dataset.shape = shape;
-    const gain = (fc) => (hz) => filterGain(type, hz, fc, p[resonance], p[morph]);
-    const curve = sweep(gain(p[cutoff]));
-    graph.querySelector(".curve").setAttribute("d", curve);
-    graph.querySelector(".fill").setAttribute("d", `${curve}L600 100L0 100Z`);
-    // Dashed: where the filter envelope's peak moves the cutoff.
-    graph.querySelector(".sweep").setAttribute("d", type && p[env]
-      ? sweep(gain(p[cutoff] * 2 ** (p[env] / 12))) : "");
+    const curve = (fc) =>
+      Array.from({ length: 160 }, (_, i) =>
+        20 * Math.log10(filterGain(type, 20 * 1000 ** (i / 159), fc, p[resonance], p[morph]) || 1e-9),
+      );
+    drawResponse(graph, [
+      curve(p[cutoff]),
+      type && p[env] ? curve(p[cutoff] * 2 ** (p[env] / 12)) : null,
+    ]);
   }
   // Voice modules: sources, envelopes, filters and output, then modulation.
   // Three to a row in the All layout. Menus sit in the heading so knobs keep
@@ -1037,7 +1042,7 @@
         heading.append(el("h3", "", module.title));
         let graph = null;
         if (module.graph) {
-          graph = el("div", "drum-filter-graph");
+          graph = el("div", "filter-graph");
           graph.setAttribute("role", "img");
           graph.setAttribute("aria-label", `${name} ${module.title} response`);
           graph.innerHTML = GRAPH;
@@ -1166,4 +1171,5 @@
   window.SadTimbres = Timbres;
   Drums.filterGain = filterGain;
   window.SadDrums = Drums;
+  window.SadFilterGraph = { markup: GRAPH, draw: drawResponse };
 })();

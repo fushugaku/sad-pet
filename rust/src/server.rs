@@ -260,6 +260,11 @@ fn handle(
                     .map_err(|e| e.to_string())?;
                 json(&serde_json::json!({"ok":true}))
             }
+            "/api/filter/response" => {
+                let value: serde_json::Value =
+                    serde_json::from_slice(&bytes).map_err(|e| format!("Filter response: {e}"))?;
+                json(&crate::dsp::filter::response_request(&value)?)
+            }
             "/api/sequencer/view" => {
                 let value: serde_json::Value =
                     serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;

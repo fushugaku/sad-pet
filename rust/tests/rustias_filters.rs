@@ -285,3 +285,83 @@ fn presets_and_host_ids_remain_compatible_and_new_controls_are_realtime() {
     assert_eq!(restored.params, e.preset.params);
     assert_eq!(restored.params.filter_model, M::Radias2);
 }
+
+#[test]
+fn editor_responses_follow_each_models_shape() {
+    use sad_pet::dsp::filter::{RESPONSE_POINTS, response, response_request};
+    // dB at 50 Hz and 5 kHz, and the deepest point. Rustias models lose some
+    // top end to their oversampling, so the 20 kHz end is not a pass band.
+    let ends = |model, kind, cutoff, resonance, morph| {
+        let db = response(model, kind, cutoff, resonance, morph);
+        assert_eq!(db.len(), RESPONSE_POINTS);
+        assert!(db.iter().all(|v| v.is_finite()), "{model:?} {kind:?}");
+        let at =
+            |hz: f64| db[((hz / 20.0).log(1000.0) * (RESPONSE_POINTS - 1) as f64).round() as usize];
+        (
+            at(50.0),
+            at(5000.0),
+            db.iter().copied().fold(f32::MAX, f32::min),
+        )
+    };
+    for model in [
+        M::LadderLp24,
+        M::Ms20Lp12,
+        M::ProLp24,
+        M::MPolyLp24,
+        M::LinearLp12,
+        M::LinearLp24,
+    ] {
+        let (low, high, _) = ends(model, FilterType::LowPass, 0.4, 0.1, 0.0);
+        assert!(
+            low > -6.0 && high < low - 24.0,
+            "{model:?} low-pass: {low} / {high} dB"
+        );
+    }
+    for model in [M::Ms20Hp12, M::LadderHp24, M::LinearHp12, M::LinearHp24] {
+        let (low, high, _) = ends(model, FilterType::LowPass, 0.6, 0.0, 0.0);
+        assert!(
+            high > -6.0 && low < high - 24.0,
+            "{model:?} high-pass: {low} / {high} dB"
+        );
+    }
+    let (low, high, deepest) = ends(M::LinearNotch24, FilterType::LowPass, 0.5, 0.0, 0.0);
+    assert!(
+        deepest < low.min(high) - 20.0,
+        "Notch: {low} / {deepest} / {high} dB"
+    );
+    for kind in [FilterType::LowPass, FilterType::HighPass] {
+        let (low, high, _) = ends(M::Legacy, kind, 0.5, 0.0, 0.0);
+        let (pass, stop) = if kind == FilterType::LowPass {
+            (low, high)
+        } else {
+            (high, low)
+        };
+        assert!(
+            pass > -3.0 && stop < -24.0,
+            "SAD PET {kind:?}: {low} / {high} dB"
+        );
+    }
+    // Comb peaks repeat across the spectrum, so its curve swings widely.
+    let comb = response(M::Legacy, FilterType::Comb, 0.3, 1.0, 0.0);
+    let swing = comb.iter().copied().fold(f32::MIN, f32::max)
+        - comb.iter().copied().fold(f32::MAX, f32::min);
+    assert!(swing > 12.0, "Comb swing {swing} dB");
+    // Resonance lifts a peak above the passband.
+    let flat = response(M::Legacy, FilterType::LowPass, 0.5, 0.0, 0.0);
+    let resonant = response(M::Legacy, FilterType::LowPass, 0.5, 0.9, 0.0);
+    let peak = |db: &[f32]| db.iter().copied().fold(f32::MIN, f32::max);
+    assert!(peak(&resonant) > peak(&flat) + 6.0);
+
+    let reply = response_request(&serde_json::json!({
+        "model": "radias2", "kind": "band_pass", "cutoffs": [0.3, 0.6], "resonance": 0.5, "morph": 0
+    }))
+    .unwrap();
+    assert_eq!(reply["curves"].as_array().unwrap().len(), 2);
+    for bad in [
+        serde_json::json!({"model": "nope", "kind": "low_pass", "cutoffs": [0.5], "resonance": 0, "morph": 0}),
+        serde_json::json!({"model": "sem", "kind": "low_pass", "cutoffs": [], "resonance": 0, "morph": 0}),
+        serde_json::json!({"model": "sem", "kind": "low_pass", "cutoffs": [0.5], "resonance": "x", "morph": 0}),
+    ] {
+        assert!(response_request(&bad).is_err());
+    }
+}

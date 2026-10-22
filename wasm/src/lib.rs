@@ -195,6 +195,7 @@ impl Host {
             }
             "/api/sequencer/catalog" => Ok(sad_pet::sequence::catalog()),
             "/api/drums/catalog" => Ok(sad_pet::drums::catalog()),
+            "/api/filter/response" => sad_pet::dsp::filter::response_request(data),
             "/api/drums/edit" => {
                 let edits = sad_pet::drums::parse_edits(data)?;
                 self.engine.apply_drum_edits(&edits);
