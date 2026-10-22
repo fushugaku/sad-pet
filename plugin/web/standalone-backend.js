@@ -44,12 +44,45 @@ window.sadPetFetch = async (path, options = {}) => {
   });
 };
 
+// The output menu replaces the device name in the footer status.
+const output = document.createElement("select");
+output.id = "output-device";
+output.setAttribute("aria-label", "Audio output");
+output.title = "Audio output";
+let shownDevice = null;
+async function refreshOutputs() {
+  const envelope = await call({ path: "/api/app/audio-outputs", method: "GET", data: null });
+  if (envelope.status !== 200) return;
+  const { outputs = [], output: current } = envelope.data;
+  output.replaceChildren(...outputs.map((name) => new Option(name, name)));
+  if (!current) output.prepend(new Option("No output", ""));
+  output.value = current || "";
+}
+// Devices plugged in since the menu was filled appear before it opens.
+output.addEventListener("pointerenter", () => refreshOutputs().catch(() => {}));
+output.addEventListener("focus", () => refreshOutputs().catch(() => {}));
+output.addEventListener("change", async () => {
+  output.disabled = true;
+  try {
+    const envelope = await call({ path: "/api/app/audio-output", method: "POST", data: { output: output.value } });
+    if (envelope.status !== 200) window.notify?.(envelope.data?.error || "Cannot open this audio output.", true);
+  } finally {
+    output.disabled = false;
+    await refreshOutputs().catch(() => {});
+  }
+});
+
 window.sadPetAudio = {
   enable: async () => {},
   status: () => {
-    if (!latest) return "Audio device";
-    if (!latest.audio_enabled) return latest.audio_device || "No audio device";
-    return `${latest.audio_device} · ${(latest.sample_rate / 1000).toFixed(1)} kHz${latest.audio_input ? " · input on" : ""}`;
+    if (!latest) return "";
+    // The app may switch devices itself, e.g. when headphones are unplugged.
+    if (latest.audio_device !== shownDevice) {
+      shownDevice = latest.audio_device;
+      refreshOutputs().catch(() => {});
+    }
+    if (!latest.audio_enabled) return "No audio output";
+    return `${(latest.sample_rate / 1000).toFixed(1)} kHz${latest.audio_input ? " · input on" : ""}`;
   },
 };
 
@@ -72,8 +105,9 @@ const settingsButton = (label, title) => {
   button.onclick = () => window.sadPetNative.settings();
   return button;
 };
+document.getElementById("audio-led").after(output);
 document.querySelector(".runtime-status")
-  .append(settingsButton("Audio/MIDI…", "Choose the audio device, sample rate, buffer size and MIDI inputs"));
+  .append(settingsButton("Audio/MIDI…", "Choose the audio input, sample rate, buffer size and MIDI inputs"));
 const midiLabel = document.createElement("span");
 midiLabel.className = "midi-summary";
 midiLabel.textContent = "All MIDI inputs";

@@ -64,7 +64,10 @@ public:
 
     const juce::String getApplicationName() override { return JucePlugin_Name; }
     const juce::String getApplicationVersion() override { return JucePlugin_VersionString; }
-    bool moreThanOneInstanceAllowed() override { return false; }
+    // A test instance with its own folder may run beside the user's app.
+    bool moreThanOneInstanceAllowed() override {
+        return juce::SystemStats::getEnvironmentVariable("SAD_PET_APP_DIR", {}).isNotEmpty();
+    }
     void anotherInstanceStarted(const juce::String&) override {
         if (window != nullptr) window->toFront(true);
     }
@@ -83,6 +86,8 @@ public:
         host.showAudioSettings = [this] { holder->showAudioSettingsDialog(); };
         host.setInputWanted = [this](bool wanted) { setInputWanted(wanted); };
         host.editorMessage = [this](const juce::String& message) { editorMessages.add(message); };
+        host.audioOutputs = [this] { return audioOutputs(); };
+        host.setAudioOutput = [this](const juce::String& name) { return setAudioOutput(name); };
         holder->deviceManager.addChangeListener(this);
         changeListenerCallback(nullptr);
 
@@ -107,6 +112,8 @@ public:
         host.showAudioSettings = nullptr;
         host.setInputWanted = nullptr;
         host.editorMessage = nullptr;
+        host.audioOutputs = nullptr;
+        host.setAudioOutput = nullptr;
         if (holder != nullptr) {
             holder->deviceManager.removeChangeListener(this);
             holder->stopPlaying();
@@ -142,6 +149,34 @@ private:
         juce::MemoryBlock data;
         holder->processor->getStateInformation(data);
         if (data.getSize() > 0) sessionFile().replaceWithData(data.getData(), data.getSize());
+    }
+
+    juce::var audioOutputs() {
+        auto& manager = holder->deviceManager;
+        juce::Array<juce::var> outputs;
+        if (auto* type = manager.getCurrentDeviceTypeObject()) {
+            // Rescan so devices plugged in since launch are offered.
+            type->scanForDevices();
+            for (const auto& name : type->getDeviceNames(false)) outputs.add(name);
+        }
+        auto* result = new juce::DynamicObject();
+        result->setProperty("outputs", outputs);
+        result->setProperty("output", manager.getAudioDeviceSetup().outputDeviceName);
+        return juce::var(result);
+    }
+
+    juce::String setAudioOutput(const juce::String& name) {
+        auto& manager = holder->deviceManager;
+        auto* type = manager.getCurrentDeviceTypeObject();
+        if (type == nullptr || !type->getDeviceNames(false).contains(name))
+            return "This audio output is no longer connected.";
+        auto setup = manager.getAudioDeviceSetup();
+        if (setup.outputDeviceName == name) return {};
+        setup.outputDeviceName = name;
+        setup.useDefaultOutputChannels = true;
+        const auto error = manager.setAudioDeviceSetup(setup, true);
+        changeListenerCallback(nullptr);
+        return error;
     }
 
     void setInputWanted(bool wanted) {

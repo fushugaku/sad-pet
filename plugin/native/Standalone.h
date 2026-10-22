@@ -15,6 +15,10 @@ struct Host {
     std::function<void()> showAudioSettings;
     std::function<void(bool)> setInputWanted;
     std::function<void(const juce::String&)> editorMessage;
+    /// {outputs, output}: the current driver's output devices and the open one.
+    std::function<juce::var()> audioOutputs;
+    /// Opens the named output device; returns an error message or an empty string.
+    std::function<juce::String(const juce::String&)> setAudioOutput;
     /// The current audio device, readable from any thread.
     void setDevice(const juce::var& summary);
     juce::var describe() const;

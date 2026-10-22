@@ -19,6 +19,13 @@
 .standalone .audio-settings {
   white-space: nowrap;
 }
+.standalone .runtime-status .audio-settings {
+  margin-left: 10px;
+}
+.standalone #output-device {
+  max-width: 260px;
+  margin-right: 8px;
+}
 .standalone footer {
   gap: 12px;
   flex-wrap: wrap;

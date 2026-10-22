@@ -154,6 +154,16 @@ bool Services::intercept(const juce::var& request, juce::WebBrowserComponent::Na
         complete(envelope(200, property("ok", true)));
         return true;
     }
+    if (path == "/api/app/audio-outputs") {
+        complete(host().audioOutputs ? envelope(200, host().audioOutputs()) : failure("No audio device is available."));
+        return true;
+    }
+    if (path == "/api/app/audio-output" && post) {
+        const auto error = host().setAudioOutput ? host().setAudioOutput(request["data"]["output"].toString())
+                                                 : juce::String("No audio device is available.");
+        complete(error.isEmpty() ? envelope(200, property("ok", true)) : failure(error));
+        return true;
+    }
     if (path == "/api/app/log") {
         const auto message = request["data"]["message"].toString();
         juce::Logger::writeToLog("SAD PET editor: " + message);

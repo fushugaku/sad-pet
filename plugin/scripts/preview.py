@@ -62,6 +62,7 @@ def main():
         audio = lib.sad_control_prepare(controller, 48000)
         instances.append((controller, audio, (c.c_float * size)()))
     recorder = {"next": 0, "active": None, "take": None}
+    outputs = {"names": ["Preview speakers", "Preview headphones"], "current": "Preview speakers"}
     left, right = (c.c_float * 2048)(), (c.c_float * 2048)()
     incoming = (c.c_float * 2048)(*(0.15 * math.sin(i * 0.04) for i in range(2048)))
 
@@ -98,6 +99,13 @@ def main():
                 else:
                     data["path"] = chosen[0]
             return None
+        if path == "/api/app/audio-outputs":
+            return {"status": 200, "data": {"outputs": outputs["names"], "output": outputs["current"]}}
+        if path == "/api/app/audio-output":
+            if data.get("output") not in outputs["names"]:
+                return {"status": 400, "data": {"error": "This audio output is no longer connected."}}
+            outputs["current"] = data["output"]
+            return {"status": 200, "data": {"ok": True}}
         if path in ("/api/app/audio-settings", "/api/app/log"):
             if path == "/api/app/log":
                 print("editor:", data.get("message"), flush=True)
@@ -150,7 +158,7 @@ def main():
                 response = take(lib.sad_control_request(controller, encoded, len(encoded)))
                 if app and request.get("path") == "/api/state" and response["status"] == 200:
                     response["data"]["recording"] = recording_state()
-                    response["data"].update(audio_device="Preview (no sound)", audio_input=response["data"]["input"]["active"])
+                    response["data"].update(audio_device=outputs["current"], audio_input=response["data"]["input"]["active"])
             body = json.dumps(response, separators=(",", ":")).encode()
             if app and any(key in text for text in (data, body) for key in (b'"binary"', b'"base64"', b'"sample_wav"')):
                 print("AUDIO CROSSED THE EDITOR BOUNDARY:", request.get("path"), flush=True)
