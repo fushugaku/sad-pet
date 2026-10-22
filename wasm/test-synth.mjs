@@ -15,8 +15,8 @@ const utility = new Core(module, rate),
 utility.call("sad_prepare", utility.call("sad_factory", undefined, 0));
 core.call("sad_load", utility.call("sad_pack"));
 const context = core.request("/api/timbres/add", { kind: "synth" });
-assert.equal(context.active, 1);
-const part = context.timbres.find((t) => t.id === 1);
+const synthId = context.active;
+const part = context.timbres.find((t) => t.id === synthId);
 assert.equal(part.kind, "synth");
 assert.equal(part.name, "Synth 1");
 core.request("/api/timbres/update", { id: 0, muted: true });
@@ -87,15 +87,14 @@ peakOf(8);
 
 utility.call("sad_scene_load", core.call("sad_scene_pack"));
 const scene = utility.json("sad_scene_document");
-assert.equal(scene.timbres.length, 1);
-assert.equal(scene.timbres[0].meta.kind, "synth");
+assert.deepEqual(scene.timbres.map((t) => t.meta.kind), ["synth", "master"]);
 assert.equal(scene.timbres[0].preset.synth.count, 2);
 assert.equal(scene.timbres[0].preset.synth.granular, true);
 assert.equal(scene.preset.synth, undefined, "A granular preset gained a synth");
 const recalled = new Core(module, rate);
 recalled.call("sad_scene_load", utility.call("sad_scene_prepare", scene));
 const restored = recalled.request("/api/state");
-assert.equal(restored.timbres.active, 1);
+assert.equal(restored.timbres.active, synthId);
 assert.equal(restored.timbres.timbres[1].kind, "synth");
 assert.equal(restored.sample_name, "Synth engine");
 assert.equal(restored.preset.synth.oscillators[1].transpose, 12);

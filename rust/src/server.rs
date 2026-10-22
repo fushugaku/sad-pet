@@ -269,6 +269,8 @@ fn handle(
                 }
                 let mut preset: Preset =
                     serde_json::from_value(value).map_err(|e| format!("Preset: {e}"))?;
+                // The desktop app has one engine and no buses to feed one.
+                preset.bus = None;
                 preset.sanitize();
                 let rate = state.lock().map_err(|e| e.to_string())?.sample_rate;
                 let (reply, result) = std::sync::mpsc::sync_channel(1);

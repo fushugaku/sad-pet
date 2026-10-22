@@ -131,6 +131,10 @@ pub struct Audio {
     parts: Option<Box<timbres::PartAudio>>,
     audible: bool,
     smooth_part_gain: f32,
+    /// Smoothed Bus sends of this part's output.
+    sends: sad_pet::timbres::SendGains,
+    /// Set on the root part while any Bus exists, so sends are summed.
+    buses: bool,
     engine: Box<Engine>,
     commands: Consumer<Update>,
     retired: Producer<Update>,
@@ -183,6 +187,7 @@ impl Controller {
         control.region = sad_pet::startup::REGION;
         control.fades = sad_pet::startup::FADES;
         control.selection.id = format!("factory:{}", sad_pet::startup::INDEX);
+        control.ensure_master();
         control
     }
 
@@ -296,21 +301,22 @@ impl Controller {
                 None
             },
             sample,
-            live: (source != Source::File || preset.history().is_some()).then(|| {
-                let mut input = preset.history().map_or_else(
-                    || LiveInput::new(self.rate, source == Source::Effects),
-                    |h| LiveInput::for_drums(self.rate, !h.granular, h.buffer_seconds),
-                );
-                input.sample.name = if preset.drums.is_some() {
-                    "Drum machine"
-                } else if preset.synth.is_some() {
-                    sad_pet::dsp::synth::NAME
-                } else {
-                    "DAW input"
-                }
-                .into();
-                input
-            }),
+            live: (preset.bus.is_none() && (source != Source::File || preset.history().is_some()))
+                .then(|| {
+                    let mut input = preset.history().map_or_else(
+                        || LiveInput::new(self.rate, source == Source::Effects),
+                        |h| LiveInput::for_drums(self.rate, !h.granular, h.buffer_seconds),
+                    );
+                    input.sample.name = if preset.drums.is_some() {
+                        "Drum machine"
+                    } else if preset.synth.is_some() {
+                        sad_pet::dsp::synth::NAME
+                    } else {
+                        "DAW input"
+                    }
+                    .into();
+                    input
+                }),
             region,
             fades,
         }
@@ -331,14 +337,18 @@ impl Controller {
             self.preset.clone(),
         ));
         engine.set_midi_gate(self.midi_gate);
-        let mut source =
-            self.prepared_source(self.sample.clone(), self.source, self.region, self.fades);
-        engine.exchange_source(&mut source.sample, &mut source.live);
-        if self.source == Source::File {
-            let _ = engine.set_region(self.region);
-            let _ = engine.set_fades(self.fades);
+        // A Bus or Master reads other timbres: it has no file source, and its
+        // Granular history comes prepared with the preset.
+        if self.preset.bus.is_none() {
+            let mut source =
+                self.prepared_source(self.sample.clone(), self.source, self.region, self.fades);
+            engine.exchange_source(&mut source.sample, &mut source.live);
+            if self.source == Source::File {
+                let _ = engine.set_region(self.region);
+                let _ = engine.set_fades(self.fades);
+            }
+            engine.exchange_processed_source(&mut source.processed);
         }
-        engine.exchange_processed_source(&mut source.processed);
         engine.set_playing(
             self.playing
                 && (self.effect || self.preset.performance.mode != Mode::Keys || !self.midi_gate),
@@ -355,6 +365,8 @@ impl Controller {
             } else {
                 self.meta.mix.gain
             },
+            sends: Default::default(),
+            buses: false,
             engine,
             commands: receiver,
             retired: retire,
@@ -524,7 +536,8 @@ impl Controller {
             saved.fades,
             &saved.preset,
         );
-        let (parts, part_audio) = self.restore_parts(std::mem::take(&mut saved.timbres))?;
+        let (mut parts, mut part_audio) = self.restore_parts(std::mem::take(&mut saved.timbres))?;
+        timbres::ensure_master_in(&mut parts, &mut part_audio, self, self.rate);
         self.enqueue(Command::Restore(Box::new(Restore {
             parts: part_audio,
             mix: saved.meta.mix,
@@ -578,6 +591,15 @@ impl Controller {
         let path = url.split('?').next().unwrap_or(url);
         let data = &request["data"];
         let post = request["method"] == "POST";
+        if post
+            && self.meta.kind.routing()
+            && matches!(
+                path,
+                "/api/wav" | "/api/input" | "/api/region" | "/api/fades"
+            )
+        {
+            return Err("A bus takes its input from the other timbres".into());
+        }
         let ok = || json!({"ok":true});
         let binary = |bytes: Vec<u8>| json!({"binary":BASE64.encode(bytes),"mime":"audio/wav"});
         if path.starts_with("/api/preset-library") {
@@ -608,6 +630,7 @@ impl Controller {
                 }
                 let mut preset: Preset =
                     serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
+                timbres::keep_role(&mut preset, &self.preset, self.meta.kind);
                 preset.sanitize();
                 self.enqueue(Command::Preset(Box::new(
                     preset.prepared_clone_for(self.rate),
@@ -991,15 +1014,21 @@ impl Audio {
         self.source_renderer.update(&mut self.engine);
         let mut part = self.parts.as_mut();
         let mut solo = self.meta.mix.solo;
+        let mut buses = false;
         while let Some(p) = part {
             p.audio.begin(&[], bpm, beat, playing, frames);
-            solo |= p.audio.meta.mix.solo;
+            let kind = p.audio.meta.kind;
+            solo |= p.audio.meta.mix.solo && !kind.routing();
+            buses |= kind == sad_pet::timbres::Kind::Bus;
             part = p.next.as_mut();
         }
+        self.buses = buses;
         self.audible = !self.meta.mix.muted && (!solo || self.meta.mix.solo);
         let mut part = self.parts.as_mut();
         while let Some(p) = part {
-            p.audio.audible = !p.audio.meta.mix.muted && (!solo || p.audio.meta.mix.solo);
+            let mix = p.audio.meta.mix;
+            // Solo selects timbres; buses and Master keep processing them.
+            p.audio.audible = !mix.muted && (p.audio.meta.kind.routing() || !solo || mix.solo);
             part = p.next.as_mut();
         }
     }

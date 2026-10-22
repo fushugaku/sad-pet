@@ -101,6 +101,17 @@ impl LiveInput {
     pub fn new(sample_rate: u32, effects_only: bool) -> Self {
         Self::with_capacity(sample_rate, effects_only, 8, 8.0)
     }
+    /// A Bus or Master input history, with a window of at most eight seconds.
+    pub fn for_bus(sample_rate: u32, seconds: f32) -> Self {
+        let mut input = Self::with_capacity(
+            sample_rate,
+            false,
+            crate::bus::MAX_BUFFER_SECONDS as usize,
+            seconds,
+        );
+        input.sample.name = "Bus input".into();
+        input
+    }
     pub fn for_drums(sample_rate: u32, effects_only: bool, seconds: f32) -> Self {
         Self::with_capacity(sample_rate, effects_only, 32, seconds)
     }

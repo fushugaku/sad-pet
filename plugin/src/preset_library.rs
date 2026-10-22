@@ -370,8 +370,12 @@ impl Controller {
                 };
                 let source =
                     self.prepared_source_for(sample.clone(), self.source, region, fades, &preset);
+                // A scene from the library starts with only its Master.
+                let mut parts = Vec::new();
+                let mut part_audio = None;
+                super::timbres::ensure_master_in(&mut parts, &mut part_audio, self, self.rate);
                 self.enqueue(Command::Restore(Box::new(super::Restore {
-                    parts: None,
+                    parts: part_audio,
                     mix: Default::default(),
                     preset: preset.prepared_clone_for(self.rate),
                     source,
@@ -381,7 +385,7 @@ impl Controller {
                     midi_gate: self.midi_gate,
                     playing: self.playing,
                 })))?;
-                self.parts.clear();
+                self.parts = parts;
                 self.active = 0;
                 self.meta = sad_pet::timbres::Meta::default();
                 self.scene_revision = self.scene_revision.wrapping_add(1);

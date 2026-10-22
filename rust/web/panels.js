@@ -16,7 +16,7 @@
     constructor(root, hooks) {
       this.root = root;
       this.hooks = hooks;
-      root.innerHTML = `<div class="timbre-top"><div class="timbre-tabs" role="tablist" aria-label="Timbres"></div><div class="timbre-add"><select aria-label="New timbre type"><option value="granular">Granular</option><option value="drums">Drum machine</option><option value="synth">Synth engine</option></select><button>+ Timbre</button></div></div><div class="timbre-mix"><input aria-label="Timbre name" maxlength="80"><button aria-pressed="false">Mute</button><button aria-pressed="false">Solo</button><label>MIDI<select aria-label="Timbre MIDI channel"><option value="0">All</option>${Array.from({ length: 16 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("")}</select></label><label>LEVEL<input aria-label="Timbre level" type="range" min="0" max="2" step=".01"></label><button aria-label="Remove timbre">×</button></div>`;
+      root.innerHTML = `<div class="timbre-top"><div class="timbre-tabs" role="tablist" aria-label="Timbres"></div><div class="timbre-add"><select aria-label="New timbre type"><option value="granular">Granular</option><option value="drums">Drum machine</option><option value="synth">Synth engine</option><option value="bus">Bus</option></select><button>+ Timbre</button></div></div><div class="timbre-mix"><input aria-label="Timbre name" maxlength="80"><button aria-pressed="false">Mute</button><button aria-pressed="false">Solo</button><label class="timbre-midi">MIDI<select aria-label="Timbre MIDI channel"><option value="0">All</option>${Array.from({ length: 16 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("")}</select></label><label><span class="timbre-level-name">MASTER</span><input aria-label="Timbre level" type="range" min="0" max="2" step=".01"></label><button aria-label="Remove timbre">×</button></div><div class="timbre-sends" aria-label="Bus sends"></div>`;
       this.tabs = root.querySelector(".timbre-tabs");
       this.addType = root.querySelector(".timbre-add select");
       root.querySelector(".timbre-add button").onclick = () =>
@@ -32,6 +32,9 @@
       this.level = root.querySelector('[aria-label="Timbre level"]');
       this.level.oninput = () =>
         this.update({ gain: Number(this.level.value) });
+      this.levelName = root.querySelector(".timbre-level-name");
+      this.midi = root.querySelector(".timbre-midi");
+      this.sends = root.querySelector(".timbre-sends");
       this.remove = root.querySelector('[aria-label="Remove timbre"]');
       this.remove.onclick = () =>
         hooks.change("/api/timbres/remove", { id: this.active().id });
@@ -96,7 +99,53 @@
       if (document.activeElement !== this.channel)
         this.channel.value = part.channel;
       if (document.activeElement !== this.level) this.level.value = part.gain;
-      this.remove.disabled = part.id === 0;
+      const routing = part.kind === "bus" || part.kind === "master";
+      this.solo.hidden = routing;
+      this.midi.hidden = routing;
+      this.levelName.textContent =
+        part.kind === "master" ? "OUTPUT" : part.kind === "bus" ? "TO MASTER" : "MASTER";
+      this.level.setAttribute(
+        "aria-label",
+        part.kind === "master" ? "Master output level" : "Level into Master",
+      );
+      this.remove.disabled = part.id === 0 || part.kind === "master";
+      this.syncSends(part, routing);
+    }
+    /** One send per Bus; a timbre's output reaches the bus at this level. */
+    syncSends(part, routing) {
+      const buses = routing
+        ? []
+        : this.context.timbres
+            .filter((t) => t.kind === "bus" && t.bus > 0)
+            .sort((a, b) => a.bus - b.bus);
+      this.sends.hidden = !buses.length;
+      const signature = JSON.stringify([part.id, buses.map((b) => [b.bus, b.name])]);
+      if (signature !== this.sendSignature) {
+        this.sendSignature = signature;
+        this.sends.replaceChildren(
+          ...buses.map((bus) => {
+            const label = el("label", "timbre-send", `→ ${bus.name}`);
+            const range = el("input");
+            range.type = "range";
+            range.min = "0";
+            range.max = "2";
+            range.step = ".01";
+            range.dataset.bus = bus.bus;
+            range.setAttribute("aria-label", `Send to ${bus.name}`);
+            range.oninput = () => {
+              const sends = [...(this.active().sends ?? Array(8).fill(0))];
+              sends[bus.bus - 1] = Number(range.value);
+              this.update({ sends });
+            };
+            label.append(range);
+            return label;
+          }),
+        );
+      }
+      for (const range of this.sends.querySelectorAll("input")) {
+        if (document.activeElement !== range)
+          range.value = part.sends?.[Number(range.dataset.bus) - 1] ?? 0;
+      }
     }
   }
   const filters = [

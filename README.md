@@ -111,6 +111,16 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   destinations (`synth_osc1_waveform`…, `synth_granular`, `synth_buffer_seconds`).
   The desktop app, which has one engine, switches it with **Engine: Granular /
   Synth engine**. Presets of the other timbres serialize unchanged.
+- **Bus and Master** (browser and DAW plug-ins). Every scene has one **Master**
+  tab that sums all timbres and buses into the output; add up to eight **Bus**
+  timbres with **+ Timbre**. Each timbre's mixer row sets its level into Master
+  and a send level to every bus. A bus or Master runs the granular engine on its
+  input, with switchable **Granular** (125 ms–8 s history) and **Filters**, plus
+  Resynth, all effect racks, added filters, LFOs and the matrix. Everything starts
+  switched off, and then the input passes through bit for bit at almost no CPU:
+  no grains, no history writes and no filters run. Solo selects timbres while
+  buses and Master keep processing them; MIDI never reaches a bus. Scenes saved
+  before buses existed open with a default Master and render unchanged.
 - Two filters with single, serial and parallel routing, envelope depth and key tracking.
 - All **18 Rustias filter models** in either slot: RADIAS, Ladder LP/HP/BP24,
   MS-20 LP/HP12, Pro LP24, SEM, Multi Filter, M/Poly LP24 and Linear LP/HP/BP/Notch

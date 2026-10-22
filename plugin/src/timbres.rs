@@ -1,6 +1,48 @@
 //! Control-thread part creation, linked audio ownership and scene recall.
 use super::*;
-use sad_pet::timbres::{Context, Kind, Meta, Mix};
+use sad_pet::{
+    bus::MAX_BUSES,
+    timbres::{Context, Kind, Meta, Mix},
+};
+
+/// Adds a Master when the scene has none (new instances and older projects).
+pub(super) fn ensure_master_in(
+    parts: &mut Vec<Controller>,
+    head: &mut Option<Box<PartAudio>>,
+    root: &Controller,
+    rate: u32,
+) {
+    if parts.iter().any(|p| p.meta.kind == Kind::Master) {
+        return;
+    }
+    let id = parts
+        .iter()
+        .map(|p| p.meta.id)
+        .max()
+        .unwrap_or(0)
+        .max(root.next_timbre_id.saturating_sub(1))
+        .saturating_add(1);
+    let mut master = root.routing_part(Kind::Master, id, 0);
+    *head = Some(Box::new(PartAudio {
+        audio: master.prepare(rate),
+        next: head.take(),
+    }));
+    parts.push(master);
+}
+/// A Bus or Master keeps its role when a preset loads into it; any other
+/// timbre ignores bus settings.
+pub(super) fn keep_role(preset: &mut Preset, current: &Preset, kind: Kind) {
+    if kind.routing() {
+        if preset.bus.is_none() {
+            preset.bus = current.bus.clone();
+        }
+        if let Some(bus) = &mut preset.bus {
+            bus.master = kind == Kind::Master;
+        }
+    } else {
+        preset.bus = None;
+    }
+}
 
 pub(super) struct PartAudio {
     pub audio: Audio,
@@ -28,6 +70,38 @@ pub(super) fn remove_part(
 }
 
 impl Controller {
+    /// A Bus or Master starts with everything off.
+    pub(super) fn routing_part(&self, kind: Kind, id: u32, bus: u8) -> Controller {
+        let mut part = Controller::new(self.effect);
+        part.meta = Meta {
+            id,
+            kind,
+            bus,
+            name: if kind == Kind::Bus {
+                format!("Bus {bus}")
+            } else {
+                kind.label().into()
+            },
+            mix: Mix::default(),
+        };
+        part.preset = kind.preset().unwrap();
+        part.preset.sanitize();
+        part.source = Source::File;
+        part.playing = self.playing;
+        part.midi_gate = false;
+        part.sync = self.sync;
+        part.rate = self.rate;
+        part
+    }
+    /// Every scene has exactly one Master, prepared with the other parts.
+    pub(super) fn ensure_master(&mut self) {
+        if !self.parts.iter().any(|p| p.meta.kind == Kind::Master) {
+            let id = self.next_timbre_id;
+            self.next_timbre_id = id.saturating_add(1);
+            let master = self.routing_part(Kind::Master, id, 0);
+            self.parts.push(master);
+        }
+    }
     fn context(&self) -> Context {
         Context {
             name: self.preset.name.clone(),
@@ -86,34 +160,52 @@ impl Controller {
                 "/api/timbres/add" => {
                     let kind: Kind =
                         serde_json::from_value(data["kind"].clone()).map_err(|e| e.to_string())?;
+                    if kind == Kind::Master {
+                        return Err("The scene always has one Master".into());
+                    }
                     let id = self.next_timbre_id;
                     let next_id = id.checked_add(1).ok_or("Timbre identity overflow")?;
                     let count = self.parts.iter().filter(|p| p.meta.kind == kind).count()
                         + usize::from(kind == Kind::Granular)
                         + 1;
-                    let mut part = Controller::new(self.effect);
-                    part.meta = Meta {
-                        id,
-                        kind,
-                        name: format!("{} {count}", kind.label()),
-                        mix: Mix::default(),
+                    let mut part = if kind == Kind::Bus {
+                        let bus = sad_pet::timbres::free_bus(
+                            std::iter::once(&self.meta).chain(self.parts.iter().map(|p| &p.meta)),
+                        )
+                        .ok_or(format!("Use at most {MAX_BUSES} buses"))?;
+                        self.routing_part(kind, id, bus)
+                    } else {
+                        let mut part = Controller::new(self.effect);
+                        part.meta = Meta {
+                            id,
+                            kind,
+                            name: format!("{} {count}", kind.label()),
+                            ..Meta::default()
+                        };
+                        part.source = Source::File;
+                        part.playing = self.playing;
+                        part.midi_gate = self.midi_gate;
+                        part.sync = self.sync;
+                        if let Some(preset) = kind.preset() {
+                            part.preset = preset;
+                            part.preset.sanitize();
+                            // Drums run free with the transport; a synth waits for notes.
+                            part.midi_gate = kind == Kind::Synth;
+                        }
+                        part
                     };
-                    part.source = Source::File;
-                    part.playing = self.playing;
-                    part.midi_gate = self.midi_gate;
-                    part.sync = self.sync;
-                    if let Some(preset) = kind.preset() {
-                        part.preset = preset;
-                        part.preset.sanitize();
-                        // Drums run free with the transport; a synth waits for notes.
-                        part.midi_gate = kind == Kind::Synth;
-                    }
                     let audio = part.prepare(self.rate);
                     self.enqueue(Command::AddPart(Some(Box::new(PartAudio {
                         audio,
                         next: None,
                     }))))?;
-                    self.parts.push(part);
+                    // Master stays the last tab; new timbres go before it.
+                    let at = self
+                        .parts
+                        .iter()
+                        .position(|p| p.meta.kind == Kind::Master)
+                        .unwrap_or(self.parts.len());
+                    self.parts.insert(at, part);
                     self.next_timbre_id = next_id;
                     self.active = id;
                     self.selection.dirty = true;
@@ -138,7 +230,7 @@ impl Controller {
                             .clone()
                     };
                     let mut value = serde_json::to_value(&meta).unwrap();
-                    for key in ["name", "gain", "muted", "solo", "channel"] {
+                    for key in ["name", "gain", "muted", "solo", "channel", "sends"] {
                         if let Some(v) = data.get(key) {
                             value[key] = v.clone();
                         }
@@ -162,8 +254,30 @@ impl Controller {
                     if id == 0 {
                         return Err("Keep the first timbre for DAW automation".into());
                     }
-                    if !self.parts.iter().any(|p| p.meta.id == id) {
-                        return Err("Unknown timbre".into());
+                    let removed = self
+                        .parts
+                        .iter()
+                        .find(|p| p.meta.id == id)
+                        .ok_or("Unknown timbre")?
+                        .meta
+                        .clone();
+                    if removed.kind == Kind::Master {
+                        return Err("The scene always has one Master".into());
+                    }
+                    if removed.kind == Kind::Bus && removed.bus > 0 {
+                        // Nothing keeps sending to the removed bus number.
+                        let index = removed.bus as usize - 1;
+                        if self.meta.mix.sends[index] != 0. {
+                            self.meta.mix.sends[index] = 0.;
+                            self.enqueue(Command::PartMix(0, self.meta.mix))?;
+                        }
+                        for i in 0..self.parts.len() {
+                            if self.parts[i].meta.mix.sends[index] != 0. {
+                                self.parts[i].meta.mix.sends[index] = 0.;
+                                let (id, mix) = (self.parts[i].meta.id, self.parts[i].meta.mix);
+                                self.enqueue(Command::PartMix(id, mix))?;
+                            }
+                        }
                     }
                     self.enqueue(Command::RemovePart(id, None))?;
                     self.parts.retain(|p| p.meta.id != id);
@@ -244,24 +358,60 @@ impl Audio {
             }
         }
     }
-    pub(super) fn process_frame(&mut self, input: Stereo) -> Stereo {
+    /// One part's level-scaled output, plus its sends into the bus inputs.
+    fn source_frame(
+        &mut self,
+        input: Stereo,
+        sends: &mut [Stereo; MAX_BUSES],
+        buses: bool,
+    ) -> Stereo {
         let target = if self.audible { self.meta.mix.gain } else { 0. };
         self.smooth_part_gain += (target - self.smooth_part_gain) * 0.004;
-        let mut output = self
-            .engine
-            .process_input_frame(input)
-            .map(|v| v * self.smooth_part_gain);
+        let out = self.engine.process_input_frame(input);
+        if buses {
+            self.sends
+                .send(&self.meta.mix.sends, self.audible, out, sends);
+        }
+        out.map(|v| v * self.smooth_part_gain)
+    }
+    /// Timbres sum into Master and send to buses; buses then feed Master,
+    /// whose engine renders the output. With no buses and Master at its
+    /// defaults, the output is the plain sum of the timbres as before.
+    pub(super) fn process_frame(&mut self, input: Stereo) -> Stereo {
+        let buses = self.buses;
+        let mut sends = [[0.; 2]; MAX_BUSES];
+        let mut output = self.source_frame(input, &mut sends, buses);
         let mut part = self.parts.as_mut();
         while let Some(p) = part {
-            let frame = p.audio.process_frame(input);
-            output[0] += frame[0];
-            output[1] += frame[1];
+            if !p.audio.meta.kind.routing() {
+                let frame = p.audio.source_frame(input, &mut sends, buses);
+                output[0] += frame[0];
+                output[1] += frame[1];
+            }
             part = p.next.as_mut();
         }
-        output
+        let mut master = None;
+        let mut part = self.parts.as_mut();
+        while let Some(p) = part {
+            match p.audio.meta.kind {
+                Kind::Bus if buses && p.audio.meta.bus > 0 => {
+                    let bus = sends[p.audio.meta.bus as usize - 1];
+                    let frame = p.audio.source_frame(bus, &mut [[0.; 2]; MAX_BUSES], false);
+                    output[0] += frame[0];
+                    output[1] += frame[1];
+                }
+                Kind::Master => master = Some(&mut p.audio),
+                _ => {}
+            }
+            part = p.next.as_mut();
+        }
+        match master {
+            Some(master) => master.source_frame(output, &mut [[0.; 2]; MAX_BUSES], false),
+            None => output,
+        }
     }
     pub(super) fn midi(&mut self, message: Message) {
-        if self.meta.mix.accepts(message) {
+        if !self.meta.kind.routing() && self.meta.mix.accepts(message) {
             self.engine.midi(message);
         }
         let mut part = self.parts.as_mut();

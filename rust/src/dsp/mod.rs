@@ -532,6 +532,11 @@ impl Engine {
         preset
             .synth_runtime
             .prepare(preset.synth.as_deref(), self.sample_rate);
+        preset.bus_runtime.prepare_reusing(
+            preset.bus.as_deref(),
+            self.sample_rate,
+            self.bus_history(),
+        );
         preset.filter_banks.prepare_reusing(
             &preset.filter_slots,
             self.sample_rate,
@@ -544,6 +549,12 @@ impl Engine {
     /// Structural FX/drum edits must use `prepared_clone_for(sample_rate)`.
     /// The caller retires the previous preset away from the audio callback.
     pub fn exchange_preset(&mut self, preset: &mut Preset) {
+        // A bus history is never freed here: it retires with the outgoing
+        // preset, whose bus_runtime is empty while that preset is installed.
+        let was_bus = self.preset.bus.is_some();
+        if was_bus && preset.bus.is_none() {
+            std::mem::swap(&mut self.live_input, &mut self.preset.bus_runtime.0);
+        }
         // A retiring synth restores the input it replaced before drums install.
         if preset.synth_runtime.0.is_none()
             && let Some(old) = &mut self.synth
@@ -632,7 +643,20 @@ impl Engine {
         }
         filter_slots::inherit(&mut preset.filter_banks.0, &mut self.filter_banks);
         std::mem::swap(&mut self.filter_banks, &mut preset.filter_banks.0);
+        if let Some(bus) = &preset.bus {
+            // Granular staying on keeps the running history and its audio.
+            if !(bus.granular && self.bus_history()) {
+                std::mem::swap(&mut self.live_input, &mut preset.bus_runtime.0);
+            }
+            std::mem::swap(&mut self.preset.bus_runtime.0, &mut preset.bus_runtime.0);
+        }
         std::mem::swap(&mut self.preset, preset);
+        if !was_bus && self.preset.bus.is_some() {
+            // The input passes at unity from the first frame, without a fade-in.
+            self.voices[0].note = 60;
+            self.smooth_gain = self.preset.params.master_volume
+                * 10.0_f32.powf(self.preset.params.out_gain * 0.05);
+        }
         self.invalidate_racks();
         self.sync_stored_chord();
         self.update_modulation();
@@ -646,7 +670,9 @@ impl Engine {
         self.refresh_sequence_free_voice();
     }
     pub fn set_sample(&mut self, sample: Arc<SampleBuffer>) {
-        self.live_input = None;
+        if self.preset.bus.is_none() {
+            self.live_input = None;
+        }
         self.sample = sample;
         self.reset_source();
     }
@@ -821,6 +847,10 @@ impl Engine {
             })
     }
     fn refresh_sequence_free_voice(&mut self) {
+        if self.preset.bus.is_some() {
+            // A bus voice is permanent; the transport neither starts nor ends it.
+            return;
+        }
         if self.playing && !self.midi_gate && self.performance.mode() == Mode::Keys {
             if self.sequence_has_notes() {
                 self.voices[0].held = false;
@@ -995,6 +1025,35 @@ impl Engine {
             self.smooth_bypass_gate = 0.0;
             self.peak = [0.0; 2];
         }
+    }
+    /// A Bus or Master whose Granular history is allocated and running.
+    fn bus_history(&self) -> bool {
+        self.preset.bus.as_ref().is_some_and(|b| b.granular) && self.live_input.is_some()
+    }
+    /// A Bus or Master with nothing switched on passes its input through.
+    fn bus_passthrough(&self) -> bool {
+        self.preset.bus.as_ref().is_some_and(|bus| {
+            !bus.filters
+                && !self.bus_history()
+                && !self.bypass
+                && !self.resynth.active()
+                && !self.pre_color_rack.is_active()
+                && !self.color_rack.is_active()
+                && self.preset.source_color_chain.is_empty()
+                && self.filter_masks.iter().all(|&mask| mask == 0)
+        })
+    }
+    /// Input times In/Out gain and Volume, without any processing or clipping.
+    /// At the default unity levels this is the input itself, bit for bit.
+    fn pass_bus(&mut self, input: Stereo) -> Stereo {
+        let gain = self.modulated.params.master_volume * self.output_gain;
+        self.smooth_gain = fast::flush(self.smooth_gain + (gain - self.smooth_gain) * 0.002);
+        let output = input.map(|x| x * self.input_gain * self.smooth_gain);
+        for (peak, value) in self.peak.iter_mut().zip(output) {
+            *peak = peak.max(value.abs());
+        }
+        self.frame += 1;
+        output
     }
     pub fn source_sample(&self) -> &SampleBuffer {
         self.live_input
@@ -1794,8 +1853,9 @@ impl Engine {
         let slots = &m.filter_slots[..m.filter_len];
         self.filter_masks = filter_slots::masks(slots, &self.filter_banks);
         filter_slots::configure_shared(slots, &mut self.filter_banks);
+        let bus = self.preset.bus.is_some();
         for (i, voice) in self.voices.iter().enumerate() {
-            if !voice.envelopes[0].active() {
+            if !voice.envelopes[0].active() && !(bus && i == 0) {
                 continue;
             }
             let note = voice.note as f32
@@ -1899,9 +1959,10 @@ impl Engine {
             }
             0
         } else {
+            let bus = self.preset.bus.is_some();
             let Some(voice) = (0..VOICES)
                 .map(|i| (i + self.next_voice) % VOICES)
-                .find(|&i| self.voices[i].envelopes[0].active())
+                .find(|&i| self.voices[i].envelopes[0].active() || (bus && i == 0))
             else {
                 return;
             };
@@ -1989,6 +2050,10 @@ impl Engine {
     }
 
     pub fn process_input_frame(&mut self, input: Stereo) -> Stereo {
+        let bus = self.preset.bus.as_deref().copied();
+        if bus.is_some() && self.bus_passthrough() {
+            return self.pass_bus(input);
+        }
         let input = if let Some(drums) = &mut self.drums {
             drums.frame()
         } else if let Some(synth) = &self.synth {
@@ -2016,8 +2081,13 @@ impl Engine {
                 }
             }
         }
-        let effects_only = self.live_input.as_ref().is_some_and(|i| i.effects_only);
-        let source_input = if self.live_input.is_some() {
+        let effects_only = if bus.is_some() {
+            // Without a history (Granular off) a bus processes its input only.
+            self.live_input.as_ref().is_none_or(|i| i.effects_only)
+        } else {
+            self.live_input.as_ref().is_some_and(|i| i.effects_only)
+        };
+        let source_input = if self.live_input.is_some() || bus.is_some() {
             self.source_color.process(input.map(|x| {
                 if x.is_finite() {
                     x.clamp(-16.0, 16.0)
@@ -2127,7 +2197,7 @@ impl Engine {
         }
         let sr = self.sample_rate as f32;
         let source_rate = self.source_sample().sample_rate as f64 / self.sample_rate as f64;
-        let source = if self.live_input.is_some() {
+        let source = if self.live_input.is_some() || bus.is_some() {
             source_input.map(|x| {
                 if x.is_finite() {
                     x.clamp(-16.0, 16.0)
@@ -2189,6 +2259,14 @@ impl Engine {
                     voice_sum += v.value;
                 }
             }
+        }
+        if bus.is_some() {
+            // A bus has one permanent voice at unity: no notes, no ENV1 VCA.
+            for (i, v) in self.voices.iter_mut().enumerate() {
+                v.value = if i == 0 { 1.0 } else { 0.0 };
+            }
+            loudest_voice = 1.0;
+            voice_sum = 1.0;
         }
         if self.frame.is_multiple_of(CONTROL_INTERVAL) {
             self.update_modulation();
@@ -2374,7 +2452,11 @@ impl Engine {
                 std::array::from_fn(|c| mixed[c] + correction[c]),
                 Instance::Voice(i),
             );
-            let voice = self.filters[i].process(voice);
+            let voice = if bus.is_some_and(|b| !b.filters) {
+                voice
+            } else {
+                self.filters[i].process(voice)
+            };
             let voice = filter_slots::chain(
                 &mut self.filter_banks,
                 masks[FilterPosition::AfterFilters as usize],
@@ -2419,7 +2501,12 @@ impl Engine {
         self.smooth_gain = fast::flush(self.smooth_gain + (gain - self.smooth_gain) * 0.002);
         self.smooth_bypass_gate = fast::flush(
             self.smooth_bypass_gate
-                + ((if self.playing { 1.0 } else { 0.0 }) - self.smooth_bypass_gate) * 0.002,
+                + ((if self.playing || bus.is_some() {
+                    1.0
+                } else {
+                    0.0
+                }) - self.smooth_bypass_gate)
+                    * 0.002,
         );
         let bypass_source = if self.bypass
             && (self.processed_source.is_some()

@@ -678,6 +678,11 @@ pub struct Preset {
     pub synth: Option<Box<crate::synth::Settings>>,
     #[serde(skip)]
     pub synth_runtime: crate::dsp::synth::Prepared,
+    /// Present only in Bus and Master timbres; other presets serialize unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bus: Option<Box<crate::bus::Settings>>,
+    #[serde(skip)]
+    pub bus_runtime: crate::bus::Prepared,
     pub pre_color_chain: Vec<crate::color::ColorSlot>,
     pub source_color_chain: Vec<crate::color::ColorSlot>,
     pub color_chain: Vec<crate::color::ColorSlot>,
@@ -708,6 +713,8 @@ impl Default for Preset {
             drum_runtime: Default::default(),
             synth: None,
             synth_runtime: Default::default(),
+            bus: None,
+            bus_runtime: Default::default(),
             pre_color_chain: Vec::new(),
             source_color_chain: Vec::new(),
             color_chain: vec![
@@ -739,6 +746,7 @@ impl<'de> Deserialize<'de> for Preset {
             resynth: crate::resynth::Settings,
             drums: Option<Box<crate::drums::Settings>>,
             synth: Option<Box<crate::synth::Settings>>,
+            bus: Option<Box<crate::bus::Settings>>,
             pre_color_chain: Vec<crate::color::ColorSlot>,
             source_color_chain: Vec<crate::color::ColorSlot>,
             color_chain: Option<Vec<crate::color::ColorSlot>>,
@@ -762,6 +770,7 @@ impl<'de> Deserialize<'de> for Preset {
                     resynth: p.resynth,
                     drums: None,
                     synth: None,
+                    bus: None,
                     pre_color_chain: Vec::new(),
                     source_color_chain: Vec::new(),
                     color_chain: None,
@@ -882,6 +891,8 @@ impl<'de> Deserialize<'de> for Preset {
             drum_runtime: Default::default(),
             synth: d.synth,
             synth_runtime: Default::default(),
+            bus: d.bus,
+            bus_runtime: Default::default(),
             pre_color_chain: d.pre_color_chain,
             source_color_chain: d.source_color_chain,
             color_chain,
@@ -904,11 +915,14 @@ impl Preset {
         preset.prepare_effects(rate);
         preset.drum_runtime.prepare(preset.drums.as_deref(), rate);
         preset.synth_runtime.prepare(preset.synth.as_deref(), rate);
+        preset.bus_runtime.prepare(preset.bus.as_deref(), rate);
         preset
     }
     /// Drum and Synth timbres keep their own output in a windowed live history.
     pub fn history(&self) -> Option<crate::synth::History> {
-        if let Some(drums) = &self.drums {
+        if let Some(bus) = &self.bus {
+            Some(bus.history())
+        } else if let Some(drums) = &self.drums {
             Some(crate::synth::History {
                 granular: drums.granular,
                 buffer_seconds: drums.buffer_seconds,
@@ -956,6 +970,12 @@ impl Preset {
         self.lfo_count = self.lfo_count.clamp(1, MODULATORS as u8);
         self.env_count = self.env_count.clamp(1, MODULATORS as u8);
         self.resynth.sanitize();
+        if let Some(bus) = &mut self.bus {
+            // A bus takes its sound from other timbres, never its own engine.
+            bus.sanitize();
+            self.drums = None;
+            self.synth = None;
+        }
         if let Some(drums) = &mut self.drums {
             drums.sanitize();
             self.synth = None;

@@ -3687,6 +3687,29 @@ input[type="range"] {
 .timbre-mix > button:last-child {
   margin-left: auto;
 }
+.timbre-sends {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding-top: 8px;
+}
+.timbre-send {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.timbre-send input[type="range"] {
+  width: 100px;
+}
+.bus-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+.filter-grid.bypassed {
+  opacity: 0.45;
+}
 .drum-global {
   display: flex;
   align-items: center;

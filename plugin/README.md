@@ -34,8 +34,12 @@ to transfer an effect preset between browsers, macOS and Windows.
 
 ## Timbres and drum machine
 
-Use the top **Timbres** bank: choose Granular, Drum machine or Synth engine, then
-**+ Timbre**.
+Use the top **Timbres** bank: choose Granular, Drum machine, Synth engine or Bus,
+then **+ Timbre**. Every scene also has one **Master** tab: all timbres and buses
+sum into it, and its engine renders the plug-in output. A timbre's mixer row sets
+its level into Master and a send to each bus; a bus or Master can switch on
+Granular, Filters, Resynth and effects, and passes its input untouched while
+everything is off.
 Tabs select the editor; every timbre continues running. Each has independent
 level, mute, solo and MIDI-channel selection (All, or 1–16). Existing host parameter
 IDs continue to automate the first timbre; every timbre supports its own numeric

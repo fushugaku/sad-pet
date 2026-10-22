@@ -15,7 +15,9 @@ core.call("sad_load", utility.call("sad_pack"));
 const root = core.request("/api/preset");
 assert.equal(root.lfos.length, 8);
 assert.equal(root.envs.length, 8);
-assert.equal(core.request("/api/timbres/add", { kind: "drums" }).active, 1);
+// Master (always present) takes an id too, so read the new timbre's id.
+const drumsId = core.request("/api/timbres/add", { kind: "drums" }).active;
+assert.ok(drumsId > 0);
 core.request("/api/timbres/update", { id: 0, muted: true });
 core.request("/api/drums/edit", [
   { track: 0, step: null, field: 0, value: 128 },
@@ -63,23 +65,23 @@ let size = core.snapshot(packet),
   sequence = core.wasm.sad_snapshot_sequence();
 assert.ok(size > 0);
 const decoded = utility.json("sad_snapshot_import", packet.slice(0, size));
-assert.equal(decoded.state.timbres.active, 1);
+assert.equal(decoded.state.timbres.active, drumsId);
 assert.equal(decoded.state.sample_name, "Drum machine");
 assert.deepEqual(decoded.state.waveform, state.waveform);
 assert.equal(decoded.state.preset.drums.tracks[0].steps.length, 128);
 core.request("/api/timbres/select", { id: 0 });
 core.wasm.sad_snapshot_ack(sequence, 1); // Ack must still reach the previous active part.
 assert.equal(core.request("/api/preset").name, root.name);
-core.request("/api/timbres/select", { id: 1 });
+core.request("/api/timbres/select", { id: drumsId });
 const prepared = core.call("sad_scene_pack");
 utility.call("sad_scene_load", prepared);
 const scene = utility.json("sad_scene_document");
-assert.equal(scene.timbres.length, 1);
-assert.equal(scene.active_timbre, 1);
+assert.deepEqual(scene.timbres.map((t) => t.meta.kind), ["drums", "master"]);
+assert.equal(scene.active_timbre, drumsId);
 assert.equal(scene.timbres[0].preset.drums.params[0][0], 91);
 const imported = new Core(module, 8000);
 imported.call("sad_scene_load", utility.call("sad_scene_prepare", scene));
-assert.equal(imported.request("/api/state").timbres.active, 1);
+assert.equal(imported.request("/api/state").timbres.active, drumsId);
 assert.equal(
   imported.request("/api/preset").drums.tracks[0].steps[127].velocity,
   scene.timbres[0].preset.drums.tracks[0].steps[127].velocity,
@@ -125,12 +127,10 @@ assert.equal(withBuffer.timbres[0].preset.drums.buffer_seconds, 1);
 const recalled = new Core(module, 8000);
 recalled.call("sad_scene_load", utility.call("sad_scene_prepare", withBuffer));
 assert.equal(recalled.request("/api/state").sample_seconds, 1);
-imported.request("/api/timbres/remove", { id: 1 });
-assert.equal(
-  imported.request("/api/timbres/add", { kind: "granular" }).active,
-  2,
-  "A deleted identity was reused",
-);
+imported.request("/api/timbres/remove", { id: drumsId });
+const ids = imported.request("/api/timbres").timbres.map((t) => t.id);
+const added = imported.request("/api/timbres/add", { kind: "granular" }).active;
+assert.ok(added > Math.max(drumsId, ...ids), "A deleted identity was reused");
 console.log(
   "Timbres: 128-step drum playback, independent controls, stable IDs, cross-part snapshot acknowledgements, whole-scene recall and granular routing passed.",
 );

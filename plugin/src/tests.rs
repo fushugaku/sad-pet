@@ -1085,7 +1085,10 @@ fn factory_recall_replaces_the_scene_and_a_drum_route_toggle_does_not_rebuild_au
         audio.begin(&recalled, 120., None, false, 1024);
     });
     // Parameter collection itself belongs to Controller; never do that on audio.
-    assert!(audio.parts.is_none());
+    // The recalled scene keeps only its Master besides the first timbre.
+    let parts = audio.parts.as_ref().unwrap();
+    assert_eq!(parts.audio.meta.kind, sad_pet::timbres::Kind::Master);
+    assert!(parts.next.is_none());
     assert_eq!(
         call(&mut control, "/api/state", Value::Null)["timbres"]["active"],
         0
@@ -1225,4 +1228,80 @@ fn synth_timbres_play_notes_switch_grains_and_save_without_audio_allocations() {
     assert_eq!(state["preset"]["synth"]["oscillators"][1]["transpose"], 7.0);
     call(&mut restored, "/api/timbres/select", json!({"id":0}));
     assert!(call(&mut restored, "/api/state", Value::Null)["preset"]["synth"].is_null());
+}
+
+#[test]
+fn timbres_reach_master_directly_or_through_a_bus_without_audio_allocation() {
+    let mut control = Controller::new_plugin(false);
+    let timbres = call(&mut control, "/api/timbres", Value::Null)["timbres"].clone();
+    let master = timbres
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["kind"] == "master")
+        .expect("every scene has a Master")["id"]
+        .as_u64()
+        .unwrap();
+    let error = control
+        .request(&json!({"path":"/api/timbres/remove","method":"POST","data":{"id":master}}))
+        .unwrap_err();
+    assert!(error.contains("Master"), "{error}");
+    let context = call(&mut control, "/api/timbres/add", json!({"kind":"bus"}));
+    let bus = context["timbres"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["kind"] == "bus")
+        .unwrap()
+        .clone();
+    assert_eq!(bus["bus"], 1);
+    // The first timbre no longer feeds Master directly, only through Bus 1.
+    let mut sends = [0.0; 8];
+    sends[0] = 1.0;
+    call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":0,"gain":0,"sends":sends}),
+    );
+    call(
+        &mut control,
+        "/api/transport",
+        json!({"playing":true,"midi_gate":false}),
+    );
+    let mut audio = control.prepare(8000);
+    let values = control.values();
+    let mut peak = 0.0_f32;
+    no_heap(|| {
+        for _ in 0..8 {
+            audio.begin(&values, 120., None, true, 1024);
+            peak = peak.max(render(&mut audio, 1024, [0.; 2]));
+        }
+    });
+    assert!(peak > 0.001, "the bus passes the timbre to Master ({peak})");
+    // Without the send nothing reaches the output.
+    let silent = [0.0_f32; 8];
+    call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":0,"sends":silent}),
+    );
+    let mut tail = 0.0_f32;
+    no_heap(|| {
+        for block in 0..8 {
+            audio.begin(&values, 120., None, true, 1024);
+            let peak = render(&mut audio, 1024, [0.; 2]);
+            if block >= 6 {
+                tail = tail.max(peak);
+            }
+        }
+    });
+    assert!(tail < 1e-4, "a muted route still sounds ({tail})");
+    // Removing the bus clears every send to its number.
+    call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":0,"sends":sends}),
+    );
+    let context = call(&mut control, "/api/timbres/remove", json!({"id":bus["id"]}));
+    assert_eq!(context["timbres"][0]["sends"][0], 0.0);
 }

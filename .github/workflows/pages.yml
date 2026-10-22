@@ -45,6 +45,7 @@ jobs:
           node wasm/test-filters-ui.mjs
           node wasm/test-neuropolis.mjs
           node wasm/test-timbres.mjs
+          node wasm/test-buses.mjs
           node wasm/test-synth.mjs
           node wasm/test-sequencer-ui.mjs
           node wasm/test-microphone.mjs

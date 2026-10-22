@@ -1026,30 +1026,40 @@ function changeTimbre(path, data, scalar = false) {
   return timbreWrites;
 }
 function syncTimbreRouting() {
-  const drums = !!preset?.drums,
+  const bus = preset?.bus,
+    drums = !!preset?.drums,
     synth = !drums && !!preset?.synth,
-    history = drums || synth;
+    history = drums || synth || !!bus;
   $("load-wav").hidden = history;
   const samplePanel = document.querySelector(".sample-panel");
   samplePanel.classList.toggle("drum-waveform", history);
   samplePanel.setAttribute("aria-label", drums ? "Drum waveform and grains"
     : synth ? "Synth waveform and grains" : "Sample and grains");
   $("drum-source-name").hidden = !history;
-  $("drum-source-name").textContent = synth ? "Synth engine" : "Drum machine";
+  $("drum-source-name").textContent = bus
+    ? bus.master ? "Master input" : "Bus input"
+    : synth ? "Synth engine" : "Drum machine";
   $("wave").setAttribute("aria-label", drums
     ? "Live drum waveform and grains"
     : synth ? "Live synth waveform and grains"
     : "Sample waveform. Drag to select a loop, click to change position");
   $("wave").title = history
-    ? `Live ${drums ? "drum" : "synth"} signal · last ${(preset.drums ?? preset.synth).buffer_seconds ?? 8} seconds`
+    ? `Live ${drums ? "drum" : bus ? "bus" : "synth"} signal · last ${(preset.drums ?? preset.synth ?? bus).buffer_seconds ?? 8} seconds`
     : "Drag to select a loop · drag the handles to adjust it";
+  // A bus without Granular has no history to show or select from.
+  samplePanel.hidden = !!bus && !bus.granular;
   const waveSlot = document.querySelector(".drum-wave-slot");
   if (drums && waveSlot && samplePanel.parentElement !== waveSlot)
     waveSlot.append(samplePanel);
   else if (!drums && $("sample-panel-home").nextElementSibling !== samplePanel)
     $("sample-panel-home").after(samplePanel);
   const grains = $("grain-engine");
-  grains.hidden = (drums && !preset.drums.granular) || (synth && !preset.synth.granular);
+  grains.hidden = (drums && !preset.drums.granular) || (synth && !preset.synth.granular)
+    || (!!bus && !bus.granular);
+  // Filter 1 and 2 of a bus stay visible but are bypassed until switched on.
+  $("filters").classList.toggle("bypassed", !!bus && !bus.filters);
+  $("filters").title = bus && !bus.filters
+    ? "Bypassed: switch on Filters in the bus heading" : "";
   const grainSlot = document.querySelector(".drum-grain-slot");
   if (drums && grainSlot && grains.parentElement !== grainSlot)
     grainSlot.append(grains);
@@ -1066,7 +1076,8 @@ function syncTimbreRouting() {
   )
     document.querySelector(".sample-panel").after(transport);
   const performance = $("performance-mode").closest("section");
-  if (performance) performance.hidden = drums;
+  if (performance) performance.hidden = drums || !!bus;
+  syncBus();
   syncEngineType();
   timbreEditor?.sync(state?.timbres);
   drumEditor?.sync();
@@ -1351,8 +1362,53 @@ function syncResynth() {
   $("resynth-spectrum").classList.toggle("inactive", !r.enabled);
   syncOscillators("resynth");
 }
+function buildBus() {
+  const buffer = $("bus-buffer");
+  buffer.replaceChildren(
+    ...[0.125, 0.25, 0.5, 1, 2, 4, 8].map((seconds) =>
+      option(
+        String(seconds),
+        seconds < 1 ? `${seconds * 1000} ms` : `${seconds} s`,
+      ),
+    ),
+  );
+  // Structural: a Granular bus allocates its history while the preset is
+  // prepared, never on the audio thread.
+  const edit = (field, value) => {
+    if (!preset?.bus) return;
+    preset.bus[field] = value;
+    schedulePreset();
+    syncTimbreRouting();
+  };
+  buffer.onchange = () => edit("buffer_seconds", Number(buffer.value));
+  $("bus-granular").onchange = () => edit("granular", $("bus-granular").checked);
+  $("bus-filters").onchange = () => edit("filters", $("bus-filters").checked);
+}
+function syncBus() {
+  const bus = preset?.bus;
+  $("bus-engine").hidden = !bus;
+  if (!bus) return;
+  const title = $("bus-title");
+  title.firstChild.textContent = bus.master ? "Master " : "Bus ";
+  title.querySelector("span").textContent = bus.master
+    ? "every timbre and bus, then the output"
+    : "sends from timbres, then Master";
+  $("bus-engine").setAttribute("aria-label", bus.master ? "Master" : "Bus");
+  $("bus-granular").checked = !!bus.granular;
+  $("bus-filters").checked = !!bus.filters;
+  const buffer = $("bus-buffer");
+  if (document.activeElement !== buffer)
+    buffer.value = String(bus.buffer_seconds ?? 4);
+  $("bus-buffer").disabled = !bus.granular;
+  const effects = [preset.color_chain, preset.pre_color_chain, preset.source_color_chain]
+    .some((chain) => chain?.some((slot) => slot.enabled && slot.mix > 0));
+  $("bus-hint").hidden =
+    !!bus.granular || !!bus.filters || !!preset.resynth?.enabled || effects
+    || (preset.filter_slots?.length ?? 0) > 0;
+}
 function buildSynth() {
   bindEngineType();
+  buildBus();
   const buffer = $("synth-buffer");
   buffer.replaceChildren(
     ...[0.125, 0.25, 0.5, 1, 2, 4, 8, 16, 32].map((seconds) =>

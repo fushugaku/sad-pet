@@ -295,7 +295,7 @@ for (const rate of [48000, 96000, 192000]) for (const kind of ["granular", "drum
     if (!finished && messages.some(m => m.id === requestId)) {
       const response = messages.findLast(m => m.id === requestId);
       assert.ok(!response.error, response.error);
-      assert.equal(response.result.timbres.length, 2);
+      assert.equal(response.result.timbres.filter((t) => t.kind !== "master").length, 2);
       reference.request("/api/timbres/add", { kind });
       finished = true;
     }
@@ -312,12 +312,12 @@ globalThis.sampleRate = 48000;
   assert.match(messages.findLast(m => m.id === adding).error, /cancelled/);
   for (let block = 0; block < 80; block++)
     staged.process([], [[new Float32Array(128), new Float32Array(128)]]);
-  assert.equal(staged.core.request("/api/timbres").timbres.length, 1);
+  assert.equal(staged.core.request("/api/timbres").timbres.filter((t) => t.kind !== "master").length, 1);
   const resumed = ++id;
   staged.port.onmessage({ data: { id: resumed, type: "add-timbre", data: { kind: "drums" } } });
   staged.process([], [[new Float32Array(128), new Float32Array(128)]]);
   staged.port.onmessage({ data: { type: "prepare-idle" } });
-  assert.equal(messages.findLast(m => m.id === resumed).result.timbres.length, 2);
+  assert.equal(messages.findLast(m => m.id === resumed).result.timbres.filter((t) => t.kind !== "master").length, 2);
 }
 
 // A meter-only message retains the preset object. Rejected deltas request a

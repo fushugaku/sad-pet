@@ -39,7 +39,7 @@ for (const rate of [8000, 44100, 48000, 96000]) {
   publish(false);
   audio.request("/api/region", { start: 0.1, end: 0.7 });
   publish();
-  audio.request("/api/timbres/add", { kind: "drums" });
+  const drums = audio.request("/api/timbres/add", { kind: "drums" }).active;
   publish();
   audio.request("/api/drums/edit", [{ track: 0, step: 127, field: 0, value: 0.8 }]);
   audio.request("/api/parameters", { drum_granular: 1, drum1_0: 73 });
@@ -50,7 +50,7 @@ for (const rate of [8000, 44100, 48000, 96000]) {
   publish();
   audio.request("/api/timbres/select", { id: 0 });
   publish();
-  audio.request("/api/timbres/remove", { id: 1 });
+  audio.request("/api/timbres/remove", { id: drums });
   publish();
   assert.throws(() => light.snapshot(obsolete), /Obsolete timbre snapshot/);
   publish(false);

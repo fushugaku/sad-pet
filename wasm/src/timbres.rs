@@ -1,11 +1,40 @@
 //! One WASM memory, independently running parts and a fixed audio mix buffer.
 use super::*;
-use sad_pet::timbres::{Context, Kind, Meta};
+use sad_pet::{
+    bus::MAX_BUSES,
+    timbres::{Context, Kind, Meta, SendGains},
+};
 
 pub(super) struct Part {
     pub meta: Meta,
     pub host: Host,
     pub gain: f32,
+    pub sends: SendGains,
+}
+impl Part {
+    /// A Bus or Master starts with everything off. It keeps the host's tiny
+    /// placeholder sample, so scenes do not store the file again for it.
+    fn routing(rate: u32, kind: Kind, id: u32, bus: u8) -> Self {
+        let mut host = Host::new(rate);
+        host.engine.set_preset(kind.preset().unwrap());
+        host.resize_snapshot();
+        let name = match kind {
+            Kind::Bus => format!("Bus {bus}"),
+            _ => kind.label().into(),
+        };
+        Self {
+            meta: Meta {
+                id,
+                name,
+                kind,
+                bus,
+                ..Meta::default()
+            },
+            host,
+            gain: 1.,
+            sends: SendGains::default(),
+        }
+    }
 }
 struct Preparing {
     kind: Kind,
@@ -33,6 +62,7 @@ impl Registry {
                 meta: Meta::default(),
                 host: Host::new(rate),
                 gain: 1.,
+                sends: SendGains::default(),
             }],
             selected: 0,
             target: None,
@@ -42,8 +72,35 @@ impl Registry {
             snapshot_part: 0,
             unacked: [None; 3],
         };
+        r.ensure_master();
         r.refresh_context();
         r
+    }
+    /// Every scene has exactly one Master, including scenes saved before it.
+    fn ensure_master(&mut self) {
+        if !self.parts.iter().any(|p| p.meta.kind == Kind::Master) {
+            let rate = self.parts[0].host.rate;
+            let id = self.next_id;
+            self.next_id = id.saturating_add(1);
+            self.parts.push(Part::routing(rate, Kind::Master, id, 0));
+        }
+    }
+    /// Bus numbers are unique and valid after loading or adopting a scene.
+    fn number_buses(&mut self) {
+        for i in 0..self.parts.len() {
+            if self.parts[i].meta.kind != Kind::Bus {
+                continue;
+            }
+            let bus = self.parts[i].meta.bus;
+            let taken = bus == 0
+                || self.parts[..i]
+                    .iter()
+                    .any(|p| p.meta.kind == Kind::Bus && p.meta.bus == bus);
+            if taken {
+                let metas: Vec<Meta> = self.parts[..i].iter().map(|p| p.meta.clone()).collect();
+                self.parts[i].meta.bus = sad_pet::timbres::free_bus(&metas).unwrap_or(0);
+            }
+        }
     }
     pub fn index(&self) -> usize {
         self.target.unwrap_or(self.selected)
@@ -70,13 +127,16 @@ impl Registry {
         for meta in &context.timbres {
             if !self.parts.iter().any(|p| p.meta.id == meta.id) {
                 let mut host = Host::new(rate);
-                host.engine
-                    .set_sample(self.parts[0].host.engine.sample.clone());
+                if !meta.kind.routing() {
+                    host.engine
+                        .set_sample(self.parts[0].host.engine.sample.clone());
+                }
                 host.file_generation = self.parts[0].host.file_generation;
                 self.parts.push(Part {
                     meta: meta.clone(),
                     host,
                     gain: meta.mix.gain,
+                    sends: SendGains::default(),
                 });
             } else {
                 self.parts
@@ -108,6 +168,14 @@ impl Registry {
     fn begin_part(&mut self, kind: Kind) -> Result<(), String> {
         if self.preparing.is_some() {
             return Err("A timbre is already being prepared".into());
+        }
+        if kind == Kind::Master {
+            return Err("The scene always has one Master".into());
+        }
+        if kind == Kind::Bus
+            && sad_pet::timbres::free_bus(self.parts.iter().map(|p| &p.meta)).is_none()
+        {
+            return Err(format!("Use at most {MAX_BUSES} buses"));
         }
         self.next_id
             .checked_add(1)
@@ -144,7 +212,7 @@ impl Registry {
                     .synth_runtime
                     .prepare_engine(preset.synth.as_deref(), rate);
             }
-            3 if pending.kind != Kind::Granular => {
+            3 if pending.kind != Kind::Granular && !pending.kind.routing() => {
                 let preset = pending.preset.as_mut().unwrap();
                 let history = preset.history().unwrap();
                 let input = pending.live.get_or_insert_with(|| {
@@ -177,7 +245,9 @@ impl Registry {
             _ => {
                 let mut host = pending.host.take().unwrap();
                 let primary = &self.parts[0].host;
-                host.engine.set_sample(primary.engine.sample.clone());
+                if !pending.kind.routing() {
+                    host.engine.set_sample(primary.engine.sample.clone());
+                }
                 host.engine.set_midi_gate(primary.engine.midi_gate);
                 host.file_generation = primary.file_generation;
                 if let Some(mut preset) = pending.preset.take() {
@@ -188,19 +258,40 @@ impl Registry {
                 host.engine.set_playing(primary.engine.playing);
                 let kind = pending.kind;
                 let count = self.parts.iter().filter(|p| p.meta.kind == kind).count() + 1;
+                let bus = if kind == Kind::Bus {
+                    sad_pet::timbres::free_bus(self.parts.iter().map(|p| &p.meta))
+                        .ok_or("No free bus")?
+                } else {
+                    0
+                };
                 let id = self.next_id;
                 self.next_id = id.checked_add(1).ok_or("Timbre identity overflow")?;
-                self.parts.push(Part {
-                    meta: Meta {
-                        id,
-                        kind,
-                        name: format!("{} {count}", kind.label()),
-                        ..Meta::default()
+                // Master stays the last tab; new timbres go before it.
+                let at = self
+                    .parts
+                    .iter()
+                    .position(|p| p.meta.kind == Kind::Master)
+                    .unwrap_or(self.parts.len());
+                self.parts.insert(
+                    at,
+                    Part {
+                        meta: Meta {
+                            id,
+                            kind,
+                            bus,
+                            name: if kind == Kind::Bus {
+                                format!("Bus {bus}")
+                            } else {
+                                format!("{} {count}", kind.label())
+                            },
+                            ..Meta::default()
+                        },
+                        host,
+                        gain: 1.,
+                        sends: SendGains::default(),
                     },
-                    host,
-                    gain: 1.,
-                });
-                self.selected = self.parts.len() - 1;
+                );
+                self.selected = at;
                 self.target = None;
                 self.revision = self.revision.wrapping_add(1);
                 self.refresh_context();
@@ -235,6 +326,8 @@ impl Registry {
                     self.selected = 0;
                     self.parts[0].meta = Meta::default();
                     self.parts[0].gain = 1.;
+                    self.parts[0].sends = SendGains::default();
+                    self.ensure_master();
                 }
                 "/api/timbres/select" => {
                     let id = data["id"].as_u64().ok_or("Choose a timbre")? as u32;
@@ -253,7 +346,7 @@ impl Registry {
                         .find(|p| p.meta.id == id)
                         .ok_or("Unknown timbre")?;
                     let mut value = json!(part.meta);
-                    for key in ["name", "gain", "muted", "solo", "channel"] {
+                    for key in ["name", "gain", "muted", "solo", "channel", "sends"] {
                         if let Some(v) = data.get(key) {
                             value[key] = v.clone();
                         }
@@ -272,6 +365,19 @@ impl Registry {
                     let id = data["id"].as_u64().ok_or("Choose a timbre")? as u32;
                     if id == 0 {
                         return Err("Keep the first timbre for DAW automation".into());
+                    }
+                    let removed = self.parts.iter().find(|p| p.meta.id == id);
+                    if removed.is_some_and(|p| p.meta.kind == Kind::Master) {
+                        return Err("The scene always has one Master".into());
+                    }
+                    // Nothing keeps sending to a removed bus or its number.
+                    if let Some(bus) = removed
+                        .filter(|p| p.meta.kind == Kind::Bus)
+                        .map(|p| p.meta.bus)
+                    {
+                        for part in &mut self.parts {
+                            part.meta.mix.sends[bus as usize - 1] = 0.;
+                        }
                     }
                     let active = self.parts[self.selected].meta.id;
                     self.parts.retain(|p| p.meta.id != id);
@@ -301,6 +407,9 @@ impl Registry {
         if path == "/api/midi-bytes" && !data.is_null() {
             // Each parser keeps running status across packets; filtering follows decoding.
             for part in &mut self.parts {
+                if part.meta.kind.routing() {
+                    continue;
+                }
                 let before = part.host.engine.preset.params;
                 let mut program = false;
                 for byte in data.as_array().ok_or("Invalid MIDI packet")? {
@@ -343,6 +452,29 @@ impl Registry {
         let index = self.index();
         let state = path == "/api/state";
         let preset_changed = path == "/api/preset" && !data.is_null();
+        let mut request = request;
+        if preset_changed && let Some(data) = request["data"].as_object_mut() {
+            // A Bus or Master keeps its role when a preset loads into it;
+            // any other timbre ignores bus settings.
+            let engine = &self.parts[index].host.engine;
+            if let Some(bus) = engine
+                .preset
+                .bus
+                .as_deref()
+                .filter(|_| self.parts[index].meta.kind.routing())
+            {
+                let mut settings = data.get("bus").cloned().unwrap_or(Value::Null);
+                if settings.is_null() {
+                    settings = json!(bus);
+                }
+                settings["master"] = json!(bus.master);
+                data.insert("bus".into(), settings);
+                data.remove("drums");
+                data.remove("synth");
+            } else {
+                data.remove("bus");
+            }
+        }
         let mut result = self.parts[index].host.command(request)?;
         if preset_changed {
             // A loaded preset can change the part's engine type.
@@ -355,23 +487,63 @@ impl Registry {
         }
         Ok(result)
     }
+    /// Timbres sum into Master and send to buses; buses then feed Master,
+    /// whose engine renders the output. With no buses and Master at its
+    /// defaults, the output is the plain sum of the timbres as before.
     pub fn process(&mut self, count: usize) -> *const Stereo {
-        let solo = self.parts.iter().any(|p| p.meta.mix.solo);
+        let solo = self
+            .parts
+            .iter()
+            .any(|p| p.meta.mix.solo && !p.meta.kind.routing());
+        let buses = self.parts.iter().any(|p| p.meta.kind == Kind::Bus);
+        let master = self.parts.iter().position(|p| p.meta.kind == Kind::Master);
+        let gain = |part: &mut Part, audible: bool| {
+            let target = if audible { part.meta.mix.gain } else { 0. };
+            part.gain = sad_pet::dsp::fast::flush(part.gain + (target - part.gain) * 0.004);
+            part.gain
+        };
         for i in 0..count.min(BLOCK) {
             let input = self.parts[0].host.audio_input[i];
             let mut frame = [0.; 2];
+            let mut sends = [[0.; 2]; MAX_BUSES];
             for part in &mut self.parts {
+                if part.meta.kind.routing() {
+                    continue;
+                }
                 let mix = part.meta.mix;
-                let target = if !mix.muted && (!solo || mix.solo) {
-                    mix.gain
-                } else {
-                    0.
-                };
-                part.gain = sad_pet::dsp::fast::flush(part.gain + (target - part.gain) * 0.004);
+                let audible = !mix.muted && (!solo || mix.solo);
+                let level = gain(part, audible);
                 let out = part.host.engine.process_input_frame(input);
                 for c in 0..2 {
-                    frame[c] += out[c] * part.gain;
+                    frame[c] += out[c] * level;
                 }
+                if buses {
+                    part.sends.send(&mix.sends, audible, out, &mut sends);
+                }
+            }
+            if buses {
+                for part in &mut self.parts {
+                    if part.meta.kind != Kind::Bus || part.meta.bus == 0 {
+                        continue;
+                    }
+                    let level = gain(part, !part.meta.mix.muted);
+                    let out = part
+                        .host
+                        .engine
+                        .process_input_frame(sends[part.meta.bus as usize - 1]);
+                    for c in 0..2 {
+                        frame[c] += out[c] * level;
+                    }
+                }
+            }
+            if let Some(m) = master {
+                let part = &mut self.parts[m];
+                let level = gain(part, !part.meta.mix.muted);
+                frame = part
+                    .host
+                    .engine
+                    .process_input_frame(frame)
+                    .map(|v| v * level);
             }
             self.parts[0].host.frames[i] = frame;
         }
@@ -522,6 +694,7 @@ impl Registry {
                 meta: state.meta,
                 host,
                 gain: 1.,
+                sends: SendGains::default(),
             });
         }
         if !tail.is_empty() || parts[0].meta.id != 0 {
@@ -548,6 +721,8 @@ impl Registry {
             header.context.revision
         };
         self.unacked.fill(None);
+        self.number_buses();
+        self.ensure_master();
         self.refresh_context();
         Ok(())
     }
@@ -642,6 +817,7 @@ impl Registry {
             let preset: Preset =
                 serde_json::from_value(state["preset"].clone()).map_err(|e| e.to_string())?;
             meta.kind = Kind::of(&preset);
+            meta.sanitize();
             let mut host = Host::new(rate);
             host.engine = Box::new(Engine::new(rate, Arc::new(sample), preset));
             if host.engine.preset.history().is_none() {
@@ -669,6 +845,7 @@ impl Registry {
                 meta,
                 host,
                 gain: 1.,
+                sends: SendGains::default(),
             });
         }
         self.next_id = self.next_id.max(
@@ -687,6 +864,8 @@ impl Registry {
             .unwrap_or(0);
         self.target = None;
         self.revision = self.revision.wrapping_add(1);
+        self.number_buses();
+        self.ensure_master();
         self.refresh_context();
         Ok(())
     }

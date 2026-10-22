@@ -34,7 +34,7 @@ try {
   let state = core.request("/api/state");
   assert.equal(state.preset.name, "glasses5");
   assert.equal(state.timbres.name, "glasses5");
-  assert.equal(state.timbres.timbres.length, 1);
+  assert.deepEqual(state.timbres.timbres.map((t) => t.kind), ["granular", "master"]);
   assert.equal(state.sample_id, "factory:dusty-keys:v1");
   assert.equal(state.sample_seconds, 12);
   assert.equal(state.source_generation, 1);
@@ -69,7 +69,7 @@ try {
   await request("/api/input", { active: true, mode: "effects" });
   core.call("sad_scene_load", await call("startup", { generation: 7 }));
   state = core.request("/api/state");
-  assert.equal(state.timbres.timbres.length, 1);
+  assert.deepEqual(state.timbres.timbres.map((t) => t.kind), ["granular", "master"]);
   assert.equal(state.timbres.active, 0);
   assert.equal(state.input.active, false);
   assert.equal(state.source_generation, 7);
