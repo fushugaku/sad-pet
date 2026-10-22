@@ -1,6 +1,6 @@
 //! Memory and ABI adapters for the statically translated firmware.
 //! Instructions themselves are Rust statements in `generated`, not interpreted bytes.
-use std::fmt;
+use std::{cell::Cell, fmt};
 
 pub const RETURN_PC: u32 = 0xffff_fff0;
 
@@ -31,8 +31,73 @@ impl FastFma for f32 {
 impl FastFma for f64 {
     #[inline(always)]
     fn fast_mul_add(self, y: f64, z: f64) -> f64 {
+        #[cfg(target_arch = "wasm32")]
+        return fma64(self, y, z);
+        #[cfg(not(target_arch = "wasm32"))]
         self.mul_add(y, z)
     }
+}
+
+/// Correctly rounded float64 fused multiply-add from plain float64 operations,
+/// for targets without a hardware FMA (wasm32 calls a software routine that
+/// multiplies 128-bit integers). Boldo and Melquiond's emulated FMA: the exact
+/// product and the exact sum with the addend are split into two floats each,
+/// their low parts are added with rounding to odd, and one final rounding to
+/// nearest gives the correctly rounded result. The proof needs every
+/// intermediate value to stay normal, so operands outside a wide exponent
+/// window (and NaN/infinity) take the library routine; a zero factor or
+/// addend has an exact product or an exact sum and needs no fusion at all.
+/// Every path returns the unique correctly rounded value.
+#[cfg_attr(not(any(test, target_arch = "wasm32")), allow(dead_code))]
+#[inline(always)]
+pub fn fma64(a: f64, b: f64, c: f64) -> f64 {
+    #[inline(always)]
+    fn moderate(x: f64) -> bool {
+        // Biased exponents 1023 ± 480: normal, |x| within 2^±480.
+        ((x.to_bits() >> 52) & 0x7ff).wrapping_sub(1023 - 480) <= 960
+    }
+    if moderate(a) && moderate(b) {
+        if moderate(c) {
+            // Dekker's exact product: a * b == ph + pl.
+            const SPLIT: f64 = 134_217_729.0; // 2^27 + 1
+            let t = SPLIT * a;
+            let ah = t - (t - a);
+            let al = a - ah;
+            let t = SPLIT * b;
+            let bh = t - (t - b);
+            let bl = b - bh;
+            let ph = a * b;
+            let pl = ((ah * bh - ph) + ah * bl + al * bh) + al * bl;
+            // Knuth's exact sum: c + ph == sh + sl.
+            let sh = c + ph;
+            let z = sh - c;
+            let sl = (c - (sh - z)) + (ph - z);
+            // sl + pl rounded to odd: the nearest float, nudged to the odd
+            // neighbour on the side of the exact sum when it was rounded.
+            let v = sl + pl;
+            let z = v - sl;
+            let e = (sl - (v - z)) + (pl - z);
+            let v = if e != 0.0 && v.to_bits() & 1 == 0 {
+                if e > 0.0 {
+                    v.next_up()
+                } else {
+                    v.next_down()
+                }
+            } else {
+                v
+            };
+            return sh + v;
+        }
+        if c == 0.0 {
+            // A normal product of moderate size is not zero: adding a signed
+            // zero leaves its rounding unchanged.
+            return a * b + c;
+        }
+    } else if (a == 0.0 && b.is_finite()) || (b == 0.0 && a.is_finite()) {
+        // The product is an exact signed zero, so one rounding remains.
+        return a * b + c;
+    }
+    a.mul_add(b, c)
 }
 pub const FLASH_BASE: u32 = 0x6002_0000;
 pub const ROM: &[u8] = include_bytes!("../firmware/echolocator-1.05.bin");
@@ -85,6 +150,10 @@ pub struct Machine {
     pub heap_cursor: usize,
     pub exclusive: u32,
     pub irq_enabled: bool,
+    /// A fault raised inside a fused ITCM block, which carries on with zero
+    /// loads and dropped stores until the dispatcher reads the cell.
+    faulted: Cell<bool>,
+    pending_fault: Cell<Option<Fault>>,
 }
 
 impl Default for Machine {
@@ -111,6 +180,8 @@ impl Machine {
             heap_cursor: 0,
             exclusive: u32::MAX,
             irq_enabled: true,
+            faulted: Cell::new(false),
+            pending_fault: Cell::new(None),
         }
     }
     /// Reset the translated machine without replacing its allocated buffers.
@@ -128,11 +199,81 @@ impl Machine {
         self.heap_cursor = 0;
         self.exclusive = u32::MAX;
         self.irq_enabled = true;
+        self.faulted.set(false);
+        self.pending_fault.set(None);
     }
     pub fn fault(&self, message: impl Into<String>) -> Fault {
         Fault {
             pc: self.pc,
             message: message.into(),
+        }
+    }
+    /// Park the first fault of a fused block for the dispatcher.
+    #[cold]
+    #[inline(never)]
+    pub fn fail(&self, fault: Fault) {
+        if !self.faulted.replace(true) {
+            self.pending_fault.set(Some(fault));
+        }
+    }
+    /// A fused block has faulted since the last `take_fault`.
+    #[inline(always)]
+    pub fn faulted(&self) -> bool {
+        self.faulted.get()
+    }
+    /// The parked fault, clearing the cell.
+    #[cold]
+    #[inline(never)]
+    pub fn take_fault(&mut self) -> Fault {
+        self.faulted.set(false);
+        self.pending_fault
+            .take()
+            .unwrap_or_else(|| self.fault("fused block faulted"))
+    }
+    /// Continue inside ITCM from a fused block, in tail position. On wasm32
+    /// with tail calls this is `return_call_indirect`: the firmware routine
+    /// runs block to block without the dispatch loop, which only sees program
+    /// counters outside ITCM, `RETURN_PC`, or a parked fault. Backward edges
+    /// pass here, so the tick budget is still enforced on every loop.
+    #[inline(always)]
+    pub fn jump(&mut self, pc: u32) -> u32 {
+        if self.faulted.get() {
+            return pc;
+        }
+        if self.ticks >= self.budget {
+            self.fail(self.fault("instruction budget exceeded"));
+            return pc;
+        }
+        crate::fused::fused(self, pc).unwrap_or(pc)
+    }
+    /// `load` for fused ITCM blocks: an unmapped address parks the fault and
+    /// reads as zero, so the block needs no early exit.
+    #[inline(always)]
+    pub fn load_itcm(&self, address: u32, size: usize) -> u64 {
+        match self.region(address, size) {
+            Ok(b) => match size {
+                1 => b[0] as u64,
+                2 => u16::from_le_bytes(b.try_into().unwrap()) as u64,
+                4 => u32::from_le_bytes(b.try_into().unwrap()) as u64,
+                8 => u64::from_le_bytes(b.try_into().unwrap()),
+                _ => {
+                    self.fail(self.fault("invalid load width"));
+                    0
+                }
+            },
+            Err(fault) => {
+                self.fail(fault);
+                0
+            }
+        }
+    }
+    /// `store` for fused ITCM blocks: an unmapped address parks the fault and
+    /// drops the write.
+    #[inline(always)]
+    pub fn store_itcm(&mut self, address: u32, size: usize, value: u64) {
+        match self.region_mut(address, size) {
+            Ok(b) => b.copy_from_slice(&value.to_le_bytes()[..size]),
+            Err(fault) => self.fail(fault),
         }
     }
     #[inline(always)]
@@ -261,10 +402,18 @@ impl Machine {
             let fused = !self.reference_dispatch;
             #[cfg(not(test))]
             let fused = true;
-            if fused && self.pc < 0x3500 {
-                // No host call lives in ITCM, so its blocks step straight
-                // through the fused table.
-                self.pc = crate::fused::itcm(self, self.pc)?;
+            // No host call lives in a fused page, so its blocks step straight
+            // through the fused tables.
+            let next = if fused {
+                crate::fused::fused(self, self.pc)
+            } else {
+                None
+            };
+            if let Some(next) = next {
+                self.pc = next;
+                if self.faulted.get() {
+                    return Err(self.take_fault());
+                }
                 continue;
             }
             if !self.host_call()? {
@@ -384,5 +533,121 @@ pub fn float_to_fixed(bits: u64, width: usize, fraction: u32) -> u64 {
         (v as i32) as u32 as u64
     } else {
         (v as i16) as u16 as u64
+    }
+}
+
+#[cfg(test)]
+mod dispatch_tests {
+    #[test]
+    fn host_calls_are_never_fused() {
+        for pc in [0x600413e0, 0x600413f0, 0x60030af4, 0x60041868, 0x6002047c] {
+            assert!(!crate::fused::is_fused(pc), "{pc:#x}");
+        }
+        assert!(crate::fused::is_fused(0x208));
+        assert!(crate::fused::is_fused(0x60040a38));
+    }
+}
+
+#[cfg(test)]
+mod fma_tests {
+    use super::fma64;
+
+    struct Rng(u64);
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            // xorshift64*
+            self.0 ^= self.0 >> 12;
+            self.0 ^= self.0 << 25;
+            self.0 ^= self.0 >> 27;
+            self.0.wrapping_mul(0x2545_f491_4f6c_dd1d)
+        }
+        /// Random sign and mantissa, biased exponent uniform in `exponents`.
+        fn float(&mut self, exponents: std::ops::RangeInclusive<u64>, sparse: bool) -> f64 {
+            let bits = self.next();
+            let span = exponents.end() - exponents.start() + 1;
+            let exponent = exponents.start() + (self.next() % span);
+            let mut mantissa = bits & 0x000f_ffff_ffff_ffff;
+            if sparse {
+                // Few significant bits: exact products and halfway sums.
+                mantissa &= self.next() & self.next() & self.next();
+            }
+            f64::from_bits((bits & (1 << 63)) | (exponent << 52) | mantissa)
+        }
+    }
+
+    fn check(a: f64, b: f64, c: f64) {
+        let want = a.mul_add(b, c);
+        let got = fma64(a, b, c);
+        assert!(
+            want.to_bits() == got.to_bits() || (want.is_nan() && got.is_nan()),
+            "fma({a:e}, {b:e}, {c:e}) = {want:e} ({:#018x}), emulated {got:e} ({:#018x})",
+            want.to_bits(),
+            got.to_bits()
+        );
+    }
+
+    #[test]
+    fn fma64_matches_the_fused_multiply_add_bit_for_bit() {
+        let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
+        let specials = [
+            0.0,
+            -0.0,
+            1.0,
+            -1.0,
+            0.5,
+            f64::MIN_POSITIVE,
+            -f64::MIN_POSITIVE,
+            f64::from_bits(1),
+            f64::MAX,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NAN,
+            1.0 + f64::EPSILON,
+            3.0,
+            1e-300,
+            1e300,
+        ];
+        for &a in &specials {
+            for &b in &specials {
+                for &c in &specials {
+                    check(a, b, c);
+                }
+            }
+        }
+        for _ in 0..3_000_000 {
+            // Uniform within the emulated window, independent exponents.
+            check(
+                rng.float(543..=1503, false),
+                rng.float(543..=1503, false),
+                rng.float(543..=1503, false),
+            );
+            // Sparse mantissas near one exponent: ties and exact sums.
+            let e = 900 + rng.next() % 300;
+            let a = rng.float(e..=e + 3, true);
+            let b = rng.float(e..=e + 3, true);
+            let c = rng.float(2 * e - 1023 - 4..=2 * e - 1023 + 6, true);
+            check(a, b, c);
+            // Cancellation: the addend is the rounded product or a neighbour.
+            let a = rng.float(800..=1200, false);
+            let b = rng.float(800..=1200, false);
+            let p = -(a * b);
+            check(a, b, p);
+            check(a, b, p.next_up());
+            check(a, b, p.next_down());
+            check(a, b, p * 0.5);
+            check(a, b, p * 2.0);
+            // Anything at all, including subnormals and infinities.
+            check(
+                rng.float(0..=2047, false),
+                rng.float(0..=2047, false),
+                rng.float(0..=2047, false),
+            );
+            // Zero factors and addends against every magnitude.
+            let x = rng.float(0..=2047, false);
+            let zero = if rng.next() & 1 == 0 { 0.0 } else { -0.0 };
+            check(zero, x, rng.float(0..=2047, false));
+            check(x, zero, rng.float(0..=2047, false));
+            check(x, rng.float(0..=2047, false), zero);
+        }
     }
 }

@@ -48,12 +48,13 @@ pub fn pitch_ratio(semitones: f32) -> f64 {
 }
 
 /// c003840c: a mirrored ramp mixed with the original half-cosine window LUT.
+/// `shape` is already within 0..=1; grains clamp it once when they start.
 pub fn grain_window(phase: f32, shape: f32) -> f32 {
     if !(0.0..=2.0).contains(&phase) {
         return 0.0;
     }
     let triangle = if phase <= 1.0 { phase } else { 2.0 - phase };
-    triangle + shape.clamp(0.0, 1.0) * (lookup(&WINDOW, triangle * 4096.0) - triangle)
+    triangle + shape * (lookup(&WINDOW, triangle * 4096.0) - triangle)
 }
 
 pub fn sine(phase: f64) -> f32 {

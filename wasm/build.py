@@ -39,12 +39,13 @@ def strip_debug_names(data):
     return output
 
 
-def cargo_build(env, target, simd):
-    """Compile the engine; the SIMD variant keeps its own target directory."""
+def cargo_build(env, target, features):
+    """Compile the engine; each target-feature variant keeps its own target directory."""
     env = env.copy()
-    if simd:
-        target = target.with_name(target.name + "-simd")
-        env["RUSTFLAGS"] = (env.get("RUSTFLAGS", "") + " -C target-feature=+simd128").strip()
+    if features:
+        target = target.with_name(target.name + "-" + "-".join(features))
+        flags = ",".join("+" + feature for feature in features)
+        env["RUSTFLAGS"] = (env.get("RUSTFLAGS", "") + f" -C target-feature={flags}").strip()
     env["CARGO_TARGET_DIR"] = str(target)
     subprocess.run([
         "cargo", "build", "--locked", "--profile", "wasm", "--target", "wasm32-unknown-unknown",
@@ -53,15 +54,17 @@ def cargo_build(env, target, simd):
     return target / "wasm32-unknown-unknown" / "wasm" / "sad_pet_wasm.wasm"
 
 
-def optimize(wasm_opt, level, path, simd):
+def optimize(wasm_opt, level, path, features):
     """Binaryen keeps IEEE float semantics without --fast-math: identical renders."""
-    features = [
+    enabled = [
         "--enable-bulk-memory", "--enable-nontrapping-float-to-int", "--enable-sign-ext",
         "--enable-mutable-globals", "--enable-multivalue", "--enable-reference-types",
     ]
-    if simd:
-        features.append("--enable-simd")
-    subprocess.run([wasm_opt, level, *features, "-o", str(path), str(path)], check=True)
+    if "simd128" in features:
+        enabled.append("--enable-simd")
+    if "tail-call" in features:
+        enabled.append("--enable-tail-call")
+    subprocess.run([wasm_opt, level, *enabled, "-o", str(path), str(path)], check=True)
 
 
 def main():
@@ -74,6 +77,11 @@ def main():
     parser.add_argument("--simd", action="store_true",
                         help="Also build sad_pet.simd.wasm (+simd128). Experimental: it renders "
                              "identical samples but measured about 5%% slower in V8")
+    parser.add_argument("--tail-call", action="store_true",
+                        help="Also build sad_pet.tc.wasm (+tail-call), which browsers that validate "
+                             "tail calls load instead of the baseline: the translated firmware "
+                             "runs block to block without its dispatch loop. Identical samples, "
+                             "measured about 2.5%% faster on SuperEcho scenes, a second 20 MB file")
     args = parser.parse_args()
     env = os.environ.copy()
     # Homebrew's cargo can precede rustup on PATH; use the rustc that owns the
@@ -90,17 +98,23 @@ def main():
             raise SystemExit("--wasm-opt needs Binaryen's wasm-opt on PATH or in $WASM_OPT")
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    variants = [("sad_pet.wasm", False)] + ([("sad_pet.simd.wasm", True)] if args.simd else [])
-    for name, simd in variants:
-        built = cargo_build(env, target, simd)
+    variants = [("sad_pet.wasm", [])]
+    if args.tail_call:
+        variants.append(("sad_pet.tc.wasm", ["tail-call"]))
+    if args.simd:
+        variants.append(("sad_pet.simd.wasm", ["simd128"]))
+    for name, features in variants:
+        built = cargo_build(env, target, features)
         shutil.copy2(built, output / name)
         if wasm_opt:
-            optimize(wasm_opt, args.wasm_opt, output / name, simd)
+            optimize(wasm_opt, args.wasm_opt, output / name, features)
         if not args.keep_debug_names:
             wasm = output / name
             wasm.write_bytes(strip_debug_names(wasm.read_bytes()))
     if not args.simd:
         (output / "sad_pet.simd.wasm").unlink(missing_ok=True)
+    if not args.tail_call:
+        (output / "sad_pet.tc.wasm").unlink(missing_ok=True)
     for name in ("index.html", "app.js", "library.js", "selection.js", "presets.js", "sequence.js", "panels.js", "style.css"):
         shutil.copy2(ROOT / "rust" / "web" / name, output / name)
     index = (output / "index.html").read_text()
@@ -108,6 +122,13 @@ def main():
     index = index.replace("RUST EDITION", "WEBASSEMBLY")
     (output / "index.html").write_text(index)
     shutil.copytree(ROOT / "wasm" / "web", output, dirs_exist_ok=True)
+    if not args.tail_call:
+        # Without the variant the loader must not spend a request on it.
+        backend = output / "browser-backend.mjs"
+        source = backend.read_text()
+        reference = 'new URL("./sad_pet.tc.wasm", import.meta.url)'
+        assert source.count(reference) == 1, "tail-call engine reference in browser-backend.mjs"
+        backend.write_text(source.replace(reference, "undefined"))
     (output / "licenses").mkdir(exist_ok=True)
     shutil.copy2(ROOT / "rust/licenses/neuropolis-AGPL-3.0.txt", output / "licenses/neuropolis-AGPL-3.0.txt")
     for name in ("superecho", "alphaverb", "dxm088"):

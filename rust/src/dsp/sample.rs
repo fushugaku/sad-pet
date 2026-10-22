@@ -600,7 +600,8 @@ impl SampleBuffer {
             range.start as f64 + wrap_position(position - range.start as f64, range.len() as f64);
         while level > 0 {
             let scale = (1_usize << level) as f64;
-            let base = (p / scale).floor();
+            // Multiplying by 2^-level is the same exact value as the division.
+            let base = (p * level_scale(level)).floor();
             let support = 16.0 * (scale - 1.0);
             if (base - 1.0) * scale - support >= range.start as f64
                 && (base + 2.0) * scale + support < range.end as f64

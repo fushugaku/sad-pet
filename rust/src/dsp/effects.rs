@@ -44,12 +44,17 @@ impl Delay {
     }
     pub fn read(&self, samples: f32) -> Stereo {
         let len = self.frames.len();
-        let position = super::sample::wrap_position(
-            self.cursor as f64 - samples.clamp(1.0, (len - 2) as f32) as f64,
-            len as f64,
-        );
-        let i = position as usize;
-        let f = (position - i as f64) as f32;
+        // The fractional delay splits into its ceiling and the distance to it.
+        // Previously this subtracted `samples` from the cursor in float64 and
+        // took the floor and fraction of the result; both were exact there
+        // (the span of bits stays under 53), so this integer index is that
+        // floor and `f` is that fraction: `whole - samples` is exact by
+        // Sterbenz's lemma, as `whole / 2 <= samples <= whole`.
+        let samples = samples.clamp(1.0, (len - 2) as f32);
+        let whole = samples.ceil();
+        let f = whole - samples;
+        let i = self.cursor + len - whole as usize;
+        let i = if i >= len { i - len } else { i };
         let a = self.frames[i];
         let b = self.frames[if i + 1 == len { 0 } else { i + 1 }];
         [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]

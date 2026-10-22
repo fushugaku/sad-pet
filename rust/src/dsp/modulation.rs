@@ -236,6 +236,7 @@ impl Rustias {
                 .adopt(self.settings, value, held, self.parameters, &tables.timing);
         }
     }
+    #[inline(never)]
     fn next_sample(&mut self) -> f32 {
         if self.running() {
             self.clock += CONTROLLER_HZ;
@@ -343,6 +344,9 @@ impl Envelope {
         }
         self.stage != Stage::Idle
     }
+    /// Inlined into the per-frame voice loop: an idle or legacy stage costs a
+    /// few instructions, while the Rustias types run out of line.
+    #[inline]
     pub fn next_sample(&mut self) -> f32 {
         if self.rustias.mode != EnvMode::Legacy {
             return self.rustias.next_sample();

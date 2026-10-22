@@ -69,3 +69,30 @@ try {
 } finally {
   globalThis.fetch = simdFetch;
 }
+
+// The tail-call engine is chosen first where the browser validates tail
+// calls, falls back when missing, and never shadows the SIMD choice.
+try {
+  const requested = [];
+  const module = (status = 200) => new Response(status === 200 ? wasm : "missing", {
+    status,
+    headers: { "content-type": "application/wasm" },
+  });
+  const tailCalls = WebAssembly.validate(Uint8Array.of(0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 10, 6, 1, 4, 0, 18, 0, 11));
+  globalThis.fetch = async (url) => {
+    requested.push(String(url));
+    return module(String(url).includes(".tc.") ? 404 : 200);
+  };
+  assert.ok(await compileEngine("engine.wasm", undefined, "engine.tc.wasm") instanceof WebAssembly.Module);
+  assert.deepEqual(requested, tailCalls ? ["engine.tc.wasm", "engine.wasm"] : ["engine.wasm"]);
+  requested.length = 0;
+  globalThis.fetch = async (url) => {
+    requested.push(String(url));
+    return module();
+  };
+  assert.ok(await compileEngine("engine.wasm", undefined, "engine.tc.wasm") instanceof WebAssembly.Module);
+  assert.deepEqual(requested, tailCalls ? ["engine.tc.wasm"] : ["engine.wasm"]);
+  console.log(`WASM loader: tail-call engine ${tailCalls ? "preferred" : "skipped"} by this engine.`);
+} finally {
+  globalThis.fetch = simdFetch;
+}

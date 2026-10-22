@@ -38,6 +38,7 @@ jobs:
           node wasm/test-realtime.mjs
           node wasm/test-telemetry.mjs
           node wasm/test-loader.mjs
+          node wasm/test-tailcall.mjs
           node wasm/test-resynth.mjs
           node wasm/test-filters.mjs
           node wasm/test-imported.mjs

@@ -2007,7 +2007,7 @@ impl Engine {
             read_level: self.source_sample().level_for_rate(rate, true),
             age: 0,
             duration,
-            shape: p.grain_shape,
+            shape: p.grain_shape.clamp(0.0, 1.0),
             pan: tables::pan(pan),
             voice,
         };
