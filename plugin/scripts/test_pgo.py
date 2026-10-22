@@ -4,6 +4,7 @@ import tempfile
 import unittest
 
 from pgo import fingerprint, llvm_major, profile_guided, runs_here, with_rustflags
+from pgo_benchmark import RESULT, table
 
 
 class ProfileGuidedBuild(unittest.TestCase):
@@ -50,6 +51,22 @@ class ProfileGuidedBuild(unittest.TestCase):
         self.assertTrue(runs_here("x86_64-pc-windows-msvc", "x86_64-pc-windows-msvc"))
         self.assertFalse(runs_here("aarch64-apple-darwin", "x86_64-apple-darwin"))
         self.assertFalse(runs_here("aarch64-pc-windows-msvc", "x86_64-pc-windows-msvc"))
+
+    def test_benchmark_keeps_each_cases_fastest_round(self):
+        found = [RESULT.match(line) for line in (
+            "44100-11: samples=8 median_us=100.50 p99_us=1.00 max_us=2.00 compare",
+            "source_fx: rate=48000 blocks=9 block_us=50.00 hash=timing-dependent",
+            "PGO: engine_benchmark ran in 1.0 s")]
+        self.assertEqual([(match["case"], match["us"], match["hash"]) for match in found[:2]],
+                         [("44100-11", "100.50", None), ("source_fx", "50.00", "timing-dependent")])
+        self.assertIsNone(found[2])
+        rounds = {"normal": {"bench": {"a": [120.0, 100.0], "b": [10.0]}},
+                  "pgo": {"bench": {"a": [90.0, 81.0], "b": [10.0]}}}
+        report = table(rounds, ["bench"])
+        self.assertIn("| bench a | 100.00 | 81.00 | -19.0% |", report)
+        self.assertIn("| bench b | 10.00 | 10.00 | +0.0% |", report)
+        # Geometric mean of 0.81 and 1.0.
+        self.assertIn("| **bench geomean** (2 cases) | | | **-10.0%** |", report)
 
 
 if __name__ == "__main__":
