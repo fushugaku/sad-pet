@@ -235,13 +235,16 @@ impl Controller {
                 Ok(json!({"ok":true}))
             }
             ("/api/effect-presets/import", true) => {
-                let bytes = BASE64
-                    .decode(
-                        data["base64"]
-                            .as_str()
-                            .ok_or("Choose an effect preset file.")?,
-                    )
-                    .map_err(|e| e.to_string())?;
+                let bytes = match data["path"].as_str() {
+                    Some(path) => read_file(path.as_ref())?,
+                    None => BASE64
+                        .decode(
+                            data["base64"]
+                                .as_str()
+                                .ok_or("Choose an effect preset file.")?,
+                        )
+                        .map_err(|e| e.to_string())?,
+                };
                 let mut record = decode(&bytes)?;
                 if let Some(kind) = data.get("kind") {
                     let kind: SaturatorType =
@@ -264,8 +267,27 @@ impl Controller {
                 Ok(json!(self.effect_write(record.patch, None)?))
             }
             ("/api/effect-presets/export", true) => {
-                let bytes = read_file(&self.effect_path(id()?)?)?;
+                // A factory patch has no file; the app writes a portable copy of it.
+                let bytes = match data.get("preset").filter(|_| data["path"].is_string()) {
+                    Some(preset) => {
+                        let mut patch: Patch =
+                            serde_json::from_value(preset.clone()).map_err(|e| e.to_string())?;
+                        patch.validate()?;
+                        encode(&Record {
+                            id: unique_id(),
+                            created_at: timestamp(),
+                            modified_at: timestamp(),
+                            trashed_at: None,
+                            patch,
+                        })?
+                    }
+                    None => read_file(&self.effect_path(id()?)?)?,
+                };
                 decode(&bytes)?;
+                if let Some(path) = data["path"].as_str() {
+                    super::audio_library::write_file(path.as_ref(), &bytes)?;
+                    return Ok(json!({"ok":true}));
+                }
                 Ok(
                     json!({"binary":BASE64.encode(bytes),"mime":"application/x-sad-pet-effect-preset"}),
                 )

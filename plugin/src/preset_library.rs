@@ -333,7 +333,7 @@ impl Controller {
                     id: record.id,
                     dirty: false,
                 };
-                if !self.effect {
+                if !self.input_available() {
                     state.source = Source::File;
                     for part in &mut state.timbres {
                         part.source = Source::File;
@@ -415,6 +415,10 @@ impl Controller {
             ("/api/preset-library/export", true) => {
                 let bytes = self.library.bytes(id()?)?;
                 let (record, _) = decode(&bytes)?;
+                if let Some(path) = data["path"].as_str() {
+                    super::audio_library::write_file(path.as_ref(), &bytes)?;
+                    return Ok(json!({"ok":true,"name":record.name}));
+                }
                 let title: String = record
                     .name
                     .chars()
@@ -431,9 +435,12 @@ impl Controller {
                 )
             }
             ("/api/preset-library/import", true) => {
-                let bytes = BASE64
-                    .decode(data["base64"].as_str().ok_or("Choose a preset file.")?)
-                    .map_err(|_| "The preset file is invalid.")?;
+                let bytes = match data["path"].as_str() {
+                    Some(path) => super::audio_library::read_file(path.as_ref())?,
+                    None => BASE64
+                        .decode(data["base64"].as_str().ok_or("Choose a preset file.")?)
+                        .map_err(|_| "The preset file is invalid.")?,
+                };
                 if bytes.len() > MAX_BYTES {
                     return Err("The preset file exceeds 128 MB.".into());
                 }

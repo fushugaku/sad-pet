@@ -63,18 +63,41 @@ private:
     }
 };
 
+#if SAD_PET_STANDALONE
+// Files dropped on the window go straight to the native library.
+class SadPetEditor final : public juce::AudioProcessorEditor, public juce::FileDragAndDropTarget {
+#else
 class SadPetEditor final : public juce::AudioProcessorEditor {
+#endif
 public:
     explicit SadPetEditor(SadPetProcessor& owner)
         : AudioProcessorEditor(owner), browser(owner) {
+       #if SAD_PET_STANDALONE
+        setResizeLimits(480, 540, 16384, 16384);
+        setSize(1180, 880);
+       #else
         setResizable(true, true);
         setResizeLimits(420, 540, 1800, 1500);
         setSize(1120, 850);
+       #endif
         addAndMakeVisible(browser);
         browser.goToURL(juce::WebBrowserComponent::getResourceProviderRoot());
     }
     void resized() override { browser.setBounds(getLocalBounds()); }
     void paint(juce::Graphics& g) override { g.fillAll(juce::Colour(0xff20291e)); }
+   #if SAD_PET_STANDALONE
+    bool isInterestedInFileDrag(const juce::StringArray& files) override {
+        for (const auto& file : files)
+            if (juce::File(file).hasFileExtension(".wav;.sadpet;.json")) return true;
+        return false;
+    }
+    void filesDropped(const juce::StringArray& files, int, int) override {
+        auto* owner = static_cast<SadPetProcessor*>(&processor);
+        owner->standalone->importDropped(files, [safe = juce::Component::SafePointer<SadPetEditor>(this)](juce::var result) {
+            if (safe != nullptr) safe->browser.emitEventIfBrowserIsVisible("sadLibraryImported", result);
+        });
+    }
+   #endif
 private:
     PluginBrowser browser;
 };
@@ -97,11 +120,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout SadPetProcessor::makeLayout(
 
 SadPetProcessor::SadPetProcessor()
     : AudioProcessor(BusesProperties()
-       #if SAD_PET_EFFECT
+       #if SAD_PET_EFFECT || SAD_PET_STANDALONE
         .withInput("Input", juce::AudioChannelSet::stereo(), true)
        #endif
         .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
-      parameters(*this, nullptr, "SAD_PET", makeLayout()), control(sad_control_new(SAD_PET_EFFECT != 0)) {
+      parameters(*this, nullptr, "SAD_PET", makeLayout()),
+     #if SAD_PET_STANDALONE
+      control(sad_control_new_standalone()) {
+    standalone = std::make_unique<sadpet::Services>(*this);
+     #else
+      control(sad_control_new(SAD_PET_EFFECT != 0)) {
+     #endif
     if (auto* array = descriptors().getArray()) {
         for (const auto& spec : *array) {
             rawParameters.push_back(parameters.getRawParameterValue(spec["id"].toString()));
@@ -117,7 +146,7 @@ SadPetProcessor::SadPetProcessor()
 }
 
 SadPetProcessor::~SadPetProcessor() {
-    requests.removeAllJobs(true, -1);
+    finishRequests();
     sad_audio_free(audio);
     sad_control_free(control);
 }
@@ -135,6 +164,10 @@ bool SadPetProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
     if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo()) return false;
    #if SAD_PET_EFFECT
     return layouts.getMainInputChannelSet() == juce::AudioChannelSet::stereo();
+   #elif SAD_PET_STANDALONE
+    // The app opens the device input only while the editor uses it.
+    return layouts.getMainInputChannelSet().isDisabled()
+        || layouts.getMainInputChannelSet() == juce::AudioChannelSet::stereo();
    #else
     return layouts.getMainInputChannelSet().isDisabled();
    #endif
@@ -169,14 +202,13 @@ void SadPetProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     sad_audio_begin(audio, renderValues.data(), renderValues.size(), bpm, beat, hasBeat, playing, static_cast<std::size_t>(frames));
     auto* left = buffer.getWritePointer(0);
     auto* right = buffer.getWritePointer(1);
+    const auto hasInput = getTotalNumInputChannels() > 0;
+   #if SAD_PET_STANDALONE
+    standalone->recorder.write(buffer.getArrayOfReadPointers(), frames, true);
+   #endif
     const auto render = [&](int start, int count) {
         if (count <= 0) return;
-        sad_audio_process(audio,
-           #if SAD_PET_EFFECT
-            left + start, right + start,
-           #else
-            nullptr, nullptr,
-           #endif
+        sad_audio_process(audio, hasInput ? left + start : nullptr, hasInput ? right + start : nullptr,
             left + start, right + start, static_cast<std::size_t>(count));
     };
     int cursor = 0;
@@ -188,6 +220,9 @@ void SadPetProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     }
     render(cursor, frames - cursor);
     sad_audio_end(audio, static_cast<std::size_t>(frames));
+   #if SAD_PET_STANDALONE
+    standalone->recorder.write(buffer.getArrayOfReadPointers(), frames, false);
+   #endif
     for (int channel = 2; channel < buffer.getNumChannels(); ++channel) buffer.clear(channel, 0, frames);
     midi.clear();
 }
@@ -224,12 +259,27 @@ juce::var SadPetProcessor::request(const juce::var& requestValue) {
             || path.startsWith("/api/timbres/") || path == "/api/drums/edit" || path == "/api/scene")
             updateHostDisplay(juce::AudioProcessorListener::ChangeDetails{}.withNonParameterStateChanged(true));
     }
+   #if SAD_PET_STANDALONE
+    auto answered = result;
+    standalone->finish(requestValue, answered);
+    return answered;
+   #else
     return result;
+   #endif
 }
 
 void SadPetProcessor::requestAsync(juce::var value, juce::WebBrowserComponent::NativeFunctionCompletion complete) {
+   #if SAD_PET_STANDALONE
+    if (standalone->intercept(value, complete)) return;
+   #endif
+    enqueue(std::move(value), std::move(complete));
+}
+
+void SadPetProcessor::enqueue(juce::var value, juce::WebBrowserComponent::NativeFunctionCompletion complete) {
     requests.addJob([this, payload = std::move(value), finish = std::move(complete)] { finish(request(payload)); });
 }
+
+void SadPetProcessor::finishRequests() { requests.removeAllJobs(true, -1); }
 
 void SadPetProcessor::getStateInformation(juce::MemoryBlock& destination) {
     const juce::ScopedLock lock(controlLock);

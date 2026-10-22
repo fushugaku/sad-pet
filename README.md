@@ -18,6 +18,9 @@ decoder keeps only preset/view metadata, without creating DSP engines for its
 timbres. Sample rates, antialiasing, interpolation and effect algorithms are
 unchanged. No backend
 or installation is required. Click Play or a keyboard key to enable sound.
+The standalone **SAD PET app** for macOS and Windows runs the native Rust engine
+on the computer's audio and MIDI devices in its own window; its editor never
+handles sample data. See [plugin/APP.md](plugin/APP.md).
 The desktop version uses the system audio output and a local browser panel.
 Its DSP publishes into three reusable snapshot buffers. A separate thread builds
 UI state, retires replaced presets and acknowledges edits in order; a busy panel

@@ -1,0 +1,64 @@
+name: Build standalone app
+
+on:
+  push:
+    branches: [main, 'codex/daw-plugins']
+    paths: ['plugin/**', 'rust/**', 'vendor/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/app.yml']
+  pull_request:
+    paths: ['plugin/**', 'rust/**', 'vendor/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/app.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macOS-universal
+            runner: macos-15
+            arguments: --universal --smoke
+          - platform: Windows-x64
+            runner: windows-latest
+            arguments: ''
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Set up Rust
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Check the app's engine boundary
+        shell: bash
+        run: cargo test -p sad-pet-plugin --no-default-features --locked standalone
+      - name: Build, smoke-test and package
+        run: python plugin/scripts/build_app.py ${{ matrix.arguments }}
+      # Hosted Windows runners have no audio device; the editor check is informative there.
+      - name: Smoke-test the Windows app
+        if: runner.os == 'Windows'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $env:SAD_PET_SMOKE_TEST = "$env:RUNNER_TEMP\sad-pet-smoke.json"
+          $env:SAD_PET_APP_DIR = "$env:RUNNER_TEMP\sad-pet-app"
+          $env:SAD_PET_LIBRARY_DIR = "$env:RUNNER_TEMP\sad-pet-app\Library"
+          $env:SAD_PET_PRESET_DIR = "$env:RUNNER_TEMP\sad-pet-app\Presets"
+          $app = Start-Process -FilePath "dist\app\SAD-PET-App-Windows-x64\SAD PET.exe" -PassThru
+          if (-not $app.WaitForExit(120000)) { $app.Kill(); throw 'The app did not finish its smoke test' }
+          Get-Content $env:SAD_PET_SMOKE_TEST
+          if ($app.ExitCode -ne 0) { throw "Smoke test exit code $($app.ExitCode)" }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: SAD-PET-App-${{ matrix.platform }}
+          path: |
+            dist/app/*.zip
+            dist/app/*.sha256
+          if-no-files-found: error

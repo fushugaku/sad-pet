@@ -633,7 +633,7 @@
             : file.kind === "render"
               ? "Render"
               : file.kind === "recording"
-                ? "Recording · WAV + MP3"
+                ? this.native ? "Recording · WAV" : "Recording · WAV + MP3"
                 : file.character || "Audio";
         detail.textContent = [
           file.factory ? "Built-in" : description,

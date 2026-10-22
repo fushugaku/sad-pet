@@ -72,7 +72,7 @@ pub(super) fn remove_part(
 impl Controller {
     /// A Bus or Master starts with everything off.
     pub(super) fn routing_part(&self, kind: Kind, id: u32, bus: u8) -> Controller {
-        let mut part = Controller::new(self.effect);
+        let mut part = self.new_part();
         part.meta = Meta {
             id,
             kind,
@@ -132,7 +132,7 @@ impl Controller {
             if state.meta.id == 0 || !ids.insert(state.meta.id) || !state.timbres.is_empty() {
                 return Err("Invalid timbre identities".into());
             }
-            let mut control = Controller::new(self.effect);
+            let mut control = self.new_part();
             control.meta = state.meta.clone();
             control.rate = self.rate;
             control.restore_saved(state)?;
@@ -151,6 +151,13 @@ impl Controller {
         self.drain();
         let path = request["path"].as_str().ok_or("Missing command")?;
         let data = &request["data"];
+        if self.standalone {
+            let post = request["method"] == "POST";
+            super::audio_library::check_editor_request(path, post, data)?;
+            if path.starts_with("/api/library") {
+                return self.library_request(path, post, data);
+            }
+        }
         if path.starts_with("/api/effect-presets") {
             return self.effect_presets_request(path, request["method"] == "POST", data);
         }
@@ -175,7 +182,7 @@ impl Controller {
                         .ok_or(format!("Use at most {MAX_BUSES} buses"))?;
                         self.routing_part(kind, id, bus)
                     } else {
-                        let mut part = Controller::new(self.effect);
+                        let mut part = self.new_part();
                         part.meta = Meta {
                             id,
                             kind,

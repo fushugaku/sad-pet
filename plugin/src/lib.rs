@@ -1,5 +1,6 @@
 //! Native plugin boundary. Only Audio is touched by the host's audio callback.
 //! Controller prepares files/presets and reclaims retired allocations off-thread.
+mod audio_library;
 mod effect_presets;
 mod parameters;
 mod preset_library;
@@ -124,6 +125,10 @@ pub struct Controller {
     host_playing: bool,
     library: preset_library::Library,
     selection: preset_library::Selection,
+    /// The standalone app: audio input is always available, the engine keeps
+    /// its own transport and sample files never cross the editor boundary.
+    standalone: bool,
+    files: audio_library::Files,
 }
 
 pub struct Audio {
@@ -180,7 +185,13 @@ impl Controller {
     /// A new DAW instance starts with the factory scene; newly added timbres
     /// still use the empty constructor below. Project restoration replaces it.
     fn new_plugin(effect: bool) -> Self {
+        Self::new_scene(effect, false)
+    }
+
+    fn new_scene(effect: bool, standalone: bool) -> Self {
         let mut control = Self::new(effect);
+        control.standalone = standalone;
+        control.sync = !standalone;
         control.preset = sad_pet::startup::preset();
         control.preset.sanitize();
         control.sample = sad_pet::startup::sample();
@@ -227,6 +238,28 @@ impl Controller {
                 id: "factory:0".into(),
                 dirty: false,
             },
+            standalone: false,
+            files: audio_library::Files::standard(),
+        }
+    }
+
+    /// A new timbre shares the scene's host mode.
+    fn new_part(&self) -> Self {
+        let mut part = Self::new(self.effect);
+        part.standalone = self.standalone;
+        part.sync = self.sync;
+        part
+    }
+
+    fn input_available(&self) -> bool {
+        self.effect || self.standalone
+    }
+
+    fn input_name(&self) -> &'static str {
+        if self.standalone {
+            "Audio input"
+        } else {
+            "DAW input"
         }
     }
 
@@ -312,7 +345,7 @@ impl Controller {
                     } else if preset.synth.is_some() {
                         sad_pet::dsp::synth::NAME
                     } else {
-                        "DAW input"
+                        self.input_name()
                     }
                     .into();
                     input
@@ -436,10 +469,10 @@ impl Controller {
         }
         let mut state = json!({
             "version": env!("CARGO_PKG_VERSION"), "instance_id": "plugin",
-            "plugin": {"effect":self.effect,"sync":self.sync,"host_bpm":self.host_bpm,"host_playing":self.host_playing,"bar_beats":view.bar_beats},
-            "sample_rate":self.rate,"audio_device":"DAW","audio_enabled":true,"audio_error":null,
+            "plugin": {"effect":self.effect,"standalone":self.standalone,"sync":self.sync,"host_bpm":self.host_bpm,"host_playing":self.host_playing,"bar_beats":view.bar_beats},
+            "sample_rate":self.rate,"audio_device":if self.standalone { "Audio device" } else { "DAW" },"audio_enabled":true,"audio_error":null,
             "playing":self.playing,"midi_gate":self.midi_gate,"frozen":self.frozen,"bypass":self.bypass,
-            "preset":displayed_preset,"sample_name":if drums { "Drum machine" } else if synth { sad_pet::dsp::synth::NAME } else if live { "DAW input" } else { &self.sample.name },
+            "preset":displayed_preset,"sample_name":if drums { "Drum machine" } else if synth { sad_pet::dsp::synth::NAME } else if live { self.input_name() } else { &self.sample.name },
             "preset_selection":self.selection,
             "sample_id":if buffered { None } else { self.sample.library_id.as_ref() },
             "sample_seconds":if buffered { buffer_frames as f64 / self.rate as f64 } else { self.sample.duration() },
@@ -449,7 +482,7 @@ impl Controller {
             "region":self.region,"fades":self.fades,"center":view.center,
             "grains":&view.grains[..view.grain_count],"active_grains":view.grain_count,
             "notes":&view.notes[..view.note_count],"step_entry":view.step_entry,"step_edits":view.step_edits,
-            "input":{"active":live,"available":self.effect,"name":"DAW input","mode":if self.source==Source::Effects {"effects"} else {"grains"},"gain":1.0,"monitor":true,"pending":false,"devices":[],"seconds":view.input_seconds,"peak":view.input_peak},
+            "input":{"active":live,"available":self.input_available(),"name":self.input_name(),"mode":if self.source==Source::Effects {"effects"} else {"grains"},"gain":1.0,"monitor":true,"pending":false,"devices":[],"seconds":view.input_seconds,"peak":view.input_peak},
             "recording":{"active":false,"available":false,"seconds":0,"error":null},
             "performance":{"mode":self.preset.performance.mode,"step":view.step,"arp_index":view.arp_index,"chord":&view.chord[..view.chord_len],"gate":view.gate,"beat":view.beat},
             "lfos":view.lfos,"envs":view.envs,"matrix_values":view.matrix,"knobs":knobs,
@@ -509,9 +542,11 @@ impl Controller {
         if saved.version != 1 {
             return Err("Unsupported SAD PET plugin state version".into());
         }
-        if saved.source != Source::File && !self.effect {
+        if saved.source != Source::File && !self.input_available() {
             return Err("Use SAD PET FX for audio input".into());
         }
+        // The standalone app has no host transport to follow.
+        saved.sync &= !self.standalone;
         if saved.meta.id != self.meta.id {
             return Err("Invalid timbre identity".into());
         }
@@ -625,7 +660,12 @@ impl Controller {
                 self.sample.frames(),
             )?)),
             ("/api/midi", _) => {
-                Ok(json!({"ports":[{"id":0,"name":"DAW MIDI"}],"connected":"DAW MIDI"}))
+                let name = if self.standalone {
+                    "All MIDI inputs"
+                } else {
+                    "DAW MIDI"
+                };
+                Ok(json!({"ports":[{"id":0,"name":name}],"connected":name}))
             }
             ("/api/preset", true) => {
                 if data["format"] != "evil-pet-rust-v1" {
@@ -695,12 +735,13 @@ impl Controller {
             ("/api/transport", true) => {
                 let transport: Transport =
                     serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
+                let sync = transport.sync.map(|v| v && !self.standalone);
                 self.enqueue(Command::Transport(Transport {
                     playing: transport.playing,
                     midi_gate: transport.midi_gate,
                     frozen: transport.frozen,
                     bypass: transport.bypass,
-                    sync: transport.sync,
+                    sync,
                     clear_hold: transport.clear_hold,
                 }))?;
                 if let Some(v) = transport.playing {
@@ -715,13 +756,13 @@ impl Controller {
                 if let Some(v) = transport.bypass {
                     self.bypass = v;
                 }
-                if let Some(v) = transport.sync {
+                if let Some(v) = sync {
                     self.sync = v;
                 }
                 Ok(ok())
             }
             ("/api/input", true) => {
-                if !self.effect {
+                if !self.input_available() {
                     return Err("Use SAD PET FX for audio input".into());
                 }
                 let source = if data["active"] == false {
@@ -774,22 +815,7 @@ impl Controller {
                     data["name"].as_str().unwrap_or("Sample.wav").into(),
                 )?;
                 sample.library_id = data["id"].as_str().map(str::to_string);
-                let sample = Arc::new(sample);
-                let source = self.prepared_source(
-                    sample.clone(),
-                    Source::File,
-                    Region::default(),
-                    Fades::default(),
-                );
-                self.enqueue(Command::Source(Box::new(source)))?;
-                self.sample = sample;
-                self.source = Source::File;
-                self.region = Region::default();
-                self.fades = Fades::default();
-                self.frozen = false;
-                Ok(
-                    json!({"name":self.sample.name,"seconds":self.sample.duration(),"sample_id":self.sample.library_id}),
-                )
+                self.use_sample(Arc::new(sample), Fades::default())
             }
             ("/api/note", true) => {
                 let message = serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
@@ -809,25 +835,7 @@ impl Controller {
                 Ok(ok())
             }
             ("/api/trim", true) => {
-                let region: Region =
-                    serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
-                let fades: Fades =
-                    serde_json::from_value(data["fades"].clone()).map_err(|e| e.to_string())?;
-                let range = region.bounds(self.sample.len())?;
-                fades.validate()?;
-                let frames: Vec<Stereo> = self.sample.frames()[range.clone()]
-                    .iter()
-                    .enumerate()
-                    .map(|(i, f)| {
-                        f.map(|v| {
-                            v * fades.gain(
-                                (range.start + i) as f64,
-                                self.sample.sample_rate,
-                                &range,
-                            )
-                        })
-                    })
-                    .collect();
+                let frames = self.trimmed(data)?;
                 Ok(binary(wav::bytes(self.sample.sample_rate, &frames)?))
             }
             _ if path.starts_with("/api/samples/") && path.ends_with(".wav") && !post => {
@@ -847,6 +855,37 @@ impl Controller {
             self.selection.dirty = true;
         }
         result
+    }
+
+    /// Replaces this timbre's file source; the engine receives it on the next block.
+    fn use_sample(&mut self, sample: Arc<SampleBuffer>, fades: Fades) -> Result<Value, String> {
+        fades.validate()?;
+        let source = self.prepared_source(sample.clone(), Source::File, Region::default(), fades);
+        self.enqueue(Command::Source(Box::new(source)))?;
+        self.sample = sample;
+        self.source = Source::File;
+        self.region = Region::default();
+        self.fades = fades;
+        self.frozen = false;
+        Ok(
+            json!({"name":self.sample.name,"seconds":self.sample.duration(),"sample_id":self.sample.library_id}),
+        )
+    }
+
+    /// The selected region of the file with its fades applied.
+    fn trimmed(&self, data: &Value) -> Result<Vec<Stereo>, String> {
+        let region: Region = serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
+        let fades: Fades =
+            serde_json::from_value(data["fades"].clone()).map_err(|e| e.to_string())?;
+        let range = region.bounds(self.sample.len())?;
+        fades.validate()?;
+        Ok(self.sample.frames()[range.clone()]
+            .iter()
+            .enumerate()
+            .map(|(i, f)| {
+                f.map(|v| v * fades.gain((range.start + i) as f64, self.sample.sample_rate, &range))
+            })
+            .collect())
     }
 }
 
@@ -1084,6 +1123,12 @@ pub extern "C" fn sad_parameters() -> Bytes {
 #[unsafe(no_mangle)]
 pub extern "C" fn sad_control_new(effect: bool) -> *mut Controller {
     Box::into_raw(Box::new(Controller::new_plugin(effect)))
+}
+
+/// The standalone app's scene: free transport, audio input and a disk library.
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_control_new_standalone() -> *mut Controller {
+    Box::into_raw(Box::new(Controller::new_scene(false, true)))
 }
 
 // The wrapper serializes Controller calls and calls prepare/free only while audio is stopped.

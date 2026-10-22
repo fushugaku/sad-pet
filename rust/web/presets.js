@@ -123,7 +123,10 @@
       };
       $("preset-save-new").onclick = () =>
         this.run(() => this.save(true), $("preset-save-error"));
-      $("preset-import").onclick = () => $("preset-file").click();
+      $("preset-import").onclick = () =>
+        window.sadPetNative
+          ? this.run(() => this.importDialog(), $("preset-error"))
+          : $("preset-file").click();
       $("preset-file").onchange = async (event) => {
         const file = event.target.files[0];
         if (file)
@@ -574,6 +577,19 @@
           name = `${[...baseName].slice(0, 72).join("")} (${suffix++})`;
         record = await this.browserWrite(name, null, state);
       }
+      await this.imported(record);
+    }
+    // The app reads the chosen preset file, including its audio.
+    async importDialog() {
+      await this.actions.flush();
+      const record = await window.sadPetNative.dialog("/api/preset-library/import", {}, {
+        mode: "open",
+        title: "Import preset",
+        patterns: "*.sadpet;*.json",
+      });
+      if (!record.cancelled) await this.imported(record);
+    }
+    async imported(record) {
       await this.refresh();
       await this.load(record.id);
       this.bank = "user";
@@ -583,6 +599,15 @@
     async export() {
       const record = this.users.find((r) => r.id === this.selection.id);
       if (!record) return;
+      if (window.sadPetNative) {
+        const result = await window.sadPetNative.dialog(
+          "/api/preset-library/export",
+          { id: record.id },
+          { mode: "save", title: "Export preset", filename: filename(record.name), patterns: "*.sadpet" },
+        );
+        if (!result.cancelled) this.actions.notify(`Exported “${record.name}”`);
+        return;
+      }
       let blob;
       if (this.native)
         blob = await (
@@ -906,12 +931,33 @@
         ? { ...this.validate(record), id: crypto.randomUUID().replaceAll("-", ""),
             created_at: Date.now(), modified_at: Date.now() }
         : record;
+      if (window.sadPetNative) {
+        const result = await window.sadPetNative.dialog(
+          "/api/effect-presets/export",
+          record.factory ? { preset: this.validate(record) } : { id: record.id },
+          { mode: "save", title: "Export effect preset", filename: filename(record.name).replace(/\.sadpet$/, ".sadfx"), patterns: "*.sadfx" },
+        );
+        if (!result.cancelled) this.actions.notify("Exported “" + record.name + "”");
+        return;
+      }
       const blob = this.actions.native && !record.factory
         ? await (await this.actions.api("/api/effect-presets/export", { id: record.id })).blob()
         : await encodeEffect(portable);
       this.actions.download(blob, filename(record.name).replace(/\.sadpet$/, ".sadfx"));
     }
     async import(view) {
+      if (window.sadPetNative) {
+        // Already inside run(): the app's dialog keeps the menu busy until it closes.
+        const record = await window.sadPetNative.dialog(
+          "/api/effect-presets/import",
+          { kind: this.current(view).kind },
+          { mode: "open", title: "Import effect preset", patterns: "*.sadfx" },
+        );
+        if (record.cancelled) return;
+        await this.changed();
+        await this.actions.apply(this.current(view).id, record);
+        return;
+      }
       const input = document.createElement("input");
       input.type = "file";
       input.accept = ".sadfx";

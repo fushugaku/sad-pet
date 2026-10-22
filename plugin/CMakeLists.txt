@@ -51,30 +51,48 @@ if(TARGET sad_pet_rust_build)
 endif()
 
 # Reuse the existing editor, loading its scripts after the native bridge is ready.
-set(web_dir "${CMAKE_BINARY_DIR}/web")
-file(MAKE_DIRECTORY "${web_dir}")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${SAD_PET_ROOT}/rust/web/index.html")
-file(READ "${SAD_PET_ROOT}/rust/web/index.html" editor_html)
+file(READ "${SAD_PET_ROOT}/rust/web/index.html" editor_source)
 foreach(script library selection presets sequence app)
-    string(REPLACE "    <script src=\"./${script}.js\" defer></script>\n" "" editor_html "${editor_html}")
+    string(REPLACE "    <script src=\"./${script}.js\" defer></script>\n" "" editor_source "${editor_source}")
 endforeach()
-string(REPLACE "</head>" "  <link rel=\"stylesheet\" href=\"./plugin.css\" />\n    <script type=\"module\" src=\"./plugin-backend.js\"></script>\n  </head>" editor_html "${editor_html}")
-file(WRITE "${web_dir}/index.html" "${editor_html}")
-juce_add_binary_data(SadPetResources SOURCES
-    "${web_dir}/index.html"
+set(editor_scripts
     "${SAD_PET_ROOT}/rust/web/style.css" "${SAD_PET_ROOT}/rust/web/app.js"
     "${SAD_PET_ROOT}/rust/web/library.js" "${SAD_PET_ROOT}/rust/web/selection.js"
     "${SAD_PET_ROOT}/rust/web/presets.js" "${SAD_PET_ROOT}/rust/web/sequence.js"
     "${SAD_PET_ROOT}/rust/web/panels.js"
-    web/plugin-backend.js web/plugin.css
     "${JUCE_MODULES_DIR}/juce_gui_extra/native/javascript/index.js"
     "${JUCE_MODULES_DIR}/juce_gui_extra/native/javascript/check_native_interop.js")
+# Writes <folder>/index.html: the editor with the given stylesheet and backend module.
+function(sad_pet_editor_page folder stylesheet backend)
+    file(MAKE_DIRECTORY "${folder}")
+    string(REPLACE "</head>" "  <link rel=\"stylesheet\" href=\"./${stylesheet}\" />\n    <script type=\"module\" src=\"./${backend}\"></script>\n  </head>" page "${editor_source}")
+    file(WRITE "${folder}/index.html" "${page}")
+endfunction()
+sad_pet_editor_page("${CMAKE_BINARY_DIR}/web" plugin.css plugin-backend.js)
+juce_add_binary_data(SadPetResources SOURCES
+    "${CMAKE_BINARY_DIR}/web/index.html" ${editor_scripts} web/plugin-backend.js web/plugin.css)
 
 set(formats VST3)
 if(APPLE)
     list(APPEND formats AU)
 endif()
 option(SAD_PET_BUILD_HOST_TESTS "Build the native plugin integration test" ON)
+
+# Engine, editor resources and platform libraries shared by the plug-ins and the app.
+function(sad_pet_link target resources)
+    target_compile_definitions(${target} PUBLIC
+        JUCE_WEB_BROWSER=1 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0
+        JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1)
+    target_link_libraries(${target} PRIVATE sad_pet_engine ${resources}
+        juce::juce_audio_utils juce::juce_gui_extra
+        PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
+    if(WIN32)
+        target_link_libraries(${target} PRIVATE ws2_32 userenv bcrypt ntdll)
+    elseif(APPLE)
+        target_link_libraries(${target} PRIVATE "-framework Security" "-framework CoreFoundation" "-framework SystemConfiguration" iconv)
+    endif()
+endfunction()
 
 function(add_sad_pet_plugin target product code is_synth is_effect)
     set(extra "")
@@ -95,21 +113,52 @@ function(add_sad_pet_plugin target product code is_synth is_effect)
         VST3_CATEGORIES ${category} AU_MAIN_TYPE ${au_type}
         FORMATS ${formats} COPY_PLUGIN_AFTER_BUILD FALSE ${extra})
     target_sources(${target} PRIVATE native/Processor.cpp native/Processor.h native/Engine.h)
-    target_compile_definitions(${target} PUBLIC SAD_PET_EFFECT=${is_effect}
-        JUCE_WEB_BROWSER=1 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0
-        JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1)
-    target_link_libraries(${target} PRIVATE sad_pet_engine SadPetResources
-        juce::juce_audio_utils juce::juce_gui_extra
-        PUBLIC juce::juce_recommended_config_flags juce::juce_recommended_warning_flags)
-    if(WIN32)
-        target_link_libraries(${target} PRIVATE ws2_32 userenv bcrypt ntdll)
-    elseif(APPLE)
-        target_link_libraries(${target} PRIVATE "-framework Security" "-framework CoreFoundation" "-framework SystemConfiguration" iconv)
-    endif()
+    target_compile_definitions(${target} PUBLIC SAD_PET_EFFECT=${is_effect} SAD_PET_STANDALONE=0)
+    sad_pet_link(${target} SadPetResources)
 endfunction()
 
 add_sad_pet_plugin(SadPet "SAD PET" SaPi TRUE 0)
 add_sad_pet_plugin(SadPetFX "SAD PET FX" SaPf FALSE 1)
+
+# The standalone app: the same processor and editor on the computer's audio and
+# MIDI devices. Its editor bridge never carries sample data (see native/Standalone.h).
+option(SAD_PET_BUILD_APP "Build the SAD PET standalone app" ON)
+if(SAD_PET_BUILD_APP)
+    sad_pet_editor_page("${CMAKE_BINARY_DIR}/web-app" standalone.css standalone-backend.js)
+    juce_add_binary_data(SadPetAppResources SOURCES
+        "${CMAKE_BINARY_DIR}/web-app/index.html" ${editor_scripts}
+        web/standalone-backend.js web/native-library.js web/standalone.css)
+    set(app_extra "")
+    if(WIN32)
+        list(APPEND app_extra NEEDS_WEBVIEW2 TRUE)
+    endif()
+    juce_add_plugin(SadPetApp COMPANY_NAME "SAD PET" BUNDLE_ID "audio.sadpet.app"
+        PLUGIN_MANUFACTURER_CODE SdPt PLUGIN_CODE SaPa
+        PRODUCT_NAME "SAD PET" IS_SYNTH TRUE NEEDS_MIDI_INPUT TRUE NEEDS_MIDI_OUTPUT FALSE
+        IS_MIDI_EFFECT FALSE EDITOR_WANTS_KEYBOARD_FOCUS TRUE
+        MICROPHONE_PERMISSION_ENABLED TRUE
+        MICROPHONE_PERMISSION_TEXT "SAD PET processes the microphone when you choose it as the source."
+        FORMATS Standalone COPY_PLUGIN_AFTER_BUILD FALSE ${app_extra})
+    target_sources(SadPetApp PRIVATE native/Processor.cpp native/Processor.h native/Engine.h
+        native/Standalone.cpp native/Standalone.h native/StandaloneApp.cpp)
+    if(APPLE)
+        target_sources(SadPetApp PRIVATE native/MacSupport.mm)
+        target_link_libraries(SadPetApp PRIVATE "-framework AppKit")
+    endif()
+    target_compile_definitions(SadPetApp PUBLIC SAD_PET_EFFECT=0 SAD_PET_STANDALONE=1
+        JUCE_USE_CUSTOM_PLUGIN_STANDALONE_APP=1)
+    sad_pet_link(SadPetApp SadPetAppResources)
+    if(WIN32)
+        # The C++ runtime ships beside SAD PET.exe instead of as a separate redistributable.
+        set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
+        include(InstallRequiredSystemLibraries)
+        if(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS)
+            add_custom_command(TARGET SadPetApp_Standalone POST_BUILD
+                COMMAND "${CMAKE_COMMAND}" -E copy_if_different ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS}
+                    "$<TARGET_FILE_DIR:SadPetApp_Standalone>")
+        endif()
+    endif()
+endif()
 
 if(SAD_PET_BUILD_HOST_TESTS)
     enable_testing()

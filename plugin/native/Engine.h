@@ -10,6 +10,7 @@ struct SadAudio;
 struct SadBytes { std::uint8_t* data; std::size_t len; };
 SadBytes sad_parameters();
 SadController* sad_control_new(bool effect);
+SadController* sad_control_new_standalone();
 void sad_control_free(SadController*);
 SadAudio* sad_control_prepare(SadController*, std::uint32_t rate);
 void sad_audio_free(SadAudio*);

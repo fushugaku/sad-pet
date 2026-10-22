@@ -1,0 +1,25 @@
+/* The app chooses devices in Audio/MIDI settings and saves recordings as WAV. */
+.standalone #quit,
+.standalone #midi,
+.standalone #midi-refresh,
+.standalone #input-device,
+.standalone .input-gain,
+.standalone #input-listen,
+.standalone #input-capture,
+.standalone #recording-mp3,
+.standalone .library-file button[title="Download MP3"] {
+  display: none !important;
+}
+.standalone .microphone-settings {
+  justify-content: flex-start;
+}
+.standalone .midi-summary {
+  white-space: nowrap;
+}
+.standalone .audio-settings {
+  white-space: nowrap;
+}
+.standalone footer {
+  gap: 12px;
+  flex-wrap: wrap;
+}

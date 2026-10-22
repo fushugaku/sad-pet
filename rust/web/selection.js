@@ -399,13 +399,13 @@
           source = library.files.find((file) => file.id === library.currentId);
         const region = { ...this.region },
           seconds = this.state.sample_seconds;
-        const response = await this.actions.api("/api/trim", {
+        const trim = {
           ...region,
           fades: { ...this.fades },
           sample_id: this.state.sample_id,
-        });
+        };
         const label = `${(source?.displayName || this.state.sample_name).replace(/\.wav$/i, "")} · ${(region.start * seconds).toFixed(3)}–${(region.end * seconds).toFixed(3)} s`;
-        const record = await library.storeBlob(await response.blob(), {
+        const metadata = {
           kind: "audio",
           name: `${(source?.name || this.state.sample_name).replace(/\.wav$/i, "")}-trim.wav`,
           displayName: label,
@@ -413,7 +413,14 @@
           trimmedFrom: source?.id,
           region,
           appliedFades: { ...this.fades },
-        });
+        };
+        // The app cuts the file itself; the browser stores the returned WAV.
+        const record = library.native
+          ? await library.saveTrim(trim, metadata)
+          : await library.storeBlob(
+              await (await this.actions.api("/api/trim", trim)).blob(),
+              metadata,
+            );
         await library.saveFades(record.id, noFades());
         await library.activate(record);
         this.actions.saved(record);

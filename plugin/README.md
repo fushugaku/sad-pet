@@ -8,6 +8,9 @@ the plug-in window; it does not launch a separate browser, audio device or serve
 | SAD PET | MIDI instrument with imported or built-in samples | VST3, AU instrument | VST3 |
 | SAD PET FX | Stereo input through filters/effects or an eight-second granular buffer; also receives MIDI | VST3, AU MIDI-controlled effect | VST3 |
 
+The same engine and editor also run as a standalone app for macOS and Windows,
+on the computer's audio and MIDI devices: see [APP.md](APP.md).
+
 New instances open **glasses5**, including the Dusty keys source, selection/fades,
 Resynth, sequencer and effect chains. It appears first in Factory presets; Init
 is still available. Restoring a saved DAW project replaces this initial scene.

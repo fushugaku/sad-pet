@@ -104,6 +104,8 @@ async function request(path, data) {
   return result;
 }
 function download(blob, name) {
+  if (window.sadPetNative)
+    throw new Error("The SAD PET app saves files through its own dialogs.");
   const url = URL.createObjectURL(blob),
     a = document.createElement("a");
   a.href = url;
@@ -3662,6 +3664,12 @@ async function loadWav(file) {
 }
 async function loadStoredAudio(record) {
   await sampleSelection?.flush(false);
+  if (fileLibrary.native) {
+    // The app reads the file and applies its saved fades.
+    const info = await request("/api/library/load", { id: record.id });
+    presetLibrary?.markDirty();
+    return info;
+  }
   const response = await api("/api/wav", record.blob, {
     "Content-Type": "audio/wav",
     "X-File-Name": encodeURIComponent(
@@ -3801,7 +3809,10 @@ function bind() {
     setParam("sample_root_note", Number(e.target.value));
   $("bpm").oninput = (e) =>
     setParam("bpm", Math.max(20, Math.min(300, Number(e.target.value) || 120)));
-  $("load-wav").onclick = () => $("wav-file").click();
+  $("load-wav").onclick = () =>
+    fileLibrary?.native
+      ? fileLibrary.importDialog(true).catch((e) => notify(e.message, true))
+      : $("wav-file").click();
   $("wav-file").onchange = (e) => loadWav(e.target.files[0]);
   const drop = $("drop-zone");
   for (const type of ["dragenter", "dragover"])
@@ -3838,11 +3849,15 @@ function bind() {
     try {
       await flushEdits();
       await sampleSelection?.flush();
-      const response = await api("/api/render", {
-        seconds: Number($("render-duration").value),
-      });
-      const blob = await response.blob();
       const seconds = Number($("render-duration").value);
+      if (fileLibrary.native) {
+        // Rendered and stored by the app, then saved where the user chooses.
+        const saved = await fileLibrary.renderScene(seconds, `${preset.name} · ${seconds}s`);
+        await fileLibrary.download(saved.id);
+        return;
+      }
+      const response = await api("/api/render", { seconds });
+      const blob = await response.blob();
       const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "");
       const name = `sad-pet-${stamp}.wav`;
       const saved = await fileLibrary.saveRender(
@@ -3944,6 +3959,8 @@ function resizeCanvas(canvas) {
 }
 
 function paintWaveform(context, w, h) {
+  // Layout can report an empty canvas before the first resize.
+  if (!w || !h) return;
   const dpr = Math.min(devicePixelRatio || 1, 2);
   const key = [w, h, dpr, state.sample_frames, state.sample_seconds, state.input?.active,
     sampleSelection?.region.start, sampleSelection?.region.end,
@@ -4296,6 +4313,7 @@ async function init() {
       loadFades: (fades) => request("/api/fades", fades),
       presets: true,
       importPreset: (file) => presetLibrary.importFile(file),
+      presetImported: (record) => presetLibrary.imported(record),
     });
     presetLibrary = new window.SadPresetLibrary(
       {

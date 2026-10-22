@@ -22,6 +22,44 @@ def run(*args, env=None):
     subprocess.run([str(arg) for arg in args], cwd=ROOT, env=env, check=True)
 
 
+def rust_toolchain():
+    """Cargo and its environment; rustup's toolchain wins over a Homebrew cargo."""
+    rust_env = dict(os.environ)
+    cargo = "cargo"
+    if shutil.which("rustup"):
+        # Homebrew cargo/rustc can shadow rustup and miss its cross-target stdlibs.
+        cargo = subprocess.check_output(["rustup", "which", "cargo"], text=True).strip()
+        rust_env.setdefault("RUSTC", subprocess.check_output(["rustup", "which", "rustc"], text=True).strip())
+    return cargo, rust_env
+
+
+def webview2_options():
+    """CMake options for the WebView2 SDK that Windows builds link statically."""
+    package_root = ROOT / "target/plugin-deps/WebView2"
+    sdk = package_root / f"Microsoft.Web.WebView2.{WEBVIEW_VERSION}"
+    if not (sdk / "build/native/include/WebView2.h").is_file():
+        sdk.mkdir(parents=True, exist_ok=True)
+        archive = package_root / "webview2.nupkg"
+        urllib.request.urlretrieve(f"https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/{WEBVIEW_VERSION}/microsoft.web.webview2.{WEBVIEW_VERSION}.nupkg", archive)
+        with zipfile.ZipFile(archive) as package:
+            package.extractall(sdk)
+    return ["-A", "x64", "-DSAD_PET_CARGO_TARGET=x86_64-pc-windows-msvc", f"-DJUCE_WEBVIEW2_PACKAGE_LOCATION={package_root}"]
+
+
+def universal_rust(build, cargo, rust_env):
+    """Builds the engine for arm64 and x86_64 and returns the combined archive."""
+    rust = build / "universal-rust"
+    archives = []
+    run("rustup", "target", "add", "aarch64-apple-darwin", "x86_64-apple-darwin")
+    for target in ("aarch64-apple-darwin", "x86_64-apple-darwin"):
+        run(cargo, "build", "-p", "sad-pet-plugin", "--release", "--locked", "--target", target,
+            env={**rust_env, "CARGO_TARGET_DIR": str(rust)})
+        archives.append(rust / target / "release/libsad_pet_plugin.a")
+    universal = rust / "libsad_pet_plugin.a"
+    run("lipo", "-create", *archives, "-output", universal)
+    return ["-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64", f"-DSAD_PET_RUST_ARCHIVE={universal}"]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", type=Path, default=ROOT / "target/plugins")
@@ -35,40 +73,17 @@ def main():
     if system not in ("Darwin", "Windows"):
         parser.error("Native plugin packages target macOS or Windows")
     build = args.build_dir.resolve()
-    rust_env = dict(os.environ)
-    cargo = "cargo"
-    if shutil.which("rustup"):
-        # Homebrew cargo/rustc can shadow rustup and miss its cross-target stdlibs.
-        cargo = subprocess.check_output(["rustup", "which", "cargo"], text=True).strip()
-        rust_env.setdefault("RUSTC", subprocess.check_output(["rustup", "which", "rustc"], text=True).strip())
-    options = ["-DCMAKE_BUILD_TYPE=Release"]
+    cargo, rust_env = rust_toolchain()
+    options = ["-DCMAKE_BUILD_TYPE=Release", "-DSAD_PET_BUILD_APP=OFF"]
     options += [f"-DCARGO_EXECUTABLE={cargo}"]
     if args.juce:
         options += [f"-DSAD_PET_JUCE_PATH={args.juce.resolve()}"]
     if system == "Windows":
-        options += ["-A", "x64", "-DSAD_PET_CARGO_TARGET=x86_64-pc-windows-msvc"]
-        package_root = ROOT / "target/plugin-deps/WebView2"
-        sdk = package_root / f"Microsoft.Web.WebView2.{WEBVIEW_VERSION}"
-        if not (sdk / "build/native/include/WebView2.h").is_file():
-            sdk.mkdir(parents=True, exist_ok=True)
-            archive = package_root / "webview2.nupkg"
-            urllib.request.urlretrieve(f"https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/{WEBVIEW_VERSION}/microsoft.web.webview2.{WEBVIEW_VERSION}.nupkg", archive)
-            with zipfile.ZipFile(archive) as package:
-                package.extractall(sdk)
-        options += [f"-DJUCE_WEBVIEW2_PACKAGE_LOCATION={package_root}"]
+        options += webview2_options()
     if args.universal and system != "Darwin":
         parser.error("--universal requires macOS")
     if args.universal and not args.package_only:
-        rust = build / "universal-rust"
-        archives = []
-        run("rustup", "target", "add", "aarch64-apple-darwin", "x86_64-apple-darwin")
-        for target in ("aarch64-apple-darwin", "x86_64-apple-darwin"):
-            run(cargo, "build", "-p", "sad-pet-plugin", "--release", "--locked", "--target", target,
-                env={**rust_env, "CARGO_TARGET_DIR": str(rust)})
-            archives.append(rust / target / "release/libsad_pet_plugin.a")
-        universal = rust / "libsad_pet_plugin.a"
-        run("lipo", "-create", *archives, "-output", universal)
-        options += ["-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64", f"-DSAD_PET_RUST_ARCHIVE={universal}"]
+        options += universal_rust(build, cargo, rust_env)
     if not args.package_only:
         run("cmake", "-S", PLUGIN, "-B", build, *options, env=rust_env)
         run("cmake", "--build", build, "--config", "Release", "--parallel", args.jobs, env=rust_env)

@@ -1366,3 +1366,238 @@ fn user_preset_recall_survives_daw_state_with_a_master() {
         .collect();
     assert_eq!(kinds, ["granular", "master"]);
 }
+
+impl PresetDirectory {
+    /// The standalone scene with its preset and audio libraries in this folder.
+    fn standalone(&self) -> Controller {
+        let mut control = Controller::new_scene(false, true);
+        control.library = preset_library::Library::at(self.0.join("Presets"));
+        control.files = audio_library::Files::at(self.0.join("Library"));
+        control
+    }
+}
+
+/// No response the standalone editor receives may hold sample data.
+fn without_audio(value: Value) -> Value {
+    let text = value.to_string();
+    for key in ["\"binary\"", "\"base64\"", "\"sample_wav\""] {
+        assert!(!text.contains(key), "{key} reached the editor: {text:.200}");
+    }
+    value
+}
+
+fn sine_wav(path: &std::path::Path, frames: usize) {
+    let frames: Vec<Stereo> = (0..frames)
+        .map(|n| [(n as f32 * 0.05).sin() * 0.5; 2])
+        .collect();
+    std::fs::write(path, sad_pet::wav::bytes(48000, &frames).unwrap()).unwrap();
+}
+
+#[test]
+fn standalone_editor_can_neither_send_nor_receive_sample_data() {
+    let folder = PresetDirectory::new();
+    let mut control = folder.standalone();
+    let _audio = control.prepare(48000);
+    let wav = BASE64.encode(sad_pet::wav::bytes(48000, &[[0.1; 2]; 64]).unwrap());
+    for (path, data) in [
+        ("/api/sample.wav", Value::Null),
+        ("/api/samples/glass-sequence.wav", Value::Null),
+        ("/api/scene", Value::Null),
+        ("/api/wav", json!({"base64":wav,"name":"x.wav"})),
+        ("/api/trim", json!({"start":0.0,"end":1.0,"fades":{}})),
+        ("/api/render", json!({"seconds":1})),
+        ("/api/preset-library/import", json!({"base64":wav})),
+        ("/api/preset-library/export", json!({"id":"0".repeat(32)})),
+        ("/api/effect-presets/export", json!({"id":"0".repeat(32)})),
+    ] {
+        let method = if data.is_null() { "GET" } else { "POST" };
+        let result = control.request(&json!({"path":path,"method":method,"data":data}));
+        assert!(
+            result.as_ref().is_err_and(|e| e.contains("natively")),
+            "{path} was not refused"
+        );
+    }
+    let state = without_audio(call(&mut control, "/api/state", Value::Null));
+    assert_eq!(state["plugin"]["standalone"], true);
+    assert_eq!(state["input"]["available"], true);
+    without_audio(call(&mut control, "/api/samples", Value::Null));
+    without_audio(call(&mut control, "/api/library", Value::Null));
+    // The plug-ins keep their existing editor protocol.
+    let mut plugin = folder.control(false);
+    let _plugin_audio = plugin.prepare(48000);
+    assert!(call(&mut plugin, "/api/sample.wav", Value::Null)["binary"].is_string());
+}
+
+#[test]
+fn standalone_keeps_its_own_transport_even_for_daw_scenes() {
+    let folder = PresetDirectory::new();
+    let mut control = folder.standalone();
+    let mut audio = control.prepare(48000);
+    call(&mut control, "/api/transport", json!({"sync":true}));
+    assert_eq!(
+        call(&mut control, "/api/state", Value::Null)["plugin"]["sync"],
+        false
+    );
+    let mut daw = folder.control(false);
+    daw.sync = true;
+    let saved = daw.save().unwrap();
+    control.restore(&saved).unwrap();
+    assert!(!control.sync);
+    // Without a DAW the sequencer runs once Play is pressed.
+    call(
+        &mut control,
+        "/api/transport",
+        json!({"playing":true,"midi_gate":false}),
+    );
+    let values = control.values();
+    audio.begin(&values, 0.0, None, false, 4800);
+    let peak = render(&mut audio, 4800, [0.0; 2]);
+    assert!(
+        peak > 0.0,
+        "the standalone scene stayed silent while playing"
+    );
+}
+
+#[test]
+fn standalone_library_imports_loads_trims_exports_and_trashes_files_on_disk() {
+    let folder = PresetDirectory::new();
+    std::fs::create_dir_all(&folder.0).unwrap();
+    let source = folder.0.join("Harp take.wav");
+    sine_wav(&source, 48000);
+    let mut control = folder.standalone();
+    let _audio = control.prepare(48000);
+    let path = source.to_str().unwrap();
+    let imported = without_audio(call(
+        &mut control,
+        "/api/library/import",
+        json!({"paths":[path, folder.0.join("missing.wav").to_str().unwrap()]}),
+    ));
+    let entry = &imported["files"][0];
+    assert_eq!(entry["displayName"], "Harp take");
+    assert_eq!(entry["seconds"], 1.0);
+    assert_eq!(imported["errors"].as_array().unwrap().len(), 1);
+    let id = entry["id"].as_str().unwrap().to_string();
+    // The same audio imports once.
+    let again = call(&mut control, "/api/library/import", json!({"paths":[path]}));
+    assert_eq!(again["files"][0]["id"], id.as_str());
+
+    let fades = json!({"fade_in":0.05,"fade_out":0.1});
+    call(
+        &mut control,
+        "/api/library/fades",
+        json!({"id":id,"fades":fades}),
+    );
+    let loaded = without_audio(call(&mut control, "/api/library/load", json!({"id":id})));
+    assert_eq!(loaded["sample_id"], id.as_str());
+    let state = without_audio(call(&mut control, "/api/state", Value::Null));
+    assert_eq!(state["sample_id"], id.as_str());
+    assert_eq!(state["fades"], fades);
+
+    let trim = without_audio(call(
+        &mut control,
+        "/api/library/trim",
+        json!({"start":0.25,"end":0.75,"fades":{"fade_in":0.0,"fade_out":0.0},"name":"Harp take-trim.wav","displayName":"Harp middle"}),
+    ));
+    assert_eq!(trim["trimmedFrom"], id.as_str());
+    assert!((trim["seconds"].as_f64().unwrap() - 0.5).abs() < 0.001);
+
+    let copy = folder.0.join("Exported.wav");
+    call(
+        &mut control,
+        "/api/library/export",
+        json!({"id":id,"path":copy.to_str().unwrap()}),
+    );
+    assert_eq!(
+        std::fs::read(&copy).unwrap(),
+        std::fs::read(&source).unwrap()
+    );
+    let factory = folder.0.join("Glass.wav");
+    call(
+        &mut control,
+        "/api/library/export",
+        json!({"id":"factory:glass-sequence:v1","path":factory.to_str().unwrap()}),
+    );
+    assert!(sad_pet::wav::read(&factory).unwrap().len() > 48000);
+
+    call(&mut control, "/api/library/trash", json!({"id":id}));
+    let listed = call(&mut control, "/api/library", Value::Null);
+    let trashed = listed["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["id"] == id.as_str())
+        .unwrap();
+    assert!(trashed["trashedAt"].is_u64());
+    call(
+        &mut control,
+        "/api/library/trash",
+        json!({"id":id,"restore":true}),
+    );
+    assert!(
+        call(&mut control, "/api/library", Value::Null)["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|f| f["trashedAt"].is_null())
+    );
+    let factory = call(
+        &mut control,
+        "/api/library/load",
+        json!({"id":"factory:glass-sequence:v1"}),
+    );
+    assert_eq!(factory["sample_id"], "factory:glass-sequence:v1");
+    assert!(
+        control
+            .request(
+                &json!({"path":"/api/library/load","method":"POST","data":{"id":"audio:../../etc"}})
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn standalone_renders_the_scene_and_keeps_recordings_in_the_library() {
+    let folder = PresetDirectory::new();
+    std::fs::create_dir_all(&folder.0).unwrap();
+    let mut control = folder.standalone();
+    let _audio = control.prepare(48000);
+    let render = without_audio(call(
+        &mut control,
+        "/api/library/render",
+        json!({"seconds":1.0,"name":"sad-pet-render.wav","displayName":"glasses5 · 1s"}),
+    ));
+    assert_eq!(render["kind"], "render");
+    assert_eq!(render["seconds"], 1.0);
+    let id = render["id"].as_str().unwrap().to_string();
+    let exported = folder.0.join("render.wav");
+    call(
+        &mut control,
+        "/api/library/export",
+        json!({"id":id,"path":exported.to_str().unwrap()}),
+    );
+    let rendered = sad_pet::wav::read(&exported).unwrap();
+    let peak = rendered
+        .frames()
+        .iter()
+        .flatten()
+        .fold(0.0_f32, |p, v| p.max(v.abs()));
+    assert!(peak > 0.001, "the offline render was silent");
+
+    let take = folder.0.join("take.wav");
+    sine_wav(&take, 24000);
+    let recording = without_audio(call(
+        &mut control,
+        "/api/library/take",
+        json!({"path":take.to_str().unwrap(),"source":"input","name":"sad-pet-microphone.wav","displayName":"Microphone"}),
+    ));
+    assert_eq!(recording["kind"], "recording");
+    assert_eq!(recording["recordedSource"], "input");
+    assert_eq!(recording["seconds"], 0.5);
+    assert_eq!(
+        call(&mut control, "/api/library", Value::Null)["files"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+}
