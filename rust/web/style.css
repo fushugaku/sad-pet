@@ -3827,7 +3827,7 @@ input[type="range"] {
 }
 .timbre-tabs [aria-selected="true"],
 .drum-pages [aria-selected="true"],
-.drum-voice-tabs [aria-selected="true"] {
+.drum-chain [aria-selected="true"] {
   background: #34462b;
   border-color: #79965a;
   color: var(--accent);
@@ -3890,23 +3890,18 @@ input[type="range"] {
 .filter-grid.bypassed {
   opacity: 0.45;
 }
-.drum-global {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.drum-buffer {
+.history-buffer {
   display: flex;
   align-items: center;
   gap: 8px;
   color: var(--muted);
   font-size: 11px;
 }
-.drum-buffer select {
+.history-buffer[hidden] {
+  display: none;
+}
+.history-buffer select {
   width: 94px;
-  min-height: 36px;
-  padding-block: 6px;
 }
 .drum-waveform :is(.input-source, #sample-select, #live-source-name, #library-toggle, .file-library, .drop-hint) {
   display: none;
@@ -3914,15 +3909,13 @@ input[type="range"] {
 .drum-waveform .wave-wrap {
   cursor: default;
 }
-.drum-pages,
-.drum-voice-tabs {
+.drum-pages {
   display: flex;
   gap: 4px;
   overflow-x: auto;
   padding-bottom: 8px;
 }
-.drum-pages button,
-.drum-voice-tabs button {
+.drum-pages button {
   min-height: 36px;
   white-space: nowrap;
   flex: 1;
@@ -4002,7 +3995,7 @@ input[type="range"] {
 }
 .drum-track-settings label,
 .drum-step-extras label,
-.drum-voice-controls label {
+.drum-voice label {
   display: grid;
   gap: 6px;
   min-width: 0;
@@ -4014,7 +4007,7 @@ input[type="range"] {
 .drum-track-settings button,
 .drum-step-extras input,
 .drum-step-extras select,
-.drum-voice-controls select {
+.drum-voice select {
   height: 36px;
   min-height: 36px;
   min-width: 72px;
@@ -4036,31 +4029,157 @@ input[type="range"] {
 .drum-step-knobs {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
-.drum-control-group {
-  border-bottom: 1px solid var(--line);
-  padding: 12px 0;
-}
-.drum-control-group summary {
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 12px;
-  padding: 8px 0;
-}
-.drum-control-group .knob-grid {
-  margin-top: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+/* One voice: its signal chain beside the chosen module, or every module. */
+.drum-voice-head {
+  display: flex;
   align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
 }
-.drum-voice-controls label {
-  padding: 0 8px;
+.drum-voice-head button {
+  min-height: 36px;
+}
+.drum-voice-name {
+  min-width: 128px;
+  text-align: left;
+  color: var(--accent);
+}
+.drum-voice-note {
+  color: var(--muted);
+  font-size: 11px;
+  margin-right: auto;
+}
+.drum-voice-tools {
+  display: flex;
+  gap: 6px;
+}
+.drum-voice-layout {
+  display: flex;
+  gap: 2px;
+  margin-left: 8px;
+}
+.drum-voice-body {
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr);
+  gap: 12px;
+}
+.drum-chain {
+  display: grid;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.drum-chain button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 0 10px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 12px;
+  text-align: left;
+}
+.drum-chain b {
+  font-weight: 500;
+  white-space: nowrap;
+}
+.drum-chain span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font:
+    11px ui-monospace,
+    monospace;
+}
+.drum-chain [aria-selected="true"] span {
+  color: inherit;
+}
+.drum-chain .off b {
+  color: var(--muted);
+}
+.drum-modules {
+  display: grid;
+  min-width: 0;
+}
+.drum-module {
+  min-width: 0;
+  padding: 12px 14px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.drum-module[hidden] {
+  display: none;
+}
+.drum-module-head {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-height: 36px;
+  margin-bottom: 14px;
+}
+.drum-module-head h3 {
+  margin: 0 auto 0 0;
+  align-self: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.drum-module-head .idle,
+.drum-module.off .drum-module-knobs {
+  opacity: 0.45;
+}
+.drum-module-knobs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 10px;
+}
+.drum-voice.all .drum-voice-body {
+  display: block;
+}
+.drum-voice.all .drum-chain {
+  display: none;
+}
+.drum-voice.all .drum-modules {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 8px;
+}
+.drum-voice.all .drum-module {
+  padding-inline: 10px;
+}
+.drum-voice.all .drum-module-knobs {
+  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+  gap: 6px 4px;
+}
+.drum-voice.all .dial,
+.drum-voice.all .dial svg {
+  width: 52px;
+  height: 52px;
+}
+.drum-voice.all :is(.knob-label, .knob-value) {
+  white-space: nowrap;
+}
+.drum-voice.all .knob-value {
+  font-size: 11px;
 }
 @media (max-width: 600px) {
-  #drum-machine > .section-heading {
-    flex-wrap: wrap;
+  .drum-voice-body {
+    grid-template-columns: minmax(0, 1fr);
   }
-  .drum-global {
-    flex: 1 1 100%;
-    justify-content: space-between;
+  .drum-chain {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .drum-voice.all .drum-modules {
+    grid-template-columns: minmax(0, 1fr);
   }
   .timbre-top {
     flex-wrap: wrap;

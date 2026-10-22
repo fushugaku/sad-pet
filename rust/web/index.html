@@ -169,12 +169,6 @@
         <div class="section-heading">
           <h2>Synth engine <span>Rustias OSC</span></h2>
           <div class="resynth-actions">
-            <label class="drum-buffer"
-              >Buffer<select
-                id="synth-buffer"
-                aria-label="Synth granular buffer duration"
-              ></select
-            ></label>
             <button id="synth-add">+ Oscillator</button>
           </div>
         </div>
@@ -195,12 +189,6 @@
         <div class="section-heading">
           <h2 id="bus-title">Bus <span>sends from timbres</span></h2>
           <div class="resynth-actions">
-            <label class="drum-buffer"
-              >Buffer<select
-                id="bus-buffer"
-                aria-label="Bus granular buffer duration"
-              ></select
-            ></label>
             <label class="check"
               ><input
                 id="bus-filters"
@@ -551,9 +539,17 @@
       <section class="bank" id="grain-engine" aria-label="Grain engine">
         <div class="section-heading">
           <h2>Grain engine <span id="drum-grain-count" hidden>0 grains</span></h2>
-          <label class="check"
-            ><input id="antialias" type="checkbox" checked />Anti-alias</label
-          >
+          <div class="resynth-actions">
+            <label id="grain-buffer-field" class="history-buffer" hidden
+              >Buffer<select
+                id="grain-buffer"
+                aria-label="Granular buffer duration"
+              ></select
+            ></label>
+            <label class="check"
+              ><input id="antialias" type="checkbox" checked />Anti-alias</label
+            >
+          </div>
         </div>
         <div id="grain-controls" class="knob-grid"></div>
       </section>

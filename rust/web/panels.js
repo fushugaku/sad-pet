@@ -332,14 +332,53 @@
     "Closed HH",
     "Open HH",
   ];
-  const groups = [
-    ["Oscillator", [0, 1, 26, 10, 35, 32]],
-    ["FM", [7, 8, 9, 24, 25, 38]],
-    ["Envelopes", [3, 2, 4, 5, 6, 37, 39, 40, 41, 42, 43, 44, 45, 50, 29]],
-    ["Filters", [14, 55, 12, 13, 36, 53, 46, 47, 48, 49, 54, 51, 52]],
-    ["Modulation", [20, 21, 22, 23, 33, 30, 31]],
-    ["Transient & output", [11, 27, 34, 28, 15, 16, 17, 18, 19]],
+  // Short names inside a module; screen readers keep the full parameter name.
+  const short = {
+    0: "Pitch", 1: "Wave", 2: "Decay", 3: "Attack", 4: "Curve", 5: "Sweep",
+    6: "Decay", 7: "Ratio", 8: "Amount", 9: "Wave", 10: "Noise", 11: "Level",
+    12: "Cutoff", 13: "Resonance", 14: "Type", 15: "Drive", 16: "Distortion",
+    17: "Reduction", 18: "Pan", 19: "Level", 20: "Rate", 21: "Depth",
+    22: "Target", 23: "Wave", 24: "Ratio 2", 25: "Amount 2", 26: "Width",
+    27: "Type", 28: "Repeat", 29: "Open decay", 30: "Target", 31: "Amount",
+    32: "Mode", 33: "Trigger", 34: "Rate", 35: "Color", 36: "Drive",
+    37: "Curve", 38: "Wave 2", 39: "Attack", 40: "Decay", 41: "Curve",
+    42: "Env", 43: "Attack", 44: "Decay", 45: "Curve", 46: "Type",
+    47: "Cutoff", 48: "Resonance", 49: "Drive", 50: "Env",
+    51: "Routing", 52: "Balance", 53: "Morph", 54: "Morph", 55: "Model",
+  };
+  const show = (p, ...ids) =>
+    ids.map((id) => format(defs[id], p[id])).join(" · ");
+  // Voice modules: sources, envelopes, filters and output, then modulation.
+  // Three to a row in the All layout. Menus sit in the heading so knobs keep
+  // the same places from module to module.
+  const modules = [
+    { title: "Osc", menus: [1, 32], knobs: [0, 26, 10, 35],
+      summary: (p) => show(p, 1, 0) },
+    { title: "FM", menus: [9, 38], knobs: [7, 8, 24, 25],
+      summary: (p) => show(p, 7, 8) },
+    { title: "Transient", menus: [27], knobs: [11, 34],
+      summary: (p) => show(p, 27, 11) },
+    { title: "Amp env", knobs: [3, 2, 4, 28, 29],
+      summary: (p) => `${show(p, 3)} / ${show(p, 2)}` },
+    { title: "Pitch env", knobs: [5, 6, 37], summary: (p) => show(p, 5, 6) },
+    { title: "Filter env", knobs: [39, 40, 41],
+      summary: (p) => `${show(p, 39)} / ${show(p, 40)}` },
+    // A modeled Filter 1 replaces the LXR type.
+    { title: "Filter 1", menus: [55, 14], knobs: [12, 13, 36, 53, 42],
+      idle: { 14: (p) => p[55] > 0 },
+      summary: (p) => show(p, p[55] > 0 ? 55 : 14, 12) },
+    { title: "Filter 2", menus: [46, 51], knobs: [47, 48, 49, 54, 50, 52],
+      off: (p) => !p[46], summary: (p) => (p[46] ? show(p, 46, 47) : "Bypass") },
+    { title: "Output", menus: [16], knobs: [15, 17, 18, 19],
+      summary: (p) => show(p, 16, 15, 19) },
+    { title: "LFO", menus: [22, 23, 33], knobs: [20, 21],
+      summary: (p) => (p[21] ? `→ ${show(p, 22, 21)}` : "Off") },
+    { title: "Velocity", menus: [30], knobs: [31], off: (p) => !p[30],
+      summary: (p) => (p[30] ? `→ ${show(p, 30, 31)}` : "Off") },
+    { title: "Assign env", knobs: [43, 44, 45],
+      summary: (p) => `${show(p, 43)} / ${show(p, 44)}` },
   ];
+  const LAYOUT_KEY = "evil-pet-drum-voice-layout";
   class Drums {
     constructor(root, catalog, hooks) {
       this.root = root;
@@ -348,13 +387,53 @@
       this.views = new Map();
       this.knobs = [];
       defs.forEach((d, i) => Object.assign(d, catalog.controls[i]));
-      root.innerHTML = `<div class="section-heading"><h2>Drum machine <span>DXM-088</span></h2><div class="drum-global"><label class="drum-buffer">Buffer<select aria-label="Drum granular buffer duration">${[0.125, 0.25, 0.5, 1, 2, 4, 8, 16, 32].map((seconds) => `<option value="${seconds}">${seconds < 1 ? `${seconds * 1000} ms` : `${seconds} s`}</option>`).join("")}</select></label></div></div><div class="drum-pages" role="tablist" aria-label="Drum pattern pages"></div><div class="drum-pattern-scroll"><div class="drum-pattern" role="group" aria-label="Drum steps"></div></div><div class="drum-track-settings"></div><div class="drum-step-panel"><div class="drum-step-title"></div><div class="drum-step-knobs knob-grid"></div><div class="drum-step-extras"></div></div><div class="drum-voice-tabs" role="tablist" aria-label="Drum voices"></div><div class="drum-voice-controls"></div>`;
-      this.buffer = root.querySelector('[aria-label="Drum granular buffer duration"]');
-      this.buffer.onchange = () => {
-        const seconds = Number(this.buffer.value);
-        this.settings().buffer_seconds = seconds;
-        hooks.parameter("drum_buffer_seconds", seconds);
-        hooks.routing();
+      root.innerHTML = `<div class="section-heading"><h2>Drum machine <span>DXM-088</span></h2></div><div class="drum-pages" role="tablist" aria-label="Drum pattern pages"></div><div class="drum-pattern-scroll"><div class="drum-pattern" role="group" aria-label="Drum steps"></div></div><div class="drum-track-settings"></div><div class="drum-step-panel"><div class="drum-step-title"></div><div class="drum-step-knobs knob-grid"></div><div class="drum-step-extras"></div></div><div class="drum-voice"><div class="drum-voice-head"><button class="drum-voice-name"></button><button class="drum-voice-previous" aria-label="Previous voice">‹</button><button class="drum-voice-next" aria-label="Next voice">›</button><span class="drum-voice-note"></span><span class="drum-voice-tools"><button class="drum-voice-copy">Copy</button><button class="drum-voice-paste" disabled>Paste</button></span><span class="drum-voice-layout" role="group" aria-label="Voice layout"><button class="drum-voice-chain" title="The signal chain beside one module">Chain</button><button class="drum-voice-all" title="Every module at once">All</button></span></div><div class="drum-voice-body"><div class="drum-chain" role="tablist" aria-label="Voice modules" aria-orientation="vertical"></div><div class="drum-modules"></div></div></div>`;
+      this.voicePanel = root.querySelector(".drum-voice");
+      this.module = 0;
+      this.layout = "chain";
+      try {
+        if (localStorage.getItem(LAYOUT_KEY) === "all") this.layout = "all";
+      } catch {}
+      const head = (name) => this.voicePanel.querySelector(`.drum-voice-${name}`);
+      head("name").onclick = () => hooks.trigger(this.view().voice);
+      for (const [name, offset] of [["previous", -1], ["next", 1]])
+        head(name).onclick = () => {
+          const view = this.view();
+          view.voice = view.track = (view.voice + offset + names.length) % names.length;
+          this.signature = "";
+          this.sync();
+        };
+      this.paste = head("paste");
+      head("copy").onclick = () => {
+        this.copied = [...this.settings().params[Math.min(5, this.view().voice)]];
+        this.paste.disabled = false;
+      };
+      this.paste.onclick = () => {
+        const voice = Math.min(5, this.view().voice);
+        this.copied?.forEach((value, id) => {
+          this.settings().params[voice][id] = value;
+          hooks.parameter(`drum${voice + 1}_${id}`, value);
+        });
+        this.signature = "";
+        this.sync();
+      };
+      for (const layout of ["chain", "all"])
+        head(layout).onclick = () => {
+          this.layout = layout;
+          try {
+            localStorage.setItem(LAYOUT_KEY, layout);
+          } catch {}
+          this.refreshVoice();
+        };
+      this.chain = this.voicePanel.querySelector(".drum-chain");
+      this.chain.onkeydown = (e) => {
+        const next = { ArrowDown: this.module + 1, ArrowUp: this.module - 1,
+          Home: 0, End: modules.length - 1 }[e.key];
+        if (next === undefined) return;
+        e.preventDefault();
+        this.module = (next + modules.length) % modules.length;
+        this.refreshVoice();
+        this.parts[this.module].tab.focus();
       };
       this.pages = root.querySelector(".drum-pages");
       for (let p = 0; p < 8; p++) {
@@ -371,18 +450,6 @@
         page.dataset.page = p;
         this.pages.append(page);
       }
-      this.voices = root.querySelector(".drum-voice-tabs");
-      names.forEach((name, i) => {
-        const tab = button(name, `${name} voice`, () => {
-          this.view().voice = i;
-          this.view().track = i;
-          this.signature = "";
-          this.sync();
-        });
-        tab.setAttribute("role", "tab");
-        tab.dataset.voice = i;
-        this.voices.append(tab);
-      });
     }
     settings() {
       return this.hooks.read().drums;
@@ -456,12 +523,12 @@
       });
       return input;
     }
-    select(parent, label, options, get, set) {
+    select(parent, label, options, get, set, text) {
       const prefix = names.find((name) => label.startsWith(name + " "));
       const box = el(
           "label",
           "",
-          prefix ? label.slice(prefix.length + 1) : label,
+          text ?? (prefix ? label.slice(prefix.length + 1) : label),
         ),
         select = el("select");
       select.setAttribute("aria-label", label);
@@ -774,59 +841,102 @@
       }
       this.buildVoice();
     }
+    // Closed and Open HH play one voice; the open hat swaps Decay for Open decay.
     buildVoice() {
-      const voice = Math.min(5, this.view().voice),
-        container = this.root.querySelector(".drum-voice-controls");
-      container.replaceChildren();
-      for (const [title, params] of groups) {
-        const section = el("details", "drum-control-group");
-        section.open = title === "Oscillator";
-        section.append(el("summary", "", title));
-        const grid = el("div", "knob-grid");
-        section.append(grid);
-        container.append(section);
-        for (const id of params) {
-          const d = defs[id],
-            key = `drum${voice + 1}_${id}`;
-          const set = (v) => {
-            const value = constrain(d, v);
-            this.settings().params[voice][id] = value;
-            this.hooks.parameter(key, value);
-          };
-          if (d.options) {
-            this.select(
+      const track = this.view().voice,
+        voice = Math.min(5, track),
+        name = names[track];
+      this.voicePanel.querySelector(".drum-voice-name").textContent = `▷ ${name}`;
+      this.voicePanel.querySelector(".drum-voice-name").setAttribute("aria-label", `Audition ${name}`);
+      this.voicePanel.querySelector(".drum-voice-note").textContent =
+        voice === 5 ? `Shared with ${names[track === 5 ? 6 : 5]}` : "";
+      const panels = this.voicePanel.querySelector(".drum-modules");
+      this.chain.replaceChildren();
+      panels.replaceChildren();
+      this.parts = modules.map((module, index) => {
+        const tab = button("", `${module.title} module`, () => {
+          this.module = index;
+          this.refreshVoice();
+        });
+        tab.setAttribute("role", "tab");
+        const summary = el("span");
+        tab.append(el("b", "", module.title), summary);
+        this.chain.append(tab);
+        const panel = el("section", "drum-module"),
+          heading = el("div", "drum-module-head"),
+          grid = el("div", "drum-module-knobs");
+        panel.setAttribute("aria-label", `${name} ${module.title}`);
+        heading.append(el("h3", "", module.title));
+        panel.append(heading, grid);
+        panels.append(panel);
+        const set = (id) => (v) => {
+          const value = constrain(defs[id], v);
+          this.settings().params[voice][id] = value;
+          this.hooks.parameter(`drum${voice + 1}_${id}`, value);
+          this.refreshVoice();
+        };
+        const menus = {};
+        for (const id of module.menus ?? [])
+          menus[id] = this.select(
+            heading,
+            `${name} ${defs[id].name}`,
+            defs[id].options,
+            () => this.settings().params[voice][id],
+            set(id),
+            short[id],
+          ).parentNode;
+        for (const id of module.knobs) {
+          if (id === 29 && voice !== 5) continue;
+          const d = defs[id];
+          this.knobs.push(
+            this.hooks.knob(
+              [
+                `drum${voice + 1}_${id}`,
+                (id === 2 && voice === 5 ? "Closed decay" : short[id]).toUpperCase(),
+                (v) => format(d, v),
+                d.min,
+                d.max,
+                `${name} ${d.name}`,
+              ],
               grid,
-              `${names[this.view().voice]} ${d.name}`,
-              d.options,
-              () => this.settings().params[voice][id],
-              set,
-            );
-          } else
-            this.knobs.push(
-              this.hooks.knob(
-                [
-                  key,
-                  d.name.toUpperCase(),
-                  (v) => format(d, v),
-                  d.min,
-                  d.max,
-                  `${names[this.view().voice]} ${d.name}`,
-                ],
-                grid,
-                {
-                  register: false,
-                  ariaScale: 1,
-                  normalize: d.log ? (v) => normalize(d, v) : undefined,
-                  denormalize: d.log ? (v) => denormalize(d, v) : undefined,
-                  step: d.unit === "integer" ? 1 : undefined,
-                  get: () => this.settings().params[voice][id],
-                  set,
-                  reset: () => this.catalog.defaults[voice][id],
-                },
-              ),
-            );
+              {
+                register: false,
+                ariaScale: 1,
+                normalize: d.log ? (v) => normalize(d, v) : undefined,
+                denormalize: d.log ? (v) => denormalize(d, v) : undefined,
+                step: d.unit === "integer" ? 1 : undefined,
+                get: () => this.settings().params[voice][id],
+                set: set(id),
+                reset: () => this.catalog.defaults[voice][id],
+              },
+            ),
+          );
         }
-      }
+        return { module, tab, summary, panel, menus };
+      });
+      this.refreshVoice();
+    }
+    refreshVoice() {
+      const params = this.settings()?.params[Math.min(5, this.view().voice)];
+      if (!params || !this.parts) return;
+      const all = this.layout === "all";
+      this.voicePanel.classList.toggle("all", all);
+      for (const layout of ["chain", "all"])
+        this.voicePanel
+          .querySelector(`.drum-voice-${layout}`)
+          .setAttribute("aria-pressed", String(layout === this.layout));
+      this.parts.forEach(({ module, tab, summary, panel, menus }, index) => {
+        const selected = index === this.module,
+          off = !!module.off?.(params);
+        summary.textContent = module.summary(params);
+        tab.setAttribute("aria-selected", String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+        tab.classList.toggle("off", off);
+        panel.classList.toggle("off", off);
+        panel.hidden = !all && !selected;
+        for (const [id, idle] of Object.entries(module.idle ?? {}))
+          menus[id].classList.toggle("idle", idle(params));
+      });
     }
     sync() {
       const settings = this.settings();
@@ -843,25 +953,10 @@
         this.signature = signature;
         this.buildEditor();
       }
-      const seconds = settings.buffer_seconds ?? 8;
-      this.buffer.querySelector('[data-custom]')?.remove();
-      if (![...this.buffer.options].some((o) => Number(o.value) === seconds)) {
-        const custom = document.createElement("option");
-        custom.value = seconds;
-        custom.textContent = `${Number(seconds.toFixed(3))} s`;
-        custom.dataset.custom = "true";
-        this.buffer.append(custom);
-      }
-      this.buffer.value = String(seconds);
       for (const tab of this.pages.children)
         tab.setAttribute(
           "aria-selected",
           String(Number(tab.dataset.page) === v.page),
-        );
-      for (const tab of this.voices.children)
-        tab.setAttribute(
-          "aria-selected",
-          String(Number(tab.dataset.voice) === v.voice),
         );
       for (const hit of this.hits) {
         const t = Number(hit.dataset.track),
@@ -878,6 +973,7 @@
         );
       this.fields.forEach((update) => update());
       this.knobs.forEach((update) => update());
+      this.refreshVoice();
     }
     update(view) {
       if (!this.settings()) return;

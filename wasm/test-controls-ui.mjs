@@ -14,7 +14,10 @@ class Element {
     this.style = {};
     this.classList = { add() {}, remove() {}, toggle() {} };
   }
-  append(...nodes) { this.children.push(...nodes); }
+  append(...nodes) {
+    for (const node of nodes) node.parentNode = this;
+    this.children.push(...nodes);
+  }
   replaceChildren(...nodes) { this.children = nodes; }
   querySelector(selector) {
     if (!this.nodes.has(selector)) this.nodes.set(selector, new Element("div"));
@@ -72,16 +75,64 @@ assert.equal(view.voice, 3);
 assert.equal(view.track, 3);
 assert.equal(view.step, 7);
 
+// Every DXM-088 parameter appears once in the voice modules; only the hat
+// voice shows Open decay.
+const voicePreset = {
+  drums: { params: Array.from({ length: 6 }, () => Array(56).fill(0)) },
+};
+for (const [voice, count] of [[0, 55], [5, 56]]) {
+  const knobs = [];
+  const voiceEditor = new panels.window.SadDrums(new Element("div"), { controls: [] }, {
+    read: () => voicePreset, trigger() {}, parameter() {},
+    knob: ([key]) => { knobs.push(key); return () => {}; },
+  });
+  Object.assign(voiceEditor, { view: () => ({ voice, track: voice }), knobs: [], fields: [] });
+  voiceEditor.buildVoice();
+  const menus = voiceEditor.voicePanel.querySelector(".drum-modules").all()
+    .filter((e) => e.tagName === "SELECT").map((e) => e.getAttribute("aria-label"));
+  assert.equal(new Set(knobs).size, knobs.length);
+  assert.equal(new Set(menus).size, menus.length);
+  assert.equal(knobs.length + menus.length, count, `Voice ${voice} must show each parameter once`);
+  assert.equal(knobs.includes(`drum${voice + 1}_29`), voice === 5);
+}
+
 const drumPreset = { drums: { buffer_seconds: 8 } };
 const routingEdits = [];
-const drumRoot = new Element("div");
-const drumEditor = new panels.window.SadDrums(drumRoot, { controls: [] }, {
-  read: () => drumPreset, parameter: (...edit) => routingEdits.push(edit), routing() {},
+const bufferNodes = new Map();
+const bufferNode = (id) => {
+  if (!bufferNodes.has(id)) bufferNodes.set(id, new Element("select"));
+  return bufferNodes.get(id);
+};
+const bufferContext = vm.createContext({
+  document, preset: drumPreset, $: bufferNode,
+  historySettings: () => bufferContext.preset.drums ?? bufferContext.preset.bus,
+  option: (value, label) => Object.assign(new Element("option"), { value, textContent: label }),
+  scheduleParameter: (...edit) => routingEdits.push(edit),
+  schedulePreset: () => routingEdits.push(["preset"]),
+  editSynth() {}, syncTimbreRouting() {},
 });
-drumEditor.buffer.value = "0.125";
-drumEditor.buffer.onchange();
+vm.runInContext(app.slice(app.indexOf("const historyBuffers"), app.indexOf("function buildBus(")), bufferContext);
+bufferContext.bindGrainBuffer();
+bufferContext.syncGrainBuffer();
+assert.equal(bufferNode("grain-buffer-field").hidden, false);
+assert.equal(bufferNode("grain-buffer").children.length, 9);
+assert.equal(bufferNode("grain-buffer").value, "8");
+bufferNode("grain-buffer").value = "0.125";
+bufferNode("grain-buffer").onchange();
 assert.equal(drumPreset.drums.buffer_seconds, 0.125);
-assert.deepEqual(routingEdits, [["drum_buffer_seconds", 0.125]], "Buffer choice must send a scalar edit");
+assert.deepEqual(routingEdits.splice(0), [["drum_buffer_seconds", 0.125]], "Buffer choice must send a scalar edit");
+// A bus history stops at 8 s, and an unlisted length stays selectable.
+bufferContext.preset = { bus: { granular: true, buffer_seconds: 3 } };
+bufferContext.syncGrainBuffer();
+assert.deepEqual(bufferNode("grain-buffer").children.map((o) => o.value), ["0.125", "0.25", "0.5", "1", "2", "4", "8", "3"]);
+assert.equal(bufferNode("grain-buffer").value, "3");
+bufferNode("grain-buffer").value = "2";
+bufferNode("grain-buffer").onchange();
+assert.equal(bufferContext.preset.bus.buffer_seconds, 2);
+assert.deepEqual(routingEdits.splice(0), [["preset"]], "A bus buffer is a structural edit");
+bufferContext.preset = { params: {} };
+bufferContext.syncGrainBuffer();
+assert.equal(bufferNode("grain-buffer-field").hidden, true);
 const sizeContext = vm.createContext({ preset: drumPreset });
 vm.runInContext(app.slice(app.indexOf("const historySettings"), app.indexOf("const grainSchema")), sizeContext);
 assert.equal(sizeContext.grainSeconds(0.5), 0.01);

@@ -1091,6 +1091,7 @@ function syncTimbreRouting() {
   if ($("grain-engine-home").nextElementSibling !== grains)
     $("grain-engine-home").after(grains);
   $("drum-grain-count").hidden = !history;
+  syncGrainBuffer();
   syncControl("grain_size");
   const transport = document.querySelector(".transport");
   if (samplePanel.nextElementSibling !== transport) samplePanel.after(transport);
@@ -1405,26 +1406,53 @@ function bindGranularToggle() {
     syncTimbreRouting();
   };
 }
+/** The live history's length belongs to Granular, so it sits in Grain engine. */
+const historyBuffers = (bus) =>
+  [0.125, 0.25, 0.5, 1, 2, 4, 8, ...(bus ? [] : [16, 32])];
+function bindGrainBuffer() {
+  const buffer = $("grain-buffer");
+  buffer.onchange = () => {
+    const seconds = Number(buffer.value);
+    if (preset?.drums) {
+      preset.drums.buffer_seconds = seconds;
+      scheduleParameter("drum_buffer_seconds", seconds);
+    } else if (preset?.synth) editSynth("buffer_seconds", seconds);
+    else if (preset?.bus) {
+      // Structural: a Granular bus allocates its history while the preset is
+      // prepared, never on the audio thread.
+      preset.bus.buffer_seconds = seconds;
+      schedulePreset();
+    } else return;
+    syncTimbreRouting();
+  };
+}
+function syncGrainBuffer() {
+  const own = historySettings(),
+    buffer = $("grain-buffer");
+  $("grain-buffer-field").hidden = !own;
+  if (!own) return;
+  const bus = !preset.drums && !preset.synth,
+    seconds = own.buffer_seconds ?? (bus ? 4 : 8),
+    choices = historyBuffers(bus),
+    custom = choices.includes(seconds) ? "" : seconds;
+  // A preset may carry a length the menu doesn't offer; keep it selectable.
+  if (buffer.dataset.choices !== `${bus}:${custom}`) {
+    buffer.dataset.choices = `${bus}:${custom}`;
+    buffer.replaceChildren(
+      ...choices.map((s) => option(String(s), s < 1 ? `${s * 1000} ms` : `${s} s`)),
+    );
+    if (custom !== "")
+      buffer.append(option(String(seconds), `${Number(seconds.toFixed(3))} s`));
+  }
+  if (document.activeElement !== buffer) buffer.value = String(seconds);
+}
 function buildBus() {
-  const buffer = $("bus-buffer");
-  buffer.replaceChildren(
-    ...[0.125, 0.25, 0.5, 1, 2, 4, 8].map((seconds) =>
-      option(
-        String(seconds),
-        seconds < 1 ? `${seconds * 1000} ms` : `${seconds} s`,
-      ),
-    ),
-  );
-  // Structural: a Granular bus allocates its history while the preset is
-  // prepared, never on the audio thread.
-  const edit = (field, value) => {
+  $("bus-filters").onchange = () => {
     if (!preset?.bus) return;
-    preset.bus[field] = value;
+    preset.bus.filters = $("bus-filters").checked;
     schedulePreset();
     syncTimbreRouting();
   };
-  buffer.onchange = () => edit("buffer_seconds", Number(buffer.value));
-  $("bus-filters").onchange = () => edit("filters", $("bus-filters").checked);
 }
 function syncBus() {
   const bus = preset?.bus;
@@ -1439,10 +1467,6 @@ function syncBus() {
     : "sends from timbres, then Master";
   $("bus-engine").setAttribute("aria-label", bus.master ? "Master" : vocal ? "Voice chain" : "Bus");
   $("bus-filters").checked = !!bus.filters;
-  const buffer = $("bus-buffer");
-  if (document.activeElement !== buffer)
-    buffer.value = String(bus.buffer_seconds ?? 4);
-  $("bus-buffer").disabled = !bus.granular;
   const effects = [preset.color_chain, preset.pre_color_chain, preset.source_color_chain]
     .some((chain) => chain?.some((slot) => slot.enabled && slot.mix > 0));
   $("bus-hint").hidden =
@@ -1453,19 +1477,7 @@ function buildSynth() {
   bindEngineType();
   buildBus();
   bindGranularToggle();
-  const buffer = $("synth-buffer");
-  buffer.replaceChildren(
-    ...[0.125, 0.25, 0.5, 1, 2, 4, 8, 16, 32].map((seconds) =>
-      option(
-        String(seconds),
-        seconds < 1 ? `${seconds * 1000} ms` : `${seconds} s`,
-      ),
-    ),
-  );
-  buffer.onchange = () => {
-    editSynth("buffer_seconds", Number(buffer.value));
-    syncTimbreRouting();
-  };
+  bindGrainBuffer();
   $("synth-add").onclick = () => {
     const s = synthSettings();
     if (s.count >= 4) return;
@@ -1521,15 +1533,6 @@ function syncSynth() {
   }
   const s = synthSettings();
   $("synth-add").disabled = s.count >= 4;
-  const buffer = $("synth-buffer"),
-    seconds = s.buffer_seconds ?? 8;
-  buffer.querySelector("[data-custom]")?.remove();
-  if (![...buffer.options].some((o) => Number(o.value) === seconds)) {
-    const custom = option(String(seconds), `${seconds} s`);
-    custom.dataset.custom = "";
-    buffer.append(custom);
-  }
-  if (document.activeElement !== buffer) buffer.value = String(seconds);
   syncOscillators("synth");
 }
 function syncOscillators(bank) {
