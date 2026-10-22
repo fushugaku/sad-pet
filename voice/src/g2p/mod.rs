@@ -43,9 +43,11 @@ pub fn alias(language: Language, text: &str) -> Option<Vec<Phoneme>> {
                 .filter(|p| !p.is_empty())
                 .or_else(|| Phoneme::parse(language, token).map(|p| vec![p])),
             Language::Ru => ru::alias(token),
-            // ARPAsing aliases are phoneme symbols; spelling them as words
-            // would read a layer suffix as letters.
-            Language::En => Phoneme::parse(language, token).map(|p| vec![p]),
+            // ARPAsing aliases are phoneme symbols, CVVC banks write X-SAMPA;
+            // spelling them as words would read a layer suffix as letters.
+            Language::En => Phoneme::parse(language, token)
+                .map(|p| vec![p])
+                .or_else(|| en::xsampa(token)),
         };
         let parsed = match Phoneme::parse(language, token) {
             Some(p) if p.language().is_none() => Some(vec![p]),

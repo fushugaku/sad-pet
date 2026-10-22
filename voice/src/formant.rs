@@ -8,7 +8,7 @@ use crate::spectrum::{AP_BANDS, AP_EDGES, ENV_POINTS, FLOOR_DB, FRAME_SECONDS, F
 use crate::timing::Segment;
 
 /// Overall level of a vowel envelope peak, dB per Hz.
-const LEVEL: f32 = -56.0;
+const LEVEL: f32 = -49.0;
 const TRANSITION: f64 = 0.045;
 
 #[derive(Clone, Copy, Debug)]

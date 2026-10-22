@@ -262,11 +262,29 @@ pub fn word(text: &str) -> Vec<Phoneme> {
     out.iter().map(|(s, _)| ph(s)).collect()
 }
 
-/// Syllables of a lyric that may hold several words.
+/// Syllables of a lyric that may hold several words. The one-letter
+/// prepositions в, к and с are sung as part of the next word (в лесу:
+/// «влесу», with в voiced before л).
 pub fn syllables(text: &str) -> Vec<Syllable> {
-    text.split_whitespace()
-        .flat_map(|w| syllabify(&word(w)))
-        .collect()
+    let mut words: Vec<String> = Vec::new();
+    let mut pending = String::new();
+    for w in text.split_whitespace() {
+        let bare: String = w
+            .to_lowercase()
+            .chars()
+            .filter(|c| c.is_alphabetic())
+            .collect();
+        if matches!(bare.as_str(), "в" | "к" | "с") {
+            pending.push_str(&bare);
+            continue;
+        }
+        words.push(format!("{pending}{w}"));
+        pending.clear();
+    }
+    if !pending.is_empty() {
+        words.push(pending);
+    }
+    words.iter().flat_map(|w| syllabify(&word(w))).collect()
 }
 
 /// The phonemes of a UTAU alias written in Cyrillic (`ка`, `а к`) or in the
@@ -287,7 +305,62 @@ pub fn alias(text: &str) -> Option<Vec<Phoneme>> {
                 .collect(),
         );
     }
-    Phoneme::parse_list(Language::Ru, text).ok()
+    Phoneme::parse_list(Language::Ru, text)
+        .ok()
+        .or_else(|| latin(text))
+}
+
+/// The Latin notation of Russian CVC voicebanks (keirokeer's reclist):
+/// `4`/`4'` ч, `c` ц, `h` х, `j` ж, `w` ш, `w'` щ, `y` ы, `~` й, `'` softens,
+/// and `-` at either end is silence (`-ba`, `ab-`). Aliases have no spaces.
+fn latin(text: &str) -> Option<Vec<Phoneme>> {
+    let mut out = Vec::new();
+    let chars: Vec<char> = text.chars().filter(|c| !c.is_whitespace()).collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        let soft = chars.get(i + 1) == Some(&'\'');
+        let symbol = match c {
+            '-' => {
+                // Silence only at the edges; one per edge.
+                if out.last() != Some(&Phoneme::SIL) {
+                    out.push(Phoneme::SIL);
+                }
+                i += 1;
+                continue;
+            }
+            'a' | 'o' | 'u' | 'e' | 'i' | 'y' => c.to_string(),
+            '4' => "ch".into(),
+            'c' => "ts".into(),
+            'h' => {
+                if soft {
+                    "x'".into()
+                } else {
+                    "x".into()
+                }
+            }
+            'j' => "zh".into(),
+            'w' => {
+                if soft {
+                    "sch".into()
+                } else {
+                    "sh".into()
+                }
+            }
+            '~' => "j".into(),
+            'b' | 'd' | 'f' | 'g' | 'k' | 'l' | 'm' | 'n' | 'p' | 'r' | 's' | 't' | 'v' | 'z' => {
+                if soft {
+                    format!("{c}'")
+                } else {
+                    c.to_string()
+                }
+            }
+            _ => return None,
+        };
+        out.push(ph(&symbol));
+        i += if soft { 2 } else { 1 };
+    }
+    (!out.is_empty()).then_some(out)
 }
 
 fn part(text: &str) -> Vec<Phoneme> {
@@ -363,6 +436,16 @@ mod tests {
         assert_eq!(show("в"), "f");
     }
     #[test]
+    fn prepositions_join_the_next_word() {
+        let s = syllables("в лесу");
+        let all: Vec<_> = s
+            .iter()
+            .flat_map(|s| s.phonemes.iter().map(|p| p.symbol()))
+            .collect();
+        assert_eq!(all.join(" "), "v l' e s u");
+        assert_eq!(syllables("с тобой")[0].phonemes[0].symbol(), "s");
+    }
+    #[test]
     fn aliases() {
         let show = |t| {
             alias(t)
@@ -376,5 +459,13 @@ mod tests {
         assert_eq!(show("а к"), "a k");
         assert_eq!(show("- ля"), "sil l' a");
         assert_eq!(show("t' i"), "t' i");
+        // Latin CVC notation.
+        assert_eq!(show("-4'a"), "sil ch a");
+        assert_eq!(show("ab'-"), "a b' sil");
+        assert_eq!(show("w'u"), "sch u");
+        assert_eq!(show("jy"), "zh y");
+        assert_eq!(show("a~"), "a j");
+        assert_eq!(show("h'e"), "x' e");
+        assert!(alias("`a").is_none());
     }
 }

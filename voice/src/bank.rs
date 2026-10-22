@@ -38,6 +38,13 @@ pub struct Unit {
     pub pitch: f32,
     /// Median level of the voiced frames in dB.
     pub level: f32,
+    /// An alternative take (a katakana alias beside hiragana ones): used
+    /// only when it fits clearly better.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub variant: bool,
+    /// The recording the unit was cut from, relative to the voicebank.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub source: String,
 }
 impl Unit {
     pub fn start(&self) -> u32 {
@@ -72,6 +79,9 @@ pub struct Voicebank {
     median_level: f32,
     /// Mean envelope of the voiced frames: the voice's overall color.
     color: Vec<f32>,
+    /// Each vowel's recorded takes: unit pitch and mean envelope shape of
+    /// the vowel's middle (level removed, see `spectrum::color_level`).
+    vowels: HashMap<Phoneme, Vec<(f32, Vec<f32>)>>,
 }
 
 fn quantize_env(db: f32) -> u8 {
@@ -191,6 +201,37 @@ impl Voicebank {
         } else {
             vec![-90.0; ENV_POINTS]
         };
+        self.vowels.clear();
+        for unit in &self.units {
+            for (k, &p) in unit.phonemes.iter().enumerate() {
+                if !p.is_vowel() {
+                    continue;
+                }
+                let (a, b) = unit.span(k);
+                let q = (b - a) / 4;
+                let mut sum = vec![0.0f32; ENV_POINTS];
+                let mut count = 0;
+                for i in (a + q..b - q).map(|i| i as usize) {
+                    if self.f0.get(i).is_none_or(|f| *f <= 0.0) {
+                        continue;
+                    }
+                    let env = &self.env[i * ENV_POINTS..(i + 1) * ENV_POINTS];
+                    let env: Vec<f32> = env
+                        .iter()
+                        .map(|&q| FLOOR_DB + q as f32 * ENV_STEP)
+                        .collect();
+                    let level = crate::spectrum::color_level(&env);
+                    for (s, e) in sum.iter_mut().zip(&env) {
+                        *s += e - level;
+                    }
+                    count += 1;
+                }
+                if count >= 3 {
+                    sum.iter_mut().for_each(|s| *s /= count as f32);
+                    self.vowels.entry(p).or_default().push((unit.pitch, sum));
+                }
+            }
+        }
         self.durations = lengths
             .into_iter()
             .map(|(p, mut v)| {
@@ -198,6 +239,23 @@ impl Voicebank {
                 (p, v[v.len() / 2])
             })
             .collect();
+    }
+
+    /// The voice's typical shape of vowel `p` near `pitch` (MIDI): the mean
+    /// of its takes, weighted toward those sung at a similar pitch.
+    pub fn vowel_shape(&self, p: Phoneme, pitch: f32) -> Option<Vec<f32>> {
+        let takes = self.vowels.get(&p).filter(|t| t.len() >= 3)?;
+        let mut sum = vec![0.0f32; ENV_POINTS];
+        let mut total = 0.0f32;
+        for (at, shape) in takes {
+            let w = (-((at - pitch) / 5.0).powi(2)).exp() + 1e-3;
+            for (s, v) in sum.iter_mut().zip(shape) {
+                *s += w * v;
+            }
+            total += w;
+        }
+        sum.iter_mut().for_each(|s| *s /= total);
+        Some(sum)
     }
 
     pub fn units_for(&self, phonemes: &[Phoneme]) -> &[u32] {
@@ -366,6 +424,8 @@ mod tests {
             stable: [start + 2, start + 8],
             pitch: 57.0,
             level: -90.0,
+            variant: false,
+            source: String::new(),
         });
         bank.finish();
         let back = Voicebank::from_bytes(&bank.to_bytes()).unwrap();
@@ -381,6 +441,41 @@ mod tests {
         }
     }
     #[test]
+    fn vowel_shape_favors_takes_at_a_similar_pitch() {
+        let mut bank = Voicebank::new(Info::default());
+        let a = Phoneme::parse(Language::Ja, "a").unwrap();
+        // Three low takes with a bright top, one high take with a dark top.
+        for (pitch, top) in [(48.0, 0.0), (49.0, 0.0), (50.0, 0.0), (72.0, -30.0)] {
+            let mut frame = Frame::SILENT;
+            frame.f0 = 220.0;
+            for (g, e) in frame.env.iter_mut().enumerate() {
+                *e = if g > ENV_POINTS / 2 {
+                    -80.0 + top
+                } else {
+                    -80.0
+                };
+            }
+            let start = bank.push_frames(&[frame; 8]);
+            bank.add_unit(Unit {
+                alias: "a".into(),
+                phonemes: vec![a],
+                bounds: vec![start, start + 8],
+                fixed: start,
+                stable: [0, 0],
+                pitch,
+                level: -80.0,
+                variant: false,
+                source: String::new(),
+            });
+        }
+        bank.finish();
+        let top = |pitch| bank.vowel_shape(a, pitch).unwrap()[ENV_POINTS - 1];
+        assert!(top(49.0) > -1.0, "{}", top(49.0));
+        assert!(top(72.0) < -20.0, "{}", top(72.0));
+        let i = Phoneme::parse(Language::Ja, "i").unwrap();
+        assert!(bank.vowel_shape(i, 60.0).is_none());
+    }
+    #[test]
     fn substitutes_the_closest_phoneme() {
         let mut bank = Voicebank::new(Info::default());
         let ja = |s| Phoneme::parse(Language::Ja, s).unwrap();
@@ -394,6 +489,8 @@ mod tests {
                 stable: [0, 0],
                 pitch: 60.0,
                 level: -90.0,
+                variant: false,
+                source: String::new(),
             });
         }
         bank.finish();

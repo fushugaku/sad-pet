@@ -16,6 +16,12 @@ const EDGE: f64 = 0.012;
 /// Candidates kept per phrase range, by their own cost.
 const KEEP: usize = 6;
 
+/// How far a vowel's middle moves toward the voice's typical shape of it
+/// (0 keeps each take as recorded). Benchmarked on three UTAU banks by
+/// rebuilding recordings from the rest of the bank: 0.7 cut the envelope
+/// error from 5.1 to 4.3 dB and cost 0.6 dB when the take itself is used.
+const MEAN_PULL: f32 = 0.7;
+
 /// One phoneme of the phrase as synthesis sees it.
 #[derive(Clone, Debug)]
 struct Item {
@@ -90,10 +96,10 @@ fn candidates(bank: &Voicebank, items: &[Item], pitch: &[f32]) -> Vec<Candidate>
                 first: 0,
                 a,
                 b: a,
-                cost: 0.35,
+                cost: 0.6,
             });
         }
-        let mut by_range: std::collections::HashMap<usize, Vec<Candidate>> =
+        let mut by_range: std::collections::HashMap<usize, Vec<(Candidate, f32)>> =
             std::collections::HashMap::new();
         for &(u, k) in occurrences
             .get(&items[a].phoneme)
@@ -110,8 +116,15 @@ fn candidates(bank: &Voicebank, items: &[Item], pitch: &[f32]) -> Vec<Candidate>
             // Every prefix of the match is a candidate.
             for l in 1..=len {
                 let b = a + l - 1;
-                let cut_left = k > 0 && !unit.phonemes[k - 1].is_pause();
-                let cut_right = k + l < unit.phonemes.len() && !unit.phonemes[k + l].is_pause();
+                // Cutting into a phoneme loses its transition; cutting off a
+                // recorded silence only loses the context, a smaller loss.
+                let cut = |p: Phoneme| if p.is_pause() { 0.25 } else { 0.7 };
+                let cut_left = if k > 0 {
+                    cut(unit.phonemes[k - 1])
+                } else {
+                    0.0
+                };
+                let cut_right = unit.phonemes.get(k + l).map_or(0.0, |&p| cut(p));
                 // A unit of only pauses adds nothing.
                 if unit.phonemes[k..k + l].iter().all(|p| p.is_pause()) {
                     continue;
@@ -123,35 +136,47 @@ fn candidates(bank: &Voicebank, items: &[Item], pitch: &[f32]) -> Vec<Candidate>
                 let target =
                     target_pitch(pitch, items[a + main - k].start, items[a + main - k].end);
                 let semitones = (unit.pitch - target).abs();
-                let pitch_cost =
-                    0.06 * (semitones - 1.0).max(0.0) + 0.08 * (semitones - 6.0).max(0.0);
-                let cost = 0.3
-                    + pitch_cost
-                    + if cut_left { 0.7 } else { 0.0 }
-                    + if cut_right { 0.7 } else { 0.0 };
-                by_range.entry(b).or_default().push(Candidate {
-                    unit: Some(u),
-                    first: k,
-                    a,
-                    b,
-                    cost,
-                });
+                let cost = 0.3 + cut_left + cut_right + if unit.variant { 0.5 } else { 0.0 };
+                by_range.entry(b).or_default().push((
+                    Candidate {
+                        unit: Some(u),
+                        first: k,
+                        a,
+                        b,
+                        cost,
+                    },
+                    semitones,
+                ));
             }
         }
         for (_, mut list) in by_range {
-            list.sort_by(|x, y| x.cost.total_cmp(&y.cost));
+            // Pitch only ranks alternatives: a voice recorded at one pitch
+            // must not make every unit look worse than plain silence.
+            let nearest = list.iter().map(|c| c.1).fold(f32::INFINITY, f32::min);
+            for (c, semitones) in &mut list {
+                let off = *semitones - nearest;
+                c.cost += 0.06 * (off - 1.0).max(0.0) + 0.08 * (off - 6.0).max(0.0);
+            }
+            list.sort_by(|x, y| x.0.cost.total_cmp(&y.0.cost));
             list.truncate(KEEP);
-            out.extend(list);
+            out.extend(list.into_iter().map(|(c, _)| c));
         }
     }
     out
 }
 
-/// Mean envelope difference (dB) of two frames over 100 Hz – 5 kHz.
+/// Mean difference (dB) of two envelopes' shapes over 100 Hz – 5 kHz. Their
+/// levels are matched first: placement evens out loudness, so only a change
+/// of timbre makes a join audible.
 fn spectral_distance(x: &Frame, y: &Frame) -> f32 {
     let lo = grid_position(100.0) as usize;
     let hi = grid_position(5000.0) as usize;
-    (lo..=hi).map(|g| (x.env[g] - y.env[g]).abs()).sum::<f32>() / (hi - lo + 1) as f32
+    let count = (hi - lo + 1) as f32;
+    let offset = (lo..=hi).map(|g| x.env[g] - y.env[g]).sum::<f32>() / count;
+    (lo..=hi)
+        .map(|g| (x.env[g] - y.env[g] - offset).abs())
+        .sum::<f32>()
+        / count
 }
 
 fn middle_frame(bank: &Voicebank, unit: &Unit, k: usize) -> Frame {
@@ -226,7 +251,7 @@ fn select(bank: &Voicebank, items: &[Item], cands: &[Candidate]) -> Vec<Candidat
 }
 
 /// Maps target time to a fractional source frame.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct Placement {
     t0: f64,
     t1: f64,
@@ -240,6 +265,9 @@ struct Placement {
     /// Limits for extrapolating past the span at a hard join.
     clamp: (f64, f64),
     gain_db: f32,
+    /// For a vowel: the voice's typical shape of it, and the source frames
+    /// the vowel spans (the pull toward the shape fades in from its edges).
+    shape: Option<(Vec<f32>, f64, f64)>,
 }
 
 impl Placement {
@@ -302,12 +330,20 @@ impl Placement {
 fn place(bank: &Voicebank, items: &[Item], chain: &[Candidate]) -> Vec<Placement> {
     let mut out = Vec::new();
     let median = bank.median_level();
+    // The whole voice sings at a common level; each unit moves most of the
+    // way to the voice's own median, smoothing uneven recordings.
+    let voice_gain = crate::spectrum::SINGING_LEVEL - median;
     for (ci, c) in chain.iter().enumerate() {
         let Some(u) = c.unit else { continue };
         let unit = &bank.units[u as usize];
         let previous = ci.checked_sub(1).map(|i| &chain[i]);
         let next = chain.get(ci + 1);
-        let gain_db = ((median - unit.level) * 0.7).clamp(-12.0, 12.0);
+        let unit_gain = if unit.level > FLOOR_DB + 10.0 {
+            ((median - unit.level) * 0.7).clamp(-12.0, 12.0)
+        } else {
+            0.0
+        };
+        let gain_db = (voice_gain + unit_gain).clamp(-36.0, 36.0);
         for (j, item) in items.iter().enumerate().take(c.b + 1).skip(c.a) {
             let k = c.first + (j - c.a);
             let (s0, s1) = unit.span(k);
@@ -341,7 +377,11 @@ fn place(bank: &Voicebank, items: &[Item], chain: &[Candidate]) -> Vec<Placement
                 fade_out: (t1, t1),
                 clamp: (unit.start() as f64, unit.end().saturating_sub(1) as f64),
                 gain_db,
+                shape: None,
             };
+            if phoneme.is_vowel() {
+                p.shape = bank.vowel_shape(phoneme, unit.pitch).map(|s| (s, s0, s1));
+            }
             if phoneme.is_pause() {
                 // A recorded lead-in or tail: keep at most 150 ms of it, faded.
                 let keep = natural.min(0.15).min(length);
@@ -478,6 +518,16 @@ pub fn frames(
             for (e, v) in env.iter_mut().zip(&f.env) {
                 *e += w * (*v + p.gain_db) as f64;
             }
+            if let Some((shape, a, b)) = p.shape.as_ref().filter(|_| f.voiced()) {
+                // Takes of a vowel differ; pull its middle toward the voice's
+                // typical color so consecutive units match.
+                let edge = ((s - a).min(b - s) / ((b - a) * 0.25).max(1.0)).clamp(0.0, 1.0);
+                let pull = MEAN_PULL * (edge * edge * (3.0 - 2.0 * edge)) as f32;
+                let level = crate::spectrum::color_level(&f.env);
+                for ((e, v), m) in env.iter_mut().zip(&f.env).zip(shape) {
+                    *e += w * (pull * (m - (v - level))) as f64;
+                }
+            }
             for (a, v) in ap.iter_mut().zip(&f.ap) {
                 *a += w * *v as f64;
             }
@@ -594,6 +644,8 @@ mod tests {
                 bounds,
                 pitch: 57.0,
                 level: -80.0,
+                variant: false,
+                source: String::new(),
             });
         }
         bank.finish();

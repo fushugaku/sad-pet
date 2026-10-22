@@ -25,7 +25,10 @@ with no threads or platform code, so the plug-ins, the app and the browser
    inside vowels and pauses rather than bursts, between spectrally similar
    frames, from units recorded near the sung pitch. Units overlap on a shared
    phoneme and cross-fade there in the spectral domain; vowels stretch over
-   their steady region, looping it for long notes. The built-in voice
+   their steady region, looping it for long notes. Units are brought to a
+   common singing level, and the middle of each vowel moves most of the way
+   toward the voice's typical shape of that vowel near the sung pitch, so
+   takes recorded on different days still match. The built-in voice
    (`formant`) instead glides between formant and noise targets per phoneme.
 5. **Voice color** (`params`). Dynamics, Breathiness, Brightness, Clearness,
    Character (formant scale), Exciter, Growl, Air and Mouth act on the frames.
@@ -39,8 +42,9 @@ Frames are 5 ms apart: F0, the power spectral envelope on a 96-point mel grid
 ## Voicebanks
 
 `utau` imports UTAU voicebanks: every `oto.ini` (Shift-JIS or UTF-8, in
-subfolders for pitch layers), `character.txt` and `prefix.map`. Aliases are
-spelled into phonemes (kana, romaji, Cyrillic or ARPAbet); the preutterance
+subfolders for pitch layers), `character.txt` and `prefix.map`, from a folder
+or a `.zip`. Aliases are spelled into phonemes (kana, romaji, Cyrillic, the
+Latin notation of Russian UTAU banks, ARPAbet or X-SAMPA); the preutterance
 marks where the final vowel (or a VC alias's consonant) begins, the overlap ends
 a VCV leading vowel and the consonant area stays unstretched. `analysis`
 measures F0 (YIN with a Viterbi path), the envelope (CheapTrick) and
@@ -50,11 +54,21 @@ a `.sadvoice` file: a JSON header and quantized frames, a few MB per bank.
 ## Command line
 
 ```sh
-cargo run -p sad-pet-voice --features cli --release -- import <utau folder> -o voice.sadvoice
+cargo run -p sad-pet-voice --features cli --release -- import <utau folder or .zip> -o voice.sadvoice
 cargo run -p sad-pet-voice --features cli --release -- demo ru -o demo.wav
 cargo run -p sad-pet-voice --features cli --release -- render score.json --voice voice.sadvoice -o out.wav
 cargo run -p sad-pet-voice --features cli --release -- analyze recording.wav
+cargo run -p sad-pet-voice --features cli --release -- resynth recording.wav
+cargo run -p sad-pet-voice --features cli --release -- reconstruct <utau folder> <recording.wav> --language ru --bank cache.sadvoice
 ```
+
+`resynth` measures the vocoder alone: it analyzes a recording, synthesizes it
+back and prints the spectral distance. `reconstruct` measures the whole
+engine: it sings one recording of a bank from the rest of the bank (its own
+units removed) on the recording's syllables and pitches and compares the
+spectral envelopes. With the free Kasane Teto (Japanese, English) and Kumi
+(Russian) banks, 20 recordings average 4.3 dB (Japanese 3.5, Russian 4.6,
+English 5.1); singing them from their own units gives 2.6 dB.
 
 `render` reads a score as JSON (the format Vocal timbres save); `import` in the
 editor also reads MIDI, `.ust`, MusicXML and `.vpr`.

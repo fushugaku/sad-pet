@@ -497,153 +497,92 @@ fn is_consonant(c: u8) -> bool {
     c.is_ascii_uppercase() && !is_vowel(c)
 }
 
-/// Matches a right-context pattern starting at `at`; returns success.
-fn match_right(word: &[u8], mut at: usize, pattern: &[u8]) -> bool {
-    let mut i = 0;
-    while i < pattern.len() {
-        let p = pattern[i];
-        let c = word.get(at).copied().unwrap_or(b' ');
-        match p {
-            b'#' => {
-                if !is_vowel(c) {
-                    return false;
-                }
-                while word.get(at).is_some_and(|&c| is_vowel(c)) {
-                    at += 1;
-                }
-            }
-            b':' => {
-                while word.get(at).is_some_and(|&c| is_consonant(c)) {
-                    at += 1;
-                }
-            }
-            b'^' => {
-                if !is_consonant(c) {
-                    return false;
-                }
-                at += 1;
-            }
-            b'.' => {
-                if !b"BDVGJLMNRWZ".contains(&c) {
-                    return false;
-                }
-                at += 1;
-            }
-            b'+' => {
-                if !b"EIY".contains(&c) {
-                    return false;
-                }
-                at += 1;
-            }
-            b'%' => {
-                let rest = &word[at.min(word.len())..];
-                let end =
-                    |s: &[u8]| rest.starts_with(s) && rest.get(s.len()).is_none_or(|&c| c == b' ');
-                let found = [b"ING".as_slice(), b"ELY", b"ER", b"ES", b"ED", b"E"]
-                    .into_iter()
-                    .find(|s| end(s));
-                match found {
-                    Some(s) => at += s.len(),
-                    None => return false,
-                }
-            }
-            b' ' => {
-                if c != b' ' {
-                    return false;
-                }
-                at += 1;
-            }
-            _ => {
-                if c != p {
-                    return false;
-                }
-                at += 1;
-            }
+/// One context symbol at a position: how many letters it may cover, in the
+/// order to try. `#` and `:` cover runs, so a later symbol can still match.
+fn spans(symbol: u8, letter: impl Fn(isize) -> u8, at: isize, step: isize) -> Vec<isize> {
+    let run = |test: fn(u8) -> bool| {
+        let mut n = 0;
+        while test(letter(at + step * n)) {
+            n += 1;
         }
-        i += 1;
+        n
+    };
+    let one = |ok: bool| if ok { vec![1] } else { vec![] };
+    let c = letter(at);
+    match symbol {
+        b'#' => (1..=run(is_vowel)).collect(),
+        b':' => (0..=run(is_consonant)).collect(),
+        b'^' => one(is_consonant(c)),
+        b'.' => one(b"BDVGJLMNRWZ".contains(&c)),
+        b'+' => one(b"EIY".contains(&c)),
+        b'&' | b'@' => {
+            let pair = if step > 0 {
+                (c, letter(at + 1))
+            } else {
+                (letter(at - 1), c)
+            };
+            let two = if symbol == b'&' {
+                matches!(pair, (b'C', b'H') | (b'S', b'H'))
+            } else {
+                matches!(pair, (b'T', b'H') | (b'C', b'H') | (b'S', b'H'))
+            };
+            let singles: &[u8] = if symbol == b'&' {
+                b"SCGZXJ"
+            } else {
+                b"TSRDLZNJ"
+            };
+            let mut out = Vec::new();
+            if two {
+                out.push(2);
+            }
+            if singles.contains(&c) {
+                out.push(1);
+            }
+            out
+        }
+        _ => one(c == symbol),
     }
-    true
+}
+
+/// Matches a right-context pattern starting at `at`, trying every span of
+/// the run symbols.
+fn match_right(word: &[u8], at: usize, pattern: &[u8]) -> bool {
+    let Some((&first, rest)) = pattern.split_first() else {
+        return true;
+    };
+    if first == b'%' {
+        let tail = &word[at.min(word.len())..];
+        let ends = |s: &[u8]| tail.starts_with(s) && tail.get(s.len()).is_none_or(|&c| c == b' ');
+        return [b"ING".as_slice(), b"ELY", b"ER", b"ES", b"ED", b"E"]
+            .into_iter()
+            .filter(|s| ends(s))
+            .any(|s| match_right(word, at + s.len(), rest));
+    }
+    let letter = |i: isize| word.get(i as usize).copied().unwrap_or(b' ');
+    spans(first, letter, at as isize, 1)
+        .into_iter()
+        .any(|n| match_right(word, at + n as usize, rest))
 }
 
 /// Matches a left-context pattern ending just before `end`, right to left.
 fn match_left(word: &[u8], end: usize, pattern: &[u8]) -> bool {
-    let mut at = end as isize - 1;
-    let get = |i: isize| if i < 0 { b' ' } else { word[i as usize] };
-    for &p in pattern.iter().rev() {
-        let c = get(at);
-        match p {
-            b'#' => {
-                if !is_vowel(c) {
-                    return false;
-                }
-                while at >= 0 && is_vowel(get(at)) {
-                    at -= 1;
-                }
-            }
-            b':' => {
-                while at >= 0 && is_consonant(get(at)) {
-                    at -= 1;
-                }
-            }
-            b'^' => {
-                if !is_consonant(c) {
-                    return false;
-                }
-                at -= 1;
-            }
-            b'.' => {
-                if !b"BDVGJLMNRWZ".contains(&c) {
-                    return false;
-                }
-                at -= 1;
-            }
-            b'+' => {
-                if !b"EIY".contains(&c) {
-                    return false;
-                }
-                at -= 1;
-            }
-            b'&' => {
-                let two = (get(at - 1), c);
-                if matches!(two, (b'C', b'H') | (b'S', b'H')) {
-                    at -= 2;
-                } else if b"SCGZXJ".contains(&c) {
-                    at -= 1;
-                } else {
-                    return false;
-                }
-            }
-            b'@' => {
-                let two = (get(at - 1), c);
-                if matches!(two, (b'T', b'H') | (b'C', b'H') | (b'S', b'H')) {
-                    at -= 2;
-                } else if b"TSRDLZNJ".contains(&c) {
-                    at -= 1;
-                } else {
-                    return false;
-                }
-            }
-            b' ' => {
-                if c != b' ' {
-                    return false;
-                }
-                at -= 1;
-            }
-            b'\'' => {
-                if c != b'\'' {
-                    return false;
-                }
-                at -= 1;
-            }
-            _ => {
-                if c != p {
-                    return false;
-                }
-                at -= 1;
-            }
+    let Some((&last, rest)) = pattern.split_last() else {
+        return true;
+    };
+    let letter = |i: isize| {
+        if i < 0 {
+            b' '
+        } else {
+            word.get(i as usize).copied().unwrap_or(b' ')
         }
-    }
-    true
+    };
+    let at = end as isize - 1;
+    spans(last, letter, at, -1).into_iter().any(|n| {
+        let next = at - n + 1;
+        // Past the word's start only the edge marker may match.
+        next >= 0 && match_left(word, next as usize, rest)
+            || next < 0 && rest.iter().all(|&p| p == b' ' || p == b':')
+    })
 }
 
 /// Letter-to-sound conversion of one word.
@@ -677,6 +616,74 @@ pub fn rules(word: &str) -> Vec<Phoneme> {
         }
     }
     out
+}
+
+/// One token of an English voicebank alias in the X-SAMPA-like notation of
+/// CVVC banks (`dZoU`, `{`, `tS`, `S3`, `aI`, `str`, `kt-`): diphthongs and
+/// affricates first, then single symbols; a trailing `-` is the release
+/// into silence.
+pub fn xsampa(token: &str) -> Option<Vec<Phoneme>> {
+    const SYMBOLS: [(&str, &str); 44] = [
+        ("tS", "ch"),
+        ("dZ", "jh"),
+        ("aI", "ay"),
+        ("aU", "aw"),
+        ("eI", "ey"),
+        ("oU", "ow"),
+        ("OI", "oy"),
+        ("@", "ah"),
+        ("V", "ah"),
+        ("3", "er"),
+        ("{", "ae"),
+        ("A", "aa"),
+        ("a", "aa"),
+        ("E", "eh"),
+        ("e", "eh"),
+        ("I", "ih"),
+        ("i", "iy"),
+        ("O", "ao"),
+        ("o", "ow"),
+        ("U", "uh"),
+        ("u", "uw"),
+        ("D", "dh"),
+        ("T", "th"),
+        ("S", "sh"),
+        ("Z", "zh"),
+        ("N", "ng"),
+        ("j", "y"),
+        ("h", "hh"),
+        ("b", "b"),
+        ("d", "d"),
+        ("f", "f"),
+        ("g", "g"),
+        ("k", "k"),
+        ("l", "l"),
+        ("m", "m"),
+        ("n", "n"),
+        ("p", "p"),
+        ("r", "r"),
+        ("s", "s"),
+        ("t", "t"),
+        ("v", "v"),
+        ("w", "w"),
+        ("z", "z"),
+        ("y", "y"),
+    ];
+    let (body, release) = match token.strip_suffix('-') {
+        Some(body) if !body.is_empty() => (body, true),
+        _ => (token, false),
+    };
+    let mut out = Vec::new();
+    let mut rest = body;
+    while !rest.is_empty() {
+        let (symbol, phoneme) = SYMBOLS.iter().find(|(s, _)| rest.starts_with(s))?;
+        out.push(ph(phoneme));
+        rest = &rest[symbol.len()..];
+    }
+    if release {
+        out.push(Phoneme::SIL);
+    }
+    (!out.is_empty()).then_some(out)
 }
 
 /// Phonemes of one word: dictionary, then suffixes, then rules.
@@ -719,6 +726,26 @@ mod tests {
         assert_eq!(show(rules("phone")), "f ow n");
         assert_eq!(show(rules("make")), "m ey k");
         assert_eq!(show(rules("glow")), "g l ow");
+        // Run contexts backtrack: `#^:` before the L of -KLE.
+        assert_eq!(show(rules("twinkle")), "t w ih ng k ah l");
+    }
+    #[test]
+    fn xsampa_alias_tokens() {
+        let show = |t| {
+            xsampa(t)
+                .unwrap()
+                .iter()
+                .map(|p| p.symbol())
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        assert_eq!(show("dZoU"), "jh ow");
+        assert_eq!(show("S3"), "sh er");
+        assert_eq!(show("{"), "ae");
+        assert_eq!(show("kt-"), "k t sil");
+        assert_eq!(show("str"), "s t r");
+        assert_eq!(show("Dju"), "dh y uw");
+        assert!(xsampa("Q").is_none());
     }
     #[test]
     fn cmudict_format() {
