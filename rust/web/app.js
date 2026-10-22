@@ -1108,8 +1108,8 @@ function syncTimbreRouting() {
   $("load-wav").hidden = history;
   const samplePanel = document.querySelector(".sample-panel");
   samplePanel.classList.toggle("drum-waveform", history);
-  // Every engine keeps the Granular order: its own section above, then the
-  // waveform, transport, Source FX and Grain engine.
+  // The transport stays on top of every timbre; below it each engine keeps the
+  // Granular order: its own section, then the waveform, Source FX and Grain engine.
   if ($("sample-panel-home").nextElementSibling !== samplePanel)
     $("sample-panel-home").after(samplePanel);
   samplePanel.setAttribute("aria-label", drums ? "Drum waveform and grains"
@@ -1139,8 +1139,6 @@ function syncTimbreRouting() {
   $("drum-grain-count").hidden = !history;
   syncGrainBuffer();
   syncControl("grain_size");
-  const transport = document.querySelector(".transport");
-  if (samplePanel.nextElementSibling !== transport) samplePanel.after(transport);
   // One Granular switch beside Dry/Wet for every engine with a live history.
   const own = historySettings();
   $("granular-toggle").hidden = !own;
