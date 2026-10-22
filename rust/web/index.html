@@ -5,11 +5,13 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>SAD PET</title>
     <link rel="stylesheet" href="./style.css" />
+    <link rel="stylesheet" href="./vocal.css" />
     <script src="./library.js" defer></script>
     <script src="./selection.js" defer></script>
     <script src="./presets.js" defer></script>
     <script src="./sequence.js" defer></script>
     <script src="./panels.js" defer></script>
+    <script src="./vocal.js" defer></script>
     <script src="./app.js" defer></script>
   </head>
   <body>
@@ -167,17 +169,17 @@
         <div class="section-heading">
           <h2>Synth engine <span>Rustias OSC</span></h2>
           <div class="resynth-actions">
-            <label class="drum-buffer"
-              >Buffer<select
-                id="synth-buffer"
-                aria-label="Synth granular buffer duration"
-              ></select
-            ></label>
             <button id="synth-add">+ Oscillator</button>
           </div>
         </div>
         <div id="synth-oscillators" class="resynth-oscillators"></div>
       </section>
+      <section
+        id="vocal-editor"
+        class="bank vocal-bank"
+        aria-label="Vocal score"
+        hidden
+      ></section>
       <section
         id="bus-engine"
         class="bank resynth-bank synth-bank bus-bank"
@@ -187,12 +189,6 @@
         <div class="section-heading">
           <h2 id="bus-title">Bus <span>sends from timbres</span></h2>
           <div class="resynth-actions">
-            <label class="drum-buffer"
-              >Buffer<select
-                id="bus-buffer"
-                aria-label="Bus granular buffer duration"
-              ></select
-            ></label>
             <label class="check"
               ><input
                 id="bus-filters"
@@ -543,9 +539,17 @@
       <section class="bank" id="grain-engine" aria-label="Grain engine">
         <div class="section-heading">
           <h2>Grain engine <span id="drum-grain-count" hidden>0 grains</span></h2>
-          <label class="check"
-            ><input id="antialias" type="checkbox" checked />Anti-alias</label
-          >
+          <div class="resynth-actions">
+            <label id="grain-buffer-field" class="history-buffer" hidden
+              >Buffer<select
+                id="grain-buffer"
+                aria-label="Granular buffer duration"
+              ></select
+            ></label>
+            <label class="check"
+              ><input id="antialias" type="checkbox" checked />Anti-alias</label
+            >
+          </div>
         </div>
         <div id="grain-controls" class="knob-grid"></div>
       </section>

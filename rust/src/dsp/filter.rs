@@ -194,6 +194,85 @@ pub fn tracked_cutoff(
         .clamp(0.0, 1.0)
 }
 
+/// Frequencies a response covers, spaced evenly in octaves from 20 Hz to 20 kHz.
+pub const RESPONSE_POINTS: usize = 160;
+
+/// One filter's magnitude response in dB, measured by ringing a quiet impulse
+/// through the real filter at 48 kHz, so every model and Comb is exact at low
+/// levels. Drive stays at zero: the curve shows the filter, not saturation.
+pub fn response(
+    model: FilterModel,
+    kind: FilterType,
+    cutoff: f32,
+    resonance: f32,
+    morph: f32,
+) -> Vec<f32> {
+    const RATE: u32 = 48_000;
+    const LENGTH: usize = 8192;
+    const LEVEL: f32 = 0.01;
+    let mut filter = Filter::new(RATE);
+    filter.configure(model, kind, cutoff, resonance, 0.0, morph);
+    // The last quarter fades out, so a long resonant tail cut short does not
+    // ripple the curve.
+    let ring: Vec<f64> = (0..LENGTH)
+        .map(|n| {
+            let sample = f64::from(filter.process([if n == 0 { LEVEL } else { 0.0 }; 2])[0]);
+            let tail = (n as f64 - LENGTH as f64 * 0.75) / (LENGTH as f64 * 0.25);
+            let taper = if tail > 0.0 {
+                0.5 + 0.5 * (std::f64::consts::PI * tail).cos()
+            } else {
+                1.0
+            };
+            sample * taper / f64::from(LEVEL)
+        })
+        .collect();
+    (0..RESPONSE_POINTS)
+        .map(|i| {
+            let hz = 20.0 * 1000.0_f64.powf(i as f64 / (RESPONSE_POINTS - 1) as f64);
+            let (sin, cos) = (std::f64::consts::TAU * hz / f64::from(RATE)).sin_cos();
+            // Turn one phasor per sample instead of a sine and cosine each.
+            let (mut re, mut im, mut turn) = (0.0, 0.0, (1.0, 0.0));
+            for h in &ring {
+                re += h * turn.0;
+                im -= h * turn.1;
+                turn = (turn.0 * cos - turn.1 * sin, turn.0 * sin + turn.1 * cos);
+            }
+            (20.0 * re.hypot(im).max(1e-9).log10()) as f32
+        })
+        .collect()
+}
+
+/// `{model, kind, cutoffs: [one or two], resonance, morph}` from the editor,
+/// answered with `{"curves": [[dB; RESPONSE_POINTS], …]}` to a tenth of a dB.
+pub fn response_request(data: &serde_json::Value) -> Result<serde_json::Value, String> {
+    let model: FilterModel =
+        serde_json::from_value(data["model"].clone()).map_err(|e| format!("Filter model: {e}"))?;
+    let kind: FilterType =
+        serde_json::from_value(data["kind"].clone()).map_err(|e| format!("Filter type: {e}"))?;
+    let number = |value: &serde_json::Value| {
+        value
+            .as_f64()
+            .filter(|v| v.is_finite())
+            .map(|v| v as f32)
+            .ok_or("Filter response values must be numbers")
+    };
+    let resonance = number(&data["resonance"])?;
+    let morph = number(&data["morph"])?;
+    let curves = data["cutoffs"]
+        .as_array()
+        .filter(|cutoffs| (1..=2).contains(&cutoffs.len()))
+        .ok_or("Filter response needs one or two cutoffs")?
+        .iter()
+        .map(|cutoff| {
+            Ok(response(model, kind, number(cutoff)?, resonance, morph)
+                .into_iter()
+                .map(|db| (db * 10.0).round() / 10.0)
+                .collect::<Vec<_>>())
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(serde_json::json!({ "curves": curves }))
+}
+
 pub struct FilterBank {
     filters: [Filter; 2],
     routing: FilterRouting,

@@ -108,6 +108,9 @@ class SadPetProcessor extends AudioWorkletProcessor {
               generation: data.generation,
             };
           }
+        } else if (type === "vocal-update") {
+          this.vocalUpdate(data);
+          result = true;
         } else if (type === "capture-input")
           result = this.core.call("sad_input_wav");
         else if (type === "record-start") {
@@ -134,6 +137,7 @@ class SadPetProcessor extends AudioWorkletProcessor {
           { id, result, stamp: this.stateStamp },
           result instanceof ArrayBuffer ? [result] : [],
         );
+        this.vocalJobs();
         if (
           ![
             "/api/note",
@@ -151,6 +155,27 @@ class SadPetProcessor extends AudioWorkletProcessor {
     };
     this.port.postMessage({ type: "ready" });
   }
+  /** Scores that changed go to the vocal render worker. */
+  vocalJobs() {
+    const jobs = this.core.json("sad_vocal_jobs");
+    if (jobs.length) this.port.postMessage({ type: "vocal-jobs", jobs });
+  }
+  /** Keeps the planned clips of each Vocal part and adds the new ones. */
+  vocalUpdate(updates) {
+    const wasm = this.core.wasm;
+    for (const update of updates) {
+      const count = update.plan.length;
+      const plan = new Float64Array(wasm.memory.buffer, wasm.sad_vocal_plan(count), count * 3);
+      update.plan.forEach((entry, i) => plan.set(entry, i * 3));
+      wasm.sad_vocal_plan_commit(update.id, count);
+      for (const clip of update.clips) {
+        const samples = new Float32Array(clip.data);
+        const pointer = wasm.sad_vocal_clip_begin(update.id, clip.key, clip.start, samples.length);
+        new Float32Array(wasm.memory.buffer, pointer, samples.length).set(samples);
+        wasm.sad_vocal_clip_commit();
+      }
+    }
+  }
   advanceTimbre() {
     const pending = this.preparingTimbre;
     if (!pending) return;
@@ -162,6 +187,7 @@ class SadPetProcessor extends AudioWorkletProcessor {
       const capacity = this.core.wasm.sad_snapshot_capacity();
       this.snapshotPool = this.snapshotPool.map(buffer => buffer.length >= capacity ? buffer : new Uint8Array(capacity));
       this.port.postMessage({ id: pending.id, result: result.context, stamp: this.stateStamp });
+      this.vocalJobs();
       this.snapshot();
     } catch (error) {
       this.preparingTimbre = null;

@@ -1,0 +1,622 @@
+# Common English lyric words in lower-case ARPAbet, no stress digits.
+# Words missing here go through the letter-to-sound rules in en.rs; a full
+# CMUdict-format file can be loaded at run time to replace both.
+a ah
+about ah b aw t
+above ah b ah v
+across ah k r ao s
+act ae k t
+after ae f t er
+again ah g eh n
+against ah g eh n s t
+age ey jh
+ago ah g ow
+ahead ah hh eh d
+air eh r
+alive ah l ay v
+all ao l
+alone ah l ow n
+along ah l ao ng
+already ao l r eh d iy
+alright ao l r ay t
+also ao l s ow
+always ao l w ey z
+am ae m
+amazing ah m ey z ih ng
+among ah m ah ng
+an ae n
+and ae n d
+angel ey n jh ah l
+angels ey n jh ah l z
+anger ae ng g er
+another ah n ah dh er
+answer ae n s er
+any eh n iy
+anymore eh n iy m ao r
+anyone eh n iy w ah n
+anything eh n iy th ih ng
+anyway eh n iy w ey
+apart ah p aa r t
+are aa r
+arms aa r m z
+around er aw n d
+as ae z
+ask ae s k
+asleep ah s l iy p
+at ae t
+away ah w ey
+baby b ey b iy
+back b ae k
+bad b ae d
+be b iy
+beat b iy t
+beautiful b y uw t ah f ah l
+beauty b y uw t iy
+became b ih k ey m
+because b ih k ao z
+become b ih k ah m
+bed b eh d
+been b ih n
+before b ih f ao r
+begin b ih g ih n
+behind b ih hh ay n d
+being b iy ih ng
+believe b ih l iy v
+belong b ih l ao ng
+below b ih l ow
+beneath b ih n iy th
+beside b ih s ay d
+best b eh s t
+better b eh t er
+between b ih t w iy n
+beyond b ih y aa n d
+big b ih g
+bird b er d
+birds b er d z
+black b l ae k
+bleed b l iy d
+blind b l ay n d
+blood b l ah d
+blow b l ow
+blue b l uw
+body b aa d iy
+bones b ow n z
+born b ao r n
+both b ow th
+boy b oy
+brave b r ey v
+break b r ey k
+breath b r eh th
+breathe b r iy dh
+bright b r ay t
+bring b r ih ng
+broken b r ow k ah n
+brother b r ah dh er
+burn b er n
+burning b er n ih ng
+but b ah t
+by b ay
+call k ao l
+came k ey m
+can k ae n
+cannot k ae n aa t
+cant k ae n t
+care k eh r
+carry k eh r iy
+catch k ae ch
+caught k ao t
+chance ch ae n s
+change ch ey n jh
+child ch ay l d
+city s ih t iy
+close k l ow z
+closer k l ow s er
+cloud k l aw d
+clouds k l aw d z
+cold k ow l d
+color k ah l er
+come k ah m
+coming k ah m ih ng
+could k uh d
+couldnt k uh d ah n t
+count k aw n t
+crazy k r ey z iy
+cry k r ay
+crying k r ay ih ng
+cut k ah t
+dance d ae n s
+dancing d ae n s ih ng
+dark d aa r k
+darkness d aa r k n ah s
+day d ey
+days d ey z
+dead d eh d
+dear d ih r
+death d eh th
+deep d iy p
+desire d ih z ay er
+did d ih d
+didnt d ih d ah n t
+die d ay
+different d ih f er ah n t
+do d uw
+does d ah z
+doesnt d ah z ah n t
+dont d ow n t
+done d ah n
+door d ao r
+down d aw n
+dream d r iy m
+dreams d r iy m z
+drink d r ih ng k
+drive d r ay v
+drown d r aw n
+dust d ah s t
+dying d ay ih ng
+each iy ch
+earth er th
+easy iy z iy
+edge eh jh
+else eh l s
+empty eh m p t iy
+end eh n d
+enough ih n ah f
+even iy v ah n
+ever eh v er
+every eh v r iy
+everybody eh v r iy b aa d iy
+everyone eh v r iy w ah n
+everything eh v r iy th ih ng
+eye ay
+eyes ay z
+face f ey s
+fade f ey d
+faith f ey th
+fall f ao l
+falling f ao l ih ng
+far f aa r
+fast f ae s t
+father f aa dh er
+fear f ih r
+feel f iy l
+feeling f iy l ih ng
+feelings f iy l ih ng z
+feet f iy t
+fell f eh l
+felt f eh l t
+few f y uw
+fight f ay t
+find f ay n d
+fine f ay n
+fire f ay er
+first f er s t
+fly f l ay
+follow f aa l ow
+for f ao r
+forever f er eh v er
+forget f er g eh t
+forgive f er g ih v
+found f aw n d
+free f r iy
+freedom f r iy d ah m
+friend f r eh n d
+friends f r eh n d z
+from f r ah m
+full f uh l
+fun f ah n
+game g ey m
+gave g ey v
+get g eh t
+gets g eh t s
+getting g eh t ih ng
+girl g er l
+give g ih v
+glad g l ae d
+go g ow
+god g aa d
+goes g ow z
+going g ow ih ng
+gold g ow l d
+gone g ao n
+gonna g aa n ah
+good g uh d
+goodbye g uh d b ay
+got g aa t
+grace g r ey s
+gray g r ey
+great g r ey t
+green g r iy n
+ground g r aw n d
+grow g r ow
+had hh ae d
+hair hh eh r
+half hh ae f
+hand hh ae n d
+hands hh ae n d z
+happy hh ae p iy
+hard hh aa r d
+has hh ae z
+have hh ae v
+he hh iy
+head hh eh d
+hear hh ih r
+heard hh er d
+heart hh aa r t
+hearts hh aa r t s
+heaven hh eh v ah n
+held hh eh l d
+hell hh eh l
+hello hh ah l ow
+help hh eh l p
+her hh er
+here hh ih r
+hey hh ey
+hide hh ay d
+high hh ay
+him hh ih m
+his hh ih z
+hold hh ow l d
+home hh ow m
+hope hh ow p
+hot hh aa t
+hour aw er
+hours aw er z
+house hh aw s
+how hh aw
+human hh y uw m ah n
+hurt hh er t
+i ay
+ice ay s
+if ih f
+im ay m
+in ih n
+inside ih n s ay d
+into ih n t uw
+is ih z
+isnt ih z ah n t
+it ih t
+its ih t s
+ive ay v
+just jh ah s t
+keep k iy p
+kept k eh p t
+kill k ih l
+kind k ay n d
+king k ih ng
+kiss k ih s
+knew n uw
+know n ow
+known n ow n
+lady l ey d iy
+land l ae n d
+last l ae s t
+late l ey t
+laugh l ae f
+lay l ey
+lead l iy d
+learn l er n
+leave l iy v
+left l eh f t
+less l eh s
+let l eh t
+lets l eh t s
+lie l ay
+lies l ay z
+life l ay f
+light l ay t
+lights l ay t s
+like l ay k
+line l ay n
+lips l ih p s
+listen l ih s ah n
+little l ih t ah l
+live l ih v
+lives l ih v z
+living l ih v ih ng
+lonely l ow n l iy
+long l ao ng
+look l uh k
+lose l uw z
+losing l uw z ih ng
+lost l ao s t
+lot l aa t
+loud l aw d
+love l ah v
+loved l ah v d
+lover l ah v er
+low l ow
+lucky l ah k iy
+made m ey d
+make m ey k
+man m ae n
+many m eh n iy
+matter m ae t er
+may m ey
+maybe m ey b iy
+me m iy
+mean m iy n
+memories m eh m er iy z
+memory m eh m er iy
+might m ay t
+mind m ay n d
+mine m ay n
+miss m ih s
+moment m ow m ah n t
+money m ah n iy
+moon m uw n
+more m ao r
+morning m ao r n ih ng
+most m ow s t
+mother m ah dh er
+mountain m aw n t ah n
+mouth m aw th
+move m uw v
+much m ah ch
+music m y uw z ih k
+must m ah s t
+my m ay
+myself m ay s eh l f
+name n ey m
+near n ih r
+need n iy d
+never n eh v er
+new n uw
+next n eh k s t
+night n ay t
+nights n ay t s
+no n ow
+nobody n ow b aa d iy
+none n ah n
+not n aa t
+nothing n ah th ih ng
+now n aw
+ocean ow sh ah n
+of ah v
+off ao f
+oh ow
+old ow l d
+on aa n
+once w ah n s
+one w ah n
+only ow n l iy
+open ow p ah n
+or ao r
+other ah dh er
+our aw er
+out aw t
+over ow v er
+own ow n
+pain p ey n
+paradise p eh r ah d ay s
+part p aa r t
+past p ae s t
+peace p iy s
+people p iy p ah l
+place p l ey s
+play p l ey
+please p l iy z
+power p aw er
+pray p r ey
+pretty p r ih t iy
+promise p r aa m ah s
+pull p uh l
+push p uh sh
+put p uh t
+queen k w iy n
+quiet k w ay ah t
+rain r ey n
+reach r iy ch
+ready r eh d iy
+real r iy l
+reason r iy z ah n
+red r eh d
+remember r ih m eh m b er
+rest r eh s t
+ride r ay d
+right r ay t
+river r ih v er
+road r ow d
+rock r aa k
+roll r ow l
+room r uw m
+rose r ow z
+run r ah n
+running r ah n ih ng
+sad s ae d
+safe s ey f
+said s eh d
+same s ey m
+save s ey v
+saw s ao
+say s ey
+scared s k eh r d
+sea s iy
+second s eh k ah n d
+secret s iy k r ah t
+see s iy
+seem s iy m
+seen s iy n
+send s eh n d
+set s eh t
+shadow sh ae d ow
+shadows sh ae d ow z
+shake sh ey k
+shall sh ae l
+she sh iy
+shine sh ay n
+should sh uh d
+show sh ow
+side s ay d
+sight s ay t
+silence s ay l ah n s
+simple s ih m p ah l
+since s ih n s
+sing s ih ng
+singing s ih ng ih ng
+sister s ih s t er
+sky s k ay
+sleep s l iy p
+slow s l ow
+slowly s l ow l iy
+small s m ao l
+smile s m ay l
+snow s n ow
+so s ow
+some s ah m
+somebody s ah m b aa d iy
+someday s ah m d ey
+someone s ah m w ah n
+something s ah m th ih ng
+sometimes s ah m t ay m z
+somewhere s ah m w eh r
+song s ao ng
+songs s ao ng z
+soon s uw n
+sorry s aa r iy
+soul s ow l
+sound s aw n d
+space s p ey s
+speak s p iy k
+stand s t ae n d
+star s t aa r
+stars s t aa r z
+start s t aa r t
+stay s t ey
+step s t eh p
+still s t ih l
+stop s t aa p
+storm s t ao r m
+story s t ao r iy
+strange s t r ey n jh
+street s t r iy t
+strong s t r ao ng
+such s ah ch
+summer s ah m er
+sun s ah n
+sunshine s ah n sh ay n
+sure sh uh r
+sweet s w iy t
+take t ey k
+taken t ey k ah n
+talk t ao k
+tears t ih r z
+tell t eh l
+than dh ae n
+thank th ae ng k
+thanks th ae ng k s
+that dh ae t
+thats dh ae t s
+the dh ah
+their dh eh r
+them dh eh m
+then dh eh n
+there dh eh r
+these dh iy z
+they dh ey
+thing th ih ng
+things th ih ng z
+think th ih ng k
+this dh ih s
+those dh ow z
+though dh ow
+thought th ao t
+through th r uw
+throw th r ow
+till t ih l
+time t ay m
+times t ay m z
+to t uw
+today t ah d ey
+together t ah g eh dh er
+told t ow l d
+tomorrow t ah m aa r ow
+tonight t ah n ay t
+too t uw
+took t uh k
+touch t ah ch
+town t aw n
+tree t r iy
+tried t r ay d
+true t r uw
+trust t r ah s t
+truth t r uw th
+try t r ay
+trying t r ay ih ng
+turn t er n
+two t uw
+under ah n d er
+understand ah n d er s t ae n d
+until ah n t ih l
+up ah p
+upon ah p aa n
+us ah s
+use y uw z
+very v eh r iy
+voice v oy s
+wait w ey t
+wake w ey k
+walk w ao k
+walking w ao k ih ng
+wall w ao l
+want w aa n t
+wanna w aa n ah
+war w ao r
+warm w ao r m
+was w aa z
+watch w aa ch
+water w ao t er
+wave w ey v
+waves w ey v z
+way w ey
+we w iy
+wear w eh r
+weather w eh dh er
+well w eh l
+went w eh n t
+were w er
+what w ah t
+whatever w ah t eh v er
+when w eh n
+where w eh r
+whether w eh dh er
+which w ih ch
+while w ay l
+white w ay t
+who hh uw
+whole hh ow l
+why w ay
+wide w ay d
+wild w ay l d
+will w ih l
+win w ih n
+wind w ih n d
+window w ih n d ow
+wings w ih ng z
+winter w ih n t er
+wish w ih sh
+with w ih dh
+within w ih dh ih n
+without w ih th aw t
+woman w uh m ah n
+won w ah n
+wont w ow n t
+word w er d
+words w er d z
+world w er l d
+worth w er th
+would w uh d
+wouldnt w uh d ah n t
+write r ay t
+wrong r ao ng
+year y ih r
+years y ih r z
+yeah y ae
+yes y eh s
+yesterday y eh s t er d ey
+yet y eh t
+you y uw
+young y ah ng
+your y ao r
+youre y uh r
+yours y ao r z
+yourself y er s eh l f

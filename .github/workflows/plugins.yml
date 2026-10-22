@@ -4,9 +4,9 @@ on:
   push:
     branches: [main, 'codex/daw-plugins']
     tags: ['plugins-v*']
-    paths: ['plugin/**', 'rust/**', 'vendor/**', 'Cargo.toml', 'Cargo.lock', 'wasm/test-presets.mjs', 'wasm/test-parameters.mjs', 'wasm/test-sequencer-ui.mjs', 'wasm/test-controls-ui.mjs', 'wasm/test-imported*.mjs', '.github/workflows/plugins.yml']
+    paths: ['plugin/**', 'rust/**', 'voice/**', 'vendor/**', 'Cargo.toml', 'Cargo.lock', 'wasm/test-presets.mjs', 'wasm/test-parameters.mjs', 'wasm/test-sequencer-ui.mjs', 'wasm/test-controls-ui.mjs', 'wasm/test-imported*.mjs', '.github/workflows/plugins.yml']
   pull_request:
-    paths: ['plugin/**', 'rust/**', 'vendor/**', 'Cargo.toml', 'Cargo.lock', 'wasm/test-presets.mjs', 'wasm/test-parameters.mjs', 'wasm/test-sequencer-ui.mjs', 'wasm/test-controls-ui.mjs', 'wasm/test-imported*.mjs', '.github/workflows/plugins.yml']
+    paths: ['plugin/**', 'rust/**', 'voice/**', 'vendor/**', 'Cargo.toml', 'Cargo.lock', 'wasm/test-presets.mjs', 'wasm/test-parameters.mjs', 'wasm/test-sequencer-ui.mjs', 'wasm/test-controls-ui.mjs', 'wasm/test-imported*.mjs', '.github/workflows/plugins.yml']
   workflow_dispatch:
 
 permissions:
@@ -47,6 +47,7 @@ jobs:
           cargo fmt --all -- --check
           cargo clippy -p sad-pet-plugin --no-default-features --all-targets --locked -- -D warnings
           cargo test -p sad-pet-plugin --no-default-features --locked
+          cargo test -p sad-pet-voice --release --locked
           cargo test -p sad-pet --lib --no-default-features --features source-worker --locked
           cargo test -p sad-pet --no-default-features --test parameter_updates --locked
           cargo test -p sad-pet --no-default-features --test neuropolis --locked

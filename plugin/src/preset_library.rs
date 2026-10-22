@@ -123,7 +123,8 @@ fn encode(record: &Record, state: &SavedState) -> Result<Vec<u8>, String> {
     file.extend_from_slice(MAGIC);
     file.extend_from_slice(&(header.len() as u32).to_le_bytes());
     file.extend_from_slice(&header);
-    let mut compressed = GzEncoder::new(file, Compression::new(6));
+    // Level 1: the sample is base64 text that higher levels barely shrink.
+    let mut compressed = GzEncoder::new(file, Compression::fast());
     serde_json::to_writer(&mut compressed, state).map_err(|e| e.to_string())?;
     let file = compressed.finish().map_err(|e| e.to_string())?;
     if file.len() > MAX_BYTES {

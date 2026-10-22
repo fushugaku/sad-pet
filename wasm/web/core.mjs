@@ -89,6 +89,43 @@ export class TelemetryCore extends Abi {
   }
 }
 
+/** The singing renderer of a dedicated Worker (`sad_vocal_*`). */
+export class VocalCore extends Abi {
+  constructor(module, rate = 48000) {
+    super(module, rate, "sad_vocal");
+  }
+  command(message) {
+    return this.json("sad_vocal_command", message);
+  }
+  /** Prefixes a binary payload with UTF-8 text whose length is passed along. */
+  prefixed(name, text, bytes) {
+    const head = encode(text);
+    const body = new Uint8Array(bytes);
+    const all = new Uint8Array(head.length + body.length);
+    all.set(head);
+    all.set(body, head.length);
+    return this.json(name, all, head.length);
+  }
+  addVoice(id, bytes) {
+    return this.prefixed("sad_vocal_voice", id, bytes);
+  }
+  importFile(path, bytes) {
+    return this.prefixed("sad_vocal_import_file", path, bytes);
+  }
+  importFinish() {
+    return this.call("sad_vocal_import_finish");
+  }
+  step(near) {
+    return this.wasm.sad_vocal_step(near);
+  }
+  updates() {
+    return this.json("sad_vocal_updates");
+  }
+  clip(key) {
+    return this.call("sad_vocal_clip", undefined, key);
+  }
+}
+
 export class Core extends Abi {
   constructor(module, rate = 48000) {
     super(module, rate, "sad");

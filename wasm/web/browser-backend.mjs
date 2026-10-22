@@ -1,5 +1,6 @@
 import { Microphone } from "./microphone.mjs";
 import { compileEngine } from "./compile.mjs";
+import { listVoices, saveVoice, removeVoice, voiceId, voiceInfo, unzip } from "./voices.mjs";
 
 class Rpc {
   constructor(port) {
@@ -90,6 +91,12 @@ export class BrowserBackend {
     );
     this.telemetry.onmessage = (message) => this.workerMessage(message);
     this.recorder.onmessage = (message) => this.workerMessage(message);
+    // Singing renders in its own worker, so long phrases never delay the
+    // sample preparation or telemetry workers.
+    this.vocal = new Rpc(
+      new Worker(new URL("./worker.mjs", import.meta.url), { type: "module" }),
+    );
+    this.vocal.onmessage = (message) => this.vocalMessage(message);
     // Browsers with WebAssembly tail calls load sad_pet.tc.wasm when it was
     // built (build.py --tail-call; build.py blanks this URL otherwise): the
     // same samples with less firmware dispatch. The optional SIMD engine
@@ -102,6 +109,7 @@ export class BrowserBackend {
     await Promise.all([
       this.worker.call("init", { module, rate: this.rate }),
       this.telemetry.call("init", { module, rate: this.rate, telemetry: true }),
+      this.vocal.call("vocal-init", { module, rate: this.rate }),
       this.context.audioWorklet.addModule(new URL("./worklet.mjs", import.meta.url)),
     ]);
     const prepared = await this.worker.call("startup", {
@@ -130,6 +138,7 @@ export class BrowserBackend {
     };
     this.monitor = this.context.createGain();
     this.node.connect(this.monitor).connect(this.context.destination);
+    await this.loadVoices();
     await this.audio.call("scene-load", prepared, [prepared]);
     this.state = await this.audio.call("request", null, [], "/api/state");
     this.viewStamp = this.audio.stamp || 0;
@@ -180,7 +189,75 @@ export class BrowserBackend {
       this.stoppingInput = null;
     }
   }
+  async loadVoices() {
+    try {
+      for (const voice of await listVoices())
+        await this.vocal.call("vocal-voice", { id: voice.id, bytes: voice.bytes });
+    } catch (error) {
+      console.warn("Voicebanks could not be loaded", error);
+    }
+  }
+  vocalMessage(message) {
+    if (message.type === "vocal-update") {
+      const transfer = message.updates.flatMap((u) => u.clips.map((c) => c.data));
+      this.audio?.port.postMessage(
+        { type: "vocal-update", data: message.updates },
+        transfer,
+      );
+    } else if (message.type === "vocal-error") this.vocalError = message.error;
+  }
+  async vocalRequest(route, data, options) {
+    if (route === "/api/vocal/voices") {
+      const voices = await this.vocal.call("vocal", { type: "voices" });
+      return [{ id: "", name: "SAD PET (built-in)", language: null, builtin: true }, ...voices];
+    }
+    if (route === "/api/vocal/progress") {
+      const progress = await this.vocal.call("vocal", { type: "progress" });
+      return { progress, error: this.vocalError || null };
+    }
+    if (route === "/api/vocal/phonemes")
+      return this.vocal.call("vocal", { type: "phonemes", ...data });
+    if (route === "/api/vocal/import-score")
+      return this.vocal.call("vocal", { type: "import-score", ...data });
+    if (route === "/api/vocal/voice/remove") {
+      await removeVoice(data.id);
+      return this.vocal.call("vocal", { type: "voice-remove", id: data.id });
+    }
+    if (route === "/api/vocal/import") {
+      // The editor passes {files: [{path, data}] | zip: ArrayBuffer | voice: ArrayBuffer}.
+      const body = options.body;
+      let bytes;
+      if (body.voice) bytes = body.voice;
+      else {
+        const files = body.zip ? await unzip(body.zip) : body.files;
+        bytes = await this.vocal.call(
+          "vocal-import",
+          { files, language: body.language, name: body.name },
+          files.map((f) => f.data),
+        );
+      }
+      const existing = new Set((await listVoices()).map((v) => v.id));
+      const id = voiceId(body.name || voiceInfo(bytes).name || "Voice", existing);
+      const info = await this.vocal.call("vocal-voice", { id, bytes: bytes.slice(0) });
+      await saveVoice({ id, name: info.name, language: info.language, bytes });
+      return info;
+    }
+    if (route === "/api/vocal/export") {
+      const voice = (await listVoices()).find((v) => v.id === data?.id);
+      if (!voice) throw new Error("Unknown voicebank");
+      return voice.bytes;
+    }
+    if (route === "/api/vocal/transport" && data?.start !== undefined)
+      this.vocal.call("vocal-near", data.start).catch(() => {});
+    return this.audio.call("request", data, [], route);
+  }
   audioMessage(message) {
+    if (message.type === "vocal-jobs") {
+      this.vocal.call("vocal-jobs", message.jobs).catch((error) => {
+        this.vocalError = error.message;
+      });
+      return;
+    }
     if (message.type === "source-ready") {
       if (message.generation !== this.sourceGeneration) return;
       if (this.sourceUploadingKey === message.key)
@@ -455,7 +532,7 @@ export class BrowserBackend {
       if (this.fatal) throw new Error(this.fatal);
       const url = new URL(path, location.href),
         route = url.pathname;
-      const binary = route === "/api/wav";
+      const binary = route === "/api/wav" || route === "/api/vocal/import";
       const data =
         options.body === undefined || binary ? null : JSON.parse(options.body);
       let result,
@@ -504,6 +581,9 @@ export class BrowserBackend {
             this.state.source_generation ?? this.sourceGeneration;
         }
         this.viewStamp = this.audio.stamp || 0;
+      } else if (route.startsWith("/api/vocal/")) {
+        result = await this.vocalRequest(route, data, options);
+        if (result instanceof ArrayBuffer) mime = "application/octet-stream";
       } else if (route === "/api/input")
         result = data
           ? data.active === false
@@ -592,10 +672,12 @@ export class BrowserBackend {
         const scene = await this.worker.call("scene-document", packed, [
           packed,
         ]);
-        result = await this.worker.call("scene-render", {
-          seconds: data.seconds,
-          scene,
-        });
+        const vocal = (await this.vocal?.call("vocal-songs")) ?? [];
+        result = await this.worker.call(
+          "scene-render",
+          { seconds: data.seconds, scene, vocal },
+          vocal.flatMap((song) => song.clips.map((clip) => clip.data)),
+        );
         mime = "audio/wav";
       } else if (route === "/api/recording") {
         if (data.active) {
@@ -649,6 +731,8 @@ export class BrowserBackend {
           "/api/effect-presets/factory",
           "/api/sequencer/catalog",
           "/api/drums/catalog",
+          // Rings an impulse through a filter: off the audio thread.
+          "/api/filter/response",
         ].includes(route)
       ) {
         result = await this.worker.call("request", data, [], route);

@@ -211,10 +211,13 @@ impl RustiasFilter {
         let key = (code, resonance.to_bits());
         if self.control_key != Some(key) {
             let frequency = self.tables.frequencies.frequency(code) as i32;
+            // The SYS tables normalise the LP24 post stages to unity, as
+            // Rustias' ControlMap::from_system does. Half of it left their
+            // pole near 0.5, so LP24 fell ~12 dB per octave of lower cutoff.
             let c = filter_control::compile(
                 frequency,
                 (resonance * 0.95 * 2147483647.0) as i32,
-                0x4000_0000,
+                i32::MAX,
             );
             self.coefficients.feedback = c.feedback;
             self.coefficients.integrator_gain = c.integrator_gain;

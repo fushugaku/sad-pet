@@ -1,0 +1,29 @@
+[package]
+name = "sad-pet-voice"
+version = "0.1.0"
+edition = "2024"
+description = "SAD PET singing synthesis: scores, phonemes, voicebanks and the vocoder"
+publish = false
+
+[lib]
+name = "sad_pet_voice"
+
+[[bin]]
+name = "sad-voice"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[features]
+cli = ["dep:hound"]
+
+[dependencies]
+rustfft = "6.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+encoding_rs = "0.8"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+roxmltree = "0.20"
+hound = { version = "3.5", optional = true }
+
+[dev-dependencies]
+hound = "3.5"

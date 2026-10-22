@@ -1,0 +1,173 @@
+/* The Vocal timbre's score editor. */
+.vocal-bank[hidden] {
+  display: none;
+}
+.vocal-heading .vocal-status {
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+}
+.vocal-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.vocal-tools select,
+.vocal-tools button {
+  height: 32px;
+  padding: 0 10px;
+}
+.vocal-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.vocal-field input {
+  height: 30px;
+  width: 64px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #171b17;
+  color: var(--text);
+  padding: 0 6px;
+}
+.vocal-play[aria-pressed="true"] {
+  color: var(--accent);
+}
+.vocal-menu {
+  position: relative;
+}
+.vocal-menu summary {
+  list-style: none;
+  height: 32px;
+  line-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #232923;
+  cursor: pointer;
+}
+.vocal-menu summary::-webkit-details-marker {
+  display: none;
+}
+.vocal-menu-items {
+  position: absolute;
+  z-index: 20;
+  top: 36px;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  padding: 6px;
+  gap: 4px;
+  background: var(--overlay);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+}
+.vocal-menu-items button {
+  text-align: left;
+}
+.vocal-roll {
+  position: relative;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.vocal-roll canvas {
+  display: block;
+  touch-action: none;
+  outline: none;
+}
+.vocal-roll canvas:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.vocal-lyric-input {
+  position: absolute;
+  height: 20px;
+  font-size: 12px;
+  padding: 0 4px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: #11140f;
+  color: var(--text);
+}
+.vocal-lanes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 8px 0;
+}
+.vocal-lanes button {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+.vocal-lanes button[aria-selected="true"] {
+  color: var(--accent);
+  border-color: #78965b;
+  background: #354b2c;
+}
+.vocal-lanes .vocal-lane-used::after {
+  content: " •";
+  color: var(--modulation);
+}
+.vocal-lane-reset {
+  margin-left: auto;
+}
+.vocal-inspector {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 10px 0 4px;
+}
+.vocal-inspector .vocal-note-label {
+  min-width: 130px;
+  font-size: 11px;
+  color: var(--blue);
+}
+.vocal-inspector select {
+  height: 30px;
+  padding: 0 8px;
+}
+.vocal-inspector input:not([type]) {
+  width: 110px;
+}
+.vocal-lyrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+.vocal-lyrics[hidden] {
+  display: none;
+}
+.vocal-lyrics textarea {
+  flex: 1 1 100%;
+  min-height: 70px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #171b17;
+  color: var(--text);
+  padding: 8px;
+  font: inherit;
+}
+.vocal-hint {
+  font-size: 11px;
+  margin: 6px 0 0;
+}
+@media (max-width: 700px) {
+  .vocal-tools {
+    gap: 6px;
+  }
+  .vocal-inspector input:not([type]) {
+    width: 90px;
+  }
+}

@@ -14,7 +14,10 @@ class Element {
     this.style = {};
     this.classList = { add() {}, remove() {}, toggle() {} };
   }
-  append(...nodes) { this.children.push(...nodes); }
+  append(...nodes) {
+    for (const node of nodes) node.parentNode = this;
+    this.children.push(...nodes);
+  }
   replaceChildren(...nodes) { this.children = nodes; }
   querySelector(selector) {
     if (!this.nodes.has(selector)) this.nodes.set(selector, new Element("div"));
@@ -58,30 +61,101 @@ vm.runInContext(await readFile(new URL("../rust/web/panels.js", import.meta.url)
 const drums = Object.create(panels.window.SadDrums.prototype);
 const grid = new Element("div");
 const view = { page: 0, track: 0, voice: 0, step: 0 };
+const opened = [], stepEdits = [];
 Object.assign(drums, {
   root: { querySelector: () => grid }, view: () => view,
-  sync() {}, hooks: { trigger() {} },
+  sync() {}, hooks: { trigger() {} }, openStep: (hit) => opened.push(hit),
+  edit: (...edit) => stepEdits.push(edit),
 });
 drums.buildPattern();
 const control = label => grid.all().find(e => e.getAttribute("aria-label") === label);
 control("Open HH track").onclick();
 assert.equal(view.voice, 6);
 assert.equal(view.track, 6);
-control("Snare step 8").onclick({ shiftKey: true });
+control("Snare step 8").onclick({ type: "click", shiftKey: true });
 assert.equal(view.voice, 3);
 assert.equal(view.track, 3);
 assert.equal(view.step, 7);
+// Step settings open from a right click (or Shift) and leave the step as it was.
+let prevented = false;
+control("Clap / Cym step 2").oncontextmenu({ type: "contextmenu", preventDefault: () => (prevented = true) });
+assert.deepEqual([view.track, view.voice, view.step], [4, 4, 1]);
+assert.ok(prevented, "The browser's own menu must stay closed");
+assert.deepEqual(opened.map((hit) => hit.getAttribute("aria-label")), ["Snare step 8", "Clap / Cym step 2"]);
+assert.equal(stepEdits.length, 0, "Opening step settings must not toggle the step");
+
+// Every DXM-088 parameter appears once in the voice modules; only the hat
+// voice shows Open decay.
+const voicePreset = {
+  drums: { params: Array.from({ length: 6 }, () => Array(56).fill(0)) },
+};
+for (const [voice, count] of [[0, 55], [5, 56]]) {
+  const knobs = [];
+  const voiceEditor = new panels.window.SadDrums(new Element("div"), { controls: [] }, {
+    read: () => voicePreset, trigger() {}, parameter() {},
+    knob: ([key]) => { knobs.push(key); return () => {}; },
+  });
+  Object.assign(voiceEditor, { view: () => ({ voice, track: voice }), knobs: [], fields: [] });
+  voiceEditor.buildVoice();
+  const menus = voiceEditor.voicePanel.querySelector(".drum-modules").all()
+    .filter((e) => e.tagName === "SELECT").map((e) => e.getAttribute("aria-label"));
+  assert.equal(new Set(knobs).size, knobs.length);
+  assert.equal(new Set(menus).size, menus.length);
+  assert.equal(knobs.length + menus.length, count, `Voice ${voice} must show each parameter once`);
+  assert.equal(knobs.includes(`drum${voice + 1}_29`), voice === 5);
+}
+
+// Filter graphs follow each type: lows pass low-pass types, highs pass
+// high-pass types, notches dip at the cutoff and resonance lifts it.
+const gain = (kind, hz, resonance = 0, morph = 0) =>
+  20 * Math.log10(panels.window.SadDrums.filterGain(kind, hz, 1000, resonance, morph));
+for (const kind of [1, 7, 8, 9, 11, 12, 13, 16, 17, 18])
+  assert.ok(gain(kind, 50) > -3 && gain(kind, 15000) < -30, `Filter type ${kind} must be a low-pass`);
+for (const kind of [2, 10, 14, 19, 20])
+  assert.ok(gain(kind, 15000) > -3 && gain(kind, 50) < -30, `Filter type ${kind} must be a high-pass`);
+for (const kind of [5, 23, 24])
+  assert.ok(gain(kind, 1000) < -30 && gain(kind, 50) > -3, `Filter type ${kind} must be a notch`);
+assert.ok(gain(12, 1000, 0, 0.5) < -30, "SEM halfway must be a notch");
+assert.ok(gain(1, 1000, 0.9) > 10, "Resonance must lift the cutoff");
+assert.equal(gain(0, 1000), 0);
 
 const drumPreset = { drums: { buffer_seconds: 8 } };
 const routingEdits = [];
-const drumRoot = new Element("div");
-const drumEditor = new panels.window.SadDrums(drumRoot, { controls: [] }, {
-  read: () => drumPreset, parameter: (...edit) => routingEdits.push(edit), routing() {},
+const bufferNodes = new Map();
+const bufferNode = (id) => {
+  if (!bufferNodes.has(id)) bufferNodes.set(id, new Element("select"));
+  return bufferNodes.get(id);
+};
+const bufferContext = vm.createContext({
+  document, preset: drumPreset, $: bufferNode,
+  historySettings: () => bufferContext.preset.drums ?? bufferContext.preset.bus,
+  option: (value, label) => Object.assign(new Element("option"), { value, textContent: label }),
+  scheduleParameter: (...edit) => routingEdits.push(edit),
+  schedulePreset: () => routingEdits.push(["preset"]),
+  editSynth() {}, syncTimbreRouting() {},
 });
-drumEditor.buffer.value = "0.125";
-drumEditor.buffer.onchange();
+vm.runInContext(app.slice(app.indexOf("const historyBuffers"), app.indexOf("function buildBus(")), bufferContext);
+bufferContext.bindGrainBuffer();
+bufferContext.syncGrainBuffer();
+assert.equal(bufferNode("grain-buffer-field").hidden, false);
+assert.equal(bufferNode("grain-buffer").children.length, 9);
+assert.equal(bufferNode("grain-buffer").value, "8");
+bufferNode("grain-buffer").value = "0.125";
+bufferNode("grain-buffer").onchange();
 assert.equal(drumPreset.drums.buffer_seconds, 0.125);
-assert.deepEqual(routingEdits, [["drum_buffer_seconds", 0.125]], "Buffer choice must send a scalar edit");
+assert.deepEqual(routingEdits.splice(0), [["drum_buffer_seconds", 0.125]], "Buffer choice must send a scalar edit");
+// A bus history stops at 8 s, and an unlisted length stays selectable.
+bufferContext.preset = { bus: { granular: true, buffer_seconds: 3 } };
+bufferContext.syncGrainBuffer();
+assert.deepEqual(bufferNode("grain-buffer").children.map((o) => o.value), ["0.125", "0.25", "0.5", "1", "2", "4", "8", "3"]);
+assert.equal(bufferNode("grain-buffer").value, "3");
+bufferNode("grain-buffer").value = "2";
+bufferNode("grain-buffer").onchange();
+assert.equal(bufferContext.preset.bus.buffer_seconds, 2);
+assert.deepEqual(routingEdits.splice(0), [["preset"]], "A bus buffer is a structural edit");
+bufferContext.preset = { params: {} };
+bufferContext.syncGrainBuffer();
+assert.equal(bufferNode("grain-buffer-field").hidden, true);
 const sizeContext = vm.createContext({ preset: drumPreset });
 vm.runInContext(app.slice(app.indexOf("const historySettings"), app.indexOf("const grainSchema")), sizeContext);
 assert.equal(sizeContext.grainSeconds(0.5), 0.01);

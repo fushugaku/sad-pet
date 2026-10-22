@@ -33,9 +33,11 @@ pub(super) fn check_editor_request(path: &str, post: bool, data: &Value) -> Resu
         "/api/preset-library/import" | "/api/effect-presets/import" => {
             data.get("base64").is_some() || data["path"].as_str().is_none()
         }
-        "/api/preset-library/export" | "/api/effect-presets/export" => {
+        "/api/preset-library/export" | "/api/effect-presets/export" | "/api/vocal/export" => {
             data["path"].as_str().is_none()
         }
+        // Voicebank recordings are read natively from the chosen file or folder.
+        "/api/vocal/import" => data["path"].as_str().is_none(),
         _ => path.starts_with("/api/samples/") || path.starts_with("/api/recording."),
     };
     if carries_audio {

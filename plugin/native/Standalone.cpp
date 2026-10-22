@@ -210,7 +210,9 @@ void Services::choose(const juce::var& request, juce::WebBrowserComponent::Nativ
     chooser = std::make_unique<juce::FileChooser>(dialog["title"].toString(),
         save && suggested.isNotEmpty() ? folder.getChildFile(suggested) : folder,
         dialog["patterns"].toString());
-    int flags = juce::FileBrowserComponent::canSelectFiles;
+    // A voicebank import may ask for a folder (a UTAU voicebank) instead of a file.
+    int flags = static_cast<bool>(dialog["folders"]) ? juce::FileBrowserComponent::canSelectDirectories
+                                                     : juce::FileBrowserComponent::canSelectFiles;
     if (save) flags |= juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting;
     else flags |= juce::FileBrowserComponent::openMode;
     if (!save && static_cast<bool>(dialog["multiple"])) flags |= juce::FileBrowserComponent::canSelectMultipleItems;
@@ -253,7 +255,8 @@ void Services::importDropped(const juce::StringArray& files, std::function<void(
 }
 
 void Services::finish(const juce::var& request, juce::var& result) {
-    if (request["path"].toString() != "/api/state" || static_cast<int>(result["status"]) != 200) return;
+    const auto path = request["path"].toString().upToFirstOccurrenceOf("?", false, false);
+    if (path != "/api/state" || static_cast<int>(result["status"]) != 200) return;
     auto* data = result["data"].getDynamicObject();
     if (data == nullptr) return;
     data->setProperty("recording", recorder.state());

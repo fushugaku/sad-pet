@@ -1458,6 +1458,114 @@ fn standalone_keeps_its_own_transport_even_for_daw_scenes() {
     );
 }
 
+/// What the editor's state merge does with a delta answer.
+fn merge_state(previous: &Value, delta: &Value) -> Value {
+    let mut merged = delta.clone();
+    for key in ["preset", "waveform", "file_source"] {
+        if merged.get(key).is_none() {
+            merged[key] = previous[key].clone();
+        }
+    }
+    let mut knobs = previous["knobs"].as_object().unwrap().clone();
+    for (key, value) in merged["knob_changes"].as_object().unwrap() {
+        if value.is_null() {
+            knobs.remove(key);
+        } else {
+            knobs.insert(key.clone(), value.clone());
+        }
+    }
+    merged["knobs"] = Value::Object(knobs);
+    merged.as_object_mut().unwrap().remove("knob_changes");
+    merged
+}
+
+#[test]
+fn state_polls_since_the_last_answer_leave_out_unchanged_parts() {
+    let mut control = Controller::new_scene(false, true);
+    let mut audio = control.prepare(48000);
+    call(
+        &mut control,
+        "/api/transport",
+        json!({"playing":true,"midi_gate":false}),
+    );
+    render(&mut audio, 4800, [0.0; 2]);
+    let full = call(&mut control, "/api/state", Value::Null);
+    assert_eq!(full["delta"], false);
+    assert!(full["preset"].is_object() && full["knobs"].is_object());
+    assert!(full["waveform"].as_array().is_some_and(|w| !w.is_empty()));
+    let token = full["state_token"].as_u64().unwrap();
+
+    render(&mut audio, 4800, [0.0; 2]);
+    let delta = call(
+        &mut control,
+        &format!("/api/state?since={token}"),
+        Value::Null,
+    );
+    assert_eq!(delta["delta"], true);
+    for key in ["preset", "waveform", "file_source", "knobs"] {
+        assert!(
+            delta.get(key).is_none(),
+            "an unchanged {key} was sent again"
+        );
+    }
+    assert!(delta["knob_changes"].is_object());
+    assert!(delta["input"].is_object() && delta["timbres"].is_object());
+    let merged = merge_state(&full, &delta);
+    let next = delta["state_token"].as_u64().unwrap();
+    assert_ne!(next, token);
+    // A complete answer to the same moment matches the merged one.
+    let complete = call(&mut control, "/api/state", Value::Null);
+    for key in [
+        "preset",
+        "waveform",
+        "file_source",
+        "knobs",
+        "grains",
+        "center",
+    ] {
+        assert_eq!(merged[key], complete[key], "{key} differs after merging");
+    }
+
+    // A stale token gets a complete answer; changes are sent again.
+    let stale = call(
+        &mut control,
+        &format!("/api/state?since={next}"),
+        Value::Null,
+    );
+    assert_eq!(stale["delta"], false);
+    assert!(stale["preset"].is_object() && stale["knobs"].is_object());
+    let token = stale["state_token"].as_u64().unwrap();
+    call(&mut control, "/api/parameters", json!({"loop_one_bar":0}));
+    let edited = call(
+        &mut control,
+        &format!("/api/state?since={token}"),
+        Value::Null,
+    );
+    assert_eq!(edited["delta"], true);
+    assert_eq!(edited["preset"]["params"]["loop_one_bar"], false);
+    assert!(edited.get("waveform").is_none());
+}
+
+#[test]
+fn host_state_is_a_zlib_stream_of_the_saved_scene() {
+    use std::io::Read as _;
+    let mut control = Controller::new_scene(false, true);
+    let _audio = control.prepare(48000);
+    let bytes = unsafe { sad_control_save(&mut control) };
+    let stream = unsafe { std::slice::from_raw_parts(bytes.data, bytes.len) }.to_vec();
+    unsafe { sad_bytes_free(bytes.data, bytes.len) };
+    let mut state = Vec::new();
+    flate2::read::ZlibDecoder::new(stream.as_slice())
+        .read_to_end(&mut state)
+        .unwrap();
+    assert!(stream.len() < state.len());
+    assert_eq!(state, control.save().unwrap());
+    let mut recalled = Controller::new_scene(false, true);
+    let _recalled_audio = recalled.prepare(48000);
+    assert!(unsafe { sad_control_restore(&mut recalled, state.as_ptr(), state.len()) });
+    assert_eq!(recalled.preset.name, control.preset.name);
+}
+
 #[test]
 fn standalone_library_imports_loads_trims_exports_and_trashes_files_on_disk() {
     let folder = PresetDirectory::new();
@@ -1600,4 +1708,90 @@ fn standalone_renders_the_scene_and_keeps_recordings_in_the_library() {
             .len(),
         2
     );
+}
+
+fn wait_for_vocal(control: &mut Controller) {
+    let started = std::time::Instant::now();
+    loop {
+        let state = call(control, "/api/vocal/state", Value::Null);
+        let progress = &state["progress"];
+        if progress["phrases"].as_u64() > Some(0) && progress["phrases"] == progress["rendered"] {
+            return;
+        }
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(30),
+            "vocal phrases did not render: {state}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn vocal_timbres_sing_at_the_daw_position_and_survive_project_recall() {
+    let voices = PresetDirectory::new();
+    // SAFETY: tests that read the variable set the same value.
+    unsafe { std::env::set_var("SAD_PET_VOICE_DIR", &voices.0) };
+    let mut control = Controller::new(false);
+    control.meta.mix.muted = true;
+    let mut audio = control.prepare(8000);
+    let values = control.values();
+    let context = call(&mut control, "/api/timbres/add", json!({"kind":"vocal"}));
+    let id = context["timbres"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["kind"] == "vocal")
+        .unwrap()["id"]
+        .as_u64()
+        .unwrap();
+    call(&mut control, "/api/timbres/select", json!({ "id": id }));
+    let score = json!({"score":{"language":"ja","style":{"auto_breath":false},"notes":[
+        {"id":1,"start":480,"length":480,"key":64,"lyric":"ら"},
+        {"id":2,"start":960,"length":480,"key":67,"lyric":"ら"}]}});
+    assert_eq!(
+        call(&mut control, "/api/vocal/score", score.clone())["score"]["notes"][1]["key"],
+        67
+    );
+    wait_for_vocal(&mut control);
+    // The DAW plays from beat 1 (0.5 s at 120 BPM): the first note sings.
+    no_heap(|| {
+        audio.begin(&values, 120., Some(0.0), false, 256);
+        render(&mut audio, 256, [0.; 2]);
+        audio.begin(&values, 120., Some(1.0), true, 2048);
+        assert!(render(&mut audio, 2048, [0.; 2]) > 0.01);
+        // Before the phrase, and while the transport is stopped: silence.
+        audio.begin(&values, 120., Some(0.0), true, 1024);
+        assert!(render(&mut audio, 1024, [0.; 2]) < 1e-3);
+        audio.begin(&values, 120., Some(1.0), false, 1024);
+        assert!(render(&mut audio, 1024, [0.; 2]) < 1e-3);
+    });
+    // A Vocal timbre does not take a file or MIDI.
+    assert!(
+        control
+            .request(&json!({"path":"/api/region","method":"POST","data":{"start":0,"end":1}}))
+            .is_err()
+    );
+
+    // Project recall renders the saved score again in a new instance.
+    let saved = control.save().unwrap();
+    let mut recalled = Controller::new(false);
+    recalled.restore(&saved).unwrap();
+    let mut recalled_audio = recalled.prepare(8000);
+    call(&mut recalled, "/api/timbres/select", json!({ "id": id }));
+    wait_for_vocal(&mut recalled);
+    recalled_audio.begin(&values, 120., Some(1.0), true, 2048);
+    let _ = render(&mut recalled_audio, 1, [0.; 2]);
+    recalled_audio.begin(&values, 120., Some(1.0), true, 2048);
+    assert!(render(&mut recalled_audio, 2048, [0.; 2]) > 0.01);
+
+    // The app's own song clock plays without a host transport.
+    call(
+        &mut control,
+        "/api/vocal/transport",
+        json!({"start": 0.5, "playing": true}),
+    );
+    audio.begin(&values, 0., None, false, 2048);
+    assert!(render(&mut audio, 2048, [0.; 2]) > 0.01);
+    control.drain();
+    recalled.drain();
 }

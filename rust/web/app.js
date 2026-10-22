@@ -25,6 +25,7 @@ const sequenceEdits = new Map();
 let neuroEditor = null;
 let timbreEditor = null,
   drumEditor = null,
+  vocalEditor = null,
   timbreBusy = false;
 const drumEdits = new Map();
 let sequenceCatalog = null;
@@ -83,9 +84,31 @@ async function api(path, data, headers) {
   }
   return response;
 }
+// The native engine answers a poll that names the previous answer's token
+// with only what changed; omitted parts keep their objects, so the editor and
+// its waveform cache can tell they did not change.
+let stateCache = null;
+async function readState() {
+  if (window.sadPetState) return window.sadPetState();
+  const token = stateCache?.state_token;
+  const next = await (
+    await api(token ? `/api/state?since=${token}` : "/api/state")
+  ).json();
+  if (next.delta && stateCache)
+    for (const key of ["preset", "waveform", "file_source"])
+      if (!(key in next)) next[key] = stateCache[key];
+  if (next.knob_changes) {
+    next.knobs = { ...stateCache?.knobs };
+    for (const [key, value] of Object.entries(next.knob_changes))
+      if (value === null) delete next.knobs[key];
+      else next.knobs[key] = value;
+    delete next.knob_changes;
+  }
+  stateCache = next;
+  return next;
+}
 async function request(path, data) {
-  if (path === "/api/state" && data === undefined && window.sadPetState)
-    return window.sadPetState();
+  if (path === "/api/state" && data === undefined) return readState();
   const result = await (await api(path, data)).json();
   if (
     data !== undefined &&
@@ -438,6 +461,7 @@ const filterChoices = {
 function setParam(key, value) {
   preset.params[key] = value;
   syncControl(key);
+  if (/^(filter2?|vcf2?_type)(_|$)/.test(key)) refreshFilterGraphs();
   if (typeof value === "number") scheduleParameter(key, value);
   else if (filterChoices[key])
     scheduleParameter(key, filterChoices[key].indexOf(value));
@@ -516,9 +540,20 @@ function createKnob(
   const toUnit = binding?.normalize || ((v) => (v - min) / (max - min));
   const fromUnit = binding?.denormalize || ((v) => min + v * (max - min));
   let drag = null;
+  // Polls repeat the same feedback for most knobs; repainting them anyway
+  // costs a style and layout pass of the whole editor. update() repaints
+  // the knob directly, so it forgets what was shown.
+  let shown = null;
   const modulation = (feedback) => {
     const base = get();
     const active = Boolean(feedback?.modulated);
+    const signature = active
+      ? [base, feedback.current, feedback.min, feedback.max, !!drag,
+          document.activeElement === dial, format(base),
+          ...[feedback.current, feedback.min, feedback.max].map((v) => format(clamp(v)))].join("|")
+      : `${base}|${format(base)}`;
+    if (signature === shown) return;
+    shown = signature;
     box.classList.toggle("is-modulated", active);
     basePointer.style.transform = `rotate(${-135 + 270 * toUnit(base)}deg)`;
     pointer.style.transform = `rotate(${-135 + 270 * toUnit(active ? clamp(feedback.current) : base)}deg)`;
@@ -571,6 +606,7 @@ function createKnob(
   };
   const update = () => {
     if (!preset) return;
+    shown = null;
     const v = get();
     const unit = toUnit(v);
     value.textContent = format(v);
@@ -685,9 +721,14 @@ function buildFilters() {
       .slice(1, -1)
       .map(([id, label]) => `<option value="${id}">${label}</option>`)
       .join("");
-    card.innerHTML = `<div class="filter-title"><strong>Filter ${number}</strong><select id="${prefix}-type" aria-label="Filter ${number} model"><optgroup label="SAD PET">${responses("legacy")}</optgroup><optgroup label="Rustias">${models}</optgroup><optgroup label="RADIAS Filter 2">${responses("radias2")}</optgroup></select><select id="${prefix}-env" aria-label="Filter ${number} envelope"><option value="env1">ENV 1</option><option value="env2">ENV 2</option><option value="env3">ENV 3</option></select></div><div id="${prefix}-controls" class="knob-grid filter-controls"></div>`;
+    card.innerHTML = `<div class="filter-title"><strong>Filter ${number}</strong><select id="${prefix}-type" aria-label="Filter ${number} model"><optgroup label="SAD PET">${responses("legacy")}</optgroup><optgroup label="Rustias">${models}</optgroup><optgroup label="RADIAS Filter 2">${responses("radias2")}</optgroup></select><select id="${prefix}-env" aria-label="Filter ${number} envelope"><option value="env1">ENV 1</option><option value="env2">ENV 2</option><option value="env3">ENV 3</option></select></div>${filterGraphMarkup(number)}<div id="${prefix}-controls" class="knob-grid filter-controls"></div>`;
     $("filters").append(card);
     const type = i === 0 ? "vcf_type" : "vcf2_type";
+    card.querySelector(".filter-graph").spec = () => {
+      const p = preset?.params;
+      return p && filterGraphSpec(p[`${prefix}_model`] ?? "legacy", p[type], p[prefix],
+        p[`${prefix}_env_depth`], p[`${prefix}_resonance`], p[`${prefix}_morph`]);
+    };
     $(`${prefix}-type`).onchange = (e) => {
       const [model, response] = e.target.value.split(":");
       setParam(`${prefix}_model`, model);
@@ -726,6 +767,39 @@ function buildFilters() {
   $("filter-routing").onchange = (e) =>
     setParam("filter_routing", e.target.value);
   $("add-filter").onclick = addFilter;
+}
+// Filter cards plot the engine's own response: it rings an impulse through
+// the real filter, one request per card at a time.
+const filterGraphMarkup = (number) =>
+  `<div class="filter-graph" role="img" aria-label="Filter ${number} response">${window.SadFilterGraph?.markup ?? ""}</div>`;
+// The dashed curve is the cutoff at the envelope's peak.
+const filterGraphSpec = (model, kind, cutoff, depth, resonance, morph) => ({
+  model, kind, resonance, morph,
+  cutoffs: depth ? [cutoff, Math.min(1, Math.max(0, cutoff + depth))] : [cutoff],
+});
+let filterGraphFrame = 0;
+function refreshFilterGraphs() {
+  if (filterGraphFrame) return;
+  filterGraphFrame = requestAnimationFrame(() => {
+    filterGraphFrame = 0;
+    document.querySelectorAll(".filter-card .filter-graph").forEach(drawFilterGraph);
+  });
+}
+async function drawFilterGraph(graph) {
+  const spec = graph.spec?.(),
+    shape = JSON.stringify(spec);
+  if (!spec || graph.busy || graph.dataset.shape === shape) return;
+  graph.busy = true;
+  try {
+    window.SadFilterGraph.draw(graph, (await request("/api/filter/response", spec)).curves);
+    graph.dataset.shape = shape;
+  } catch {
+    // An engine without the route keeps the card as it was.
+    return;
+  } finally {
+    graph.busy = false;
+  }
+  if (graph.isConnected && JSON.stringify(graph.spec()) !== shape) drawFilterGraph(graph);
 }
 function syncFilters() {
   if (!preset) return;
@@ -772,6 +846,7 @@ function syncFilters() {
     controls.get(prefix)?.();
   }
   syncAddedFilters();
+  refreshFilterGraphs();
 }
 // Filters 3 and up. Positions inside a note's path run one filter per voice
 // with its own envelope and key tracking; the others are one shared filter
@@ -890,6 +965,7 @@ function syncAddedFilters() {
     for (const [field] of FILTER_SLOT_CONTROLS)
       controls.get(`filter_slot:${slot.id}:${field}`)?.();
   }
+  refreshFilterGraphs();
 }
 function addedFilterCard(index, slot) {
   const number = index + 3,
@@ -898,7 +974,11 @@ function addedFilterCard(index, slot) {
   card.className = "filter-card added-filter-card";
   card.classList.toggle("inactive", !slot.enabled);
   card.dataset.id = id;
-  card.innerHTML = `<div class="filter-title added-filter-title"><strong>Filter ${number}</strong><select class="added-filter-position" aria-label="Filter ${number} position"></select><select class="added-filter-type" aria-label="Filter ${number} model">${filterModelOptions()}</select><select class="added-filter-env" aria-label="Filter ${number} envelope"><option value="env1">ENV 1</option><option value="env2">ENV 2</option><option value="env3">ENV 3</option></select><div class="color-actions"><button class="color-bypass" aria-label="Bypass Filter ${number}" title="Bypass" aria-pressed="${!slot.enabled}">⏻</button><button class="color-up" aria-label="Move Filter ${number} up" title="Move up">↑</button><button class="color-down" aria-label="Move Filter ${number} down" title="Move down">↓</button><button class="color-remove" aria-label="Remove Filter ${number}" title="Remove">×</button></div></div><div id="filter-slot-${id}-controls" class="knob-grid filter-controls"></div>`;
+  card.innerHTML = `<div class="filter-title added-filter-title"><strong>Filter ${number}</strong><select class="added-filter-position" aria-label="Filter ${number} position"></select><select class="added-filter-type" aria-label="Filter ${number} model">${filterModelOptions()}</select><select class="added-filter-env" aria-label="Filter ${number} envelope"><option value="env1">ENV 1</option><option value="env2">ENV 2</option><option value="env3">ENV 3</option></select><div class="color-actions"><button class="color-bypass" aria-label="Bypass Filter ${number}" title="Bypass" aria-pressed="${!slot.enabled}">⏻</button><button class="color-up" aria-label="Move Filter ${number} up" title="Move up">↑</button><button class="color-down" aria-label="Move Filter ${number} down" title="Move down">↓</button><button class="color-remove" aria-label="Remove Filter ${number}" title="Remove">×</button></div></div>${filterGraphMarkup(number)}<div id="filter-slot-${id}-controls" class="knob-grid filter-controls"></div>`;
+  card.querySelector(".filter-graph").spec = () => {
+    const s = findFilterSlot(id);
+    return s && filterGraphSpec(s.model, s.kind, s.cutoff, s.env_depth, s.resonance, s.morph);
+  };
   const position = card.querySelector(".added-filter-position");
   position.replaceChildren(
     ...FILTER_POSITIONS.map(([value, label]) => option(value, label)),
@@ -957,6 +1037,7 @@ function addedFilterCard(index, slot) {
           s[field] = value;
           controls.get(key)?.();
           scheduleParameter(`filter${number}_${field}`, value);
+          refreshFilterGraphs();
         },
         reset: () => FILTER_SLOT_DEFAULT[field],
       },
@@ -1034,8 +1115,8 @@ function syncTimbreRouting() {
   samplePanel.setAttribute("aria-label", drums ? "Drum waveform and grains"
     : synth ? "Synth waveform and grains" : "Sample and grains");
   $("drum-source-name").hidden = !history;
-  $("drum-source-name").textContent = bus
-    ? bus.master ? "Master input" : "Bus input"
+  $("drum-source-name").textContent = preset?.vocal ? "Vocal"
+    : bus ? bus.master ? "Master input" : "Bus input"
     : synth ? "Synth engine" : "Drum machine";
   $("wave").setAttribute("aria-label", drums
     ? "Live drum waveform and grains"
@@ -1056,6 +1137,7 @@ function syncTimbreRouting() {
   if ($("grain-engine-home").nextElementSibling !== grains)
     $("grain-engine-home").after(grains);
   $("drum-grain-count").hidden = !history;
+  syncGrainBuffer();
   syncControl("grain_size");
   const transport = document.querySelector(".transport");
   if (samplePanel.nextElementSibling !== transport) samplePanel.after(transport);
@@ -1073,6 +1155,7 @@ function syncTimbreRouting() {
   syncEngineType();
   timbreEditor?.sync(state?.timbres);
   drumEditor?.sync();
+  vocalEditor?.sync();
   syncSynth();
 }
 function syncAll() {
@@ -1369,42 +1452,67 @@ function bindGranularToggle() {
     syncTimbreRouting();
   };
 }
+/** The live history's length belongs to Granular, so it sits in Grain engine. */
+const historyBuffers = (bus) =>
+  [0.125, 0.25, 0.5, 1, 2, 4, 8, ...(bus ? [] : [16, 32])];
+function bindGrainBuffer() {
+  const buffer = $("grain-buffer");
+  buffer.onchange = () => {
+    const seconds = Number(buffer.value);
+    if (preset?.drums) {
+      preset.drums.buffer_seconds = seconds;
+      scheduleParameter("drum_buffer_seconds", seconds);
+    } else if (preset?.synth) editSynth("buffer_seconds", seconds);
+    else if (preset?.bus) {
+      // Structural: a Granular bus allocates its history while the preset is
+      // prepared, never on the audio thread.
+      preset.bus.buffer_seconds = seconds;
+      schedulePreset();
+    } else return;
+    syncTimbreRouting();
+  };
+}
+function syncGrainBuffer() {
+  const own = historySettings(),
+    buffer = $("grain-buffer");
+  $("grain-buffer-field").hidden = !own;
+  if (!own) return;
+  const bus = !preset.drums && !preset.synth,
+    seconds = own.buffer_seconds ?? (bus ? 4 : 8),
+    choices = historyBuffers(bus),
+    custom = choices.includes(seconds) ? "" : seconds;
+  // A preset may carry a length the menu doesn't offer; keep it selectable.
+  if (buffer.dataset.choices !== `${bus}:${custom}`) {
+    buffer.dataset.choices = `${bus}:${custom}`;
+    buffer.replaceChildren(
+      ...choices.map((s) => option(String(s), s < 1 ? `${s * 1000} ms` : `${s} s`)),
+    );
+    if (custom !== "")
+      buffer.append(option(String(seconds), `${Number(seconds.toFixed(3))} s`));
+  }
+  if (document.activeElement !== buffer) buffer.value = String(seconds);
+}
 function buildBus() {
-  const buffer = $("bus-buffer");
-  buffer.replaceChildren(
-    ...[0.125, 0.25, 0.5, 1, 2, 4, 8].map((seconds) =>
-      option(
-        String(seconds),
-        seconds < 1 ? `${seconds * 1000} ms` : `${seconds} s`,
-      ),
-    ),
-  );
-  // Structural: a Granular bus allocates its history while the preset is
-  // prepared, never on the audio thread.
-  const edit = (field, value) => {
+  $("bus-filters").onchange = () => {
     if (!preset?.bus) return;
-    preset.bus[field] = value;
+    preset.bus.filters = $("bus-filters").checked;
     schedulePreset();
     syncTimbreRouting();
   };
-  buffer.onchange = () => edit("buffer_seconds", Number(buffer.value));
-  $("bus-filters").onchange = () => edit("filters", $("bus-filters").checked);
 }
 function syncBus() {
   const bus = preset?.bus;
   $("bus-engine").hidden = !bus;
   if (!bus) return;
   const title = $("bus-title");
-  title.firstChild.textContent = bus.master ? "Master " : "Bus ";
+  const vocal = !!preset.vocal;
+  title.firstChild.textContent = bus.master ? "Master " : vocal ? "Voice chain " : "Bus ";
   title.querySelector("span").textContent = bus.master
     ? "every timbre and bus, then the output"
+    : vocal ? "the sung voice, then Master"
     : "sends from timbres, then Master";
-  $("bus-engine").setAttribute("aria-label", bus.master ? "Master" : "Bus");
+  $("bus-engine").setAttribute("aria-label", bus.master ? "Master" : vocal ? "Voice chain" : "Bus");
   $("bus-filters").checked = !!bus.filters;
-  const buffer = $("bus-buffer");
-  if (document.activeElement !== buffer)
-    buffer.value = String(bus.buffer_seconds ?? 4);
-  $("bus-buffer").disabled = !bus.granular;
   const effects = [preset.color_chain, preset.pre_color_chain, preset.source_color_chain]
     .some((chain) => chain?.some((slot) => slot.enabled && slot.mix > 0));
   $("bus-hint").hidden =
@@ -1415,19 +1523,7 @@ function buildSynth() {
   bindEngineType();
   buildBus();
   bindGranularToggle();
-  const buffer = $("synth-buffer");
-  buffer.replaceChildren(
-    ...[0.125, 0.25, 0.5, 1, 2, 4, 8, 16, 32].map((seconds) =>
-      option(
-        String(seconds),
-        seconds < 1 ? `${seconds * 1000} ms` : `${seconds} s`,
-      ),
-    ),
-  );
-  buffer.onchange = () => {
-    editSynth("buffer_seconds", Number(buffer.value));
-    syncTimbreRouting();
-  };
+  bindGrainBuffer();
   $("synth-add").onclick = () => {
     const s = synthSettings();
     if (s.count >= 4) return;
@@ -1483,15 +1579,6 @@ function syncSynth() {
   }
   const s = synthSettings();
   $("synth-add").disabled = s.count >= 4;
-  const buffer = $("synth-buffer"),
-    seconds = s.buffer_seconds ?? 8;
-  buffer.querySelector("[data-custom]")?.remove();
-  if (![...buffer.options].some((o) => Number(o.value) === seconds)) {
-    const custom = option(String(seconds), `${seconds} s`);
-    custom.dataset.custom = "";
-    buffer.append(custom);
-  }
-  if (document.activeElement !== buffer) buffer.value = String(seconds);
   syncOscillators("synth");
 }
 function syncOscillators(bank) {
@@ -3567,6 +3654,7 @@ async function transport(data) {
 function noteOn(note) {
   if (held.has(note)) return;
   held.add(note);
+  vocalEditor?.stepInput(note);
   document.querySelector(`[data-note="${note}"]`)?.classList.add("active");
   noteChain = noteChain
     .then(() =>
@@ -4011,6 +4099,15 @@ function resizeCanvas(canvas) {
   return [c, r.width, r.height];
 }
 
+// A complete state answer carries a new waveform array even when its points
+// did not change; rebuilding the background bitmap is the costly part.
+function sameWaveform(a, b) {
+  if (a === b) return true;
+  if (a?.length !== b?.length) return false;
+  for (let i = 0; i < a.length; i++)
+    if (a[i][0] !== b[i][0] || a[i][1] !== b[i][1]) return false;
+  return true;
+}
 function paintWaveform(context, w, h) {
   // Layout can report an empty canvas before the first resize.
   if (!w || !h) return;
@@ -4018,7 +4115,7 @@ function paintWaveform(context, w, h) {
   const key = [w, h, dpr, state.sample_frames, state.sample_seconds, state.input?.active,
     sampleSelection?.region.start, sampleSelection?.region.end,
     sampleSelection?.fades.fade_in, sampleSelection?.fades.fade_out].join(":");
-  if (!waveBackground || waveBackground.key !== key || waveBackground.waveform !== state.waveform) {
+  if (!waveBackground || waveBackground.key !== key || !sameWaveform(waveBackground.waveform, state.waveform)) {
     const bitmap = document.createElement("canvas");
     bitmap.width = Math.round(w * dpr);
     bitmap.height = Math.round(h * dpr);
@@ -4130,16 +4227,16 @@ let inputDevicesKey = "";
 function syncInput(input) {
   if (!input) return;
   const active = input.active;
-  $("source-file").setAttribute(
-    "aria-pressed",
-    String(!active && !input.pending),
+  setAttr($("source-file"), "aria-pressed", !active && !input.pending);
+  setAttr($("source-mic"), "aria-pressed", active || input.pending);
+  setText(
+    $("source-mic"),
+    input.pending
+      ? "Cancel microphone"
+      : window.sadPetPlugin
+        ? "DAW input"
+        : "Microphone",
   );
-  $("source-mic").setAttribute("aria-pressed", String(active || input.pending));
-  $("source-mic").textContent = input.pending
-    ? "Cancel microphone"
-    : window.sadPetPlugin
-      ? "DAW input"
-      : "Microphone";
   $("microphone-controls").hidden = !active;
   const recordSlot = active
     ? $("microphone-record-slot")
@@ -4150,23 +4247,24 @@ function syncInput(input) {
     : $("recording-result-slot");
   if ($("recording-result").parentElement !== resultSlot)
     resultSlot.append($("recording-result"));
-  $("input-listen").setAttribute("aria-pressed", String(!!input.monitor));
-  $("input-listen").textContent = input.monitor ? "Listen on" : "Listen off";
+  setAttr($("input-listen"), "aria-pressed", !!input.monitor);
+  setText($("input-listen"), input.monitor ? "Listen on" : "Listen off");
   $("sample-select").hidden = active;
   $("live-source-name").hidden = !active;
-  $("live-source-name").textContent = input.name || "Microphone";
+  setText($("live-source-name"), input.name || "Microphone");
   $("input-status").classList.toggle("live", active);
   const peak = Math.max(...(input.peak || [0, 0]));
   $("input-level").style.width = `${Math.min(1, peak) * 100}%`;
-  $("input-level").parentElement.setAttribute(
+  setAttr(
+    $("input-level").parentElement,
     "aria-valuenow",
-    String(Math.round(Math.min(1, peak) * 100)),
+    Math.round(Math.min(1, peak) * 100),
   );
   if (active) $("render").disabled = true;
   else if ($("render").dataset.liveDisabled === "true")
     $("render").disabled = false;
-  $("render").dataset.liveDisabled = String(active);
-  $("render").title = active ? "Use Record to save the live output" : "";
+  setAttr($("render"), "data-live-disabled", active);
+  setAttr($("render"), "title", active ? "Use Record to save the live output" : "");
   const history = historySettings();
   const effectsOnly = history
     ? !history.granular : active && input.mode === "effects";
@@ -4194,6 +4292,16 @@ function syncInput(input) {
     $("input-gain").value = input.gain;
     $("input-gain-value").textContent = percent(input.gain);
   }
+}
+// A poll repeats mostly unchanged values; equal writes would still make the
+// browser restyle and lay out the editor.
+function setText(element, text) {
+  text = String(text);
+  if (element.textContent !== text) element.textContent = text;
+}
+function setAttr(element, name, value) {
+  value = String(value);
+  if (element.getAttribute(name) !== value) element.setAttribute(name, value);
 }
 async function poll() {
   try {
@@ -4235,38 +4343,35 @@ async function poll() {
     if (generation === editGeneration && !pending && !editing
         && !document.activeElement?.matches("input,select,.sad-menu-layer *"))
       receivedPreset = next.preset;
-    $("sample-name").textContent = next.sample_name;
+    setText($("sample-name"), next.sample_name);
     presetLibrary?.observe(next, pending > 0);
     fileLibrary?.observe(next);
-    $("sample-info").textContent = `${next.sample_seconds.toFixed((next.preset?.drums || next.preset?.synth) && next.sample_seconds < 1 ? 3 : 2)} s`;
+    setText($("sample-info"), `${next.sample_seconds.toFixed((next.preset?.drums || next.preset?.synth) && next.sample_seconds < 1 ? 3 : 2)} s`);
     syncInput(next.input);
     updateResynthMeter(next.resynth);
     neuroEditor?.update(next.sequencer, next.playing);
     timbreEditor?.sync(next.timbres);
     drumEditor?.update(next.drums);
     sampleSelection?.sync(next);
-    $("sample-end").textContent = formatTime(next.sample_seconds);
-    $("position-info").textContent = formatTime(
-      next.center * next.sample_seconds,
-    );
-    $("grain-count").textContent = next.active_grains;
-    $("drum-grain-count").textContent = `${next.active_grains} grains`;
-    $("play").setAttribute("aria-pressed", String(next.playing));
-    $("play-icon").textContent = next.playing ? "Ⅱ" : "▶";
-    $("play-label").textContent = next.playing ? "Pause" : "Play";
+    setText($("sample-end"), formatTime(next.sample_seconds));
+    setText($("position-info"), formatTime(next.center * next.sample_seconds));
+    setText($("grain-count"), next.active_grains);
+    setText($("drum-grain-count"), `${next.active_grains} grains`);
+    setAttr($("play"), "aria-pressed", next.playing);
+    setText($("play-icon"), next.playing ? "Ⅱ" : "▶");
+    setText($("play-label"), next.playing ? "Pause" : "Play");
     for (const key of ["freeze", "bypass"])
-      $(key).setAttribute(
-        "aria-pressed",
-        String(next[key === "freeze" ? "frozen" : key]),
-      );
+      setAttr($(key), "aria-pressed", next[key === "freeze" ? "frozen" : key]);
     $("meter-l").style.width = `${Math.min(1, next.peak[0]) * 100}%`;
     $("meter-r").style.width = `${Math.min(1, next.peak[1]) * 100}%`;
     syncGainReduction(next);
-    $("audio-status").textContent =
+    setText(
+      $("audio-status"),
       window.sadPetAudio?.status() ||
-      (next.audio_enabled
-        ? `${(next.sample_rate / 1000).toFixed(1)} kHz · stereo`
-        : "Audio output disabled");
+        (next.audio_enabled
+          ? `${(next.sample_rate / 1000).toFixed(1)} kHz · stereo`
+          : "Audio output disabled"),
+    );
     $("audio-led").classList.toggle("off", !next.audio_enabled);
     syncRecording();
     if (
@@ -4277,15 +4382,13 @@ async function poll() {
       next.recording.id !== failedRecordingId
     )
       saveCompletedRecording(next.recording);
-    $("cpu").textContent = `DSP ${next.cpu_percent.toFixed(1)}%`;
+    setText($("cpu"), `DSP ${next.cpu_percent.toFixed(1)}%`);
     if (next.audio_error) notify(next.audio_error, true);
     for (let i = 0; i < scopes.length; i++) {
       const a = scopes[i].values;
       a.push(next.lfos[i] || 0);
       if (a.length > 80) a.shift();
-      envCards[i].card.querySelector(".env-level").textContent = percent(
-        next.envs[i] || 0,
-      );
+      setText(envCards[i].card.querySelector(".env-level"), percent(next.envs[i] || 0));
     }
     for (const key of document.querySelectorAll(".key"))
       key.classList.toggle(
@@ -4308,7 +4411,8 @@ async function poll() {
       syncGainReduction(null);
     }
   } finally {
-    setTimeout(poll, 80);
+    // A hidden editor still notices finished recordings and audio errors.
+    setTimeout(poll, document.hidden ? 500 : 80);
   }
 }
 async function init() {
@@ -4346,6 +4450,16 @@ async function init() {
           ),
       });
     }
+    if (window.SadVocal && state.timbres?.timbres)
+      vocalEditor = new window.SadVocal($("vocal-editor"), {
+        read: () => preset,
+        context: () => state?.timbres,
+        host: () => state?.plugin,
+        request,
+        api,
+        notify,
+        download,
+      });
     buildKeyboard();
     bind();
     sampleSelection = new window.SadSampleSelection({

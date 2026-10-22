@@ -16,7 +16,7 @@
     constructor(root, hooks) {
       this.root = root;
       this.hooks = hooks;
-      root.innerHTML = `<div class="timbre-top"><div class="timbre-tabs" role="tablist" aria-label="Timbres"></div><div class="timbre-add"><select aria-label="New timbre type"><option value="granular">Granular</option><option value="drums">Drum machine</option><option value="synth">Synth engine</option><option value="bus">Bus</option></select><button>+ Timbre</button></div></div><div class="timbre-mix"><input aria-label="Timbre name" maxlength="80"><button aria-pressed="false">Mute</button><button aria-pressed="false">Solo</button><label class="timbre-midi">MIDI<select aria-label="Timbre MIDI channel"><option value="0">All</option>${Array.from({ length: 16 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("")}</select></label><label><span class="timbre-level-name">MASTER</span><input aria-label="Timbre level" type="range" min="0" max="2" step=".01"></label><button aria-label="Remove timbre">×</button></div><div class="timbre-sends" aria-label="Bus sends"></div>`;
+      root.innerHTML = `<div class="timbre-top"><div class="timbre-tabs" role="tablist" aria-label="Timbres"></div><div class="timbre-add"><select aria-label="New timbre type"><option value="granular">Granular</option><option value="drums">Drum machine</option><option value="synth">Synth engine</option><option value="vocal">Vocal</option><option value="bus">Bus</option></select><button>+ Timbre</button></div></div><div class="timbre-mix"><input aria-label="Timbre name" maxlength="80"><button aria-pressed="false">Mute</button><button aria-pressed="false">Solo</button><label class="timbre-midi">MIDI<select aria-label="Timbre MIDI channel"><option value="0">All</option>${Array.from({ length: 16 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("")}</select></label><label><span class="timbre-level-name">MASTER</span><input aria-label="Timbre level" type="range" min="0" max="2" step=".01"></label><button aria-label="Remove timbre">×</button></div><div class="timbre-sends" aria-label="Bus sends"></div>`;
       this.tabs = root.querySelector(".timbre-tabs");
       this.addType = root.querySelector(".timbre-add select");
       root.querySelector(".timbre-add button").onclick = () =>
@@ -332,14 +332,166 @@
     "Closed HH",
     "Open HH",
   ];
-  const groups = [
-    ["Oscillator", [0, 1, 26, 10, 35, 32]],
-    ["FM", [7, 8, 9, 24, 25, 38]],
-    ["Envelopes", [3, 2, 4, 5, 6, 37, 39, 40, 41, 42, 43, 44, 45, 50, 29]],
-    ["Filters", [14, 55, 12, 13, 36, 53, 46, 47, 48, 49, 54, 51, 52]],
-    ["Modulation", [20, 21, 22, 23, 33, 30, 31]],
-    ["Transient & output", [11, 27, 34, 28, 15, 16, 17, 18, 19]],
+  // Short names inside a module; screen readers keep the full parameter name.
+  const short = {
+    0: "Pitch", 1: "Wave", 2: "Decay", 3: "Attack", 4: "Curve", 5: "Sweep",
+    6: "Decay", 7: "Ratio", 8: "Amount", 9: "Wave", 10: "Noise", 11: "Level",
+    12: "Cutoff", 13: "Resonance", 14: "Type", 15: "Drive", 16: "Distortion",
+    17: "Reduction", 18: "Pan", 19: "Level", 20: "Rate", 21: "Depth",
+    22: "Target", 23: "Wave", 24: "Ratio 2", 25: "Amount 2", 26: "Width",
+    27: "Type", 28: "Repeat", 29: "Open decay", 30: "Target", 31: "Amount",
+    32: "Mode", 33: "Trigger", 34: "Rate", 35: "Color", 36: "Drive",
+    37: "Curve", 38: "Wave 2", 39: "Attack", 40: "Decay", 41: "Curve",
+    42: "Env", 43: "Attack", 44: "Decay", 45: "Curve", 46: "Type",
+    47: "Cutoff", 48: "Resonance", 49: "Drive", 50: "Env",
+    51: "Routing", 52: "Balance", 53: "Morph", 54: "Morph", 55: "Model",
+  };
+  const show = (p, ...ids) =>
+    ids.map((id) => format(defs[id], p[id])).join(" · ");
+
+  // Linear response of a voice filter from the engine's own topologies and
+  // prewarping (firmware/filter.rs, rustias_filter.rs). Drive and saturation
+  // are left out, so this is the shape at low levels.
+  const RATE = 48000;
+  const cx = (re) => [re, 0];
+  const plus = (...terms) => terms.reduce(([a, b], [c, d]) => [a + c, b + d]);
+  const times = (...terms) =>
+    terms.reduce(([a, b], [c, d]) => [a * c - b * d, a * d + b * c]);
+  const scale = ([a, b], k) => [a * k, b * k];
+  const over = ([a, b], [c, d]) => {
+    const n = c * c + d * d;
+    return [(a * c + b * d) / n, (b * c - a * d) / n];
+  };
+  function filterGain(kind, hz, cutoff, resonance, morph) {
+    if (!kind) return 1;
+    if (kind === 7) {
+      // LP2: two one-pole stages with resonant feedback, at the sample rate.
+      const a = Math.min(cutoff / RATE, 0.45) * 2.21,
+        q = resonance > 0.9 ? 0.98 : resonance,
+        feedback = q * 1.4 + q / (1 - a),
+        w = (2 * Math.PI * hz) / RATE,
+        delay = [Math.cos(w), -Math.sin(w)],
+        pole = plus(cx(1), scale(delay, a - 1));
+      return Math.hypot(...over(cx(a * a), plus(
+        times(pole, plus(pole, scale(delay, -a * feedback))),
+        scale(delay, a * a * feedback),
+      )));
+    }
+    if (kind < 7) {
+      // The LXR state-variable filter and its rational tan prewarp.
+      const f = Math.min(cutoff / RATE, 0.45),
+        r = f >= 0.4499 ? 1 : resonance > 0.9 ? 0.02 : 1 - resonance,
+        g = Math.PI * f,
+        w = Math.tan((Math.PI * hz) / RATE) / (((g * g - 15) * g) / 3 / (2 * g * g - 5)),
+        numerator = [[1, 0], [-w * w, 0], [0, w], [0, 2 * r * w], [1 - w * w, 0],
+          [1 + w * w, 0]][kind - 1];
+      return Math.hypot(...numerator) / Math.hypot(1 - w * w, 2 * r * w);
+    }
+    // Rustias models run at twice the sample rate.
+    const mode = kind - 7,
+      rate = RATE * 2,
+      fc = Math.min(Math.max(cutoff, 12), 20000, RATE * 0.45),
+      s = [0, Math.tan((Math.PI * hz) / rate) / Math.tan((Math.PI * fc) / rate)];
+    if ([1, 4, 7, 8, 9].includes(mode)) {
+      // Four one-pole stages inside one feedback loop.
+      const k = resonance * (mode === 4 ? 4.1 : 3.95),
+        g = over(cx(1), plus(cx(1), s)),
+        g2 = times(g, g),
+        g4 = times(g2, g2),
+        input = over(cx(1), plus(cx(1), scale(g4, k))),
+        rest = plus(cx(1), scale(g, -1));
+      return Math.hypot(...(mode === 7
+        ? plus(cx(1), scale(times(input, plus(scale(g, 4), scale(g2, -6),
+          scale(times(g2, g), 4), scale(g4, -1))), -1))
+        : mode === 8 ? scale(times(input, g2, rest, rest), 4)
+        : scale(times(input, g4), 1 + k * 0.2)));
+    }
+    const k = Math.max(2 - resonance * 1.98, 0.02),
+      denominator = plus(times(s, s), scale(s, k), cx(1)),
+      low = over(cx(1), denominator),
+      band = over(s, denominator),
+      high = over(times(s, s), denominator);
+    let h;
+    if (mode >= 10) {
+      h = [low, high, scale(band, k), plus(low, high)][(mode - 10) >> 1];
+      if (mode % 2) h = times(h, h);
+    } else if (mode === 2) h = plus(low, scale(band, resonance * 0.35));
+    else if (mode === 3) h = high;
+    else if (mode === 5)
+      h = morph < 0.5 ? plus(low, scale(high, morph * 2))
+        : plus(scale(low, 2 - morph * 2), high);
+    else {
+      const taps = [low, band, high, plus(low, high)],
+        i = Math.min(Math.floor(morph * 3), 2),
+        t = morph * 3 - i;
+      h = plus(scale(taps[i], 1 - t), scale(taps[i + 1], t));
+    }
+    return Math.hypot(...h);
+  }
+  // Response graphs, shared with the instrument's filter cards: dB values
+  // spaced evenly in octaves from 20 Hz to 20 kHz, drawn from +18 to −42 dB.
+  const curvePath = (db) =>
+    db.map((v, i) =>
+      `${i ? "L" : "M"}${((i * 600) / (db.length - 1)).toFixed(1)} ${(((18 - Math.min(18, Math.max(-42, v))) * 5) / 3).toFixed(1)}`,
+    ).join("");
+  // Dashed: where the envelope's peak moves the cutoff.
+  function drawResponse(graph, [curve, sweep]) {
+    const path = curvePath(curve);
+    graph.querySelector(".curve").setAttribute("d", path);
+    graph.querySelector(".fill").setAttribute("d", `${path}L600 100L0 100Z`);
+    graph.querySelector(".sweep").setAttribute("d", sweep ? curvePath(sweep) : "");
+  }
+  const GRAPH = `<svg viewBox="0 0 600 100" preserveAspectRatio="none" aria-hidden="true">${[100, 1000, 10000].map((hz) => `<line class="grid" x1="${(Math.log10(hz / 20) * 200).toFixed(1)}" x2="${(Math.log10(hz / 20) * 200).toFixed(1)}" y1="0" y2="100"/>`).join("")}<line class="grid zero" x1="0" x2="600" y1="30" y2="30"/><path class="fill"/><path class="sweep"/><path class="curve"/></svg>${[100, 1000, 10000].map((hz) => `<span style="left:${(Math.log10(hz / 20) * 100) / 3}%">${hz < 1000 ? hz : `${hz / 1000}k`}</span>`).join("")}`;
+  function drawGraph(graph, { kind, cutoff, resonance, morph, env }, p) {
+    const type = kind(p),
+      shape = [type, p[cutoff], p[resonance], p[morph], p[env]].join();
+    if (graph.dataset.shape === shape) return;
+    graph.dataset.shape = shape;
+    const curve = (fc) =>
+      Array.from({ length: 160 }, (_, i) =>
+        20 * Math.log10(filterGain(type, 20 * 1000 ** (i / 159), fc, p[resonance], p[morph]) || 1e-9),
+      );
+    drawResponse(graph, [
+      curve(p[cutoff]),
+      type && p[env] ? curve(p[cutoff] * 2 ** (p[env] / 12)) : null,
+    ]);
+  }
+  // Voice modules: sources, envelopes, filters and output, then modulation.
+  // Three to a row in the All layout. Menus sit in the heading so knobs keep
+  // the same places from module to module.
+  const modules = [
+    { title: "Osc", menus: [1, 32], knobs: [0, 26, 10, 35],
+      summary: (p) => show(p, 1, 0) },
+    { title: "FM", menus: [9, 38], knobs: [7, 8, 24, 25],
+      summary: (p) => show(p, 7, 8) },
+    { title: "Transient", menus: [27], knobs: [11, 34],
+      summary: (p) => show(p, 27, 11) },
+    { title: "Amp env", knobs: [3, 2, 4, 28, 29],
+      summary: (p) => `${show(p, 3)} / ${show(p, 2)}` },
+    { title: "Pitch env", knobs: [5, 6, 37], summary: (p) => show(p, 5, 6) },
+    { title: "Filter env", knobs: [39, 40, 41],
+      summary: (p) => `${show(p, 39)} / ${show(p, 40)}` },
+    // A modeled Filter 1 replaces the LXR type.
+    { title: "Filter 1", menus: [55, 14], knobs: [12, 13, 36, 53, 42],
+      idle: { 14: (p) => p[55] > 0 },
+      graph: { kind: (p) => (p[55] > 0 ? 7 + p[55] : p[14]), cutoff: 12,
+        resonance: 13, morph: 53, env: 42 },
+      summary: (p) => show(p, p[55] > 0 ? 55 : 14, 12) },
+    // Balance crossfades the filters only when they run in parallel.
+    { title: "Filter 2", menus: [46, 51], knobs: [47, 48, 49, 54, 50, 52],
+      idle: { 52: (p) => p[51] < 0.5 },
+      graph: { kind: (p) => p[46], cutoff: 47, resonance: 48, morph: 54, env: 50 },
+      off: (p) => !p[46], summary: (p) => (p[46] ? show(p, 46, 47) : "Bypass") },
+    { title: "Output", menus: [16], knobs: [15, 17, 18, 19],
+      summary: (p) => show(p, 16, 15, 19) },
+    { title: "LFO", menus: [22, 23, 33], knobs: [20, 21],
+      summary: (p) => (p[21] ? `→ ${show(p, 22, 21)}` : "Off") },
+    { title: "Velocity", menus: [30], knobs: [31], off: (p) => !p[30],
+      summary: (p) => (p[30] ? `→ ${show(p, 30, 31)}` : "Off") },
+    { title: "Assign env", knobs: [43, 44, 45],
+      summary: (p) => `${show(p, 43)} / ${show(p, 44)}` },
   ];
+  const LAYOUT_KEY = "evil-pet-drum-voice-layout";
   class Drums {
     constructor(root, catalog, hooks) {
       this.root = root;
@@ -348,13 +500,62 @@
       this.views = new Map();
       this.knobs = [];
       defs.forEach((d, i) => Object.assign(d, catalog.controls[i]));
-      root.innerHTML = `<div class="section-heading"><h2>Drum machine <span>DXM-088</span></h2><div class="drum-global"><label class="drum-buffer">Buffer<select aria-label="Drum granular buffer duration">${[0.125, 0.25, 0.5, 1, 2, 4, 8, 16, 32].map((seconds) => `<option value="${seconds}">${seconds < 1 ? `${seconds * 1000} ms` : `${seconds} s`}</option>`).join("")}</select></label></div></div><div class="drum-pages" role="tablist" aria-label="Drum pattern pages"></div><div class="drum-pattern-scroll"><div class="drum-pattern" role="group" aria-label="Drum steps"></div></div><div class="drum-track-settings"></div><div class="drum-step-panel"><div class="drum-step-title"></div><div class="drum-step-knobs knob-grid"></div><div class="drum-step-extras"></div></div><div class="drum-voice-tabs" role="tablist" aria-label="Drum voices"></div><div class="drum-voice-controls"></div>`;
-      this.buffer = root.querySelector('[aria-label="Drum granular buffer duration"]');
-      this.buffer.onchange = () => {
-        const seconds = Number(this.buffer.value);
-        this.settings().buffer_seconds = seconds;
-        hooks.parameter("drum_buffer_seconds", seconds);
-        hooks.routing();
+      root.innerHTML = `<div class="section-heading"><h2>Drum machine <span>DXM-088</span></h2></div><div class="drum-pages" role="tablist" aria-label="Drum pattern pages"></div><div class="drum-pattern-scroll"><div class="drum-pattern" role="group" aria-label="Drum steps"></div></div><div class="drum-track-settings"></div><div class="drum-step-panel" role="dialog" aria-label="Step settings" hidden><div class="drum-step-head"><div class="drum-step-title"></div><button class="drum-step-close" aria-label="Close step settings">×</button></div><div class="drum-step-knobs knob-grid"></div><div class="drum-step-extras"></div></div><div class="drum-voice"><div class="drum-voice-head"><button class="drum-voice-name"></button><button class="drum-voice-previous" aria-label="Previous voice">‹</button><button class="drum-voice-next" aria-label="Next voice">›</button><span class="drum-voice-note"></span><span class="drum-voice-tools"><button class="drum-voice-copy">Copy</button><button class="drum-voice-paste" disabled>Paste</button></span><span class="drum-voice-layout" role="group" aria-label="Voice layout"><button class="drum-voice-chain" title="The signal chain beside one module">Chain</button><button class="drum-voice-all" title="Every module at once">All</button></span></div><div class="drum-voice-body"><div class="drum-chain" role="tablist" aria-label="Voice modules" aria-orientation="vertical"></div><div class="drum-modules"></div></div></div>`;
+      this.voicePanel = root.querySelector(".drum-voice");
+      this.module = 0;
+      this.layout = "chain";
+      try {
+        if (localStorage.getItem(LAYOUT_KEY) === "all") this.layout = "all";
+      } catch {}
+      const head = (name) => this.voicePanel.querySelector(`.drum-voice-${name}`);
+      head("name").onclick = () => hooks.trigger(this.view().voice);
+      for (const [name, offset] of [["previous", -1], ["next", 1]])
+        head(name).onclick = () => {
+          const view = this.view();
+          view.voice = view.track = (view.voice + offset + names.length) % names.length;
+          this.signature = "";
+          this.sync();
+        };
+      this.paste = head("paste");
+      head("copy").onclick = () => {
+        this.copied = [...this.settings().params[Math.min(5, this.view().voice)]];
+        this.paste.disabled = false;
+      };
+      this.paste.onclick = () => {
+        const voice = Math.min(5, this.view().voice);
+        this.copied?.forEach((value, id) => {
+          this.settings().params[voice][id] = value;
+          hooks.parameter(`drum${voice + 1}_${id}`, value);
+        });
+        this.signature = "";
+        this.sync();
+      };
+      for (const layout of ["chain", "all"])
+        head(layout).onclick = () => {
+          this.layout = layout;
+          try {
+            localStorage.setItem(LAYOUT_KEY, layout);
+          } catch {}
+          this.refreshVoice();
+        };
+      this.chain = this.voicePanel.querySelector(".drum-chain");
+      this.chain.onkeydown = (e) => {
+        const next = { ArrowDown: this.module + 1, ArrowUp: this.module - 1,
+          Home: 0, End: modules.length - 1 }[e.key];
+        if (next === undefined) return;
+        e.preventDefault();
+        this.module = (next + modules.length) % modules.length;
+        this.refreshVoice();
+        this.parts[this.module].tab.focus();
+      };
+      // Step settings open over the pattern from a step and close like a menu.
+      this.stepPanel = root.querySelector(".drum-step-panel");
+      this.stepPanel.querySelector(".drum-step-close").onclick = () =>
+        this.closeStep(true);
+      this.dismissStep = (e) => {
+        if (e.type === "keydown" && e.key !== "Escape") return;
+        if (e.type === "pointerdown" && this.stepPanel.contains(e.target)) return;
+        this.closeStep(e.type === "keydown");
       };
       this.pages = root.querySelector(".drum-pages");
       for (let p = 0; p < 8; p++) {
@@ -371,18 +572,6 @@
         page.dataset.page = p;
         this.pages.append(page);
       }
-      this.voices = root.querySelector(".drum-voice-tabs");
-      names.forEach((name, i) => {
-        const tab = button(name, `${name} voice`, () => {
-          this.view().voice = i;
-          this.view().track = i;
-          this.signature = "";
-          this.sync();
-        });
-        tab.setAttribute("role", "tab");
-        tab.dataset.voice = i;
-        this.voices.append(tab);
-      });
     }
     settings() {
       return this.hooks.read().drums;
@@ -456,12 +645,12 @@
       });
       return input;
     }
-    select(parent, label, options, get, set) {
+    select(parent, label, options, get, set, text) {
       const prefix = names.find((name) => label.startsWith(name + " "));
       const box = el(
           "label",
           "",
-          prefix ? label.slice(prefix.length + 1) : label,
+          text ?? (prefix ? label.slice(prefix.length + 1) : label),
         ),
         select = el("select");
       select.setAttribute("aria-label", label);
@@ -479,6 +668,7 @@
       return select;
     }
     buildPattern() {
+      this.closeStep();
       const grid = this.root.querySelector(".drum-pattern");
       grid.replaceChildren();
       const view = this.view();
@@ -507,11 +697,19 @@
         grid.append(title);
         for (let i = 0; i < 16; i++) {
           const step = view.page * 16 + i;
-          const hit = button("", `${name} step ${step + 1}`, (e) => {
+          // A right click, Shift or a long press opens the step's settings
+          // without toggling it.
+          const pick = (e) => {
+            if (e.type === "click" && this.pressed === hit) {
+              this.pressed = null;
+              return;
+            }
             this.view().track = t;
             this.view().voice = t;
             this.view().step = step;
-            if (!e.shiftKey) {
+            const settings = e.shiftKey || e.type === "contextmenu";
+            if (e.type === "contextmenu") e.preventDefault();
+            if (!settings) {
               const current = this.settings().tracks[t];
               if (step >= current.length) this.edit(t, null, 0, step + 1);
               this.edit(
@@ -523,7 +721,22 @@
             }
             this.signature = "";
             this.sync();
-          });
+            if (settings) this.openStep(hit);
+          };
+          const hit = button("", `${name} step ${step + 1}`, pick);
+          hit.oncontextmenu = pick;
+          hit.onpointerdown = (e) => {
+            this.pressed = null;
+            if (e.pointerType !== "touch") return;
+            clearTimeout(this.press);
+            this.press = setTimeout(() => {
+              this.pressed = hit;
+              pick({ type: "contextmenu", preventDefault() {} });
+            }, 500);
+          };
+          hit.onpointerup = hit.onpointercancel = hit.onpointerleave = () =>
+            clearTimeout(this.press);
+          hit.title = "Click to switch on or off · right-click for step settings";
           hit.className = "drum-hit";
           hit.dataset.track = t;
           hit.dataset.step = step;
@@ -531,6 +744,33 @@
           this.hits.push(hit);
         }
       });
+    }
+    // Below the step, or above it when the window has no room below.
+    openStep(hit) {
+      const panel = this.stepPanel;
+      this.stepHit = hit;
+      panel.hidden = false;
+      const box = this.root.getBoundingClientRect(),
+        cell = hit.getBoundingClientRect(),
+        { offsetWidth: width, offsetHeight: height } = panel,
+        below =
+          cell.bottom + 6 + height <= window.innerHeight || cell.top - 6 - height < 0;
+      panel.style.left = `${Math.max(0, Math.min(cell.left - box.left + cell.width / 2 - width / 2, box.width - width))}px`;
+      panel.style.top = `${below ? cell.bottom - box.top + 6 : cell.top - box.top - 6 - height}px`;
+      if (!this.stepOpen) {
+        this.stepOpen = true;
+        document.addEventListener("pointerdown", this.dismissStep, true);
+        document.addEventListener("keydown", this.dismissStep, true);
+      }
+      panel.querySelector('[role="slider"]')?.focus();
+    }
+    closeStep(refocus = false) {
+      if (!this.stepOpen) return;
+      this.stepOpen = false;
+      this.stepPanel.hidden = true;
+      document.removeEventListener("pointerdown", this.dismissStep, true);
+      document.removeEventListener("keydown", this.dismissStep, true);
+      if (refocus) this.stepHit?.focus();
     }
     buildEditor() {
       const view = this.view(),
@@ -774,64 +1014,116 @@
       }
       this.buildVoice();
     }
+    // Closed and Open HH play one voice; the open hat swaps Decay for Open decay.
     buildVoice() {
-      const voice = Math.min(5, this.view().voice),
-        container = this.root.querySelector(".drum-voice-controls");
-      container.replaceChildren();
-      for (const [title, params] of groups) {
-        const section = el("details", "drum-control-group");
-        section.open = title === "Oscillator";
-        section.append(el("summary", "", title));
-        const grid = el("div", "knob-grid");
-        section.append(grid);
-        container.append(section);
-        for (const id of params) {
-          const d = defs[id],
-            key = `drum${voice + 1}_${id}`;
-          const set = (v) => {
-            const value = constrain(d, v);
-            this.settings().params[voice][id] = value;
-            this.hooks.parameter(key, value);
-          };
-          if (d.options) {
-            this.select(
-              grid,
-              `${names[this.view().voice]} ${d.name}`,
-              d.options,
-              () => this.settings().params[voice][id],
-              set,
-            );
-          } else
-            this.knobs.push(
-              this.hooks.knob(
-                [
-                  key,
-                  d.name.toUpperCase(),
-                  (v) => format(d, v),
-                  d.min,
-                  d.max,
-                  `${names[this.view().voice]} ${d.name}`,
-                ],
-                grid,
-                {
-                  register: false,
-                  ariaScale: 1,
-                  normalize: d.log ? (v) => normalize(d, v) : undefined,
-                  denormalize: d.log ? (v) => denormalize(d, v) : undefined,
-                  step: d.unit === "integer" ? 1 : undefined,
-                  get: () => this.settings().params[voice][id],
-                  set,
-                  reset: () => this.catalog.defaults[voice][id],
-                },
-              ),
-            );
+      const track = this.view().voice,
+        voice = Math.min(5, track),
+        name = names[track];
+      this.voicePanel.querySelector(".drum-voice-name").textContent = `▷ ${name}`;
+      this.voicePanel.querySelector(".drum-voice-name").setAttribute("aria-label", `Audition ${name}`);
+      this.voicePanel.querySelector(".drum-voice-note").textContent =
+        voice === 5 ? `Shared with ${names[track === 5 ? 6 : 5]}` : "";
+      const panels = this.voicePanel.querySelector(".drum-modules");
+      this.chain.replaceChildren();
+      panels.replaceChildren();
+      this.parts = modules.map((module, index) => {
+        const tab = button("", `${module.title} module`, () => {
+          this.module = index;
+          this.refreshVoice();
+        });
+        tab.setAttribute("role", "tab");
+        const summary = el("span");
+        tab.append(el("b", "", module.title), summary);
+        this.chain.append(tab);
+        const panel = el("section", "drum-module"),
+          heading = el("div", "drum-module-head"),
+          grid = el("div", "drum-module-knobs");
+        panel.setAttribute("aria-label", `${name} ${module.title}`);
+        heading.append(el("h3", "", module.title));
+        let graph = null;
+        if (module.graph) {
+          graph = el("div", "filter-graph");
+          graph.setAttribute("role", "img");
+          graph.setAttribute("aria-label", `${name} ${module.title} response`);
+          graph.innerHTML = GRAPH;
         }
-      }
+        panel.append(...[heading, graph, grid].filter(Boolean));
+        panels.append(panel);
+        const set = (id) => (v) => {
+          const value = constrain(defs[id], v);
+          this.settings().params[voice][id] = value;
+          this.hooks.parameter(`drum${voice + 1}_${id}`, value);
+          this.refreshVoice();
+        };
+        const controls = {};
+        for (const id of module.menus ?? [])
+          controls[id] = this.select(
+            heading,
+            `${name} ${defs[id].name}`,
+            defs[id].options,
+            () => this.settings().params[voice][id],
+            set(id),
+            short[id],
+          ).parentNode;
+        for (const id of module.knobs) {
+          if (id === 29 && voice !== 5) continue;
+          const d = defs[id];
+          this.knobs.push(
+            this.hooks.knob(
+              [
+                `drum${voice + 1}_${id}`,
+                (id === 2 && voice === 5 ? "Closed decay" : short[id]).toUpperCase(),
+                (v) => format(d, v),
+                d.min,
+                d.max,
+                `${name} ${d.name}`,
+              ],
+              grid,
+              {
+                register: false,
+                ariaScale: 1,
+                normalize: d.log ? (v) => normalize(d, v) : undefined,
+                denormalize: d.log ? (v) => denormalize(d, v) : undefined,
+                step: d.unit === "integer" ? 1 : undefined,
+                get: () => this.settings().params[voice][id],
+                set: set(id),
+                reset: () => this.catalog.defaults[voice][id],
+              },
+            ),
+          );
+          controls[id] = grid.lastElementChild;
+        }
+        return { module, tab, summary, panel, controls, graph };
+      });
+      this.refreshVoice();
+    }
+    refreshVoice() {
+      const params = this.settings()?.params[Math.min(5, this.view().voice)];
+      if (!params || !this.parts) return;
+      const all = this.layout === "all";
+      this.voicePanel.classList.toggle("all", all);
+      for (const layout of ["chain", "all"])
+        this.voicePanel
+          .querySelector(`.drum-voice-${layout}`)
+          .setAttribute("aria-pressed", String(layout === this.layout));
+      this.parts.forEach(({ module, tab, summary, panel, controls, graph }, index) => {
+        const selected = index === this.module,
+          off = !!module.off?.(params);
+        summary.textContent = module.summary(params);
+        tab.setAttribute("aria-selected", String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+        tab.classList.toggle("off", off);
+        panel.classList.toggle("off", off);
+        panel.hidden = !all && !selected;
+        for (const [id, idle] of Object.entries(module.idle ?? {}))
+          controls[id]?.classList.toggle("idle", idle(params));
+        if (graph) drawGraph(graph, module.graph, params);
+      });
     }
     sync() {
       const settings = this.settings();
       this.root.hidden = !settings;
-      if (!settings) return;
+      if (!settings) return this.closeStep();
       const v = this.view(),
         id = this.hooks.context()?.active ?? 0,
         signature = `${id}:${v.track}:${v.step}:${v.voice}`;
@@ -843,25 +1135,10 @@
         this.signature = signature;
         this.buildEditor();
       }
-      const seconds = settings.buffer_seconds ?? 8;
-      this.buffer.querySelector('[data-custom]')?.remove();
-      if (![...this.buffer.options].some((o) => Number(o.value) === seconds)) {
-        const custom = document.createElement("option");
-        custom.value = seconds;
-        custom.textContent = `${Number(seconds.toFixed(3))} s`;
-        custom.dataset.custom = "true";
-        this.buffer.append(custom);
-      }
-      this.buffer.value = String(seconds);
       for (const tab of this.pages.children)
         tab.setAttribute(
           "aria-selected",
           String(Number(tab.dataset.page) === v.page),
-        );
-      for (const tab of this.voices.children)
-        tab.setAttribute(
-          "aria-selected",
-          String(Number(tab.dataset.voice) === v.voice),
         );
       for (const hit of this.hits) {
         const t = Number(hit.dataset.track),
@@ -878,6 +1155,7 @@
         );
       this.fields.forEach((update) => update());
       this.knobs.forEach((update) => update());
+      this.refreshVoice();
     }
     update(view) {
       if (!this.settings()) return;
@@ -891,5 +1169,7 @@
     }
   }
   window.SadTimbres = Timbres;
+  Drums.filterGain = filterGain;
   window.SadDrums = Drums;
+  window.SadFilterGraph = { markup: GRAPH, draw: drawResponse };
 })();
