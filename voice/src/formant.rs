@@ -131,6 +131,62 @@ fn target(p: Phoneme) -> Target {
     }
 }
 
+/// The voice's color: a correction (dB) at each frequency, fitted so that
+/// over the listening set (`voice/listening.json`) the synthetic voice's
+/// average envelope matches what the bundled voicebanks sing there, within
+/// 0.3 dB. Most of it lifts the highs, where the cascade falls far too
+/// steeply past its fifth formant; it also takes the edge off 2.5 kHz.
+const COLOR: [(f32, f32); 13] = [
+    (250.0, 2.0),
+    (500.0, -7.6),
+    (750.0, -0.6),
+    (1000.0, 1.6),
+    (1500.0, 0.6),
+    (2000.0, -1.4),
+    (2500.0, -11.9),
+    (3000.0, 1.1),
+    (4000.0, 24.2),
+    (5000.0, 47.2),
+    (6500.0, 67.8),
+    (8000.0, 91.5),
+    (10000.0, 110.5),
+];
+
+fn color(hz: f32) -> f32 {
+    let x = hz.clamp(COLOR[0].0, COLOR[12].0).ln();
+    let i = COLOR
+        .iter()
+        .rposition(|c| c.0.ln() <= x)
+        .unwrap_or(0)
+        .min(11);
+    let ((h0, c0), (h1, c1)) = (COLOR[i], COLOR[i + 1]);
+    c0 + (c1 - c0) * (x - h0.ln()) / (h1.ln() - h0.ln())
+}
+
+/// The aperiodicity a voiced sound keeps in each band, from the same fit: a
+/// recorded voice is a little breathy above 3 kHz, where a bare pulse train
+/// buzzes.
+const BREATH: [f32; AP_BANDS] = [0.003, 0.003, 0.015, 0.041, 0.059, 0.155, 0.221, 0.354];
+
+/// How far the formants (share) and the loudness (dB) waver.
+const WAVER_FORMANTS: f32 = 0.012;
+const WAVER_DB: f32 = 0.8;
+
+/// Two slow, irregular wavers in -1..1 at time `t`: sums of sines at rates
+/// that never line up.
+fn waver(t: f64) -> (f32, f32) {
+    let wave = |rates: [(f64, f64, f64); 3]| {
+        rates
+            .iter()
+            .map(|&(hz, phase, weight)| weight * (std::f64::consts::TAU * hz * t + phase).sin())
+            .sum::<f64>() as f32
+    };
+    (
+        wave([(3.1, 0.4, 0.5), (5.3, 2.1, 0.3), (1.7, 4.0, 0.2)]),
+        wave([(4.3, 1.3, 0.5), (2.3, 5.2, 0.3), (6.7, 0.9, 0.2)]),
+    )
+}
+
 /// dB of a cascade of resonators at `hz` relative to DC gain.
 fn formant_db(t: &Target, hz: f32) -> f32 {
     let mut db = 0.0;
@@ -186,6 +242,12 @@ pub fn frames(segments: &[Segment], pitch: &[f32]) -> Vec<Frame> {
         if here.silent {
             continue;
         }
+        // A live voice never holds still: the formants and the loudness
+        // waver a little, slowly and without a pattern.
+        let (shift, shimmer) = waver(t);
+        for f in tract.formants.iter_mut() {
+            *f *= 1.0 + WAVER_FORMANTS * shift;
+        }
         let progress = ((t - s.start) / s.length().max(1e-6)) as f32;
         // Stops: closure for the first part, then the burst.
         let (voice_gain, noise_gain) = match s.phoneme.class() {
@@ -228,7 +290,13 @@ pub fn frames(segments: &[Segment], pitch: &[f32]) -> Vec<Frame> {
         for (g, value) in frame.env.iter_mut().enumerate() {
             let hz = grid_hz(g).max(1.0);
             let tilt = TILT * (hz / 250.0).max(1.0).log2();
-            let periodic = LEVEL + voice_gain + tilt + formant_db(&tract, hz) + fade_db;
+            let periodic = LEVEL
+                + voice_gain
+                + tilt
+                + formant_db(&tract, hz)
+                + color(hz)
+                + WAVER_DB * shimmer
+                + fade_db;
             let noise = match here.noise {
                 Some((center, width, _)) => {
                     let x = (hz - center) / width;
@@ -244,14 +312,14 @@ pub fn frames(segments: &[Segment], pitch: &[f32]) -> Vec<Frame> {
         for b in 0..AP_BANDS {
             let hz = (AP_EDGES[b] + AP_EDGES[b + 1]) * 0.5;
             let tilt = TILT * (hz / 250.0).max(1.0).log2();
-            let periodic = LEVEL + voice_gain + tilt + formant_db(&tract, hz);
+            let periodic = LEVEL + voice_gain + tilt + formant_db(&tract, hz) + color(hz);
             let noise = here.noise.map_or(FLOOR_DB, |(center, width, _)| {
                 let x = (hz - center) / width;
                 LEVEL + noise_gain - 12.0 * x * x
             });
             let (pp, pn) = (10f32.powf(periodic / 10.0), 10f32.powf(noise / 10.0));
             // A little breath in the highest bands of every vowel.
-            let floor = 0.005 + 0.12 * ((hz - 3000.0) / 6000.0).clamp(0.0, 1.0);
+            let floor = BREATH[b];
             frame.ap[b] = if voiced {
                 (pn / (pp + pn)).max(floor)
             } else {
@@ -298,5 +366,13 @@ mod tests {
         // /i/ has a low F1 and a high F2.
         assert!(i.env_at(2300.0) > a.env_at(2300.0));
         assert!(i.env_at(750.0) < a.env_at(750.0));
+        // Like a recorded voice, a vowel keeps some air above 5 kHz and is a
+        // little breathy there, where a bare pulse train would buzz.
+        assert!(
+            a.env_at(6500.0) > a.env_at(750.0) - 55.0,
+            "{}",
+            a.env_at(6500.0) - a.env_at(750.0)
+        );
+        assert!(a.ap[5] > 0.1 && a.ap[1] < 0.01);
     }
 }

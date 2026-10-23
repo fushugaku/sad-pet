@@ -467,6 +467,24 @@ fn main() {
                 );
             }
         }
+        "profile" => {
+            // The average voiced envelope and aperiodicity, to set renders
+            // beside recordings.
+            let hz: Vec<String> = listen::PROFILE_HZ
+                .iter()
+                .map(|h| format!("{h:>6.0}"))
+                .collect();
+            println!("{:>28} {} | aperiodicity per band", "Hz", hz.join(""));
+            for path in &args.positional[1..] {
+                let audio = wav::read(&std::fs::read(path).unwrap_or_else(|e| fail(e)))
+                    .unwrap_or_else(|e| fail(e));
+                let (env, ap) = listen::profile(&audio.samples, audio.rate);
+                let name = path.rsplit('/').next().unwrap_or(path);
+                let env: Vec<String> = env.iter().map(|v| format!("{v:>6.1}")).collect();
+                let ap: Vec<String> = ap.iter().map(|v| format!("{v:.2}")).collect();
+                println!("{:>28} {} | {}", name, env.join(""), ap.join(" "));
+            }
+        }
         "listen" => {
             let dir = args
                 .positional

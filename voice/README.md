@@ -29,7 +29,9 @@ with no threads or platform code, so the plug-ins, the app and the browser
    common singing level, and the middle of each vowel moves a third of the
    way toward the voice's typical shape of that vowel near the sung pitch, so
    takes recorded on different days match without blurring the formants. The built-in voice
-   (`formant`) instead glides between formant and noise targets per phoneme.
+   (`formant`) instead glides between formant and noise targets per phoneme;
+   its overall color and breathiness are fitted to what the bundled voicebanks
+   sing in the listening set, and its formants, level and period waver a little.
 5. **Voice color** (`params`). Dynamics, Breathiness, Brightness, Clearness,
    Character (formant scale), Exciter, Growl, Air and Mouth act on the frames.
 6. **Vocoder** (`vocoder`). A WORLD-style source-filter synthesis: per glottal

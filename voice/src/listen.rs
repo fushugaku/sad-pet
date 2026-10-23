@@ -182,6 +182,38 @@ pub fn measure(samples: &[f32], rate: u32) -> Metrics {
     }
 }
 
+/// Frequencies `profile` reads the envelope at, Hz.
+pub const PROFILE_HZ: [f32; 13] = [
+    250.0, 500.0, 750.0, 1000.0, 1500.0, 2000.0, 2500.0, 3000.0, 4000.0, 5000.0, 6500.0, 8000.0,
+    10000.0,
+];
+
+/// The average voiced sound of a render: its envelope at `PROFILE_HZ`
+/// (dB from its 150 Hz – 6 kHz level) and the aperiodicity of each band.
+pub fn profile(samples: &[f32], rate: u32) -> ([f32; 13], [f32; 8]) {
+    let frames = analysis::analyze(samples, rate, &analysis::Options::default());
+    let loudest = frames.iter().map(|f| f.level()).fold(f32::MIN, f32::max);
+    let (mut env, mut ap, mut count) = ([0.0f32; 13], [0.0f32; 8], 0);
+    for f in frames
+        .iter()
+        .filter(|f| f.voiced() && f.level() > loudest - 20.0)
+    {
+        let level = sad_pet_voice::spectrum::color_level(&f.env);
+        for (e, hz) in env.iter_mut().zip(PROFILE_HZ) {
+            let at = grid_position(hz);
+            let (i, t) = (at as usize, at.fract());
+            let v = f.env[i] + (f.env[(i + 1).min(f.env.len() - 1)] - f.env[i]) * t;
+            *e += v - level;
+        }
+        for (a, v) in ap.iter_mut().zip(&f.ap) {
+            *a += v;
+        }
+        count += 1;
+    }
+    let n = count.max(1) as f32;
+    (env.map(|v| v / n), ap.map(|v| v / n))
+}
+
 /// One render of the set: a phrase sung by a voice.
 #[derive(Serialize, Deserialize)]
 struct Take {

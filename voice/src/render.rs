@@ -19,6 +19,9 @@ pub const PHRASE_GAP: f64 = 0.35;
 /// Audio before the first note (breath and consonants) and after the last.
 pub const LEAD: f64 = 0.6;
 pub const TAIL: f64 = 0.3;
+/// The synthetic voice's period and level jitter (`vocoder::Pulse`): about
+/// a singer's own, ±0.4 % in period.
+const JITTER: f32 = 0.3;
 
 #[derive(Clone, Debug)]
 pub enum Voice {
@@ -331,6 +334,11 @@ pub fn render(
         // Pauses keep the voice's own breath; parameters shape the singing.
         if segments[seg_at].role != Role::Pause {
             *pulse = params::apply(frame, &values, style.robot);
+            if matches!(voice, Voice::Formant) && !style.robot {
+                // Recordings carry their own period and level wander; the
+                // synthetic voice needs it added.
+                pulse.jitter = pulse.jitter.max(JITTER);
+            }
             if db != 0.0 {
                 for e in frame.env.iter_mut() {
                     *e += db;
