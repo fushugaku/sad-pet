@@ -24,7 +24,7 @@ jobs:
         include:
           - platform: macOS-universal
             runner: macos-15
-            # Profile-guided only where measured; see plugin/README.md#build.
+            # Profile-guided only where it is faster; see plugin/README.md#build.
             arguments: --universal --smoke --pgo aarch64-apple-darwin
           - platform: Windows-x64
             runner: windows-latest

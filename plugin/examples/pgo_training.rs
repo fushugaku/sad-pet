@@ -20,7 +20,7 @@ use sad_pet::{
 };
 use sad_pet_plugin::*;
 use serde_json::{Value, json};
-use std::time::Instant;
+use std::{io::Read as _, time::Instant};
 
 const BLOCK: usize = 256;
 /// Host parameters moved every few blocks, like DAW automation lanes.
@@ -381,8 +381,13 @@ fn main() {
     h.request("/api/timbres/update", json!({"id":drums,"muted":true}));
     h.run(1.0);
     let saved = unsafe { sad_control_save(h.control) };
-    let restored = unsafe { sad_control_restore(h.control, saved.data, saved.len) };
+    // A zlib stream, which the JUCE wrapper inflates before restoring it.
+    let mut state = Vec::new();
+    flate2::read::ZlibDecoder::new(unsafe { std::slice::from_raw_parts(saved.data, saved.len) })
+        .read_to_end(&mut state)
+        .unwrap();
     unsafe { sad_bytes_free(saved.data, saved.len) };
+    let restored = unsafe { sad_control_restore(h.control, state.as_ptr(), state.len()) };
     assert!(restored, "scene restore");
     h.run(1.0);
     h.report("app_multi", true);

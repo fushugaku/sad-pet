@@ -108,7 +108,7 @@ def main():
     report = table(rounds, programs)
     title = f"PGO benchmark, {target}, fastest of {args.rounds} rounds"
     print(f"\n{title}\n{report}")
-    (build / "results.md").write_text(f"## {title}\n\n{report}\n")
+    (build / "results.md").write_text(f"## {title}\n\n{report}\n", encoding="utf-8")
     (build / "results.json").write_text(json.dumps({"target": target, "rounds": rounds}, indent=1))
     if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(summary, "a", encoding="utf-8") as file:
