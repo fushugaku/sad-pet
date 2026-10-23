@@ -457,7 +457,8 @@ impl Registry {
         }
         if path == "/api/transport" && !data.is_null() {
             if let Some(playing) = data["playing"].as_bool() {
-                self.clock.play(playing);
+                let lead_in = self.vocal_lead_in();
+                self.clock.play(playing, lead_in);
             }
             let mut shared = serde_json::Map::new();
             for key in ["playing", "midi_gate", "clear_hold"] {

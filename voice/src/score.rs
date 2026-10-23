@@ -170,6 +170,9 @@ pub struct Note {
     pub vibrato: Vibrato,
     pub attack: Effect<Attack>,
     pub release: Effect<Release>,
+    /// A voicebank unit (its alias) this note's syllable should use.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub unit: String,
 }
 impl Default for Note {
     fn default() -> Self {
@@ -185,6 +188,7 @@ impl Default for Note {
             vibrato: Vibrato::default(),
             attack: Effect::default(),
             release: Effect::default(),
+            unit: String::new(),
         }
     }
 }
@@ -355,8 +359,10 @@ pub struct Score {
     pub voice: String,
     /// Semitones added to every note.
     pub transpose: i8,
-    /// Length in ticks after which the score starts over; 0 sings it once.
+    /// Tick where the score goes back to `loop_start`; 0 sings it once.
     pub loop_ticks: u32,
+    /// Tick the loop goes back to; notes before it are an intro sung once.
+    pub loop_start: u32,
 }
 impl Default for Score {
     fn default() -> Self {
@@ -374,6 +380,7 @@ impl Default for Score {
             voice: String::new(),
             transpose: 0,
             loop_ticks: 0,
+            loop_start: 0,
         }
     }
 }
@@ -414,6 +421,9 @@ impl Score {
                 .collect();
         }
         self.loop_ticks = self.loop_ticks.min(TICKS_PER_BEAT * 4 * 1024);
+        if self.loop_start >= self.loop_ticks {
+            self.loop_start = 0;
+        }
         self.tempo.retain(|t| t.bpm.is_finite() && t.bpm > 0.0);
         self.tempo.sort_by_key(|t| t.tick);
         self.tempo.dedup_by_key(|t| t.tick);
@@ -577,6 +587,20 @@ mod tests {
         let pass = score.one_pass();
         assert_eq!(pass.notes.len(), 2);
         assert_eq!(pass.notes[1].length, 480);
+    }
+
+    #[test]
+    fn a_loop_starts_before_it_ends() {
+        let mut score = Score {
+            loop_ticks: 1920,
+            loop_start: 2400,
+            ..Default::default()
+        };
+        score.sanitize();
+        assert_eq!(score.loop_start, 0);
+        score.loop_start = 960;
+        score.sanitize();
+        assert_eq!(score.loop_start, 960);
     }
 
     #[test]

@@ -105,7 +105,8 @@ assert.ok(at(1.1) > 0.01, `The second note sings: ${at(1.1)}`);
 assert.ok(at(2.0) < 1e-3, `The rest is quiet: ${at(2.0)}`);
 assert.ok(at(2.6) > 0.01, `The last phrase sings: ${at(2.6)}`);
 const state = core.request("/api/vocal/state");
-assert.ok(state.playing && Math.abs(state.position - 3.2) < 0.02, JSON.stringify(state));
+// Playback from 0 began 0.1 s early, for the first note's lead-in.
+assert.ok(state.playing && Math.abs(state.position - 3.1) < 0.02, JSON.stringify(state));
 core.request("/api/transport", { playing: false });
 assert.equal(core.request("/api/vocal/state").playing, false, "The global Stop stops the song");
 
@@ -130,8 +131,10 @@ const looped = levels(3.2);
 const loopAt = (s) => max(looped.slice(Math.floor((s * rate) / 128), Math.ceil(((s + 0.2) * rate) / 128)));
 assert.ok(loopAt(2.1) > 0.01, `The first note sings again: ${loopAt(2.1)}`);
 assert.ok(loopAt(2.6) > 0.01, `The second note sings again: ${loopAt(2.6)}`);
+// The first note (0.5 s) leads in 0.6 s before it, so playback from 0
+// starts 0.1 s early for the first pass to have its consonant too.
 const wrapped = core.request("/api/vocal/state").position;
-assert.ok(Math.abs(wrapped - (3.2 - 1.5 * 2)) < 0.02, `The position wraps: ${wrapped}`);
+assert.ok(Math.abs(wrapped - (3.2 - 0.1 - 1.5 * 2)) < 0.02, `The position wraps: ${wrapped}`);
 core.request("/api/transport", { playing: false });
 delete score.loop_ticks;
 core.request("/api/vocal/score", { score });
@@ -148,6 +151,24 @@ deliver();
   vocal.addVoice("kasane-teto", bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length));
   const listed = vocal.command({ type: "voices" });
   assert.ok(listed.some((v) => v.id === "kasane-teto" && v.units > 1000), JSON.stringify(listed));
+
+  // The editor learns which units sing each note, and a note can ask for one.
+  core.request("/api/vocal/score", { score: { ...score, voice: "kasane-teto" } });
+  for (const job of jobs()) vocal.command(job);
+  let units = vocal.command({ type: "units", id: part.id });
+  assert.ok(units["1"]?.used.length && units["1"].options.length > 1, JSON.stringify(units));
+  const other = units["1"].options.find((o) => !units["1"].used.includes(o));
+  const asked = structuredClone(score);
+  asked.voice = "kasane-teto";
+  asked.notes[0].unit = other;
+  core.request("/api/vocal/score", { score: asked });
+  for (const job of jobs()) vocal.command(job);
+  units = vocal.command({ type: "units", id: part.id });
+  assert.ok(units["1"].used.includes(other), `${other} sings the note: ${JSON.stringify(units["1"])}`);
+  core.request("/api/vocal/score", { score });
+  for (const job of jobs()) vocal.command(job);
+  renderAll();
+  deliver();
 }
 
 // A loaded preset keeps the role and the score; Granular and Filters work.

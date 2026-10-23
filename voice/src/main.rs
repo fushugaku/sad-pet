@@ -8,9 +8,12 @@
 use sad_pet_voice::bank::Voicebank;
 use sad_pet_voice::phoneme::Language;
 use sad_pet_voice::render::{self, Voice};
-use sad_pet_voice::score::{Note, Score, TICKS_PER_BEAT};
+use sad_pet_voice::score::{Note, Score};
 use sad_pet_voice::{analysis, utau, wav};
 use std::path::PathBuf;
+
+// The listening set and its measures (command line only).
+mod listen;
 use std::sync::Arc;
 
 struct Args {
@@ -62,95 +65,12 @@ fn output(args: &Args) -> PathBuf {
 }
 
 fn demo(language: Language) -> Score {
-    // A well-known tune in each language, one syllable per note: lyric, key
-    // and length in eighths (0: an eighth's rest).
-    let (bpm, tune): (f32, &[(&str, u8, u32)]) = match language {
-        Language::Ja => (
-            // さくら さくら
-            100.0,
-            &[
-                ("さ", 69, 2),
-                ("く", 69, 2),
-                ("ら", 71, 4),
-                ("さ", 69, 2),
-                ("く", 69, 2),
-                ("ら", 71, 4),
-                ("や", 69, 2),
-                ("よ", 71, 2),
-                ("い", 72, 2),
-                ("の", 71, 2),
-                ("そ", 69, 2),
-                ("ら", 71, 1),
-                ("", 69, 1),
-                ("は", 65, 4),
-            ],
-        ),
-        Language::En => (
-            // Twinkle, Twinkle, Little Star
-            110.0,
-            &[
-                ("twin-", 60, 2),
-                ("kle", 60, 2),
-                ("twin-", 67, 2),
-                ("kle", 67, 2),
-                ("lit-", 69, 2),
-                ("tle", 69, 2),
-                ("star", 67, 4),
-                ("how", 65, 2),
-                ("I", 65, 2),
-                ("won-", 64, 2),
-                ("der", 64, 2),
-                ("what", 62, 2),
-                ("you", 62, 2),
-                ("are", 60, 4),
-            ],
-        ),
-        Language::Ru => (
-            // В лесу родилась ёлочка
-            100.0,
-            &[
-                ("в ле-", 60, 1),
-                ("су", 69, 1),
-                ("ро-", 69, 1),
-                ("ди-", 67, 1),
-                ("лась", 69, 1),
-                ("ё-", 65, 1),
-                ("лоч-", 60, 1),
-                ("ка", 60, 1),
-                ("в ле-", 60, 1),
-                ("су", 69, 1),
-                ("о-", 69, 1),
-                ("на", 70, 1),
-                ("рос-", 67, 1),
-                ("ла", 72, 3),
-            ],
-        ),
-    };
-    let mut score = Score {
-        language,
-        tempo: vec![sad_pet_voice::score::Tempo { tick: 0, bpm }],
-        ..Default::default()
-    };
-    let eighth = TICKS_PER_BEAT / 2;
-    let mut tick = TICKS_PER_BEAT * 2;
-    for &(lyric, key, eighths) in tune {
-        if eighths == 0 {
-            tick += eighth;
-            continue;
-        }
-        score.notes.push(Note {
-            id: score.notes.len() as u32 + 1,
-            start: tick,
-            length: eighths * eighth,
-            key,
-            // "" holds the vowel of the note before on a new pitch.
-            lyric: if lyric.is_empty() { "-" } else { lyric }.to_string(),
-            ..Default::default()
-        });
-        tick += eighths * eighth;
-    }
-    score.sanitize();
-    score
+    // The first phrase of the listening set in that language.
+    listen::phrases()
+        .into_iter()
+        .find(|p| p.language == language)
+        .map(|p| p.score())
+        .unwrap_or_default()
 }
 
 fn write(path: &PathBuf, rate: u32, samples: &[f32]) {
@@ -502,21 +422,20 @@ fn main() {
                 // Which voicebank units each phrase joins, with its syllables.
                 let timeline = score.timeline(None);
                 for phrase in render::plan(&score, &timeline, &id, rate, None) {
-                    let mut units = Vec::new();
-                    render::render_with_units(
-                        &score,
-                        &timeline,
-                        &phrase,
-                        &voice,
-                        rate,
-                        Some(&mut units),
-                    );
-                    let lyrics: Vec<&str> = phrase
-                        .notes
-                        .iter()
-                        .map(|&n| score.notes[n].lyric.as_str())
+                    let units: Vec<String> = render::units(&score, &timeline, &phrase, &voice)
+                        .into_iter()
+                        .map(|(n, u)| {
+                            let others: Vec<&str> =
+                                u.options.iter().take(5).map(String::as_str).collect();
+                            format!(
+                                "{} = {} (or {})",
+                                score.notes[n].lyric,
+                                u.used.join(" + "),
+                                others.join(", ")
+                            )
+                        })
                         .collect();
-                    eprintln!("{}: {}", lyrics.join(" "), units.join(" | "));
+                    eprintln!("{}", units.join(" | "));
                 }
             }
             let started = std::time::Instant::now();
@@ -531,147 +450,46 @@ fn main() {
         }
         "reconstruct" => reconstruct(&args),
         "hnr" => {
-            // Harmonics-to-noise ratio of the voiced frames, from the
-            // normalized autocorrelation at the period (independent of the
-            // analysis' aperiodicity), full band and above ~2 kHz.
+            // Noise, harmonics and formant measures of renders or recordings.
             for path in &args.positional[1..] {
                 let audio = wav::read(&std::fs::read(path).unwrap_or_else(|e| fail(e)))
                     .unwrap_or_else(|e| fail(e));
-                let frames =
-                    analysis::analyze(&audio.samples, audio.rate, &analysis::Options::default());
-                let x = &audio.samples;
-                let high: Vec<f32> = (0..x.len())
-                    .map(|i| {
-                        let at = |k: usize| x.get(i.wrapping_sub(k)).copied().unwrap_or(0.0);
-                        at(0) - 2.0 * at(1) + at(2)
-                    })
-                    .collect();
-                let rate = audio.rate as f32;
-                let ratio = |s: &[f32], center: usize, period: f32| {
-                    let n = (0.04 * rate) as usize;
-                    let start = center.saturating_sub(n / 2);
-                    let mut best = 0.0f32;
-                    let lo = (period * 0.9) as usize;
-                    let hi = (period * 1.1).ceil() as usize;
-                    for lag in lo.max(1)..=hi {
-                        if start + n + lag >= s.len() {
-                            return None;
-                        }
-                        let (mut xy, mut xx, mut yy) = (0.0f64, 0.0f64, 0.0f64);
-                        for i in start..start + n {
-                            let (a, b) = (s[i] as f64, s[i + lag] as f64);
-                            xy += a * b;
-                            xx += a * a;
-                            yy += b * b;
-                        }
-                        best = best.max((xy / (xx * yy).sqrt().max(1e-12)) as f32);
-                    }
-                    let r = best.clamp(1e-3, 0.9999);
-                    Some(10.0 * (r / (1.0 - r)).log10())
-                };
-                let loudest = frames.iter().map(|f| f.level()).fold(f32::MIN, f32::max);
-                let (mut full, mut top, mut count, mut voiced, mut loud) = (0.0, 0.0, 0, 0, 0);
-                for (i, f) in frames.iter().enumerate().step_by(4) {
-                    if f.level() < loudest - 30.0 {
-                        continue;
-                    }
-                    loud += 1;
-                    if !f.voiced() {
-                        continue;
-                    }
-                    voiced += 1;
-                    let center = (i as f32 * 0.005 * rate) as usize;
-                    let period = rate / f.f0;
-                    if let (Some(a), Some(b)) =
-                        (ratio(x, center, period), ratio(&high, center, period))
-                    {
-                        full += a;
-                        top += b;
-                        count += 1;
-                    }
-                }
-                let n = count.max(1) as f32;
-                // Formant contrast: how far the envelope swings around its
-                // tilt between 300 Hz and 4 kHz (blurred vowels swing less).
-                let (lo, hi) = (
-                    sad_pet_voice::spectrum::grid_position(300.0) as usize,
-                    sad_pet_voice::spectrum::grid_position(4000.0) as usize,
-                );
-                let mut contrast = (0.0f64, 0usize);
-                let mut brightness = (0.0f64, ());
-                for f in frames
-                    .iter()
-                    .filter(|f| f.voiced() && f.level() > loudest - 20.0)
-                {
-                    let y = &f.env[lo..=hi];
-                    let m = y.len() as f64;
-                    let (sx, sy) = (
-                        (0..y.len()).map(|i| i as f64).sum::<f64>(),
-                        y.iter().map(|&v| v as f64).sum::<f64>(),
-                    );
-                    let sxx = (0..y.len()).map(|i| (i * i) as f64).sum::<f64>();
-                    let sxy = y
-                        .iter()
-                        .enumerate()
-                        .map(|(i, &v)| i as f64 * v as f64)
-                        .sum::<f64>();
-                    let slope = (m * sxy - sx * sy) / (m * sxx - sx * sx);
-                    let icpt = (sy - slope * sx) / m;
-                    let var = y
-                        .iter()
-                        .enumerate()
-                        .map(|(i, &v)| (v as f64 - icpt - slope * i as f64).powi(2))
-                        .sum::<f64>()
-                        / m;
-                    contrast.0 += var.sqrt();
-                    contrast.1 += 1;
-                    let band = |a: f32, b: f32| {
-                        let (a, b) = (
-                            sad_pet_voice::spectrum::grid_position(a) as usize,
-                            sad_pet_voice::spectrum::grid_position(b) as usize,
-                        );
-                        f.env[a..=b].iter().sum::<f32>() / (b - a + 1) as f32
-                    };
-                    brightness.0 += (band(2000.0, 5000.0) - band(200.0, 1000.0)) as f64;
-                }
-                // Hiss: how much of the sound is unvoiced, and how loud its
-                // loudest tenth is next to the vowels.
-                let active: Vec<_> = frames
-                    .iter()
-                    .filter(|f| f.level() > loudest - 40.0)
-                    .collect();
-                let median = |mut v: Vec<f32>| {
-                    v.sort_by(f32::total_cmp);
-                    v.get(v.len() / 2).copied().unwrap_or(f32::NAN)
-                };
-                let vowels = median(
-                    active
-                        .iter()
-                        .filter(|f| f.voiced())
-                        .map(|f| f.level())
-                        .collect(),
-                );
-                let mut hiss: Vec<f32> = active
-                    .iter()
-                    .filter(|f| !f.voiced())
-                    .map(|f| f.level())
-                    .collect();
-                hiss.sort_by(f32::total_cmp);
-                let loudest_hiss = hiss.get(hiss.len() * 9 / 10).copied().unwrap_or(f32::NAN);
+                let m = listen::measure(&audio.samples, audio.rate);
                 println!(
-                    "{path}: hiss {:.0}% of the sound, its loudest tenth {:+.1} dB from the vowels",
-                    100.0 * hiss.len() as f32 / active.len().max(1) as f32,
-                    loudest_hiss - vowels
-                );
-                println!(
-                    "{path}: HNR {:.1} dB, above 2 kHz {:.1} dB, voiced {:.0}% of loud frames, formant contrast {:.2} dB, 2-5 kHz {:+.1} dB from 0.2-1 kHz",
-                    full / n,
-                    top / n,
-                    100.0 * voiced as f32 / loud.max(1) as f32,
-                    contrast.0 / contrast.1.max(1) as f64,
-                    brightness.0 / contrast.1.max(1) as f64
+                    "{path}: hiss {:.0}% (loudest {:+.1} dB from the vowels), HNR {:.1} dB \
+                     (above 2 kHz {:.1}), formant contrast {:.2} dB, 2-5 kHz {:+.1} dB",
+                    m.hiss_share * 100.0,
+                    m.hiss_db,
+                    m.hnr,
+                    m.hnr_high,
+                    m.contrast,
+                    m.brightness
                 );
             }
+        }
+        "listen" => {
+            let dir = args
+                .positional
+                .get(1)
+                .unwrap_or_else(|| fail("missing output folder"));
+            let packs = args
+                .options
+                .get("packs")
+                .map_or("voice/packs", String::as_str);
+            let rate = args
+                .options
+                .get("rate")
+                .and_then(|r| r.parse().ok())
+                .unwrap_or(32_000);
+            listen::run(
+                std::path::Path::new(dir),
+                args.options.get("before").map(std::path::Path::new),
+                std::path::Path::new(packs),
+                rate,
+                args.options
+                    .get("label")
+                    .map_or("This build", String::as_str),
+            );
         }
         "resynth" => {
             // Analysis and resynthesis of a recording at its own pitch, with
@@ -728,7 +546,9 @@ fn main() {
             }
         }
         _ => {
-            eprintln!("usage: sad-voice import|info|render|demo|analyze|resynth|reconstruct ...");
+            eprintln!(
+                "usage: sad-voice import|info|render|demo|analyze|resynth|reconstruct|hnr|listen ..."
+            );
             std::process::exit(2);
         }
     }

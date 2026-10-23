@@ -103,10 +103,16 @@ pub fn plan(
             (start, end)
         })
         .collect();
-    // A looping score's first phrase follows the last one of the pass
-    // before, and may start before 0: its lead-in sounds at that pass's end.
-    let period = (score.loop_ticks > 0).then(|| timeline.seconds(score.loop_ticks as f64));
-    let wrapped_end = period.and_then(|p| seconds.last().map(|s| s.1 - p));
+    // A looping score's first phrase in the loop follows the last one of
+    // the pass before, and may start before the loop does: its lead-in
+    // sounds at that pass's end.
+    let looping = (score.loop_ticks > 0).then(|| {
+        (
+            timeline.seconds(score.loop_start as f64),
+            timeline.seconds(score.loop_ticks as f64),
+        )
+    });
+    let wrapped_end = looping.and_then(|(a, b)| seconds.last().map(|s| s.1 - (b - a)));
     let mut phrases: Vec<Phrase> = Vec::new();
     let mut current: Vec<usize> = Vec::new();
     let flush = |current: &mut Vec<usize>, phrases: &mut Vec<Phrase>| {
@@ -120,7 +126,12 @@ pub fn plan(
             .map(|p| p.notes.last().map_or(0.0, |&n| seconds[n].1))
             .or(wrapped_end);
         let breath = previous_end.is_none_or(|e| seconds[first].0 - e >= 0.5);
-        let earliest = period.map_or(0.0, |p| -p);
+        // A first note's consonants may come before 0: playback from the
+        // start begins early enough for them (`Song::lead_in`).
+        let earliest = match looping {
+            Some((a, b)) if seconds[first].0 >= a => a - (b - a),
+            _ => f64::NEG_INFINITY,
+        };
         let start = (seconds[first].0 - LEAD)
             .max(earliest)
             .min(seconds[first].0);
@@ -163,7 +174,10 @@ pub fn plan(
         if let Some(&last) = current.last() {
             // A melisma or a "+" syllable never starts a new phrase.
             let continues = matches!(texts[i], NoteText::Hold);
-            if seconds[i].0 - seconds[last].1 >= PHRASE_GAP && !continues {
+            // The loop's first note starts a phrase of its own.
+            let enters_loop =
+                looping.is_some_and(|(a, _)| seconds[last].0 < a && seconds[i].0 >= a);
+            if (seconds[i].0 - seconds[last].1 >= PHRASE_GAP && !continues) || enters_loop {
                 flush(&mut current, &mut phrases);
             }
         }
@@ -173,26 +187,16 @@ pub fn plan(
     phrases
 }
 
-/// Renders one phrase at `rate`; the samples start at `phrase.start`.
-pub fn render(
-    score: &Score,
-    timeline: &Timeline,
-    phrase: &Phrase,
-    voice: &Voice,
-    rate: u32,
-) -> Vec<f32> {
-    render_with_units(score, timeline, phrase, voice, rate, None)
+/// A phrase laid out for synthesis: its notes' times (seconds from the
+/// phrase start), the phonemes' timing and the pitch per frame.
+struct Layout<'a> {
+    notes: Vec<&'a crate::score::Note>,
+    times: Vec<(f64, f64)>,
+    segments: Vec<crate::timing::Segment>,
+    contour: Vec<f32>,
 }
 
-/// `render`, also naming the voicebank units it joins (for diagnostics).
-pub fn render_with_units(
-    score: &Score,
-    timeline: &Timeline,
-    phrase: &Phrase,
-    voice: &Voice,
-    rate: u32,
-    units: Option<&mut Vec<String>>,
-) -> Vec<f32> {
+fn layout<'a>(score: &'a Score, timeline: &Timeline, phrase: &Phrase, voice: &Voice) -> Layout<'a> {
     let origin = phrase.start;
     let total = phrase.end - phrase.start;
     let frames = (total / FRAME_SECONDS as f64).ceil() as usize + 1;
@@ -250,14 +254,55 @@ pub fn render_with_units(
     };
     let portamento = |t: f64| score.param(Param::PortamentoTiming, tick_at(t));
     let contour = pitch::contour(&pitch_notes, frames, style, &bend, &portamento, phrase.key);
+    Layout {
+        notes,
+        times,
+        segments,
+        contour,
+    }
+}
 
+/// For each note of the phrase (as score indices): the voicebank units its
+/// syllable is joined from and others that could sing it. Empty for the
+/// built-in voice.
+pub fn units(
+    score: &Score,
+    timeline: &Timeline,
+    phrase: &Phrase,
+    voice: &Voice,
+) -> Vec<(usize, concat::NoteUnits)> {
+    let Voice::Bank(bank) = voice else {
+        return Vec::new();
+    };
+    let l = layout(score, timeline, phrase, voice);
+    let prefer: Vec<&str> = l.notes.iter().map(|n| n.unit.as_str()).collect();
+    let found = concat::note_units(bank, &l.segments, &l.contour, &prefer, l.notes.len());
+    phrase.notes.iter().copied().zip(found).collect()
+}
+
+/// Renders one phrase at `rate`; the samples start at `phrase.start`.
+pub fn render(
+    score: &Score,
+    timeline: &Timeline,
+    phrase: &Phrase,
+    voice: &Voice,
+    rate: u32,
+) -> Vec<f32> {
+    let origin = phrase.start;
+    let total = phrase.end - phrase.start;
+    let Layout {
+        notes,
+        times,
+        segments,
+        contour,
+    } = layout(score, timeline, phrase, voice);
+    let style = &score.style;
+    let tick_at = |t: f64| timeline.tick(t + origin) as f32;
     let mut voice_frames = match voice {
         Voice::Formant => formant::frames(&segments, &contour),
         Voice::Bank(bank) => {
-            if let Some(units) = units {
-                *units = concat::describe(bank, &segments, &contour);
-            }
-            concat::frames(bank, &segments, &contour, 0.25)
+            let prefer: Vec<&str> = notes.iter().map(|n| n.unit.as_str()).collect();
+            concat::frames(bank, &segments, &contour, 0.25, &prefer)
         }
     };
     // Parameters, note effects and pulse controls per frame.
@@ -378,22 +423,34 @@ mod tests {
     }
 
     #[test]
-    fn a_looping_score_sings_its_first_consonant_before_zero() {
+    fn a_first_note_sings_its_consonant_before_zero() {
         let mut score = song(Language::Ru, &["ла", "ла"]);
         score.notes[0].start = 0;
         let timeline = score.timeline(None);
         let once = plan(&score, &timeline, "", 48_000, None);
-        assert_eq!(once[0].start, 0.0, "nothing plays before 0 without a loop");
+        assert!(once[0].start < -0.3, "{}", once[0].start);
         score.loop_ticks = TICKS_PER_BEAT * 8;
         let looped = plan(&score, &timeline, "", 48_000, None);
         assert!(looped[0].start < -0.3, "{}", looped[0].start);
-        assert_ne!(once[0].key, looped[0].key);
         let audio = render(&score, &timeline, &looped[0], &Voice::Formant, 48_000);
         let before: f32 = audio[..(-looped[0].start * 48_000.0) as usize]
             .iter()
             .map(|s| s * s)
             .sum();
         assert!(before > 1e-3, "the «л» sounds before the beat: {before}");
+    }
+
+    #[test]
+    fn the_loop_start_begins_a_phrase_and_its_lead_in_may_reach_back() {
+        let mut score = song(Language::Ru, &["ла", "ла", "ла"]);
+        // Notes at beats 2, 3 and 4; the loop goes from beat 3 to beat 6.
+        score.loop_start = TICKS_PER_BEAT * 3;
+        score.loop_ticks = TICKS_PER_BEAT * 6;
+        let timeline = score.timeline(None);
+        let phrases = plan(&score, &timeline, "", 48_000, None);
+        assert_eq!(phrases.len(), 2, "the intro note sings apart");
+        assert_eq!(phrases[1].notes, [1, 2]);
+        assert!(phrases[1].start < timeline.seconds(score.loop_start as f64));
     }
 
     #[test]

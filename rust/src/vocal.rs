@@ -63,72 +63,104 @@ impl Clip {
     }
 }
 
-/// Frames after which a score starts over, if it loops.
-pub fn period(score: &Score, host: Option<&[Tempo]>, rate: u32) -> Option<u64> {
+/// A looping song's region, in frames: playback goes from `end` back to
+/// `start`. `lead` bounds how early a phrase starts before its first note.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Loop {
+    pub start: i64,
+    pub end: i64,
+    pub lead: i64,
+}
+
+/// The frames a score loops over, if it does.
+pub fn looping(score: &Score, host: Option<&[Tempo]>, rate: u32) -> Option<Loop> {
     if score.loop_ticks == 0 {
         return None;
     }
-    let seconds = score.timeline(host).seconds(score.loop_ticks as f64);
-    Some((seconds * rate as f64).round() as u64).filter(|p| *p > 0)
+    let timeline = score.timeline(host);
+    let frames = |tick: u32| (timeline.seconds(tick as f64) * rate as f64).round() as i64;
+    let (start, end) = (frames(score.loop_start), frames(score.loop_ticks));
+    let lead = (render::LEAD * rate as f64).ceil() as i64;
+    (end > start).then_some(Loop { start, end, lead })
 }
 
 /// Every clip of one timbre, sorted by start.
 #[derive(Clone, Debug, Default)]
 pub struct Song {
     pub clips: Vec<Clip>,
-    /// Frames after which the song starts over (the score's loop).
-    pub period: Option<u64>,
+    /// The score's loop, in frames.
+    pub looping: Option<Loop>,
 }
 impl Song {
     pub fn new(mut clips: Vec<Clip>) -> Self {
         clips.sort_by_key(|c| c.start);
         Self {
             clips,
-            period: None,
+            looping: None,
         }
     }
-    /// Replaces the clips and keeps the period.
+    /// Replaces the clips and keeps the loop.
     pub fn set_clips(&mut self, clips: Vec<Clip>) {
-        let period = self.period;
+        let looping = self.looping;
         *self = Self::new(clips);
-        self.period = period;
+        self.looping = looping;
     }
-    /// Where a song position falls in the song.
-    pub fn wrap(&self, position: u64) -> u64 {
-        self.period.map_or(position, |p| position % p)
+    /// Where a song position falls in the score.
+    pub fn wrap(&self, position: i64) -> i64 {
+        match self.looping {
+            Some(l) if position >= l.end => l.start + (position - l.start) % (l.end - l.start),
+            _ => position,
+        }
+    }
+    /// Frames of lead-in before the song's start (a first note's consonants),
+    /// for playback from 0 to begin with.
+    pub fn lead_in(&self) -> u64 {
+        self.clips.first().map_or(0, |c| (-c.start).max(0) as u64)
     }
     /// Mixes the song into `out`, starting at `position`. A looping song
-    /// plays its first `period` frames over and over; what rings past the
-    /// end of a pass sounds over the start of the next, and what comes
-    /// before 0 (a first note's consonants) over the end of the pass before.
-    pub fn fill(&self, position: u64, out: &mut [f32]) {
+    /// plays up to its loop's end, then the loop over and over: what rings
+    /// past the end sounds over the start of the next pass, and the lead-in
+    /// of the loop's first phrase over the end of the pass before.
+    pub fn fill(&self, position: i64, out: &mut [f32]) {
         out.fill(0.0);
-        let Some(period) = self.period else {
-            self.mix(position as i64, out);
+        let Some(l) = self.looping else {
+            self.mix(position, out, |_| true);
             return;
         };
+        let length = l.end - l.start;
         let mut done = 0;
         while done < out.len() {
-            let at = position + done as u64;
-            let from = at % period;
-            let count = ((period - from) as usize).min(out.len() - done);
-            let block = &mut out[done..done + count];
-            let (from, period) = (from as i64, period as i64);
-            self.mix(from, block);
-            if at >= period as u64 {
-                self.mix(from + period, block);
+            let at = position + done as i64;
+            if at < l.start {
+                // Before the loop: the intro, or the lead-in before 0.
+                let count = ((l.start - at) as usize).min(out.len() - done);
+                self.mix(at, &mut out[done..done + count], |_| true);
+                done += count;
+                continue;
             }
-            self.mix(from - period, block);
+            let from = self.wrap(at);
+            let count = ((l.end - from) as usize).min(out.len() - done);
+            let block = &mut out[done..done + count];
+            self.mix(from, block, |_| true);
+            if at >= l.end {
+                // The pass before rings on.
+                self.mix(from + length, block, |c| c.start < l.end);
+            }
+            // The next pass's first phrase leads in.
+            self.mix(from - length, block, |c| {
+                c.start < l.start && c.start >= l.start - l.lead && c.end() > l.start
+            });
             done += count;
         }
     }
-    /// Adds the clips over `out.len()` frames from `position` into `out`.
-    fn mix(&self, position: i64, out: &mut [f32]) {
+    /// Adds the clips `take` accepts, over `out.len()` frames from
+    /// `position`, into `out`.
+    fn mix(&self, position: i64, out: &mut [f32], take: impl Fn(&Clip) -> bool) {
         let end = position + out.len() as i64;
         // Clips are short and few; skip those that end before the block.
         let first = self.clips.partition_point(|c| c.end() < position);
         for clip in self.clips[first..].iter().take_while(|c| c.start < end) {
-            if clip.end() <= position {
+            if clip.end() <= position || !take(clip) {
                 continue;
             }
             let from = position.max(clip.start);
@@ -269,12 +301,12 @@ impl Track {
     }
     /// Fills one block at a song position and reports where in the song
     /// that is.
-    pub fn fill(&mut self, position: u64, out: &mut [f32]) {
+    pub fn fill(&mut self, position: i64, out: &mut [f32]) {
         self.update();
         self.song.fill(position, out);
         if let Some(mailbox) = &self.mailbox {
             mailbox.position.store(
-                self.song.wrap(position),
+                self.song.wrap(position).max(0) as u64,
                 std::sync::atomic::Ordering::Relaxed,
             );
         }
@@ -295,21 +327,23 @@ fn give_back(mailbox: &Mailbox, song: Song) -> Result<(), Song> {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Clock {
     pub playing: bool,
-    /// Frames at the engine rate.
-    pub position: u64,
+    /// Frames at the engine rate; below 0 while a first note leads in.
+    pub position: i64,
     /// Where Play starts.
     pub start: u64,
 }
 impl Clock {
-    pub fn play(&mut self, playing: bool) {
+    /// Starts or stops. From the song's start, playback begins `lead_in`
+    /// frames early, so a first note's consonants sound on the first pass.
+    pub fn play(&mut self, playing: bool, lead_in: u64) {
         if playing && !self.playing {
-            self.position = self.start;
+            self.position = self.start as i64 - if self.start == 0 { lead_in as i64 } else { 0 };
         }
         self.playing = playing;
     }
     pub fn advance(&mut self, frames: usize) {
         if self.playing {
-            self.position += frames as u64;
+            self.position += frames as i64;
         }
     }
 }
@@ -403,7 +437,7 @@ pub struct Plan {
     pub voice_id: String,
     /// What the phrases sing: one pass of a looping score.
     pub score: Score,
-    pub period: Option<u64>,
+    pub looping: Option<Loop>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -466,7 +500,7 @@ impl Renderer {
             timeline,
             rate: job.rate,
             voice_id,
-            period: period(&score, job.host_tempo.as_deref(), job.rate),
+            looping: looping(&score, job.host_tempo.as_deref(), job.rate),
             score,
         }
     }
@@ -523,8 +557,18 @@ impl Renderer {
                 })
                 .collect(),
         );
-        song.period = plan.period;
+        song.looping = plan.looping;
         song
+    }
+    /// For each note of a plan (by id): the voicebank units it is sung with
+    /// and others that could sing it. Nothing for the built-in voice.
+    pub fn units(&self, plan: &Plan) -> Vec<(u32, voice::concat::NoteUnits)> {
+        let voice = self.voice(&plan.voice_id);
+        plan.phrases
+            .iter()
+            .flat_map(|p| render::units(&plan.score, &plan.timeline, p, &voice))
+            .map(|(n, units)| (plan.score.notes[n].id, units))
+            .collect()
     }
     /// Forgets phrases no current plan uses.
     pub fn retain(&mut self, plans: &[&Plan]) {
@@ -653,7 +697,11 @@ mod tests {
             start: 6,
             samples: vec![1.0; 6].into(),
         }]);
-        song.period = Some(10);
+        song.looping = Some(Loop {
+            start: 0,
+            end: 10,
+            lead: 5,
+        });
         let mut out = [9.0; 30];
         song.fill(0, &mut out);
         let expected = [
@@ -669,7 +717,7 @@ mod tests {
             start: -3,
             samples: vec![1.0; 5].into(),
         }]);
-        assert_eq!(song.period, Some(10));
+        assert_eq!(song.looping.map(|l| l.end), Some(10));
         song.fill(0, &mut out);
         let expected = [
             1., 1., 0., 0., 0., 0., 0., 1., 1., 1., // the rest of its own, then the next
@@ -677,6 +725,54 @@ mod tests {
             1., 1., 0., 0., 0., 0., 0., 1., 1., 1.,
         ];
         assert_eq!(out, expected);
+        // Played from 0, the clock starts early enough for the first pass
+        // to lead in too.
+        assert_eq!(song.lead_in(), 3);
+        let mut clock = Clock::default();
+        clock.play(true, song.lead_in());
+        assert_eq!(clock.position, -3);
+        let mut first = [9.0; 5];
+        song.fill(clock.position, &mut first);
+        assert_eq!(first, [1.0; 5]);
+    }
+
+    #[test]
+    fn an_intro_plays_once_before_the_loop() {
+        // Intro clip at 0..4, the loop 10..20 with its phrase leading in from
+        // 8 and ringing on to 22.
+        let mut song = Song::new(vec![
+            Clip {
+                key: 1,
+                start: 0,
+                samples: vec![0.5; 4].into(),
+            },
+            Clip {
+                key: 2,
+                start: 8,
+                samples: vec![1.0; 14].into(),
+            },
+        ]);
+        song.looping = Some(Loop {
+            start: 10,
+            end: 20,
+            lead: 3,
+        });
+        let mut out = [9.0; 40];
+        song.fill(0, &mut out);
+        let mut expected = [0.0f32; 40];
+        expected[..4].fill(0.5); // the intro, once
+        expected[8..20].fill(1.0); // lead-in and first pass
+        expected[20..22].fill(2.0); // the tail over the next pass's start
+        expected[22..30].fill(1.0);
+        // The lead-in of each next pass over the last frames of the one before.
+        expected[18..20].fill(2.0);
+        expected[28..30].fill(2.0);
+        expected[30..32].fill(2.0);
+        expected[32..40].fill(1.0);
+        expected[38..40].fill(2.0);
+        assert_eq!(out, expected);
+        assert_eq!(song.wrap(25), 15);
+        assert_eq!(song.wrap(5), 5);
     }
 
     #[test]

@@ -71,6 +71,8 @@ struct State {
     stop: bool,
     /// Voicebanks to drop from the renderer (removed files).
     forgotten: Vec<String>,
+    /// The units each timbre's notes are sung with, by note id.
+    units: BTreeMap<u32, Vec<(u32, voice::concat::NoteUnits)>>,
 }
 
 struct Shared {
@@ -121,7 +123,17 @@ impl Service {
         if let Ok(mut state) = self.shared.state.lock() {
             state.entries.remove(&id);
             state.progress.remove(&id);
+            state.units.remove(&id);
         }
+    }
+    /// The units a timbre's notes were last planned with, by note id.
+    pub fn units(&self, id: u32) -> Vec<(u32, voice::concat::NoteUnits)> {
+        self.shared
+            .state
+            .lock()
+            .ok()
+            .and_then(|s| s.units.get(&id).cloned())
+            .unwrap_or_default()
     }
     /// Progress of the latest submitted score; nothing while it is unplanned.
     pub fn progress(&self, id: u32) -> Progress {
@@ -212,6 +224,10 @@ fn run(shared: Arc<Shared>) {
                 load_voice(&mut renderer, &job.settings.score.voice);
                 let plan = renderer.plan(&job);
                 mailbox.post(renderer.song(&plan));
+                let units = renderer.units(&plan);
+                if let Ok(mut state) = shared.state.lock() {
+                    state.units.insert(id, units);
+                }
                 plans.insert(id, (generation, plan, job.clone()));
             }
             let (planned, plan, job) = &plans[&id];

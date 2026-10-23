@@ -67,6 +67,15 @@ cargo run -p sad-pet-voice --features cli --release -- resynth recording.wav
 cargo run -p sad-pet-voice --features cli --release -- reconstruct <utau folder> <recording.wav> --language ru --bank cache.sadvoice
 ```
 
+`listen <folder> [--before <earlier folder>]` renders the listening set
+(`listening.json`: phrases in each language, from folk songs to consonant
+clusters and long vowels) with every voicebank in `voice/packs` and the
+synthetic voice, and writes `index.html` with players beside the earlier
+render, the units each syllable is joined from and the noise and formant
+measures `hnr` prints. It also writes each phrase's score to `scores/`, so
+an older build can render the same set with `render` for the comparison.
+`demo` and `render --units 1` print the units of each note too.
+
 `resynth` measures the vocoder alone: it analyzes a recording, synthesizes it
 back and prints the spectral distance. `reconstruct` measures the whole
 engine: it sings one recording of a bank from the rest of the bank (its own

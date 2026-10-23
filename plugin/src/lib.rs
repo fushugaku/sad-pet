@@ -104,7 +104,7 @@ struct Feedback {
     host_playing: bool,
     /// The song clock or the host's song position, for Vocal timbres.
     song_playing: bool,
-    song_position: u64,
+    song_position: i64,
 }
 
 /// The editor polls /api/state about twelve times a second. The preset and
@@ -203,7 +203,7 @@ pub struct Controller {
     /// The render thread, shared by every part and started on first use.
     voices: Arc<std::sync::OnceLock<vocal::Service>>,
     song_playing: bool,
-    song_position: u64,
+    song_position: i64,
 }
 
 pub struct Audio {
@@ -233,7 +233,7 @@ pub struct Audio {
     /// The scene's song clock, used when the host has no transport.
     clock: sad_pet::vocal::Clock,
     /// This block's song state: playing, position in frames.
-    song: (bool, u64),
+    song: (bool, i64),
     /// The DAW's tempo map as heard so far: Vocal timbres render on it and
     /// read the song position with it.
     tempo: sad_pet::vocal::TempoMap,
@@ -247,7 +247,7 @@ struct VocalAudio {
     track: sad_pet::vocal::Track,
     buffer: [f32; 256],
     index: usize,
-    position: u64,
+    position: i64,
     playing: bool,
     /// The version of the host tempo map the render thread was given.
     published: u64,
@@ -272,7 +272,7 @@ impl VocalAudio {
     /// waits until every phrase is rendered.
     fn begin(
         &mut self,
-        position: u64,
+        position: i64,
         playing: bool,
         tempo: Option<&sad_pet::vocal::TempoMap>,
         offline: bool,
@@ -307,7 +307,7 @@ impl VocalAudio {
             } else {
                 self.buffer.fill(0.0);
             }
-            self.position += self.buffer.len() as u64;
+            self.position += self.buffer.len() as i64;
             self.index = 0;
         }
         let sample = self.buffer[self.index];
@@ -925,14 +925,25 @@ impl Controller {
                 self.selection.dirty = true;
                 Ok(reply)
             }
+            ("/api/vocal/units", _) => Ok(json!(
+                self.voice_service()
+                    .units(self.meta.id)
+                    .into_iter()
+                    .map(|(note, units)| (note.to_string(), json!(units)))
+                    .collect::<serde_json::Map<_, _>>()
+            )),
             ("/api/vocal/state", _) => {
                 let progress = self.voice_service().progress(self.meta.id);
                 // Where a looping score is in its pass.
                 let host_tempo = self.vocal.as_ref().and_then(|m| m.tempo().0);
-                let period = self.preset.vocal.as_deref().and_then(|s| {
-                    sad_pet::vocal::period(&s.score, host_tempo.as_deref(), self.rate)
+                let looping = self.preset.vocal.as_deref().and_then(|s| {
+                    sad_pet::vocal::looping(&s.score, host_tempo.as_deref(), self.rate)
                 });
-                let position = period.map_or(self.song_position, |p| self.song_position % p);
+                let song = sad_pet::vocal::Song {
+                    looping,
+                    ..Default::default()
+                };
+                let position = song.wrap(self.song_position);
                 Ok(json!({
                     "playing": self.song_playing,
                     "position": position as f64 / self.rate as f64,
@@ -1143,6 +1154,18 @@ impl Audio {
         self.engine.set_frozen(false);
         self.engine.exchange_processed_source(&mut source.processed);
     }
+    /// The longest lead-in of a Vocal part's first note, before 0.
+    fn vocal_lead_in(&self) -> u64 {
+        let mut lead_in = self.vocal.as_ref().map_or(0, |v| v.track.song.lead_in());
+        let mut part = self.parts.as_ref();
+        while let Some(p) = part {
+            if let Some(v) = &p.audio.vocal {
+                lead_in = lead_in.max(v.track.song.lead_in());
+            }
+            part = p.next.as_ref();
+        }
+        lead_in
+    }
     fn begin(&mut self, values: &[f32], bpm: f32, beat: Option<f64>, playing: bool, frames: usize) {
         let sequence_was_enabled = self.engine.preset.sequencer.enabled;
         let mut preset_changed = false;
@@ -1199,7 +1222,8 @@ impl Audio {
                     }
                     if let Some(v) = t.playing {
                         self.engine.set_playing(v);
-                        self.clock.play(v);
+                        let lead_in = self.vocal_lead_in();
+                        self.clock.play(v, lead_in);
                     }
                     if let Some(v) = t.frozen {
                         self.engine.set_frozen(v);
@@ -1222,11 +1246,12 @@ impl Audio {
                     if let Some(start) = start {
                         self.clock.start = *start;
                         if !self.clock.playing {
-                            self.clock.position = *start;
+                            self.clock.position = *start as i64;
                         }
                     }
                     if let Some(playing) = playing {
-                        self.clock.play(*playing);
+                        let lead_in = self.vocal_lead_in();
+                        self.clock.play(*playing, lead_in);
                     }
                 }
                 Command::Step {
@@ -1315,7 +1340,7 @@ impl Audio {
             Some(beat) => {
                 self.tempo.observe(beat, bpm);
                 let seconds = self.tempo.seconds(beat.max(0.0), bpm);
-                let position = (seconds * self.engine.sample_rate as f64).round() as u64;
+                let position = (seconds * self.engine.sample_rate as f64).round() as i64;
                 (playing, position, Some(&self.tempo))
             }
             None => (self.clock.playing, self.clock.position, None),
