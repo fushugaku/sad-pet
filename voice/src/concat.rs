@@ -310,6 +310,7 @@ impl Placement {
         if t < self.fade_in.0 || t > self.fade_out.1 {
             return 0.0;
         }
+        // A ramp of no length is no fade: inside the span, full weight.
         let ramp = |x: f64, a: f64, b: f64| {
             if b <= a {
                 1.0
@@ -318,7 +319,11 @@ impl Placement {
             }
         };
         let up = ramp(t, self.fade_in.0, self.fade_in.1);
-        let down = 1.0 - ramp(t, self.fade_out.0, self.fade_out.1);
+        let down = if self.fade_out.1 <= self.fade_out.0 {
+            1.0
+        } else {
+            1.0 - ramp(t, self.fade_out.0, self.fade_out.1)
+        };
         let w = up.min(down);
         // Equal-power-ish raised cosine.
         0.5 - 0.5 * (std::f64::consts::PI * w).cos()
@@ -863,6 +868,8 @@ mod tests {
         let f = frames(&b, &s, &pitch, 0.0, &[]);
         // Silent before the phrase, voiced in the vowels at the sung pitch.
         assert_eq!(f[10].f0, 0.0);
+        // The consonant inside "ka" sounds too (it once had no weight).
+        assert!(f[67].level() > -150.0, "{}", f[67].level());
         assert!((f[120].f0 - 220.0).abs() < 0.5);
         assert!(f[120].level() > -100.0);
         assert!(f[290].level() < -150.0);
