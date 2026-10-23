@@ -17,10 +17,12 @@ const EDGE: f64 = 0.012;
 const KEEP: usize = 6;
 
 /// How far a vowel's middle moves toward the voice's typical shape of it
-/// (0 keeps each take as recorded). Benchmarked on three UTAU banks by
-/// rebuilding recordings from the rest of the bank: 0.7 cut the envelope
-/// error from 5.1 to 4.3 dB and cost 0.6 dB when the take itself is used.
-const MEAN_PULL: f32 = 0.7;
+/// (0 keeps each take as recorded). Rebuilding recordings of three UTAU
+/// banks from the rest of their bank, 0.7 cut the envelope error most (5.1
+/// to 4.3 dB) but blurred the formants: their contrast fell from 8.4 to
+/// 7.3 dB in Kumi, under the recordings' own. 0.3 keeps it (7.9 dB) and still
+/// cuts the error to 4.7 dB.
+const MEAN_PULL: f32 = 0.3;
 
 /// One phoneme of the phrase as synthesis sees it.
 #[derive(Clone, Debug)]
@@ -116,15 +118,15 @@ fn candidates(bank: &Voicebank, items: &[Item], pitch: &[f32]) -> Vec<Candidate>
             // Every prefix of the match is a candidate.
             for l in 1..=len {
                 let b = a + l - 1;
-                // Cutting into a phoneme loses its transition; cutting off a
-                // recorded silence only loses the context, a smaller loss.
-                let cut = |p: Phoneme| if p.is_pause() { 0.25 } else { 0.7 };
-                let cut_left = if k > 0 {
-                    cut(unit.phonemes[k - 1])
-                } else {
-                    0.0
-                };
-                let cut_right = unit.phonemes.get(k + l).map_or(0.0, |&p| cut(p));
+                let target_left = a.checked_sub(1).map_or(Phoneme::SIL, |i| items[i].phoneme);
+                let target_right = items.get(b + 1).map_or(Phoneme::SIL, |i| i.phoneme);
+                let cut_left = k
+                    .checked_sub(1)
+                    .map_or(0.0, |i| cut_cost(unit.phonemes[i], target_left));
+                let cut_right = unit
+                    .phonemes
+                    .get(k + l)
+                    .map_or(0.0, |&p| cut_cost(p, target_right));
                 // A unit of only pauses adds nothing.
                 if unit.phonemes[k..k + l].iter().all(|p| p.is_pause()) {
                     continue;
@@ -515,8 +517,9 @@ pub fn frames(
             }
             let s = p.source(t);
             let f = bank.frame_at(s as f32);
-            for (e, v) in env.iter_mut().zip(&f.env) {
-                *e += w * (*v + p.gain_db) as f64;
+            let mut own = f.env;
+            for v in own.iter_mut() {
+                *v += p.gain_db;
             }
             if let Some((shape, a, b)) = p.shape.as_ref().filter(|_| f.voiced()) {
                 // Takes of a vowel differ; pull its middle toward the voice's
@@ -524,9 +527,12 @@ pub fn frames(
                 let edge = ((s - a).min(b - s) / ((b - a) * 0.25).max(1.0)).clamp(0.0, 1.0);
                 let pull = MEAN_PULL * (edge * edge * (3.0 - 2.0 * edge)) as f32;
                 let level = crate::spectrum::color_level(&f.env);
-                for ((e, v), m) in env.iter_mut().zip(&f.env).zip(shape) {
-                    *e += w * (pull * (m - (v - level))) as f64;
+                for ((o, v), m) in own.iter_mut().zip(&f.env).zip(shape) {
+                    *o += pull * (m - (v - level));
                 }
+            }
+            for (e, v) in env.iter_mut().zip(&own) {
+                *e += w * *v as f64;
             }
             for (a, v) in ap.iter_mut().zip(&f.ap) {
                 *a += w * *v as f64;
@@ -576,6 +582,18 @@ pub fn frames(
         }
     }
     out
+}
+
+/// What cutting a unit short of its recorded `neighbour` costs, next to the
+/// phrase's `target` phoneme there. Cutting off a recorded silence only
+/// loses the context; cutting into a phoneme loses its transition, more so
+/// the less the neighbour is like the phrase's: «у» from «лю» serves «рю»
+/// better than «у» from «ду».
+fn cut_cost(neighbour: Phoneme, target: Phoneme) -> f32 {
+    if neighbour.is_pause() {
+        return 0.25;
+    }
+    0.35 + 0.7 * (1.0 - (-neighbour.distance(target) / 2.5).exp())
 }
 
 /// Which unit aliases a phrase would use (for tests and the editor).

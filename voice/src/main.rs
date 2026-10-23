@@ -62,49 +62,92 @@ fn output(args: &Args) -> PathBuf {
 }
 
 fn demo(language: Language) -> Score {
-    // A short tune in each language; one syllable per note.
-    let (lyrics, keys): (&[&str], &[u8]) = match language {
+    // A well-known tune in each language, one syllable per note: lyric, key
+    // and length in eighths (0: an eighth's rest).
+    let (bpm, tune): (f32, &[(&str, u8, u32)]) = match language {
         Language::Ja => (
+            // さくら さくら
+            100.0,
             &[
-                "さ", "く", "ら", "さ", "く", "ら", "や", "よ", "い", "の", "そ", "ら", "は",
+                ("さ", 69, 2),
+                ("く", 69, 2),
+                ("ら", 71, 4),
+                ("さ", 69, 2),
+                ("く", 69, 2),
+                ("ら", 71, 4),
+                ("や", 69, 2),
+                ("よ", 71, 2),
+                ("い", 72, 2),
+                ("の", 71, 2),
+                ("そ", 69, 2),
+                ("ら", 71, 1),
+                ("", 69, 1),
+                ("は", 65, 4),
             ],
-            &[69, 69, 71, 69, 69, 71, 69, 71, 72, 71, 69, 71, 69],
         ),
         Language::En => (
+            // Twinkle, Twinkle, Little Star
+            110.0,
             &[
-                "twin-", "kle", "twin-", "kle", "lit-", "tle", "star", "how", "I", "won-", "der",
-                "what", "you", "are",
+                ("twin-", 60, 2),
+                ("kle", 60, 2),
+                ("twin-", 67, 2),
+                ("kle", 67, 2),
+                ("lit-", 69, 2),
+                ("tle", 69, 2),
+                ("star", 67, 4),
+                ("how", 65, 2),
+                ("I", 65, 2),
+                ("won-", 64, 2),
+                ("der", 64, 2),
+                ("what", 62, 2),
+                ("you", 62, 2),
+                ("are", 60, 4),
             ],
-            &[60, 60, 67, 67, 69, 69, 67, 65, 65, 64, 64, 62, 62, 60],
         ),
         Language::Ru => (
+            // В лесу родилась ёлочка
+            100.0,
             &[
-                "в ле-", "су", "ро-", "ди-", "лась", "ё-", "лоч-", "ка", "в ле-", "су", "о-", "на",
-                "рос-", "ла",
+                ("в ле-", 60, 1),
+                ("су", 69, 1),
+                ("ро-", 69, 1),
+                ("ди-", 67, 1),
+                ("лась", 69, 1),
+                ("ё-", 65, 1),
+                ("лоч-", 60, 1),
+                ("ка", 60, 1),
+                ("в ле-", 60, 1),
+                ("су", 69, 1),
+                ("о-", 69, 1),
+                ("на", 70, 1),
+                ("рос-", 67, 1),
+                ("ла", 72, 3),
             ],
-            &[60, 69, 69, 67, 69, 65, 60, 60, 60, 69, 69, 70, 67, 72],
         ),
     };
     let mut score = Score {
         language,
+        tempo: vec![sad_pet_voice::score::Tempo { tick: 0, bpm }],
         ..Default::default()
     };
+    let eighth = TICKS_PER_BEAT / 2;
     let mut tick = TICKS_PER_BEAT * 2;
-    for (i, (lyric, key)) in lyrics.iter().zip(keys).enumerate() {
-        let length = if i + 1 == lyrics.len() || i % 7 == 6 {
-            TICKS_PER_BEAT * 2
-        } else {
-            TICKS_PER_BEAT
-        };
+    for &(lyric, key, eighths) in tune {
+        if eighths == 0 {
+            tick += eighth;
+            continue;
+        }
         score.notes.push(Note {
-            id: i as u32 + 1,
+            id: score.notes.len() as u32 + 1,
             start: tick,
-            length,
-            key: *key,
-            lyric: lyric.to_string(),
+            length: eighths * eighth,
+            key,
+            // "" holds the vowel of the note before on a new pitch.
+            lyric: if lyric.is_empty() { "-" } else { lyric }.to_string(),
             ..Default::default()
         });
-        tick += length + if i % 7 == 6 { TICKS_PER_BEAT } else { 0 };
+        tick += eighths * eighth;
     }
     score.sanitize();
     score
@@ -455,6 +498,27 @@ fn main() {
                     .find(|s| s.name.eq_ignore_ascii_case(style))
                     .unwrap_or_else(|| fail(format!("unknown style {style}")));
             }
+            if args.options.contains_key("units") {
+                // Which voicebank units each phrase joins, with its syllables.
+                let timeline = score.timeline(None);
+                for phrase in render::plan(&score, &timeline, &id, rate, None) {
+                    let mut units = Vec::new();
+                    render::render_with_units(
+                        &score,
+                        &timeline,
+                        &phrase,
+                        &voice,
+                        rate,
+                        Some(&mut units),
+                    );
+                    let lyrics: Vec<&str> = phrase
+                        .notes
+                        .iter()
+                        .map(|&n| score.notes[n].lyric.as_str())
+                        .collect();
+                    eprintln!("{}: {}", lyrics.join(" "), units.join(" | "));
+                }
+            }
             let started = std::time::Instant::now();
             let samples = render::render_song(&score, &voice, &id, rate, None);
             let elapsed = started.elapsed().as_secs_f64();
@@ -527,11 +591,85 @@ fn main() {
                     }
                 }
                 let n = count.max(1) as f32;
+                // Formant contrast: how far the envelope swings around its
+                // tilt between 300 Hz and 4 kHz (blurred vowels swing less).
+                let (lo, hi) = (
+                    sad_pet_voice::spectrum::grid_position(300.0) as usize,
+                    sad_pet_voice::spectrum::grid_position(4000.0) as usize,
+                );
+                let mut contrast = (0.0f64, 0usize);
+                let mut brightness = (0.0f64, ());
+                for f in frames
+                    .iter()
+                    .filter(|f| f.voiced() && f.level() > loudest - 20.0)
+                {
+                    let y = &f.env[lo..=hi];
+                    let m = y.len() as f64;
+                    let (sx, sy) = (
+                        (0..y.len()).map(|i| i as f64).sum::<f64>(),
+                        y.iter().map(|&v| v as f64).sum::<f64>(),
+                    );
+                    let sxx = (0..y.len()).map(|i| (i * i) as f64).sum::<f64>();
+                    let sxy = y
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &v)| i as f64 * v as f64)
+                        .sum::<f64>();
+                    let slope = (m * sxy - sx * sy) / (m * sxx - sx * sx);
+                    let icpt = (sy - slope * sx) / m;
+                    let var = y
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &v)| (v as f64 - icpt - slope * i as f64).powi(2))
+                        .sum::<f64>()
+                        / m;
+                    contrast.0 += var.sqrt();
+                    contrast.1 += 1;
+                    let band = |a: f32, b: f32| {
+                        let (a, b) = (
+                            sad_pet_voice::spectrum::grid_position(a) as usize,
+                            sad_pet_voice::spectrum::grid_position(b) as usize,
+                        );
+                        f.env[a..=b].iter().sum::<f32>() / (b - a + 1) as f32
+                    };
+                    brightness.0 += (band(2000.0, 5000.0) - band(200.0, 1000.0)) as f64;
+                }
+                // Hiss: how much of the sound is unvoiced, and how loud its
+                // loudest tenth is next to the vowels.
+                let active: Vec<_> = frames
+                    .iter()
+                    .filter(|f| f.level() > loudest - 40.0)
+                    .collect();
+                let median = |mut v: Vec<f32>| {
+                    v.sort_by(f32::total_cmp);
+                    v.get(v.len() / 2).copied().unwrap_or(f32::NAN)
+                };
+                let vowels = median(
+                    active
+                        .iter()
+                        .filter(|f| f.voiced())
+                        .map(|f| f.level())
+                        .collect(),
+                );
+                let mut hiss: Vec<f32> = active
+                    .iter()
+                    .filter(|f| !f.voiced())
+                    .map(|f| f.level())
+                    .collect();
+                hiss.sort_by(f32::total_cmp);
+                let loudest_hiss = hiss.get(hiss.len() * 9 / 10).copied().unwrap_or(f32::NAN);
                 println!(
-                    "{path}: HNR {:.1} dB, above 2 kHz {:.1} dB, voiced {:.0}% of loud frames",
+                    "{path}: hiss {:.0}% of the sound, its loudest tenth {:+.1} dB from the vowels",
+                    100.0 * hiss.len() as f32 / active.len().max(1) as f32,
+                    loudest_hiss - vowels
+                );
+                println!(
+                    "{path}: HNR {:.1} dB, above 2 kHz {:.1} dB, voiced {:.0}% of loud frames, formant contrast {:.2} dB, 2-5 kHz {:+.1} dB from 0.2-1 kHz",
                     full / n,
                     top / n,
-                    100.0 * voiced as f32 / loud.max(1) as f32
+                    100.0 * voiced as f32 / loud.max(1) as f32,
+                    contrast.0 / contrast.1.max(1) as f64,
+                    brightness.0 / contrast.1.max(1) as f64
                 );
             }
         }

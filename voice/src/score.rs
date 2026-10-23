@@ -451,10 +451,12 @@ impl Score {
         std::borrow::Cow::Owned(score)
     }
 
-    /// Tempo map with an optional host tempo replacing it.
-    pub fn timeline(&self, host_bpm: Option<f32>) -> Timeline {
-        match host_bpm.filter(|b| self.follow_host && b.is_finite() && *b > 0.0) {
-            Some(bpm) => Timeline::constant(bpm),
+    /// Tempo map, or the host's (in ticks) when the score follows it.
+    pub fn timeline(&self, host: Option<&[Tempo]>) -> Timeline {
+        let valid =
+            |t: &[Tempo]| !t.is_empty() && t.iter().all(|t| t.bpm.is_finite() && t.bpm > 0.0);
+        match host.filter(|t| self.follow_host && valid(t)) {
+            Some(tempo) => Timeline::new(tempo),
             None => Timeline::new(&self.tempo),
         }
     }

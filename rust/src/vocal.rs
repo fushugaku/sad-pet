@@ -7,10 +7,11 @@ pub use sad_pet_voice as voice;
 
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use voice::bank::Voicebank;
 use voice::render::{self, Phrase, Voice};
-use voice::score::{Score, Timeline};
+use voice::score::{Score, Tempo, Timeline};
 
 /// Voicebanks that come with SAD PET, by id and language. The plug-in and
 /// the web build carry their files, from `voice/packs`.
@@ -48,24 +49,26 @@ impl Settings {
 }
 
 /// A rendered phrase on the song timeline, in frames of the engine's rate.
+/// In a looping song a phrase may start before 0: its lead-in sounds at the
+/// end of the pass before.
 #[derive(Clone, Debug)]
 pub struct Clip {
     pub key: u64,
-    pub start: u64,
+    pub start: i64,
     pub samples: Arc<[f32]>,
 }
 impl Clip {
-    pub fn end(&self) -> u64 {
-        self.start + self.samples.len() as u64
+    pub fn end(&self) -> i64 {
+        self.start + self.samples.len() as i64
     }
 }
 
 /// Frames after which a score starts over, if it loops.
-pub fn period(score: &Score, host_bpm: Option<f32>, rate: u32) -> Option<u64> {
+pub fn period(score: &Score, host: Option<&[Tempo]>, rate: u32) -> Option<u64> {
     if score.loop_ticks == 0 {
         return None;
     }
-    let seconds = score.timeline(host_bpm).seconds(score.loop_ticks as f64);
+    let seconds = score.timeline(host).seconds(score.loop_ticks as f64);
     Some((seconds * rate as f64).round() as u64).filter(|p| *p > 0)
 }
 
@@ -84,17 +87,24 @@ impl Song {
             period: None,
         }
     }
+    /// Replaces the clips and keeps the period.
+    pub fn set_clips(&mut self, clips: Vec<Clip>) {
+        let period = self.period;
+        *self = Self::new(clips);
+        self.period = period;
+    }
     /// Where a song position falls in the song.
     pub fn wrap(&self, position: u64) -> u64 {
         self.period.map_or(position, |p| position % p)
     }
     /// Mixes the song into `out`, starting at `position`. A looping song
     /// plays its first `period` frames over and over; what rings past the
-    /// end of a pass sounds over the start of the next.
+    /// end of a pass sounds over the start of the next, and what comes
+    /// before 0 (a first note's consonants) over the end of the pass before.
     pub fn fill(&self, position: u64, out: &mut [f32]) {
         out.fill(0.0);
         let Some(period) = self.period else {
-            self.mix(position, out);
+            self.mix(position as i64, out);
             return;
         };
         let mut done = 0;
@@ -103,20 +113,20 @@ impl Song {
             let from = at % period;
             let count = ((period - from) as usize).min(out.len() - done);
             let block = &mut out[done..done + count];
+            let (from, period) = (from as i64, period as i64);
             self.mix(from, block);
-            if at >= period {
+            if at >= period as u64 {
                 self.mix(from + period, block);
             }
+            self.mix(from - period, block);
             done += count;
         }
     }
     /// Adds the clips over `out.len()` frames from `position` into `out`.
-    fn mix(&self, position: u64, out: &mut [f32]) {
-        let end = position + out.len() as u64;
+    fn mix(&self, position: i64, out: &mut [f32]) {
+        let end = position + out.len() as i64;
         // Clips are short and few; skip those that end before the block.
-        let first = self
-            .clips
-            .partition_point(|c| c.start + (c.samples.len() as u64) < position);
+        let first = self.clips.partition_point(|c| c.end() < position);
         for clip in self.clips[first..].iter().take_while(|c| c.start < end) {
             if clip.end() <= position {
                 continue;
@@ -141,15 +151,57 @@ pub struct Mailbox {
     garbage: Mutex<Vec<Song>>,
     /// Song position the audio thread last played, so rendering starts there.
     pub position: std::sync::atomic::AtomicU64,
-    /// The host's tempo as `f32` bits, 0 without a host transport.
-    pub host_bpm: std::sync::atomic::AtomicU32,
+    /// The host's tempo map as the audio thread has learned it (empty without
+    /// a host transport), and a count of its changes.
+    tempo: Mutex<Vec<Tempo>>,
+    tempo_version: std::sync::atomic::AtomicU64,
+    /// The tempo version whose song was posted with every phrase rendered;
+    /// `u64::MAX` while phrases are missing. Offline bounces wait for it.
+    complete: std::sync::atomic::AtomicU64,
 }
 impl Mailbox {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             garbage: Mutex::new(Vec::with_capacity(8)),
+            tempo: Mutex::new(Vec::with_capacity(TempoMap::CAPACITY)),
+            complete: u64::MAX.into(),
             ..Default::default()
         })
+    }
+    /// Audio side: hands over a newer tempo map. Never blocks or allocates;
+    /// false when the render side holds the map (try again next block).
+    pub fn publish_tempo(&self, map: &TempoMap) -> bool {
+        let Ok(mut tempo) = self.tempo.try_lock() else {
+            return false;
+        };
+        tempo.clear();
+        let room = tempo.capacity();
+        tempo.extend(map.entries.iter().take(room));
+        self.tempo_version.fetch_add(1, Ordering::AcqRel);
+        self.complete.store(u64::MAX, Ordering::Release);
+        true
+    }
+    /// Render side: the host tempo map, if any, and its version.
+    pub fn tempo(&self) -> (Option<Arc<[Tempo]>>, u64) {
+        let Ok(tempo) = self.tempo.lock() else {
+            return (None, 0);
+        };
+        let version = self.tempo_version.load(Ordering::Acquire);
+        (
+            (!tempo.is_empty()).then(|| tempo.as_slice().into()),
+            version,
+        )
+    }
+    /// Render side: the song just posted has every phrase of the plan made
+    /// with tempo `version` (or misses some, with `None`).
+    pub fn set_complete(&self, version: Option<u64>) {
+        self.complete
+            .store(version.unwrap_or(u64::MAX), Ordering::Release);
+    }
+    /// Audio side: whether the latest song has every phrase for the tempo
+    /// map the audio thread published last.
+    pub fn is_complete(&self) -> bool {
+        self.complete.load(Ordering::Acquire) == self.tempo_version.load(Ordering::Acquire)
     }
     /// Render side: offers the newest song, replacing one not taken yet.
     pub fn post(&self, song: Song) {
@@ -203,6 +255,18 @@ impl Track {
             }
         }
     }
+    /// Takes the newest song and tells whether it has every phrase of the
+    /// latest score and tempo map: an offline bounce waits for that.
+    pub fn complete(&mut self) -> bool {
+        let complete = self.mailbox.as_ref().is_none_or(|m| m.is_complete());
+        self.update();
+        complete
+            && self
+                .mailbox
+                .as_ref()
+                .is_none_or(|m| matches!(m.incoming.try_lock(), Ok(slot) if slot.is_none()))
+            && self.pending_garbage.is_none()
+    }
     /// Fills one block at a song position and reports where in the song
     /// that is.
     pub fn fill(&mut self, position: u64, out: &mut [f32]) {
@@ -250,13 +314,84 @@ impl Clock {
     }
 }
 
+/// A host's tempo as the audio thread meets it: block by block it notes
+/// where the tempo differs from what it knew, so phrases render on the same
+/// map the song position is read with. Fixed capacity: it never allocates
+/// after `new`.
+#[derive(Clone, Debug)]
+pub struct TempoMap {
+    entries: Vec<Tempo>,
+    version: u64,
+}
+impl Default for TempoMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+impl TempoMap {
+    pub const CAPACITY: usize = 512;
+    pub fn new() -> Self {
+        Self {
+            entries: Vec::with_capacity(Self::CAPACITY),
+            version: 0,
+        }
+    }
+    /// Counts the changes, so each listener can tell it has the latest.
+    pub fn version(&self) -> u64 {
+        self.version
+    }
+    /// Notes the tempo at a beat. Tempo changes land on a 1/16 grid and
+    /// differences under 0.05 BPM are ignored, so ramps stay a few entries.
+    pub fn observe(&mut self, beat: f64, bpm: f32) {
+        if !(bpm.is_finite() && bpm > 0.0 && beat.is_finite()) {
+            return;
+        }
+        let step = voice::score::TICKS_PER_BEAT / 4;
+        let tick = (beat.max(0.0) * 4.0).floor() as u32 * step;
+        let known = self.entries.iter().rev().find(|t| t.tick <= tick);
+        if known.is_some_and(|t| (t.bpm - bpm).abs() < 0.05) {
+            return;
+        }
+        if self.entries.is_empty() {
+            // Before the first beat heard, the tempo was the same.
+            self.entries.push(Tempo { tick: 0, bpm });
+        } else {
+            self.entries.retain(|t| t.tick < tick);
+            if self.entries.len() < Self::CAPACITY {
+                self.entries.push(Tempo { tick, bpm });
+            }
+        }
+        self.version += 1;
+    }
+    /// Seconds at a beat on this map (the given tempo when it is empty).
+    pub fn seconds(&self, beat: f64, bpm: f32) -> f64 {
+        let tick = beat * voice::score::TICKS_PER_BEAT as f64;
+        let per_tick =
+            |bpm: f32| 60.0 / (bpm.max(1.0) as f64 * voice::score::TICKS_PER_BEAT as f64);
+        let Some(first) = self.entries.first() else {
+            return tick * per_tick(bpm);
+        };
+        let mut seconds = 0.0;
+        let mut at = (0.0, first.bpm);
+        for t in &self.entries[1..] {
+            if t.tick as f64 >= tick {
+                break;
+            }
+            seconds += (t.tick as f64 - at.0) * per_tick(at.1);
+            at = (t.tick as f64, t.bpm);
+        }
+        seconds + (tick - at.0) * per_tick(at.1)
+    }
+}
+
 /// What a render job needs to know about one timbre.
 #[derive(Clone, Debug)]
 pub struct Job {
     pub settings: Settings,
     pub rate: u32,
-    /// The host's tempo replaces the score's when the score follows it.
-    pub host_bpm: Option<f32>,
+    /// The host's tempo map (in ticks) replaces the score's when the score
+    /// follows it.
+    pub host_tempo: Option<Arc<[Tempo]>>,
 }
 
 /// A planned song: its phrases and timeline.
@@ -314,7 +449,7 @@ impl Renderer {
     }
     pub fn plan(&self, job: &Job) -> Plan {
         let score = job.settings.score.one_pass().into_owned();
-        let timeline = score.timeline(job.host_bpm);
+        let timeline = score.timeline(job.host_tempo.as_deref());
         let voice_id = if self.voices.contains_key(&job.settings.score.voice) {
             job.settings.score.voice.clone()
         } else {
@@ -331,7 +466,7 @@ impl Renderer {
             timeline,
             rate: job.rate,
             voice_id,
-            period: period(&score, job.host_bpm, job.rate),
+            period: period(&score, job.host_tempo.as_deref(), job.rate),
             score,
         }
     }
@@ -382,7 +517,7 @@ impl Renderer {
                     let samples = self.cache.get(&p.key)?;
                     Some(Clip {
                         key: p.key,
-                        start: (p.start * plan.rate as f64).round() as u64,
+                        start: (p.start * plan.rate as f64).round() as i64,
                         samples: samples.clone(),
                     })
                 })
@@ -429,7 +564,7 @@ mod tests {
         let job = Job {
             settings: settings(),
             rate: 24_000,
-            host_bpm: None,
+            host_tempo: None,
         };
         let mut renderer = Renderer::new();
         let plan = renderer.plan(&job);
@@ -473,6 +608,45 @@ mod tests {
     }
 
     #[test]
+    fn the_tempo_map_learns_changes_and_reads_seconds_on_them() {
+        let mut map = TempoMap::new();
+        assert_eq!(map.seconds(4.0, 120.0), 2.0, "empty: the tempo given");
+        map.observe(2.3, 120.0);
+        map.observe(3.0, 120.02);
+        assert_eq!(map.version(), 1, "tiny wobbles are not changes");
+        // From beat 8 on, 60 BPM; heard a little after the beat.
+        map.observe(8.1, 60.0);
+        assert_eq!(map.version(), 2);
+        assert!((map.seconds(10.0, 60.0) - (4.0 + 2.0)).abs() < 1e-9);
+        assert!(
+            (map.seconds(6.0, 60.0) - 3.0).abs() < 1e-9,
+            "earlier beats keep their time"
+        );
+        // Played again from the start, the map is unchanged.
+        map.observe(0.0, 120.0);
+        assert_eq!(map.version(), 2);
+        // A different tempo earlier forgets what came after it.
+        map.observe(4.0, 90.0);
+        assert!((map.seconds(10.0, 90.0) - (2.0 + 6.0 * 60.0 / 90.0)).abs() < 1e-9);
+        // The render side gets the map in ticks; the song waits for it.
+        let mailbox = Mailbox::new();
+        mailbox.set_complete(Some(0));
+        assert!(mailbox.is_complete());
+        assert!(mailbox.publish_tempo(&map));
+        assert!(!mailbox.is_complete(), "a new map needs a new render");
+        let (tempo, version) = mailbox.tempo();
+        assert_eq!(
+            tempo.unwrap()[1],
+            Tempo {
+                tick: 1920,
+                bpm: 90.0
+            }
+        );
+        mailbox.set_complete(Some(version));
+        assert!(mailbox.is_complete());
+    }
+
+    #[test]
     fn a_looping_song_repeats_and_rings_into_the_next_pass() {
         let mut song = Song::new(vec![Clip {
             key: 1,
@@ -489,6 +663,20 @@ mod tests {
         ];
         assert_eq!(out, expected);
         assert_eq!(song.wrap(23), 3);
+        // A lead-in before 0 sounds at the end of every pass, the next one's.
+        song.set_clips(vec![Clip {
+            key: 2,
+            start: -3,
+            samples: vec![1.0; 5].into(),
+        }]);
+        assert_eq!(song.period, Some(10));
+        song.fill(0, &mut out);
+        let expected = [
+            1., 1., 0., 0., 0., 0., 0., 1., 1., 1., // the rest of its own, then the next
+            1., 1., 0., 0., 0., 0., 0., 1., 1., 1., //
+            1., 1., 0., 0., 0., 0., 0., 1., 1., 1.,
+        ];
+        assert_eq!(out, expected);
     }
 
     #[test]

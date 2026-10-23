@@ -234,6 +234,12 @@ pub struct Audio {
     clock: sad_pet::vocal::Clock,
     /// This block's song state: playing, position in frames.
     song: (bool, u64),
+    /// The DAW's tempo map as heard so far: Vocal timbres render on it and
+    /// read the song position with it.
+    tempo: sad_pet::vocal::TempoMap,
+    /// The host renders faster than real time (a bounce): Vocal timbres wait
+    /// for their phrases.
+    offline: bool,
 }
 
 /// A Vocal part's audio side: rendered clips, read a chunk at a time.
@@ -243,6 +249,11 @@ struct VocalAudio {
     index: usize,
     position: u64,
     playing: bool,
+    /// The version of the host tempo map the render thread was given.
+    published: u64,
+    /// An offline bounce stopped waiting for phrases (the render thread
+    /// took too long); it plays what there is until the transport stops.
+    gave_up: bool,
 }
 impl VocalAudio {
     fn new(mailbox: Arc<sad_pet::vocal::Mailbox>) -> Box<Self> {
@@ -252,19 +263,41 @@ impl VocalAudio {
             index: 256,
             position: 0,
             playing: false,
+            published: 0,
+            gave_up: false,
         })
     }
-    /// Starts a block at a song position.
-    fn begin(&mut self, position: u64, playing: bool, bpm: Option<f32>) {
+    /// Starts a block at a song position. With a host transport, `tempo` is
+    /// the DAW's tempo map as heard so far; offline (a bounce), the block
+    /// waits until every phrase is rendered.
+    fn begin(
+        &mut self,
+        position: u64,
+        playing: bool,
+        tempo: Option<&sad_pet::vocal::TempoMap>,
+        offline: bool,
+    ) {
         self.position = position;
         self.playing = playing;
         self.index = self.buffer.len();
         self.track.update();
-        if let Some(mailbox) = &self.track.mailbox {
-            let bits = bpm.map_or(0, f32::to_bits);
-            mailbox
-                .host_bpm
-                .store(bits, std::sync::atomic::Ordering::Relaxed);
+        if let (Some(map), Some(mailbox)) = (tempo, &self.track.mailbox)
+            && self.published != map.version()
+            && mailbox.publish_tempo(map)
+        {
+            self.published = map.version();
+        }
+        if !playing {
+            self.gave_up = false;
+        } else if offline && !self.gave_up {
+            let started = std::time::Instant::now();
+            while !self.track.complete() {
+                if started.elapsed() > std::time::Duration::from_secs(30) {
+                    self.gave_up = true;
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
         }
     }
     fn next(&mut self) -> f32 {
@@ -553,6 +586,8 @@ impl Controller {
             vocal,
             clock: Default::default(),
             song: (false, 0),
+            tempo: sad_pet::vocal::TempoMap::new(),
+            offline: false,
         }
     }
 
@@ -893,16 +928,10 @@ impl Controller {
             ("/api/vocal/state", _) => {
                 let progress = self.voice_service().progress(self.meta.id);
                 // Where a looping score is in its pass.
-                let host_bpm = self
-                    .vocal
-                    .as_ref()
-                    .map(|m| f32::from_bits(m.host_bpm.load(std::sync::atomic::Ordering::Relaxed)))
-                    .filter(|bpm| *bpm > 0.0);
-                let period = self
-                    .preset
-                    .vocal
-                    .as_deref()
-                    .and_then(|s| sad_pet::vocal::period(&s.score, host_bpm, self.rate));
+                let host_tempo = self.vocal.as_ref().and_then(|m| m.tempo().0);
+                let period = self.preset.vocal.as_deref().and_then(|s| {
+                    sad_pet::vocal::period(&s.score, host_tempo.as_deref(), self.rate)
+                });
                 let position = period.map_or(self.song_position, |p| self.song_position % p);
                 Ok(json!({
                     "playing": self.song_playing,
@@ -1282,17 +1311,18 @@ impl Audio {
         self.source_renderer.update(&mut self.engine);
         // Vocal timbres play at the DAW's song position, or at the scene's
         // own clock in the app and while a host has no transport.
-        let (song_playing, song_position, song_bpm) = match beat.filter(|_| self.sync) {
-            Some(beat) => (
-                playing,
-                (beat.max(0.0) * 60.0 / bpm as f64 * self.engine.sample_rate as f64).round() as u64,
-                Some(bpm),
-            ),
+        let (song_playing, song_position, tempo) = match beat.filter(|_| self.sync) {
+            Some(beat) => {
+                self.tempo.observe(beat, bpm);
+                let seconds = self.tempo.seconds(beat.max(0.0), bpm);
+                let position = (seconds * self.engine.sample_rate as f64).round() as u64;
+                (playing, position, Some(&self.tempo))
+            }
             None => (self.clock.playing, self.clock.position, None),
         };
         self.song = (song_playing, song_position);
         if let Some(vocal) = &mut self.vocal {
-            vocal.begin(song_position, song_playing, song_bpm);
+            vocal.begin(song_position, song_playing, tempo, self.offline);
         }
         let mut part = self.parts.as_mut();
         let mut solo = self.meta.mix.solo;
@@ -1300,7 +1330,7 @@ impl Audio {
         while let Some(p) = part {
             p.audio.begin(&[], bpm, beat, playing, frames);
             if let Some(vocal) = &mut p.audio.vocal {
-                vocal.begin(song_position, song_playing, song_bpm);
+                vocal.begin(song_position, song_playing, tempo, self.offline);
             }
             let kind = p.audio.meta.kind;
             solo |= p.audio.meta.mix.solo && !kind.routing();
@@ -1529,6 +1559,14 @@ pub unsafe extern "C" fn sad_audio_time_signature(
 ) {
     if let Some(audio) = unsafe { audio.as_mut() } {
         audio.time_signature(numerator, denominator);
+    }
+}
+/// # Safety
+/// Audio must be exclusively held by the host render thread.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sad_audio_offline(audio: *mut Audio, offline: bool) {
+    if let Some(audio) = unsafe { audio.as_mut() } {
+        audio.offline = offline;
     }
 }
 /// # Safety

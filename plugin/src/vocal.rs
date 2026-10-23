@@ -106,13 +106,15 @@ impl Service {
                     job: Job {
                         settings: settings.clone(),
                         rate,
-                        host_bpm: None,
+                        host_tempo: None,
                     },
                     mailbox: mailbox.clone(),
                     generation,
                 },
             );
         }
+        // An offline bounce waits for the edited score.
+        mailbox.set_complete(None);
         self.shared.wake.notify_one();
     }
     pub fn forget(&self, id: u32) {
@@ -172,12 +174,6 @@ fn load_voice(renderer: &mut Renderer, id: &str) {
     }
 }
 
-/// The host tempo a score renders at: the DAW's, when it follows the host.
-fn host_bpm(job: &Job, mailbox: &Mailbox) -> Option<f32> {
-    let bpm = f32::from_bits(mailbox.host_bpm.load(Ordering::Relaxed));
-    (job.settings.score.follow_host && bpm > 0.0).then_some(bpm)
-}
-
 fn run(shared: Arc<Shared>) {
     let mut renderer = Renderer::new();
     // id → (generation planned, plan, job)
@@ -205,10 +201,13 @@ fn run(shared: Arc<Shared>) {
         let mut rendered = false;
         for (id, generation, mut job, mailbox) in work {
             mailbox.collect();
-            job.host_bpm = host_bpm(&job, &mailbox);
-            let stale = plans
-                .get(&id)
-                .is_none_or(|(g, _, planned)| *g != generation || planned.host_bpm != job.host_bpm);
+            // The DAW's tempo map as the audio thread learned it, when the
+            // score follows the host.
+            let (tempo, tempo_version) = mailbox.tempo();
+            job.host_tempo = tempo.filter(|_| job.settings.score.follow_host);
+            let stale = plans.get(&id).is_none_or(|(g, _, planned)| {
+                *g != generation || planned.host_tempo != job.host_tempo
+            });
             if stale {
                 load_voice(&mut renderer, &job.settings.score.voice);
                 let plan = renderer.plan(&job);
@@ -221,8 +220,9 @@ fn run(shared: Arc<Shared>) {
                 mailbox.post(renderer.song(plan));
                 rendered = true;
             }
+            let progress = renderer.progress(job, plan);
+            mailbox.set_complete((progress.rendered == progress.phrases).then_some(tempo_version));
             if let Ok(mut state) = shared.state.lock() {
-                let progress = renderer.progress(job, plan);
                 state.progress.insert(id, (*planned, progress));
             }
             if rendered {

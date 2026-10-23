@@ -26,9 +26,9 @@ with no threads or platform code, so the plug-ins, the app and the browser
    frames, from units recorded near the sung pitch. Units overlap on a shared
    phoneme and cross-fade there in the spectral domain; vowels stretch over
    their steady region, looping it for long notes. Units are brought to a
-   common singing level, and the middle of each vowel moves most of the way
-   toward the voice's typical shape of that vowel near the sung pitch, so
-   takes recorded on different days still match. The built-in voice
+   common singing level, and the middle of each vowel moves a third of the
+   way toward the voice's typical shape of that vowel near the sung pitch, so
+   takes recorded on different days match without blurring the formants. The built-in voice
    (`formant`) instead glides between formant and noise targets per phoneme.
 5. **Voice color** (`params`). Dynamics, Breathiness, Brightness, Clearness,
    Character (formant scale), Exciter, Growl, Air and Mouth act on the frames.
@@ -72,8 +72,11 @@ back and prints the spectral distance. `reconstruct` measures the whole
 engine: it sings one recording of a bank from the rest of the bank (its own
 units removed) on the recording's syllables and pitches and compares the
 spectral envelopes. With the free Kasane Teto (Japanese, English) and Kumi
-(Russian) banks, 20 recordings average 4.3 dB (Japanese 3.5, Russian 4.6,
-English 5.1); singing them from their own units gives 2.6 dB.
+(Russian) banks, 20 recordings average 4.7 dB (Japanese 3.9, Russian 5.0,
+English 5.5); singing them from their own units gives 2.1 dB. The measure
+compares envelopes only: it rewards averaging and hardly hears a lost
+transition, so settings it favours still need listening (`hnr` adds the
+noise and formant contrast of renders next to recordings).
 
 `render` reads a score as JSON (the format Vocal timbres save); `import` in the
 editor also reads MIDI, `.ust`, MusicXML and `.vpr`.

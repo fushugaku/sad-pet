@@ -134,7 +134,7 @@ pub extern "C" fn sad_vocal_jobs() -> u32 {
 struct Staged {
     part: u32,
     key: u64,
-    start: u64,
+    start: i64,
     samples: Vec<f32>,
 }
 thread_local! {
@@ -155,7 +155,7 @@ pub extern "C" fn sad_render_clip(part: u32, start: f64, length: usize) -> *mut 
             part,
             Clip {
                 key: 0,
-                start: start as u64,
+                start: start as i64,
                 samples,
             },
         ))
@@ -172,7 +172,7 @@ impl super::timbres::Registry {
         self.vocal_jobs.clear();
         for part in &mut self.parts {
             if let Some(vocal) = &mut part.vocal {
-                vocal.song = Song::new(
+                vocal.song.set_clips(
                     clips
                         .iter()
                         .filter(|(id, _)| *id == part.meta.id)
@@ -221,13 +221,13 @@ pub extern "C" fn sad_vocal_plan(count: usize) -> *mut f64 {
 /// changed) and drops the rest. Returns how many planned clips are missing.
 #[unsafe(no_mangle)]
 pub extern "C" fn sad_vocal_plan_commit(part: u32, count: usize) -> usize {
-    let plan: Vec<(u64, u64)> = PLAN.with(|p| {
+    let plan: Vec<(u64, i64)> = PLAN.with(|p| {
         p.borrow()
             .as_chunks::<3>()
             .0
             .iter()
             .take(count)
-            .map(|t| (t[0] as u64, t[1] as u64))
+            .map(|t| (t[0] as u64, t[1] as i64))
             .collect()
     });
     registry(|r| {
@@ -250,9 +250,7 @@ pub extern "C" fn sad_vocal_plan_commit(part: u32, count: usize) -> usize {
             }
         }
         let missing = plan.len() - clips.len();
-        let period = state.song.period;
-        state.song = Song::new(clips);
-        state.song.period = period;
+        state.song.set_clips(clips);
         missing
     })
 }
@@ -262,7 +260,7 @@ pub extern "C" fn sad_vocal_clip_begin(part: u32, key: f64, start: f64, length: 
         let mut staged = Staged {
             part,
             key: key as u64,
-            start: start as u64,
+            start: start as i64,
             samples: vec![0.0; length.min(64 << 20)],
         };
         let pointer = staged.samples.as_mut_ptr();
@@ -291,7 +289,7 @@ pub extern "C" fn sad_vocal_clip_commit() -> u32 {
             start: staged.start,
             samples: staged.samples.into(),
         });
-        state.song = Song::new(clips);
+        state.song.set_clips(clips);
         1
     })
 }
@@ -364,7 +362,8 @@ fn worker_command(w: &mut Worker, request: Value) -> Result<Value, String> {
             let job = Job {
                 settings,
                 rate: request["rate"].as_u64().map_or(w.rate, |r| r as u32),
-                host_bpm: request["host_bpm"].as_f64().map(|b| b as f32),
+                // A browser has no host transport.
+                host_tempo: None,
             };
             let plan = w.renderer.plan(&job);
             w.jobs.insert(id, (job, plan));

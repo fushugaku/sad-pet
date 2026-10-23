@@ -8,7 +8,10 @@ use crate::spectrum::{AP_BANDS, AP_EDGES, ENV_POINTS, FLOOR_DB, FRAME_SECONDS, F
 use crate::timing::Segment;
 
 /// Overall level of a vowel envelope peak, dB per Hz.
-const LEVEL: f32 = -49.0;
+const LEVEL: f32 = -61.5;
+/// Source slope above 250 Hz, dB per octave: with the formants' own falloff
+/// it gives the 2–5 kHz band about the balance of the bundled voicebanks.
+const TILT: f32 = -2.5;
 const TRANSITION: f64 = 0.045;
 
 #[derive(Clone, Copy, Debug)]
@@ -48,16 +51,18 @@ fn locus(place: Place, soft: bool) -> [f32; 3] {
     [300.0, f2, 2600.0]
 }
 
+/// Noise band of a consonant: center, width (Hz) and gain (dB). The gains
+/// put the loudest hiss about 20 dB under the vowels, as in recordings.
 fn noise_of(place: Place, soft: bool) -> (f32, f32, f32) {
     match place {
-        Place::Bilabial => (1200.0, 2500.0, -20.0),
-        Place::Labiodental | Place::Dental => (6000.0, 6000.0, -22.0),
-        Place::Alveolar => (6500.0, 3000.0, -6.0),
-        Place::Postalveolar => (if soft { 3500.0 } else { 3000.0 }, 2000.0, -8.0),
-        Place::Palatal => (3500.0, 2500.0, -14.0),
-        Place::Velar => (if soft { 3000.0 } else { 1800.0 }, 1500.0, -14.0),
-        Place::Uvular => (1300.0, 1200.0, -16.0),
-        Place::Glottal | Place::Open => (1500.0, 3000.0, -24.0),
+        Place::Bilabial => (1200.0, 2500.0, -26.0),
+        Place::Labiodental | Place::Dental => (6000.0, 6000.0, -28.0),
+        Place::Alveolar => (6500.0, 3000.0, -13.0),
+        Place::Postalveolar => (if soft { 3500.0 } else { 3000.0 }, 2000.0, -15.0),
+        Place::Palatal => (3500.0, 2500.0, -20.0),
+        Place::Velar => (if soft { 3000.0 } else { 1800.0 }, 1500.0, -20.0),
+        Place::Uvular => (1300.0, 1200.0, -22.0),
+        Place::Glottal | Place::Open => (1500.0, 3000.0, -28.0),
     }
 }
 
@@ -77,7 +82,7 @@ fn target(p: Phoneme) -> Target {
         },
         Class::Breath => Target {
             voice: -90.0,
-            noise: Some((1800.0, 3500.0, -30.0)),
+            noise: Some((1800.0, 3500.0, -34.0)),
             ..vowel([600.0, 1500.0, 2500.0])
         },
         Class::Nasal => match info.place {
@@ -132,7 +137,8 @@ fn formant_db(t: &Target, hz: f32) -> f32 {
     for (&f, &b) in t.formants.iter().zip(&t.bandwidths) {
         let num = f * f + (b * 0.5).powi(2);
         let den = ((f * f - hz * hz + (b * 0.5).powi(2)).powi(2) + (hz * b).powi(2)).sqrt();
-        db += 10.0 * (num / den).log10();
+        // `num / den` is the resonator's amplitude gain.
+        db += 20.0 * (num / den).log10();
     }
     db
 }
@@ -221,8 +227,7 @@ pub fn frames(segments: &[Segment], pitch: &[f32]) -> Vec<Frame> {
         };
         for (g, value) in frame.env.iter_mut().enumerate() {
             let hz = grid_hz(g).max(1.0);
-            // Glottal source: -12 dB/octave above 250 Hz, +6 dB lip radiation.
-            let tilt = -6.0 * (hz / 250.0).max(1.0).log2();
+            let tilt = TILT * (hz / 250.0).max(1.0).log2();
             let periodic = LEVEL + voice_gain + tilt + formant_db(&tract, hz) + fade_db;
             let noise = match here.noise {
                 Some((center, width, _)) => {
@@ -238,7 +243,7 @@ pub fn frames(segments: &[Segment], pitch: &[f32]) -> Vec<Frame> {
         // Aperiodicity: the noise share in each band.
         for b in 0..AP_BANDS {
             let hz = (AP_EDGES[b] + AP_EDGES[b + 1]) * 0.5;
-            let tilt = -6.0 * (hz / 250.0).max(1.0).log2();
+            let tilt = TILT * (hz / 250.0).max(1.0).log2();
             let periodic = LEVEL + voice_gain + tilt + formant_db(&tract, hz);
             let noise = here.noise.map_or(FLOOR_DB, |(center, width, _)| {
                 let x = (hz - center) / width;

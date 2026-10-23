@@ -28,11 +28,14 @@ pub enum Voice {
 }
 impl Voice {
     fn consonant_length(&self, p: Phoneme) -> f64 {
-        let natural = match self {
-            Voice::Formant => None,
-            Voice::Bank(bank) => bank.duration(bank.substitute(p)),
-        };
-        natural.unwrap_or_else(|| utau::default_duration(p)) as f64
+        match self {
+            // Sung consonants are short; a synthetic one is all hiss.
+            Voice::Formant => utau::default_duration(p) as f64 * 0.7,
+            Voice::Bank(bank) => {
+                bank.duration(bank.substitute(p))
+                    .unwrap_or_else(|| utau::default_duration(p)) as f64
+            }
+        }
     }
 }
 
@@ -100,6 +103,10 @@ pub fn plan(
             (start, end)
         })
         .collect();
+    // A looping score's first phrase follows the last one of the pass
+    // before, and may start before 0: its lead-in sounds at that pass's end.
+    let period = (score.loop_ticks > 0).then(|| timeline.seconds(score.loop_ticks as f64));
+    let wrapped_end = period.and_then(|p| seconds.last().map(|s| s.1 - p));
     let mut phrases: Vec<Phrase> = Vec::new();
     let mut current: Vec<usize> = Vec::new();
     let flush = |current: &mut Vec<usize>, phrases: &mut Vec<Phrase>| {
@@ -110,9 +117,13 @@ pub fn plan(
         let last = *current.last().unwrap();
         let previous_end = phrases
             .last()
-            .map(|p| p.notes.last().map_or(0.0, |&n| seconds[n].1));
+            .map(|p| p.notes.last().map_or(0.0, |&n| seconds[n].1))
+            .or(wrapped_end);
         let breath = previous_end.is_none_or(|e| seconds[first].0 - e >= 0.5);
-        let start = (seconds[first].0 - LEAD).max(0.0).min(seconds[first].0);
+        let earliest = period.map_or(0.0, |p| -p);
+        let start = (seconds[first].0 - LEAD)
+            .max(earliest)
+            .min(seconds[first].0);
         let end = seconds[last].1 + TAIL;
         let mut hash = Fnv::new();
         hash.json(&(
@@ -169,6 +180,18 @@ pub fn render(
     phrase: &Phrase,
     voice: &Voice,
     rate: u32,
+) -> Vec<f32> {
+    render_with_units(score, timeline, phrase, voice, rate, None)
+}
+
+/// `render`, also naming the voicebank units it joins (for diagnostics).
+pub fn render_with_units(
+    score: &Score,
+    timeline: &Timeline,
+    phrase: &Phrase,
+    voice: &Voice,
+    rate: u32,
+    units: Option<&mut Vec<String>>,
 ) -> Vec<f32> {
     let origin = phrase.start;
     let total = phrase.end - phrase.start;
@@ -230,7 +253,12 @@ pub fn render(
 
     let mut voice_frames = match voice {
         Voice::Formant => formant::frames(&segments, &contour),
-        Voice::Bank(bank) => concat::frames(bank, &segments, &contour, 0.25),
+        Voice::Bank(bank) => {
+            if let Some(units) = units {
+                *units = concat::describe(bank, &segments, &contour);
+            }
+            concat::frames(bank, &segments, &contour, 0.25)
+        }
     };
     // Parameters, note effects and pulse controls per frame.
     let mut pulses = vec![Pulse::default(); voice_frames.len()];
@@ -294,8 +322,13 @@ pub fn render_song(
     let mut out = vec![0.0f32; (end * rate as f64).ceil() as usize + 1];
     for phrase in &phrases {
         let audio = render(score, &timeline, phrase, voice, rate);
-        let offset = (phrase.start * rate as f64).round() as usize;
-        for (o, s) in out[offset..].iter_mut().zip(&audio) {
+        // A looping score's lead-in before 0 has no pass before it here.
+        let offset = (phrase.start * rate as f64).round() as i64;
+        let skip = (-offset).max(0) as usize;
+        for (o, s) in out[offset.max(0) as usize..]
+            .iter_mut()
+            .zip(audio.iter().skip(skip))
+        {
             *o += s;
         }
     }
@@ -339,8 +372,28 @@ mod tests {
         assert_eq!(a[0].key, b[0].key);
         assert_ne!(a[1].key, b[1].key);
         // Host tempo moves everything.
-        let c = plan(&score, &score.timeline(Some(90.0)), "", 48_000, None);
+        let host = [crate::score::Tempo { tick: 0, bpm: 90.0 }];
+        let c = plan(&score, &score.timeline(Some(&host)), "", 48_000, None);
         assert_ne!(a[0].key, c[0].key);
+    }
+
+    #[test]
+    fn a_looping_score_sings_its_first_consonant_before_zero() {
+        let mut score = song(Language::Ru, &["ла", "ла"]);
+        score.notes[0].start = 0;
+        let timeline = score.timeline(None);
+        let once = plan(&score, &timeline, "", 48_000, None);
+        assert_eq!(once[0].start, 0.0, "nothing plays before 0 without a loop");
+        score.loop_ticks = TICKS_PER_BEAT * 8;
+        let looped = plan(&score, &timeline, "", 48_000, None);
+        assert!(looped[0].start < -0.3, "{}", looped[0].start);
+        assert_ne!(once[0].key, looped[0].key);
+        let audio = render(&score, &timeline, &looped[0], &Voice::Formant, 48_000);
+        let before: f32 = audio[..(-looped[0].start * 48_000.0) as usize]
+            .iter()
+            .map(|s| s * s)
+            .sum();
+        assert!(before > 1e-3, "the «л» sounds before the beat: {before}");
     }
 
     #[test]
