@@ -73,6 +73,10 @@ pub struct Metrics {
     pub contrast: f32,
     /// The 2–5 kHz band against 0.2–1 kHz (dB).
     pub brightness: f32,
+    /// How much a vowel's envelope changes from one 5 ms frame to the next
+    /// (median dB, 300 Hz – 5 kHz): a live voice never repeats itself.
+    #[serde(default)]
+    pub flux: f32,
 }
 
 pub fn measure(samples: &[f32], rate: u32) -> Metrics {
@@ -155,6 +159,26 @@ pub fn measure(samples: &[f32], rate: u32) -> Metrics {
         brightness += (band(&f.env, 2000.0, 5000.0) - band(&f.env, 200.0, 1000.0)) as f64;
         shaped += 1;
     }
+    // Frame-to-frame change of steady voiced envelopes.
+    let (f_lo, f_hi) = (
+        grid_position(300.0) as usize,
+        grid_position(5000.0) as usize,
+    );
+    let mut changes: Vec<f32> = frames
+        .windows(2)
+        .filter(|w| w.iter().all(|f| f.voiced() && f.level() > loudest - 20.0))
+        .map(|w| {
+            let (a, b) = (&w[0].env[f_lo..=f_hi], &w[1].env[f_lo..=f_hi]);
+            let shift = a.iter().zip(b).map(|(x, y)| y - x).sum::<f32>() / a.len() as f32;
+            a.iter()
+                .zip(b)
+                .map(|(x, y)| (y - x - shift).abs())
+                .sum::<f32>()
+                / a.len() as f32
+        })
+        .collect();
+    changes.sort_by(f32::total_cmp);
+    let flux = changes.get(changes.len() / 2).copied().unwrap_or(f32::NAN);
     let active: Vec<_> = frames
         .iter()
         .filter(|f| f.level() > loudest - 40.0)
@@ -179,6 +203,7 @@ pub fn measure(samples: &[f32], rate: u32) -> Metrics {
         hnr_high: top / count.max(1) as f32,
         contrast: (contrast / shaped.max(1) as f64) as f32,
         brightness: (brightness / shaped.max(1) as f64) as f32,
+        flux,
     }
 }
 

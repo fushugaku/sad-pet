@@ -457,13 +457,15 @@ fn main() {
                 let m = listen::measure(&audio.samples, audio.rate);
                 println!(
                     "{path}: hiss {:.0}% (loudest {:+.1} dB from the vowels), HNR {:.1} dB \
-                     (above 2 kHz {:.1}), formant contrast {:.2} dB, 2-5 kHz {:+.1} dB",
+                     (above 2 kHz {:.1}), formant contrast {:.2} dB, 2-5 kHz {:+.1} dB, \
+                     frame-to-frame change {:.2} dB",
                     m.hiss_share * 100.0,
                     m.hiss_db,
                     m.hnr,
                     m.hnr_high,
                     m.contrast,
-                    m.brightness
+                    m.brightness,
+                    m.flux
                 );
             }
         }

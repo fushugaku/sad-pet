@@ -29,7 +29,8 @@ struct Target {
 fn vowel(f: [f32; 3]) -> Target {
     Target {
         formants: [f[0], f[1], f[2], 3500.0, 4500.0],
-        bandwidths: [70.0, 90.0, 140.0, 220.0, 300.0],
+        // Wide enough not to ring: narrower ones buzzed by ear.
+        bandwidths: [120.0, 150.0, 240.0, 370.0, 510.0],
         voice: 0.0,
         noise: None,
         silent: false,
@@ -138,18 +139,18 @@ fn target(p: Phoneme) -> Target {
 /// steeply past its fifth formant; it also takes the edge off 2.5 kHz.
 const COLOR: [(f32, f32); 13] = [
     (250.0, 2.0),
-    (500.0, -7.6),
-    (750.0, -0.6),
-    (1000.0, 1.6),
-    (1500.0, 0.6),
-    (2000.0, -1.4),
-    (2500.0, -11.9),
-    (3000.0, 1.1),
-    (4000.0, 24.2),
-    (5000.0, 47.2),
-    (6500.0, 67.8),
-    (8000.0, 91.5),
-    (10000.0, 110.5),
+    (500.0, -7.0),
+    (750.0, 0.5),
+    (1000.0, 1.8),
+    (1500.0, 0.5),
+    (2000.0, -1.9),
+    (2500.0, -10.1),
+    (3000.0, 0.7),
+    (4000.0, 24.4),
+    (5000.0, 47.0),
+    (6500.0, 66.9),
+    (8000.0, 90.6),
+    (10000.0, 109.6),
 ];
 
 fn color(hz: f32) -> f32 {
@@ -166,7 +167,7 @@ fn color(hz: f32) -> f32 {
 /// The aperiodicity a voiced sound keeps in each band, from the same fit: a
 /// recorded voice is a little breathy above 3 kHz, where a bare pulse train
 /// buzzes.
-const BREATH: [f32; AP_BANDS] = [0.003, 0.003, 0.015, 0.041, 0.059, 0.155, 0.221, 0.354];
+const BREATH: [f32; AP_BANDS] = [0.006, 0.005, 0.017, 0.043, 0.053, 0.143, 0.204, 0.62];
 
 /// How far the formants (share) and the loudness (dB) waver.
 const WAVER_FORMANTS: f32 = 0.012;
