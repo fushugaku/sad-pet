@@ -661,7 +661,11 @@ export class BrowserBackend {
         const id = route.slice("/api/samples/".length, -4);
         const index = catalog.findIndex((t) => t.id === id);
         if (index < 0) throw new Error("Unknown track");
-        result = await this.worker.call("factory", index);
+        if (catalog[index].asset) {
+          const response = await fetch(new URL(`./samples/${catalog[index].asset}`, import.meta.url));
+          if (!response.ok) throw new Error(`Cannot load ${catalog[index].name}.`);
+          result = await response.arrayBuffer();
+        } else result = await this.worker.call("factory", index);
         mime = "audio/wav";
       } else if (route === "/api/render") {
         if (this.microphone.active)

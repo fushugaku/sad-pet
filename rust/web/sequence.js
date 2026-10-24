@@ -35,6 +35,7 @@ window.SadLazySelect = (() => {
     menu = {
       anchor, layer, levels: [], drill: view.right - view.left < 600,
       timer: 0, pointer: null, hovered: null, typed: "", typedAt: 0,
+      preview: models.get(anchor).preview,
     };
     layer.className = menu.drill ? "sad-menu-layer is-drill" : "sad-menu-layer";
     layer.onkeydown = key;
@@ -56,8 +57,9 @@ window.SadLazySelect = (() => {
   }
   function hide(refocus) {
     if (!menu) return;
-    const { anchor, layer, timer } = menu;
+    const { anchor, layer, timer, preview } = menu;
     menu = null;
+    preview?.stop();
     clearTimeout(timer);
     layer.remove();
     anchor.setAttribute("aria-expanded", "false");
@@ -105,7 +107,36 @@ window.SadLazySelect = (() => {
     if (!e.back && holds(e, value)) node.classList.add("is-current");
     text.textContent = e.text;
     node.append(text);
+    if (!e.items && !e.back && menu.preview) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "sad-menu-preview";
+      button.tabIndex = -1;
+      node.previewButton = button;
+      previewButton(button, e, "idle");
+      node.append(button);
+      node.setAttribute("aria-keyshortcuts", "Space");
+    }
     return node;
+  }
+  function previewButton(button, e, status) {
+    button.textContent = status === "loading" ? "…" : status === "playing" ? "■" : "▶";
+    button.setAttribute("aria-label", `${status === "idle" ? "Preview" : "Stop preview"} ${e.label}`);
+    button.setAttribute("aria-pressed", String(status !== "idle"));
+    button.setAttribute("aria-busy", String(status === "loading"));
+    button.title = `${status === "idle" ? "Preview" : "Stop preview"} · Space`;
+  }
+  function preview(e) {
+    const shown = menu;
+    if (!shown?.preview || e.items || e.back) return;
+    shown.preview.play(e.value, (status) => {
+      if (menu !== shown) return;
+      for (const level of shown.levels)
+        level.rows.forEach((item, i) => {
+          const button = level.list.children[i].previewButton;
+          if (button) previewButton(button, item, item.value === e.value ? status : "idle");
+        });
+    });
   }
   function start({ rows }) {
     const i = rows.findIndex((e) => !e.back && holds(e, menu.anchor.value));
@@ -198,6 +229,7 @@ window.SadLazySelect = (() => {
   function truncate(depth) {
     const levels = menu.levels;
     if (levels.length <= depth + 1) return;
+    menu.preview?.stop();
     while (levels.length > depth + 1) {
       const gone = levels.pop(),
         parent = levels[levels.length - 1];
@@ -231,7 +263,12 @@ window.SadLazySelect = (() => {
   const depthOf = (node) => menu.levels.findIndex((l) => l.list.contains(node));
   function click(event) {
     const node = event.target.closest(".sad-menu-item");
-    if (node) activate(depthOf(node), Number(node.dataset.index), event.detail === 0);
+    if (!node) return;
+    const depth = depthOf(node), index = Number(node.dataset.index);
+    if (event.target.closest(".sad-menu-preview")) {
+      focus(depth, index);
+      preview(menu.levels[depth].rows[index]);
+    } else activate(depth, index, event.detail === 0);
   }
   // Hovering a section opens it after a moment, so a diagonal path into its
   // submenu can cross other rows without switching. A menu that opened under
@@ -263,6 +300,12 @@ window.SadLazySelect = (() => {
       at = menu.levels[depth].active,
       e = menu.levels[depth].rows[at],
       k = event.key;
+    if (menu.preview && e && !e.items && !e.back &&
+        (k === " " || (k === "Enter" && event.target.closest(".sad-menu-preview")))) {
+      event.preventDefault();
+      preview(e);
+      return;
+    }
     if (k.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey && (k !== " " || Date.now() - menu.typedAt < 700)) {
       find(depth, k);
       event.preventDefault();
@@ -302,7 +345,7 @@ window.SadLazySelect = (() => {
       }
   }
   return {
-    configure(anchor, value, groups) {
+    configure(anchor, value, groups, preview) {
       if (!models.has(anchor)) {
         anchor.type = "button";
         anchor.classList.add("sad-select");
@@ -324,7 +367,7 @@ window.SadLazySelect = (() => {
         };
       }
       const items = entries(groups.flatMap((g) => (g.label ? [g] : g.choices)));
-      models.set(anchor, { items, labels: labels(items) });
+      models.set(anchor, { items, labels: labels(items), preview });
       render(anchor, String(value));
     },
     setValue(anchor, value) {

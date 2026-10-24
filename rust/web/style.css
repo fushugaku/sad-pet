@@ -205,6 +205,30 @@ select {
   height: 38px;
   font-size: 13px;
 }
+.sad-menu .sad-menu-preview {
+  flex: none;
+  width: 26px;
+  height: 24px;
+  min-height: 0;
+  padding: 0;
+  line-height: 1;
+  margin-left: 8px;
+  border-color: transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+}
+.sad-menu .sad-menu-preview:hover,
+.sad-menu .sad-menu-preview[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+  background: #263723;
+}
+.is-drill .sad-menu .sad-menu-preview {
+  width: 36px;
+  height: 34px;
+}
 header {
   display: flex;
   align-items: center;

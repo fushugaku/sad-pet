@@ -159,6 +159,9 @@ impl Controller {
         self.drain();
         let path = request["path"].as_str().ok_or("Missing command")?;
         let data = &request["data"];
+        if path == "/api/sample-preview" && request["method"] == "POST" {
+            return self.preview_request(data);
+        }
         if self.standalone {
             let post = request["method"] == "POST";
             super::audio_library::check_editor_request(path, post, data)?;
@@ -432,8 +435,15 @@ impl Audio {
             }
             part = p.next.as_mut();
         }
-        match master {
+        let output = match master {
             Some(master) => master.source_frame(output, &mut [[0.; 2]; MAX_BUSES], false),
+            None => output,
+        };
+        match &mut self.preview {
+            Some(preview) => {
+                let frame = preview.next();
+                [output[0] + frame[0], output[1] + frame[1]]
+            }
             None => output,
         }
     }

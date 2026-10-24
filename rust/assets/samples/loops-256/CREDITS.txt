@@ -1,0 +1,1286 @@
+256 CC0 musical loops for SAD PET
+=================================
+Dataset: https://zenodo.org/records/3967852
+All individual audio licenses: CC0 1.0 Universal.
+Original authors retain recognition; attribution is preserved below.
+Audio is unchanged from the public research dataset.
+
+02 Disco bass loop
+  Creator: josefpres
+  Source: https://freesound.org/s/483401/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Dubstep Wobble Bass
+  Creator: Foxcraft
+  Source: https://freesound.org/s/315664/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+electrohouse warble effect
+  Creator: waveplay_old
+  Source: https://freesound.org/s/212924/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+bassMeat
+  Creator: igjop
+  Source: https://freesound.org/s/128493/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Abminor Funk BassGroove
+  Creator: GRD-music-
+  Source: https://freesound.org/s/412617/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Bass (2 bar)
+  Creator: Bronxio
+  Source: https://freesound.org/s/239076/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Bass Chaos - 4 bar - (swing)
+  Creator: Bronxio
+  Source: https://freesound.org/s/239550/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+bass looper 102
+  Creator: Snapper4298
+  Source: https://freesound.org/s/157779/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+bass60bpm
+  Creator: UncleSigmund
+  Source: https://freesound.org/s/34373/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Bassguitar loop1 C
+  Creator: tichec
+  Source: https://freesound.org/s/169880/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Bminor Funk BassGroove
+  Creator: GRD-music-
+  Source: https://freesound.org/s/412844/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Bminor Funk BassGroove · GRD-music-
+  Creator: GRD-music-
+  Source: https://freesound.org/s/413253/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+breakbeat hiphop A3 4bar
+  Creator: MustardPlug
+  Source: https://freesound.org/s/395059/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+CTCC FUZZ 01
+  Creator: chicocorrea
+  Source: https://freesound.org/s/76694/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+CTCC FUZZ 06
+  Creator: chicocorrea
+  Source: https://freesound.org/s/76699/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+double overtime loop
+  Creator: DarkoZL
+  Source: https://freesound.org/s/141884/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Eminor Funk BassGroove
+  Creator: GRD-music-
+  Source: https://freesound.org/s/413257/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+F#minor SLAP BassGroove
+  Creator: GRD-music-
+  Source: https://freesound.org/s/413256/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Gminor Funk BassGroove
+  Creator: GRD-music-
+  Source: https://freesound.org/s/412616/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Jazz01
+  Creator: FullMetalJedi
+  Source: https://freesound.org/s/339982/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Minimal Dance Bass
+  Creator: Teacoma
+  Source: https://freesound.org/s/362755/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Psytrance Triple Bass Loop
+  Creator: Teacoma
+  Source: https://freesound.org/s/324944/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Queens Bass Loop
+  Creator: newagesoup
+  Source: https://freesound.org/s/399087/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Rhythm 1 Dist
+  Creator: Khoon
+  Source: https://freesound.org/s/151007/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+SlideBass
+  Creator: Schulze
+  Source: https://freesound.org/s/24951/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Subbass #D
+  Creator: Greek555
+  Source: https://freesound.org/s/414045/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Synth Loop - Wobble Wars
+  Creator: mooncubedesign
+  Source: https://freesound.org/s/344081/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Wobble Loop 140 C2
+  Creator: Keygenerator
+  Source: https://freesound.org/s/104382/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+808-like drum loop
+  Creator: dippy_
+  Source: https://freesound.org/s/217500/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+105 stezzer break 1
+  Creator: Snapper4298
+  Source: https://freesound.org/s/173021/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+120 - MICRODISCO 1
+  Creator: AKUSTIKA
+  Source: https://freesound.org/s/92062/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+distorded drum loop
+  Creator: Garzul
+  Source: https://freesound.org/s/213523/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+drum loop
+  Creator: mika55
+  Source: https://freesound.org/s/188553/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+120frugengeddy
+  Creator: UncleSigmund
+  Source: https://freesound.org/s/41030/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+32 Beat Loop
+  Creator: x86cam
+  Source: https://freesound.org/s/233709/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+drums - 7 Arm (loop)
+  Creator: Paradox39
+  Source: https://freesound.org/s/345566/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+drum loop · Garzul
+  Creator: Garzul
+  Source: https://freesound.org/s/213654/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+(Reggae / Dubstep beat crossover)
+  Creator: Bliss
+  Source: https://freesound.org/s/244105/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+185 LOOP BLUED
+  Creator: carbilicon
+  Source: https://freesound.org/s/65186/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+90S
+  Creator: daatg
+  Source: https://freesound.org/s/95081/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+[Energy] 003
+  Creator: ErrorCell
+  Source: https://freesound.org/s/21141/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+[Energy] 006
+  Creator: ErrorCell
+  Source: https://freesound.org/s/21144/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+[jerado] RB beat 221107 03
+  Creator: jerado
+  Source: https://freesound.org/s/44193/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Abstract Hip Hop Beat 1 - Loop (Wav)
+  Creator: afleetingspeck
+  Source: https://freesound.org/s/166029/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+african
+  Creator: kroshe
+  Source: https://freesound.org/s/468507/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+bass and drum loop
+  Creator: Sub-d
+  Source: https://freesound.org/s/49746/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Beat 5 - Loop (Wav)
+  Creator: afleetingspeck
+  Source: https://freesound.org/s/166177/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+beat1
+  Creator: Hoerspielwerkstatt_HEF
+  Source: https://freesound.org/s/345261/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+beat2
+  Creator: Hoerspielwerkstatt_HEF
+  Source: https://freesound.org/s/345260/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+beat7
+  Creator: Hoerspielwerkstatt_HEF
+  Source: https://freesound.org/s/345263/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+beat8
+  Creator: Hoerspielwerkstatt_HEF
+  Source: https://freesound.org/s/345268/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+beat9
+  Creator: Hoerspielwerkstatt_HEF
+  Source: https://freesound.org/s/345267/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Brushes Loop by Canis et Circensis
+  Creator: brudelarge
+  Source: https://freesound.org/s/111072/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Classy chill beat
+  Creator: uzerx
+  Source: https://freesound.org/s/72893/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Disclosure Beat 130
+  Creator: jaffa1970
+  Source: https://freesound.org/s/264278/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Drum 1
+  Creator: Jack_Master
+  Source: https://freesound.org/s/203522/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+drum
+  Creator: yapppy
+  Source: https://freesound.org/s/251250/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Drum Loop Solo Kick
+  Creator: Uknow Dude
+  Source: https://freesound.org/s/102888/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+drum solo
+  Creator: mika55
+  Source: https://freesound.org/s/188551/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+drum kit acoustic120
+  Creator: dr_skitz
+  Source: https://freesound.org/s/353853/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+drum loop 4bars
+  Creator: lezaarth
+  Source: https://freesound.org/s/242590/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Drums closedhat snareghost loop1
+  Creator: tichec
+  Source: https://freesound.org/s/169870/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+DrunkRiddim C)
+  Creator: DaveN
+  Source: https://freesound.org/s/192443/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Dubstep Beat 2
+  Creator: jaffa1970
+  Source: https://freesound.org/s/268201/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+DubStepBeatProcessedPro90
+  Creator: slivkro
+  Source: https://freesound.org/s/275301/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+EDM Dance Beat
+  Creator: Teacoma
+  Source: https://freesound.org/s/363148/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+fast hat loop
+  Creator: wouter.hisschemoller
+  Source: https://freesound.org/s/101264/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+FoundSoundForFreeSound
+  Creator: BartjeBral
+  Source: https://freesound.org/s/323672/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+funkdub
+  Creator: mikobuntu
+  Source: https://freesound.org/s/207801/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Hard Kit Beat 2 - Loop (Wav)
+  Creator: afleetingspeck
+  Source: https://freesound.org/s/166069/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Hectic 808 Drum Loop
+  Creator: Hugofski
+  Source: https://freesound.org/s/236003/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+hip hop 5
+  Creator: Insidebeat
+  Source: https://freesound.org/s/245110/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+hiphop mpc-sp 2
+  Creator: Insidebeat
+  Source: https://freesound.org/s/245098/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+House Beat
+  Creator: sumsun
+  Source: https://freesound.org/s/152670/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+INDUSTRY LOOP
+  Creator: uzerx
+  Source: https://freesound.org/s/72894/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Jazzy Beat
+  Creator: Scydan
+  Source: https://freesound.org/s/252453/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Matt's House Kick Drum
+  Creator: Mattc90
+  Source: https://freesound.org/s/220866/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Minimal Loop
+  Creator: Jessetz
+  Source: https://freesound.org/s/168643/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Minimal Tech House Beat
+  Creator: Teacoma
+  Source: https://freesound.org/s/360375/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+New House rmx class4
+  Creator: Dolfeus
+  Source: https://freesound.org/s/44914/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+old school bit - (street bit)
+  Creator: Link-Boy
+  Source: https://freesound.org/s/174452/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Old School Break
+  Creator: jaffa1970
+  Source: https://freesound.org/s/268712/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Old School Hip Hop Loop
+  Creator: RetroBro
+  Source: https://freesound.org/s/266784/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Phazed Gator Beats
+  Creator: John Scott
+  Source: https://freesound.org/s/22873/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+PsyLoopHorror
+  Creator: GenerationMachine
+  Source: https://freesound.org/s/431435/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+ReggaeLoop83bpm
+  Creator: gis_sweden
+  Source: https://freesound.org/s/252040/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Reggaeton groove - 4 bars)
+  Creator: c0mp0s3r
+  Source: https://freesound.org/s/177422/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Simple House Beat
+  Creator: Teacoma
+  Source: https://freesound.org/s/351305/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Sinkhole Sample
+  Creator: godspine
+  Source: https://freesound.org/s/215048/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+song191
+  Creator: Vres
+  Source: https://freesound.org/s/57660/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Supersaw Beat Loop
+  Creator: AlonnaAllen
+  Source: https://freesound.org/s/332064/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+tm0g Trap Hats
+  Creator: tmog.762
+  Source: https://freesound.org/s/386921/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Trip Acoustic Beat
+  Creator: Scydan
+  Source: https://freesound.org/s/385676/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+useless
+  Creator: hello_flowers
+  Source: https://freesound.org/s/41027/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+[20] s-piano
+  Creator: arseniiv
+  Source: https://freesound.org/s/238748/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Chill/Sad Rhodes electric piano sample
+  Creator: arightwizard
+  Source: https://freesound.org/s/131423/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Crystal Caves (Loop)
+  Creator: JoeHowell
+  Source: https://freesound.org/s/331230/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Distorted Synth Guitar 1 C
+  Creator: furbyguy
+  Source: https://freesound.org/s/370352/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Distorted Synth Guitar 2 C
+  Creator: furbyguy
+  Source: https://freesound.org/s/370351/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Emotional Piano 001 (D#-90)
+  Creator: Xinematix
+  Source: https://freesound.org/s/491284/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Emotional Piano 002 (D#m-80)
+  Creator: Xinematix
+  Source: https://freesound.org/s/491283/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Emotional Piano 003 (D#m-80)
+  Creator: Xinematix
+  Source: https://freesound.org/s/491282/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Emotional Piano 004 (D#m-80)
+  Creator: Xinematix
+  Source: https://freesound.org/s/491281/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Emotional Piano 005 (Am-80)
+  Creator: Xinematix
+  Source: https://freesound.org/s/491285/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Groovy Rhodes 02
+  Creator: SouthernUK
+  Source: https://freesound.org/s/138163/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+HipHopPiano0186BPM
+  Creator: deleted_user_984625
+  Source: https://freesound.org/s/69606/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Keys The Quid of the Question - 2 bar - (swing)
+  Creator: Bronxio
+  Source: https://freesound.org/s/239083/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Mix0786BPM
+  Creator: deleted_user_984625
+  Source: https://freesound.org/s/69611/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Piano 4 bar *4
+  Creator: shitefromaheight
+  Source: https://freesound.org/s/209814/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Piano pop 1 · A major
+  Creator: Pax11
+  Source: https://freesound.org/s/447129/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+126 The Shimmering D (polished)
+  Creator: fran_ky
+  Source: https://freesound.org/s/237363/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Aetera loop
+  Creator: wehrwolf78
+  Source: https://freesound.org/s/132581/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Aquaticparksf2009m
+  Creator: tec_studio
+  Source: https://freesound.org/s/88168/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Darkness Cinematic
+  Creator: ANARKYA
+  Source: https://freesound.org/s/389773/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+flickering
+  Creator: CyberMad
+  Source: https://freesound.org/s/402457/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+humming
+  Creator: CyberMad
+  Source: https://freesound.org/s/402458/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+quiz game music loop BPM 90
+  Creator: portwain
+  Source: https://freesound.org/s/220060/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Strings 8 bar *1
+  Creator: shitefromaheight
+  Source: https://freesound.org/s/132910/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+A loop culled I
+  Creator: p_ano
+  Source: https://freesound.org/s/200406/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+african loop001 bpm130
+  Creator: kasull
+  Source: https://freesound.org/s/93635/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+african loop002 bpm130
+  Creator: kasull
+  Source: https://freesound.org/s/93636/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+african loop003 bpm130(SHUFFLE)
+  Creator: kasull
+  Source: https://freesound.org/s/93637/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+african loop004 bpm130
+  Creator: kasull
+  Source: https://freesound.org/s/93638/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Bitcrushed Drums
+  Creator: Dekpi
+  Source: https://freesound.org/s/403904/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+bongoes
+  Creator: MarleneAyni
+  Source: https://freesound.org/s/89608/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+bongos
+  Creator: uiop
+  Source: https://freesound.org/s/44706/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+breakbeat hiphop A4 4bar
+  Creator: MustardPlug
+  Source: https://freesound.org/s/395058/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+davul
+  Creator: kroshe
+  Source: https://freesound.org/s/468506/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Dog Melody (funny loop)
+  Creator: Lynx_5969
+  Source: https://freesound.org/s/450289/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Drum Beat
+  Creator: vykroft
+  Source: https://freesound.org/s/417754/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Funk Bitxl op i1
+  Creator: brudelarge
+  Source: https://freesound.org/s/151841/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Glitch Drum loop 9h - 8 bars
+  Creator: vykroft
+  Source: https://freesound.org/s/441191/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Glitch Drum loop 9i - 8 bars
+  Creator: vykroft
+  Source: https://freesound.org/s/441192/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+H3
+  Creator: connectik
+  Source: https://freesound.org/s/379605/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+h9
+  Creator: connectik
+  Source: https://freesound.org/s/381170/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Hypo-Beat
+  Creator: edemson86
+  Source: https://freesound.org/s/330873/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Junk Drum Kit Loop 1
+  Creator: daehedon
+  Source: https://freesound.org/s/340484/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Lo-Fi Beat
+  Creator: Teacoma
+  Source: https://freesound.org/s/427915/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Middle East Ethnic Tribal Percussion
+  Creator: Roanian
+  Source: https://freesound.org/s/322327/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+minimal glitchy loop nokick
+  Creator: cubix
+  Source: https://freesound.org/s/124542/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Muster Loop
+  Creator: gilbert007
+  Source: https://freesound.org/s/237724/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+perc
+  Creator: asdftekno
+  Source: https://freesound.org/s/48529/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+PO-12 013
+  Creator: GioMilko
+  Source: https://freesound.org/s/390132/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+PO-12 014
+  Creator: GioMilko
+  Source: https://freesound.org/s/390133/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+shaker2
+  Creator: Sycopation
+  Source: https://freesound.org/s/272009/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+shaker5 (in 5s 8ths)
+  Creator: Sycopation
+  Source: https://freesound.org/s/272008/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Shaker TOCA
+  Creator: SeryLis
+  Source: https://freesound.org/s/277267/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+slow metal
+  Creator: fons
+  Source: https://freesound.org/s/85271/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Stone Beat (120)
+  Creator: JoaoSousa1988
+  Source: https://freesound.org/s/388840/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Stone Beat (120) Snare
+  Creator: JoaoSousa1988
+  Source: https://freesound.org/s/388842/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Strever's Drums P103
+  Creator: Strever953
+  Source: https://freesound.org/s/144481/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Strever's Drums P104
+  Creator: Strever953
+  Source: https://freesound.org/s/144480/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Tabla Loop Shuffle (4 bars
+  Creator: c0mp0s3r
+  Source: https://freesound.org/s/178176/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Taiko Drumloop 002 [With Ending] (120)
+  Creator: Xinematix
+  Source: https://freesound.org/s/491278/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Tambourine 2-bars loop 44.1kHz
+  Creator: funkologic
+  Source: https://freesound.org/s/456131/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Tambourine Loop
+  Creator: radiopassiveboy
+  Source: https://freesound.org/s/219251/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Tambourine Loop · radiopassiveboy
+  Creator: radiopassiveboy
+  Source: https://freesound.org/s/219250/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Tambourine Loop · radiopassiveboy · take 3
+  Creator: radiopassiveboy
+  Source: https://freesound.org/s/219254/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Tambourine Loop · radiopassiveboy · take 4
+  Creator: radiopassiveboy
+  Source: https://freesound.org/s/219265/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Acoustic Guitar Loop
+  Creator: mooncubedesign
+  Source: https://freesound.org/s/344082/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+August 28 2016 02
+  Creator: ADnova
+  Source: https://freesound.org/s/353041/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+backside of the moon Elec git loop 1
+  Creator: ShortBusMusic
+  Source: https://freesound.org/s/444923/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+CG105Loop
+  Creator: daatg
+  Source: https://freesound.org/s/72205/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Funk guitar in E 1 bar 114b
+  Creator: Sub-d
+  Source: https://freesound.org/s/47038/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+gtr 3
+  Creator: Rupert1073
+  Source: https://freesound.org/s/17698/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+plucky mallets loop a minor
+  Creator: skratan
+  Source: https://freesound.org/s/474863/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Rhythm 1 Clean
+  Creator: Khoon
+  Source: https://freesound.org/s/151009/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Rhythm 1 Dist Gated
+  Creator: Khoon
+  Source: https://freesound.org/s/151006/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+002 Example - bass riff loop
+  Creator: josefpres
+  Source: https://freesound.org/s/493117/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+rising square arpegiated chords
+  Creator: EathanMarkson
+  Source: https://freesound.org/s/346374/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+120 Distressed Break
+  Creator: fran_ky
+  Source: https://freesound.org/s/210824/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+120bpm12sAix1 G
+  Creator: gis_sweden
+  Source: https://freesound.org/s/246483/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+135-trap-melody
+  Creator: chiptraxxx
+  Source: https://freesound.org/s/431187/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+160-digital vinyl loop
+  Creator: chiptraxxx
+  Source: https://freesound.org/s/415004/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+8-kairatune--4M
+  Creator: PhilNSolo
+  Source: https://freesound.org/s/171846/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+9oBpM FLoWErS Evil Creams - 3
+  Creator: hello_flowers
+  Source: https://freesound.org/s/33358/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+analog untitled 6802
+  Creator: stixthule
+  Source: https://freesound.org/s/412913/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Bass
+  Creator: Greek555
+  Source: https://freesound.org/s/413752/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Bass · Greek555
+  Creator: Greek555
+  Source: https://freesound.org/s/414548/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Bass02
+  Creator: a7643PG
+  Source: https://freesound.org/s/262133/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Brass synth loop
+  Creator: EX-AN
+  Source: https://freesound.org/s/428332/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+City Wind Synth Loop 2
+  Creator: Stereo Surgeon
+  Source: https://freesound.org/s/345005/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Dance Bass
+  Creator: TheFlakesMaster
+  Source: https://freesound.org/s/404053/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Drums loop Massive HouseInCity125BPM-01
+  Creator: colano100dio
+  Source: https://freesound.org/s/108141/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+floating to nowhere synth
+  Creator: yapppy
+  Source: https://freesound.org/s/251249/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Game World
+  Creator: T_Beau
+  Source: https://freesound.org/s/367703/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+glitch loop
+  Creator: sandufi
+  Source: https://freesound.org/s/350858/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Morphine intro100 bpm
+  Creator: Matematik_production
+  Source: https://freesound.org/s/474383/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+plastic
+  Creator: kroshe
+  Source: https://freesound.org/s/468504/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+ride it
+  Creator: ADnova
+  Source: https://freesound.org/s/404526/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Riff#01
+  Creator: Feeder74
+  Source: https://freesound.org/s/59774/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Sample
+  Creator: Greek555
+  Source: https://freesound.org/s/414130/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Stabs Loop
+  Creator: woundwise
+  Source: https://freesound.org/s/415115/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+sydance8
+  Creator: Hoerspielwerkstatt_HEF
+  Source: https://freesound.org/s/345402/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+synth 142
+  Creator: MYUZIKOfficial
+  Source: https://freesound.org/s/414265/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Synth 4.1
+  Creator: jesuswaffle
+  Source: https://freesound.org/s/45455/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Synthloop A
+  Creator: Keygenerator
+  Source: https://freesound.org/s/104109/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Synthloop E
+  Creator: Keygenerator
+  Source: https://freesound.org/s/104310/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+TechOddLoop1 LC
+  Creator: aikighost
+  Source: https://freesound.org/s/19069/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+OrchSynthLoop
+  Creator: marcusvmanzoni
+  Source: https://freesound.org/s/136980/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+SynthLoop
+  Creator: marcusvmanzoni
+  Source: https://freesound.org/s/136979/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+105 freesound collab2-break
+  Creator: Snapper4298
+  Source: https://freesound.org/s/173506/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+vox warble effect (dubstep)
+  Creator: waveplay_old
+  Source: https://freesound.org/s/213868/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Bitcrushed Drums with wub
+  Creator: Dekpi
+  Source: https://freesound.org/s/403905/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Blips
+  Creator: kasa90
+  Source: https://freesound.org/s/202784/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+boop beep twannggggg
+  Creator: Screamr
+  Source: https://freesound.org/s/474161/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Chiptune Loop
+  Creator: Komit.
+  Source: https://freesound.org/s/399325/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+cloudcycle.stratus-darkbeat
+  Creator: mauxuam
+  Source: https://freesound.org/s/216812/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Dark Electronical Scape 001 The Division (A
+  Creator: Xinematix
+  Source: https://freesound.org/s/396158/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Dark Electronical Scape 002 The Division (A
+  Creator: Xinematix
+  Source: https://freesound.org/s/396157/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+deep sidechained bass
+  Creator: waveplay_old
+  Source: https://freesound.org/s/202384/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+distortedloop75bpm
+  Creator: deleted_user_984625
+  Source: https://freesound.org/s/112287/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+dubbrk
+  Creator: mikobuntu
+  Source: https://freesound.org/s/165086/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+east river twisted
+  Creator: torn.rugged.audio.35
+  Source: https://freesound.org/s/45741/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+glitchbeat
+  Creator: k2tr
+  Source: https://freesound.org/s/174005/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+GlitchLoop03
+  Creator: csum
+  Source: https://freesound.org/s/211956/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+jazz follow hardrise 155bpm3
+  Creator: torn.rugged.audio.35
+  Source: https://freesound.org/s/45742/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Lead01
+  Creator: a7643PG
+  Source: https://freesound.org/s/262201/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Noisy dubstep loop
+  Creator: Vicces1212
+  Source: https://freesound.org/s/150115/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Power Bass Electro House Synth (SAW+SQUARE)
+  Creator: joesacco
+  Source: https://freesound.org/s/161948/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Psy Trance Loop 06
+  Creator: zgump
+  Source: https://freesound.org/s/242555/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+REESEY BASS 2, , D
+  Creator: dubbwebb
+  Source: https://freesound.org/s/265152/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Synth
+  Creator: Greek555
+  Source: https://freesound.org/s/387461/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Synthbass loop1 C
+  Creator: tichec
+  Source: https://freesound.org/s/169879/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+VINYL LOOP
+  Creator: _CAZAPROD_
+  Source: https://freesound.org/s/342431/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+ZEF-rastathing
+  Creator: lezef
+  Source: https://freesound.org/s/45527/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+distorded drum loop · Garzul
+  Creator: Garzul
+  Source: https://freesound.org/s/213524/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+4bar-glitchyloop
+  Creator: mikobuntu
+  Source: https://freesound.org/s/329830/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+DnB-Loop-1
+  Creator: mikobuntu
+  Source: https://freesound.org/s/424083/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+2
+  Creator: bbd319
+  Source: https://freesound.org/s/170452/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+A loop culled II
+  Creator: p_ano
+  Source: https://freesound.org/s/200407/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Aciddream 10 light
+  Creator: Dolfeus
+  Source: https://freesound.org/s/44909/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Bgun 62 1
+  Creator: Dolfeus
+  Source: https://freesound.org/s/44910/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Bgun 62 3
+  Creator: Dolfeus
+  Source: https://freesound.org/s/44911/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Boss Intro 01
+  Creator: ADnova
+  Source: https://freesound.org/s/353272/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Boss Intro 02
+  Creator: ADnova
+  Source: https://freesound.org/s/353317/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Dodgy C Laid Back Loop
+  Creator: Dodgy C
+  Source: https://freesound.org/s/265076/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+DubStep Beat 150
+  Creator: jaffa1970
+  Source: https://freesound.org/s/266179/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+experimental electronic beat
+  Creator: xpansive
+  Source: https://freesound.org/s/244974/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+groove162
+  Creator: wmquincy101
+  Source: https://freesound.org/s/333626/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Melody Loop
+  Creator: Greek555
+  Source: https://freesound.org/s/414445/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+MusicLoop1
+  Creator: senkoro
+  Source: https://freesound.org/s/188533/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Theatrical Loop
+  Creator: SSS_Samples
+  Source: https://freesound.org/s/362380/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+trance-loop
+  Creator: antoinevg
+  Source: https://freesound.org/s/369227/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+very dark hip hop beat
+  Creator: exotonestudio
+  Source: https://freesound.org/s/416988/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+107-sloppy-beat-beatboxing
+  Creator: chiptraxxx
+  Source: https://freesound.org/s/431184/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Loop P101
+  Creator: Strever953
+  Source: https://freesound.org/s/147269/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+dub-loop1
+  Creator: mikobuntu
+  Source: https://freesound.org/s/175841/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Beatbox loop at with effects
+  Creator: jackheath
+  Source: https://freesound.org/s/347751/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+DreSludgeBox
+  Creator: .Andre_Onate
+  Source: https://freesound.org/s/332728/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Drumloop 'Wey' - 4 bar - (no swing)
+  Creator: Bronxio
+  Source: https://freesound.org/s/240099/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Human funk 5
+  Creator: fons
+  Source: https://freesound.org/s/466688/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Matt's Beatbox Harmonies Loop
+  Creator: Mattc90
+  Source: https://freesound.org/s/203977/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Matt's Beatbox Loop
+  Creator: Mattc90
+  Source: https://freesound.org/s/203532/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+Strever's Drums P102
+  Creator: Strever953
+  Source: https://freesound.org/s/144482/
+  License: https://creativecommons.org/publicdomain/zero/1.0/
+
+vox-loop-91
+  Creator: inlinebeats
+  Source: https://freesound.org/s/401819/
+  License: https://creativecommons.org/publicdomain/zero/1.0/

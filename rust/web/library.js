@@ -92,6 +92,10 @@
       this.actions.notify(message, true);
     }
     bind() {
+      window.addEventListener?.("pagehide", () => this.stopPreview());
+      document.addEventListener?.("visibilitychange", () => {
+        if (document.hidden) this.stopPreview();
+      });
       byId("library-toggle").onclick = () => {
         const expanded = byId("file-library").hidden;
         byId("file-library").hidden = !expanded;
@@ -381,12 +385,103 @@
       await this.rememberNative(native);
     }
     async activateId(id) {
+      this.stopPreview();
       const track = this.catalog.find((track) => factoryId(track) === id);
       const record = track
         ? await this.ensureFactory(track)
         : await this.store.read("files", id);
       if (!record) throw new Error("File is no longer in the library.");
       await this.activate(record);
+    }
+    stopPreview() {
+      const generation = this.previewGeneration = (this.previewGeneration || Date.now() * 1024) + 1;
+      clearTimeout(this.previewTimer);
+      if (this.previewNode) {
+        const { source, gain, context } = this.previewNode;
+        this.previewNode = null;
+        source.onended = null;
+        gain.gain.cancelScheduledValues(context.currentTime);
+        gain.gain.setTargetAtTime(0, context.currentTime, 0.003);
+        try { source.stop(context.currentTime + 0.015); } catch {}
+        source.onended = () => { source.disconnect(); gain.disconnect(); };
+      }
+      if (this.previewId && (window.sadPetPlugin || this.native))
+        this.nativePreview({ generation }).catch(error => this.error(error));
+      this.previewId = null;
+      this.previewNotify?.("idle");
+      this.previewNotify = null;
+    }
+    async nativePreview(data) {
+      const response = await fetch("/api/sample-preview", { method: "POST", body: JSON.stringify(data) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Cannot preview this sound.");
+      return result;
+    }
+    async preview(id, notify) {
+      const repeated = this.previewId === id;
+      this.stopPreview();
+      if (repeated) return;
+      const generation = this.previewGeneration;
+      this.previewId = id;
+      this.previewNotify = notify;
+      notify("loading");
+      const current = () => generation === this.previewGeneration;
+      try {
+        const track = this.catalog.find(track => factoryId(track) === id);
+        if (window.sadPetPlugin || this.native) {
+          const data = { id, generation };
+          if (!track && !this.native) {
+            const record = await this.store.read("files", id);
+            if (!record?.blob) throw new Error("File is no longer in the library.");
+            const bytes = new Uint8Array(await record.blob.arrayBuffer());
+            let text = "";
+            for (let i = 0; i < bytes.length; i += 32768)
+              text += String.fromCharCode(...bytes.subarray(i, i + 32768));
+            data.base64 = btoa(text);
+          }
+          if (!current()) return;
+          const result = await this.nativePreview(data);
+          if (!current()) return;
+          notify("playing");
+          this.previewTimer = setTimeout(() => current() && this.stopPreview(), result.seconds * 1000);
+          return;
+        }
+        // Resume during the gesture, before fetching or decoding a new source.
+        const Context = window.AudioContext || window.webkitAudioContext;
+        if (!Context) throw new Error("Audio preview is unavailable in this browser.");
+        const context = this.previewContext ||= new Context();
+        await context.resume();
+        if (!current()) return;
+        let buffer = this.previewBuffer?.id === id ? this.previewBuffer.buffer : null;
+        if (!buffer) {
+          const record = track ? await this.ensureFactory(track) : await this.store.read("files", id);
+          if (!current()) return;
+          if (!record?.blob) throw new Error("File is no longer in the library.");
+          buffer = await context.decodeAudioData(await record.blob.arrayBuffer());
+          if (!current()) return;
+          this.previewBuffer = { id, buffer };
+        }
+        const source = context.createBufferSource(), gain = context.createGain();
+        const now = context.currentTime, seconds = Math.min(8, buffer.duration);
+        source.buffer = buffer;
+        source.connect(gain);
+        gain.connect(context.destination);
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(0.5, now + Math.min(0.008, seconds / 3));
+        gain.gain.setValueAtTime(0.5, now + Math.max(seconds - 0.02, seconds / 3));
+        gain.gain.linearRampToValueAtTime(0, now + seconds);
+        this.previewNode = { source, gain, context };
+        source.onended = () => {
+          source.disconnect(); gain.disconnect();
+          if (current()) { this.previewNode = null; this.stopPreview(); }
+        };
+        source.start(now, 0, seconds);
+        notify("playing");
+      } catch (error) {
+        if (!current()) return;
+        this.stopPreview();
+        this.error(error);
+      }
     }
     activate(record) {
       const next = this.activation.then(() => this.activateNow(record));
@@ -576,7 +671,7 @@
     sourceGroups() {
       const categories = new Map([
         "Drums", "Percussion", "Vocals", "Bass", "Keys", "Plucks & mallets",
-        "Pads & strings", "Textures & FX", "Recordings",
+        "Pads & strings", "Synth loops", "Textures & FX", "Tracks", "Recordings",
       ].map((label) => [label, []]));
       for (const track of this.catalog) {
         const category = track.category || "Other";
@@ -606,6 +701,7 @@
         byId("sample-select"),
         this.currentId || (this.catalog.length ? factoryId(this.catalog[0]) : ""),
         this.sourceGroups(),
+        { play: (id, notify) => this.preview(id, notify), stop: () => this.stopPreview() },
       );
     }
     renderCurrent() {

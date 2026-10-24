@@ -511,7 +511,10 @@ pub extern "C" fn sad_factory(index: usize) -> u32 {
         let result = sad_pet::samples::TRACKS
             .get(index)
             .ok_or_else(|| "Unknown track".to_string())
-            .and_then(|_| {
+            .and_then(|track| {
+                if track.asset.is_some() {
+                    return Err("Load this recording from its catalog asset".to_string());
+                }
                 // IndexedDB retains the exported WAV. Keeping every generated
                 // sample and its mipmaps in the worker would duplicate the whole
                 // expanded bank in mobile RAM throughout the browser session.

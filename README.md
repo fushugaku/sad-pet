@@ -42,7 +42,7 @@ are shared across the three FX racks and all timbres of the same effect type.
 Portable `.sadfx` import/export moves settings between the web and native
 plug-ins, including modes, tempo sync, Smooth and Mix.
 
-- 158 categorized built-in audio sources, WAV import and an IndexedDB file library, including
+- 414 categorized built-in audio sources, WAV import and an IndexedDB file library, including
   Matrix POV video audio and a 42.67-second Harvest Dawn harp/chamber-string cover
   loop: 16 bars at 90 BPM, with the recognizable eight-bar introduction played
   in two variations. Note pitches/rhythm are checked against published transcriptions.
@@ -60,6 +60,18 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   the choices and in-place category navigation on phones. Factory audio is
   generated and cached when loaded or downloaded; opening the library does not
   render or store the entire bank. Existing source IDs and indices are preserved.
+- 256 additional CC0 musical loops from the Freesound Loop Dataset: multi-beat
+  drum/percussion parts, bass lines, keys, plucked and synthesized phrases,
+  vocals, pads, textures and mixed tracks. Original source links, creators,
+  licenses, tempo annotations and checksums accompany the recordings.
+  Browser builds fetch only the selected recording from the bundled assets;
+  the complete audio bank is not embedded in WASM or loaded into memory.
+- **Preview** a source with its **▶** button in the source menu, or **Space**
+  on a focused sound. It plays up to eight seconds of the raw recording without
+  changing the timbre, preset or transport. Click again to stop; choosing a
+  source, closing the menu or leaving its category stops the audition.
+  **Enter** or the sound's name loads it. Native editions preview through their
+  audio device/DAW output; audio files stay outside the standalone editor.
 - Browser microphone input with device selection, gain and level metering:
   direct filters/effects or granular processing of an eight-second live buffer.
 - Polyphonic keyboard, note/chord hold and arpeggiator.

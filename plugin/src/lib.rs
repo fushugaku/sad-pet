@@ -4,6 +4,7 @@ mod audio_library;
 mod effect_presets;
 mod parameters;
 mod preset_library;
+mod preview;
 mod timbres;
 mod vocal;
 use sad_pet::dsp::source_fx_worker as source_fx;
@@ -54,6 +55,8 @@ struct Transport {
 }
 
 enum Command {
+    Preview(Option<Box<preview::Preview>>),
+    PreviewStop,
     Preset(Box<Preset>),
     Parameters(Box<[parameters::Change]>),
     Sequence(Box<[sad_pet::sequence::Edit]>),
@@ -166,6 +169,7 @@ impl SentState {
 }
 
 pub struct Controller {
+    preview_generation: u64,
     meta: sad_pet::timbres::Meta,
     parts: Vec<Controller>,
     active: u32,
@@ -207,6 +211,7 @@ pub struct Controller {
 }
 
 pub struct Audio {
+    preview: Option<Box<preview::Preview>>,
     meta: sad_pet::timbres::Meta,
     parts: Option<Box<timbres::PartAudio>>,
     audible: bool,
@@ -372,6 +377,7 @@ impl Controller {
             voices: Arc::new(std::sync::OnceLock::new()),
             song_playing: false,
             song_position: 0,
+            preview_generation: 0,
         }
     }
 
@@ -526,6 +532,7 @@ impl Controller {
         let source_renderer = source_fx::Renderer::new(&engine);
         let vocal = self.sync_vocal().map(VocalAudio::new);
         Audio {
+            preview: None,
             meta: self.meta.clone(),
             parts: self.prepare_parts(self.rate),
             audible: !self.meta.mix.muted,
@@ -1111,6 +1118,12 @@ impl Audio {
                 break;
             };
             match &mut update.command {
+                Command::Preview(preview) => std::mem::swap(&mut self.preview, preview),
+                Command::PreviewStop => {
+                    if let Some(preview) = &mut self.preview {
+                        preview.stop();
+                    }
+                }
                 Command::Drums(edits) => self.engine.apply_drum_edits(edits),
                 Command::DrumTrigger(track, velocity) => {
                     self.engine.trigger_drum(*track, *velocity)

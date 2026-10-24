@@ -90,6 +90,7 @@
       return groups;
     }
     async activateId(id) {
+      this.stopPreview();
       const record = this.files.find((file) => file.id === id);
       if (!record) throw new Error("File is no longer in the library.");
       await this.activate(record);

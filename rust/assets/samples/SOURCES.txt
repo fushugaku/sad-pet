@@ -70,3 +70,25 @@ The sources vary in rhythm, melody, register, synthesis and articulation.
 Every addition is a four-bar stereo loop, rendered at 48 kHz on demand,
 with circular tails, DC removal and a peak ceiling of 0.78. The preceding
 30 entries retain their indices, factory IDs and audio generators.
+
+Recorded musical loops (256 sources, CC0)
+----------------------------------------
+Source: Freesound Loop Dataset, Ramires et al., ISMIR 2020.
+Dataset DOI / download: https://zenodo.org/records/3967852
+Archive MD5: c260a1203a82c1dda80ec1de75e5e23f (FSL10K.zip).
+
+These are multi-beat musical loops, 4–24 seconds each, not individual note or
+drum-hit samples. Each selected sound has a CC0 dedication in the dataset's
+per-sound metadata and a well-cut / defined-tempo annotation. The bank covers
+drum grooves, percussion patterns, bass lines, keys, guitar/plucked phrases,
+synth lines, vocal/beatbox loops, pads, textures and mixed musical tracks.
+Selected WAV bytes are preserved. Display titles and filenames are cleaned up;
+full original names, authors, source links, annotations, SHA-256 fingerprints
+and technical measurements are retained in loops-256/manifest.json.
+
+Per-source credits: loops-256/CREDITS.txt
+License text: loops-256/LICENSE-CC0.txt
+Verification: python3 rust/scripts/check_loop_bank.py
+No external account or runtime request to Freesound/Zenodo is required.
+Browsers fetch the selected WAV from the app's own static assets. Native
+builds embed the recordings; the WAV bank is excluded from the WASM binary.

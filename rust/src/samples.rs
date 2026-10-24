@@ -9,6 +9,7 @@ use std::{
 
 mod bank;
 mod harvest_cover;
+mod recordings;
 
 #[derive(Clone, Copy, Serialize)]
 pub struct Track {
@@ -18,6 +19,8 @@ pub struct Track {
     pub character: &'static str,
     pub seconds: f64,
     pub bpm: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub asset: Option<&'static str>,
 }
 
 const fn loop_track(
@@ -34,6 +37,7 @@ const fn loop_track(
         category,
         seconds: 16.0 * 60.0 / bpm as f64,
         bpm: Some(bpm),
+        asset: None,
     }
 }
 
@@ -45,6 +49,7 @@ const ORIGINAL_TRACKS: [Track; 30] = [
         character: "Glass plucks",
         seconds: 8.0,
         bpm: Some(120),
+        asset: None,
     },
     Track {
         id: "warm-chords",
@@ -53,6 +58,7 @@ const ORIGINAL_TRACKS: [Track; 30] = [
         character: "Slow analog pad",
         seconds: 16.0,
         bpm: Some(60),
+        asset: None,
     },
     Track {
         id: "analog-bass",
@@ -61,6 +67,7 @@ const ORIGINAL_TRACKS: [Track; 30] = [
         character: "Pulsing bass line",
         seconds: 8.0,
         bpm: Some(120),
+        asset: None,
     },
     Track {
         id: "drum-machine",
@@ -69,6 +76,7 @@ const ORIGINAL_TRACKS: [Track; 30] = [
         character: "Kick, snare & hats",
         seconds: 8.0,
         bpm: Some(120),
+        asset: None,
     },
     Track {
         id: "dusty-keys",
@@ -77,6 +85,7 @@ const ORIGINAL_TRACKS: [Track; 30] = [
         character: "Soft electric keys",
         seconds: 12.0,
         bpm: Some(80),
+        asset: None,
     },
     Track {
         id: "vowel-choir",
@@ -85,6 +94,7 @@ const ORIGINAL_TRACKS: [Track; 30] = [
         character: "Synthetic vocal phrases",
         seconds: 8.0,
         bpm: Some(120),
+        asset: None,
     },
     Track {
         id: "metallic-textures",
@@ -93,6 +103,7 @@ const ORIGINAL_TRACKS: [Track; 30] = [
         character: "Inharmonic struck tones",
         seconds: 12.0,
         bpm: Some(80),
+        asset: None,
     },
     Track {
         id: "air-and-rain",
@@ -101,6 +112,7 @@ const ORIGINAL_TRACKS: [Track; 30] = [
         character: "Noise, droplets & air",
         seconds: 12.0,
         bpm: None,
+        asset: None,
     },
     Track {
         id: "matrix-pov",
@@ -109,6 +121,7 @@ const ORIGINAL_TRACKS: [Track; 30] = [
         character: "Audio from the Matrix POV video",
         seconds: 7.453625,
         bpm: None,
+        asset: None,
     },
     Track {
         id: "harvest-dawn-loop",
@@ -117,6 +130,7 @@ const ORIGINAL_TRACKS: [Track; 30] = [
         character: "Jeremy Soule · Harp & chamber strings cover · 16 bars",
         seconds: harvest_cover::SECONDS,
         bpm: Some(harvest_cover::BPM),
+        asset: None,
     },
     loop_track(
         "lofi-beat",
@@ -216,6 +230,7 @@ const ORIGINAL_TRACKS: [Track; 30] = [
         character: "Evolving sub, beating partials & air",
         seconds: 16.0,
         bpm: None,
+        asset: None,
     },
     Track {
         id: "singing-bowl",
@@ -224,6 +239,7 @@ const ORIGINAL_TRACKS: [Track; 30] = [
         character: "Long bronze resonance",
         seconds: 12.0,
         bpm: None,
+        asset: None,
     },
     loop_track(
         "resonant-bells",
@@ -246,6 +262,7 @@ const ORIGINAL_TRACKS: [Track; 30] = [
         character: "Radio chirps, pulses & static",
         seconds: 12.0,
         bpm: None,
+        asset: None,
     },
     Track {
         id: "ocean-swell",
@@ -254,6 +271,7 @@ const ORIGINAL_TRACKS: [Track; 30] = [
         character: "Soft stereo surf & rolling waves",
         seconds: 16.0,
         bpm: None,
+        asset: None,
     },
     Track {
         id: "vinyl-dust",
@@ -262,12 +280,14 @@ const ORIGINAL_TRACKS: [Track; 30] = [
         character: "Record crackle, hiss & low hum",
         seconds: 12.0,
         bpm: None,
+        asset: None,
     },
 ];
 
 // Append only: existing factory indices and IDs remain stable in saved scenes.
 pub const TRACKS: &[Track] = &{
-    let mut tracks = [ORIGINAL_TRACKS[0]; ORIGINAL_TRACKS.len() + bank::EXPANSION_TRACKS.len()];
+    let mut tracks = [ORIGINAL_TRACKS[0];
+        ORIGINAL_TRACKS.len() + bank::EXPANSION_TRACKS.len() + recordings::TRACKS.len()];
     let mut i = 0;
     while i < ORIGINAL_TRACKS.len() {
         tracks[i] = ORIGINAL_TRACKS[i];
@@ -277,6 +297,11 @@ pub const TRACKS: &[Track] = &{
     while j < bank::EXPANSION_TRACKS.len() {
         tracks[i + j] = bank::EXPANSION_TRACKS[j];
         j += 1;
+    }
+    let mut k = 0;
+    while k < recordings::TRACKS.len() {
+        tracks[i + j + k] = recordings::TRACKS[k];
+        k += 1;
     }
     tracks
 };
@@ -306,6 +331,12 @@ fn envelope(age: f64, attack: f64, decay: f64) -> f64 {
 /// A variable rate is useful to verify the bank without allocating all 48 kHz files.
 pub fn generate(index: usize, sample_rate: u32) -> SampleBuffer {
     let track = &TRACKS[index];
+    if track.asset.is_some() {
+        return recorded(
+            index - ORIGINAL_TRACKS.len() - bank::EXPANSION_TRACKS.len(),
+            sample_rate,
+        );
+    }
     if track.id == "harvest-dawn-loop" {
         return harvest_cover::generate(track, sample_rate);
     }
@@ -525,4 +556,30 @@ pub fn generate(index: usize, sample_rate: u32) -> SampleBuffer {
         SampleBuffer::new(track.name.into(), sample_rate, frames).expect("valid built-in track");
     sample.library_id = Some(format!("factory:{}:v1", track.id));
     sample
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn recorded(index: usize, sample_rate: u32) -> SampleBuffer {
+    let track = &recordings::TRACKS[index];
+    let decoded = crate::wav::decode(Cursor::new(recordings::bytes(index)), track.name.into())
+        .expect("valid bundled recorded loop");
+    let mut sample = if sample_rate == decoded.sample_rate {
+        decoded
+    } else {
+        let step = decoded.sample_rate as f64 / sample_rate as f64;
+        let frames = (0..(track.seconds * sample_rate as f64).round() as usize)
+            .map(|i| decoded.read(i as f64 * step, step, true))
+            .collect();
+        SampleBuffer::new(track.name.into(), sample_rate, frames)
+            .expect("valid resampled recording")
+    };
+    sample.library_id = Some(format!("factory:{}:v1", track.id));
+    sample
+}
+
+#[cfg(target_arch = "wasm32")]
+fn recorded(_: usize, _: u32) -> SampleBuffer {
+    // sad_factory rejects external assets; the browser fetches and prepares the
+    // selected WAV. The recorded bank never inflates the WASM binary/heap.
+    panic!("Recorded sources must be loaded from their catalog asset");
 }

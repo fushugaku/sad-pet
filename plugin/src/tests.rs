@@ -33,6 +33,51 @@ unsafe impl GlobalAlloc for Allocator {
 #[global_allocator]
 static ALLOCATOR: Allocator = Allocator;
 
+#[test]
+fn sample_preview_plays_without_changing_scene_and_stops_without_heap_work() {
+    for rate in [44100, 48000] {
+        let mut control = Controller::new(false);
+        let mut audio = control.prepare(rate);
+        let values = control.values();
+        let saved = control.save().unwrap();
+        let source = control.sample.clone();
+        call(
+            &mut control,
+            "/api/sample-preview",
+            json!({"id":"factory:glass-sequence:v1","generation":1}),
+        );
+        let mut peak = 0.0_f32;
+        no_heap(|| {
+            audio.begin(&values, 0.0, None, false, 4096);
+            for _ in 0..4096 {
+                for sample in audio.process_frame([0.0; 2]) {
+                    peak = peak.max(sample.abs());
+                }
+            }
+        });
+        assert!(peak > 0.01);
+        assert!(Arc::ptr_eq(&source, &control.sample));
+        assert_eq!(saved, control.save().unwrap());
+        call(&mut control, "/api/sample-preview", json!({"generation":3}));
+        // A load that arrives after Stop with an older generation stays stopped.
+        call(
+            &mut control,
+            "/api/sample-preview",
+            json!({"id":"factory:dusty-keys:v1","generation":2}),
+        );
+        no_heap(|| {
+            audio.begin(&values, 0.0, None, false, 2048);
+            for i in 0..2048 {
+                let frame = audio.process_frame([0.0; 2]);
+                if i > 1024 {
+                    assert_eq!(frame, [0.0; 2]);
+                }
+            }
+        });
+        assert_eq!(saved, control.save().unwrap());
+    }
+}
+
 fn no_heap(f: impl FnOnce()) {
     HEAP_OPERATIONS.with(|n| n.set(0));
     TRACK.with(|t| t.set(true));

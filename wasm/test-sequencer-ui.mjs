@@ -454,6 +454,42 @@ console.log(
   "Destination menus: one closed button, section → target cascade, keyboard, type-ahead, hover, phone drill-in and outside click passed.",
 );
 
+// Audition is optional and never commits the source value. Space previews;
+// Enter/name chooses. Closing/back/category changes stop even pending audio.
+{
+  const anchor = Object.assign(new Element("button"), { connected: true });
+  const previews = [], updates = [];
+  let stops = 0;
+  context.window.SadLazySelect.configure(anchor, "old", [
+    { label: "Vocals", choices: [["old", "Old voice"], ["new", "New voice"]] },
+  ], { play: (id, notify) => { previews.push(id); updates.push(notify); }, stop: () => stops++ });
+  anchor.onclick();
+  menuKey("ArrowRight");
+  menuKey("ArrowDown");
+  menuKey(" ");
+  assert.deepEqual(previews, ["new"]);
+  assert.equal(anchor.value, "old");
+  updates[0]("playing");
+  const playButton = menuLayer().children[1].children[1].previewButton;
+  assert.equal(playButton.getAttribute("aria-pressed"), "true");
+  assert.equal(playButton.textContent, "■");
+  menuLayer().onclick({ target: playButton, detail: 1 });
+  assert.deepEqual(previews, ["new", "new"]);
+  assert.equal(anchor.value, "old", "Preview button selected the sound");
+  menuKey("Enter");
+  assert.equal(anchor.value, "new");
+  assert.equal(menuLayer(), undefined);
+  assert.equal(stops, 1);
+  updates[0]("playing"); // Late completions cannot recreate the dismissed menu.
+  anchor.onclick();
+  menuKey("ArrowRight");
+  menuKey("ArrowLeft");
+  assert.equal(stops, 2);
+  menuKey("Escape");
+  assert.equal(stops, 3);
+}
+console.log("Source preview menus: separate preview/selection, Space/Enter, stop on close and back, stale callbacks passed.");
+
 // Step selection, copy and paste.
 preset = {
   ...preset,

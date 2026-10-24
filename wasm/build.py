@@ -122,6 +122,7 @@ def main():
     index = index.replace("RUST EDITION", "WEBASSEMBLY")
     (output / "index.html").write_text(index)
     shutil.copytree(ROOT / "wasm" / "web", output, dirs_exist_ok=True)
+    shutil.copytree(ROOT / "rust/assets/samples/loops-256", output / "samples/loops-256", dirs_exist_ok=True)
     if not args.tail_call:
         # Without the variant the loader must not spend a request on it.
         backend = output / "browser-backend.mjs"
