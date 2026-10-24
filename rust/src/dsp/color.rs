@@ -123,7 +123,7 @@ impl ColorProcessor {
     }
     /// Standalone offline processors also prepare on their creating thread.
     pub fn prepare_imported(&mut self, slot: ColorSlot) {
-        self.imported = crate::imported_fx::Core::new(slot.kind);
+        self.imported = crate::imported_fx::Core::new(slot.kind, self.sample_rate as u32);
         self.imported_fresh = self.imported.is_some();
     }
     pub(super) fn detach_imported(&mut self, pool: &mut crate::imported_fx::PreparedEffects) {
@@ -168,7 +168,10 @@ impl ColorProcessor {
     pub fn configure_tempo(&mut self, slot: ColorSlot, bpm: f32) {
         let tempo = if matches!(
             slot.kind,
-            SaturatorType::LcrDelay | SaturatorType::ModDelay | SaturatorType::SuperEcho
+            SaturatorType::LcrDelay
+                | SaturatorType::ModDelay
+                | SaturatorType::SuperEcho
+                | SaturatorType::Mooz(_)
         ) {
             bpm
         } else {
@@ -282,7 +285,7 @@ impl ColorProcessor {
                 }
                 self.radias_delay.configure(slot, bpm)
             }
-            SaturatorType::SuperEcho | SaturatorType::AlphaVerb => {
+            SaturatorType::SuperEcho | SaturatorType::AlphaVerb | SaturatorType::Mooz(_) => {
                 if let Some(core) = &mut self.imported {
                     core.configure(slot, bpm);
                 }
@@ -384,6 +387,11 @@ impl ColorProcessor {
                     frame
                 }
             }
+            // Mooz models run at the host rate and need no rate bridge.
+            SaturatorType::Mooz(_) => match &mut self.imported {
+                Some(core) => core.process(frame),
+                None => frame,
+            },
             SaturatorType::Compressor => self.compressor.process(frame),
             SaturatorType::Waveshaper => self.waveshaper.process_with_voice_gain(frame, voice_gain),
         };

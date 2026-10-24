@@ -680,7 +680,8 @@
     title(record.name);
     return record;
   }
-  const fxPrefix = (kind) => (kind === "lcr_delay" ? "lcr" : kind) + "_";
+  const fxPrefix = (kind) =>
+    kind.startsWith("mooz_") ? "mooz_p" : (kind === "lcr_delay" ? "lcr" : kind) + "_";
   const closeValue = (a, b) => typeof a === "number" && typeof b === "number"
     ? Math.abs(a - b) < 0.000001 : a === b;
   class EffectPresets {

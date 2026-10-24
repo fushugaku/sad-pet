@@ -1,5 +1,6 @@
-//! Original KekLocator / Dayverb DSP. Heavy instances are prepared on the control
-//! thread, moved into the racks, and retired with the previous preset.
+//! Original KekLocator / Dayverb DSP and the mooz (MS-70CDR) models. Heavy
+//! instances are prepared on the control thread, moved into the racks, and
+//! retired with the previous preset.
 use crate::{Stereo, color::ColorSlot, preset::SaturatorType};
 
 pub struct Core {
@@ -18,10 +19,23 @@ enum Algorithm {
         read: usize,
         available: usize,
     },
+    /// Runs at the host rate; its buffers are sized for the rate it was made for.
+    Mooz {
+        model: sad_pet_mooz::Model,
+        effect: Box<dyn sad_pet_mooz::Effect>,
+        values: sad_pet_mooz::Values,
+        bpm: f32,
+    },
 }
 impl Core {
-    pub fn new(kind: SaturatorType) -> Option<Box<Self>> {
+    pub fn new(kind: SaturatorType, rate: u32) -> Option<Box<Self>> {
         let engine = match kind {
+            SaturatorType::Mooz(model) => Algorithm::Mooz {
+                model,
+                effect: model.create(rate as f32),
+                values: [f32::NAN; sad_pet_mooz::MAX_PARAMS],
+                bpm: 0.0,
+            },
             SaturatorType::SuperEcho => Algorithm::SuperEcho(Box::new(
                 sad_pet_superecho::Engine::new().expect("Pinned SuperEcho DSP initialization"),
             )),
@@ -45,6 +59,20 @@ impl Core {
     }
     pub fn configure(&mut self, slot: ColorSlot, bpm: f32) {
         match &mut self.engine {
+            Algorithm::Mooz {
+                model,
+                effect,
+                values,
+                bpm: configured,
+            } => {
+                let next = model.denormalize(&slot.mooz_values());
+                // A NaN never compares equal, so the first call always applies.
+                if next != *values || bpm != *configured {
+                    *values = next;
+                    *configured = bpm;
+                    effect.set(values, bpm);
+                }
+            }
             Algorithm::SuperEcho(engine) => {
                 let mut values = slot.super_echo_values();
                 if slot.settings.super_echo_sync >= 0.5 {
@@ -77,6 +105,10 @@ impl Core {
     }
     pub fn clear(&mut self) {
         self.failed = match &mut self.engine {
+            Algorithm::Mooz { effect, .. } => {
+                effect.clear();
+                false
+            }
             Algorithm::SuperEcho(engine) => engine.reset().is_err(),
             Algorithm::AlphaVerb {
                 engine,
@@ -100,6 +132,7 @@ impl Core {
             return [0.0; 2];
         }
         match &mut self.engine {
+            Algorithm::Mooz { effect, .. } => effect.process(frame),
             Algorithm::SuperEcho(engine) => {
                 let mut output = [[0.0; 2]];
                 self.failed |= engine.process(&[frame], &mut output).is_err();
@@ -256,7 +289,7 @@ impl PreparedEffects {
                     kind: s.kind,
                     scope,
                     rate,
-                    core: if core { None } else { Core::new(s.kind) },
+                    core: if core { None } else { Core::new(s.kind, rate) },
                     buffers: if buffers {
                         Buffers::default()
                     } else {
@@ -388,10 +421,51 @@ mod tests {
         assert!(old.entries[0].buffers.reverb.is_some());
     }
     #[test]
+    fn mooz_slots_persist_their_key_and_prepare_one_instance_per_model() {
+        let model = sad_pet_mooz::Model::from_key("mooz_delay").unwrap();
+        let slot = ColorSlot::mooz(7, model);
+        let json = serde_json::to_value(slot).unwrap();
+        assert_eq!(json["kind"], "mooz_delay");
+        let restored: ColorSlot = serde_json::from_value(json).unwrap();
+        assert_eq!(restored, slot);
+        assert!(
+            serde_json::from_value::<ColorSlot>(serde_json::json!({"kind": "mooz_nope"})).is_err()
+        );
+        assert_eq!(
+            serde_json::from_value::<SaturatorType>(serde_json::json!("alpha_verb")).unwrap(),
+            SaturatorType::AlphaVerb
+        );
+        let mut prepared = PreparedEffects::default();
+        prepared.prepare_for([slot].iter(), 44_100);
+        assert!(prepared.entries[0].core.is_some());
+        // Another model in the same slot is a different instance.
+        let mut other = slot;
+        other.kind = SaturatorType::Mooz(sad_pet_mooz::Model::from_key("mooz_hall").unwrap());
+        let mut next = PreparedEffects::default();
+        next.prepare_for([other].iter(), 44_100);
+        next.inherit(&mut prepared);
+        assert!(next.entries[0].core.is_some());
+        assert!(prepared.entries[0].core.is_some());
+    }
+    #[test]
+    fn mooz_slots_process_through_the_rack() {
+        for &model in sad_pet_mooz::Model::ALL {
+            let slot = ColorSlot::mooz(3, model);
+            let mut processor = crate::dsp::color::ColorProcessor::new(48_000);
+            processor.prepare_imported(slot);
+            processor.configure_tempo(slot, 128.0);
+            for i in 0..2048 {
+                let x = ((i as f32) * 0.03).sin() * 0.3;
+                let out = processor.process([x, -x]);
+                assert!(out.iter().all(|v| v.is_finite()), "{}", model.key());
+            }
+        }
+    }
+    #[test]
     fn alphaverb_mode_labels_match_original_compressor_and_gate_flags() {
         let manifest: serde_json::Value =
             serde_json::from_str(include_str!("../tests/fixtures/erika-fx/manifest.json")).unwrap();
-        let mut core = Core::new(SaturatorType::AlphaVerb).unwrap();
+        let mut core = Core::new(SaturatorType::AlphaVerb, 48_000).unwrap();
         let mut slot = ColorSlot {
             kind: SaturatorType::AlphaVerb,
             ..Default::default()

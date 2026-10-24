@@ -1,0 +1,16 @@
+pub mod ba_detune;
+pub mod ba_octave;
+pub mod ba_pitch;
+pub mod bit_crush;
+mod common;
+pub mod detune;
+mod dual_window;
+pub mod hps;
+pub mod mono_pitch;
+pub mod mono_synth;
+pub mod octave;
+pub mod pitch_shft;
+pub mod ring_mod;
+mod rom;
+mod two_tap;
+pub mod z_organ;

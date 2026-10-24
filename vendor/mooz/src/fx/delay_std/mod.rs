@@ -1,0 +1,12 @@
+pub mod analog_dly;
+mod common;
+pub mod delay;
+mod feedback;
+pub mod multi_tap_d;
+pub mod pitch_dly;
+pub mod reverse_dl;
+pub mod stereo_dly;
+pub mod stomp_dly;
+pub mod tape_echo;
+pub mod tape_echo3;
+pub mod trg_hld_dly;

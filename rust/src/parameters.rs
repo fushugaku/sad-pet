@@ -671,7 +671,10 @@ pub fn specs() -> &'static [Spec] {
         for i in 0..MAX_COLOR_SLOTS {
             for &field in ColorParameter::ALL {
                 // Existing AU parameter order stays stable; append new controls below.
-                if field == ColorParameter::WaveshaperDepth || field.is_imported() {
+                if field == ColorParameter::WaveshaperDepth
+                    || field.is_imported()
+                    || field.is_mooz()
+                {
                     continue;
                 }
                 let default = *ColorSlot::default().parameter_mut(field);
@@ -691,7 +694,10 @@ pub fn specs() -> &'static [Spec] {
         for pre in [false, true] {
             for i in 0..MAX_COLOR_SLOTS {
                 for &field in ColorParameter::ALL {
-                    if field.is_imported() || (!pre && field != ColorParameter::WaveshaperDepth) {
+                    if field.is_imported()
+                        || field.is_mooz()
+                        || (!pre && field != ColorParameter::WaveshaperDepth)
+                    {
                         continue;
                     }
                     let mut spec = Spec {
@@ -745,7 +751,7 @@ pub fn specs() -> &'static [Spec] {
             },
         });
         for &field in ColorParameter::ALL {
-            if field.is_imported() {
+            if field.is_imported() || field.is_mooz() {
                 continue;
             }
             result.push(Spec {
@@ -926,7 +932,7 @@ pub fn specs() -> &'static [Spec] {
         for rack in 0..3 {
             let count = if rack == 2 { 1 } else { MAX_COLOR_SLOTS };
             for i in 0..count {
-                for &field in &ColorParameter::ALL[ColorParameter::LEGACY_COUNT..] {
+                for &field in ColorParameter::ALL.iter().filter(|f| f.is_imported()) {
                     let prefix = ["", "pre_", "source_"][rack];
                     let mut spec = Spec {
                         id: format!("{prefix}fx{}_{}", i + 1, field.key()),
@@ -1090,6 +1096,39 @@ pub fn specs() -> &'static [Spec] {
                     default: oscillator_get(*o, field),
                     target: Target::SynthOsc(i, field),
                 });
+            }
+        }
+        // Mooz model controls append after every released host index. Their
+        // meaning follows the slot's model; values are normalized to 0..1.
+        for rack in 0..3 {
+            let count = if rack == 2 { 1 } else { MAX_COLOR_SLOTS };
+            for i in 0..count {
+                for field in ColorParameter::MOOZ {
+                    let mut spec = Spec {
+                        id: format!(
+                            "{}fx{}_{}",
+                            ["", "pre_", "source_"][rack],
+                            i + 1,
+                            field.key()
+                        ),
+                        name: format!(
+                            "{}FX {} mooz {}",
+                            ["", "Pre ", "Source "][rack],
+                            i + 1,
+                            &field.key()["mooz_".len()..]
+                        ),
+                        min: 0.0,
+                        max: 1.0,
+                        default: 0.0,
+                        target: if rack == 2 {
+                            Target::SourceFx(field)
+                        } else {
+                            Target::Fx(rack == 1, i, field)
+                        },
+                    };
+                    spec.default = spec.get(&preset);
+                    result.push(spec);
+                }
             }
         }
         result

@@ -1,0 +1,16 @@
+[package]
+name = "sad-pet-mooz"
+version = "0.1.0"
+edition = "2024"
+description = "mooz: the Zoom MS-70CDR 2.10 effect set rebuilt as native f32 DSP for SAD PET"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+
+# Standalone porting builds: the contract test renders seconds of audio per model.
+[profile.dev]
+opt-level = 1
+
+[profile.test]
+opt-level = 2

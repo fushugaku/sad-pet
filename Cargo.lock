@@ -845,6 +845,7 @@ dependencies = [
  "rtrb",
  "sad-pet-alphaverb",
  "sad-pet-dxm088",
+ "sad-pet-mooz",
  "sad-pet-superecho",
  "sad-pet-voice",
  "serde",
@@ -859,6 +860,13 @@ version = "0.4.0"
 [[package]]
 name = "sad-pet-dxm088"
 version = "0.9.0"
+
+[[package]]
+name = "sad-pet-mooz"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "sad-pet-plugin"
