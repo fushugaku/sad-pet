@@ -1845,25 +1845,15 @@ impl Engine {
         self.color_rack.set_pitch(shaper_note);
         self.applied_shaper_pitch = shaper_note.to_bits();
         self.performance.modulate(m.performance);
+        // Pitch is a Grain engine control: it leaves the drum and synth voices
+        // alone, so switching Granular off restores their own pitch.
+        let direct_tune = m.params.sample_tune_semis + m.params.sample_tune_cents * 0.01;
         if let (Some(drums), Some(settings)) = (&mut self.drums, &self.preset.drums) {
-            let transpose = if settings.granular {
-                0.
-            } else {
-                (m.params.pitch * 2. - 1.) * m.params.pitch_range
-                    + m.params.sample_tune_semis
-                    + m.params.sample_tune_cents * 0.01
-            };
+            let transpose = if settings.granular { 0. } else { direct_tune };
             drums.configure(settings, m.drums, m.params.bpm, transpose);
         }
         if let Some(synth) = &mut self.synth {
-            // As with drums, Pitch transposes the grains while they are on.
-            let transpose = if m.synth.granular {
-                0.
-            } else {
-                (m.params.pitch * 2. - 1.) * m.params.pitch_range
-                    + m.params.sample_tune_semis
-                    + m.params.sample_tune_cents * 0.01
-            };
+            let transpose = if m.synth.granular { 0. } else { direct_tune };
             synth.configure(&m.synth, transpose, &self.sample, m.params.sample_root_note);
         }
         for (i, env) in m.envs.iter().enumerate() {

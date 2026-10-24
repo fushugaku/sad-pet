@@ -55,3 +55,21 @@ fn drum_granular_routing_changes_audio_and_can_be_toggled_without_rebuilding_the
     }
     assert!(dry.active_grains() > 0);
 }
+
+#[test]
+fn grain_pitch_leaves_the_direct_drums_at_their_own_tuning() {
+    // Pitch moved while Granular is on, then Granular switched off.
+    let mut moved = drum_engine(true);
+    moved.apply_parameters(
+        &parameters::parse(&serde_json::json!({"pitch":0.9,"drum_granular":0})).unwrap(),
+    );
+    let mut reference = drum_engine(false);
+    reference.apply_parameters(&parameters::parse(&serde_json::json!({"pitch":0.5})).unwrap());
+    let mut energy = 0.0;
+    for _ in 0..16000 {
+        let (a, b) = (moved.process_frame(), reference.process_frame());
+        energy += a[0] * a[0];
+        assert!((a[0] - b[0]).abs() < 1e-4, "Grain pitch transposed the direct drums");
+    }
+    assert!(energy > 0.01);
+}
