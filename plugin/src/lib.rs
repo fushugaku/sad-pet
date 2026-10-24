@@ -7,6 +7,7 @@ mod preset_library;
 mod preview;
 mod timbres;
 mod vocal;
+mod workers;
 use sad_pet::dsp::source_fx_worker as source_fx;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
@@ -82,6 +83,8 @@ enum Command {
         reset: bool,
         clear: bool,
     },
+    /// Render workers, started on a control thread once a scene has two timbres.
+    Workers(Option<Box<workers::Pool>>),
 }
 
 struct Restore {
@@ -208,6 +211,8 @@ pub struct Controller {
     voices: Arc<std::sync::OnceLock<vocal::Service>>,
     song_playing: bool,
     song_position: u64,
+    /// The prepared audio has render workers, or a queued update brings them.
+    workers_started: bool,
 }
 
 pub struct Audio {
@@ -241,6 +246,8 @@ pub struct Audio {
     song: (bool, u64),
     /// This part's render buffers for one chunk of the block.
     chunk: Box<timbres::Chunk>,
+    /// The scene's render workers; only the scene's own part has them.
+    pool: Option<Box<workers::Pool>>,
 }
 
 /// A Vocal part's audio side: rendered clips, read a chunk at a time.
@@ -380,6 +387,7 @@ impl Controller {
             song_playing: false,
             song_position: 0,
             preview_generation: 0,
+            workers_started: false,
         }
     }
 
@@ -500,6 +508,8 @@ impl Controller {
 
     fn prepare(&mut self, rate: u32) -> Audio {
         self.drain();
+        // Workers queued for an earlier audio leave with its queue.
+        self.workers_started = false;
         self.rate = rate.clamp(8_000, 384_000);
         let (commands, receiver) = RingBuffer::new(QUEUE);
         let (retire, retired) = RingBuffer::new(QUEUE);
@@ -563,6 +573,32 @@ impl Controller {
             clock: Default::default(),
             song: (false, 0),
             chunk: timbres::Chunk::new(),
+            pool: self.start_workers(),
+        }
+    }
+
+    /// Timbres that render their own source: the scene's part and every
+    /// part that is not a Bus or Master.
+    fn rendered_timbres(&self) -> usize {
+        1 + self.parts.iter().filter(|p| !p.meta.kind.routing()).count()
+    }
+    /// Workers for the scene once it renders two timbres or more; a part
+    /// of the scene, or a scene of one timbre, renders on the audio thread.
+    fn start_workers(&mut self) -> Option<Box<workers::Pool>> {
+        if self.meta.id != 0 || self.workers_started || self.rendered_timbres() < 2 {
+            return None;
+        }
+        let pool = workers::Pool::new().map(Box::new);
+        self.workers_started = pool.is_some();
+        pool
+    }
+    /// Hands workers to the running audio once the scene has grown to two
+    /// timbres. Without a queue slot they follow with a later change.
+    fn offer_workers(&mut self) {
+        if let Some(pool) = self.start_workers()
+            && self.enqueue(Command::Workers(Some(pool))).is_err()
+        {
+            self.workers_started = false;
         }
     }
 
@@ -794,6 +830,7 @@ impl Controller {
         self.midi_gate = saved.midi_gate;
         self.playing = saved.playing;
         self.selection = saved.selection;
+        self.offer_workers();
         Ok(())
     }
 
@@ -1214,6 +1251,9 @@ impl Audio {
                         self.engine.clear_step_notes();
                     }
                 }
+                // Any previous pool goes back with the update, so its
+                // threads are joined on the control thread.
+                Command::Workers(pool) => std::mem::swap(&mut self.pool, pool),
             }
             self.revision = update.revision;
             // Space was checked above; no allocation can be freed in this callback.
