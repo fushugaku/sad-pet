@@ -269,6 +269,9 @@ pub struct Resynth {
     lfo: i16,
     /// Advances with every configuration that can change carrier controls.
     control_epoch: u64,
+    /// The last frame paused every carrier, so all taps, feedback and wraps
+    /// hold zero.
+    taps_clear: bool,
 }
 impl Resynth {
     pub fn new(sr: u32) -> Self {
@@ -310,6 +313,7 @@ impl Resynth {
             frame: 0,
             lfo: 0,
             control_epoch: 0,
+            taps_clear: false,
         }
     }
     pub fn clear(&mut self) {
@@ -618,6 +622,10 @@ impl Resynth {
         // resume from their own phases. During playback they always run, so
         // rendered audio is unchanged.
         let paused = !running && self.gains.iter().all(|&gain| gain == 0.0);
+        // A paused frame only stores zero taps for every layer; once one has,
+        // the next paused frames would store the same zeros again.
+        let idle = paused && self.taps_clear;
+        self.taps_clear = paused;
         let mut wet = [0.0; 2];
         for sub in 0..self.oversample {
             wet = [0.0; 2];
@@ -628,6 +636,9 @@ impl Resynth {
                 self.frame & !3
             };
             for (layer_id, &filters) in layer_filters.iter().enumerate() {
+                if idle {
+                    break;
+                }
                 let layer = &mut self.layers[layer_id];
                 if paused
                     || (!self.needed[layer_id] && layer.target_gain == 0.0 && layer.gain == 0.0)
