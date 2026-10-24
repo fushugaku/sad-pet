@@ -128,13 +128,39 @@ color_parameters! {
     AlphaVerbGateHold => alpha_verb_gate_hold,
     AlphaVerbGateRelease => alpha_verb_gate_release,
     AlphaVerbFreeze => alpha_verb_freeze,
+    MoozP1 => mooz_p1,
+    MoozP2 => mooz_p2,
+    MoozP3 => mooz_p3,
+    MoozP4 => mooz_p4,
+    MoozP5 => mooz_p5,
+    MoozP6 => mooz_p6,
+    MoozP7 => mooz_p7,
+    MoozP8 => mooz_p8,
+    MoozP9 => mooz_p9,
 }
 
 impl ColorParameter {
     /// Parameter count in the released 0.8 host layout. New IDs append later.
     pub const LEGACY_COUNT: usize = 59;
+    /// Generic controls of the mooz models, in each model's catalog order.
+    pub const MOOZ: [Self; sad_pet_mooz::MAX_PARAMS] = [
+        Self::MoozP1,
+        Self::MoozP2,
+        Self::MoozP3,
+        Self::MoozP4,
+        Self::MoozP5,
+        Self::MoozP6,
+        Self::MoozP7,
+        Self::MoozP8,
+        Self::MoozP9,
+    ];
+    /// SuperEcho and AlphaVerb controls, appended after the 0.8 layout.
     pub fn is_imported(self) -> bool {
-        self as usize >= Self::LEGACY_COUNT
+        self as usize >= Self::LEGACY_COUNT && !self.is_mooz()
+    }
+    /// Mooz controls append after every other host ID.
+    pub fn is_mooz(self) -> bool {
+        self as usize >= Self::MoozP1 as usize
     }
 }
 
@@ -247,6 +273,16 @@ pub struct ColorSettings {
     pub alpha_verb_gate_hold: f32,
     pub alpha_verb_gate_release: f32,
     pub alpha_verb_freeze: f32,
+    /// Normalized values of the slot's mooz model, in catalog order.
+    pub mooz_p1: f32,
+    pub mooz_p2: f32,
+    pub mooz_p3: f32,
+    pub mooz_p4: f32,
+    pub mooz_p5: f32,
+    pub mooz_p6: f32,
+    pub mooz_p7: f32,
+    pub mooz_p8: f32,
+    pub mooz_p9: f32,
 }
 impl Default for ColorSettings {
     fn default() -> Self {
@@ -358,6 +394,15 @@ impl Default for ColorSettings {
             alpha_verb_gate_hold: sad_pet_alphaverb::parameters::PARAMETERS[18].default_normalized,
             alpha_verb_gate_release: 0.0,
             alpha_verb_freeze: 0.0,
+            mooz_p1: 0.0,
+            mooz_p2: 0.0,
+            mooz_p3: 0.0,
+            mooz_p4: 0.0,
+            mooz_p5: 0.0,
+            mooz_p6: 0.0,
+            mooz_p7: 0.0,
+            mooz_p8: 0.0,
+            mooz_p9: 0.0,
         }
     }
 }
@@ -385,7 +430,65 @@ impl Default for ColorSlot {
 impl ColorSlot {
     pub fn control_parameters(&self) -> &'static [ColorParameter] {
         use ColorParameter as P;
+        const MOOZ_CONTROLS: [&[ColorParameter]; sad_pet_mooz::MAX_PARAMS + 1] = [
+            &[P::Mix],
+            &[P::MoozP1, P::Mix],
+            &[P::MoozP1, P::MoozP2, P::Mix],
+            &[P::MoozP1, P::MoozP2, P::MoozP3, P::Mix],
+            &[P::MoozP1, P::MoozP2, P::MoozP3, P::MoozP4, P::Mix],
+            &[
+                P::MoozP1,
+                P::MoozP2,
+                P::MoozP3,
+                P::MoozP4,
+                P::MoozP5,
+                P::Mix,
+            ],
+            &[
+                P::MoozP1,
+                P::MoozP2,
+                P::MoozP3,
+                P::MoozP4,
+                P::MoozP5,
+                P::MoozP6,
+                P::Mix,
+            ],
+            &[
+                P::MoozP1,
+                P::MoozP2,
+                P::MoozP3,
+                P::MoozP4,
+                P::MoozP5,
+                P::MoozP6,
+                P::MoozP7,
+                P::Mix,
+            ],
+            &[
+                P::MoozP1,
+                P::MoozP2,
+                P::MoozP3,
+                P::MoozP4,
+                P::MoozP5,
+                P::MoozP6,
+                P::MoozP7,
+                P::MoozP8,
+                P::Mix,
+            ],
+            &[
+                P::MoozP1,
+                P::MoozP2,
+                P::MoozP3,
+                P::MoozP4,
+                P::MoozP5,
+                P::MoozP6,
+                P::MoozP7,
+                P::MoozP8,
+                P::MoozP9,
+                P::Mix,
+            ],
+        ];
         match self.kind {
+            SaturatorType::Mooz(model) => MOOZ_CONTROLS[model.info().params.len()],
             SaturatorType::Distortion => &[
                 P::DistortionDrive,
                 P::DistortionTone,
@@ -586,6 +689,32 @@ impl ColorSlot {
             s.alpha_verb_freeze,
         ]
     }
+    pub fn mooz_values(&self) -> [f32; sad_pet_mooz::MAX_PARAMS] {
+        let s = self.settings;
+        [
+            s.mooz_p1, s.mooz_p2, s.mooz_p3, s.mooz_p4, s.mooz_p5, s.mooz_p6, s.mooz_p7, s.mooz_p8,
+            s.mooz_p9,
+        ]
+    }
+    /// A fresh slot of a mooz model at its original defaults. The model has
+    /// its own Mix and Level, so the slot passes it through fully wet.
+    pub fn mooz(id: u32, model: sad_pet_mooz::Model) -> Self {
+        let mut slot = Self {
+            id,
+            kind: SaturatorType::Mooz(model),
+            mix: 1.0,
+            ..Self::default()
+        };
+        slot.set_mooz_defaults();
+        slot
+    }
+    pub fn set_mooz_defaults(&mut self) {
+        let defaults = self.kind.mooz().map(|m| m.normalized_defaults());
+        let defaults = defaults.unwrap_or([0.0; sad_pet_mooz::MAX_PARAMS]);
+        for (parameter, value) in ColorParameter::MOOZ.into_iter().zip(defaults) {
+            *self.parameter_mut(parameter) = value;
+        }
+    }
     pub fn legacy_reverb(id: u32, params: &Params) -> Self {
         Self {
             id,
@@ -741,7 +870,16 @@ impl ColorSlot {
             compressor_release,
             compressor_knee,
             compressor_makeup,
-            waveshaper_depth
+            waveshaper_depth,
+            mooz_p1,
+            mooz_p2,
+            mooz_p3,
+            mooz_p4,
+            mooz_p5,
+            mooz_p6,
+            mooz_p7,
+            mooz_p8,
+            mooz_p9
         );
     }
 }
@@ -770,5 +908,63 @@ pub fn mirror_reverb(params: &mut Params, slots: &[ColorSlot]) {
         params.diffuse = p.diffuse;
     } else {
         params.reverb = 0.0;
+    }
+}
+
+/// What the UI needs to build mooz cards: every model's catalog entry, the menu
+/// sections and the tempo-note labels used by synced parameters.
+pub fn mooz_catalog() -> serde_json::Value {
+    // Plain integer displays are the common case; the UI prints those itself.
+    let plain = serde_json::to_value(sad_pet_mooz::Display::INT).expect("display");
+    let models: Vec<_> = sad_pet_mooz::Model::ALL
+        .iter()
+        .map(|model| {
+            let info = model.info();
+            let params: Vec<_> = info
+                .params
+                .iter()
+                .map(|param| {
+                    let mut entry = serde_json::json!({
+                        "name": param.name,
+                        "max": param.max,
+                        "default": param.default,
+                    });
+                    let display = serde_json::to_value(param.display).expect("display");
+                    if display != plain {
+                        entry["display"] = display;
+                    }
+                    entry
+                })
+                .collect();
+            serde_json::json!({
+                "key": info.key,
+                "name": info.name,
+                "category": info.category,
+                "description": info.description,
+                "params": params,
+            })
+        })
+        .collect();
+    let categories: Vec<_> = sad_pet_mooz::Category::ALL
+        .iter()
+        .map(|category| serde_json::json!({"key": category, "label": category.label()}))
+        .collect();
+    serde_json::json!({
+        "models": models,
+        "categories": categories,
+        "delay_notes": &sad_pet_mooz::zoom::DELAY_NOTE_LABELS[..],
+        "rate_notes": &sad_pet_mooz::zoom::RATE_NOTE_LABELS[..],
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn mooz_catalog_lists_every_model_compactly() {
+        let catalog = super::mooz_catalog();
+        assert_eq!(catalog["models"].as_array().unwrap().len(), 137);
+        assert_eq!(catalog["delay_notes"].as_array().unwrap().len(), 71);
+        let size = serde_json::to_string(&catalog).unwrap().len();
+        assert!(size < 128 * 1024, "{size} bytes");
     }
 }

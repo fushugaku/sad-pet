@@ -1,0 +1,15 @@
+pub mod auto_pan;
+pub mod ba_flanger;
+pub mod bf_flg_2;
+mod common;
+pub mod duo_phase;
+pub mod duo_trem;
+pub mod dyna_flngr;
+pub mod flanger;
+mod flanger_core;
+pub mod phaser;
+pub mod stone_pha;
+pub mod the_vibe;
+pub mod tremolo;
+pub mod vin_flngr;
+pub mod warp_phase;

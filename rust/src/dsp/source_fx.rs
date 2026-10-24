@@ -17,6 +17,14 @@ impl Recipe {
             crate::preset::SaturatorType::LcrDelay => s.settings.lcr_sync,
             crate::preset::SaturatorType::ModDelay => s.settings.mod_delay_sync,
             crate::preset::SaturatorType::SuperEcho => s.settings.super_echo_sync >= 0.5,
+            // Any mooz model with tempo-synced times or rates renders per tempo.
+            crate::preset::SaturatorType::Mooz(model) => model.info().params.iter().any(|p| {
+                matches!(
+                    p.display,
+                    sad_pet_mooz::Display::DelayTime { .. }
+                        | sad_pet_mooz::Display::SyncRate { .. }
+                ) || p.name.eq_ignore_ascii_case("sync")
+            }),
             _ => false,
         });
         let pitched = slot.is_some_and(|s| {

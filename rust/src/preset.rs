@@ -235,8 +235,7 @@ impl FilterSlotParameter {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum SaturatorType {
     #[default]
     Distortion,
@@ -252,6 +251,63 @@ pub enum SaturatorType {
     Waveshaper,
     SuperEcho,
     AlphaVerb,
+    /// The MS-70CDR effect set, persisted as its `mooz_<name>` key.
+    Mooz(sad_pet_mooz::Model),
+}
+impl SaturatorType {
+    const BUILT_IN: [(Self, &'static str); 13] = [
+        (Self::Distortion, "distortion"),
+        (Self::Reducer, "reducer"),
+        (Self::Crusher, "crusher"),
+        (Self::Flanger, "flanger"),
+        (Self::Chorus, "chorus"),
+        (Self::Binaural, "binaural"),
+        (Self::Reverb, "reverb"),
+        (Self::LcrDelay, "lcr_delay"),
+        (Self::ModDelay, "mod_delay"),
+        (Self::Compressor, "compressor"),
+        (Self::Waveshaper, "waveshaper"),
+        (Self::SuperEcho, "super_echo"),
+        (Self::AlphaVerb, "alpha_verb"),
+    ];
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Mooz(model) => model.key(),
+            kind => {
+                Self::BUILT_IN
+                    .iter()
+                    .find(|(k, _)| *k == kind)
+                    .expect("built-in kind")
+                    .1
+            }
+        }
+    }
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::BUILT_IN
+            .iter()
+            .find(|(_, k)| *k == key)
+            .map(|(kind, _)| *kind)
+            .or_else(|| sad_pet_mooz::Model::from_key(key).map(Self::Mooz))
+    }
+    pub fn mooz(self) -> Option<sad_pet_mooz::Model> {
+        match self {
+            Self::Mooz(model) => Some(model),
+            _ => None,
+        }
+    }
+}
+impl Serialize for SaturatorType {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.key())
+    }
+}
+impl<'de> Deserialize<'de> for SaturatorType {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let key = std::borrow::Cow::<'de, str>::deserialize(deserializer)?;
+        Self::from_key(&key).ok_or_else(|| {
+            serde::de::Error::unknown_variant(&key, &["distortion", "…", "alpha_verb", "mooz_*"])
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]

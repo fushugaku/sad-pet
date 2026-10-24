@@ -1890,6 +1890,77 @@ const colorTypeGroups = () =>
     label,
     choices: kinds.map((kind) => COLOR_TYPES.find(([k]) => k === kind)),
   }));
+// The MS-70CDR set arrives with the color defaults: one type per model, named
+// "mooz <original name>", with nine generic controls read through its catalog.
+const MOOZ = { models: new Map(), delayNotes: [], rateNotes: [] };
+const isMooz = (kind) => typeof kind === "string" && kind.startsWith("mooz_");
+function moozValue(param, v) {
+  return Math.round(Math.max(0, Math.min(1, v)) * param.max);
+}
+function moozFormat(param, v) {
+  const value = moozValue(param, v),
+    d = param.display;
+  if (!d) return String(value);
+  const number = (x) => `${(x * d.scale + d.offset).toFixed(d.decimals)}${d.unit}`;
+  if (d.type === "labels") return d.labels[value] ?? String(value);
+  if (d.type === "delay_time")
+    return value <= d.threshold
+      ? `${value + (d.offset ?? 1)} ms`
+      : MOOZ.delayNotes[value - d.threshold - 1] ?? String(value);
+  if (d.type === "sync_rate")
+    return value <= d.threshold
+      ? number(value)
+      : MOOZ.rateNotes[value - d.threshold - 1] ?? String(value);
+  return number(value);
+}
+function registerMooz(catalog) {
+  if (!catalog || MOOZ.models.size) return;
+  MOOZ.delayNotes = catalog.delay_notes;
+  MOOZ.rateNotes = catalog.rate_notes;
+  const models = [...catalog.models].sort((a, b) =>
+    a.name.localeCompare(b.name, "en", { sensitivity: "base" }),
+  );
+  for (const model of models) {
+    MOOZ.models.set(model.key, model);
+    COLOR_TYPES.push([model.key, `mooz ${model.name}`]);
+    COLOR_SCHEMAS[model.key] = model.params.map((param, i) => [
+      `mooz_p${i + 1}`,
+      param.name.toUpperCase(),
+      (v) => moozFormat(param, v),
+    ]);
+  }
+  for (const { key, label } of catalog.categories) {
+    const kinds = models.filter((m) => m.category === key).map((m) => m.key);
+    if (kinds.length) COLOR_SECTIONS.push([`mooz · ${label}`, kinds]);
+  }
+}
+function moozParam(kind, parameter) {
+  const match = /^mooz_p(\d)$/.exec(parameter);
+  return match && MOOZ.models.get(kind)?.params[Number(match[1]) - 1];
+}
+// Pedal values are integers; long ranges step faster from the keyboard.
+function moozBinding(kind, parameter) {
+  const param = moozParam(kind, parameter);
+  if (!param || !param.max) return {};
+  const step = param.max > 200 ? Math.round(param.max / 200) : 1;
+  const snap = (v) => Math.max(0, Math.min(param.max, Math.round(v * param.max))) / param.max;
+  return {
+    quantize: (v) => snap(v),
+    increment: (v, direction) => snap(v + (direction * step) / param.max),
+    reset: () => param.default / param.max,
+  };
+}
+// A new or retyped slot starts at its model's original settings.
+function applyKindDefaults(slot) {
+  if (slot.kind === "compressor") slot.mix = 1;
+  const model = MOOZ.models.get(slot.kind);
+  if (!model) return;
+  slot.mix = 1;
+  for (let i = 0; i < 9; i++) {
+    const param = model.params[i];
+    slot.settings[`mooz_p${i + 1}`] = param && param.max ? param.default / param.max : 0;
+  }
+}
 const COLOR_RACKS = [
   {
     key: "source_color_chain",
@@ -2242,7 +2313,7 @@ const COLOR_SCHEMAS = {
 function colorSchema(kind, slot = null) {
   const prefix = delayPrefix(kind);
   const sync = prefix && slot?.settings[`${prefix}_sync`];
-  const schema = COLOR_SCHEMAS[kind].map(([parameter, label, format]) => {
+  const schema = (COLOR_SCHEMAS[kind] || []).map(([parameter, label, format]) => {
     if (
       kind === "super_echo" &&
       parameter === "super_echo_time" &&
@@ -2261,7 +2332,8 @@ function colorSchema(kind, slot = null) {
       ];
     return [parameter, label, format];
   });
-  return [...schema, ["mix", "MIX", percent]];
+  // Mooz models have their own MIX; the slot's dry/wet reads as BLEND there.
+  return [...schema, ["mix", isMooz(kind) ? "BLEND" : "MIX", percent]];
 }
 function colorDestinationSchema(kind) {
   const schema = colorSchema(kind);
@@ -2369,7 +2441,7 @@ function buildColors() {
       const slot = structuredClone(colorDefaults.slot);
       slot.id = nextColorId++;
       slot.kind = $(`${rack.add}-type`).value;
-      if (slot.kind === "compressor") slot.mix = 1;
+      applyKindDefaults(slot);
       preset[rack.key].push(slot);
       editColorChain();
     };
@@ -2409,7 +2481,9 @@ function syncColors() {
       window.SadLazySelect.configure(select, slot.kind, colorTypeGroups());
       select.onchange = () => {
         const focused = document.activeElement === select;
-        findColor(id).kind = select.value;
+        const retyped = findColor(id);
+        retyped.kind = select.value;
+        if (isMooz(retyped.kind)) applyKindDefaults(retyped);
         editColorChain();
         // The card is rebuilt for its new type; keep keyboard focus on it.
         if (focused)
@@ -2577,6 +2651,7 @@ function syncColors() {
           `color-${id}-knobs`,
           {
             ...(parameter === "lcr_ratio" ? lcrRatioBinding(getSlot) : {}),
+            ...moozBinding(slot.kind, parameter),
             get,
             set: (value) => {
               const s = getSlot();
@@ -2591,8 +2666,10 @@ function syncColors() {
               );
             },
             reset: () =>
-              parameter === "mix"
-                ? slot.kind === "compressor"
+              moozParam(slot.kind, parameter)
+                ? moozBinding(slot.kind, parameter).reset()
+                : parameter === "mix"
+                ? slot.kind === "compressor" || isMooz(slot.kind)
                   ? 1
                   : colorDefaults.slot.mix
                 : colorDefaults.slot.settings[parameter],
@@ -4449,6 +4526,7 @@ async function init() {
   try {
     presets = await request("/api/presets");
     colorDefaults = await request("/api/color-defaults");
+    registerMooz(colorDefaults.mooz);
     sequenceCatalog = await request("/api/sequencer/catalog");
     state = await request("/api/state");
     preset = structuredClone(state.preset);
@@ -4550,7 +4628,9 @@ async function init() {
           const slot = findColor(id);
           if (!slot || slot.kind !== saved.kind)
             throw new Error("The effect slot changed. Select it again.");
-          const prefix = (slot.kind === "lcr_delay" ? "lcr" : slot.kind) + "_";
+          const prefix = isMooz(slot.kind)
+            ? "mooz_p"
+            : (slot.kind === "lcr_delay" ? "lcr" : slot.kind) + "_";
           for (const key of Object.keys(slot.settings))
             if (key.startsWith(prefix))
               slot.settings[key] = saved.settings[key] ?? colorDefaults.slot.settings[key];

@@ -223,8 +223,12 @@ fn synth_controls_append_after_every_other_host_parameter() {
     assert_eq!(specs[start + 1].id, "synth_granular");
     assert_eq!(specs[start + 2].id, "synth_buffer_seconds");
     assert_eq!(specs[start + 3].id, "synth_osc1_enabled");
-    assert_eq!(specs.len(), start + 3 + 4 * 14);
-    assert_eq!(specs.last().unwrap().id, "synth_osc4_interaction_source");
+    let end = start + 3 + 4 * 14;
+    assert_eq!(specs[end - 1].id, "synth_osc4_interaction_source");
+    // Then the mooz controls of every FX/Pre/Source slot.
+    assert_eq!(specs.len(), end + (2 * 12 + 1) * 9);
+    assert_eq!(specs[end].id, "fx1_mooz_p1");
+    assert_eq!(specs.last().unwrap().id, "source_fx1_mooz_p9");
 }
 
 #[test]

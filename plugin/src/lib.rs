@@ -908,7 +908,7 @@ impl Controller {
                     .collect::<Vec<_>>()
             )),
             ("/api/color-defaults", false) => Ok(
-                json!({"max_slots":sad_pet::color::MAX_COLOR_SLOTS,"slot":sad_pet::color::ColorSlot::default(),"delay_tables":sad_pet::radias_delay::display_tables()}),
+                json!({"max_slots":sad_pet::color::MAX_COLOR_SLOTS,"slot":sad_pet::color::ColorSlot::default(),"delay_tables":sad_pet::radias_delay::display_tables(),"mooz":sad_pet::color::mooz_catalog()}),
             ),
             ("/api/samples", false) => Ok(json!(sad_pet::samples::TRACKS)),
             ("/api/sample.wav", false) => Ok(binary(wav::bytes(

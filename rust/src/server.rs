@@ -206,7 +206,7 @@ fn handle(
                 }
                 "/api/effect-presets/factory" => json(&crate::effect_presets::factory()),
                 "/api/color-defaults" => json(
-                    &serde_json::json!({"max_slots": crate::color::MAX_COLOR_SLOTS, "slot": crate::color::ColorSlot::default(), "delay_tables": crate::radias_delay::display_tables()}),
+                    &serde_json::json!({"max_slots": crate::color::MAX_COLOR_SLOTS, "slot": crate::color::ColorSlot::default(), "delay_tables": crate::radias_delay::display_tables(), "mooz": crate::color::mooz_catalog()}),
                 ),
                 "/api/midi" => json(
                     &serde_json::json!({"ports":midi::ports()?,"connected":connection.lock().map_err(|e|e.to_string())?.as_ref().map(|c|&c.name)}),

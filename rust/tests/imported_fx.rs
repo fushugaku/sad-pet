@@ -295,9 +295,9 @@ fn all_three_racks_roundtrip_controls_and_released_parameter_positions_are_stabl
 }
 #[test]
 fn only_selected_slots_allocate_original_engines() {
-    assert!(Core::new(Kind::Distortion).is_none());
+    assert!(Core::new(Kind::Distortion, 48_000).is_none());
     let slot = slot(Kind::SuperEcho, 1);
-    let mut core = Core::new(Kind::SuperEcho).unwrap();
+    let mut core = Core::new(Kind::SuperEcho, 48_000).unwrap();
     core.configure(slot, 120.0);
     // Mix belongs to SAD PET; the embedded digital mixer is forced fully wet.
     let mut dry = slot;

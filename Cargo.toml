@@ -1,7 +1,7 @@
 [workspace]
 members = ["rust", "voice", "wasm", "plugin"]
 default-members = ["rust"]
-exclude = ["vendor/superecho", "vendor/alphaverb", "vendor/dxm088"]
+exclude = ["vendor/superecho", "vendor/alphaverb", "vendor/dxm088", "vendor/mooz"]
 resolver = "2"
 
 [profile.release]
