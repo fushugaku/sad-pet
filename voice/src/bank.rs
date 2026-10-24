@@ -176,9 +176,17 @@ impl Voicebank {
                 .push(i as u32);
             for (k, &p) in unit.phonemes.iter().enumerate() {
                 seen.insert(p);
-                // A consonant fully inside a unit, between two other phonemes,
-                // shows its natural length.
-                if !p.is_vowel() && !p.is_pause() && k > 0 && k + 1 < unit.phonemes.len() {
+                // A consonant's natural length, where both its ends were
+                // measured: between two sounds (VCV, CVC), or a CV's onset
+                // (oto offset to preutterance). Not the halves of a VC- tail
+                // or a -CV onset, which the import divides by a guess.
+                let len = unit.phonemes.len();
+                let measured = (k > 0
+                    && k + 1 < len
+                    && !unit.phonemes[k - 1].is_pause()
+                    && !unit.phonemes[k + 1].is_pause())
+                    || (k == 0 && len > 1 && unit.phonemes[1].is_vowel());
+                if !p.is_vowel() && !p.is_pause() && measured {
                     let (a, b) = unit.span(k);
                     lengths
                         .entry(p)

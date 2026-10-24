@@ -11,6 +11,25 @@ use crate::spectrum::{ENV_POINTS, FLOOR_DB, FRAME_SECONDS, Frame, grid_position}
 use crate::timing::Segment;
 
 const FRAME: f64 = FRAME_SECONDS as f64;
+/// How incomplete a candidate's last consonant is, 0 (as long as the voice
+/// sings it) to 1 (only the start of it): Kumi's VC units end a stop or an
+/// affricate just after its closure, so «ч» from «ач» before «к» is silent.
+fn stub(bank: &Voicebank, c: &Candidate) -> f32 {
+    let Some(u) = c.unit else { return 0.0 };
+    let unit = &bank.units[u as usize];
+    let k = c.first + (c.b - c.a);
+    let p = unit.phonemes[k];
+    if p.is_vowel() || p.is_pause() {
+        return 0.0;
+    }
+    let (a, b) = unit.span(k);
+    let span = (b - a) as f32 * FRAME_SECONDS;
+    let full = bank
+        .duration(p)
+        .unwrap_or_else(|| crate::utau::default_duration(p));
+    (1.0 - span / (0.6 * full)).clamp(0.0, 1.0)
+}
+
 /// Cross-fade half-width at a join between two phonemes (a hard join).
 const EDGE: f64 = 0.012;
 /// Candidates kept per phrase range, by their own cost.
@@ -224,12 +243,14 @@ fn join_cost(bank: &Voicebank, items: &[Item], p: &Candidate, c: &Candidate) -> 
             // Where the cut falls decides how much it is heard: in a stop's
             // closure, near silence, hardly; between a consonant's release
             // and its vowel, the transition is lost.
+            // A consonant cut short before the join is a stub of itself.
             let (left, right) = (items[p.b].phoneme.class(), items[c.a].phoneme.class());
-            Some(match (left, right) {
+            let place = match (left, right) {
                 (_, Class::Stop | Class::Affricate) => 0.6,
                 (Class::Stop | Class::Affricate | Class::Fricative, Class::Vowel) => 2.2,
                 _ => 1.4,
-            })
+            };
+            Some(place + 1.5 * stub(bank, p))
         }
         // Next to a pause, a cut is a natural onset or ending.
         (_, _) if p.b + 1 == c.a => Some(0.25),
@@ -571,8 +592,10 @@ pub fn frames(
                     *o += pull * (m - (v - level));
                 }
             }
+            // Mixed as power: a fade into a closure is not a dB average
+            // falling 20 dB below both.
             for (e, v) in env.iter_mut().zip(&own) {
-                *e += w * *v as f64;
+                *e += w * 10f64.powf(*v as f64 / 10.0);
             }
             for (a, v) in ap.iter_mut().zip(&f.ap) {
                 *a += w * *v as f64;
@@ -593,7 +616,7 @@ pub fn frames(
         let presence = weight.min(1.0);
         let fade_db = 20.0 * presence.max(1e-4).log10();
         for (o, e) in frame.env.iter_mut().zip(&env) {
-            *o = ((e / weight) + fade_db).max(FLOOR_DB as f64) as f32;
+            *o = (10.0 * (e / weight).max(1e-30).log10() + fade_db).max(FLOOR_DB as f64) as f32;
         }
         for (o, a) in frame.ap.iter_mut().zip(&ap) {
             *o = (a / weight).clamp(0.0, 1.0) as f32;
