@@ -92,3 +92,20 @@ Verification: python3 rust/scripts/check_loop_bank.py
 No external account or runtime request to Freesound/Zenodo is required.
 Browsers fetch the selected WAV from the app's own static assets. Native
 builds embed the recordings; the WAV bank is excluded from the WASM binary.
+
+Sampler starter packs (8 kits, CC0)
+-----------------------------------
+Folder: rust/assets/sampler-packs (index packs.json; per pack pack.json, samples/,
+CREDITS.txt with the original file of every sample).
+Sources, pinned to a commit:
+  Versilian Community Sample Library (VCSL), Versilian Studios LLC, CC0 1.0:
+  https://github.com/sgossner/VCSL (c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e)
+  Roland TR-808 Sound Sample Set 1.0.0, Michael Fischer (Technopolis, 1994),
+  released free of charge by its author and dedicated CC0 1.0 by TidalCycles:
+  https://github.com/tidalcycles/sounds-tr808-fischer (85fbecf1bec32553395625ea659e2a56dfd7c0e1)
+Files are trimmed of silence, faded, capped in length and converted to 16-bit
+44.1 kHz WAV with one gain per pad. Rebuild: python3 rust/scripts/build_sampler_packs.py
+--cache <folder>; verify: node rust/scripts/check_sampler_packs.mjs (index versions,
+files, and every keygroup root against the engine's pitch detector).
+The web build serves the folder as static files; the editor copies a pack into
+IndexedDB the first time it loads.

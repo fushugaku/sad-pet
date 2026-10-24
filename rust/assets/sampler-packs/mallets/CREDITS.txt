@@ -1,0 +1,46 @@
+Mallets — a SAD PET Sampler pack
+========================================
+
+Source: Versilian Community Sample Library (VCSL), Versilian Studios LLC
+  https://github.com/sgossner/VCSL
+License: CC0 1.0 Universal
+Pinned at: https://raw.githubusercontent.com/sgossner/VCSL/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/
+
+Trimmed of silence, faded, capped in length and converted to 16-bit 44.1 kHz;
+one gain per pad; its velocity layers stay within 12 dB. Original files:
+
+mallets-glockenspiel-c6.wav  ←  Idiophones/Struck Idiophones/Glockenspiel/glock_medium_C5_01.wav
+mallets-glockenspiel-c7.wav  ←  Idiophones/Struck Idiophones/Glockenspiel/glock_medium_C6_01.wav
+mallets-glockenspiel-c8.wav  ←  Idiophones/Struck Idiophones/Glockenspiel/glock_medium_C7_01.wav
+mallets-glockenspiel-g5.wav  ←  Idiophones/Struck Idiophones/Glockenspiel/glock_medium_G4_01.wav
+mallets-glockenspiel-g6.wav  ←  Idiophones/Struck Idiophones/Glockenspiel/glock_medium_G5_01.wav
+mallets-glockenspiel-g7.wav  ←  Idiophones/Struck Idiophones/Glockenspiel/glock_medium_G6_01.wav
+mallets-marimba-b3.wav  ←  Idiophones/Struck Idiophones/Marimba/Marimba_hit_Outrigger_B2_med_01.wav
+mallets-marimba-b5.wav  ←  Idiophones/Struck Idiophones/Marimba/Marimba_hit_Outrigger_B4_med_01.wav
+mallets-marimba-c3.wav  ←  Idiophones/Struck Idiophones/Marimba/Marimba_hit_Outrigger_C2_med_01.wav
+mallets-marimba-c5.wav  ←  Idiophones/Struck Idiophones/Marimba/Marimba_hit_Outrigger_C4_med_01.wav
+mallets-marimba-c7.wav  ←  Idiophones/Struck Idiophones/Marimba/Marimba_hit_Outrigger_C6_med_01.wav
+mallets-marimba-f2.wav  ←  Idiophones/Struck Idiophones/Marimba/Marimba_hit_Outrigger_F1_med_01.wav
+mallets-marimba-f4.wav  ←  Idiophones/Struck Idiophones/Marimba/Marimba_hit_Outrigger_F3_med_01.wav
+mallets-marimba-f6.wav  ←  Idiophones/Struck Idiophones/Marimba/Marimba_hit_Outrigger_F5_med_01.wav
+mallets-marimba-g3.wav  ←  Idiophones/Struck Idiophones/Marimba/Marimba_hit_Outrigger_G2_med_01.wav
+mallets-marimba-g5.wav  ←  Idiophones/Struck Idiophones/Marimba/Marimba_hit_Outrigger_G4_med_01.wav
+mallets-vibraphone-a3.wav  ←  Idiophones/Struck Idiophones/Vibraphone/Hard Mallets/Vibes_hard_A2_v2_rr1_Main.wav
+mallets-vibraphone-a5.wav  ←  Idiophones/Struck Idiophones/Vibraphone/Hard Mallets/Vibes_hard_A4_v2_rr1_Main.wav
+mallets-vibraphone-b4.wav  ←  Idiophones/Struck Idiophones/Vibraphone/Hard Mallets/Vibes_hard_B3_v2_rr1_Main.wav
+mallets-vibraphone-c4.wav  ←  Idiophones/Struck Idiophones/Vibraphone/Hard Mallets/Vibes_hard_C3_v2_rr1_Main.wav
+mallets-vibraphone-c6.wav  ←  Idiophones/Struck Idiophones/Vibraphone/Hard Mallets/Vibes_hard_C5_v2_rr1_Main.wav
+mallets-vibraphone-d5.wav  ←  Idiophones/Struck Idiophones/Vibraphone/Hard Mallets/Vibes_hard_D4_v2_rr1_Main.wav
+mallets-vibraphone-e4.wav  ←  Idiophones/Struck Idiophones/Vibraphone/Hard Mallets/Vibes_hard_E3_v2_rr1_Main.wav
+mallets-vibraphone-e6.wav  ←  Idiophones/Struck Idiophones/Vibraphone/Hard Mallets/Vibes_hard_E5_v2_rr1_Main.wav
+mallets-vibraphone-f3.wav  ←  Idiophones/Struck Idiophones/Vibraphone/Hard Mallets/Vibes_hard_F2_v2_rr1_Main.wav
+mallets-vibraphone-f5.wav  ←  Idiophones/Struck Idiophones/Vibraphone/Hard Mallets/Vibes_hard_F4_v2_rr1_Main.wav
+mallets-vibraphone-g4.wav  ←  Idiophones/Struck Idiophones/Vibraphone/Hard Mallets/Vibes_hard_G3_v2_rr1_Main.wav
+mallets-xylophone-c5.wav  ←  Idiophones/Struck Idiophones/Xylophone/Medium Mallets/Xylo_Medium_C4_ff_01_far.wav
+mallets-xylophone-c6.wav  ←  Idiophones/Struck Idiophones/Xylophone/Medium Mallets/Xylo_Medium_C5_ff_01_far.wav
+mallets-xylophone-c7.wav  ←  Idiophones/Struck Idiophones/Xylophone/Medium Mallets/Xylo_Medium_C6_ff_01_far.wav
+mallets-xylophone-c8.wav  ←  Idiophones/Struck Idiophones/Xylophone/Medium Mallets/Xylo_Medium_C7_ff_01_far.wav
+mallets-xylophone-g4.wav  ←  Idiophones/Struck Idiophones/Xylophone/Medium Mallets/Xylo_Medium_G3_ff_01_far.wav
+mallets-xylophone-g5.wav  ←  Idiophones/Struck Idiophones/Xylophone/Medium Mallets/Xylo_Medium_G4_ff_01_far.wav
+mallets-xylophone-g6.wav  ←  Idiophones/Struck Idiophones/Xylophone/Medium Mallets/Xylo_Medium_G5_ff_01_far.wav
+mallets-xylophone-g7.wav  ←  Idiophones/Struck Idiophones/Xylophone/Medium Mallets/Xylo_Medium_G6_ff_01_far.wav

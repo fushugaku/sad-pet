@@ -1,0 +1,1607 @@
+{
+ "format": "sad-pet-pack-v1",
+ "name": "Cinematic Hits & FX",
+ "description": "Timpani, orchestral bass drum, gong, clash cymbals, tubular bells, wind chimes, ocean drum and other textures from VCSL",
+ "license": "CC0 1.0 Universal",
+ "kit": {
+  "pads": [
+   {
+    "name": "Timpani",
+    "keys": [
+     36,
+     36
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "cinematic-timpani-1",
+      "start": 0,
+      "end": 220569,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       63
+      ]
+     },
+     {
+      "sample": "cinematic-timpani-2",
+      "start": 0,
+      "end": 234520,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       64,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 1
+   },
+   {
+    "name": "Timpani high",
+    "keys": [
+     37,
+     37
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "cinematic-timpani-high-1",
+      "start": 0,
+      "end": 96333,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       63
+      ]
+     },
+     {
+      "sample": "cinematic-timpani-high-2",
+      "start": 0,
+      "end": 144554,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       64,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 2
+   },
+   {
+    "name": "Bass drum",
+    "keys": [
+     38,
+     38
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "cinematic-bass-drum-1",
+      "start": 0,
+      "end": 264600,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       63
+      ]
+     },
+     {
+      "sample": "cinematic-bass-drum-2",
+      "start": 0,
+      "end": 264600,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       64,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 3
+   },
+   {
+    "name": "Bass drum swell",
+    "keys": [
+     39,
+     39
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "cinematic-bass-drum-swell",
+      "start": 0,
+      "end": 264600,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 4
+   },
+   {
+    "name": "Gong",
+    "keys": [
+     40,
+     40
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "cinematic-gong-1",
+      "start": 0,
+      "end": 264600,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       63
+      ]
+     },
+     {
+      "sample": "cinematic-gong-2",
+      "start": 0,
+      "end": 264600,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       64,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 5
+   },
+   {
+    "name": "Clash cymbals",
+    "keys": [
+     41,
+     41
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "cinematic-clash-cymbals-1",
+      "start": 0,
+      "end": 264600,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       63
+      ]
+     },
+     {
+      "sample": "cinematic-clash-cymbals-2",
+      "start": 0,
+      "end": 264600,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       64,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 6
+   },
+   {
+    "name": "Cymbal swell",
+    "keys": [
+     42,
+     42
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "cinematic-cymbal-swell",
+      "start": 0,
+      "end": 264600,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 7
+   },
+   {
+    "name": "Tubular bell",
+    "keys": [
+     43,
+     43
+    ],
+    "keytrack": true,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "cinematic-tubular-bell",
+      "start": 0,
+      "end": 264600,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 8
+   },
+   {
+    "name": "Wind chimes",
+    "keys": [
+     44,
+     44
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "cinematic-wind-chimes",
+      "start": 0,
+      "end": 264600,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 9
+   },
+   {
+    "name": "Bell tree",
+    "keys": [
+     45,
+     45
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "cinematic-bell-tree",
+      "start": 0,
+      "end": 210577,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 10
+   },
+   {
+    "name": "Ocean drum",
+    "keys": [
+     46,
+     46
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "cinematic-ocean-drum",
+      "start": 0,
+      "end": 264600,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 11
+   },
+   {
+    "name": "Wine glass",
+    "keys": [
+     47,
+     47
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "cinematic-wine-glass",
+      "start": 0,
+      "end": 95853,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 12
+   },
+   {
+    "name": "Anvil",
+    "keys": [
+     48,
+     48
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "cinematic-anvil-1",
+      "start": 0,
+      "end": 64735,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       42
+      ]
+     },
+     {
+      "sample": "cinematic-anvil-2",
+      "start": 0,
+      "end": 52162,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       43,
+       84
+      ]
+     },
+     {
+      "sample": "cinematic-anvil-3",
+      "start": 0,
+      "end": 61603,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       85,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 13
+   },
+   {
+    "name": "Brake drum",
+    "keys": [
+     49,
+     49
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "cinematic-brake-drum-1",
+      "start": 0,
+      "end": 48260,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       42
+      ]
+     },
+     {
+      "sample": "cinematic-brake-drum-2",
+      "start": 0,
+      "end": 40136,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       43,
+       84
+      ]
+     },
+     {
+      "sample": "cinematic-brake-drum-3",
+      "start": 0,
+      "end": 37273,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       85,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 14
+   },
+   {
+    "name": "Flexatone",
+    "keys": [
+     50,
+     50
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "cinematic-flexatone",
+      "start": 0,
+      "end": 166222,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 15
+   },
+   {
+    "name": "Ratchet",
+    "keys": [
+     51,
+     51
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "cinematic-ratchet",
+      "start": 0,
+      "end": 259143,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 16
+   }
+  ],
+  "polyphony": 32,
+  "selected": 1
+ },
+ "samples": [
+  {
+   "id": "cinematic-timpani-1",
+   "name": "Timpani 1",
+   "file": "samples/cinematic-timpani-1.wav"
+  },
+  {
+   "id": "cinematic-timpani-2",
+   "name": "Timpani 2",
+   "file": "samples/cinematic-timpani-2.wav"
+  },
+  {
+   "id": "cinematic-timpani-high-1",
+   "name": "Timpani high 1",
+   "file": "samples/cinematic-timpani-high-1.wav"
+  },
+  {
+   "id": "cinematic-timpani-high-2",
+   "name": "Timpani high 2",
+   "file": "samples/cinematic-timpani-high-2.wav"
+  },
+  {
+   "id": "cinematic-bass-drum-1",
+   "name": "Bass drum 1",
+   "file": "samples/cinematic-bass-drum-1.wav"
+  },
+  {
+   "id": "cinematic-bass-drum-2",
+   "name": "Bass drum 2",
+   "file": "samples/cinematic-bass-drum-2.wav"
+  },
+  {
+   "id": "cinematic-bass-drum-swell",
+   "name": "Bass drum swell",
+   "file": "samples/cinematic-bass-drum-swell.wav"
+  },
+  {
+   "id": "cinematic-gong-1",
+   "name": "Gong 1",
+   "file": "samples/cinematic-gong-1.wav"
+  },
+  {
+   "id": "cinematic-gong-2",
+   "name": "Gong 2",
+   "file": "samples/cinematic-gong-2.wav"
+  },
+  {
+   "id": "cinematic-clash-cymbals-1",
+   "name": "Clash cymbals 1",
+   "file": "samples/cinematic-clash-cymbals-1.wav"
+  },
+  {
+   "id": "cinematic-clash-cymbals-2",
+   "name": "Clash cymbals 2",
+   "file": "samples/cinematic-clash-cymbals-2.wav"
+  },
+  {
+   "id": "cinematic-cymbal-swell",
+   "name": "Cymbal swell",
+   "file": "samples/cinematic-cymbal-swell.wav"
+  },
+  {
+   "id": "cinematic-tubular-bell",
+   "name": "Tubular bell",
+   "file": "samples/cinematic-tubular-bell.wav"
+  },
+  {
+   "id": "cinematic-wind-chimes",
+   "name": "Wind chimes",
+   "file": "samples/cinematic-wind-chimes.wav"
+  },
+  {
+   "id": "cinematic-bell-tree",
+   "name": "Bell tree",
+   "file": "samples/cinematic-bell-tree.wav"
+  },
+  {
+   "id": "cinematic-ocean-drum",
+   "name": "Ocean drum",
+   "file": "samples/cinematic-ocean-drum.wav"
+  },
+  {
+   "id": "cinematic-wine-glass",
+   "name": "Wine glass",
+   "file": "samples/cinematic-wine-glass.wav"
+  },
+  {
+   "id": "cinematic-anvil-1",
+   "name": "Anvil 1",
+   "file": "samples/cinematic-anvil-1.wav"
+  },
+  {
+   "id": "cinematic-anvil-2",
+   "name": "Anvil 2",
+   "file": "samples/cinematic-anvil-2.wav"
+  },
+  {
+   "id": "cinematic-anvil-3",
+   "name": "Anvil 3",
+   "file": "samples/cinematic-anvil-3.wav"
+  },
+  {
+   "id": "cinematic-brake-drum-1",
+   "name": "Brake drum 1",
+   "file": "samples/cinematic-brake-drum-1.wav"
+  },
+  {
+   "id": "cinematic-brake-drum-2",
+   "name": "Brake drum 2",
+   "file": "samples/cinematic-brake-drum-2.wav"
+  },
+  {
+   "id": "cinematic-brake-drum-3",
+   "name": "Brake drum 3",
+   "file": "samples/cinematic-brake-drum-3.wav"
+  },
+  {
+   "id": "cinematic-flexatone",
+   "name": "Flexatone",
+   "file": "samples/cinematic-flexatone.wav"
+  },
+  {
+   "id": "cinematic-ratchet",
+   "name": "Ratchet",
+   "file": "samples/cinematic-ratchet.wav"
+  }
+ ]
+}

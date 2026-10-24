@@ -1,0 +1,788 @@
+{
+ "format": "sad-pet-pack-v1",
+ "name": "FM Electric Piano",
+ "description": "The Yamaha TX81Z's FM piano from VCSL, a sample every four keys, for the whole keyboard",
+ "license": "CC0 1.0 Universal",
+ "kit": {
+  "pads": [
+   {
+    "name": "FM piano",
+    "keys": [
+     21,
+     108
+    ],
+    "keytrack": true,
+    "trigger": "note_on",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "fm-piano-fm-piano-c0",
+      "start": 0,
+      "end": 176400,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 12,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       21,
+       14
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "fm-piano-fm-piano-e0",
+      "start": 0,
+      "end": 176400,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 16,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       15,
+       18
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "fm-piano-fm-piano-g-0",
+      "start": 0,
+      "end": 176400,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 20,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       19,
+       22
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "fm-piano-fm-piano-c1",
+      "start": 0,
+      "end": 176400,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 24,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       23,
+       26
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "fm-piano-fm-piano-e1",
+      "start": 0,
+      "end": 176400,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 28,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       27,
+       30
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "fm-piano-fm-piano-g-1",
+      "start": 0,
+      "end": 176400,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 32,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       31,
+       34
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "fm-piano-fm-piano-c2",
+      "start": 0,
+      "end": 176400,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 36,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       35,
+       38
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "fm-piano-fm-piano-e2",
+      "start": 0,
+      "end": 176400,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 40,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       39,
+       42
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "fm-piano-fm-piano-g-2",
+      "start": 0,
+      "end": 176400,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 44,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       43,
+       46
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "fm-piano-fm-piano-c3",
+      "start": 0,
+      "end": 176400,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 48,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       47,
+       50
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "fm-piano-fm-piano-e3",
+      "start": 0,
+      "end": 176400,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 52,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       51,
+       54
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "fm-piano-fm-piano-g-3",
+      "start": 0,
+      "end": 176400,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 56,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       55,
+       58
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "fm-piano-fm-piano-c4",
+      "start": 0,
+      "end": 176400,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       59,
+       62
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "fm-piano-fm-piano-e4",
+      "start": 0,
+      "end": 176400,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 64,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       63,
+       66
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "fm-piano-fm-piano-g-4",
+      "start": 0,
+      "end": 176400,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 68,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       67,
+       70
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "fm-piano-fm-piano-c5",
+      "start": 0,
+      "end": 176400,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 72,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       71,
+       74
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "fm-piano-fm-piano-e5",
+      "start": 0,
+      "end": 176400,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 76,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       75,
+       78
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "fm-piano-fm-piano-g-5",
+      "start": 0,
+      "end": 159812,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 80,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       79,
+       82
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "fm-piano-fm-piano-c6",
+      "start": 0,
+      "end": 159980,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 84,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       83,
+       86
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "fm-piano-fm-piano-e6",
+      "start": 0,
+      "end": 140383,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 88,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       87,
+       90
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "fm-piano-fm-piano-g-6",
+      "start": 0,
+      "end": 112604,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 92,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       91,
+       94
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "fm-piano-fm-piano-c7",
+      "start": 0,
+      "end": 109628,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 96,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       95,
+       108
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 250
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 0.7,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 1
+   }
+  ],
+  "polyphony": 32,
+  "selected": 1
+ },
+ "samples": [
+  {
+   "id": "fm-piano-fm-piano-c0",
+   "name": "FM piano C0",
+   "file": "samples/fm-piano-fm-piano-c0.wav"
+  },
+  {
+   "id": "fm-piano-fm-piano-e0",
+   "name": "FM piano E0",
+   "file": "samples/fm-piano-fm-piano-e0.wav"
+  },
+  {
+   "id": "fm-piano-fm-piano-g-0",
+   "name": "FM piano G#0",
+   "file": "samples/fm-piano-fm-piano-g-0.wav"
+  },
+  {
+   "id": "fm-piano-fm-piano-c1",
+   "name": "FM piano C1",
+   "file": "samples/fm-piano-fm-piano-c1.wav"
+  },
+  {
+   "id": "fm-piano-fm-piano-e1",
+   "name": "FM piano E1",
+   "file": "samples/fm-piano-fm-piano-e1.wav"
+  },
+  {
+   "id": "fm-piano-fm-piano-g-1",
+   "name": "FM piano G#1",
+   "file": "samples/fm-piano-fm-piano-g-1.wav"
+  },
+  {
+   "id": "fm-piano-fm-piano-c2",
+   "name": "FM piano C2",
+   "file": "samples/fm-piano-fm-piano-c2.wav"
+  },
+  {
+   "id": "fm-piano-fm-piano-e2",
+   "name": "FM piano E2",
+   "file": "samples/fm-piano-fm-piano-e2.wav"
+  },
+  {
+   "id": "fm-piano-fm-piano-g-2",
+   "name": "FM piano G#2",
+   "file": "samples/fm-piano-fm-piano-g-2.wav"
+  },
+  {
+   "id": "fm-piano-fm-piano-c3",
+   "name": "FM piano C3",
+   "file": "samples/fm-piano-fm-piano-c3.wav"
+  },
+  {
+   "id": "fm-piano-fm-piano-e3",
+   "name": "FM piano E3",
+   "file": "samples/fm-piano-fm-piano-e3.wav"
+  },
+  {
+   "id": "fm-piano-fm-piano-g-3",
+   "name": "FM piano G#3",
+   "file": "samples/fm-piano-fm-piano-g-3.wav"
+  },
+  {
+   "id": "fm-piano-fm-piano-c4",
+   "name": "FM piano C4",
+   "file": "samples/fm-piano-fm-piano-c4.wav"
+  },
+  {
+   "id": "fm-piano-fm-piano-e4",
+   "name": "FM piano E4",
+   "file": "samples/fm-piano-fm-piano-e4.wav"
+  },
+  {
+   "id": "fm-piano-fm-piano-g-4",
+   "name": "FM piano G#4",
+   "file": "samples/fm-piano-fm-piano-g-4.wav"
+  },
+  {
+   "id": "fm-piano-fm-piano-c5",
+   "name": "FM piano C5",
+   "file": "samples/fm-piano-fm-piano-c5.wav"
+  },
+  {
+   "id": "fm-piano-fm-piano-e5",
+   "name": "FM piano E5",
+   "file": "samples/fm-piano-fm-piano-e5.wav"
+  },
+  {
+   "id": "fm-piano-fm-piano-g-5",
+   "name": "FM piano G#5",
+   "file": "samples/fm-piano-fm-piano-g-5.wav"
+  },
+  {
+   "id": "fm-piano-fm-piano-c6",
+   "name": "FM piano C6",
+   "file": "samples/fm-piano-fm-piano-c6.wav"
+  },
+  {
+   "id": "fm-piano-fm-piano-e6",
+   "name": "FM piano E6",
+   "file": "samples/fm-piano-fm-piano-e6.wav"
+  },
+  {
+   "id": "fm-piano-fm-piano-g-6",
+   "name": "FM piano G#6",
+   "file": "samples/fm-piano-fm-piano-g-6.wav"
+  },
+  {
+   "id": "fm-piano-fm-piano-c7",
+   "name": "FM piano C7",
+   "file": "samples/fm-piano-fm-piano-c7.wav"
+  }
+ ]
+}

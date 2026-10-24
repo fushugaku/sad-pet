@@ -1,0 +1,30 @@
+Grand Piano — a SAD PET Sampler pack
+========================================
+
+Source: Versilian Community Sample Library (VCSL), Versilian Studios LLC
+  https://github.com/sgossner/VCSL
+License: CC0 1.0 Universal
+Pinned at: https://raw.githubusercontent.com/sgossner/VCSL/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/
+
+Trimmed of silence, faded, capped in length and converted to 16-bit 44.1 kHz;
+one gain per pad; its velocity layers stay within 12 dB. Original files:
+
+grand-piano-grand-piano-a-0.wav  ←  Chordophones/Zithers/Grand Piano, Kawai/Sustains/GPiano_sus_A#-1_v3_rr1_Player.wav
+grand-piano-grand-piano-a-3.wav  ←  Chordophones/Zithers/Grand Piano, Kawai/Sustains/GPiano_sus_A#2_v3_rr1_Player.wav
+grand-piano-grand-piano-a-4.wav  ←  Chordophones/Zithers/Grand Piano, Kawai/Sustains/GPiano_sus_A#3_v3_rr1_Player.wav
+grand-piano-grand-piano-a-5.wav  ←  Chordophones/Zithers/Grand Piano, Kawai/Sustains/GPiano_sus_A#4_v3_rr1_Player.wav
+grand-piano-grand-piano-a1.wav  ←  Chordophones/Zithers/Grand Piano, Kawai/Sustains/GPiano_sus_A0_v3_rr1_Player.wav
+grand-piano-grand-piano-a2.wav  ←  Chordophones/Zithers/Grand Piano, Kawai/Sustains/GPiano_sus_A1_v3_rr1_Player.wav
+grand-piano-grand-piano-c6.wav  ←  Chordophones/Zithers/Grand Piano, Kawai/Sustains/GPiano_sus_C5_v3_rr1_Player.wav
+grand-piano-grand-piano-c7.wav  ←  Chordophones/Zithers/Grand Piano, Kawai/Sustains/GPiano_sus_C6_v3_rr1_Player.wav
+grand-piano-grand-piano-c8.wav  ←  Chordophones/Zithers/Grand Piano, Kawai/Sustains/GPiano_sus_C7_v3_rr1_Player.wav
+grand-piano-grand-piano-d-1.wav  ←  Chordophones/Zithers/Grand Piano, Kawai/Sustains/GPiano_sus_D#0_v3_rr1_Player.wav
+grand-piano-grand-piano-d-2.wav  ←  Chordophones/Zithers/Grand Piano, Kawai/Sustains/GPiano_sus_D#1_v3_rr1_Player.wav
+grand-piano-grand-piano-d3.wav  ←  Chordophones/Zithers/Grand Piano, Kawai/Sustains/GPiano_sus_D2_v3_rr1_Player.wav
+grand-piano-grand-piano-d4.wav  ←  Chordophones/Zithers/Grand Piano, Kawai/Sustains/GPiano_sus_D3_v3_rr1_Player.wav
+grand-piano-grand-piano-d5.wav  ←  Chordophones/Zithers/Grand Piano, Kawai/Sustains/GPiano_sus_D4_v3_rr1_Player.wav
+grand-piano-grand-piano-f-3.wav  ←  Chordophones/Zithers/Grand Piano, Kawai/Sustains/GPiano_sus_F#2_v3_rr1_Player.wav
+grand-piano-grand-piano-f-4.wav  ←  Chordophones/Zithers/Grand Piano, Kawai/Sustains/GPiano_sus_F#3_v3_rr1_Player.wav
+grand-piano-grand-piano-f-5.wav  ←  Chordophones/Zithers/Grand Piano, Kawai/Sustains/GPiano_sus_F#4_v3_rr1_Player.wav
+grand-piano-grand-piano-f-6.wav  ←  Chordophones/Zithers/Grand Piano, Kawai/Sustains/GPiano_sus_F#5_v3_rr1_Player.wav
+grand-piano-grand-piano-f-7.wav  ←  Chordophones/Zithers/Grand Piano, Kawai/Sustains/GPiano_sus_F#6_v3_rr1_Player.wav

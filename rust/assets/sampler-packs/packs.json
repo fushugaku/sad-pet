@@ -1,0 +1,74 @@
+[
+ {
+  "id": "tr808",
+  "name": "TR-808",
+  "description": "Michael Fischer's Roland TR-808 set: kicks, snares, hats, toms, congas and percussion, with kick and snare variations on bank B",
+  "pads": 32,
+  "samples": 32,
+  "size": 2400393,
+  "version": "e69464fe489e"
+ },
+ {
+  "id": "acoustic-kit",
+  "name": "Acoustic Kit",
+  "description": "A recorded drum kit from VCSL with velocity layers: kick, snares, toms, hi-hat, cymbals, claps and tambourine",
+  "pads": 16,
+  "samples": 42,
+  "size": 13692115,
+  "version": "2f7c03ec7fca"
+ },
+ {
+  "id": "hand-percussion",
+  "name": "Hand Percussion",
+  "description": "Congas, bongos, cajón, darbuka, frame drum, shakers and small percussion from VCSL, with velocity layers",
+  "pads": 24,
+  "samples": 49,
+  "size": 7869842,
+  "version": "80efb04cc8fa"
+ },
+ {
+  "id": "grand-piano",
+  "name": "Grand Piano",
+  "description": "VCSL's Kawai grand, one sample every few keys over the whole keyboard; it plays from the keyboard and holds while a key is down",
+  "pads": 1,
+  "samples": 19,
+  "size": 11746656,
+  "version": "836dde68ee42"
+ },
+ {
+  "id": "fm-piano",
+  "name": "FM Electric Piano",
+  "description": "The Yamaha TX81Z's FM piano from VCSL, a sample every four keys, for the whole keyboard",
+  "pads": 1,
+  "samples": 22,
+  "size": 7379366,
+  "version": "6bd566ba547b"
+ },
+ {
+  "id": "mallets",
+  "name": "Mallets",
+  "description": "Marimba, vibraphone, xylophone and glockenspiel from VCSL, split over the keyboard from low to high",
+  "pads": 4,
+  "samples": 35,
+  "size": 14157184,
+  "version": "346b8b5d1966"
+ },
+ {
+  "id": "concert-harp",
+  "name": "Concert Harp",
+  "description": "VCSL's concert harp, plucked mezzo-forte, over the whole keyboard; notes ring on after the key",
+  "pads": 1,
+  "samples": 19,
+  "size": 11263673,
+  "version": "aa445c48e269"
+ },
+ {
+  "id": "cinematic",
+  "name": "Cinematic Hits & FX",
+  "description": "Timpani, orchestral bass drum, gong, clash cymbals, tubular bells, wind chimes, ocean drum and other textures from VCSL",
+  "pads": 16,
+  "samples": 25,
+  "size": 18601297,
+  "version": "d95ea2d8fd4a"
+ }
+]

@@ -1,0 +1,689 @@
+{
+ "format": "sad-pet-pack-v1",
+ "name": "Concert Harp",
+ "description": "VCSL's concert harp, plucked mezzo-forte, over the whole keyboard; notes ring on after the key",
+ "license": "CC0 1.0 Universal",
+ "kit": {
+  "pads": [
+   {
+    "name": "Concert harp",
+    "keys": [
+     24,
+     103
+    ],
+    "keytrack": true,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "concert-harp-concert-harp-b1",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 35,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       24,
+       36
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "concert-harp-concert-harp-d2",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 38,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       37,
+       39
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "concert-harp-concert-harp-f2",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 41,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       40,
+       43
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "concert-harp-concert-harp-a2",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 45,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       44,
+       46
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "concert-harp-concert-harp-c3",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 48,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       47,
+       50
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "concert-harp-concert-harp-e3",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 52,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       51,
+       53
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "concert-harp-concert-harp-g3",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 55,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       54,
+       57
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "concert-harp-concert-harp-b3",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 59,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       58,
+       60
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "concert-harp-concert-harp-d4",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 62,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       61,
+       63
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "concert-harp-concert-harp-f4",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 65,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       64,
+       67
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "concert-harp-concert-harp-a4",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 69,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       68,
+       70
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "concert-harp-concert-harp-c5",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 72,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       71,
+       74
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "concert-harp-concert-harp-e5",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 76,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       75,
+       77
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "concert-harp-concert-harp-g5",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 79,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       78,
+       81
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "concert-harp-concert-harp-b5",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 83,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       82,
+       84
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "concert-harp-concert-harp-d6",
+      "start": 0,
+      "end": 118512,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 86,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       85,
+       87
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "concert-harp-concert-harp-f6",
+      "start": 0,
+      "end": 102933,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 89,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       88,
+       91
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "concert-harp-concert-harp-a6",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 93,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       92,
+       94
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "concert-harp-concert-harp-b6",
+      "start": 0,
+      "end": 120909,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 95,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       95,
+       103
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 1
+   }
+  ],
+  "polyphony": 32,
+  "selected": 1
+ },
+ "samples": [
+  {
+   "id": "concert-harp-concert-harp-b1",
+   "name": "Concert harp B1",
+   "file": "samples/concert-harp-concert-harp-b1.wav"
+  },
+  {
+   "id": "concert-harp-concert-harp-d2",
+   "name": "Concert harp D2",
+   "file": "samples/concert-harp-concert-harp-d2.wav"
+  },
+  {
+   "id": "concert-harp-concert-harp-f2",
+   "name": "Concert harp F2",
+   "file": "samples/concert-harp-concert-harp-f2.wav"
+  },
+  {
+   "id": "concert-harp-concert-harp-a2",
+   "name": "Concert harp A2",
+   "file": "samples/concert-harp-concert-harp-a2.wav"
+  },
+  {
+   "id": "concert-harp-concert-harp-c3",
+   "name": "Concert harp C3",
+   "file": "samples/concert-harp-concert-harp-c3.wav"
+  },
+  {
+   "id": "concert-harp-concert-harp-e3",
+   "name": "Concert harp E3",
+   "file": "samples/concert-harp-concert-harp-e3.wav"
+  },
+  {
+   "id": "concert-harp-concert-harp-g3",
+   "name": "Concert harp G3",
+   "file": "samples/concert-harp-concert-harp-g3.wav"
+  },
+  {
+   "id": "concert-harp-concert-harp-b3",
+   "name": "Concert harp B3",
+   "file": "samples/concert-harp-concert-harp-b3.wav"
+  },
+  {
+   "id": "concert-harp-concert-harp-d4",
+   "name": "Concert harp D4",
+   "file": "samples/concert-harp-concert-harp-d4.wav"
+  },
+  {
+   "id": "concert-harp-concert-harp-f4",
+   "name": "Concert harp F4",
+   "file": "samples/concert-harp-concert-harp-f4.wav"
+  },
+  {
+   "id": "concert-harp-concert-harp-a4",
+   "name": "Concert harp A4",
+   "file": "samples/concert-harp-concert-harp-a4.wav"
+  },
+  {
+   "id": "concert-harp-concert-harp-c5",
+   "name": "Concert harp C5",
+   "file": "samples/concert-harp-concert-harp-c5.wav"
+  },
+  {
+   "id": "concert-harp-concert-harp-e5",
+   "name": "Concert harp E5",
+   "file": "samples/concert-harp-concert-harp-e5.wav"
+  },
+  {
+   "id": "concert-harp-concert-harp-g5",
+   "name": "Concert harp G5",
+   "file": "samples/concert-harp-concert-harp-g5.wav"
+  },
+  {
+   "id": "concert-harp-concert-harp-b5",
+   "name": "Concert harp B5",
+   "file": "samples/concert-harp-concert-harp-b5.wav"
+  },
+  {
+   "id": "concert-harp-concert-harp-d6",
+   "name": "Concert harp D6",
+   "file": "samples/concert-harp-concert-harp-d6.wav"
+  },
+  {
+   "id": "concert-harp-concert-harp-f6",
+   "name": "Concert harp F6",
+   "file": "samples/concert-harp-concert-harp-f6.wav"
+  },
+  {
+   "id": "concert-harp-concert-harp-a6",
+   "name": "Concert harp A6",
+   "file": "samples/concert-harp-concert-harp-a6.wav"
+  },
+  {
+   "id": "concert-harp-concert-harp-b6",
+   "name": "Concert harp B6",
+   "file": "samples/concert-harp-concert-harp-b6.wav"
+  }
+ ]
+}

@@ -1,0 +1,2606 @@
+{
+ "format": "sad-pet-pack-v1",
+ "name": "TR-808",
+ "description": "Michael Fischer's Roland TR-808 set: kicks, snares, hats, toms, congas and percussion, with kick and snare variations on bank B",
+ "license": "CC0 1.0 Universal (repository dedication; the author released the set free of charge)",
+ "kit": {
+  "pads": [
+   {
+    "name": "Kick",
+    "keys": [
+     36,
+     36
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-kick",
+      "start": 0,
+      "end": 66151,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 1
+   },
+   {
+    "name": "Kick long",
+    "keys": [
+     37,
+     37
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-kick-long",
+      "start": 0,
+      "end": 88201,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 2
+   },
+   {
+    "name": "Snare",
+    "keys": [
+     38,
+     38
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-snare",
+      "start": 0,
+      "end": 16931,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 3
+   },
+   {
+    "name": "Snare snappy",
+    "keys": [
+     39,
+     39
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-snare-snappy",
+      "start": 0,
+      "end": 15402,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 4
+   },
+   {
+    "name": "Rimshot",
+    "keys": [
+     40,
+     40
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-rimshot",
+      "start": 0,
+      "end": 1693,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 5
+   },
+   {
+    "name": "Clap",
+    "keys": [
+     41,
+     41
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-clap",
+      "start": 0,
+      "end": 55119,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 6
+   },
+   {
+    "name": "Closed hat",
+    "keys": [
+     42,
+     42
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 1,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-closed-hat",
+      "start": 0,
+      "end": 6844,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 7
+   },
+   {
+    "name": "Open hat",
+    "keys": [
+     43,
+     43
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 1,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-open-hat",
+      "start": 0,
+      "end": 17190,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 8
+   },
+   {
+    "name": "Cymbal",
+    "keys": [
+     44,
+     44
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-cymbal",
+      "start": 0,
+      "end": 103908,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 9
+   },
+   {
+    "name": "Cowbell",
+    "keys": [
+     45,
+     45
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-cowbell",
+      "start": 0,
+      "end": 28889,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 10
+   },
+   {
+    "name": "Claves",
+    "keys": [
+     46,
+     46
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-claves",
+      "start": 0,
+      "end": 2522,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 11
+   },
+   {
+    "name": "Maracas",
+    "keys": [
+     47,
+     47
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-maracas",
+      "start": 0,
+      "end": 2411,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 12
+   },
+   {
+    "name": "Low tom",
+    "keys": [
+     48,
+     48
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-low-tom",
+      "start": 0,
+      "end": 31010,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 13
+   },
+   {
+    "name": "Mid tom",
+    "keys": [
+     49,
+     49
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-mid-tom",
+      "start": 0,
+      "end": 25988,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 14
+   },
+   {
+    "name": "High tom",
+    "keys": [
+     50,
+     50
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-high-tom",
+      "start": 0,
+      "end": 27236,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 15
+   },
+   {
+    "name": "High conga",
+    "keys": [
+     51,
+     51
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-high-conga",
+      "start": 0,
+      "end": 12008,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 16
+   },
+   {
+    "name": "Kick tight",
+    "keys": [
+     52,
+     52
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-kick-tight",
+      "start": 0,
+      "end": 132301,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 17
+   },
+   {
+    "name": "Kick boom",
+    "keys": [
+     53,
+     53
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-kick-boom",
+      "start": 0,
+      "end": 88201,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 18
+   },
+   {
+    "name": "Kick bright",
+    "keys": [
+     54,
+     54
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-kick-bright",
+      "start": 0,
+      "end": 52972,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 19
+   },
+   {
+    "name": "Kick dark",
+    "keys": [
+     55,
+     55
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-kick-dark",
+      "start": 0,
+      "end": 44511,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 20
+   },
+   {
+    "name": "Kick short",
+    "keys": [
+     56,
+     56
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-kick-short",
+      "start": 0,
+      "end": 8797,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 21
+   },
+   {
+    "name": "Snare dark",
+    "keys": [
+     57,
+     57
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-snare-dark",
+      "start": 0,
+      "end": 15231,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 22
+   },
+   {
+    "name": "Snare bright",
+    "keys": [
+     58,
+     58
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-snare-bright",
+      "start": 0,
+      "end": 16044,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 23
+   },
+   {
+    "name": "Snare tight",
+    "keys": [
+     59,
+     59
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-snare-tight",
+      "start": 0,
+      "end": 16972,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 24
+   },
+   {
+    "name": "Open hat short",
+    "keys": [
+     60,
+     60
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 1,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-open-hat-short",
+      "start": 0,
+      "end": 27302,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 25
+   },
+   {
+    "name": "Open hat long",
+    "keys": [
+     61,
+     61
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 1,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-open-hat-long",
+      "start": 0,
+      "end": 23844,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 26
+   },
+   {
+    "name": "Cymbal long",
+    "keys": [
+     62,
+     62
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-cymbal-long",
+      "start": 0,
+      "end": 132593,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 27
+   },
+   {
+    "name": "Low conga",
+    "keys": [
+     63,
+     63
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-low-conga",
+      "start": 0,
+      "end": 22051,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 28
+   },
+   {
+    "name": "Mid conga",
+    "keys": [
+     64,
+     64
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-mid-conga",
+      "start": 0,
+      "end": 13522,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 29
+   },
+   {
+    "name": "Low tom long",
+    "keys": [
+     65,
+     65
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-low-tom-long",
+      "start": 0,
+      "end": 33172,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 30
+   },
+   {
+    "name": "Mid tom long",
+    "keys": [
+     66,
+     66
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-mid-tom-long",
+      "start": 0,
+      "end": 25807,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 31
+   },
+   {
+    "name": "High tom long",
+    "keys": [
+     67,
+     67
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "tr808-high-tom-long",
+      "start": 0,
+      "end": 22289,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 32
+   }
+  ],
+  "polyphony": 32,
+  "selected": 1
+ },
+ "samples": [
+  {
+   "id": "tr808-kick",
+   "name": "Kick",
+   "file": "samples/tr808-kick.wav"
+  },
+  {
+   "id": "tr808-kick-long",
+   "name": "Kick long",
+   "file": "samples/tr808-kick-long.wav"
+  },
+  {
+   "id": "tr808-snare",
+   "name": "Snare",
+   "file": "samples/tr808-snare.wav"
+  },
+  {
+   "id": "tr808-snare-snappy",
+   "name": "Snare snappy",
+   "file": "samples/tr808-snare-snappy.wav"
+  },
+  {
+   "id": "tr808-rimshot",
+   "name": "Rimshot",
+   "file": "samples/tr808-rimshot.wav"
+  },
+  {
+   "id": "tr808-clap",
+   "name": "Clap",
+   "file": "samples/tr808-clap.wav"
+  },
+  {
+   "id": "tr808-closed-hat",
+   "name": "Closed hat",
+   "file": "samples/tr808-closed-hat.wav"
+  },
+  {
+   "id": "tr808-open-hat",
+   "name": "Open hat",
+   "file": "samples/tr808-open-hat.wav"
+  },
+  {
+   "id": "tr808-cymbal",
+   "name": "Cymbal",
+   "file": "samples/tr808-cymbal.wav"
+  },
+  {
+   "id": "tr808-cowbell",
+   "name": "Cowbell",
+   "file": "samples/tr808-cowbell.wav"
+  },
+  {
+   "id": "tr808-claves",
+   "name": "Claves",
+   "file": "samples/tr808-claves.wav"
+  },
+  {
+   "id": "tr808-maracas",
+   "name": "Maracas",
+   "file": "samples/tr808-maracas.wav"
+  },
+  {
+   "id": "tr808-low-tom",
+   "name": "Low tom",
+   "file": "samples/tr808-low-tom.wav"
+  },
+  {
+   "id": "tr808-mid-tom",
+   "name": "Mid tom",
+   "file": "samples/tr808-mid-tom.wav"
+  },
+  {
+   "id": "tr808-high-tom",
+   "name": "High tom",
+   "file": "samples/tr808-high-tom.wav"
+  },
+  {
+   "id": "tr808-high-conga",
+   "name": "High conga",
+   "file": "samples/tr808-high-conga.wav"
+  },
+  {
+   "id": "tr808-kick-tight",
+   "name": "Kick tight",
+   "file": "samples/tr808-kick-tight.wav"
+  },
+  {
+   "id": "tr808-kick-boom",
+   "name": "Kick boom",
+   "file": "samples/tr808-kick-boom.wav"
+  },
+  {
+   "id": "tr808-kick-bright",
+   "name": "Kick bright",
+   "file": "samples/tr808-kick-bright.wav"
+  },
+  {
+   "id": "tr808-kick-dark",
+   "name": "Kick dark",
+   "file": "samples/tr808-kick-dark.wav"
+  },
+  {
+   "id": "tr808-kick-short",
+   "name": "Kick short",
+   "file": "samples/tr808-kick-short.wav"
+  },
+  {
+   "id": "tr808-snare-dark",
+   "name": "Snare dark",
+   "file": "samples/tr808-snare-dark.wav"
+  },
+  {
+   "id": "tr808-snare-bright",
+   "name": "Snare bright",
+   "file": "samples/tr808-snare-bright.wav"
+  },
+  {
+   "id": "tr808-snare-tight",
+   "name": "Snare tight",
+   "file": "samples/tr808-snare-tight.wav"
+  },
+  {
+   "id": "tr808-open-hat-short",
+   "name": "Open hat short",
+   "file": "samples/tr808-open-hat-short.wav"
+  },
+  {
+   "id": "tr808-open-hat-long",
+   "name": "Open hat long",
+   "file": "samples/tr808-open-hat-long.wav"
+  },
+  {
+   "id": "tr808-cymbal-long",
+   "name": "Cymbal long",
+   "file": "samples/tr808-cymbal-long.wav"
+  },
+  {
+   "id": "tr808-low-conga",
+   "name": "Low conga",
+   "file": "samples/tr808-low-conga.wav"
+  },
+  {
+   "id": "tr808-mid-conga",
+   "name": "Mid conga",
+   "file": "samples/tr808-mid-conga.wav"
+  },
+  {
+   "id": "tr808-low-tom-long",
+   "name": "Low tom long",
+   "file": "samples/tr808-low-tom-long.wav"
+  },
+  {
+   "id": "tr808-mid-tom-long",
+   "name": "Mid tom long",
+   "file": "samples/tr808-mid-tom-long.wav"
+  },
+  {
+   "id": "tr808-high-tom-long",
+   "name": "High tom long",
+   "file": "samples/tr808-high-tom-long.wav"
+  }
+ ]
+}

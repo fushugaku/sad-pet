@@ -1,0 +1,2783 @@
+{
+ "format": "sad-pet-pack-v1",
+ "name": "Hand Percussion",
+ "description": "Congas, bongos, cajón, darbuka, frame drum, shakers and small percussion from VCSL, with velocity layers",
+ "license": "CC0 1.0 Universal",
+ "kit": {
+  "pads": [
+   {
+    "name": "Conga open",
+    "keys": [
+     36,
+     36
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "hand-percussion-conga-open-1",
+      "start": 0,
+      "end": 42407,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       63
+      ]
+     },
+     {
+      "sample": "hand-percussion-conga-open-2",
+      "start": 0,
+      "end": 34420,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       64,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 1
+   },
+   {
+    "name": "Conga muted",
+    "keys": [
+     37,
+     37
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "hand-percussion-conga-muted-1",
+      "start": 0,
+      "end": 27049,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       63
+      ]
+     },
+     {
+      "sample": "hand-percussion-conga-muted-2",
+      "start": 0,
+      "end": 35279,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       64,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 2
+   },
+   {
+    "name": "Bongo high",
+    "keys": [
+     38,
+     38
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "hand-percussion-bongo-high-1",
+      "start": 0,
+      "end": 32918,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       42
+      ]
+     },
+     {
+      "sample": "hand-percussion-bongo-high-2",
+      "start": 0,
+      "end": 33294,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       43,
+       84
+      ]
+     },
+     {
+      "sample": "hand-percussion-bongo-high-3",
+      "start": 0,
+      "end": 33066,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       85,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 3
+   },
+   {
+    "name": "Bongo muted",
+    "keys": [
+     39,
+     39
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "hand-percussion-bongo-muted",
+      "start": 0,
+      "end": 31103,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 4
+   },
+   {
+    "name": "Cajón bass",
+    "keys": [
+     40,
+     40
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "hand-percussion-caj-n-bass-1",
+      "start": 0,
+      "end": 39543,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       42
+      ]
+     },
+     {
+      "sample": "hand-percussion-caj-n-bass-2",
+      "start": 0,
+      "end": 28861,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       43,
+       84
+      ]
+     },
+     {
+      "sample": "hand-percussion-caj-n-bass-3",
+      "start": 0,
+      "end": 27579,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       85,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 5
+   },
+   {
+    "name": "Cajón slap",
+    "keys": [
+     41,
+     41
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "hand-percussion-caj-n-slap-1",
+      "start": 0,
+      "end": 54428,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       42
+      ]
+     },
+     {
+      "sample": "hand-percussion-caj-n-slap-2",
+      "start": 0,
+      "end": 27397,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       43,
+       84
+      ]
+     },
+     {
+      "sample": "hand-percussion-caj-n-slap-3",
+      "start": 0,
+      "end": 35504,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       85,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 6
+   },
+   {
+    "name": "Darbuka doum",
+    "keys": [
+     42,
+     42
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "hand-percussion-darbuka-doum-1",
+      "start": 0,
+      "end": 47063,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       63
+      ]
+     },
+     {
+      "sample": "hand-percussion-darbuka-doum-2",
+      "start": 0,
+      "end": 55286,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       64,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 7
+   },
+   {
+    "name": "Darbuka tek",
+    "keys": [
+     43,
+     43
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "hand-percussion-darbuka-tek-1",
+      "start": 0,
+      "end": 28485,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       63
+      ]
+     },
+     {
+      "sample": "hand-percussion-darbuka-tek-2",
+      "start": 0,
+      "end": 24110,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       64,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 8
+   },
+   {
+    "name": "Frame drum",
+    "keys": [
+     44,
+     44
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "hand-percussion-frame-drum",
+      "start": 0,
+      "end": 132300,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 9
+   },
+   {
+    "name": "Shaker",
+    "keys": [
+     45,
+     45
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "hand-percussion-shaker",
+      "start": 0,
+      "end": 11699,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 10
+   },
+   {
+    "name": "Tambourine",
+    "keys": [
+     46,
+     46
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "hand-percussion-tambourine-1",
+      "start": 0,
+      "end": 72345,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       63
+      ]
+     },
+     {
+      "sample": "hand-percussion-tambourine-2",
+      "start": 0,
+      "end": 51678,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       64,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 11
+   },
+   {
+    "name": "Claves",
+    "keys": [
+     47,
+     47
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "hand-percussion-claves-1",
+      "start": 0,
+      "end": 41053,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       42
+      ]
+     },
+     {
+      "sample": "hand-percussion-claves-2",
+      "start": 0,
+      "end": 35443,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       43,
+       84
+      ]
+     },
+     {
+      "sample": "hand-percussion-claves-3",
+      "start": 0,
+      "end": 28313,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       85,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 12
+   },
+   {
+    "name": "Woodblock",
+    "keys": [
+     48,
+     48
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "hand-percussion-woodblock-1",
+      "start": 0,
+      "end": 21427,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       42
+      ]
+     },
+     {
+      "sample": "hand-percussion-woodblock-2",
+      "start": 0,
+      "end": 20122,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       43,
+       84
+      ]
+     },
+     {
+      "sample": "hand-percussion-woodblock-3",
+      "start": 0,
+      "end": 19367,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       85,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 13
+   },
+   {
+    "name": "Agogo high",
+    "keys": [
+     49,
+     49
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "hand-percussion-agogo-high-1",
+      "start": 0,
+      "end": 42341,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       42
+      ]
+     },
+     {
+      "sample": "hand-percussion-agogo-high-2",
+      "start": 0,
+      "end": 36566,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       43,
+       84
+      ]
+     },
+     {
+      "sample": "hand-percussion-agogo-high-3",
+      "start": 0,
+      "end": 33325,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       85,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 14
+   },
+   {
+    "name": "Agogo low",
+    "keys": [
+     50,
+     50
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "hand-percussion-agogo-low-1",
+      "start": 0,
+      "end": 75250,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       63
+      ]
+     },
+     {
+      "sample": "hand-percussion-agogo-low-2",
+      "start": 0,
+      "end": 73480,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       64,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 15
+   },
+   {
+    "name": "Guiro",
+    "keys": [
+     51,
+     51
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "hand-percussion-guiro",
+      "start": 0,
+      "end": 47153,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 16
+   },
+   {
+    "name": "Cowbell",
+    "keys": [
+     52,
+     52
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "hand-percussion-cowbell-1",
+      "start": 0,
+      "end": 37433,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       42
+      ]
+     },
+     {
+      "sample": "hand-percussion-cowbell-2",
+      "start": 0,
+      "end": 32155,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       43,
+       84
+      ]
+     },
+     {
+      "sample": "hand-percussion-cowbell-3",
+      "start": 0,
+      "end": 32239,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       85,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 17
+   },
+   {
+    "name": "Cowbell muted",
+    "keys": [
+     53,
+     53
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "hand-percussion-cowbell-muted-1",
+      "start": 0,
+      "end": 31211,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       63
+      ]
+     },
+     {
+      "sample": "hand-percussion-cowbell-muted-2",
+      "start": 0,
+      "end": 28503,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       64,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 18
+   },
+   {
+    "name": "Cabasa",
+    "keys": [
+     54,
+     54
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "hand-percussion-cabasa",
+      "start": 0,
+      "end": 24598,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 19
+   },
+   {
+    "name": "Large shaker",
+    "keys": [
+     55,
+     55
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "hand-percussion-large-shaker",
+      "start": 0,
+      "end": 31952,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 20
+   },
+   {
+    "name": "Slit drum high",
+    "keys": [
+     56,
+     56
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "hand-percussion-slit-drum-high-1",
+      "start": 0,
+      "end": 48520,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       42
+      ]
+     },
+     {
+      "sample": "hand-percussion-slit-drum-high-2",
+      "start": 0,
+      "end": 49838,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       43,
+       84
+      ]
+     },
+     {
+      "sample": "hand-percussion-slit-drum-high-3",
+      "start": 0,
+      "end": 45034,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       85,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 21
+   },
+   {
+    "name": "Slit drum low",
+    "keys": [
+     57,
+     57
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "hand-percussion-slit-drum-low-1",
+      "start": 0,
+      "end": 39426,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       42
+      ]
+     },
+     {
+      "sample": "hand-percussion-slit-drum-low-2",
+      "start": 0,
+      "end": 40680,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       43,
+       84
+      ]
+     },
+     {
+      "sample": "hand-percussion-slit-drum-low-3",
+      "start": 0,
+      "end": 33633,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       85,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 22
+   },
+   {
+    "name": "Sleigh bells",
+    "keys": [
+     58,
+     58
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "hand-percussion-sleigh-bells",
+      "start": 0,
+      "end": 81196,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 23
+   },
+   {
+    "name": "Slapstick",
+    "keys": [
+     59,
+     59
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "hand-percussion-slapstick",
+      "start": 0,
+      "end": 17416,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 24
+   }
+  ],
+  "polyphony": 32,
+  "selected": 1
+ },
+ "samples": [
+  {
+   "id": "hand-percussion-conga-open-1",
+   "name": "Conga open 1",
+   "file": "samples/hand-percussion-conga-open-1.wav"
+  },
+  {
+   "id": "hand-percussion-conga-open-2",
+   "name": "Conga open 2",
+   "file": "samples/hand-percussion-conga-open-2.wav"
+  },
+  {
+   "id": "hand-percussion-conga-muted-1",
+   "name": "Conga muted 1",
+   "file": "samples/hand-percussion-conga-muted-1.wav"
+  },
+  {
+   "id": "hand-percussion-conga-muted-2",
+   "name": "Conga muted 2",
+   "file": "samples/hand-percussion-conga-muted-2.wav"
+  },
+  {
+   "id": "hand-percussion-bongo-high-1",
+   "name": "Bongo high 1",
+   "file": "samples/hand-percussion-bongo-high-1.wav"
+  },
+  {
+   "id": "hand-percussion-bongo-high-2",
+   "name": "Bongo high 2",
+   "file": "samples/hand-percussion-bongo-high-2.wav"
+  },
+  {
+   "id": "hand-percussion-bongo-high-3",
+   "name": "Bongo high 3",
+   "file": "samples/hand-percussion-bongo-high-3.wav"
+  },
+  {
+   "id": "hand-percussion-bongo-muted",
+   "name": "Bongo muted",
+   "file": "samples/hand-percussion-bongo-muted.wav"
+  },
+  {
+   "id": "hand-percussion-caj-n-bass-1",
+   "name": "Cajón bass 1",
+   "file": "samples/hand-percussion-caj-n-bass-1.wav"
+  },
+  {
+   "id": "hand-percussion-caj-n-bass-2",
+   "name": "Cajón bass 2",
+   "file": "samples/hand-percussion-caj-n-bass-2.wav"
+  },
+  {
+   "id": "hand-percussion-caj-n-bass-3",
+   "name": "Cajón bass 3",
+   "file": "samples/hand-percussion-caj-n-bass-3.wav"
+  },
+  {
+   "id": "hand-percussion-caj-n-slap-1",
+   "name": "Cajón slap 1",
+   "file": "samples/hand-percussion-caj-n-slap-1.wav"
+  },
+  {
+   "id": "hand-percussion-caj-n-slap-2",
+   "name": "Cajón slap 2",
+   "file": "samples/hand-percussion-caj-n-slap-2.wav"
+  },
+  {
+   "id": "hand-percussion-caj-n-slap-3",
+   "name": "Cajón slap 3",
+   "file": "samples/hand-percussion-caj-n-slap-3.wav"
+  },
+  {
+   "id": "hand-percussion-darbuka-doum-1",
+   "name": "Darbuka doum 1",
+   "file": "samples/hand-percussion-darbuka-doum-1.wav"
+  },
+  {
+   "id": "hand-percussion-darbuka-doum-2",
+   "name": "Darbuka doum 2",
+   "file": "samples/hand-percussion-darbuka-doum-2.wav"
+  },
+  {
+   "id": "hand-percussion-darbuka-tek-1",
+   "name": "Darbuka tek 1",
+   "file": "samples/hand-percussion-darbuka-tek-1.wav"
+  },
+  {
+   "id": "hand-percussion-darbuka-tek-2",
+   "name": "Darbuka tek 2",
+   "file": "samples/hand-percussion-darbuka-tek-2.wav"
+  },
+  {
+   "id": "hand-percussion-frame-drum",
+   "name": "Frame drum",
+   "file": "samples/hand-percussion-frame-drum.wav"
+  },
+  {
+   "id": "hand-percussion-shaker",
+   "name": "Shaker",
+   "file": "samples/hand-percussion-shaker.wav"
+  },
+  {
+   "id": "hand-percussion-tambourine-1",
+   "name": "Tambourine 1",
+   "file": "samples/hand-percussion-tambourine-1.wav"
+  },
+  {
+   "id": "hand-percussion-tambourine-2",
+   "name": "Tambourine 2",
+   "file": "samples/hand-percussion-tambourine-2.wav"
+  },
+  {
+   "id": "hand-percussion-claves-1",
+   "name": "Claves 1",
+   "file": "samples/hand-percussion-claves-1.wav"
+  },
+  {
+   "id": "hand-percussion-claves-2",
+   "name": "Claves 2",
+   "file": "samples/hand-percussion-claves-2.wav"
+  },
+  {
+   "id": "hand-percussion-claves-3",
+   "name": "Claves 3",
+   "file": "samples/hand-percussion-claves-3.wav"
+  },
+  {
+   "id": "hand-percussion-woodblock-1",
+   "name": "Woodblock 1",
+   "file": "samples/hand-percussion-woodblock-1.wav"
+  },
+  {
+   "id": "hand-percussion-woodblock-2",
+   "name": "Woodblock 2",
+   "file": "samples/hand-percussion-woodblock-2.wav"
+  },
+  {
+   "id": "hand-percussion-woodblock-3",
+   "name": "Woodblock 3",
+   "file": "samples/hand-percussion-woodblock-3.wav"
+  },
+  {
+   "id": "hand-percussion-agogo-high-1",
+   "name": "Agogo high 1",
+   "file": "samples/hand-percussion-agogo-high-1.wav"
+  },
+  {
+   "id": "hand-percussion-agogo-high-2",
+   "name": "Agogo high 2",
+   "file": "samples/hand-percussion-agogo-high-2.wav"
+  },
+  {
+   "id": "hand-percussion-agogo-high-3",
+   "name": "Agogo high 3",
+   "file": "samples/hand-percussion-agogo-high-3.wav"
+  },
+  {
+   "id": "hand-percussion-agogo-low-1",
+   "name": "Agogo low 1",
+   "file": "samples/hand-percussion-agogo-low-1.wav"
+  },
+  {
+   "id": "hand-percussion-agogo-low-2",
+   "name": "Agogo low 2",
+   "file": "samples/hand-percussion-agogo-low-2.wav"
+  },
+  {
+   "id": "hand-percussion-guiro",
+   "name": "Guiro",
+   "file": "samples/hand-percussion-guiro.wav"
+  },
+  {
+   "id": "hand-percussion-cowbell-1",
+   "name": "Cowbell 1",
+   "file": "samples/hand-percussion-cowbell-1.wav"
+  },
+  {
+   "id": "hand-percussion-cowbell-2",
+   "name": "Cowbell 2",
+   "file": "samples/hand-percussion-cowbell-2.wav"
+  },
+  {
+   "id": "hand-percussion-cowbell-3",
+   "name": "Cowbell 3",
+   "file": "samples/hand-percussion-cowbell-3.wav"
+  },
+  {
+   "id": "hand-percussion-cowbell-muted-1",
+   "name": "Cowbell muted 1",
+   "file": "samples/hand-percussion-cowbell-muted-1.wav"
+  },
+  {
+   "id": "hand-percussion-cowbell-muted-2",
+   "name": "Cowbell muted 2",
+   "file": "samples/hand-percussion-cowbell-muted-2.wav"
+  },
+  {
+   "id": "hand-percussion-cabasa",
+   "name": "Cabasa",
+   "file": "samples/hand-percussion-cabasa.wav"
+  },
+  {
+   "id": "hand-percussion-large-shaker",
+   "name": "Large shaker",
+   "file": "samples/hand-percussion-large-shaker.wav"
+  },
+  {
+   "id": "hand-percussion-slit-drum-high-1",
+   "name": "Slit drum high 1",
+   "file": "samples/hand-percussion-slit-drum-high-1.wav"
+  },
+  {
+   "id": "hand-percussion-slit-drum-high-2",
+   "name": "Slit drum high 2",
+   "file": "samples/hand-percussion-slit-drum-high-2.wav"
+  },
+  {
+   "id": "hand-percussion-slit-drum-high-3",
+   "name": "Slit drum high 3",
+   "file": "samples/hand-percussion-slit-drum-high-3.wav"
+  },
+  {
+   "id": "hand-percussion-slit-drum-low-1",
+   "name": "Slit drum low 1",
+   "file": "samples/hand-percussion-slit-drum-low-1.wav"
+  },
+  {
+   "id": "hand-percussion-slit-drum-low-2",
+   "name": "Slit drum low 2",
+   "file": "samples/hand-percussion-slit-drum-low-2.wav"
+  },
+  {
+   "id": "hand-percussion-slit-drum-low-3",
+   "name": "Slit drum low 3",
+   "file": "samples/hand-percussion-slit-drum-low-3.wav"
+  },
+  {
+   "id": "hand-percussion-sleigh-bells",
+   "name": "Sleigh bells",
+   "file": "samples/hand-percussion-sleigh-bells.wav"
+  },
+  {
+   "id": "hand-percussion-slapstick",
+   "name": "Slapstick",
+   "file": "samples/hand-percussion-slapstick.wav"
+  }
+ ]
+}

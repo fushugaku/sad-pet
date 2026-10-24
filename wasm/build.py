@@ -142,6 +142,8 @@ def main():
     (output / "index.html").write_text(index)
     shutil.copytree(ROOT / "wasm" / "web", output, dirs_exist_ok=True)
     shutil.copytree(ROOT / "rust/assets/samples/loops-256", output / "samples/loops-256", dirs_exist_ok=True)
+    # The Sampler's starter packs: CC0 kits the editor loads into IndexedDB on first use.
+    shutil.copytree(ROOT / "rust/assets/sampler-packs", output / "sampler-packs", dirs_exist_ok=True)
     copy_voice_packs(output / "voices")
     if not args.tail_call:
         # Without the variant the loader must not spend a request on it.

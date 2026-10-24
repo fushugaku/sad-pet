@@ -310,7 +310,23 @@
       this.polyphony.setAttribute("aria-label", "Polyphony");
       for (const n of [1, 2, 4, 8, 16, 24, 32, 48, 64]) this.polyphony.append(new Option(`${n} voices`, n));
       this.polyphony.onchange = () => this.change((kit) => (kit.polyphony = Number(this.polyphony.value)));
-      tools.append(this.banks, importButton, this.recordButton, this.libraryButton, this.polyphony, this.fileInput);
+      // Starter packs come with SAD PET and load on first use.
+      this.starter = el("select");
+      this.starter.setAttribute("aria-label", "Load a starter pack");
+      this.starter.append(new Option("Starter packs…", ""));
+      this.starter.onchange = () => {
+        const id = this.starter.value;
+        this.starter.value = "";
+        this.bundled().then((packs) => {
+          const entry = packs.find((p) => p.id === id);
+          if (entry) return this.loadBundled(entry);
+        }).catch((e) => this.hooks.notify(e.message));
+      };
+      this.bundled().then((packs) => {
+        for (const p of packs) this.starter.append(new Option(`${p.name} · ${p.pads} pad${p.pads === 1 ? "" : "s"}`, p.id));
+        this.starter.hidden = !packs.length;
+      });
+      tools.append(this.banks, this.starter, importButton, this.recordButton, this.libraryButton, this.polyphony, this.fileInput);
       this.recordPanel = this.buildRecord();
       this.libraryPanel = this.buildLibrary();
       const layout = el("div", "sampler-layout");
@@ -768,7 +784,8 @@
       );
       this.packList = el("div", "sampler-pack-list");
       this.sampleList = el("div", "sampler-sample-list");
-      panel.append(bar, el("h3", "", "Packs"), this.packList, el("h3", "", "Samples"), this.sampleList);
+      this.starterList = el("div", "sampler-pack-list");
+      panel.append(bar, el("h3", "", "Starter packs · CC0"), this.starterList, el("h3", "", "Your packs"), this.packList, el("h3", "", "Samples"), this.sampleList);
       return panel;
     }
 
@@ -1495,6 +1512,14 @@
           return row;
         }),
       );
+      this.bundled().then((packs) => this.starterList.replaceChildren(...packs.map((entry) => {
+        const row = el("div", "sampler-sample");
+        const name = el("span", "sampler-sample-name", entry.name);
+        name.title = entry.description;
+        row.append(name, el("span", "muted", `${entry.pads} pad${entry.pads === 1 ? "" : "s"} · ${(entry.size / 1e6).toFixed(1)} MB`),
+          button("Load", entry.description, () => this.loadBundled(entry)));
+        return row;
+      })));
       if (!this.packs?.length) this.packList.append(el("p", "muted", "No packs: save the kit as one, or import a .zip."));
     }
     async preview(id) {
@@ -1583,6 +1608,44 @@
       if (this.kit() && confirm(`Load ${pack.name} onto the pads now?`)) await this.loadPack(pack);
       this.showLibrary();
     }
+    /** The starter packs that come with SAD PET, from the site's own files. */
+    bundled() {
+      this.bundledList ??= fetch(new URL("./sampler-packs/packs.json", location.href))
+        .then((r) => (r.ok ? r.json() : []))
+        .catch(() => []);
+      return this.bundledList;
+    }
+    /** Copies a starter pack's samples into the library once, then loads its kit. */
+    async loadBundled(entry) {
+      const base = new URL(`./sampler-packs/${entry.id}/`, location.href);
+      try {
+        const response = await fetch(new URL(`pack.json?v=${entry.version}`, base));
+        if (!response.ok) throw new Error(`${entry.name}: ${response.status}`);
+        const manifest = await response.json();
+        const ids = [];
+        for (const [i, sample] of manifest.samples.entries()) {
+          ids.push(sample.id);
+          if (await this.library.get(sample.id)) continue;
+          this.status = `Loading ${entry.name}: ${i + 1}/${manifest.samples.length}`;
+          this.syncStatus();
+          const file = await fetch(new URL(`${sample.file}?v=${entry.version}`, base));
+          if (!file.ok) throw new Error(`${sample.name}: ${file.status}`);
+          const wav = await file.arrayBuffer();
+          const audio = Files.parseWav(wav);
+          await this.library.put({
+            id: sample.id, name: sample.name, wav: new Blob([wav], { type: "audio/wav" }),
+            rate: audio.rate, frames: audio.frames, channels: audio.channels, origin: "starter", pack: entry.id,
+          });
+        }
+        await this.loadPack({ kit: manifest.kit, samples: ids });
+        this.hooks.notify(`${entry.name}: ${manifest.kit.pads.length} pad${manifest.kit.pads.length === 1 ? "" : "s"}`);
+      } catch (error) {
+        this.hooks.notify(error.message);
+      } finally {
+        this.status = "";
+        this.syncStatus();
+      }
+    }
     async loadPack(pack) {
       if (pack.kit) {
         this.change((kit) => {
@@ -1603,6 +1666,15 @@
         });
       }
       this.bank = 0;
+      // The engine forgets the samples of the kit this one replaced; the
+      // library keeps them.
+      const part = this.part();
+      const used = new Set(this.kit().pads.flatMap((p) => [...p.zones, ...(p.bounce?.zones || [])].map((z) => z.sample)));
+      const unused = [...this.loaded].filter((id) => !used.has(id));
+      if (unused.length && part !== null) {
+        await this.hooks.request("/api/sampler/forget", { ids: unused });
+        for (const id of unused) this.loaded.delete(id);
+      }
       this.syncPool();
       this.sync();
     }
@@ -1626,6 +1698,13 @@
         this.slices = [];
         this.selection = null;
         this.bank = Math.floor(Math.max(0, kit.pads.findIndex((p) => p.id === kit.selected)) / BANK);
+        // A new, empty kit starts with the first starter pack, as a Vocal
+        // timbre starts with a voice.
+        if (!kit.pads.some((p) => p.zones.length))
+          this.bundled().then((packs) => {
+            if (packs[0] && this.part() === part && !this.kit()?.pads.some((p) => p.zones.length))
+              return this.loadBundled(packs[0]);
+          });
       }
       const banks = Math.ceil(Math.max(kit.pads.length, 1) / BANK);
       for (const bank of this.banks.children) {

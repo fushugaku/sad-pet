@@ -1,0 +1,53 @@
+Acoustic Kit — a SAD PET Sampler pack
+========================================
+
+Source: Versilian Community Sample Library (VCSL), Versilian Studios LLC
+  https://github.com/sgossner/VCSL
+License: CC0 1.0 Universal
+Pinned at: https://raw.githubusercontent.com/sgossner/VCSL/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/
+
+Trimmed of silence, faded, capped in length and converted to 16-bit 44.1 kHz;
+one gain per pad; its velocity layers stay within 12 dB. Original files:
+
+acoustic-kit-bell-1.wav  ←  Idiophones/Struck Idiophones/Suspended Cymbal 1/susCymb1_hit_bell_mf1.wav
+acoustic-kit-bell-2.wav  ←  Idiophones/Struck Idiophones/Suspended Cymbal 1/susCymb1_hit_bell_fff1.wav
+acoustic-kit-clap-1.wav  ←  Idiophones/Struck Idiophones/Claps/SoloClap_vl1.wav
+acoustic-kit-clap-2.wav  ←  Idiophones/Struck Idiophones/Claps/SoloClap_vl2.wav
+acoustic-kit-clap-3.wav  ←  Idiophones/Struck Idiophones/Claps/SoloClap_vl3.wav
+acoustic-kit-clap-4.wav  ←  Idiophones/Struck Idiophones/Claps/SoloClap_vl4.wav
+acoustic-kit-closed-hat-1.wav  ←  Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_HitC_v1_rr1_Mid.wav
+acoustic-kit-closed-hat-2.wav  ←  Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_HitC_v2_rr1_Mid.wav
+acoustic-kit-closed-hat-3.wav  ←  Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_HitC_v3_rr1_Mid.wav
+acoustic-kit-closed-hat-4.wav  ←  Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_HitC_v4_rr1_Mid.wav
+acoustic-kit-crash-1.wav  ←  Idiophones/Struck Idiophones/Suspended Cymbal 1/susCymb1_hit_mp1.wav
+acoustic-kit-crash-2.wav  ←  Idiophones/Struck Idiophones/Suspended Cymbal 1/susCymb1_hit_f1.wav
+acoustic-kit-crash-3.wav  ←  Idiophones/Struck Idiophones/Suspended Cymbal 1/susCymb1_hit_fff1.wav
+acoustic-kit-cross-stick.wav  ←  Membranophones/Struck Membranophones/Snare Drum, Modern 3/Snare4_Xstick_v2_rr1_Mid.wav
+acoustic-kit-high-tom-1.wav  ←  Membranophones/Struck Membranophones/Tom 1/Stick/TomH_HitS_v2_rr1_Mid.wav
+acoustic-kit-high-tom-2.wav  ←  Membranophones/Struck Membranophones/Tom 1/Stick/TomH_HitS_v3_rr1_Mid.wav
+acoustic-kit-high-tom-3.wav  ←  Membranophones/Struck Membranophones/Tom 1/Stick/TomH_HitS_v4_rr1_Mid.wav
+acoustic-kit-kick-1.wav  ←  Membranophones/Struck Membranophones/Bass Drum 1/BDrumNew_hit_v2_rr1_Sum.wav
+acoustic-kit-kick-2.wav  ←  Membranophones/Struck Membranophones/Bass Drum 1/BDrumNew_hit_v3_rr1_Sum.wav
+acoustic-kit-kick-3.wav  ←  Membranophones/Struck Membranophones/Bass Drum 1/BDrumNew_hit_v5_rr1_Sum.wav
+acoustic-kit-kick-4.wav  ←  Membranophones/Struck Membranophones/Bass Drum 1/BDrumNew_hit_v7_rr1_Sum.wav
+acoustic-kit-loose-hat.wav  ←  Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_HitLoose_rr1_Mid.wav
+acoustic-kit-low-tom-1.wav  ←  Membranophones/Struck Membranophones/Tom 2/Stick/TomL_HitS_v2_rr1_Mid.wav
+acoustic-kit-low-tom-2.wav  ←  Membranophones/Struck Membranophones/Tom 2/Stick/TomL_HitS_v3_rr1_Mid.wav
+acoustic-kit-low-tom-3.wav  ←  Membranophones/Struck Membranophones/Tom 2/Stick/TomL_HitS_v4_rr1_Mid.wav
+acoustic-kit-open-hat.wav  ←  Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_HitO_rr1_Mid.wav
+acoustic-kit-pedal-hat.wav  ←  Idiophones/Struck Idiophones/Hi-Hat Cymbal/HiHat_Close_rr1_Mid.wav
+acoustic-kit-ride-1.wav  ←  Idiophones/Struck Idiophones/Suspended Cymbal 1/susCymb1_hit_stick_pp1.wav
+acoustic-kit-ride-2.wav  ←  Idiophones/Struck Idiophones/Suspended Cymbal 1/susCymb1_hit_stick_mp1.wav
+acoustic-kit-ride-3.wav  ←  Idiophones/Struck Idiophones/Suspended Cymbal 1/susCymb1_hit_stick_f1.wav
+acoustic-kit-snare-1.wav  ←  Membranophones/Struck Membranophones/Snare Drum, Modern 1/Snare2_HitSN_v3_rr1_Mid.wav
+acoustic-kit-snare-2.wav  ←  Membranophones/Struck Membranophones/Snare Drum, Modern 1/Snare2_HitSN_v5_rr1_Mid.wav
+acoustic-kit-snare-3.wav  ←  Membranophones/Struck Membranophones/Snare Drum, Modern 1/Snare2_HitSN_v6_rr1_Mid.wav
+acoustic-kit-snare-4.wav  ←  Membranophones/Struck Membranophones/Snare Drum, Modern 1/Snare2_HitSN_v7_rr1_Mid.wav
+acoustic-kit-snare-5.wav  ←  Membranophones/Struck Membranophones/Snare Drum, Modern 1/Snare2_HitSN_v9_rr1_Mid.wav
+acoustic-kit-snare-off-1.wav  ←  Membranophones/Struck Membranophones/Snare Drum, Modern 1/Snare2_HitNS_v2_rr1_Mid.wav
+acoustic-kit-snare-off-2.wav  ←  Membranophones/Struck Membranophones/Snare Drum, Modern 1/Snare2_HitNS_v4_rr1_Mid.wav
+acoustic-kit-snare-off-3.wav  ←  Membranophones/Struck Membranophones/Snare Drum, Modern 1/Snare2_HitNS_v5_rr1_Mid.wav
+acoustic-kit-snare-off-4.wav  ←  Membranophones/Struck Membranophones/Snare Drum, Modern 1/Snare2_HitNS_v6_rr1_Mid.wav
+acoustic-kit-snare-roll.wav  ←  Membranophones/Struck Membranophones/Snare Drum, Modern 1/Snare2_rollSN_v4_rr1_Mid.wav
+acoustic-kit-tambourine-1.wav  ←  Idiophones/Struck Idiophones/Tambourine 1/Tamb1_Hit_v1_rr1_Mid.wav
+acoustic-kit-tambourine-2.wav  ←  Idiophones/Struck Idiophones/Tambourine 1/Tamb1_Hit_v2_rr1_Mid.wav

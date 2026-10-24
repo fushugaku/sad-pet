@@ -1,0 +1,43 @@
+TR-808 — a SAD PET Sampler pack
+========================================
+
+Source: Roland TR-808 Sound Sample Set 1.0.0, Michael Fischer (Technopolis, 1994), published by TidalCycles
+  https://github.com/tidalcycles/sounds-tr808-fischer
+License: CC0 1.0 Universal (repository dedication; the author released the set free of charge)
+Pinned at: https://raw.githubusercontent.com/tidalcycles/sounds-tr808-fischer/85fbecf1bec32553395625ea659e2a56dfd7c0e1/
+
+Trimmed of silence, faded, capped in length and converted to 16-bit 44.1 kHz;
+one gain per pad; its velocity layers stay within 12 dB. Original files:
+
+tr808-clap.wav  ←  cp8/CP.WAV
+tr808-claves.wav  ←  cl8/CL.WAV
+tr808-closed-hat.wav  ←  ch8/CH.WAV
+tr808-cowbell.wav  ←  cb8/CB.WAV
+tr808-cymbal.wav  ←  cy8/CY5050.WAV
+tr808-cymbal-long.wav  ←  cy8/CY5075.WAV
+tr808-high-conga.wav  ←  hc8/HC50.WAV
+tr808-high-tom.wav  ←  ht8/HT50.WAV
+tr808-high-tom-long.wav  ←  ht8/HT75.WAV
+tr808-kick.wav  ←  bd8/BD5050.WAV
+tr808-kick-boom.wav  ←  bd8/BD2575.WAV
+tr808-kick-bright.wav  ←  bd8/BD7550.WAV
+tr808-kick-dark.wav  ←  bd8/BD0050.WAV
+tr808-kick-long.wav  ←  bd8/BD5075.WAV
+tr808-kick-short.wav  ←  bd8/BD5000.WAV
+tr808-kick-tight.wav  ←  bd8/BD5010.WAV
+tr808-low-conga.wav  ←  lc8/LC50.WAV
+tr808-low-tom.wav  ←  lt8/LT50.WAV
+tr808-low-tom-long.wav  ←  lt8/LT75.WAV
+tr808-maracas.wav  ←  ma8/MA.WAV
+tr808-mid-conga.wav  ←  mc8/MC50.WAV
+tr808-mid-tom.wav  ←  mt8/MT50.WAV
+tr808-mid-tom-long.wav  ←  mt8/MT75.WAV
+tr808-open-hat.wav  ←  oh8/OH50.WAV
+tr808-open-hat-long.wav  ←  oh8/OH75.WAV
+tr808-open-hat-short.wav  ←  oh8/OH10.WAV
+tr808-rimshot.wav  ←  rs8/RS.WAV
+tr808-snare.wav  ←  sd8/SD5050.WAV
+tr808-snare-bright.wav  ←  sd8/SD7550.WAV
+tr808-snare-dark.wav  ←  sd8/SD0050.WAV
+tr808-snare-snappy.wav  ←  sd8/SD5075.WAV
+tr808-snare-tight.wav  ←  sd8/SD5010.WAV

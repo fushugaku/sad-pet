@@ -1,0 +1,36 @@
+Cinematic Hits & FX — a SAD PET Sampler pack
+========================================
+
+Source: Versilian Community Sample Library (VCSL), Versilian Studios LLC
+  https://github.com/sgossner/VCSL
+License: CC0 1.0 Universal
+Pinned at: https://raw.githubusercontent.com/sgossner/VCSL/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/
+
+Trimmed of silence, faded, capped in length and converted to 16-bit 44.1 kHz;
+one gain per pad; its velocity layers stay within 12 dB. Original files:
+
+cinematic-anvil-1.wav  ←  Idiophones/Struck Idiophones/Anvil/Anvil_Hit1_v1_rr1_Mid.wav
+cinematic-anvil-2.wav  ←  Idiophones/Struck Idiophones/Anvil/Anvil_Hit1_v2_rr1_Mid.wav
+cinematic-anvil-3.wav  ←  Idiophones/Struck Idiophones/Anvil/Anvil_Hit1_v3_rr1_Mid.wav
+cinematic-bass-drum-1.wav  ←  Membranophones/Struck Membranophones/Bass Drum 2/bassdrum_hit_mf1.wav
+cinematic-bass-drum-2.wav  ←  Membranophones/Struck Membranophones/Bass Drum 2/bassdrum_hit_ff.wav
+cinematic-bass-drum-swell.wav  ←  Membranophones/Struck Membranophones/Bass Drum 2/bassdrum_cresc_short.wav
+cinematic-bell-tree.wav  ←  Idiophones/Struck Idiophones/Bell Tree/Stroke/BellTree_Stroke_10_Mid.wav
+cinematic-brake-drum-1.wav  ←  Idiophones/Struck Idiophones/Brake Drum/BrakeDrum1_Hammer_v1_rr1_Mid.wav
+cinematic-brake-drum-2.wav  ←  Idiophones/Struck Idiophones/Brake Drum/BrakeDrum1_Hammer_v2_rr1_Mid.wav
+cinematic-brake-drum-3.wav  ←  Idiophones/Struck Idiophones/Brake Drum/BrakeDrum1_Hammer_v3_rr1_Mid.wav
+cinematic-clash-cymbals-1.wav  ←  Idiophones/Struck Idiophones/Clash Cymbals 1/cymbal_crash1_mf1.wav
+cinematic-clash-cymbals-2.wav  ←  Idiophones/Struck Idiophones/Clash Cymbals 1/cymbal_crash1_ff2.wav
+cinematic-cymbal-swell.wav  ←  Idiophones/Struck Idiophones/Suspended Cymbal 1/susCymb1_cresc_2s.wav
+cinematic-flexatone.wav  ←  Idiophones/Struck Idiophones/Flexatone/flexatone1.wav
+cinematic-gong-1.wav  ←  Idiophones/Struck Idiophones/Gong 1/gong_mf.wav
+cinematic-gong-2.wav  ←  Idiophones/Struck Idiophones/Gong 1/gong_fff.wav
+cinematic-ocean-drum.wav  ←  Membranophones/Other Membranophones/Ocean Drum/OceanDrum_Sus_1_Mid.wav
+cinematic-ratchet.wav  ←  Idiophones/Struck Idiophones/Ratchet/Ratchet1_Fast_rr1_Mid.wav
+cinematic-timpani-1.wav  ←  Membranophones/Struck Membranophones/Timpani 1/Hit/Timpani1_Hit_v2_rr1_Sum.wav
+cinematic-timpani-2.wav  ←  Membranophones/Struck Membranophones/Timpani 1/Hit/Timpani1_Hit_v4_rr1_Sum.wav
+cinematic-timpani-high-1.wav  ←  Membranophones/Struck Membranophones/Timpani 1/Hit/Timpani4_Hit_v2_rr1_Sum.wav
+cinematic-timpani-high-2.wav  ←  Membranophones/Struck Membranophones/Timpani 1/Hit/Timpani4_Hit_v4_rr1_Sum.wav
+cinematic-tubular-bell.wav  ←  Idiophones/Struck Idiophones/Tubular Bells 1/chimes_C4_ff_rr2.wav
+cinematic-wind-chimes.wav  ←  Idiophones/Struck Idiophones/Mark Trees/Legacy/windchimes_slowDesc1.wav
+cinematic-wine-glass.wav  ←  Idiophones/Friction Idiophones/Wine Glasses/Releases/Slow/glass1_D#4_Slow_1_Decay.wav

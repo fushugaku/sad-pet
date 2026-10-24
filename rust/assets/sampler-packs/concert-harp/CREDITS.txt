@@ -1,0 +1,30 @@
+Concert Harp — a SAD PET Sampler pack
+========================================
+
+Source: Versilian Community Sample Library (VCSL), Versilian Studios LLC
+  https://github.com/sgossner/VCSL
+License: CC0 1.0 Universal
+Pinned at: https://raw.githubusercontent.com/sgossner/VCSL/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/
+
+Trimmed of silence, faded, capped in length and converted to 16-bit 44.1 kHz;
+one gain per pad; its velocity layers stay within 12 dB. Original files:
+
+concert-harp-concert-harp-a2.wav  ←  Chordophones/Composite Chordophones/Concert Harp/KSHarp_A2_mf1.wav
+concert-harp-concert-harp-a4.wav  ←  Chordophones/Composite Chordophones/Concert Harp/KSHarp_A4_mf1.wav
+concert-harp-concert-harp-a6.wav  ←  Chordophones/Composite Chordophones/Concert Harp/KSHarp_A6_mf1.wav
+concert-harp-concert-harp-b1.wav  ←  Chordophones/Composite Chordophones/Concert Harp/KSHarp_B1_mf1.wav
+concert-harp-concert-harp-b3.wav  ←  Chordophones/Composite Chordophones/Concert Harp/KSHarp_B3_mf1.wav
+concert-harp-concert-harp-b5.wav  ←  Chordophones/Composite Chordophones/Concert Harp/KSHarp_B5_mf1.wav
+concert-harp-concert-harp-b6.wav  ←  Chordophones/Composite Chordophones/Concert Harp/KSHarp_B6_mf1.wav
+concert-harp-concert-harp-c3.wav  ←  Chordophones/Composite Chordophones/Concert Harp/KSHarp_C3_mf3.wav
+concert-harp-concert-harp-c5.wav  ←  Chordophones/Composite Chordophones/Concert Harp/KSHarp_C5_mf1.wav
+concert-harp-concert-harp-d2.wav  ←  Chordophones/Composite Chordophones/Concert Harp/KSHarp_D2_mf1.wav
+concert-harp-concert-harp-d4.wav  ←  Chordophones/Composite Chordophones/Concert Harp/KSHarp_D4_mf1.wav
+concert-harp-concert-harp-d6.wav  ←  Chordophones/Composite Chordophones/Concert Harp/KSHarp_D6_mf1.wav
+concert-harp-concert-harp-e3.wav  ←  Chordophones/Composite Chordophones/Concert Harp/KSHarp_E3_mf1.wav
+concert-harp-concert-harp-e5.wav  ←  Chordophones/Composite Chordophones/Concert Harp/KSHarp_E5_mf1.wav
+concert-harp-concert-harp-f2.wav  ←  Chordophones/Composite Chordophones/Concert Harp/KSHarp_F2_mf1.wav
+concert-harp-concert-harp-f4.wav  ←  Chordophones/Composite Chordophones/Concert Harp/KSHarp_F4_mf1.wav
+concert-harp-concert-harp-f6.wav  ←  Chordophones/Composite Chordophones/Concert Harp/KSHarp_F6_mf1.wav
+concert-harp-concert-harp-g3.wav  ←  Chordophones/Composite Chordophones/Concert Harp/KSHarp_G3_mf1.wav
+concert-harp-concert-harp-g5.wav  ←  Chordophones/Composite Chordophones/Concert Harp/KSHarp_G5_mf1.wav

@@ -1,0 +1,60 @@
+Hand Percussion — a SAD PET Sampler pack
+========================================
+
+Source: Versilian Community Sample Library (VCSL), Versilian Studios LLC
+  https://github.com/sgossner/VCSL
+License: CC0 1.0 Universal
+Pinned at: https://raw.githubusercontent.com/sgossner/VCSL/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/
+
+Trimmed of silence, faded, capped in length and converted to 16-bit 44.1 kHz;
+one gain per pad; its velocity layers stay within 12 dB. Original files:
+
+hand-percussion-agogo-high-1.wav  ←  Idiophones/Struck Idiophones/Agogo Bells/Agogo_High_v1_rr1_Mid.wav
+hand-percussion-agogo-high-2.wav  ←  Idiophones/Struck Idiophones/Agogo Bells/Agogo_High_v2_rr1_Mid.wav
+hand-percussion-agogo-high-3.wav  ←  Idiophones/Struck Idiophones/Agogo Bells/Agogo_High_v3_rr1_Mid.wav
+hand-percussion-agogo-low-1.wav  ←  Idiophones/Struck Idiophones/Agogo Bells/Agogo_Low_v1_rr1_Mid.wav
+hand-percussion-agogo-low-2.wav  ←  Idiophones/Struck Idiophones/Agogo Bells/Agogo_Low_v2_rr1_Mid.wav
+hand-percussion-bongo-high-1.wav  ←  Membranophones/Struck Membranophones/Bongos/BongoH_Hit1_v1_rr1_Mid.wav
+hand-percussion-bongo-high-2.wav  ←  Membranophones/Struck Membranophones/Bongos/BongoH_Hit1_v2_rr1_Mid.wav
+hand-percussion-bongo-high-3.wav  ←  Membranophones/Struck Membranophones/Bongos/BongoH_Hit1_v3_rr1_Mid.wav
+hand-percussion-bongo-muted.wav  ←  Membranophones/Struck Membranophones/Bongos/BongoH_HitMuted1_v1_rr1_Mid.wav
+hand-percussion-cabasa.wav  ←  Idiophones/Struck Idiophones/Cabasa/Cabasa1_Hit_rr1_Mid.wav
+hand-percussion-caj-n-bass-1.wav  ←  Idiophones/Struck Idiophones/Cajon/Cajon_hit1_mp_rr1.wav
+hand-percussion-caj-n-bass-2.wav  ←  Idiophones/Struck Idiophones/Cajon/Cajon_hit1_f_rr1.wav
+hand-percussion-caj-n-bass-3.wav  ←  Idiophones/Struck Idiophones/Cajon/Cajon_hit1_fff_rr1.wav
+hand-percussion-caj-n-slap-1.wav  ←  Idiophones/Struck Idiophones/Cajon/Cajon_hit2_pp_rr1.wav
+hand-percussion-caj-n-slap-2.wav  ←  Idiophones/Struck Idiophones/Cajon/Cajon_hit2_mp_rr1.wav
+hand-percussion-caj-n-slap-3.wav  ←  Idiophones/Struck Idiophones/Cajon/Cajon_hit2_f_rr1.wav
+hand-percussion-claves-1.wav  ←  Idiophones/Struck Idiophones/Claves/Claves1_Hit_v1_rr1_Mid.wav
+hand-percussion-claves-2.wav  ←  Idiophones/Struck Idiophones/Claves/Claves1_Hit_v2_rr1_Mid.wav
+hand-percussion-claves-3.wav  ←  Idiophones/Struck Idiophones/Claves/Claves1_Hit_v3_rr1_Mid.wav
+hand-percussion-conga-muted-1.wav  ←  Membranophones/Struck Membranophones/Conga/Conga_HitFM_v1_rr1_Sum.wav
+hand-percussion-conga-muted-2.wav  ←  Membranophones/Struck Membranophones/Conga/Conga_HitFM_v2_rr1_Sum.wav
+hand-percussion-conga-open-1.wav  ←  Membranophones/Struck Membranophones/Conga/Conga_HitN_v1_rr1_Sum.wav
+hand-percussion-conga-open-2.wav  ←  Membranophones/Struck Membranophones/Conga/Conga_HitN_v2_rr1_Sum.wav
+hand-percussion-cowbell-1.wav  ←  Idiophones/Struck Idiophones/Cowbells/Cowbell1_Hit_v2_rr1_Mid.wav
+hand-percussion-cowbell-2.wav  ←  Idiophones/Struck Idiophones/Cowbells/Cowbell1_Hit_v3_rr1_Mid.wav
+hand-percussion-cowbell-3.wav  ←  Idiophones/Struck Idiophones/Cowbells/Cowbell1_Hit_v4_rr1_Mid.wav
+hand-percussion-cowbell-muted-1.wav  ←  Idiophones/Struck Idiophones/Cowbells/Cowbell1_Muted_v2_rr1_Mid.wav
+hand-percussion-cowbell-muted-2.wav  ←  Idiophones/Struck Idiophones/Cowbells/Cowbell1_Muted_v3_rr1_Mid.wav
+hand-percussion-darbuka-doum-1.wav  ←  Membranophones/Struck Membranophones/Darbuka/Darbuka_1_hit_vl1_rr1.wav
+hand-percussion-darbuka-doum-2.wav  ←  Membranophones/Struck Membranophones/Darbuka/Darbuka_1_hit_vl2_rr1.wav
+hand-percussion-darbuka-tek-1.wav  ←  Membranophones/Struck Membranophones/Darbuka/Darbuka_2_hit_vl1_rr1.wav
+hand-percussion-darbuka-tek-2.wav  ←  Membranophones/Struck Membranophones/Darbuka/Darbuka_2_hit_vl2_rr1.wav
+hand-percussion-frame-drum.wav  ←  Membranophones/Struck Membranophones/Frame Drum/HDrumL_Hit_v2_rr1_Sum.wav
+hand-percussion-guiro.wav  ←  Idiophones/Struck Idiophones/Guiro/Guiro_Hit_rr1_Mid.wav
+hand-percussion-large-shaker.wav  ←  Idiophones/Struck Idiophones/Shaker, Large/LShaker_Hit_rr1_Mid.wav
+hand-percussion-shaker.wav  ←  Idiophones/Struck Idiophones/Shaker, Small/Mid_ShakerDouble_Down_rr1.wav
+hand-percussion-slapstick.wav  ←  Idiophones/Struck Idiophones/Slapstick/slapstick_rr1.wav
+hand-percussion-sleigh-bells.wav  ←  Idiophones/Struck Idiophones/Sleigh Bells/Sleighbells_Hit_rr1_Mid.wav
+hand-percussion-slit-drum-high-1.wav  ←  Idiophones/Struck Idiophones/Slit Drum/LogDrumHi_MedM_v1_rr1_Sum.wav
+hand-percussion-slit-drum-high-2.wav  ←  Idiophones/Struck Idiophones/Slit Drum/LogDrumHi_MedM_v2_rr1_Sum.wav
+hand-percussion-slit-drum-high-3.wav  ←  Idiophones/Struck Idiophones/Slit Drum/LogDrumHi_MedM_v3_rr1_Sum.wav
+hand-percussion-slit-drum-low-1.wav  ←  Idiophones/Struck Idiophones/Slit Drum/LogDrumLo_MedM_v1_rr1_Sum.wav
+hand-percussion-slit-drum-low-2.wav  ←  Idiophones/Struck Idiophones/Slit Drum/LogDrumLo_MedM_v2_rr1_Sum.wav
+hand-percussion-slit-drum-low-3.wav  ←  Idiophones/Struck Idiophones/Slit Drum/LogDrumLo_MedM_v3_rr1_Sum.wav
+hand-percussion-tambourine-1.wav  ←  Idiophones/Struck Idiophones/Tambourine 1/Tamb1_Hit_v1_rr1_Mid.wav
+hand-percussion-tambourine-2.wav  ←  Idiophones/Struck Idiophones/Tambourine 1/Tamb1_Hit_v2_rr1_Mid.wav
+hand-percussion-woodblock-1.wav  ←  Idiophones/Struck Idiophones/Woodblock/wood_click_mp.wav
+hand-percussion-woodblock-2.wav  ←  Idiophones/Struck Idiophones/Woodblock/wood_click_f_rr1.wav
+hand-percussion-woodblock-3.wav  ←  Idiophones/Struck Idiophones/Woodblock/wood_click_ff.wav

@@ -1,0 +1,689 @@
+{
+ "format": "sad-pet-pack-v1",
+ "name": "Grand Piano",
+ "description": "VCSL's Kawai grand, one sample every few keys over the whole keyboard; it plays from the keyboard and holds while a key is down",
+ "license": "CC0 1.0 Universal",
+ "kit": {
+  "pads": [
+   {
+    "name": "Grand piano",
+    "keys": [
+     21,
+     108
+    ],
+    "keytrack": true,
+    "trigger": "note_on",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "grand-piano-grand-piano-a-0",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 22,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       21,
+       24
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "grand-piano-grand-piano-d-1",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 27,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       25,
+       30
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "grand-piano-grand-piano-a1",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 33,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       31,
+       36
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "grand-piano-grand-piano-d-2",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 39,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       37,
+       42
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "grand-piano-grand-piano-a2",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 45,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       43,
+       47
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "grand-piano-grand-piano-d3",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 50,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       48,
+       52
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "grand-piano-grand-piano-f-3",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 54,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       53,
+       56
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "grand-piano-grand-piano-a-3",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 58,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       57,
+       60
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "grand-piano-grand-piano-d4",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 62,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       61,
+       64
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "grand-piano-grand-piano-f-4",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 66,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       65,
+       68
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "grand-piano-grand-piano-a-4",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 70,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       69,
+       72
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "grand-piano-grand-piano-d5",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 74,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       73,
+       76
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "grand-piano-grand-piano-f-5",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 78,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       77,
+       80
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "grand-piano-grand-piano-a-5",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 82,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       81,
+       83
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "grand-piano-grand-piano-c6",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 84,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       84,
+       87
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "grand-piano-grand-piano-f-6",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 90,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       88,
+       93
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "grand-piano-grand-piano-c7",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 96,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       94,
+       99
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "grand-piano-grand-piano-f-7",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 102,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       100,
+       105
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     },
+     {
+      "sample": "grand-piano-grand-piano-c8",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 108,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       106,
+       108
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 350
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 0.8,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 1
+   }
+  ],
+  "polyphony": 32,
+  "selected": 1
+ },
+ "samples": [
+  {
+   "id": "grand-piano-grand-piano-a-0",
+   "name": "Grand piano A#0",
+   "file": "samples/grand-piano-grand-piano-a-0.wav"
+  },
+  {
+   "id": "grand-piano-grand-piano-d-1",
+   "name": "Grand piano D#1",
+   "file": "samples/grand-piano-grand-piano-d-1.wav"
+  },
+  {
+   "id": "grand-piano-grand-piano-a1",
+   "name": "Grand piano A1",
+   "file": "samples/grand-piano-grand-piano-a1.wav"
+  },
+  {
+   "id": "grand-piano-grand-piano-d-2",
+   "name": "Grand piano D#2",
+   "file": "samples/grand-piano-grand-piano-d-2.wav"
+  },
+  {
+   "id": "grand-piano-grand-piano-a2",
+   "name": "Grand piano A2",
+   "file": "samples/grand-piano-grand-piano-a2.wav"
+  },
+  {
+   "id": "grand-piano-grand-piano-d3",
+   "name": "Grand piano D3",
+   "file": "samples/grand-piano-grand-piano-d3.wav"
+  },
+  {
+   "id": "grand-piano-grand-piano-f-3",
+   "name": "Grand piano F#3",
+   "file": "samples/grand-piano-grand-piano-f-3.wav"
+  },
+  {
+   "id": "grand-piano-grand-piano-a-3",
+   "name": "Grand piano A#3",
+   "file": "samples/grand-piano-grand-piano-a-3.wav"
+  },
+  {
+   "id": "grand-piano-grand-piano-d4",
+   "name": "Grand piano D4",
+   "file": "samples/grand-piano-grand-piano-d4.wav"
+  },
+  {
+   "id": "grand-piano-grand-piano-f-4",
+   "name": "Grand piano F#4",
+   "file": "samples/grand-piano-grand-piano-f-4.wav"
+  },
+  {
+   "id": "grand-piano-grand-piano-a-4",
+   "name": "Grand piano A#4",
+   "file": "samples/grand-piano-grand-piano-a-4.wav"
+  },
+  {
+   "id": "grand-piano-grand-piano-d5",
+   "name": "Grand piano D5",
+   "file": "samples/grand-piano-grand-piano-d5.wav"
+  },
+  {
+   "id": "grand-piano-grand-piano-f-5",
+   "name": "Grand piano F#5",
+   "file": "samples/grand-piano-grand-piano-f-5.wav"
+  },
+  {
+   "id": "grand-piano-grand-piano-a-5",
+   "name": "Grand piano A#5",
+   "file": "samples/grand-piano-grand-piano-a-5.wav"
+  },
+  {
+   "id": "grand-piano-grand-piano-c6",
+   "name": "Grand piano C6",
+   "file": "samples/grand-piano-grand-piano-c6.wav"
+  },
+  {
+   "id": "grand-piano-grand-piano-f-6",
+   "name": "Grand piano F#6",
+   "file": "samples/grand-piano-grand-piano-f-6.wav"
+  },
+  {
+   "id": "grand-piano-grand-piano-c7",
+   "name": "Grand piano C7",
+   "file": "samples/grand-piano-grand-piano-c7.wav"
+  },
+  {
+   "id": "grand-piano-grand-piano-f-7",
+   "name": "Grand piano F#7",
+   "file": "samples/grand-piano-grand-piano-f-7.wav"
+  },
+  {
+   "id": "grand-piano-grand-piano-c8",
+   "name": "Grand piano C8",
+   "file": "samples/grand-piano-grand-piano-c8.wav"
+  }
+ ]
+}

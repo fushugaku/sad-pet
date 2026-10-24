@@ -201,7 +201,15 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   **packs** keep a kit with its samples and move between browsers as `.zip` files
   (`pack.json` and WAVs). Imports take WAV and whatever the browser decodes (MP3,
   AAC, OGG, FLAC), files dropped on pads, and `.zip` packs or plain zips of samples.
-  Scenes and presets carry the kit's samples. The DAW plug-ins and app play Sampler
+  Scenes and presets carry the kit's samples. **Eight CC0 starter packs** come with
+  SAD PET (**Starter packs…** or the Library) and a new Sampler starts with the first:
+  TR-808 (Michael Fischer's set, 32 pads), Acoustic Kit, Hand Percussion and
+  Cinematic Hits & FX with velocity layers and mute groups, and Grand Piano, FM
+  Electric Piano, Concert Harp and Mallets (a split of marimba, vibraphone,
+  xylophone and glockenspiel) as keygroups from the Versilian Community Sample
+  Library. A pack's samples join IndexedDB on first use. `rust/scripts/
+  build_sampler_packs.py` rebuilds them from pinned sources; credits are in each
+  pack's `CREDITS.txt`. The DAW plug-ins and app play Sampler
   timbres of loaded scenes silently for now.
 - Two filters with single, serial and parallel routing, envelope depth and key tracking.
 - All **18 Rustias filter models** in either slot: RADIAS, Ladder LP/HP/BP24,

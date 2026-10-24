@@ -1,0 +1,2168 @@
+{
+ "format": "sad-pet-pack-v1",
+ "name": "Acoustic Kit",
+ "description": "A recorded drum kit from VCSL with velocity layers: kick, snares, toms, hi-hat, cymbals, claps and tambourine",
+ "license": "CC0 1.0 Universal",
+ "kit": {
+  "pads": [
+   {
+    "name": "Kick",
+    "keys": [
+     36,
+     36
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "acoustic-kit-kick-1",
+      "start": 0,
+      "end": 60432,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       31
+      ]
+     },
+     {
+      "sample": "acoustic-kit-kick-2",
+      "start": 0,
+      "end": 75609,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       32,
+       63
+      ]
+     },
+     {
+      "sample": "acoustic-kit-kick-3",
+      "start": 0,
+      "end": 114879,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       64,
+       95
+      ]
+     },
+     {
+      "sample": "acoustic-kit-kick-4",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       96,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 1
+   },
+   {
+    "name": "Snare",
+    "keys": [
+     37,
+     37
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "acoustic-kit-snare-1",
+      "start": 0,
+      "end": 76278,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       25
+      ]
+     },
+     {
+      "sample": "acoustic-kit-snare-2",
+      "start": 0,
+      "end": 60083,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       26,
+       50
+      ]
+     },
+     {
+      "sample": "acoustic-kit-snare-3",
+      "start": 0,
+      "end": 60088,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       51,
+       76
+      ]
+     },
+     {
+      "sample": "acoustic-kit-snare-4",
+      "start": 0,
+      "end": 67509,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       77,
+       101
+      ]
+     },
+     {
+      "sample": "acoustic-kit-snare-5",
+      "start": 0,
+      "end": 71922,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       102,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 2
+   },
+   {
+    "name": "Snare off",
+    "keys": [
+     38,
+     38
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "acoustic-kit-snare-off-1",
+      "start": 0,
+      "end": 38841,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       31
+      ]
+     },
+     {
+      "sample": "acoustic-kit-snare-off-2",
+      "start": 0,
+      "end": 41548,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       32,
+       63
+      ]
+     },
+     {
+      "sample": "acoustic-kit-snare-off-3",
+      "start": 0,
+      "end": 40267,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       64,
+       95
+      ]
+     },
+     {
+      "sample": "acoustic-kit-snare-off-4",
+      "start": 0,
+      "end": 46154,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       96,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 3
+   },
+   {
+    "name": "Cross stick",
+    "keys": [
+     39,
+     39
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "acoustic-kit-cross-stick",
+      "start": 0,
+      "end": 34474,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 4
+   },
+   {
+    "name": "Closed hat",
+    "keys": [
+     40,
+     40
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 1,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "acoustic-kit-closed-hat-1",
+      "start": 0,
+      "end": 46288,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       31
+      ]
+     },
+     {
+      "sample": "acoustic-kit-closed-hat-2",
+      "start": 0,
+      "end": 45757,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       32,
+       63
+      ]
+     },
+     {
+      "sample": "acoustic-kit-closed-hat-3",
+      "start": 0,
+      "end": 28499,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       64,
+       95
+      ]
+     },
+     {
+      "sample": "acoustic-kit-closed-hat-4",
+      "start": 0,
+      "end": 32881,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       96,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 5
+   },
+   {
+    "name": "Pedal hat",
+    "keys": [
+     41,
+     41
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 1,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "acoustic-kit-pedal-hat",
+      "start": 0,
+      "end": 36707,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 6
+   },
+   {
+    "name": "Loose hat",
+    "keys": [
+     42,
+     42
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 1,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "acoustic-kit-loose-hat",
+      "start": 0,
+      "end": 35711,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 7
+   },
+   {
+    "name": "Open hat",
+    "keys": [
+     43,
+     43
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 1,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "acoustic-kit-open-hat",
+      "start": 0,
+      "end": 150599,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 8
+   },
+   {
+    "name": "High tom",
+    "keys": [
+     44,
+     44
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "acoustic-kit-high-tom-1",
+      "start": 0,
+      "end": 103312,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       42
+      ]
+     },
+     {
+      "sample": "acoustic-kit-high-tom-2",
+      "start": 0,
+      "end": 99035,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       43,
+       84
+      ]
+     },
+     {
+      "sample": "acoustic-kit-high-tom-3",
+      "start": 0,
+      "end": 68907,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       85,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 9
+   },
+   {
+    "name": "Low tom",
+    "keys": [
+     45,
+     45
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "acoustic-kit-low-tom-1",
+      "start": 0,
+      "end": 102878,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       42
+      ]
+     },
+     {
+      "sample": "acoustic-kit-low-tom-2",
+      "start": 0,
+      "end": 112652,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       43,
+       84
+      ]
+     },
+     {
+      "sample": "acoustic-kit-low-tom-3",
+      "start": 0,
+      "end": 71441,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       85,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 10
+   },
+   {
+    "name": "Crash",
+    "keys": [
+     46,
+     46
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "acoustic-kit-crash-1",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       42
+      ]
+     },
+     {
+      "sample": "acoustic-kit-crash-2",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       43,
+       84
+      ]
+     },
+     {
+      "sample": "acoustic-kit-crash-3",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       85,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 11
+   },
+   {
+    "name": "Ride",
+    "keys": [
+     47,
+     47
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "acoustic-kit-ride-1",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       42
+      ]
+     },
+     {
+      "sample": "acoustic-kit-ride-2",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       43,
+       84
+      ]
+     },
+     {
+      "sample": "acoustic-kit-ride-3",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       85,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 12
+   },
+   {
+    "name": "Bell",
+    "keys": [
+     48,
+     48
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "acoustic-kit-bell-1",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       63
+      ]
+     },
+     {
+      "sample": "acoustic-kit-bell-2",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       64,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 13
+   },
+   {
+    "name": "Clap",
+    "keys": [
+     49,
+     49
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "acoustic-kit-clap-1",
+      "start": 0,
+      "end": 12300,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       31
+      ]
+     },
+     {
+      "sample": "acoustic-kit-clap-2",
+      "start": 0,
+      "end": 12415,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       32,
+       63
+      ]
+     },
+     {
+      "sample": "acoustic-kit-clap-3",
+      "start": 0,
+      "end": 9966,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       64,
+       95
+      ]
+     },
+     {
+      "sample": "acoustic-kit-clap-4",
+      "start": 0,
+      "end": 9026,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       96,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 14
+   },
+   {
+    "name": "Tambourine",
+    "keys": [
+     50,
+     50
+    ],
+    "keytrack": false,
+    "trigger": "one_shot",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "acoustic-kit-tambourine-1",
+      "start": 0,
+      "end": 72345,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       63
+      ]
+     },
+     {
+      "sample": "acoustic-kit-tambourine-2",
+      "start": 0,
+      "end": 51678,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       64,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 30
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 15
+   },
+   {
+    "name": "Snare roll",
+    "keys": [
+     51,
+     51
+    ],
+    "keytrack": false,
+    "trigger": "note_on",
+    "mono": false,
+    "choke": 0,
+    "layers": "velocity",
+    "zones": [
+     {
+      "sample": "acoustic-kit-snare-roll",
+      "start": 0,
+      "end": 154350,
+      "loop_mode": "off",
+      "loop_start": 0,
+      "crossfade": 0,
+      "reverse": false,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fade_curve": [
+       0,
+       0
+      ],
+      "root": 60,
+      "tune": 0,
+      "fine": 0,
+      "gain": 0,
+      "pan": 0,
+      "keys": [
+       0,
+       127
+      ],
+      "velocities": [
+       1,
+       127
+      ]
+     }
+    ],
+    "tune": 0,
+    "fine": 0,
+    "gain": 0,
+    "pan": 0,
+    "envelope": {
+     "attack": 0,
+     "hold": 0,
+     "decay": 300,
+     "sustain": 1,
+     "release": 120
+    },
+    "filter": {
+     "kind": "off",
+     "cutoff": 8000,
+     "resonance": 0.1,
+     "envelope": 0,
+     "attack": 0,
+     "decay": 300,
+     "keytrack": 0,
+     "velocity": 0
+    },
+    "pitch": {
+     "amount": 0,
+     "decay": 100
+    },
+    "velocity": {
+     "level": 1,
+     "start": 0,
+     "attack": 0
+    },
+    "muted": false,
+    "solo": false,
+    "bounce": null,
+    "id": 16
+   }
+  ],
+  "polyphony": 32,
+  "selected": 1
+ },
+ "samples": [
+  {
+   "id": "acoustic-kit-kick-1",
+   "name": "Kick 1",
+   "file": "samples/acoustic-kit-kick-1.wav"
+  },
+  {
+   "id": "acoustic-kit-kick-2",
+   "name": "Kick 2",
+   "file": "samples/acoustic-kit-kick-2.wav"
+  },
+  {
+   "id": "acoustic-kit-kick-3",
+   "name": "Kick 3",
+   "file": "samples/acoustic-kit-kick-3.wav"
+  },
+  {
+   "id": "acoustic-kit-kick-4",
+   "name": "Kick 4",
+   "file": "samples/acoustic-kit-kick-4.wav"
+  },
+  {
+   "id": "acoustic-kit-snare-1",
+   "name": "Snare 1",
+   "file": "samples/acoustic-kit-snare-1.wav"
+  },
+  {
+   "id": "acoustic-kit-snare-2",
+   "name": "Snare 2",
+   "file": "samples/acoustic-kit-snare-2.wav"
+  },
+  {
+   "id": "acoustic-kit-snare-3",
+   "name": "Snare 3",
+   "file": "samples/acoustic-kit-snare-3.wav"
+  },
+  {
+   "id": "acoustic-kit-snare-4",
+   "name": "Snare 4",
+   "file": "samples/acoustic-kit-snare-4.wav"
+  },
+  {
+   "id": "acoustic-kit-snare-5",
+   "name": "Snare 5",
+   "file": "samples/acoustic-kit-snare-5.wav"
+  },
+  {
+   "id": "acoustic-kit-snare-off-1",
+   "name": "Snare off 1",
+   "file": "samples/acoustic-kit-snare-off-1.wav"
+  },
+  {
+   "id": "acoustic-kit-snare-off-2",
+   "name": "Snare off 2",
+   "file": "samples/acoustic-kit-snare-off-2.wav"
+  },
+  {
+   "id": "acoustic-kit-snare-off-3",
+   "name": "Snare off 3",
+   "file": "samples/acoustic-kit-snare-off-3.wav"
+  },
+  {
+   "id": "acoustic-kit-snare-off-4",
+   "name": "Snare off 4",
+   "file": "samples/acoustic-kit-snare-off-4.wav"
+  },
+  {
+   "id": "acoustic-kit-cross-stick",
+   "name": "Cross stick",
+   "file": "samples/acoustic-kit-cross-stick.wav"
+  },
+  {
+   "id": "acoustic-kit-closed-hat-1",
+   "name": "Closed hat 1",
+   "file": "samples/acoustic-kit-closed-hat-1.wav"
+  },
+  {
+   "id": "acoustic-kit-closed-hat-2",
+   "name": "Closed hat 2",
+   "file": "samples/acoustic-kit-closed-hat-2.wav"
+  },
+  {
+   "id": "acoustic-kit-closed-hat-3",
+   "name": "Closed hat 3",
+   "file": "samples/acoustic-kit-closed-hat-3.wav"
+  },
+  {
+   "id": "acoustic-kit-closed-hat-4",
+   "name": "Closed hat 4",
+   "file": "samples/acoustic-kit-closed-hat-4.wav"
+  },
+  {
+   "id": "acoustic-kit-pedal-hat",
+   "name": "Pedal hat",
+   "file": "samples/acoustic-kit-pedal-hat.wav"
+  },
+  {
+   "id": "acoustic-kit-loose-hat",
+   "name": "Loose hat",
+   "file": "samples/acoustic-kit-loose-hat.wav"
+  },
+  {
+   "id": "acoustic-kit-open-hat",
+   "name": "Open hat",
+   "file": "samples/acoustic-kit-open-hat.wav"
+  },
+  {
+   "id": "acoustic-kit-high-tom-1",
+   "name": "High tom 1",
+   "file": "samples/acoustic-kit-high-tom-1.wav"
+  },
+  {
+   "id": "acoustic-kit-high-tom-2",
+   "name": "High tom 2",
+   "file": "samples/acoustic-kit-high-tom-2.wav"
+  },
+  {
+   "id": "acoustic-kit-high-tom-3",
+   "name": "High tom 3",
+   "file": "samples/acoustic-kit-high-tom-3.wav"
+  },
+  {
+   "id": "acoustic-kit-low-tom-1",
+   "name": "Low tom 1",
+   "file": "samples/acoustic-kit-low-tom-1.wav"
+  },
+  {
+   "id": "acoustic-kit-low-tom-2",
+   "name": "Low tom 2",
+   "file": "samples/acoustic-kit-low-tom-2.wav"
+  },
+  {
+   "id": "acoustic-kit-low-tom-3",
+   "name": "Low tom 3",
+   "file": "samples/acoustic-kit-low-tom-3.wav"
+  },
+  {
+   "id": "acoustic-kit-crash-1",
+   "name": "Crash 1",
+   "file": "samples/acoustic-kit-crash-1.wav"
+  },
+  {
+   "id": "acoustic-kit-crash-2",
+   "name": "Crash 2",
+   "file": "samples/acoustic-kit-crash-2.wav"
+  },
+  {
+   "id": "acoustic-kit-crash-3",
+   "name": "Crash 3",
+   "file": "samples/acoustic-kit-crash-3.wav"
+  },
+  {
+   "id": "acoustic-kit-ride-1",
+   "name": "Ride 1",
+   "file": "samples/acoustic-kit-ride-1.wav"
+  },
+  {
+   "id": "acoustic-kit-ride-2",
+   "name": "Ride 2",
+   "file": "samples/acoustic-kit-ride-2.wav"
+  },
+  {
+   "id": "acoustic-kit-ride-3",
+   "name": "Ride 3",
+   "file": "samples/acoustic-kit-ride-3.wav"
+  },
+  {
+   "id": "acoustic-kit-bell-1",
+   "name": "Bell 1",
+   "file": "samples/acoustic-kit-bell-1.wav"
+  },
+  {
+   "id": "acoustic-kit-bell-2",
+   "name": "Bell 2",
+   "file": "samples/acoustic-kit-bell-2.wav"
+  },
+  {
+   "id": "acoustic-kit-clap-1",
+   "name": "Clap 1",
+   "file": "samples/acoustic-kit-clap-1.wav"
+  },
+  {
+   "id": "acoustic-kit-clap-2",
+   "name": "Clap 2",
+   "file": "samples/acoustic-kit-clap-2.wav"
+  },
+  {
+   "id": "acoustic-kit-clap-3",
+   "name": "Clap 3",
+   "file": "samples/acoustic-kit-clap-3.wav"
+  },
+  {
+   "id": "acoustic-kit-clap-4",
+   "name": "Clap 4",
+   "file": "samples/acoustic-kit-clap-4.wav"
+  },
+  {
+   "id": "acoustic-kit-tambourine-1",
+   "name": "Tambourine 1",
+   "file": "samples/acoustic-kit-tambourine-1.wav"
+  },
+  {
+   "id": "acoustic-kit-tambourine-2",
+   "name": "Tambourine 2",
+   "file": "samples/acoustic-kit-tambourine-2.wav"
+  },
+  {
+   "id": "acoustic-kit-snare-roll",
+   "name": "Snare roll",
+   "file": "samples/acoustic-kit-snare-roll.wav"
+  }
+ ]
+}
