@@ -6,12 +6,15 @@
     <title>SAD PET</title>
     <link rel="stylesheet" href="./style.css" />
     <link rel="stylesheet" href="./vocal.css" />
+    <link rel="stylesheet" href="./sampler.css" />
     <script src="./library.js" defer></script>
     <script src="./selection.js" defer></script>
     <script src="./presets.js" defer></script>
     <script src="./sequence.js" defer></script>
     <script src="./panels.js" defer></script>
     <script src="./vocal.js" defer></script>
+    <script src="./sampler-library.js" defer></script>
+    <script src="./sampler.js" defer></script>
     <script src="./app.js" defer></script>
   </head>
   <body>
@@ -253,6 +256,12 @@
         hidden
       ></section>
       <section
+        id="sampler-editor"
+        class="bank sampler-bank"
+        aria-label="Sampler"
+        hidden
+      ></section>
+      <section
         id="bus-engine"
         class="bank resynth-bank synth-bank bus-bank"
         aria-label="Bus"
@@ -261,6 +270,7 @@
         <div class="section-heading">
           <h2 id="bus-title">Bus <span>sends from timbres</span></h2>
           <div class="resynth-actions">
+            <button id="bus-back" hidden></button>
             <label class="check"
               ><input
                 id="bus-filters"

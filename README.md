@@ -177,6 +177,32 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   Granular, Filters, Resynth and every effect apply to the voice. Plug-ins play
   the score at the DAW position and tempo; the browser and app play it with
   **▶ Play** or the main transport. See [the voice engine](voice/README.md).
+- **Sampler timbres** (browser) play kits of samples in the manner of an MPC: eight
+  banks of sixteen pads, each with **zones** for velocity layers (by velocity, cycle
+  or random) and key groups. Every zone has Start/End, a loop (forward, back and
+  forth, or while held) with **crossfade**, Reverse, **fade in / fade out** with
+  curves, root note and tuning; every pad adds One shot / Note on, Mono, **mute
+  groups**, keytracking, an AHDSR amp envelope, a filter (low/high/band pass, notch)
+  with its own envelope, a pitch envelope and velocity to level, start and attack.
+  The **Sample editor** shows the waveform with draggable markers and zero-crossing
+  snap: **Trim**, **Loop**, **Chop** (transients, equal regions or beats, onto pads,
+  onto keys of one pad, or into new samples) and **Process**: crop, delete, silence,
+  insert silence, normalize, gain, reverse, fades, baked loop crossfade, DC removal,
+  phase invert, mono, swap, pitch shift (varispeed or keeping the length), time
+  stretch, resample, bit crush, trim silence, copy/paste/mix paste and undo. Each
+  edit makes a new sample; the original stays. **Detect root** finds a sample's pitch.
+  **Record** takes a sample from any input or resamples SAD PET's own output, starting
+  at a level if you like. Every pad can get its own **Pad FX** timbre — Granular,
+  Filters, Resynth and both effect racks, edited like any timbre — and **Bounce**
+  renders each note of a range through it into plain samples (key groups) that the pad
+  then plays, freeing the chain's CPU; **Unbounce** goes back. **Sequence this pad**
+  adds a Neuropolis track that plays one pad whatever its keys; note tracks play pads
+  by key. Samples, takes, slices, edits and bounces live in the browser's IndexedDB;
+  **packs** keep a kit with its samples and move between browsers as `.zip` files
+  (`pack.json` and WAVs). Imports take WAV and whatever the browser decodes (MP3,
+  AAC, OGG, FLAC), files dropped on pads, and `.zip` packs or plain zips of samples.
+  Scenes and presets carry the kit's samples. The DAW plug-ins and app play Sampler
+  timbres of loaded scenes silently for now.
 - Two filters with single, serial and parallel routing, envelope depth and key tracking.
 - All **18 Rustias filter models** in either slot: RADIAS, Ladder LP/HP/BP24,
   MS-20 LP/HP12, Pro LP24, SEM, Multi Filter, M/Poly LP24 and Linear LP/HP/BP/Notch

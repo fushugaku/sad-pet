@@ -91,6 +91,7 @@ impl Controller {
                 kind.label().into()
             },
             mix: Mix::default(),
+            ..Meta::default()
         };
         part.preset = kind.preset().unwrap();
         part.preset.sanitize();
@@ -183,6 +184,9 @@ impl Controller {
                         serde_json::from_value(data["kind"].clone()).map_err(|e| e.to_string())?;
                     if kind == Kind::Master {
                         return Err("The scene always has one Master".into());
+                    }
+                    if matches!(kind, Kind::Sampler | Kind::PadFx) {
+                        return Err("Sampler timbres play in the browser version for now".into());
                     }
                     let id = self.next_timbre_id;
                     let next_id = id.checked_add(1).ok_or("Timbre identity overflow")?;

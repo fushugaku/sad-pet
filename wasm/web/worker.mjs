@@ -281,6 +281,38 @@ async function handle(message) {
       case "sample":
         result = core.call("sad_sample_wav");
         break;
+      // Sampler: preparation, Sample editor edits and analysis, bounces.
+      case "sampler-prepare":
+        result = core.call("sad_sampler_prepare", data);
+        break;
+      case "sampler-process": {
+        let bytes = new Uint8Array(data.wav);
+        const request = { ...data.request };
+        if (data.clip) {
+          const clip = new Uint8Array(data.clip);
+          const all = new Uint8Array(bytes.length + clip.length);
+          all.set(bytes);
+          all.set(clip, bytes.length);
+          bytes = all;
+          request.clip = clip.length;
+        }
+        result = core.prefixedCall("sad_sampler_process", JSON.stringify(request), bytes);
+        break;
+      }
+      case "sampler-analyze":
+        result = core.prefixedJson("sad_sampler_analyze", JSON.stringify(data.request), data.wav);
+        break;
+      case "sampler-adopt":
+        // Bounces and exports read this worker's copy of the scene.
+        core.call("sad_scene_adopt", data);
+        result = true;
+        break;
+      case "sampler-bounce":
+        result = core.call("sad_sampler_bounce", data);
+        break;
+      case "sampler-wav":
+        result = core.call("sad_sampler_wav", new TextEncoder().encode(data.id), data.part);
+        break;
       case "trim":
         result = core.call("sad_trim", data);
         break;

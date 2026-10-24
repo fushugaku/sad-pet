@@ -4376,3 +4376,9 @@ input[type="range"] {
   min-height: 36px;
   padding-block: 6px;
 }
+
+/* Pad FX timbres sit under their Sampler's tab. */
+.timbre-tabs .timbre-child {
+  font-size: 11px;
+  opacity: 0.85;
+}

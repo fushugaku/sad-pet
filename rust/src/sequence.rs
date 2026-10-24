@@ -20,6 +20,10 @@ pub enum Target {
         parameter: String,
     },
     Notes,
+    /// Notes that play one Sampler pad, whatever its keys.
+    Pad {
+        pad: u32,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]

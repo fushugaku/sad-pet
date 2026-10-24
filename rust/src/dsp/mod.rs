@@ -15,6 +15,7 @@ mod radias_wavefolder;
 pub mod radias_waveshaper;
 pub mod resynth;
 pub mod sample;
+pub mod sampler;
 pub(crate) mod sequence;
 pub mod source_fx;
 #[cfg(all(feature = "source-worker", not(target_arch = "wasm32")))]
@@ -47,6 +48,8 @@ const _: () = assert!(
 );
 const VOICES: usize = 9;
 const CONTROL_INTERVAL: u64 = 32;
+/// Sampler pads auditioned from the editor own their notes under this bit.
+const AUDITION: u32 = 1 << 31;
 
 #[derive(Clone, Copy, Debug, Default)]
 struct Grain {
@@ -375,6 +378,8 @@ pub struct Engine {
     resynth: resynth::Resynth,
     drums: Option<Box<crate::drums::Runtime>>,
     synth: Option<Box<synth::Runtime>>,
+    /// Present while the preset is a Sampler kit: its pads replace the input.
+    sampler: Option<Box<sampler::Runtime>>,
     pub processed_source: Option<Arc<source_fx::ProcessedSource>>,
     previous_source: Option<Arc<source_fx::ProcessedSource>>,
     source_fade_remaining: u32,
@@ -464,6 +469,7 @@ impl Engine {
             resynth: resynth::Resynth::new(sr),
             drums: None,
             synth: None,
+            sampler: None,
             processed_source: None,
             previous_source: None,
             source_fade_remaining: 0,
@@ -651,6 +657,7 @@ impl Engine {
             std::mem::swap(&mut self.preset.bus_runtime.0, &mut preset.bus_runtime.0);
         }
         std::mem::swap(&mut self.preset, preset);
+        self.sync_sampler();
         if !was_bus && self.preset.bus.is_some() {
             // The input passes at unity from the first frame, without a fade-in.
             self.voices[0].note = 60;
@@ -890,15 +897,12 @@ impl Engine {
                     voice.off();
                 }
             }
+            if let (Some(sampler), Some(settings)) = (&mut self.sampler, &self.preset.sampler) {
+                sampler.release_owner(settings, edit.track);
+            }
         }
         if !self.preset.sequencer.enabled || edits.iter().any(|e| e.track == 0 && e.field == 1) {
-            for voice in &mut self.voices {
-                if voice.owner != 0 {
-                    voice.held = false;
-                    voice.sustained = false;
-                    voice.off();
-                }
-            }
+            self.release_sequence_notes();
             if let Some(runtime) = &mut self.preset.sequencer.runtime {
                 runtime.restart();
             }
@@ -914,6 +918,9 @@ impl Engine {
                 voice.sustained = false;
                 voice.off();
             }
+        }
+        if let (Some(sampler), Some(settings)) = (&mut self.sampler, &self.preset.sampler) {
+            sampler.release_sequenced(settings);
         }
     }
     /// DAW transport stops the sequencer while live input and keyboard audition
@@ -1253,6 +1260,9 @@ impl Engine {
             voice.sustained = false;
             voice.off();
         }
+        if let Some(sampler) = &mut self.sampler {
+            sampler.release_all();
+        }
     }
     fn sync_stored_chord(&mut self) {
         self.preset.performance.chord.clear();
@@ -1333,7 +1343,9 @@ impl Engine {
     }
 
     pub fn midi(&mut self, message: Message) {
-        if self.preset.synth.is_some() && matches!(message, Message::Program { .. }) {
+        if (self.preset.synth.is_some() || self.preset.sampler.is_some())
+            && matches!(message, Message::Program { .. })
+        {
             // Synth patches are recalled by the host, as scenes and drums are.
             return;
         }
@@ -1446,6 +1458,9 @@ impl Engine {
     fn apply_owned_midi(&mut self, message: Message, owner: u32) {
         if matches!(message, Message::Control { .. } | Message::Program { .. }) {
             self.invalidate_racks();
+        }
+        if self.sampler.is_some() && self.sampler_midi(message, owner) {
+            return;
         }
         match message {
             Message::NoteOn {
@@ -2015,6 +2030,99 @@ impl Engine {
         };
     }
 
+    /// Sequencer steps and arpeggiator notes for this frame.
+    fn tick_events(&mut self) {
+        let tick = self.preset.sequencer.runtime.as_mut().is_some_and(|r| {
+            r.tick(
+                self.sample_rate,
+                self.preset.params.bpm,
+                self.preset.sequencer.enabled && self.sequence_running,
+            )
+        });
+        if tick {
+            let count = self
+                .preset
+                .sequencer
+                .runtime
+                .as_ref()
+                .map_or(0, |r| r.len());
+            for index in 0..count {
+                let (id, actions) = self
+                    .preset
+                    .sequencer
+                    .runtime
+                    .as_mut()
+                    .unwrap()
+                    .actions(index);
+                for action in actions.into_iter().flatten() {
+                    match action {
+                        sequence::Action::Midi(message) => self.apply_owned_midi(message, id),
+                        sequence::Action::Legato {
+                            channel,
+                            note,
+                            velocity,
+                        } => {
+                            // A kit has no voice to bend: the slide replays the pad.
+                            if let (Some(sampler), Some(settings)) =
+                                (&mut self.sampler, &self.preset.sampler)
+                            {
+                                sampler.release_owner(settings, id);
+                            }
+                            if let Some(voice) = self
+                                .voices
+                                .iter_mut()
+                                .find(|v| v.owner == id && v.held && self.sampler.is_none())
+                            {
+                                voice.note = note;
+                                voice.channel = channel;
+                                voice.velocity = velocity as f32 / 127.0;
+                                self.source_note = note;
+                                self.source_channel = channel;
+                            } else {
+                                self.apply_owned_midi(
+                                    Message::NoteOn {
+                                        channel,
+                                        note,
+                                        velocity,
+                                    },
+                                    id,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            // Main pitch steps can gate the free voice's ENV like notes.
+            if let Some((trigger, open)) = self
+                .preset
+                .sequencer
+                .runtime
+                .as_ref()
+                .and_then(|r| r.env_gate())
+                && self.voices[0].held
+            {
+                if trigger {
+                    self.start_free_voice();
+                    self.grain_clock = 1.0;
+                } else if !open && !self.voices[0].gated {
+                    self.voices[0].off();
+                    self.voices[0].gated = true;
+                }
+            }
+            self.update_modulation();
+        }
+        if self.performance.ticking() {
+            for action in self
+                .performance
+                .tick(self.sample_rate, self.modulated.params.bpm)
+                .into_iter()
+                .flatten()
+            {
+                self.apply_midi(action);
+            }
+        }
+    }
+
     pub fn process_frame(&mut self) -> Stereo {
         self.process_input_frame([0.0; 2])
     }
@@ -2041,6 +2149,160 @@ impl Engine {
             }
         }
     }
+    fn render_sampler(&mut self) -> Stereo {
+        let (Some(sampler), Some(settings)) = (&mut self.sampler, &self.preset.sampler) else {
+            return [0.0; 2];
+        };
+        let range = self.preset.params.midi_pitchbend_range;
+        let bend: [f32; 16] = std::array::from_fn(|c| self.bend[c] * range);
+        sampler.render(settings, &bend)
+    }
+    fn sync_sampler(&mut self) {
+        match &self.preset.sampler {
+            Some(settings) => {
+                let rate = self.sample_rate;
+                self.sampler
+                    .get_or_insert_with(|| Box::new(sampler::Runtime::new(rate)))
+                    .configure(settings);
+            }
+            None => self.sampler = None,
+        }
+    }
+    /// Notes, the sustain pedal and panics of a Sampler kit. Returns whether
+    /// the message is used up; pitch bend and controllers continue.
+    fn sampler_midi(&mut self, message: Message, owner: u32) -> bool {
+        let (Some(sampler), Some(settings)) = (&mut self.sampler, &self.preset.sampler) else {
+            return false;
+        };
+        match message {
+            Message::NoteOn {
+                channel,
+                note,
+                velocity,
+            } if channel < 16 && note < 128 && velocity < 128 => {
+                let sustain = owner == 0 && self.sustain[channel as usize];
+                if velocity == 0 {
+                    sampler.note_off(settings, channel, note, owner, sustain);
+                    return true;
+                }
+                let pad = self
+                    .preset
+                    .sequencer
+                    .tracks
+                    .iter()
+                    .find(|t| owner != 0 && t.id == owner)
+                    .and_then(|t| match t.target {
+                        crate::sequence::Target::Pad { pad } => Some(pad),
+                        _ => None,
+                    });
+                match pad {
+                    // A pad's own track plays it whatever its keys.
+                    Some(pad) => {
+                        if let Some(index) = sampler.pad_index(pad) {
+                            sampler.trigger(settings, index, channel, note, velocity, owner);
+                        }
+                    }
+                    None => sampler.note_on(settings, channel, note, velocity, owner),
+                }
+                self.mod_note_on(channel, note, velocity);
+                true
+            }
+            Message::NoteOff { channel, note, .. } if channel < 16 => {
+                let sustain = owner == 0 && self.sustain[channel as usize];
+                sampler.note_off(settings, channel, note, owner, sustain);
+                true
+            }
+            Message::Control {
+                channel,
+                controller: 64,
+                value,
+            } if channel < 16 => {
+                self.sustain[channel as usize] = value >= 64;
+                if value < 64 {
+                    sampler.release_sustained(settings, channel);
+                }
+                true
+            }
+            Message::Control {
+                controller: 120, ..
+            }
+            | Message::Reset => {
+                sampler.panic();
+                false
+            }
+            Message::Control {
+                controller: 123, ..
+            } => {
+                sampler.release_all();
+                false
+            }
+            _ => false,
+        }
+    }
+    /// Replaces a kit's settings without rebuilding the preset or effects.
+    pub fn set_sampler(&mut self, settings: crate::sampler::Settings) {
+        if self.preset.sampler.is_some() {
+            self.preset.sampler = Some(Box::new(settings));
+            self.sync_sampler();
+        }
+    }
+    /// The kit's samples by pool id; call `refresh_sampler` after a change.
+    pub fn sampler_pool(&self) -> Option<&sampler::Pool> {
+        self.sampler.as_ref().map(|s| &s.pool)
+    }
+    pub fn sampler_pool_mut(&mut self) -> Option<&mut sampler::Pool> {
+        self.sampler.as_mut().map(|s| &mut s.pool)
+    }
+    pub fn refresh_sampler(&mut self) {
+        self.sync_sampler();
+    }
+    /// The pads whose voices go to their Pad FX timbre rather than the mix.
+    pub fn set_sampler_routes(&mut self, routes: &[u32]) {
+        if let (Some(sampler), Some(settings)) = (&mut self.sampler, &self.preset.sampler) {
+            sampler.set_routes(routes, settings);
+        }
+    }
+    /// The last frame of a routed pad's voices.
+    pub fn sampler_send(&self, pad: u32) -> Stereo {
+        self.sampler.as_ref().map_or([0.0; 2], |s| s.send(pad))
+    }
+    pub fn sampler_idle(&self) -> bool {
+        self.sampler.as_ref().is_none_or(|s| s.idle())
+    }
+    /// Plays one pad, as a click on it does: `note` defaults to its lowest key.
+    pub fn trigger_pad(&mut self, pad: u32, note: Option<u8>, velocity: u8) {
+        if let (Some(sampler), Some(settings)) = (&mut self.sampler, &self.preset.sampler)
+            && let Some(index) = sampler.pad_index(pad)
+        {
+            let note = note.unwrap_or(settings.pads[index].keys[0]).min(127);
+            sampler.trigger(
+                settings,
+                index,
+                0,
+                note,
+                velocity.clamp(1, 127),
+                AUDITION | pad,
+            );
+        }
+    }
+    pub fn release_pad(&mut self, pad: u32) {
+        if let (Some(sampler), Some(settings)) = (&mut self.sampler, &self.preset.sampler) {
+            sampler.release_owner(settings, AUDITION | pad);
+        }
+    }
+    pub fn sampler_view(&self) -> crate::sampler::View {
+        let Some(sampler) = &self.sampler else {
+            return Default::default();
+        };
+        crate::sampler::View {
+            voices: sampler.positions(),
+            hits: sampler
+                .pad_ids()
+                .zip(sampler.hits.iter().copied())
+                .collect(),
+            loaded: sampler.pool.keys().cloned().collect(),
+        }
+    }
     pub fn drum_view(&self) -> crate::drums::View {
         self.drums
             .as_ref()
@@ -2052,6 +2314,16 @@ impl Engine {
     }
 
     pub fn process_input_frame(&mut self, input: Stereo) -> Stereo {
+        let input = if self.sampler.is_some() {
+            // A kit plays its sequencer even while its chain passes through.
+            if self.playing {
+                self.tick_events();
+            }
+            let kit = self.render_sampler();
+            [input[0] + kit[0], input[1] + kit[1]]
+        } else {
+            input
+        };
         let bus = self.preset.bus.as_deref().copied();
         if bus.is_some() && self.bus_passthrough() {
             return self.pass_bus(input);
@@ -2114,88 +2386,8 @@ impl Engine {
                 }
             }
         }
-        if self.playing {
-            let tick = self.preset.sequencer.runtime.as_mut().is_some_and(|r| {
-                r.tick(
-                    self.sample_rate,
-                    self.preset.params.bpm,
-                    self.preset.sequencer.enabled && self.sequence_running,
-                )
-            });
-            if tick {
-                let count = self
-                    .preset
-                    .sequencer
-                    .runtime
-                    .as_ref()
-                    .map_or(0, |r| r.len());
-                for index in 0..count {
-                    let (id, actions) = self
-                        .preset
-                        .sequencer
-                        .runtime
-                        .as_mut()
-                        .unwrap()
-                        .actions(index);
-                    for action in actions.into_iter().flatten() {
-                        match action {
-                            sequence::Action::Midi(message) => self.apply_owned_midi(message, id),
-                            sequence::Action::Legato {
-                                channel,
-                                note,
-                                velocity,
-                            } => {
-                                if let Some(voice) =
-                                    self.voices.iter_mut().find(|v| v.owner == id && v.held)
-                                {
-                                    voice.note = note;
-                                    voice.channel = channel;
-                                    voice.velocity = velocity as f32 / 127.0;
-                                    self.source_note = note;
-                                    self.source_channel = channel;
-                                } else {
-                                    self.apply_owned_midi(
-                                        Message::NoteOn {
-                                            channel,
-                                            note,
-                                            velocity,
-                                        },
-                                        id,
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-                // Main pitch steps can gate the free voice's ENV like notes.
-                if let Some((trigger, open)) = self
-                    .preset
-                    .sequencer
-                    .runtime
-                    .as_ref()
-                    .and_then(|r| r.env_gate())
-                    && self.voices[0].held
-                {
-                    if trigger {
-                        self.start_free_voice();
-                        self.grain_clock = 1.0;
-                    } else if !open && !self.voices[0].gated {
-                        self.voices[0].off();
-                        self.voices[0].gated = true;
-                    }
-                }
-                self.update_modulation();
-            }
-            if self.performance.ticking() {
-                for action in self
-                    .performance
-                    .tick(self.sample_rate, self.modulated.params.bpm)
-                    .into_iter()
-                    .flatten()
-                {
-                    self.apply_midi(action);
-                }
-            }
+        if self.playing && self.sampler.is_none() {
+            self.tick_events();
         }
         let sr = self.sample_rate as f32;
         let source_rate = self.source_sample().sample_rate as f64 / self.sample_rate as f64;
