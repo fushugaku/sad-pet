@@ -134,7 +134,7 @@ def main():
         (output / "sad_pet.simd.wasm").unlink(missing_ok=True)
     if not args.tail_call:
         (output / "sad_pet.tc.wasm").unlink(missing_ok=True)
-    for name in ("index.html", "app.js", "library.js", "selection.js", "presets.js", "sequence.js", "panels.js", "vocal.js", "style.css", "vocal.css"):
+    for name in ("index.html", "app.js", "library.js", "selection.js", "presets.js", "sequence.js", "panels.js", "vocal.js", "sampler-library.js", "sampler.js", "style.css", "vocal.css", "sampler.css"):
         shutil.copy2(ROOT / "rust" / "web" / name, output / name)
     index = (output / "index.html").read_text()
     index = index.replace('<script src="./library.js"', '<script src="./browser.js" defer></script>\n    <script src="./library.js"')

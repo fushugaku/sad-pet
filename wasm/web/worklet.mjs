@@ -111,6 +111,9 @@ class SadPetProcessor extends AudioWorkletProcessor {
         } else if (type === "vocal-update") {
           this.vocalUpdate(data);
           result = true;
+        } else if (type === "sampler-sample") {
+          // A prepared sample joins the pool of one Sampler timbre.
+          result = this.core.prefixedJson("sad_sampler_sample", data.id, data.prepared, data.part);
         } else if (type === "capture-input")
           result = this.core.call("sad_input_wav");
         else if (type === "record-start") {
@@ -329,3 +332,4 @@ class SadPetProcessor extends AudioWorkletProcessor {
   }
 }
 registerProcessor("sad-pet", SadPetProcessor);
+

@@ -159,6 +159,18 @@ fn handle(
                     include_bytes!("../web/vocal.css").to_vec(),
                     "text/css; charset=utf-8",
                 )),
+                "/sampler.js" => Ok((
+                    include_bytes!("../web/sampler.js").to_vec(),
+                    "application/javascript",
+                )),
+                "/sampler-library.js" => Ok((
+                    include_bytes!("../web/sampler-library.js").to_vec(),
+                    "application/javascript",
+                )),
+                "/sampler.css" => Ok((
+                    include_bytes!("../web/sampler.css").to_vec(),
+                    "text/css; charset=utf-8",
+                )),
                 "/api/sequencer/catalog" => json(&crate::sequence::catalog()),
                 "/api/drums/catalog" => json(&crate::drums::catalog()),
                 "/favicon.ico" => Ok((Vec::new(), "image/x-icon")),

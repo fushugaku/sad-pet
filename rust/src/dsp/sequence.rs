@@ -105,7 +105,7 @@ impl Runtime {
                 let binding = match &t.target {
                     Target::MainPitch => Binding::MainPitch,
                     Target::Oscillator { index } => Binding::Oscillator(*index as usize),
-                    Target::Notes => Binding::Notes,
+                    Target::Notes | Target::Pad { .. } => Binding::Notes,
                     Target::Parameter { parameter } => parameters::specs()
                         .iter()
                         .position(|s| s.id == *parameter && s.can_sequence())

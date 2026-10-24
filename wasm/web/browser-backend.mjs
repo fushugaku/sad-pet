@@ -2,6 +2,38 @@ import { Microphone } from "./microphone.mjs";
 import { compileEngine } from "./compile.mjs";
 import { listVoices, saveVoice, removeVoice, voiceId, voiceInfo, unzip } from "./voices.mjs";
 
+/** A 32-bit float stereo WAV of interleaved chunks. */
+function wave(chunks, rate) {
+  const samples = chunks.reduce((n, c) => n + c.length, 0);
+  const buffer = new ArrayBuffer(44 + samples * 4),
+    view = new DataView(buffer);
+  const text = (offset, value) => {
+    for (let i = 0; i < value.length; i++) view.setUint8(offset + i, value.charCodeAt(i));
+  };
+  text(0, "RIFF");
+  view.setUint32(4, buffer.byteLength - 8, true);
+  text(8, "WAVE");
+  text(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 3, true);
+  view.setUint16(22, 2, true);
+  view.setUint32(24, rate, true);
+  view.setUint32(28, rate * 8, true);
+  view.setUint16(32, 8, true);
+  view.setUint16(34, 32, true);
+  text(36, "data");
+  view.setUint32(40, samples * 4, true);
+  const data = new Float32Array(buffer, 44);
+  let offset = 0;
+  for (const chunk of chunks) {
+    data.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return buffer;
+}
+const bytesOf = async (value) =>
+  value instanceof Blob ? value.arrayBuffer() : value instanceof ArrayBuffer ? value.slice(0) : new Uint8Array(value).buffer;
+
 class Rpc {
   constructor(port) {
     this.port = port;
@@ -304,6 +336,128 @@ export class BrowserBackend {
       this.vocal.call("vocal-near", data.start).catch(() => {});
     return this.audio.call("request", data, [], route);
   }
+  /** Sampler timbres: pool uploads, Sample editor edits, bounces, takes. */
+  async samplerRequest(route, data, options) {
+    if (route === "/api/sampler/upload") {
+      const { id, part } = options.body;
+      const wav = await bytesOf(options.body.wav);
+      const prepared = await this.worker.call("sampler-prepare", wav, [wav]);
+      return this.audio.call("sampler-sample", { id, part, prepared }, [prepared]);
+    }
+    if (route === "/api/sampler/process") {
+      const wav = await bytesOf(options.body.wav);
+      const clip = options.body.clip ? await bytesOf(options.body.clip) : null;
+      return this.worker.call(
+        "sampler-process",
+        { request: options.body.request, wav, clip },
+        clip ? [wav, clip] : [wav],
+      );
+    }
+    if (route === "/api/sampler/analyze") {
+      const wav = await bytesOf(options.body.wav);
+      return this.worker.call("sampler-analyze", { request: options.body.request, wav }, [wav]);
+    }
+    if (route === "/api/sampler/bounce" || route === "/api/sampler/sample.wav") {
+      // Both read the worker's copy of the scene, taken once per bounce.
+      if (data.adopt !== false) {
+        const packed = await this.audio.call("scene-pack");
+        await this.worker.call("sampler-adopt", packed, [packed]);
+      }
+      return this.worker.call(route === "/api/sampler/bounce" ? "sampler-bounce" : "sampler-wav", data);
+    }
+    if (route === "/api/sampler/record") return this.samplerRecord(data);
+    if (route === "/api/sampler/chain") {
+      // A new Pad FX timbre changes the scene like + Timbre.
+      await this.sourceLoadTail;
+      const context = await this.audio.call("request", data, [], route);
+      await this.worker.call("request", context, [], "/api/timbres/context");
+      this.queuedSource = null;
+      this.sourceRecipeKey = null;
+      this.state = await this.audio.call("request", null, [], "/api/state");
+      this.sourceGeneration = this.state.source_generation ?? this.sourceGeneration;
+      this.viewStamp = this.audio.stamp || 0;
+      return context;
+    }
+    return this.audio.call("request", data, [], route);
+  }
+  /** A take for the Sampler from an input device or SAD PET's own output,
+   * optionally waiting for a level; stopping returns its WAV. */
+  async samplerRecord(data) {
+    const take = this.capture;
+    const status = () => ({
+      active: !!take?.active,
+      armed: !!take?.armed,
+      seconds: (take?.frames || 0) / this.rate,
+      peak: take?.peak || 0,
+      source: take?.source || null,
+    });
+    if (!data) return status();
+    if (data.active) {
+      if (take?.active) throw new Error("The Sampler is already recording.");
+      this.resume();
+      this.captureModule ??= this.context.audioWorklet.addModule(new URL("./capture.mjs", import.meta.url));
+      await this.captureModule;
+      const threshold = data.threshold == null ? 0 : 10 ** (Math.min(0, Number(data.threshold)) / 20);
+      const node = new AudioWorkletNode(this.context, "sad-capture", {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [2],
+        channelCount: 2,
+        channelCountMode: "explicit",
+        processorOptions: { threshold, limit: Math.round(this.rate * Math.min(600, Number(data.seconds) || 60)) },
+      });
+      // Pulled by a silent path so it runs while nothing listens.
+      const sink = this.context.createGain();
+      sink.gain.value = 0;
+      node.connect(sink).connect(this.context.destination);
+      const next = {
+        active: true, armed: threshold > 0, frames: 0, peak: 0, chunks: [],
+        source: data.source === "input" ? "input" : "output", node, sink,
+      };
+      next.done = new Promise((resolve) => (next.finish = resolve));
+      node.port.onmessage = ({ data: m }) => {
+        if (m.type === "chunk") next.chunks.push(m.data);
+        else if (m.type === "level") {
+          next.peak = m.peak;
+          next.armed = m.armed;
+          next.frames = m.frames;
+        } else if (m.type === "stopped") {
+          next.frames = m.frames;
+          next.active = false;
+          next.limit = !!m.limit;
+          node.disconnect();
+          sink.disconnect();
+          next.input?.disconnect();
+          for (const track of next.stream?.getTracks() || []) track.stop();
+          next.finish();
+        }
+      };
+      if (next.source === "input") {
+        if (!navigator.mediaDevices?.getUserMedia)
+          throw new Error("Recording needs HTTPS or localhost and a browser with audio capture.");
+        next.stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            ...(data.device ? { deviceId: { exact: data.device } } : {}),
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+            channelCount: { ideal: 2 },
+          },
+          video: false,
+        });
+        next.input = this.context.createMediaStreamSource(next.stream);
+        next.input.connect(node);
+      } else this.node.connect(node);
+      this.capture = next;
+      return { ...status(), active: true, armed: next.armed, source: next.source };
+    }
+    if (!take) throw new Error("There is no take yet.");
+    if (take.active) take.node.port.postMessage("stop");
+    await take.done;
+    this.capture = null;
+    if (!take.frames) throw new Error("Nothing was recorded: the level never reached the threshold.");
+    return wave(take.chunks, this.rate);
+  }
   audioMessage(message) {
     if (message.type === "vocal-jobs") {
       // A score sung by a pack waits for the pack, in order with other jobs.
@@ -501,6 +655,7 @@ export class BrowserBackend {
   snapshot() {
     return {
       ...this.state,
+      features: { sampler: true },
       instance_id: this.instanceId,
       audio_enabled: this.context.state === "running" && !this.fatal,
       audio_error: this.fatal || null,
@@ -590,7 +745,8 @@ export class BrowserBackend {
       if (this.fatal) throw new Error(this.fatal);
       const url = new URL(path, location.href),
         route = url.pathname;
-      const binary = route === "/api/wav" || route === "/api/vocal/import";
+      const binary = route === "/api/wav" || route === "/api/vocal/import"
+        || ["/api/sampler/upload", "/api/sampler/process", "/api/sampler/analyze"].includes(route);
       const data =
         options.body === undefined || binary ? null : JSON.parse(options.body);
       let result,
@@ -642,6 +798,9 @@ export class BrowserBackend {
       } else if (route.startsWith("/api/vocal/")) {
         result = await this.vocalRequest(route, data, options);
         if (result instanceof ArrayBuffer) mime = "application/octet-stream";
+      } else if (route.startsWith("/api/sampler/")) {
+        result = await this.samplerRequest(route, data, options);
+        if (result instanceof ArrayBuffer) mime = "audio/wav";
       } else if (route === "/api/input")
         result = data
           ? data.active === false

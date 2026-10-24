@@ -11,6 +11,12 @@ pub enum Kind {
     Synth,
     /// Sings a score; its voice runs through the chain like a Bus input.
     Vocal,
+    /// Plays a kit of sample pads; the kit runs through the chain like a
+    /// Bus input.
+    Sampler,
+    /// The effect chain of one Sampler pad: a bus fed by that pad's voices,
+    /// whose output returns into its Sampler.
+    PadFx,
     /// Processes the sends of other timbres and feeds Master.
     Bus,
     /// Always present: the sum of every timbre and bus, then the output.
@@ -23,13 +29,16 @@ impl Kind {
             Kind::Drums => "Drums",
             Kind::Synth => "Synth",
             Kind::Vocal => "Vocal",
+            Kind::Sampler => "Sampler",
+            Kind::PadFx => "Pad FX",
             Kind::Bus => "Bus",
             Kind::Master => "Master",
         }
     }
-    /// Bus and Master take their input from other timbres, not MIDI or a file.
+    /// Bus, Master and Pad FX take their input from other timbres, not MIDI
+    /// or a file.
     pub fn routing(self) -> bool {
-        matches!(self, Kind::Bus | Kind::Master)
+        matches!(self, Kind::Bus | Kind::Master | Kind::PadFx)
     }
     /// Plays notes from MIDI and the keyboard; a Vocal timbre sings its score.
     pub fn takes_midi(self) -> bool {
@@ -37,11 +46,15 @@ impl Kind {
     }
     /// Keeps its engine role when a preset loads into it.
     pub fn keeps_role(self) -> bool {
-        self.routing() || self == Kind::Vocal
+        self.routing() || matches!(self, Kind::Vocal | Kind::Sampler)
     }
+    /// Pad FX timbres cannot be told from a Bus by their preset; their Meta
+    /// names the Sampler they belong to.
     pub fn of(preset: &crate::preset::Preset) -> Self {
         if preset.vocal.is_some() {
             Kind::Vocal
+        } else if preset.sampler.is_some() {
+            Kind::Sampler
         } else if let Some(bus) = &preset.bus {
             if bus.master { Kind::Master } else { Kind::Bus }
         } else if preset.drums.is_some() {
@@ -63,7 +76,7 @@ impl Kind {
             Kind::Granular => return None,
             Kind::Drums => preset.drums = Some(Box::default()),
             Kind::Synth => preset.synth = Some(Box::default()),
-            Kind::Bus | Kind::Master | Kind::Vocal => {
+            Kind::Bus | Kind::Master | Kind::Vocal | Kind::Sampler | Kind::PadFx => {
                 // Everything off: the input passes at unity and costs nothing.
                 preset.bus = Some(Box::new(crate::bus::Settings {
                     master: self == Kind::Master,
@@ -74,6 +87,9 @@ impl Kind {
                 preset.color_chain.clear();
                 if self == Kind::Vocal {
                     preset.vocal = Some(Box::new(crate::vocal::Settings::new()));
+                }
+                if self == Kind::Sampler {
+                    preset.sampler = Some(Box::new(crate::sampler::Settings::new()));
                 }
             }
         }
@@ -142,8 +158,16 @@ pub struct Meta {
     pub kind: Kind,
     /// 1–8 for a Bus: the send slot other timbres address; 0 otherwise.
     pub bus: u8,
+    /// For a Pad FX timbre: the id of its Sampler and the pad it processes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<u32>,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub pad: u32,
     #[serde(flatten)]
     pub mix: Mix,
+}
+fn is_zero(value: &u32) -> bool {
+    *value == 0
 }
 impl Default for Meta {
     fn default() -> Self {
@@ -152,6 +176,8 @@ impl Default for Meta {
             name: "Granular 1".into(),
             kind: Kind::Granular,
             bus: 0,
+            owner: None,
+            pad: 0,
             mix: Mix::default(),
         }
     }
@@ -166,6 +192,10 @@ impl Meta {
         }
         if self.kind != Kind::Bus || self.bus as usize > MAX_BUSES {
             self.bus = 0;
+        }
+        if self.kind != Kind::PadFx {
+            self.owner = None;
+            self.pad = 0;
         }
         self.name = self
             .name

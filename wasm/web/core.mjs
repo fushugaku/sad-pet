@@ -78,6 +78,23 @@ class Abi {
   json(name, input, ...args) {
     return JSON.parse(decode(new Uint8Array(this.call(name, input, ...args))));
   }
+  /** Input of UTF-8 `text` then `bytes`; the text's length is the last argument. */
+  joined(text, bytes) {
+    const head = encode(text);
+    const body = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || 0);
+    const all = new Uint8Array(head.length + body.length);
+    all.set(head);
+    all.set(body, head.length);
+    return [all, head.length];
+  }
+  prefixedCall(name, text, bytes, ...args) {
+    const [all, length] = this.joined(text, bytes);
+    return this.call(name, all, ...args, length);
+  }
+  prefixedJson(name, text, bytes, ...args) {
+    const [all, length] = this.joined(text, bytes);
+    return this.json(name, all, ...args, length);
+  }
 }
 
 export class TelemetryCore extends Abi {
@@ -99,12 +116,7 @@ export class VocalCore extends Abi {
   }
   /** Prefixes a binary payload with UTF-8 text whose length is passed along. */
   prefixed(name, text, bytes) {
-    const head = encode(text);
-    const body = new Uint8Array(bytes);
-    const all = new Uint8Array(head.length + body.length);
-    all.set(head);
-    all.set(body, head.length);
-    return this.json(name, all, head.length);
+    return this.prefixedJson(name, text, bytes);
   }
   addVoice(id, bytes) {
     return this.prefixed("sad_vocal_voice", id, bytes);
