@@ -69,7 +69,10 @@ fn grain_pitch_leaves_the_direct_drums_at_their_own_tuning() {
     for _ in 0..16000 {
         let (a, b) = (moved.process_frame(), reference.process_frame());
         energy += a[0] * a[0];
-        assert!((a[0] - b[0]).abs() < 1e-4, "Grain pitch transposed the direct drums");
+        assert!(
+            (a[0] - b[0]).abs() < 1e-4,
+            "Grain pitch transposed the direct drums"
+        );
     }
     assert!(energy > 0.01);
 }
