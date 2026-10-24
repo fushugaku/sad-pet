@@ -5,6 +5,12 @@ use std::{
 };
 
 pub fn decode<R: Read + Seek>(reader: R, name: String) -> Result<SampleBuffer, String> {
+    let (rate, frames) = frames(reader)?;
+    SampleBuffer::new(name, rate, frames)
+}
+/// The rate and stereo frames of a mono or stereo WAV, without preparing
+/// the antialiasing levels a playable sample needs.
+pub fn frames<R: Read + Seek>(reader: R) -> Result<(u32, Vec<Stereo>), String> {
     let mut wav = hound::WavReader::new(reader).map_err(|e| format!("WAV: {e}"))?;
     let spec = wav.spec();
     if !(1..=2).contains(&spec.channels) {
@@ -36,7 +42,7 @@ pub fn decode<R: Read + Seek>(reader: R, name: String) -> Result<SampleBuffer, S
     } else {
         samples.as_chunks::<2>().0.to_vec()
     };
-    SampleBuffer::new(name, spec.sample_rate, frames)
+    Ok((spec.sample_rate, frames))
 }
 pub fn read(path: &Path) -> Result<SampleBuffer, String> {
     decode(

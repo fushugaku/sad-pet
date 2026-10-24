@@ -26,6 +26,7 @@ let neuroEditor = null;
 let timbreEditor = null,
   drumEditor = null,
   vocalEditor = null,
+  samplerEditor = null,
   timbreBusy = false;
 const drumEdits = new Map();
 let sequenceCatalog = null;
@@ -1116,6 +1117,7 @@ function syncTimbreRouting() {
     : synth ? "Synth waveform and grains" : "Sample and grains");
   $("drum-source-name").hidden = !history;
   $("drum-source-name").textContent = preset?.vocal ? "Vocal"
+    : preset?.sampler ? "Kit"
     : bus ? bus.master ? "Master input" : "Bus input"
     : synth ? "Synth engine" : "Drum machine";
   $("wave").setAttribute("aria-label", drums
@@ -1148,12 +1150,14 @@ function syncTimbreRouting() {
     ? "Switch on Granular to blend in grains"
     : "Blend source audio and grains before filters and effects";
   const performance = $("performance-mode").closest("section");
-  if (performance) performance.hidden = drums || !!bus;
+  // A kit plays notes like a synth: keys, arpeggiator and hold apply.
+  if (performance) performance.hidden = drums || (!!bus && !preset.sampler);
   syncBus();
   syncEngineType();
   timbreEditor?.sync(state?.timbres);
   drumEditor?.sync();
   vocalEditor?.sync();
+  samplerEditor?.sync();
   syncSynth();
 }
 function syncAll() {
@@ -1504,12 +1508,23 @@ function syncBus() {
   if (!bus) return;
   const title = $("bus-title");
   const vocal = !!preset.vocal;
-  title.firstChild.textContent = bus.master ? "Master " : vocal ? "Voice chain " : "Bus ";
+  const kit = !!preset.sampler;
+  const active = state?.timbres?.timbres?.find((t) => t.id === state.timbres.active);
+  const padFx = active?.kind === "pad_fx";
+  const owner = padFx && state.timbres.timbres.find((t) => t.id === active.owner);
+  title.firstChild.textContent = bus.master ? "Master " : vocal ? "Voice chain "
+    : kit ? "Kit chain " : padFx ? `${active.name} ` : "Bus ";
   title.querySelector("span").textContent = bus.master
     ? "every timbre and bus, then the output"
     : vocal ? "the sung voice, then Master"
+    : kit ? "every pad, then Master"
+    : padFx ? `one pad's voices, back into ${owner?.name || "its Sampler"}`
     : "sends from timbres, then Master";
-  $("bus-engine").setAttribute("aria-label", bus.master ? "Master" : vocal ? "Voice chain" : "Bus");
+  $("bus-engine").setAttribute("aria-label", bus.master ? "Master" : vocal ? "Voice chain"
+    : kit ? "Kit chain" : padFx ? "Pad FX chain" : "Bus");
+  $("bus-back").hidden = !owner;
+  $("bus-back").textContent = owner ? `◀ ${owner.name}` : "";
+  $("bus-back").onclick = () => owner && changeTimbre("/api/timbres/select", { id: owner.id });
   $("bus-filters").checked = !!bus.filters;
   const effects = [preset.color_chain, preset.pre_color_chain, preset.source_color_chain]
     .some((chain) => chain?.some((slot) => slot.enabled && slot.mix > 0));
@@ -3520,6 +3535,23 @@ function buildSequence() {
         .catch((e) => notify(e.message)),
   });
 }
+/** A Neuropolis track that plays one Sampler pad, and the sequencer on. */
+function addPadTrack(pad, name) {
+  const track = structuredClone(sequenceCatalog.track);
+  const tracks = preset.sequencer.tracks;
+  track.id = tracks.reduce((max, t) => Math.max(max, t.id), 0) + 1;
+  track.name = name;
+  track.target = { kind: "pad", pad };
+  tracks.push(track);
+  preset.sequencer.enabled = true;
+  if (neuroEditor) {
+    neuroEditor.selected = track.id;
+    neuroEditor.signature = "";
+  }
+  schedulePreset();
+  syncAll();
+  $("neuropolis").scrollIntoView({ behavior: "smooth", block: "start" });
+}
 function syncPerformance() {
   const p = preset.performance;
   const arp = ["arp", "sequencer_arp"].includes(p.mode);
@@ -4431,6 +4463,7 @@ async function init() {
     buildSequence();
     timbreEditor = new window.SadTimbres($("timbres"), {
       change: changeTimbre,
+      features: () => state?.features,
     });
     if (state.timbres?.timbres) {
       const drumCatalog = await request("/api/drums/catalog");
@@ -4448,6 +4481,20 @@ async function init() {
           ),
       });
     }
+    if (window.SadSampler && state.timbres?.timbres)
+      samplerEditor = new window.SadSampler($("sampler-editor"), {
+        read: () => preset,
+        context: () => state?.timbres,
+        structure: schedulePreset,
+        flush: flushEdits,
+        change: changeTimbre,
+        knob: createKnob,
+        sequence: addPadTrack,
+        request,
+        api,
+        notify,
+        download,
+      });
     if (window.SadVocal && state.timbres?.timbres)
       vocalEditor = new window.SadVocal($("vocal-editor"), {
         read: () => preset,

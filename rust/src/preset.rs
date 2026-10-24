@@ -688,6 +688,10 @@ pub struct Preset {
     /// engine processes the sung voice the way a bus processes its input.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vocal: Option<Box<crate::vocal::Settings>>,
+    /// Present only in Sampler timbres, which also carry Bus settings: their
+    /// engine processes the kit the way a bus processes its input.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sampler: Option<Box<crate::sampler::Settings>>,
     pub pre_color_chain: Vec<crate::color::ColorSlot>,
     pub source_color_chain: Vec<crate::color::ColorSlot>,
     pub color_chain: Vec<crate::color::ColorSlot>,
@@ -721,6 +725,7 @@ impl Default for Preset {
             bus: None,
             bus_runtime: Default::default(),
             vocal: None,
+            sampler: None,
             pre_color_chain: Vec::new(),
             source_color_chain: Vec::new(),
             color_chain: vec![
@@ -754,6 +759,7 @@ impl<'de> Deserialize<'de> for Preset {
             synth: Option<Box<crate::synth::Settings>>,
             bus: Option<Box<crate::bus::Settings>>,
             vocal: Option<Box<crate::vocal::Settings>>,
+            sampler: Option<Box<crate::sampler::Settings>>,
             pre_color_chain: Vec<crate::color::ColorSlot>,
             source_color_chain: Vec<crate::color::ColorSlot>,
             color_chain: Option<Vec<crate::color::ColorSlot>>,
@@ -779,6 +785,7 @@ impl<'de> Deserialize<'de> for Preset {
                     synth: None,
                     bus: None,
                     vocal: None,
+                    sampler: None,
                     pre_color_chain: Vec::new(),
                     source_color_chain: Vec::new(),
                     color_chain: None,
@@ -902,6 +909,7 @@ impl<'de> Deserialize<'de> for Preset {
             bus: d.bus,
             bus_runtime: Default::default(),
             vocal: d.vocal,
+            sampler: d.sampler,
             pre_color_chain: d.pre_color_chain,
             source_color_chain: d.source_color_chain,
             color_chain,
@@ -982,6 +990,13 @@ impl Preset {
         if let Some(vocal) = &mut self.vocal {
             // A Vocal timbre's engine is a bus fed by its voice, never Master.
             vocal.sanitize();
+            let bus = self.bus.get_or_insert_with(Default::default);
+            bus.master = false;
+            self.sampler = None;
+        }
+        if let Some(sampler) = &mut self.sampler {
+            // So is a Sampler's, fed by its kit.
+            sampler.sanitize();
             let bus = self.bus.get_or_insert_with(Default::default);
             bus.master = false;
         }

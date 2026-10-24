@@ -2,6 +2,7 @@
 //! utility worker. All synthesis uses the same Engine as the desktop build.
 #[cfg(test)]
 mod allocation_tests;
+mod sampler;
 mod source_fx;
 mod telemetry;
 mod timbres;

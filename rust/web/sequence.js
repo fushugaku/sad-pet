@@ -492,11 +492,20 @@ window.SadNeuropolis = class {
               }[field]
             ];
   }
+  /** "Pad A01 · Kick" for a Sampler pad's track. */
+  padName(id) {
+    const pads = this.hooks.read().sampler?.pads || [];
+    const index = pads.findIndex((p) => p.id === id);
+    if (index < 0) return `Pad ${id}`;
+    const label = `${"ABCDEFGH"[Math.floor(index / 16)]}${String((index % 16) + 1).padStart(2, "0")}`;
+    return `Pad ${label}${pads[index].name ? ` · ${pads[index].name}` : ""}`;
+  }
   targetName(t) {
+    if (t.target.kind === "pad") return this.padName(t.target.pad);
     return t.target.kind === "main_pitch"
       ? "Main pitch"
       : t.target.kind === "notes"
-        ? "Notes → grains + ENV"
+        ? this.hooks.read().sampler ? "Notes → pads by key" : "Notes → grains + ENV"
         : t.target.kind === "oscillator"
           ? `OSC ${t.target.index + 1} offset`
           : this.catalog.parameters.find((p) => p.id === t.target.parameter)
@@ -1249,18 +1258,27 @@ window.SadNeuropolis = class {
     };
     const target = document.createElement("button");
     target.setAttribute("aria-label", "Track destination");
+    const pads = this.hooks.read().sampler?.pads || [];
     window.SadLazySelect.configure(target,
       track.target.kind === "oscillator" ? `osc:${track.target.index}`
+        : track.target.kind === "pad" ? `pad:${track.target.pad}`
         : track.target.kind === "parameter" ? `param:${track.target.parameter}` : track.target.kind,
       [{ label: "Pitch & notes", choices: [
-        ["main_pitch", "Main track pitch"], ["notes", "Notes → grains + ENV"],
+        ["main_pitch", "Main track pitch"], ["notes", pads.length ? "Notes → pads by key" : "Notes → grains + ENV"],
         ...[0, 1, 2, 3].map(i => [`osc:${i}`, `OSC ${i + 1} pitch offset`]),
-      ] }, ...this.parameterGroups("param:")]);
+      ] },
+      // A kit's pads, each played by its own track whatever its keys.
+      ...(pads.length ? [{ label: "Sampler pads", choices: pads
+        .filter((p, i) => p.zones.length || i < 16)
+        .map((p) => [`pad:${p.id}`, this.padName(p.id)]) }] : []),
+      ...this.parameterGroups("param:")]);
     target.onchange = () => {
       const current = this.track(track.id);
       current.target = target.value.startsWith("osc:")
         ? { kind: "oscillator", index: Number(target.value.slice(4)) }
-        : target.value.startsWith("param:")
+        : target.value.startsWith("pad:")
+          ? { kind: "pad", pad: Number(target.value.slice(4)) }
+          : target.value.startsWith("param:")
           ? { kind: "parameter", parameter: target.value.slice(6) }
           : { kind: target.value };
       if (current.target.kind === "oscillator") {

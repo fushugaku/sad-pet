@@ -52,7 +52,7 @@ pub(super) struct Registry {
     pub selected: usize,
     pub target: Option<usize>,
     pub revision: u64,
-    next_id: u32,
+    pub next_id: u32,
     pub sequence: u32,
     pub snapshot_part: usize,
     pub unacked: [Option<(u32, u32, u32)>; 3],
@@ -125,11 +125,12 @@ impl Registry {
             timbres: self.parts.iter().map(|p| p.meta.clone()).collect(),
         }
     }
-    fn refresh_context(&mut self) {
+    pub fn refresh_context(&mut self) {
         let context = self.context();
         for p in &mut self.parts {
             p.host.context = context.clone();
         }
+        self.sync_sampler_routes();
     }
     pub fn adopt_context(&mut self, context: Context) -> Result<(), String> {
         if context.timbres.is_empty() || context.revision < self.revision {
@@ -395,7 +396,9 @@ impl Registry {
                         }
                     }
                     let active = self.parts[self.selected].meta.id;
-                    self.parts.retain(|p| p.meta.id != id);
+                    // A Sampler's Pad FX timbres go with it.
+                    self.parts
+                        .retain(|p| p.meta.id != id && p.meta.owner != Some(id));
                     self.selected = self
                         .parts
                         .iter()
@@ -455,6 +458,9 @@ impl Registry {
         if path.starts_with("/api/vocal/") {
             return self.vocal_command(path, data);
         }
+        if path.starts_with("/api/sampler/") {
+            return self.sampler_command(path, data);
+        }
         if path == "/api/transport" && !data.is_null() {
             if let Some(playing) = data["playing"].as_bool() {
                 self.clock.play(playing);
@@ -492,6 +498,22 @@ impl Registry {
             } else {
                 data.remove("bus");
             }
+            // A Sampler keeps its kit; nothing else gains one.
+            match engine
+                .preset
+                .sampler
+                .as_deref()
+                .filter(|_| kind == Kind::Sampler)
+            {
+                Some(kit) => {
+                    if data.get("sampler").is_none_or(Value::is_null) {
+                        data.insert("sampler".into(), json!(kit));
+                    }
+                }
+                None => {
+                    data.remove("sampler");
+                }
+            }
             // A Vocal timbre keeps its score; nothing else gains one.
             match engine
                 .preset
@@ -511,9 +533,13 @@ impl Registry {
         }
         let mut result = self.parts[index].host.command(request)?;
         if preset_changed {
-            // A loaded preset can change the part's engine type.
+            // A loaded preset can change the part's engine type; a Pad FX
+            // timbre stays one.
             let part = &mut self.parts[index];
-            part.meta.kind = Kind::of(&part.host.engine.preset);
+            if part.meta.kind != Kind::PadFx {
+                part.meta.kind = Kind::of(&part.host.engine.preset);
+            }
+            self.prune_chains();
             self.refresh_context();
         }
         if state {
@@ -538,6 +564,22 @@ impl Registry {
             part.gain
         };
         let count = count.min(BLOCK);
+        // A pad's chain runs on the pad's voices of the previous frame and
+        // returns into its Sampler; a bounced pad needs no chain.
+        let links: Vec<(usize, usize, u32)> = self
+            .chain_links()
+            .into_iter()
+            .filter(|&(o, _, pad)| {
+                self.parts[o]
+                    .host
+                    .engine
+                    .preset
+                    .sampler
+                    .as_ref()
+                    .and_then(|s| s.pad(pad))
+                    .is_some_and(|p| p.bounce.is_none())
+            })
+            .collect();
         for part in &mut self.parts {
             if let Some(vocal) = &mut part.vocal {
                 let out = &mut vocal.buffer[..count];
@@ -553,15 +595,28 @@ impl Registry {
             let input = self.parts[0].host.audio_input[i];
             let mut frame = [0.; 2];
             let mut sends = [[0.; 2]; MAX_BUSES];
-            for part in &mut self.parts {
-                if part.meta.kind.routing() {
+            for p in 0..self.parts.len() {
+                if self.parts[p].meta.kind.routing() {
                     continue;
                 }
+                let mut returned = [0.; 2];
+                if self.parts[p].meta.kind == Kind::Sampler {
+                    for &(_, c, pad) in links.iter().filter(|l| l.0 == p) {
+                        let send = self.parts[p].host.engine.sampler_send(pad);
+                        let chain = &mut self.parts[c];
+                        let level = gain(chain, !chain.meta.mix.muted);
+                        let out = chain.host.engine.process_input_frame(send);
+                        returned[0] += out[0] * level;
+                        returned[1] += out[1] * level;
+                    }
+                }
+                let part = &mut self.parts[p];
                 let mix = part.meta.mix;
                 let audible = !mix.muted && (!solo || mix.solo);
                 let level = gain(part, audible);
                 let source = match &part.vocal {
                     Some(vocal) => [vocal.buffer[i]; 2],
+                    None if part.meta.kind == Kind::Sampler => returned,
                     None => input,
                 };
                 let out = part.host.engine.process_input_frame(source);
@@ -616,6 +671,9 @@ struct PartState {
     bypass: bool,
     live: bool,
     effects_only: bool,
+    /// A Sampler's pool ids, whose samples follow its source in this order.
+    #[serde(default)]
+    pool: Vec<String>,
 }
 #[derive(Serialize, Deserialize)]
 struct Header {
@@ -653,6 +711,11 @@ impl Registry {
                         .live_input
                         .as_ref()
                         .is_some_and(|i| i.effects_only),
+                    pool: p
+                        .host
+                        .engine
+                        .sampler_pool()
+                        .map_or_else(Vec::new, |pool| pool.keys().cloned().collect()),
                 })
                 .collect(),
         };
@@ -668,6 +731,17 @@ impl Registry {
                 && !part.host.engine.source_effects_pending()
             {
                 let sample = super::pack(&cache.sample);
+                bytes.extend_from_slice(&(sample.len() as u32).to_le_bytes());
+                bytes.extend_from_slice(&sample);
+            }
+            for sample in part
+                .host
+                .engine
+                .sampler_pool()
+                .into_iter()
+                .flat_map(|p| p.values())
+            {
+                let sample = super::pack(sample);
                 bytes.extend_from_slice(&(sample.len() as u32).to_le_bytes());
                 bytes.extend_from_slice(&sample);
             }
@@ -739,6 +813,17 @@ impl Registry {
                 }));
                 host.engine.exchange_processed_source(&mut cache);
             }
+            for id in state.pool {
+                let length =
+                    u32::from_le_bytes(tail.get(..4).ok_or("Incomplete kit")?.try_into().unwrap())
+                        as usize;
+                let sample = super::unpack(tail.get(4..4 + length).ok_or("Incomplete kit")?)?;
+                tail = &tail[4 + length..];
+                if let Some(pool) = host.engine.sampler_pool_mut() {
+                    pool.insert(id, Arc::new(sample));
+                }
+            }
+            host.engine.refresh_sampler();
             host.reset_source_buffers();
             host.resize_snapshot();
             parts.push(Part {
@@ -775,6 +860,7 @@ impl Registry {
         self.unacked.fill(None);
         self.number_buses();
         self.ensure_master();
+        self.prune_chains();
         self.refresh_context();
         self.sync_vocal();
         Ok(())
@@ -820,7 +906,15 @@ impl Registry {
         let mut states = Vec::new();
         for p in &self.parts {
             let e = &p.host.engine;
-            states.push(json!({"version":1,"meta":p.meta,"preset":e.preset,"sample_name":e.sample.name,"sample_id":e.sample.library_id,"sample_wav":base64::engine::general_purpose::STANDARD.encode(wav::bytes(e.sample.sample_rate,e.sample.frames())?),"source":if e.preset.history().is_some() || e.live_input.is_none() {"file"} else if e.live_input.as_ref().is_some_and(|i|i.effects_only) {"effects"} else {"grains"},"region":e.region,"fades":e.fades,"sync":true,"frozen":false,"bypass":e.bypass,"midi_gate":e.midi_gate,"playing":false,"timbres":[],"active_timbre":0}));
+            let kit: Vec<Value> = e
+                .sampler_pool()
+                .into_iter()
+                .flatten()
+                .map(|(id, s)| {
+                    Ok(json!({"id":id,"name":s.name,"wav":base64::engine::general_purpose::STANDARD.encode(wav::bytes(s.sample_rate,s.frames())?)}))
+                })
+                .collect::<Result<_, String>>()?;
+            states.push(json!({"version":1,"meta":p.meta,"kit_samples":kit,"preset":e.preset,"sample_name":e.sample.name,"sample_id":e.sample.library_id,"sample_wav":base64::engine::general_purpose::STANDARD.encode(wav::bytes(e.sample.sample_rate,e.sample.frames())?),"source":if e.preset.history().is_some() || e.live_input.is_none() {"file"} else if e.live_input.as_ref().is_some_and(|i|i.effects_only) {"effects"} else {"grains"},"region":e.region,"fades":e.fades,"sync":true,"frozen":false,"bypass":e.bypass,"midi_gate":e.midi_gate,"playing":false,"timbres":[],"active_timbre":0}));
         }
         let mut root = states.remove(0);
         root["timbres"] = json!(states);
@@ -869,10 +963,27 @@ impl Registry {
             sample.library_id = state["sample_id"].as_str().map(str::to_string);
             let preset: Preset =
                 serde_json::from_value(state["preset"].clone()).map_err(|e| e.to_string())?;
-            meta.kind = Kind::of(&preset);
+            if meta.kind != Kind::PadFx || meta.owner.is_none() {
+                meta.kind = Kind::of(&preset);
+            }
             meta.sanitize();
             let mut host = Host::new(rate);
             host.engine = Box::new(Engine::new(rate, Arc::new(sample), preset));
+            for item in state["kit_samples"].as_array().into_iter().flatten() {
+                let id = sad_pet::sampler::sample_id(item["id"].as_str().unwrap_or(""));
+                let bytes = base64::engine::general_purpose::STANDARD
+                    .decode(item["wav"].as_str().ok_or("Missing kit audio")?)
+                    .map_err(|e| e.to_string())?;
+                let mut sample = wav::decode(
+                    Cursor::new(bytes),
+                    item["name"].as_str().unwrap_or("Sample").into(),
+                )?;
+                sample.library_id = Some(id.clone());
+                if let Some(pool) = host.engine.sampler_pool_mut() {
+                    pool.insert(id, Arc::new(sample));
+                }
+            }
+            host.engine.refresh_sampler();
             if host.engine.preset.history().is_none() {
                 {
                     host.engine.set_region(
@@ -920,6 +1031,7 @@ impl Registry {
         self.revision = self.revision.wrapping_add(1);
         self.number_buses();
         self.ensure_master();
+        self.prune_chains();
         self.refresh_context();
         Ok(())
     }

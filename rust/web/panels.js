@@ -16,9 +16,10 @@
     constructor(root, hooks) {
       this.root = root;
       this.hooks = hooks;
-      root.innerHTML = `<div class="timbre-top"><div class="timbre-tabs" role="tablist" aria-label="Timbres"></div><div class="timbre-add"><select aria-label="New timbre type"><option value="granular">Granular</option><option value="drums">Drum machine</option><option value="synth">Synth engine</option><option value="vocal">Vocal</option><option value="bus">Bus</option></select><button>+ Timbre</button></div></div><div class="timbre-mix"><input aria-label="Timbre name" maxlength="80"><button aria-pressed="false">Mute</button><button aria-pressed="false">Solo</button><label class="timbre-midi">MIDI<select aria-label="Timbre MIDI channel"><option value="0">All</option>${Array.from({ length: 16 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("")}</select></label><label><span class="timbre-level-name">MASTER</span><input aria-label="Timbre level" type="range" min="0" max="2" step=".01"></label><button aria-label="Remove timbre">×</button></div><div class="timbre-sends" aria-label="Bus sends"></div>`;
+      root.innerHTML = `<div class="timbre-top"><div class="timbre-tabs" role="tablist" aria-label="Timbres"></div><div class="timbre-add"><select aria-label="New timbre type"><option value="granular">Granular</option><option value="drums">Drum machine</option><option value="synth">Synth engine</option><option value="vocal">Vocal</option><option value="sampler" hidden>Sampler</option><option value="bus">Bus</option></select><button>+ Timbre</button></div></div><div class="timbre-mix"><input aria-label="Timbre name" maxlength="80"><button aria-pressed="false">Mute</button><button aria-pressed="false">Solo</button><label class="timbre-midi">MIDI<select aria-label="Timbre MIDI channel"><option value="0">All</option>${Array.from({ length: 16 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("")}</select></label><label><span class="timbre-level-name">MASTER</span><input aria-label="Timbre level" type="range" min="0" max="2" step=".01"></label><button aria-label="Remove timbre">×</button></div><div class="timbre-sends" aria-label="Bus sends"></div>`;
       this.tabs = root.querySelector(".timbre-tabs");
       this.addType = root.querySelector(".timbre-add select");
+      this.samplerOption = this.addType.querySelector('[value="sampler"]');
       root.querySelector(".timbre-add button").onclick = () =>
         hooks.change("/api/timbres/add", { kind: this.addType.value });
       this.name = root.querySelector('[aria-label="Timbre name"]');
@@ -55,15 +56,22 @@
       this.root.hidden = !context?.timbres;
       if (!context?.timbres) return;
       this.context = context;
-      const signature = JSON.stringify(
-        context.timbres.map((t) => [t.id, t.name, t.kind]),
-      );
+      this.samplerOption.hidden = !this.hooks.features?.()?.sampler;
+      // Pad FX timbres show under their Sampler while it or one of them is open.
+      const active = context.timbres.find((t) => t.id === context.active);
+      const family = active?.kind === "pad_fx" ? active.owner : active?.id;
+      const signature = JSON.stringify([
+        context.timbres.map((t) => [t.id, t.name, t.kind, t.owner]),
+        family,
+      ]);
       if (signature !== this.signature) {
         this.tabs.replaceChildren();
         for (const part of context.timbres) {
-          const tab = button(part.name, `${part.name} timbre`, () =>
+          if (part.kind === "pad_fx" && part.owner !== family) continue;
+          const tab = button(part.kind === "pad_fx" ? `↳ ${part.name}` : part.name, `${part.name} timbre`, () =>
             this.hooks.change("/api/timbres/select", { id: part.id }),
           );
+          if (part.kind === "pad_fx") tab.classList.add("timbre-child");
           tab.setAttribute("role", "tab");
           tab.dataset.id = part.id;
           tab.onkeydown = (e) => {
@@ -99,11 +107,12 @@
       if (document.activeElement !== this.channel)
         this.channel.value = part.channel;
       if (document.activeElement !== this.level) this.level.value = part.gain;
-      const routing = part.kind === "bus" || part.kind === "master";
+      const routing = part.kind === "bus" || part.kind === "master" || part.kind === "pad_fx";
       this.solo.hidden = routing;
       this.midi.hidden = routing;
       this.levelName.textContent =
-        part.kind === "master" ? "OUTPUT" : part.kind === "bus" ? "TO MASTER" : "MASTER";
+        part.kind === "master" ? "OUTPUT" : part.kind === "bus" ? "TO MASTER"
+          : part.kind === "pad_fx" ? "TO SAMPLER" : "MASTER";
       this.level.setAttribute(
         "aria-label",
         part.kind === "master" ? "Master output level" : "Level into Master",
