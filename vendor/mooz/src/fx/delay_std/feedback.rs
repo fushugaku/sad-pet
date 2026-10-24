@@ -21,12 +21,8 @@
 //! `1 + ((v-80)/19)²` above (Main's square curve with count 20); Level `v/100`;
 //! HiDMP copies one of eleven ROM biquads. ROM biquads are re-derived for the
 //! host rate. The Main volume coefficient [4] and on/off [0] are taken as 1.
-use super::common::{self, Gate};
-use crate::{
-    Effect, Values,
-    dsp::{Biquad, Coefficients, DelayLine, flush},
-    zoom::{self, Ramp},
-};
+use super::common::{self, Biquad, DelayLine, Gate, Ramp, flush};
+use crate::{Effect, Values, dsp::Coefficients, zoom};
 
 /// Time parameter: 0..=3999 are 1..4000 ms, above are tempo notes.
 pub const TIME_THRESHOLD: u16 = 3999;

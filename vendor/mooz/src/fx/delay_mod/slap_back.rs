@@ -25,12 +25,12 @@
 //! hall's delay lengths and ROM filters are rescaled to the host rate; Mix
 //! glides like Main's `context[7]` setter (16 ms); Tone and Decay
 //! interpolate between table entries while modulated.
-use super::common::{FadeTap, FirstOrder, Glide};
+use super::common::{DelayLine, FadeTap, FirstOrder, Glide, Ramp, flush};
 use crate::{
     Effect, Values,
     catalog::*,
-    dsp::{DelayLine, flush, scale_samples},
-    zoom::{self, DEFAULT_STEP, Ramp},
+    dsp::scale_samples,
+    zoom::{self, DEFAULT_STEP},
 };
 
 pub const INFO: ModelInfo = ModelInfo {

@@ -42,12 +42,8 @@
 //! feedback write is clamped at ±4: at REGEN 100 the loop gain through the
 //! resonant Tone filters exceeds 1 and the original would grow without bound.
 //! Delay lengths, LFO rate and depth are rescaled to the host rate.
-use crate::{
-    Effect, Values,
-    catalog::*,
-    dsp::{self, Biquad, Coefficients, DelayLine},
-    zoom,
-};
+use super::common::{Biquad, DelayLine, Ramp};
+use crate::{Effect, Values, catalog::*, dsp::Coefficients, zoom};
 
 pub const INFO: ModelInfo = ModelInfo {
     key: "mooz_carbon_dly",
@@ -254,17 +250,22 @@ const DISTORTION_OUTPUT: f32 = w(0x400c_cccd) * w(0x3f59_999a) * w(0x3ed7_e910) 
 const INNER_RATE: f32 = 4.0 * zoom::ORIGINAL_RATE;
 
 /// The original's soft clipper (`compress`): odd, ±1 at |v| ≥ 1.
+///
+/// Written on `|scaled|`: for a negative input `-CLIP_FIRST · scaled` is
+/// `CLIP_FIRST · |scaled|` and the third branch is the exact negation of its
+/// positive form (negation and clamping are symmetric), so only the sign of
+/// `first · third` depends on the branch (`-0.0` takes the positive branch
+/// with `first = -0.0`, also a negative zero product). Both products are
+/// non-negative, so only the upper clamp can act.
 #[inline]
 fn compress(value: f32) -> f32 {
     let scaled = CLIP_SCALE * value;
     let second = (CLIP_SECOND * scaled).clamp(-1.0, 1.0);
-    let (first, third) = if value < 0.0 {
-        (-CLIP_FIRST * scaled, -CLIP_OFFSET + CLIP_SLOPE * scaled)
-    } else {
-        (CLIP_FIRST * scaled, CLIP_OFFSET + CLIP_SLOPE * scaled)
-    };
-    let first = first.clamp(-1.0, 1.0);
-    second * (first - 1.0).abs() + first * third.clamp(-1.0, 1.0)
+    let magnitude = scaled.abs();
+    let upper = |x: f32| if x > 1.0 { 1.0 } else { x };
+    let first = upper(CLIP_FIRST * magnitude);
+    let third = upper(CLIP_OFFSET + CLIP_SLOPE * magnitude);
+    second * (first - 1.0).abs() + (first * third).copysign(value)
 }
 
 /// Transposed direct form II of the oversampling IIR.
@@ -300,7 +301,7 @@ impl Oversampler {
     }
 
     fn flush(&mut self) {
-        self.state = self.state.map(dsp::flush);
+        self.state = self.state.map(super::common::flush);
     }
 }
 
@@ -310,13 +311,13 @@ struct CarbonDelay {
     // Modulation.
     phase: u32,
     increment: u32,
-    depth: zoom::Ramp,
+    depth: Ramp,
     base: f32,
     target: f32,
     slew: f32,
     // Delay.
     line: DelayLine,
-    feedback: zoom::Ramp,
+    feedback: Ramp,
     feedback_dc: Biquad,
     tone: [Biquad; 2],
     tone_value: f32,
@@ -326,20 +327,20 @@ struct CarbonDelay {
     upsampler: Oversampler,
     downsampler: Oversampler,
     // Output.
-    mix: zoom::Ramp,
+    mix: Ramp,
 }
 
 impl CarbonDelay {
     fn new(sample_rate: f32) -> Self {
         let factor = (INNER_RATE / sample_rate).round().max(1.0) as usize;
-        let ramp = |value| zoom::Ramp::new(value, zoom::DEFAULT_STEP, sample_rate);
+        let ramp = |value| Ramp::new(value, zoom::DEFAULT_STEP, sample_rate);
         let mut delay = Self {
             sample_rate,
             fresh: true,
             phase: 0,
             increment: 0,
             // Depth in samples, set almost immediately like context[10].
-            depth: zoom::Ramp::new(0.0, 0.5, sample_rate),
+            depth: Ramp::new(0.0, 0.5, sample_rate),
             base: 0.0,
             target: 0.0,
             slew: 1.0 - (1.0 - SLEW_44K).powf(zoom::ORIGINAL_RATE / sample_rate),
@@ -569,7 +570,7 @@ mod tests {
     fn maximum_regeneration_stays_bounded() {
         let mut effect = CarbonDelay::new(48_000.0);
         effect.set(&values(0.0, 100.0, 100.0, 1.0, 0.0), 120.0);
-        let mut noise = dsp::Noise::new(9);
+        let mut noise = crate::dsp::Noise::new(9);
         let mut peak = 0.0f32;
         for i in 0..48_000 * 10 {
             let x = if i < 4800 { noise.bipolar() } else { 0.0 };

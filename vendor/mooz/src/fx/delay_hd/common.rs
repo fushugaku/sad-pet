@@ -5,8 +5,8 @@
 //! mute → swap → unmute sequence the editors use for stepped filter tables and
 //! a direct-form-1 biquad cascade with flat coefficient storage.
 use crate::{
-    dsp::{Coefficients, flush},
-    zoom::{ORIGINAL_RATE, delay_note_ms},
+    dsp::Coefficients,
+    zoom::{ORIGINAL_RATE, Ramp, delay_note_ms},
 };
 
 /// Q31 → float.
@@ -28,6 +28,202 @@ pub enum Kind {
     HighShelf1 = 8,
     /// First-order low shelf; a cut moves the corner up by the cut's ratio.
     LowShelf1 = 9,
+}
+
+/// `dsp::DelayLine` with the same power-of-two layout and arithmetic, but
+/// with the ring index masked into a buffer whose length is fixed at
+/// construction, so the per-sample accesses need no bounds checks.
+#[derive(Debug, Clone)]
+pub struct DelayLine {
+    buffer: Box<[f32]>,
+    mask: usize,
+    write: usize,
+}
+
+impl DelayLine {
+    /// Holds at least `max_delay` samples of history plus interpolation room.
+    pub fn new(max_delay: usize) -> Self {
+        let length = (max_delay + 4).next_power_of_two();
+        Self {
+            buffer: vec![0.0; length].into_boxed_slice(),
+            mask: length - 1,
+            write: 0,
+        }
+    }
+    /// For a maximum delay in seconds at `sample_rate`.
+    pub fn with_seconds(seconds: f32, sample_rate: f32) -> Self {
+        Self::new((seconds * sample_rate).ceil() as usize + 1)
+    }
+    #[inline]
+    pub fn capacity(&self) -> usize {
+        self.mask - 3
+    }
+    #[inline]
+    fn at(&self, index: usize) -> f32 {
+        debug_assert!(self.buffer.len() == self.mask + 1);
+        // SAFETY: `index & mask < buffer.len()`, a power of two fixed in `new`.
+        unsafe { *self.buffer.get_unchecked(index & self.mask) }
+    }
+    #[inline]
+    pub fn write(&mut self, x: f32) {
+        debug_assert!(self.buffer.len() == self.mask + 1);
+        self.write = (self.write + 1) & self.mask;
+        // SAFETY: `write <= mask < buffer.len()`.
+        unsafe { *self.buffer.get_unchecked_mut(self.write) = x };
+    }
+    #[inline]
+    pub fn read(&self, delay: usize) -> f32 {
+        self.at(self.write.wrapping_sub(delay))
+    }
+    /// Linear interpolation, `delay` clamped to `[0, capacity]`.
+    #[inline]
+    pub fn read_linear(&self, delay: f32) -> f32 {
+        let delay = delay.clamp(0.0, self.capacity() as f32);
+        let whole = delay as usize;
+        let fraction = delay - whole as f32;
+        let a = self.read(whole);
+        let b = self.read(whole + 1);
+        a + (b - a) * fraction
+    }
+    /// `read_linear(delay)` split into its whole and fractional parts once,
+    /// for a delay that does not change.
+    pub fn fixed(&self, delay: f32) -> (usize, f32) {
+        let delay = delay.clamp(0.0, self.capacity() as f32);
+        let whole = delay as usize;
+        (whole, delay - whole as f32)
+    }
+    /// `read_linear` at a delay prepared by [`DelayLine::fixed`].
+    #[inline]
+    pub fn read_fixed(&self, (whole, fraction): (usize, f32)) -> f32 {
+        let a = self.read(whole);
+        let b = self.read(whole + 1);
+        a + (b - a) * fraction
+    }
+    /// `blend · read_linear(taps[0]) + (1 - blend) · read_linear(taps[1])`
+    /// (the two-tap crossfade), skipping the silent tap once a fade is over:
+    /// with a zero weight it adds only a signed zero, which leaves a nonzero
+    /// sum unchanged, so the result is identical.
+    #[inline]
+    pub fn read_crossfade(&self, blend: f32, taps: [f32; 2]) -> f32 {
+        if blend == 1.0 {
+            let a = self.read_linear(taps[0]);
+            if a != 0.0 {
+                return a;
+            }
+        } else if blend == 0.0 {
+            let b = self.read_linear(taps[1]);
+            if b != 0.0 {
+                return b;
+            }
+        }
+        blend * self.read_linear(taps[0]) + (1.0 - blend) * self.read_linear(taps[1])
+    }
+    pub fn clear(&mut self) {
+        self.buffer.fill(0.0);
+    }
+}
+
+/// Fixed delay lines that are all written exactly once per sample, side by
+/// side in one buffer with one shared write position. Each lane is a
+/// power-of-two ring, so a lane behaves exactly like its own `DelayLine`.
+#[derive(Debug, Clone)]
+pub struct Bank {
+    buffer: Box<[f32]>,
+    position: usize,
+    wrap: usize,
+}
+
+/// One ring of a [`Bank`].
+#[derive(Debug, Clone, Copy)]
+pub struct Lane {
+    offset: usize,
+    mask: usize,
+}
+
+impl Bank {
+    /// One lane per entry, each holding at least `max_delay` samples of
+    /// history (sized like `DelayLine::new`).
+    pub fn new<const N: usize>(max_delays: [usize; N]) -> (Self, [Lane; N]) {
+        let mut offset = 0;
+        let lanes = max_delays.map(|d| {
+            let length = (d + 4).next_power_of_two();
+            let lane = Lane {
+                offset,
+                mask: length - 1,
+            };
+            offset += length;
+            lane
+        });
+        let wrap = lanes.iter().map(|l| l.mask).max().unwrap_or(0);
+        let bank = Self {
+            buffer: vec![0.0; offset].into_boxed_slice(),
+            position: 0,
+            wrap,
+        };
+        (bank, lanes)
+    }
+    /// Moves every lane to the next sample; call once before the sample's
+    /// reads and writes.
+    #[inline]
+    pub fn advance(&mut self) {
+        self.position = (self.position + 1) & self.wrap;
+    }
+    #[inline]
+    fn index(&self, lane: Lane, position: usize) -> usize {
+        let index = lane.offset + (position & lane.mask);
+        debug_assert!(lane.mask <= self.wrap && index < self.buffer.len());
+        index
+    }
+    /// Writes this sample's value of `lane`.
+    #[inline]
+    pub fn write(&mut self, lane: Lane, x: f32) {
+        let index = self.index(lane, self.position);
+        // SAFETY: lanes come from `new` and tile the buffer; the position is
+        // masked into the lane.
+        unsafe { *self.buffer.get_unchecked_mut(index) = x };
+    }
+    /// The value of `lane` written `ago` samples before this one (0 = this
+    /// sample's write).
+    #[inline]
+    pub fn ago(&self, lane: Lane, ago: usize) -> f32 {
+        let index = self.index(lane, self.position.wrapping_sub(ago));
+        // SAFETY: as in `write`.
+        unsafe { *self.buffer.get_unchecked(index) }
+    }
+    pub fn clear(&mut self) {
+        self.buffer.fill(0.0);
+    }
+}
+
+/// `Ramp::tick` with a fast path once the ramp has arrived: a settled
+/// `tick` returns `target` and changes nothing else, so this is identical.
+pub trait Settled {
+    fn step(&mut self) -> f32;
+}
+
+impl Settled for Ramp {
+    #[inline]
+    fn step(&mut self) -> f32 {
+        if self.current == self.target {
+            self.target
+        } else {
+            self.tick()
+        }
+    }
+}
+
+/// `dsp::flush` (zero below 1e-20 in magnitude and for non-finite values)
+/// as one range test on the magnitude bits: identical results.
+#[inline]
+pub fn flush(x: f32) -> f32 {
+    const LOW: u32 = 1e-20f32.to_bits();
+    const INFINITY: u32 = f32::INFINITY.to_bits();
+    let magnitude = x.to_bits() & 0x7fff_ffff;
+    if magnitude.wrapping_sub(LOW) < INFINITY - LOW {
+        x
+    } else {
+        0.0
+    }
 }
 
 /// Main c00bc2e0 (`A4`=out, `B4`=Hz, `A6`=gain dB, `A8`=Q, `B8`=type) at the
@@ -389,6 +585,49 @@ impl Stage {
     }
 }
 
+/// A first-order [`Stage`] (`b2 = fb2 = 0`, as every first-order design and
+/// first-order ROM word set stays after resampling). The dropped terms only
+/// add a signed zero, and a zero result is flushed to `+0.0` either way, so
+/// the output is bit-identical to [`Stage::process`] for finite input.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Stage1 {
+    b0: f32,
+    b1: f32,
+    fb1: f32,
+    x1: f32,
+    y1: f32,
+}
+
+impl Stage1 {
+    /// From words in the original order; `c[2]` and `c[4]` must be zero.
+    pub fn new(c: [f32; 5]) -> Self {
+        let mut stage = Self::default();
+        stage.load(c);
+        stage
+    }
+    pub fn from(c: Coefficients) -> Self {
+        Self::new(words(c))
+    }
+    /// Replaces the coefficients, keeping the history.
+    pub fn load(&mut self, c: [f32; 5]) {
+        assert!(c[2] == 0.0 && c[4] == 0.0, "not a first-order set: {c:?}");
+        self.b0 = c[0];
+        self.b1 = c[1];
+        self.fb1 = c[3];
+    }
+    #[inline]
+    pub fn process(&mut self, x: f32) -> f32 {
+        let y = self.b0 * x + self.b1 * self.x1 + self.fb1 * self.y1;
+        self.x1 = x;
+        self.y1 = flush(y);
+        self.y1
+    }
+    pub fn clear(&mut self) {
+        self.x1 = 0.0;
+        self.y1 = 0.0;
+    }
+}
+
 /// A cascade of up to `N` biquads; identity stages of a ROM set are skipped.
 #[derive(Debug, Clone, Copy)]
 pub struct Cascade<const N: usize> {
@@ -473,6 +712,31 @@ pub fn clip1(x: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn flush_matches_the_shared_one() {
+        let probes = [
+            0.0,
+            -0.0,
+            1e-20,
+            -1e-20,
+            f32::from_bits(1e-20f32.to_bits() - 1),
+            f32::from_bits(1e-20f32.to_bits() + 1),
+            1e-30,
+            0.5,
+            -3.0,
+            f32::MAX,
+            f32::MIN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+            f32::MIN_POSITIVE,
+            f32::from_bits(1),
+        ];
+        for x in probes {
+            assert_eq!(flush(x).to_bits(), crate::dsp::flush(x).to_bits(), "{x}");
+        }
+    }
 
     #[test]
     fn table_to_value_interpolates_like_the_modules() {

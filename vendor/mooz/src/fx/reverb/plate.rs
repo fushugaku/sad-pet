@@ -34,10 +34,12 @@
 //! re-derived; the damping filters are designed at the host rate (the HiDMP
 //! corner is kept below Nyquist).
 use super::{
-    common::{FirstOrder, Glides, Ring, SETTER_SAMPLES, STEP_FAST, f, place, rom_biquad, stepped},
+    common::{
+        Biquad, FirstOrder, Glides, Ring, SETTER_SAMPLES, STEP_FAST, f, place, rom_biquad, stepped,
+    },
     rom::{PLATE_COE, PLATE_COMB_PERIODS},
 };
-use crate::{Effect, Values, catalog::*, dsp::Biquad, zoom};
+use crate::{Effect, Values, catalog::*, zoom};
 
 pub const INFO: ModelInfo = ModelInfo {
     key: "mooz_plate",
@@ -344,18 +346,20 @@ impl Effect for Plate {
         }
         let g = &self.glides.value;
         let ring = &self.ring;
-        let t: [f32; READS] = std::array::from_fn(|j| ring.read(self.read[j]));
+        let read = &self.read;
+        // Taps read where used (all before the frame's writes), kept in locals.
+        let t = |j: usize| ring.read(read[j]);
         let (c40, c41, c42, c43) = (c(40), g[DIFFUSION], c(42), g[C43]);
 
         let high_passed = self.highpass.process(0.5 * (left + right));
         let colored_input = self.color_eq.process(high_passed);
 
         // Input diffusers.
-        let predelayed = g[DUCK] * t[0];
+        let predelayed = g[DUCK] * t(0);
         let mut signal = predelayed;
         let mut diffusers = [0.0f32; 4];
         for (stage, written) in diffusers.iter_mut().enumerate() {
-            let tap = t[1 + stage];
+            let tap = t(1 + stage);
             let next = c43 * tap + c42 * signal;
             *written = self.diffuser_damp[stage].process(c40 * signal + c41 * tap);
             signal = next;
@@ -366,18 +370,18 @@ impl Effect for Plate {
         let keep = 1.0 - self.crossover;
         let mut lanes = [0.0f32; 5];
         for (lane, written) in lanes.iter_mut().enumerate() {
-            let tap = t[5 + lane];
+            let tap = t(5 + lane);
             let memory = keep * self.lane_low[lane];
             let low = self.crossover * tap + memory;
             let high = keep * tap - memory;
-            self.lane_low[lane] = crate::dsp::flush(low);
+            self.lane_low[lane] = super::common::flush(low);
             let colored = excitation + g[LANES + 2 * lane + 1] * high + g[LANES + 2 * lane] * low;
             *written = self.lane_dc[lane].process(self.lane_damp[lane].process(colored));
         }
 
         // Output diffusers.
-        let left_sum = c(56) * (t[10] + t[12] + t[14] + t[16] + t[18]);
-        let right_sum = c(57) * (t[11] + t[13] + t[15] + t[17] + t[19]);
+        let left_sum = c(56) * (t(10) + t(12) + t(14) + t(16) + t(18));
+        let right_sum = c(57) * (t(11) + t(13) + t(15) + t(17) + t(19));
         let pair = |x: f32, d1: f32, d2: f32| {
             let next = c42 * x + c43 * d1;
             let first = c41 * d1 + c40 * x;
@@ -385,8 +389,8 @@ impl Effect for Plate {
             let second = c41 * d2 + c40 * next;
             (first, second, feed)
         };
-        let (left_first, left_second, left_feed) = pair(left_sum, t[20], t[21]);
-        let (right_first, right_second, right_feed) = pair(right_sum, t[22], t[23]);
+        let (left_first, left_second, left_feed) = pair(left_sum, t(20), t(21));
+        let (right_first, right_second, right_feed) = pair(right_sum, t(22), t(23));
         let [[left_low, left_shelf], [right_low, right_shelf]] = &mut self.tail;
         let tail_left = left_shelf.process(left_low.process(left_feed));
         let tail_right = right_shelf.process(right_low.process(right_feed));
@@ -394,25 +398,26 @@ impl Effect for Plate {
         // Early reflections.
         let mut first = predelayed;
         for i in 0..4 {
-            first += c(92 + i) * t[24 + i];
+            first += c(92 + i) * t(24 + i);
         }
         let reflected = g[DUCK] * first;
         let mut early_left = 0.0;
         let mut early_right = 0.0;
         for i in 0..8 {
-            early_left += c(96 + i) * t[28 + i];
-            early_right += c(104 + i) * t[28 + i];
+            early_left += c(96 + i) * t(28 + i);
+            early_right += c(104 + i) * t(28 + i);
         }
 
         let (wet, dry, level) = (g[WET], g[DRY], g[LEVEL]);
         let w = &self.write;
-        let ring = &mut self.ring;
+        let mut ring = self.ring.writer();
         ring.write(w[0], c(38) * colored_input);
+        // Diffuser and lane values leave flushing sections.
         for (i, value) in diffusers.into_iter().enumerate() {
-            ring.write(w[1 + i], value);
+            ring.write_flushed(w[1 + i], value);
         }
         for (i, value) in lanes.into_iter().enumerate() {
-            ring.write(w[5 + i], value);
+            ring.write_flushed(w[5 + i], value);
         }
         ring.write(w[10], left_first);
         ring.write(w[11], left_second);
@@ -420,7 +425,7 @@ impl Effect for Plate {
         ring.write(w[13], right_second);
         ring.write(w[14], predelayed);
         ring.write(w[15], reflected);
-        ring.advance();
+        self.ring.advance();
 
         let wet_left = tail_left + c(112) * early_left;
         let wet_right = tail_right + c(112) * early_right;

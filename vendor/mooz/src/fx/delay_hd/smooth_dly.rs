@@ -20,12 +20,12 @@
 //! Deviation: a TIME change glides through the callback's Q31 smoother (as for
 //! tempo changes) instead of the knob path's mute → jump → reopen.
 use super::common::{
-    Glide, Kind, Stage, design, one_pole_at, rom, safety, samples, table, time_ms, words,
+    Bank, DelayLine, Glide, Kind, Lane, Settled, Stage, Stage1, design, flush, one_pole_at, rom,
+    safety, samples, table, time_ms, words,
 };
 use crate::{
     Effect, Values,
     catalog::*,
-    dsp::{DelayLine, flush},
     zoom::{DEFAULT_STEP, Ramp, curve, is_synced},
 };
 
@@ -101,56 +101,61 @@ const A_DELAYED: f32 = -0.5;
 /// Decay time of `decay_Calc_set`: curve(7743.75, 347.66, 91, 19, square) ms.
 const DECAY_MS: f32 = 677.29;
 
-struct Section {
-    line: DelayLine,
+/// An allpass-like section; `LOWPASS` sections filter the stored signal.
+struct Section<const LOWPASS: bool> {
+    lane: Lane,
     delay: usize,
-    lowpass: Option<Stage>,
+    lowpass: Stage1,
 }
 
-impl Section {
+impl<const LOWPASS: bool> Section<LOWPASS> {
     #[inline]
-    fn process(&mut self, x: f32) -> f32 {
-        let d = self.line.read(self.delay - 1);
+    fn process(&mut self, bank: &mut Bank, x: f32) -> f32 {
+        let d = bank.ago(self.lane, self.delay);
         let mut w = A_IN * x + A_FB * d;
-        if let Some(lp) = &mut self.lowpass {
-            w = lp.process(w);
+        if LOWPASS {
+            w = self.lowpass.process(w);
         }
-        self.line.write(flush(w));
+        bank.write(self.lane, flush(w));
         A_DELAYED * d + A_DIRECT * x
     }
 }
 
 struct Comb {
-    line: DelayLine,
+    lane: Lane,
     delay: usize,
     gain: f32,
+    /// `gain · (1 - split)`.
+    high_gain: f32,
     split: f32,
     lowband: f32,
-    lowpass: Stage,
-    highpass: Stage,
+    lowpass: Stage1,
+    highpass: Stage1,
 }
 
 struct SmoothDly {
     sample_rate: f32,
-    input_lp: Stage,
+    input_lp: Stage1,
     line: DelayLine,
     time: Glide,
     tap: f32,
     tap_eq: Stage,
-    tone: Stage,
-    net_hp: Stage,
+    tone: Stage1,
+    net_hp: Stage1,
     previous: f32,
-    sections: [Section; 4],
+    sections: [Section<true>; 4],
     combs: [Comb; 5],
     taps_left: [usize; 5],
     taps_right: [usize; 5],
-    diffuse: [Section; 4],
-    early_in: DelayLine,
+    diffuse: [Section<false>; 4],
+    /// Every network line (sections, combs, diffusers, early in/out).
+    bank: Bank,
+    early_in: Lane,
     early_in_taps: [usize; 4],
-    early_out: DelayLine,
+    early_out: Lane,
     early_left: [usize; 4],
     early_right: [usize; 4],
-    out_shelf: [[Stage; 2]; 2],
+    out_shelf: [[Stage1; 2]; 2],
     feedback: Ramp,
     delay_level: Ramp,
     net_level: Ramp,
@@ -163,31 +168,60 @@ impl SmoothDly {
         let sr = sample_rate;
         let n = |d: usize| (samples(d as f32, sr).round() as usize).max(1);
         let lowpass = words(rom([0.551_688, 0.551_688, 0.0, -0.103_376, 0.0], sr));
-        let section = |d: usize, lp: bool| Section {
-            line: DelayLine::new(n(d) + 2),
-            delay: n(d),
-            lowpass: lp.then(|| Stage::new(lowpass)),
-        };
+        // network lanes: sections 0..4, combs 4..9, diffusers 9..13, early
+        // in, early out (sized as their own delay lines were)
+        let (bank, lanes) = Bank::new([
+            n(SECTIONS[0]) + 2,
+            n(SECTIONS[1]) + 2,
+            n(SECTIONS[2]) + 2,
+            n(SECTIONS[3]) + 2,
+            n(COMBS[0]) + 2,
+            n(COMBS[1]) + 2,
+            n(COMBS[2]) + 2,
+            n(COMBS[3]) + 2,
+            n(COMBS[4]) + 2,
+            n(DIFFUSE_LEFT[0]) + 2,
+            n(DIFFUSE_LEFT[1]) + 2,
+            n(DIFFUSE_RIGHT[0]) + 2,
+            n(DIFFUSE_RIGHT[1]) + 2,
+            n(3299) + 2,
+            n(1746) + 2,
+        ]);
+        fn section<const LOWPASS: bool>(
+            lane: Lane,
+            delay: usize,
+            lowpass: [f32; 5],
+        ) -> Section<LOWPASS> {
+            Section {
+                lane,
+                delay,
+                lowpass: Stage1::new(if LOWPASS { lowpass } else { Stage::IDENTITY }),
+            }
+        }
         // C40 one-pole (0.028 at 44.1 kHz, ~200 Hz) at the host rate.
         let split = 1.0 - one_pole_at(0.028_157, 1.0 - 0.028_157, 44_100.0, sr).1;
-        let comb = |k: usize| Comb {
-            line: DelayLine::new(n(COMBS[k]) + 2),
-            delay: n(COMBS[k]),
-            gain: 0.01f32.powf(COMB_MS[k] / DECAY_MS),
-            split,
-            lowband: 0.0,
-            lowpass: Stage::new(lowpass),
-            highpass: Stage::from(rom([0.995_532, -0.995_532, 0.0, 0.991_064, 0.0], sr)),
+        let comb = |k: usize| {
+            let gain = 0.01f32.powf(COMB_MS[k] / DECAY_MS);
+            Comb {
+                lane: lanes[4 + k],
+                delay: n(COMBS[k]),
+                gain,
+                high_gain: gain * (1.0 - split),
+                split,
+                lowband: 0.0,
+                lowpass: Stage1::new(lowpass),
+                highpass: Stage1::from(rom([0.995_532, -0.995_532, 0.0, 0.991_064, 0.0], sr)),
+            }
         };
         let shelves = || {
             [
-                Stage::from(rom([0.937_38, -0.089_016, 0.0, 0.151_635, 0.0], sr)),
-                Stage::from(rom([1.003_637, -0.968_265, 0.0, 0.971_903, 0.0], sr)),
+                Stage1::from(rom([0.937_38, -0.089_016, 0.0, 0.151_635, 0.0], sr)),
+                Stage1::from(rom([1.003_637, -0.968_265, 0.0, 0.971_903, 0.0], sr)),
             ]
         };
         let mut effect = Self {
             sample_rate,
-            input_lp: Stage::from(rom([0.390_553, 0.390_553, 0.0, 0.218_893, 0.0], sr)),
+            input_lp: Stage1::from(rom([0.390_553, 0.390_553, 0.0, 0.218_893, 0.0], sr)),
             line: DelayLine::with_seconds(MAX_MS * 0.001 + 0.01, sr),
             time: Glide::new(0.0, 0x0005_0000, 0x7ffa_ffff, sr),
             tap: 0.0,
@@ -195,27 +229,28 @@ impl SmoothDly {
                 [1.005_432, -1.941_126, 0.936_925, 1.941_126, -0.942_358],
                 sr,
             )),
-            tone: Stage::new(Stage::IDENTITY),
-            net_hp: Stage::from(rom([0.996_451, -0.996_451, 0.0, 0.992_901, 0.0], sr)),
+            tone: Stage1::new(Stage::IDENTITY),
+            net_hp: Stage1::from(rom([0.996_451, -0.996_451, 0.0, 0.992_901, 0.0], sr)),
             previous: 0.0,
             sections: [
-                section(SECTIONS[0], true),
-                section(SECTIONS[1], true),
-                section(SECTIONS[2], true),
-                section(SECTIONS[3], true),
+                section(lanes[0], n(SECTIONS[0]), lowpass),
+                section(lanes[1], n(SECTIONS[1]), lowpass),
+                section(lanes[2], n(SECTIONS[2]), lowpass),
+                section(lanes[3], n(SECTIONS[3]), lowpass),
             ],
             combs: [comb(0), comb(1), comb(2), comb(3), comb(4)],
             taps_left: TAPS_LEFT.map(n),
             taps_right: TAPS_RIGHT.map(n),
             diffuse: [
-                section(DIFFUSE_LEFT[0], false),
-                section(DIFFUSE_LEFT[1], false),
-                section(DIFFUSE_RIGHT[0], false),
-                section(DIFFUSE_RIGHT[1], false),
+                section(lanes[9], n(DIFFUSE_LEFT[0]), lowpass),
+                section(lanes[10], n(DIFFUSE_LEFT[1]), lowpass),
+                section(lanes[11], n(DIFFUSE_RIGHT[0]), lowpass),
+                section(lanes[12], n(DIFFUSE_RIGHT[1]), lowpass),
             ],
-            early_in: DelayLine::new(n(3299) + 2),
+            bank,
+            early_in: lanes[13],
             early_in_taps: EARLY_IN.map(|(d, _)| n(d)),
-            early_out: DelayLine::new(n(1746) + 2),
+            early_out: lanes[14],
             early_left: EARLY_LEFT.map(n),
             early_right: EARLY_RIGHT.map(n),
             out_shelf: [shelves(), shelves()],
@@ -269,7 +304,8 @@ impl Effect for SmoothDly {
         self.net_level.set(net);
         if tone != self.last[3].round() {
             let db = table(&TONE_DB, tone, 101);
-            self.tone.c = words(design(Kind::HighShelf1, sr, 10_992.0, db, 0.0));
+            self.tone
+                .load(words(design(Kind::HighShelf1, sr, 10_992.0, db, 0.0)));
         }
         self.last.copy_from_slice(&values[..4]);
         self.bpm = bpm;
@@ -277,7 +313,7 @@ impl Effect for SmoothDly {
 
     fn process(&mut self, frame: [f32; 2]) -> [f32; 2] {
         let mono = 0.5 * (frame[0] + frame[1]);
-        let feedback = self.feedback.tick();
+        let feedback = self.feedback.step();
         let filtered = self.input_lp.process(mono);
         self.line
             .write(safety(flush(filtered + feedback * self.tap)));
@@ -289,12 +325,14 @@ impl Effect for SmoothDly {
         self.previous = self.net_hp.process(mono + delayed);
 
         // early reflections
-        self.early_in.write(x);
+        let bank = &mut self.bank;
+        bank.advance();
+        bank.write(self.early_in, x);
         let mut early = x;
         for (&d, &(_, g)) in self.early_in_taps.iter().zip(&EARLY_IN) {
-            early += g * self.early_in.read(d - 1);
+            early += g * bank.ago(self.early_in, d - 1);
         }
-        self.early_out.write(flush(early));
+        bank.write(self.early_out, flush(early));
         let mut early_left = early;
         let mut early_right = early;
         for ((g, &l), &r) in EARLY_GAINS
@@ -302,35 +340,37 @@ impl Effect for SmoothDly {
             .zip(&self.early_left)
             .zip(&self.early_right)
         {
-            early_left += g * self.early_out.read(l - 1);
-            early_right += g * self.early_out.read(r - 1);
+            early_left += g * bank.ago(self.early_out, l - 1);
+            early_right += g * bank.ago(self.early_out, r - 1);
         }
 
         // allpass-like chain into the combs
         let mut y = x;
         for section in &mut self.sections {
-            y = section.process(y);
+            y = section.process(bank, y);
         }
         let mut sum_left = 0.0;
         let mut sum_right = 0.0;
         for (k, comb) in self.combs.iter_mut().enumerate() {
-            let tap = comb.line.read(comb.delay - 1);
+            let tap = bank.ago(comb.lane, comb.delay);
             let old = comb.lowband;
             comb.lowband = flush(comb.lowband + comb.split * (tap - comb.lowband));
-            let w = y + comb.gain * (1.0 - comb.split) * (tap - old) + comb.gain * comb.lowband;
+            let w = y + comb.high_gain * (tap - old) + comb.gain * comb.lowband;
             let w = comb.highpass.process(comb.lowpass.process(w));
-            sum_left += comb.line.read(self.taps_left[k] - 1);
-            sum_right += comb.line.read(self.taps_right[k] - 1);
-            comb.line.write(w);
+            sum_left += bank.ago(comb.lane, self.taps_left[k]);
+            sum_right += bank.ago(comb.lane, self.taps_right[k]);
+            bank.write(comb.lane, w);
         }
         let mut late_left = 1.196_782 * sum_left;
         let mut late_right = 1.191_906 * sum_right;
         let [d0, d1, d2, d3] = &mut self.diffuse;
-        late_left = d1.process(d0.process(late_left));
-        late_right = d3.process(d2.process(late_right));
+        late_left = d0.process(bank, late_left);
+        late_left = d1.process(bank, late_left);
+        late_right = d2.process(bank, late_right);
+        late_right = d3.process(bank, late_right);
 
-        let net_level = self.net_level.tick();
-        let delay_level = self.delay_level.tick();
+        let net_level = self.net_level.step();
+        let delay_level = self.delay_level.step();
         let net = [early_left + late_left, early_right + late_right];
         let mut out = [0.0; 2];
         for ch in 0..2 {
@@ -349,20 +389,15 @@ impl Effect for SmoothDly {
         self.tone.clear();
         self.net_hp.clear();
         self.previous = 0.0;
-        for s in self.sections.iter_mut().chain(self.diffuse.iter_mut()) {
-            s.line.clear();
-            if let Some(lp) = &mut s.lowpass {
-                lp.clear();
-            }
+        self.bank.clear();
+        for s in &mut self.sections {
+            s.lowpass.clear();
         }
         for c in &mut self.combs {
-            c.line.clear();
             c.lowband = 0.0;
             c.lowpass.clear();
             c.highpass.clear();
         }
-        self.early_in.clear();
-        self.early_out.clear();
         for side in &mut self.out_shelf {
             for s in side {
                 s.clear();

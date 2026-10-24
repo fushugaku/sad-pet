@@ -29,13 +29,8 @@
 //! original reads Main's dry input buffer, which is the same signal when
 //! DynaDelay is first in the chain); the time-constant coefficients and the
 //! two first-order filters are re-derived for the host rate.
-use super::common::{FadeTap, FirstOrder};
-use crate::{
-    Effect, Values,
-    catalog::*,
-    dsp::{DelayLine, flush},
-    zoom::{self, Ramp},
-};
+use super::common::{DelayLine, FadeTap, FirstOrder, Ramp, flush};
+use crate::{Effect, Values, catalog::*, zoom};
 
 pub const INFO: ModelInfo = ModelInfo {
     key: "mooz_dyna_delay",

@@ -41,12 +41,8 @@
 //! Approximations: the drip combs never read below one sample (at rest the
 //! original's zero-length read aliases the whole 176400-word ring); Main's
 //! on/off crossfade C0 and the shared control C4 are taken as 1.
-use crate::{
-    Effect, Values,
-    catalog::*,
-    dsp::{Biquad, Coefficients, DelayLine, flush},
-    zoom::{ORIGINAL_RATE, Ramp},
-};
+use super::fast::{Bank, Biquad, DelayLine, Ramp, flush};
+use crate::{Effect, Values, catalog::*, dsp::Coefficients, zoom::ORIGINAL_RATE};
 
 pub const INFO: ModelInfo = ModelInfo {
     key: "mooz_spring63",
@@ -172,7 +168,7 @@ impl FirstOrder {
         self.c = other.c;
     }
 
-    #[inline]
+    #[inline(always)]
     fn process(&mut self, x: f32) -> f32 {
         let y = flush(self.b0 * x + self.b1 * self.x1 + self.c * self.y1);
         self.x1 = x;
@@ -199,7 +195,7 @@ impl FirstOrder {
 }
 
 /// Two first-order sections in series.
-#[inline]
+#[inline(always)]
 fn cascade(sections: &mut [FirstOrder; 2], x: f32) -> f32 {
     let y = sections[0].process(x);
     sections[1].process(y)
@@ -268,7 +264,7 @@ impl Leaky {
             state: 0.0,
         }
     }
-    #[inline]
+    #[inline(always)]
     fn process(&mut self, x: f32) -> f32 {
         self.state = flush(self.pole * self.state + self.gain * x);
         self.state
@@ -309,7 +305,7 @@ impl TimedRamp {
         self.target = value;
         self.remaining = 0;
     }
-    #[inline]
+    #[inline(always)]
     fn tick(&mut self) -> f32 {
         if self.remaining > 0 {
             self.remaining -= 1;
@@ -331,6 +327,26 @@ struct Line {
     output_tap: usize,
 }
 
+/// The tap distances of a line kept in a [`Bank`] region.
+#[derive(Debug, Clone, Copy)]
+struct Taps {
+    feedback_tap: usize,
+    output_tap: usize,
+}
+
+impl Taps {
+    fn new(feedback_at_44k: f32, output_at_44k: f32, sample_rate: f32) -> Self {
+        Self {
+            feedback_tap: samples(feedback_at_44k, sample_rate),
+            output_tap: samples(output_at_44k, sample_rate),
+        }
+    }
+    /// The longest read, in [`Bank::new`] terms.
+    fn longest(&self) -> usize {
+        self.feedback_tap.max(self.output_tap) + 1
+    }
+}
+
 impl Line {
     fn new(feedback_at_44k: f32, output_at_44k: f32, sample_rate: f32) -> Self {
         let feedback_tap = samples(feedback_at_44k, sample_rate);
@@ -350,7 +366,7 @@ fn samples(at_44k: f32, sample_rate: f32) -> usize {
 
 /// A recirculating tank line with split damping and the two loop shelves.
 struct TankLine {
-    line: Line,
+    line: Taps,
     low_gain: f32,
     high_gain: f32,
     damping: f32,
@@ -402,8 +418,10 @@ struct Spring63 {
     drip_highpass: Biquad,
     drip_lowpass: FirstOrder,
     // Tank.
-    diffusers: [Line; 4],
+    diffusers: [Taps; 4],
+    diffuser_lines: Bank<4>,
     tank: [TankLine; 4],
+    tank_lines: Bank<4>,
     long_a: Line,
     long_b: Line,
     long_a_shelves: [FirstOrder; 2],
@@ -430,8 +448,8 @@ impl Spring63 {
         let shelf2 = first(0.959_578, -0.404_795, 0.445_217);
         let tap_highpass = first(0.979_073, -0.979_073, 0.958_145);
         let tap_lowpass = first(0.226_559, 0.226_559, 0.546_882);
-        let tank = std::array::from_fn(|i| TankLine {
-            line: Line::new(TANK[i].0, TANK[i].1, sample_rate),
+        let tank: [TankLine; 4] = std::array::from_fn(|i| TankLine {
+            line: Taps::new(TANK[i].0, TANK[i].1, sample_rate),
             low_gain: TANK_LOW[i],
             high_gain: TANK_HIGH[i],
             damping: 0.0,
@@ -439,6 +457,12 @@ impl Spring63 {
             shelf1,
             shelf2,
         });
+        let diffusers: [Taps; 4] =
+            std::array::from_fn(|i| Taps::new(DIFFUSERS[i], 1.0, sample_rate));
+        let bank = |taps: [Taps; 4]| {
+            let longest = taps.iter().map(Taps::longest).max().unwrap_or(1);
+            Bank::new([1; 4], longest)
+        };
         let mut effect = Self {
             sample_rate,
             last: [f32::NAN; crate::MAX_PARAMS],
@@ -470,7 +494,9 @@ impl Spring63 {
                 sample_rate,
             ),
             drip_lowpass: first(0.555_976, 0.555_976, -0.111_952),
-            diffusers: std::array::from_fn(|i| Line::new(DIFFUSERS[i], 1.0, sample_rate)),
+            diffuser_lines: bank(diffusers),
+            diffusers,
+            tank_lines: bank(tank.each_ref().map(|line| line.line)),
             tank,
             long_a: Line::new(4263.0, 44.0, sample_rate),
             long_b: Line::new(12789.0, 44.0, sample_rate),
@@ -543,15 +569,13 @@ impl Effect for Spring63 {
     fn process(&mut self, frame: [f32; 2]) -> [f32; 2] {
         // Reads first, as the original does before its block of ring writes.
         let tension_delayed = self.tension_line.read(self.tension_tap);
-        let diffused: [f32; 4] = std::array::from_fn(|i| {
-            let line = &self.diffusers[i];
-            line.buffer.read(line.feedback_tap)
-        });
+        let diffused: [f32; 4] =
+            std::array::from_fn(|i| self.diffuser_lines.read(i, self.diffusers[i].feedback_tap));
         let tank_reads: [(f32, f32); 4] = std::array::from_fn(|i| {
-            let line = &self.tank[i].line;
+            let taps = &self.tank[i].line;
             (
-                line.buffer.read(line.feedback_tap),
-                line.buffer.read(line.output_tap),
+                self.tank_lines.read(i, taps.feedback_tap),
+                self.tank_lines.read(i, taps.output_tap),
             )
         });
         let long_a = self.long_a.buffer.read(self.long_a.feedback_tap);
@@ -614,7 +638,8 @@ impl Effect for Spring63 {
         // Tank lines with split damping and loop shelves.
         let input = diffused_out + 0.33 * drip;
         let mut tap_sum = 0.0;
-        for (line, (recirculated, tap)) in self.tank.iter_mut().zip(tank_reads) {
+        let mut tank_lines = self.tank_lines.frame();
+        for (i, (line, (recirculated, tap))) in self.tank.iter_mut().zip(tank_reads).enumerate() {
             // One-pole C74 split: low = LP(read), high = (1 - C74)(read - LP_prev).
             let low_previous = line.lowpass;
             let low = flush(low_previous + (recirculated - low_previous) * line.damping);
@@ -622,9 +647,10 @@ impl Effect for Spring63 {
             line.lowpass = low;
             let x = input + line.low_gain * low + line.high_gain * high;
             let y = line.shelf2.process(line.shelf1.process(x));
-            line.line.buffer.write(y);
+            tank_lines.write_raw(i, y);
             tap_sum += tap;
         }
+        self.tank_lines.advance();
         let long_a_fb = cascade(&mut self.long_a_shelves, long_a);
         let long_b_fb = cascade(&mut self.long_b_shelves, long_b);
         self.long_a
@@ -633,9 +659,10 @@ impl Effect for Spring63 {
         self.long_b
             .buffer
             .write(0.54 * drip + 0.492 * long_b_fb + diffused_out);
-        for (line, w) in self.diffusers.iter_mut().zip(writes) {
-            line.buffer.write(w);
+        for (i, w) in writes.into_iter().enumerate() {
+            self.diffuser_lines.write_raw(i, w);
         }
+        self.diffuser_lines.advance();
         self.comb_a.write(comb_a);
         self.comb_b.write(comb_b);
         self.tension_line.write(tension);
@@ -680,11 +707,9 @@ impl Effect for Spring63 {
         self.comb_delay = 0.0;
         self.drip_highpass.clear();
         self.drip_lowpass.clear();
-        for line in &mut self.diffusers {
-            line.buffer.clear();
-        }
+        self.diffuser_lines.clear();
+        self.tank_lines.clear();
         for line in &mut self.tank {
-            line.line.buffer.clear();
             line.shelf1.clear();
             line.shelf2.clear();
             line.lowpass = 0.0;

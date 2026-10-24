@@ -31,7 +31,8 @@
 //! right channel's previous fraction to both); the 6.67 Hz LFO with depth 1e-5
 //! is omitted; TBL_TO_VAL reads past its table for High = 200 and is clamped.
 use super::dual_common::{self as common, Gains, Glide};
-use crate::dsp::{Biquad, Coefficients, DelayLine};
+use super::fast::{Biquad, Biquad1, DelayLine};
+use crate::dsp::Coefficients;
 use crate::zoom::ORIGINAL_RATE;
 use crate::{Effect, Values, catalog::*};
 
@@ -233,7 +234,9 @@ struct MangledSpace {
     ratio: f32,
     sample_rate: f32,
     last: Option<Values>,
-    input: [[Biquad; 3]; 2],
+    /// Body bell and top filter around the first-order low shelf.
+    input: [[Biquad; 2]; 2],
+    input_shelf: [Biquad1; 2],
     output: [[Biquad; 3]; 2],
     pre: [DelayLine; 2],
     diffusers: [[DelayLine; 4]; 2],
@@ -243,6 +246,11 @@ struct MangledSpace {
     taps: [[usize; 4]; 2],
     right_loop: f32,
     glide: Glide<DELAYS>,
+    /// `glide.current[i] as usize - 1` (the `DelayLine::read` argument) for
+    /// every delay, and for the left loop's second tap (`LOOP_LEFT + 1`) in
+    /// the last slot; valid while the glide stands still and `back_valid`.
+    back: [usize; DELAYS + 1],
+    back_valid: bool,
     gains: Gains<GAINS>,
     phase_lfo: f32,
     phase_am: f32,
@@ -263,7 +271,8 @@ impl MangledSpace {
             ratio,
             sample_rate,
             last: None,
-            input: [[Biquad::default(); 3]; 2],
+            input: [[Biquad::default(); 2]; 2],
+            input_shelf: [Biquad1::default(); 2],
             output: [[Biquad::default(); 3]; 2],
             pre: [pre_samples(500.0), pre_samples(620.0)],
             diffusers: std::array::from_fn(|side| {
@@ -281,6 +290,8 @@ impl MangledSpace {
             }),
             right_loop: (RIGHT_LOOP * ratio).round().max(2.0),
             glide: Glide::new(sample_rate),
+            back: [0; DELAYS + 1],
+            back_valid: false,
             gains: Gains::new(sample_rate),
             phase_lfo: 0.0,
             phase_am: 0.0,
@@ -341,6 +352,7 @@ impl MangledSpace {
         delays[PRE + 1] =
             (1.0 + (44.1 * (pdly + (1.0 - d) * (3.0 + 1.17 * size))).trunc()) * self.ratio;
         self.glide.set(&delays, jump);
+        self.back_valid = false;
 
         // decay_Calc_set: comb feedback for the requested reverb time.
         let rt = 650.0 + 10_000.0 * (d * s).powf(2.6);
@@ -416,7 +428,7 @@ impl MangledSpace {
                 common::low_shelf1(sr, 130.0, common::table(101, low - 100.0, &LOW_BOOST_DB))
             };
             for side in 0..2 {
-                self.input[side][1].coefficients = shelf;
+                self.input_shelf[side].set(shelf);
             }
         }
         // High_edit: 800 Hz bell, 5200 Hz bell or darkening low-pass on the
@@ -438,7 +450,7 @@ impl MangledSpace {
             };
             for side in 0..2 {
                 self.input[side][0].coefficients = body;
-                self.input[side][2].coefficients = top;
+                self.input[side][1].coefficients = top;
                 self.output[side][0].coefficients = damp;
             }
         }
@@ -446,12 +458,21 @@ impl MangledSpace {
     }
 
     #[inline(always)]
-    fn tap<const GLIDE: bool>(line: &DelayLine, delay: f32) -> f32 {
+    fn tap<const GLIDE: bool>(line: &DelayLine, delay: f32, back: usize) -> f32 {
         if GLIDE {
             line.read_linear(delay - 1.0)
         } else {
-            line.read(delay as usize - 1)
+            line.read(back)
         }
+    }
+
+    fn update_back(&mut self) {
+        let current = &self.glide.current;
+        for (back, &delay) in self.back.iter_mut().zip(current) {
+            *back = delay as usize - 1;
+        }
+        self.back[DELAYS] = (current[LOOP_LEFT] + 1.0) as usize - 1;
+        self.back_valid = true;
     }
 
     #[inline(always)]
@@ -459,9 +480,11 @@ impl MangledSpace {
         self.gains.tick();
         if GLIDE {
             self.glide.tick();
+            self.back_valid = false;
         }
         let g = &self.gains.value;
         let delay = &self.glide.current;
+        let back = &self.back;
 
         // Pre-delay modulation: C94 raised cosine times the C170 envelope.
         let envelope = 1.0 - 0.37 * (1.0 - common::lfo_shape(self.phase_am));
@@ -474,7 +497,8 @@ impl MangledSpace {
         let mut x = [0.0; 2];
         let mut clipped = [0.0; 2];
         for side in 0..2 {
-            let [body, low, top] = &mut self.input[side];
+            let [body, top] = &mut self.input[side];
+            let low = &mut self.input_shelf[side];
             let filtered = top.process(low.process(body.process(crossed[side])));
             let pre = &mut self.pre[side];
             x[side] = pre.read_linear(delay[PRE + side] + modulated[side] - 1.0);
@@ -482,14 +506,16 @@ impl MangledSpace {
 
             let mut y = x[side];
             for (i, line) in self.diffusers[side].iter_mut().enumerate() {
-                let d = Self::tap::<GLIDE>(line, delay[DIFFUSER + side * 4 + i]);
+                let k = DIFFUSER + side * 4 + i;
+                let d = Self::tap::<GLIDE>(line, delay[k], back[k]);
                 line.write(y + g[G_DIFFUSION] * d);
                 y = d - y;
             }
             let early_line = &mut self.early[side];
             let mut early = 0.0;
             for i in 0..8 {
-                early += g[G_EARLY + i] * Self::tap::<GLIDE>(early_line, delay[EARLY + i]);
+                let k = EARLY + i;
+                early += g[G_EARLY + i] * Self::tap::<GLIDE>(early_line, delay[k], back[k]);
             }
             early_line.write(g[G_DIRECT] * x[side] + g[G_DIFFUSED] * y);
             let drive = g[G_DRIVE] * (g[G_CLIP_DIRECT] * x[side] + g[G_CLIP_EARLY] * early);
@@ -501,7 +527,8 @@ impl MangledSpace {
         for side in 0..2 {
             let feed = 0.43 * clipped[side];
             for (i, line) in self.combs[side].iter_mut().enumerate() {
-                let feedback = Self::tap::<GLIDE>(line, delay[COMB + side * 4 + i]);
+                let k = COMB + side * 4 + i;
+                let feedback = Self::tap::<GLIDE>(line, delay[k], back[k]);
                 sums[side][0] += line.read(self.taps[0][i] - 1);
                 sums[side][1] += line.read(self.taps[1][i] - 1);
                 line.write(feed + g[G_COMB + side * 4 + i] * feedback);
@@ -510,8 +537,8 @@ impl MangledSpace {
 
         // Input loops C8D/C8E: the feedback is taken one sample later.
         let loop_left = &mut self.loops[0];
-        let left_loop = Self::tap::<GLIDE>(loop_left, delay[LOOP_LEFT]);
-        let left_feedback = Self::tap::<GLIDE>(loop_left, delay[LOOP_LEFT] + 1.0);
+        let left_loop = Self::tap::<GLIDE>(loop_left, delay[LOOP_LEFT], back[LOOP_LEFT]);
+        let left_feedback = Self::tap::<GLIDE>(loop_left, delay[LOOP_LEFT] + 1.0, back[DELAYS]);
         loop_left.write(x[0] + g[G_LOOP_LEFT] * left_feedback);
         let loop_right = &mut self.loops[1];
         let right_loop = loop_right.read(self.right_loop as usize - 1);
@@ -553,6 +580,9 @@ impl Effect for MangledSpace {
         if self.glide.moving {
             self.frame::<true>(frame)
         } else {
+            if !self.back_valid {
+                self.update_back();
+            }
             self.frame::<false>(frame)
         }
     }
@@ -562,6 +592,7 @@ impl Effect for MangledSpace {
             for filter in self.input[side].iter_mut().chain(&mut self.output[side]) {
                 filter.clear();
             }
+            self.input_shelf[side].clear();
             self.pre[side].clear();
             self.early[side].clear();
             self.loops[side].clear();

@@ -31,13 +31,8 @@
 //! Approximations: the LFO and its conversion to the host rate
 //! (`f' = 2 sin(r · asin(f/2))`) run every 16 samples with a linear ramp in
 //! between (the original computes one value per sample at 44.1 kHz).
-use super::common::FadeTap;
-use crate::{
-    Effect, Values,
-    catalog::*,
-    dsp::{DelayLine, flush},
-    zoom::{self, Ramp},
-};
+use super::common::{DelayLine, FadeTap, Ramp, flush};
+use crate::{Effect, Values, catalog::*, zoom};
 
 pub const INFO: ModelInfo = ModelInfo {
     key: "mooz_filter_dly",

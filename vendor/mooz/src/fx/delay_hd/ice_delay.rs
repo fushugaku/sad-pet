@@ -25,8 +25,8 @@
 //! safety limiter above ±2 (the callback has no clip at 100 % feedback).
 use super::{
     common::{
-        Cascade, Glide, Kind, MuteSwap, Stage, design, pole, rom, rom_set, safety, samples, table,
-        time_ms, words,
+        Cascade, DelayLine, Glide, Kind, MuteSwap, Settled, Stage, Stage1, design, flush, pole,
+        rom, rom_set, safety, samples, table, time_ms, words,
     },
     tables::ICE_DAMP,
     trem_delay::{FB_TBL, HPF_HZ, HPF_LABELS, MIX_DRY, MIX_WET},
@@ -34,7 +34,6 @@ use super::{
 use crate::{
     Effect, Values,
     catalog::*,
-    dsp::{DelayLine, flush},
     zoom::{DEFAULT_STEP, Ramp, is_synced},
 };
 
@@ -201,55 +200,77 @@ const BLEND_ICE: [f32; 21] = [
 ];
 const DIFFUSION: [usize; 8] = [59, 73, 79, 61, 67, 71, 89, 97];
 
-/// The SMEAR diffuser (eight nested allpasses on 100-sample lanes).
+/// The SMEAR diffuser (eight nested allpasses). Every lane is written once
+/// per call, so the lanes share one write position and live side by side in
+/// one buffer of power-of-two strides.
 struct Smear {
-    lanes: [DelayLine; 8],
-    delays: [usize; 8],
+    buffer: Box<[f32]>,
+    mask: usize,
+    write: usize,
+    /// `delay - 1` of each lane.
+    reads: [usize; 8],
 }
 
 impl Smear {
     fn new(sample_rate: f32) -> Self {
         let n = |d: usize| (samples(d as f32, sample_rate).round() as usize).max(1);
+        let stride = (n(DIFFUSION[7]).max(n(DIFFUSION[6])) + 6).next_power_of_two();
+        debug_assert!(DIFFUSION.iter().all(|&d| n(d) <= stride));
         Self {
-            lanes: std::array::from_fn(|i| DelayLine::new(n(DIFFUSION[i]) + 2)),
-            delays: DIFFUSION.map(n),
+            buffer: vec![0.0; 8 * stride].into_boxed_slice(),
+            mask: stride - 1,
+            write: 0,
+            reads: DIFFUSION.map(|d| n(d) - 1),
         }
     }
     #[inline]
     fn process(&mut self, x: f32, g1: f32, g2: f32) -> f32 {
-        let t: [f32; 8] = std::array::from_fn(|i| self.lanes[i].read(self.delays[i] - 1));
+        let mask = self.mask;
+        let stride = mask + 1;
+        let write = (self.write + 1) & mask;
+        self.write = write;
+        debug_assert!(self.buffer.len() == 8 * stride);
+        let buffer = &mut self.buffer;
+        let t: [f32; 8] = std::array::from_fn(|i| {
+            // SAFETY: lane `i < 8` of a buffer of `8 · stride`, index masked.
+            unsafe {
+                *buffer.get_unchecked(i * stride + (write.wrapping_sub(1 + self.reads[i]) & mask))
+            }
+        });
+        let mut put = |i: usize, v: f32| {
+            // SAFETY: as above; `write <= mask`.
+            unsafe { *buffer.get_unchecked_mut(i * stride + write) = v };
+        };
         let a = t[1] - g2 * t[0];
         let b = t[2] - g2 * a;
         let mut prev = b - g1 * x;
-        self.lanes[0].write(flush(g1 * prev + x));
-        self.lanes[1].write(flush(g2 * a + t[0]));
-        self.lanes[2].write(flush(g2 * b + a));
-        for (lane, tap) in self.lanes[3..].iter_mut().zip(&t[3..]) {
+        put(0, flush(g1 * prev + x));
+        put(1, flush(g2 * a + t[0]));
+        put(2, flush(g2 * b + a));
+        for (i, tap) in t.iter().enumerate().skip(3) {
             let v = tap - g2 * prev;
-            lane.write(flush(g2 * v + prev));
+            put(i, flush(g2 * v + prev));
             prev = v;
         }
         prev
     }
     fn clear(&mut self) {
-        for lane in &mut self.lanes {
-            lane.clear();
-        }
+        self.buffer.fill(0.0);
     }
 }
 
 struct IceDelay {
     sample_rate: f32,
-    input_shelf: [Stage; 2],
+    input_shelf: [Stage1; 2],
     // detector
-    detector_hp: Stage,
+    detector_hp: Stage1,
     envelope: f32,
     envelope_decay: f32,
     armed: bool,
     countdown: i32,
     countdown_length: i32,
     // ice path
-    ice_lp: Stage,
+    ice_lp: Stage1,
     ice_damp: Cascade<4>,
     ring: Vec<f32>,
     length: usize,
@@ -257,6 +278,10 @@ struct IceDelay {
     write: usize,
     phase: f64,
     ratio: f64,
+    /// `(900·ratio) as usize · countdown_length / 900`, per INTVL.
+    advance: usize,
+    /// `2 + ratio as usize`: the heads approach by 1 + ratio per sample.
+    reach: usize,
     read_gain: f32,
     write_gain: f32,
     window_step: f32,
@@ -271,7 +296,7 @@ struct IceDelay {
     smear_mix: (Ramp, Ramp),
     damp_swap: MuteSwap,
     damp_pending: [[f32; 5]; 4],
-    hpf: Stage,
+    hpf: Stage1,
     feedback: Ramp,
     blend: (Ramp, Ramp),
     wet: Ramp,
@@ -283,18 +308,18 @@ struct IceDelay {
 impl IceDelay {
     fn new(sample_rate: f32) -> Self {
         let sr = sample_rate;
-        let shelf = || Stage::from(rom([0.777_428_6, -0.301_606_9, 0.0, 0.524_178_3, 0.0], sr));
+        let shelf = || Stage1::from(rom([0.777_428_6, -0.301_606_9, 0.0, 0.524_178_3, 0.0], sr));
         let ring = (2.0 * MAX_MS * 0.001 * sr) as usize + 8;
         let mut effect = Self {
             sample_rate,
             input_shelf: [shelf(), shelf()],
-            detector_hp: Stage::from(rom([0.992_926_5, -0.992_926_5, 0.0, 0.985_853, 0.0], sr)),
+            detector_hp: Stage1::from(rom([0.992_926_5, -0.992_926_5, 0.0, 0.985_853, 0.0], sr)),
             envelope: 0.0,
             envelope_decay: pole(0.999_939, sr),
             armed: true,
             countdown: 0,
             countdown_length: samples(900.0, sr).round() as i32,
-            ice_lp: Stage::from(rom([0.157_799_8, 0.157_799_8, 0.0, 0.684_400_4, 0.0], sr)),
+            ice_lp: Stage1::from(rom([0.157_799_8, 0.157_799_8, 0.0, 0.684_400_4, 0.0], sr)),
             ice_damp: Cascade::default(),
             ring: vec![0.0; ring],
             length: 1,
@@ -302,6 +327,8 @@ impl IceDelay {
             write: 0,
             phase: 0.0,
             ratio: 1.0,
+            advance: 0,
+            reach: 3,
             read_gain: 0.0,
             write_gain: 0.0,
             window_step: 0.001_112 * 44_100.0 / sr,
@@ -318,7 +345,7 @@ impl IceDelay {
             ),
             damp_swap: MuteSwap::new(sr),
             damp_pending: [Stage::IDENTITY; 4],
-            hpf: Stage::new(Stage::IDENTITY),
+            hpf: Stage1::new(Stage::IDENTITY),
             feedback: Ramp::new(0.0, DEFAULT_STEP, sr),
             blend: (
                 Ramp::new(0.0, DEFAULT_STEP, sr),
@@ -381,8 +408,7 @@ impl IceDelay {
         let whole = self.phase.floor();
         let fraction = (self.phase - whole) as f32;
         let target = length.saturating_sub(whole as usize);
-        let advance = (900.0 * self.ratio) as usize * self.countdown_length as usize / 900;
-        let end = advance + self.countdown_length as usize + self.write;
+        let end = self.advance + self.countdown_length as usize + self.write;
         let safe = if end < length {
             target > end || target < self.write
         } else {
@@ -398,14 +424,21 @@ impl IceDelay {
             }
         }
         // the heads approach by 1 + ratio per sample: "meet" within that step
-        let reach = 2 + self.ratio as usize;
-        if self.pending_length != 0 && self.write.abs_diff(target) <= reach {
+        if self.pending_length != 0 && self.write.abs_diff(target) <= self.reach {
             self.length = self.pending_length;
             self.pending_length = 0;
             self.phase = 0.0;
         }
-        let tap0 = self.ring[target];
-        let tap1 = self.ring[if target >= length { 0 } else { target + 1 }];
+        let next = if target >= length { 0 } else { target + 1 };
+        debug_assert!(target <= length && length < self.ring.len());
+        // SAFETY: `target <= length` and `length <= ring.len() - 2` (clamped in
+        // `set`), so both indices are in the ring.
+        let (tap0, tap1) = unsafe {
+            (
+                *self.ring.get_unchecked(target),
+                *self.ring.get_unchecked(next),
+            )
+        };
         self.read_gain * (tap0 + fraction * (tap0 - tap1))
     }
 }
@@ -436,6 +469,8 @@ impl Effect for IceDelay {
         self.wet.set(table(&MIX_WET, mix, 101));
         self.dry.set(table(&MIX_DRY, mix, 101));
         self.ratio = INTERVAL[values[3].round().clamp(0.0, 30.0) as usize];
+        self.advance = (900.0 * self.ratio) as usize * self.countdown_length as usize / 900;
+        self.reach = 2 + self.ratio as usize;
         let blend = values[5].round().clamp(0.0, 20.0) as usize;
         self.blend.0.set(BLEND_ICE[blend]);
         self.blend.1.set(BLEND_DRY[blend]);
@@ -460,11 +495,11 @@ impl Effect for IceDelay {
         }
         if values[8] != self.last[8] {
             let hpf = values[8].round().clamp(0.0, 20.0) as usize;
-            self.hpf.c = if hpf == 0 {
+            self.hpf.load(if hpf == 0 {
                 Stage::IDENTITY
             } else {
                 words(design(Kind::Highpass1, sr, HPF_HZ[hpf], 0.0, 0.7))
-            };
+            });
         }
         self.last.copy_from_slice(&values[..9]);
         self.bpm = bpm;
@@ -477,17 +512,17 @@ impl Effect for IceDelay {
         ];
         let mono = 0.5 * (filtered[0] + filtered[1]);
         self.detect(0.5 * (frame[0] + frame[1]));
-        let feedback = self.feedback.tick();
-        let ice = self.blend.0.tick();
-        let dry_blend = self.blend.1.tick();
+        let feedback = self.feedback.step();
+        let ice = self.blend.0.step();
+        let dry_blend = self.blend.1.step();
         let (damp_gain, swap) = self.damp_swap.tick();
         if swap {
             self.ice_damp.load(&self.damp_pending);
             self.damp.load(&self.damp_pending);
         }
         let (g1, g2) = self.smear_coefficients;
-        let diffused = self.smear_mix.0.tick();
-        let direct = self.smear_mix.1.tick();
+        let diffused = self.smear_mix.0.step();
+        let direct = self.smear_mix.1.step();
 
         // path A: reversed pitch-shifted slices
         self.write += 1;
@@ -496,7 +531,12 @@ impl Effect for IceDelay {
         }
         let input_a = mono + feedback * (ice * self.ice_out + dry_blend * self.dry_out);
         let a = self.ice_damp.process(self.ice_lp.process(input_a));
-        self.ring[self.write] = safety(flush(self.write_gain * damp_gain * a));
+        debug_assert!(self.write < self.ring.len());
+        // SAFETY: `write <= length <= ring.len() - 2`.
+        unsafe {
+            *self.ring.get_unchecked_mut(self.write) =
+                safety(flush(self.write_gain * damp_gain * a));
+        }
         let tap = self.ice_tap();
         let smeared = if diffused != 0.0 {
             self.smear[1].process(tap, g1, g2)
@@ -520,8 +560,8 @@ impl Effect for IceDelay {
         let wet = self
             .hpf
             .process(dry_blend * self.dry_out + ice * self.ice_out);
-        let wet_gain = self.wet.tick();
-        let dry_gain = self.dry.tick();
+        let wet_gain = self.wet.step();
+        let dry_gain = self.dry.step();
         [
             wet_gain * wet + dry_gain * filtered[0],
             wet_gain * wet + dry_gain * filtered[1],

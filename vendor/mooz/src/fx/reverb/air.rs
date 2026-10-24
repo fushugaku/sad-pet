@@ -14,10 +14,10 @@
 //!
 //! Port notes: delays are scaled from 44.1 kHz, the ROM biquads re-derived.
 use super::{
-    common::{Glides, Ring, SETTER_SAMPLES, f, ms, rom_biquad, scale, stepped},
+    common::{Biquad, Glides, Ring, SETTER_SAMPLES, f, ms, rom_biquad, scale, stepped},
     rom::{AIR_COE, AIR_DAMP},
 };
-use crate::{Effect, Values, catalog::*, dsp::Biquad, zoom};
+use crate::{Effect, Values, catalog::*, zoom};
 
 pub const INFO: ModelInfo = ModelInfo {
     key: "mooz_air",

@@ -2,10 +2,21 @@
 //! decrementing cursor, the firmware's first-order sections (with their
 //! bilinear re-derivation for other sample rates) and the two coefficient
 //! setters the editors use (fixed step per sample, or a fixed duration).
-use crate::{
-    dsp::{Coefficients, flush},
-    zoom::ORIGINAL_RATE,
-};
+use crate::{dsp::Coefficients, zoom::ORIGINAL_RATE};
+
+/// `crate::dsp::flush` as one integer compare: keeps `x` exactly when
+/// `1e-20 <= |x| < inf`, zero otherwise (tiny, infinite or NaN), the same
+/// results bit for bit.
+#[inline(always)]
+pub fn flush(x: f32) -> f32 {
+    const LOW: u32 = 1e-20f32.to_bits();
+    const SPAN: u32 = f32::INFINITY.to_bits() - LOW;
+    if (x.to_bits() & 0x7fff_ffff).wrapping_sub(LOW) < SPAN {
+        x
+    } else {
+        0.0
+    }
+}
 
 /// A ROM float word.
 #[inline]
@@ -50,21 +61,63 @@ impl Ring {
             position: 0,
         }
     }
-    #[inline]
+    #[inline(always)]
     pub fn read(&self, offset: usize) -> f32 {
-        self.buffer[(self.position + offset) & self.mask]
+        let at = self.position.wrapping_add(offset) & self.mask;
+        debug_assert!(at < self.buffer.len());
+        // SAFETY: `buffer.len() == mask + 1` (set in `new`, never resized).
+        unsafe { *self.buffer.get_unchecked(at) }
     }
-    #[inline]
+    #[inline(always)]
     pub fn write(&mut self, offset: usize, x: f32) {
-        let at = (self.position + offset) & self.mask;
-        self.buffer[at] = flush(x);
+        let at = self.position.wrapping_add(offset) & self.mask;
+        debug_assert!(at < self.buffer.len());
+        // SAFETY: `buffer.len() == mask + 1` (set in `new`, never resized).
+        unsafe { *self.buffer.get_unchecked_mut(at) = flush(x) };
     }
-    #[inline]
+    /// The frame's writes with the cursor, mask and buffer held in locals
+    /// (stores into the buffer can't make the compiler reload them).
+    #[inline(always)]
+    pub fn writer(&mut self) -> RingWriter<'_> {
+        RingWriter {
+            buffer: &mut self.buffer,
+            mask: self.mask,
+            position: self.position,
+        }
+    }
+    #[inline(always)]
     pub fn advance(&mut self) {
         self.position = self.position.wrapping_sub(1) & self.mask;
     }
     pub fn clear(&mut self) {
         self.buffer.fill(0.0);
+    }
+}
+
+/// [`Ring::writer`]: the same `write`/`write_flushed` on local copies.
+pub struct RingWriter<'a> {
+    buffer: &'a mut [f32],
+    mask: usize,
+    position: usize,
+}
+
+impl RingWriter<'_> {
+    #[inline(always)]
+    pub fn write(&mut self, offset: usize, x: f32) {
+        self.write_flushed_unchecked(offset, flush(x));
+    }
+    /// `write` for a value that is already flushed (flushing is idempotent).
+    #[inline(always)]
+    pub fn write_flushed(&mut self, offset: usize, x: f32) {
+        debug_assert_eq!(x.to_bits(), flush(x).to_bits());
+        self.write_flushed_unchecked(offset, x);
+    }
+    #[inline(always)]
+    fn write_flushed_unchecked(&mut self, offset: usize, x: f32) {
+        let at = self.position.wrapping_add(offset) & self.mask;
+        debug_assert!(at < self.buffer.len());
+        // SAFETY: `buffer.len() == mask + 1` (set in `Ring::new`, never resized).
+        unsafe { *self.buffer.get_unchecked_mut(at) = x };
     }
 }
 
@@ -172,7 +225,7 @@ impl FirstOrder {
         self.a = ((1.0 - k) * norm) as f32;
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn process(&mut self, x: f32) -> f32 {
         let y = flush(self.b0 * x + self.b1 * self.x1 + self.a * self.y1);
         self.x1 = x;
@@ -196,6 +249,37 @@ impl FirstOrder {
     pub fn clear(&mut self) {
         self.x1 = 0.0;
         self.y1 = 0.0;
+    }
+}
+
+/// `crate::dsp::Biquad` (transposed direct form II, same arithmetic) with
+/// the group's single-compare [`flush`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Biquad {
+    pub coefficients: Coefficients,
+    s1: f32,
+    s2: f32,
+}
+
+impl Biquad {
+    pub fn new(coefficients: Coefficients) -> Self {
+        Self {
+            coefficients,
+            s1: 0.0,
+            s2: 0.0,
+        }
+    }
+    #[inline(always)]
+    pub fn process(&mut self, x: f32) -> f32 {
+        let c = &self.coefficients;
+        let y = c.b0 * x + self.s1;
+        self.s1 = flush(c.b1 * x - c.a1 * y + self.s2);
+        self.s2 = flush(c.b2 * x - c.a2 * y);
+        y
+    }
+    pub fn clear(&mut self) {
+        self.s1 = 0.0;
+        self.s2 = 0.0;
     }
 }
 

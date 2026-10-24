@@ -1,7 +1,7 @@
 //! Pieces shared by the delay_std ports: ROM words, Zoom-convention biquads
 //! re-derived for the host rate, Main's two float setters and the tap
 //! mute/reopen sequence most delay editors run when Time changes.
-use crate::dsp::{Coefficients, DelayLine};
+use crate::dsp::Coefficients;
 use crate::zoom::{self, ORIGINAL_RATE};
 
 /// `context[7]` (Main c00cc94c) ramps every tap open/mute over 705.6 samples
@@ -61,6 +61,195 @@ pub fn pole_at(pole_44k: f32, sample_rate: f32) -> f32 {
 #[inline]
 pub fn smoothing_at(coefficient_44k: f32, sample_rate: f32) -> f32 {
     1.0 - pole_at(1.0 - coefficient_44k, sample_rate)
+}
+
+/// [`crate::zoom::Ramp`] with the same arithmetic, plus a fast path once the
+/// ramp has settled (bit-equal current and target, where `tick` would store
+/// the same value again).
+#[derive(Debug, Clone, Copy)]
+pub struct Ramp {
+    pub current: f32,
+    pub target: f32,
+    step: f32,
+}
+
+impl Ramp {
+    pub fn new(value: f32, step_at_44k: f32, sample_rate: f32) -> Self {
+        Self {
+            current: value,
+            target: value,
+            step: step_at_44k * ORIGINAL_RATE / sample_rate,
+        }
+    }
+
+    pub fn set(&mut self, target: f32) {
+        self.target = target;
+    }
+
+    pub fn jump(&mut self, value: f32) {
+        self.current = value;
+        self.target = value;
+    }
+
+    #[inline]
+    pub fn tick(&mut self) -> f32 {
+        if self.current.to_bits() == self.target.to_bits() {
+            return self.current;
+        }
+        let difference = self.target - self.current;
+        if difference.abs() <= self.step * 1.1 {
+            self.current = self.target;
+        } else if difference > 0.0 {
+            self.current += self.step;
+        } else {
+            self.current -= self.step;
+        }
+        self.current
+    }
+}
+
+/// [`crate::dsp::DelayLine`] with the same layout and arithmetic, indexing
+/// unchecked: every index is masked by `mask = buffer.len() - 1`.
+#[derive(Debug, Clone)]
+pub struct DelayLine {
+    buffer: Box<[f32]>,
+    mask: usize,
+    write: usize,
+}
+
+impl DelayLine {
+    /// Holds at least `max_delay` samples of history plus interpolation room.
+    pub fn new(max_delay: usize) -> Self {
+        let length = (max_delay + 4).next_power_of_two();
+        Self {
+            buffer: vec![0.0; length].into_boxed_slice(),
+            mask: length - 1,
+            write: 0,
+        }
+    }
+
+    pub fn capacity(&self) -> usize {
+        self.mask - 3
+    }
+
+    #[inline]
+    fn at(&self, index: usize) -> f32 {
+        debug_assert!(self.buffer.len() == self.mask + 1);
+        // SAFETY: the buffer length is the power of two `mask + 1`.
+        unsafe { *self.buffer.get_unchecked(index & self.mask) }
+    }
+
+    #[inline]
+    pub fn write(&mut self, x: f32) {
+        debug_assert!(self.buffer.len() == self.mask + 1);
+        self.write = (self.write + 1) & self.mask;
+        // SAFETY: `write` was just masked into the buffer.
+        unsafe { *self.buffer.get_unchecked_mut(self.write) = x };
+    }
+
+    #[inline]
+    pub fn read(&self, delay: usize) -> f32 {
+        self.at(self.write.wrapping_sub(delay))
+    }
+
+    /// Linear interpolation, `delay` clamped to `[0, capacity]`.
+    #[inline]
+    pub fn read_linear(&self, delay: f32) -> f32 {
+        let delay = delay.clamp(0.0, self.capacity() as f32);
+        let whole = delay as usize;
+        let fraction = delay - whole as f32;
+        let a = self.read(whole);
+        let b = self.read(whole + 1);
+        a + (b - a) * fraction
+    }
+
+    pub fn clear(&mut self) {
+        self.buffer.fill(0.0);
+    }
+}
+
+/// [`crate::dsp::flush`] as one integer range check on the magnitude bits:
+/// `|x|` in `[1e-20, inf)` passes, anything smaller, infinite or NaN is 0.
+#[inline]
+pub fn flush(x: f32) -> f32 {
+    const LOW: u32 = 1e-20f32.to_bits();
+    const INF: u32 = f32::INFINITY.to_bits();
+    let magnitude = x.to_bits() & 0x7fff_ffff;
+    if magnitude.wrapping_sub(LOW) < INF - LOW {
+        x
+    } else {
+        0.0
+    }
+}
+
+/// [`crate::dsp::Biquad`] (transposed direct form II, same operation order)
+/// with this module's [`flush`]; bit-identical output.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Biquad {
+    pub coefficients: Coefficients,
+    s1: f32,
+    s2: f32,
+}
+
+impl Biquad {
+    pub fn new(coefficients: Coefficients) -> Self {
+        Self {
+            coefficients,
+            s1: 0.0,
+            s2: 0.0,
+        }
+    }
+
+    #[inline]
+    pub fn process(&mut self, x: f32) -> f32 {
+        let c = &self.coefficients;
+        let y = c.b0 * x + self.s1;
+        self.s1 = flush(c.b1 * x - c.a1 * y + self.s2);
+        self.s2 = flush(c.b2 * x - c.a2 * y);
+        y
+    }
+
+    pub fn clear(&mut self) {
+        self.s1 = 0.0;
+        self.s2 = 0.0;
+    }
+}
+
+/// A [`crate::dsp::Biquad`] whose `b2` and `a2` are zero, without the second
+/// state: there `s2 = flush(0·x − 0·y)` is always `+0.0`, so `s1` gets
+/// exactly `flush(b1·x − a1·y)` and the output is bit-identical.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FirstOrder {
+    b0: f32,
+    b1: f32,
+    a1: f32,
+    s1: f32,
+}
+
+impl FirstOrder {
+    pub fn new(c: Coefficients) -> Self {
+        let mut section = Self::default();
+        section.set(c);
+        section
+    }
+
+    pub fn set(&mut self, c: Coefficients) {
+        assert!(c.b2 == 0.0 && c.a2 == 0.0, "not a first-order section");
+        self.b0 = c.b0;
+        self.b1 = c.b1;
+        self.a1 = c.a1;
+    }
+
+    #[inline]
+    pub fn process(&mut self, x: f32) -> f32 {
+        let y = self.b0 * x + self.s1;
+        self.s1 = flush(self.b1 * x - self.a1 * y);
+        y
+    }
+
+    pub fn clear(&mut self) {
+        self.s1 = 0.0;
+    }
 }
 
 /// Main c00cc94c (`context[7]`): a coefficient moves linearly to its target
@@ -174,8 +363,8 @@ impl Gate {
 }
 
 /// A step setter (`context[8]`, Main c00cc8c8) with the common editor step.
-pub fn setter(value: f32, sample_rate: f32) -> zoom::Ramp {
-    zoom::Ramp::new(value, zoom::DEFAULT_STEP, sample_rate)
+pub fn setter(value: f32, sample_rate: f32) -> Ramp {
+    Ramp::new(value, zoom::DEFAULT_STEP, sample_rate)
 }
 
 /// A delay line holding at least `ms` milliseconds plus `extra` samples.
@@ -263,6 +452,33 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn flush_matches_the_shared_one() {
+        let mut values = vec![
+            0.0,
+            -0.0,
+            1e-20,
+            -1e-20,
+            f32::from_bits(1e-20f32.to_bits() - 1),
+            f32::MAX,
+            f32::MIN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+            f32::MIN_POSITIVE,
+            1.0,
+            -0.5,
+        ];
+        let mut bits = 1u32;
+        while bits < u32::MAX / 7 * 7 {
+            values.push(f32::from_bits(bits));
+            bits = bits.wrapping_add(0x0001_2345);
+        }
+        for x in values {
+            assert_eq!(flush(x).to_bits(), crate::dsp::flush(x).to_bits(), "{x:e}");
+        }
+    }
 
     #[test]
     fn fade_reaches_target_in_the_requested_time() {

@@ -18,13 +18,8 @@
 //! wet (`Bal/100`) and dry (`(100 - Bal)/100`), F.B `0.95·v/100`, Level
 //! `v/100`, HiDMP a table of eleven one-pole coefficients (~250 Hz..~8.6 kHz)
 //! re-derived for the host rate. Time shows `v + 10` ms, as the pedal does.
-use super::common::{self, Gate};
-use crate::{
-    Effect, Values,
-    catalog::*,
-    dsp::{DelayLine, flush},
-    zoom::{self, Ramp},
-};
+use super::common::{self, DelayLine, Gate, Ramp, flush};
+use crate::{Effect, Values, catalog::*, zoom};
 
 pub const INFO: ModelInfo = ModelInfo {
     key: "mooz_reverse_dl",

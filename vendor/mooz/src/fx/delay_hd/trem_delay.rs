@@ -25,15 +25,15 @@
 //! omitted.
 use super::{
     common::{
-        Cascade, DurationRamp, Glide, Kind, MuteSwap, Q31, RAMP_SAMPLES, Stage, clip1, design,
-        one_pole_at, rom, rom_set, table, time_ms, words,
+        Cascade, DelayLine, DurationRamp, Glide, Kind, MuteSwap, Q31, RAMP_SAMPLES, Settled, Stage,
+        Stage1, clip1, design, flush, one_pole_at, rom, rom_set, table, time_ms, words,
     },
     tables::DAMP,
 };
 use crate::{
     Effect, Values,
     catalog::*,
-    dsp::{DelayLine, flush, tanh},
+    dsp::tanh,
     zoom::{DEFAULT_STEP, Ramp, is_synced},
 };
 
@@ -251,13 +251,16 @@ fn wave(shape: usize, phase: u32) -> f32 {
 }
 
 struct Channel {
-    feedback_hp: Stage,
-    clean_hp: Stage,
-    drive: [Stage; 5],
+    feedback_hp: Stage1,
+    clean_hp: Stage1,
+    /// Post-drive low-passes and the second-order drive EQ stages.
+    drive: [Stage; 4],
+    /// The last (first-order) drive EQ stage.
+    drive_last: Stage1,
     damp: Cascade<4>,
     line: DelayLine,
     tap: f32,
-    post: Stage,
+    post: Stage1,
 }
 
 struct TremDelay {
@@ -285,19 +288,19 @@ struct TremDelay {
 impl TremDelay {
     fn new(sample_rate: f32) -> Self {
         let channel = || Channel {
-            feedback_hp: Stage::from(rom(FEEDBACK_HP, sample_rate)),
-            clean_hp: Stage::new(Stage::IDENTITY),
+            feedback_hp: Stage1::from(rom(FEEDBACK_HP, sample_rate)),
+            clean_hp: Stage1::new(Stage::IDENTITY),
             drive: [
                 Stage::default(),
                 Stage::default(),
                 Stage::from(rom(DRIVE_EQ[0], sample_rate)),
                 Stage::from(rom(DRIVE_EQ[1], sample_rate)),
-                Stage::from(rom(DRIVE_EQ[2], sample_rate)),
             ],
+            drive_last: Stage1::from(rom(DRIVE_EQ[2], sample_rate)),
             damp: Cascade::default(),
             line: DelayLine::with_seconds(MAX_MS * 0.001 + 0.01, sample_rate),
             tap: 0.0,
-            post: Stage::new(Stage::IDENTITY),
+            post: Stage1::new(Stage::IDENTITY),
         };
         let mut effect = Self {
             sample_rate,
@@ -389,7 +392,7 @@ impl Effect for TremDelay {
                 words(design(Kind::Highpass1, sr, HPF_HZ[hpf], 0.0, 0.7))
             };
             for ch in &mut self.channels {
-                ch.post.c = c;
+                ch.post.load(c);
             }
         }
         if changed(8) {
@@ -404,7 +407,7 @@ impl Effect for TremDelay {
             for ch in &mut self.channels {
                 ch.drive[0].c = lowpass;
                 ch.drive[1].c = lowpass;
-                ch.clean_hp.c = clean;
+                ch.clean_hp.load(clean);
             }
         }
         self.last.copy_from_slice(&values[..9]);
@@ -416,9 +419,9 @@ impl Effect for TremDelay {
         let gain = 1.0 - self.depth + self.depth * wave(self.shape, self.phase);
         self.trem = self.trem_smooth.0 * gain + self.trem_smooth.1 * self.trem;
         let delay = self.time.tick();
-        let feedback = self.feedback.tick();
-        let wet_gain = self.wet.tick();
-        let dry_gain = self.dry.tick();
+        let feedback = self.feedback.step();
+        let wet_gain = self.wet.step();
+        let dry_gain = self.dry.step();
         let drive_mix = self.drive_mix.tick();
         let dry_mix = self.dry_mix.tick();
         let (write_gain, swap) = self.damp_swap.tick();
@@ -436,6 +439,7 @@ impl Effect for TremDelay {
                 for stage in &mut channel.drive {
                     driven = stage.process(driven);
                 }
+                driven = channel.drive_last.process(driven);
                 grit += drive_mix * driven;
             }
             let damped = channel.damp.process(grit);
@@ -454,6 +458,7 @@ impl Effect for TremDelay {
             for stage in &mut ch.drive {
                 stage.clear();
             }
+            ch.drive_last.clear();
             ch.damp.clear();
             ch.line.clear();
             ch.tap = 0.0;

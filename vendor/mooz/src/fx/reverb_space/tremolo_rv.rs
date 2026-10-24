@@ -26,12 +26,13 @@
 //! so the pre-delay taps are static as in the firmware. RNDM renders like TRI:
 //! the callback computes an LFSR and an accumulator for it but never uses
 //! them. PDLY changes use a 16 ms tap mute on the reverb input.
+use super::fast::{Bank, Biquad, Biquad1, DelayLine, Ramp, flush};
 use super::space_common::{self as common, Glide, TapMute};
 use crate::{
     Effect, Values,
     catalog::*,
-    dsp::{Biquad, Coefficients, DelayLine, flush},
-    zoom::{self, ORIGINAL_RATE, Ramp},
+    dsp::Coefficients,
+    zoom::{self, ORIGINAL_RATE},
 };
 
 pub const INFO: ModelInfo = ModelInfo {
@@ -191,7 +192,7 @@ const SHAPES: [[f32; 5]; 6] = [
 ];
 
 /// The tremolo LFO of `Fx_SUB_Tremolo` for one channel's phase (turns).
-#[inline]
+#[inline(always)]
 fn tremolo_wave(weights: &[f32; 5], turns: f32) -> f32 {
     let u = turns - turns.floor();
     let x = common::triangle(u);
@@ -218,15 +219,16 @@ fn comb_length(points: &[f32; 3], size: f32) -> f32 {
 }
 
 struct Side {
-    input_high: Biquad,
-    input_low: Biquad,
+    input_high: Biquad1,
+    input_low: Biquad1,
     input: DelayLine,
-    allpasses: [DelayLine; 4],
-    ap_delay: [usize; 4],
+    /// The four all-passes, `allpasses.delay` their lengths.
+    allpasses: Bank<4>,
     diffused: DelayLine,
     er_delay: [usize; 8],
-    combs: [DelayLine; 4],
-    damping: [Biquad; 4],
+    /// The four combs, read at `comb_delay` (and the output taps).
+    combs: Bank<4>,
+    damping: [Biquad1; 4],
     comb_gain: [Ramp; 4],
     comb_delay: [usize; 4],
     comb_points: [[f32; 3]; 4],
@@ -239,15 +241,23 @@ impl Side {
         let scale = sample_rate / ORIGINAL_RATE;
         let line = |at_44k: f32| DelayLine::new((at_44k * scale).ceil() as usize + 8);
         Self {
-            input_high: Biquad::new(Coefficients::highpass1(sample_rate, 60.0)),
-            input_low: Biquad::new(Coefficients::lowpass1(sample_rate, 3000.0)),
+            input_high: Biquad1::new(Coefficients::highpass1(sample_rate, 60.0)),
+            input_low: Biquad1::new(Coefficients::lowpass1(sample_rate, 3000.0)),
             input: line(500.0 * 44.1 + 91.0),
-            allpasses: std::array::from_fn(|i| line(ap[i])),
-            ap_delay: ap.map(|d| common::samples(d, sample_rate)),
+            allpasses: Bank::new(ap.map(|d| common::samples(d, sample_rate)), 0),
             diffused: line(er[7]),
             er_delay: er.map(|d| common::samples(d, sample_rate)),
-            combs: std::array::from_fn(|i| line(comb_points[i][2])),
-            damping: [Biquad::new(Coefficients::lowpass1(sample_rate, 7000.0)); 4],
+            combs: {
+                let longest = comb_points
+                    .iter()
+                    .flatten()
+                    .chain(OUT_LEFT_FROM_LEFT.iter())
+                    .chain(OUT_LEFT_FROM_RIGHT.iter())
+                    .chain(OUT_RIGHT.iter())
+                    .fold(0.0f32, |a, &b| a.max(b));
+                Bank::new([1; 4], (longest * scale).ceil() as usize + 8)
+            },
+            damping: [Biquad1::new(Coefficients::lowpass1(sample_rate, 7000.0)); 4],
             comb_gain: [Ramp::new(0.0, STEP, sample_rate); 4],
             comb_delay: [1; 4],
             comb_points: *comb_points,
@@ -258,17 +268,19 @@ impl Side {
 
     /// Input filters, pre-delay tap, diffusion and reflections; returns the
     /// reflection sum (C67 x 0.6 x taps).
-    #[inline]
+    #[inline(always)]
     fn front(&mut self, x: f32, predelay: usize, gate: f32) -> f32 {
         let filtered = self.input_low.process(self.input_high.process(x));
         let mut v = gate * common::tap(&self.input, predelay);
         self.input.write(filtered);
-        for (line, &delay) in self.allpasses.iter_mut().zip(&self.ap_delay) {
-            let delayed = common::tap(line, delay);
+        let mut allpasses = self.allpasses.frame();
+        for i in 0..4 {
+            let delayed = allpasses.out(i);
             let w = flush(v + AP_GAIN * delayed);
-            line.write(w);
+            allpasses.write_raw(i, w);
             v = delayed - AP_GAIN * w;
         }
+        self.allpasses.advance();
         let mut reflections = 0.0;
         for &delay in &self.er_delay {
             reflections += common::tap(&self.diffused, delay);
@@ -278,19 +290,15 @@ impl Side {
     }
 
     /// Comb loop: read feedback taps, damp and write.
-    #[inline]
+    #[inline(always)]
     fn combs(&mut self, reflections: f32, feedback_scale: f32) {
         let input = 0.43 * reflections;
-        for (((line, damping), gain), &delay) in self
-            .combs
-            .iter_mut()
-            .zip(&mut self.damping)
-            .zip(&mut self.comb_gain)
-            .zip(&self.comb_delay)
-        {
-            let fed = feedback_scale * gain.tick() * common::tap(line, delay);
-            line.write(damping.process(fed + input));
+        let mut combs = self.combs.frame();
+        for (i, (damping, gain)) in self.damping.iter_mut().zip(&mut self.comb_gain).enumerate() {
+            let fed = feedback_scale * gain.tick() * combs.tap(i, self.comb_delay[i]);
+            combs.write_raw(i, damping.process(fed + input));
         }
+        self.combs.advance();
     }
 
     fn set_size(&mut self, size: f32, sample_rate: f32) {
@@ -319,9 +327,8 @@ impl Side {
         self.input_high.clear();
         self.input_low.clear();
         self.input.clear();
-        for line in self.allpasses.iter_mut().chain(self.combs.iter_mut()) {
-            line.clear();
-        }
+        self.allpasses.clear();
+        self.combs.clear();
         self.diffused.clear();
         for filter in &mut self.damping {
             filter.clear();
@@ -542,10 +549,10 @@ impl Effect for TremoloRv {
         let reflections_right = self.right.front(right, self.predelay[1], gate);
 
         // Output taps read before the combs are written this frame.
-        let sum = |line: &[DelayLine; 4], taps: &[usize; 4]| {
-            line.iter()
-                .zip(taps)
-                .map(|(line, &delay)| common::tap(line, delay))
+        let sum = |combs: &Bank<4>, taps: &[usize; 4]| {
+            taps.iter()
+                .enumerate()
+                .map(|(i, &delay)| combs.tap(i, delay))
                 .sum::<f32>()
         };
         let left_own = sum(&self.left.combs, &self.out_from_left);

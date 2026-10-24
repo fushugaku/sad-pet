@@ -31,13 +31,9 @@
 //! changes inside a range use a short tap mute (the firmware jumps the taps);
 //! a range change mutes, holds silence for the FIR length + 10 ms (assumed ms,
 //! like the firmware's deferred `FB_tapmuteOpen`) and reopens.
+use super::fast::{Bank, Biquad, Biquad1, DelayLine, Ramp, Smoother, flush};
 use super::space_common::{self as common, Glide, TapMute};
-use crate::{
-    Effect, Values,
-    catalog::*,
-    dsp::{Biquad, Coefficients, DelayLine, Smoother, flush},
-    zoom::{ORIGINAL_RATE, Ramp},
-};
+use crate::{Effect, Values, catalog::*, dsp::Coefficients, zoom::ORIGINAL_RATE};
 
 pub const INFO: ModelInfo = ModelInfo {
     key: "mooz_space_hole",
@@ -363,11 +359,11 @@ impl Network {
 struct Channel {
     low: Biquad,
     high: Biquad,
-    bass: Biquad,
+    bass: Biquad1,
 }
 
 impl Channel {
-    #[inline]
+    #[inline(always)]
     fn process(&mut self, x: f32) -> f32 {
         self.bass.process(self.high.process(self.low.process(x)))
     }
@@ -381,15 +377,15 @@ impl Channel {
 struct SpaceHole {
     sample_rate: f32,
     scale: f32,
-    input_block: Biquad,
+    input_block: Biquad1,
     peak: Biquad,
-    feedback_block: Biquad,
+    feedback_block: Biquad1,
     input_line: DelayLine,
     fir_line: DelayLine,
     allpasses: [DelayLine; 6],
-    combs: [DelayLine; 4],
+    /// The four combs, `combs.delay` their lengths.
+    combs: Bank<4>,
     chorus_line: DelayLine,
-    comb_length: [usize; 4],
     taps_left: [(usize, usize); 4],
     taps_right: [(usize, usize); 4],
     chorus_left: f32,
@@ -431,7 +427,7 @@ impl SpaceHole {
         let channel = || Channel {
             low: identity,
             high: identity,
-            bass: Biquad::new(BASS.resample(ORIGINAL_RATE, sample_rate)),
+            bass: Biquad1::new(BASS.resample(ORIGINAL_RATE, sample_rate)),
         };
         let max_fir = FIR_MS
             .iter()
@@ -449,15 +445,17 @@ impl SpaceHole {
         let mut effect = Self {
             sample_rate,
             scale,
-            input_block: Biquad::new(Coefficients::highpass1(sample_rate, 10.0)),
+            input_block: Biquad1::new(Coefficients::highpass1(sample_rate, 10.0)),
             peak: Biquad::new(PEAK.resample(ORIGINAL_RATE, sample_rate)),
-            feedback_block: Biquad::new(Coefficients::highpass1(sample_rate, 10.0)),
+            feedback_block: Biquad1::new(Coefficients::highpass1(sample_rate, 10.0)),
             input_line: line(1000.0 * 44.1 + 1.0 + 1025.0),
             fir_line: line(max_fir * 44.1 + 1.0),
             allpasses: std::array::from_fn(|i| line(max_ap(i) + 1.0)),
-            combs: std::array::from_fn(|i| line(COMB_LENGTH[i])),
+            combs: Bank::new(
+                COMB_LENGTH.map(|length| common::samples(length, sample_rate)),
+                0,
+            ),
             chorus_line: line(504.0 + 1025.0),
-            comb_length: COMB_LENGTH.map(|length| common::samples(length, sample_rate)),
             taps_left: TAPS_LEFT.map(|(comb, delay)| (comb, common::samples(delay, sample_rate))),
             taps_right: TAPS_RIGHT.map(|(comb, delay)| (comb, common::samples(delay, sample_rate))),
             chorus_left: 441.0 * scale,
@@ -667,23 +665,20 @@ impl Effect for SpaceHole {
         let net = mute * (self.predelay_to_net.tick() * pre + diffused);
 
         // Combs and their output taps.
-        let read_side = |taps: &[(usize, usize); 4], combs: &[DelayLine; 4]| {
+        let read_side = |taps: &[(usize, usize); 4], combs: &Bank<4>| {
             taps.iter()
-                .map(|&(comb, delay)| common::tap(&combs[comb], delay))
+                .map(|&(comb, delay)| combs.tap(comb, delay))
                 .sum::<f32>()
         };
         let comb_left = read_side(&self.taps_left, &self.combs);
         let comb_right = read_side(&self.taps_right, &self.combs);
         let comb_input = 0.19 * net;
-        for ((line, &length), gain) in self
-            .combs
-            .iter_mut()
-            .zip(&self.comb_length)
-            .zip(&mut self.comb_gain)
-        {
-            let fed_back = gain.tick() * mute * common::tap(line, length);
-            line.write(flush(comb_input + fed_back));
+        let mut combs = self.combs.frame();
+        for (i, gain) in self.comb_gain.iter_mut().enumerate() {
+            let fed_back = gain.tick() * mute * combs.out(i);
+            combs.write(i, comb_input + fed_back);
         }
+        self.combs.advance();
         let output = self.output.tick();
         let direct = self.direct.tick();
         let shared = direct * net;
@@ -715,9 +710,10 @@ impl Effect for SpaceHole {
         self.feedback_block.clear();
         self.input_line.clear();
         self.fir_line.clear();
-        for line in self.allpasses.iter_mut().chain(self.combs.iter_mut()) {
+        for line in &mut self.allpasses {
             line.clear();
         }
+        self.combs.clear();
         self.chorus_line.clear();
         self.left.clear();
         self.right.clear();

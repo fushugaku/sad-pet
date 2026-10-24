@@ -19,9 +19,10 @@
 //! initialised coefficient block captured from the firmware (the 1.9 output
 //! gain included).
 use super::common::{
-    BLOCK, Design, FirstOrder, FirstOrderState, Ramps, Ring, design1, rom_biquad, scale, tbl,
+    BLOCK, Biquad, Design, FirstOrder, FirstOrderState, Ramps, Ring, design1, rom_biquad, scale,
+    tbl,
 };
-use crate::dsp::Biquad;
+
 use crate::zoom::ORIGINAL_RATE;
 use crate::{Effect, Values, catalog::*};
 
@@ -202,7 +203,7 @@ impl Effect for HolyFlerb {
         let tapped = self
             .flange
             .read_frac(self.flange_base + self.flange_span * offset);
-        self.feedback = crate::dsp::flush(tapped * (1.0 + FLANGE_GAIN_DEPTH * offset));
+        self.feedback = super::common::flush(tapped * (1.0 + FLANGE_GAIN_DEPTH * offset));
         let mut wet = FLANGE_DRY * delayed + FLANGE_WET * self.feedback;
 
         // Post filters.

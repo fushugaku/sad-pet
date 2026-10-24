@@ -27,9 +27,9 @@
 //!   `curve(10, 160, 101, LoDMP)` Hz into the second comb section. The
 //!   original's init never calls it (the ROM shelf stays until the knob is
 //!   touched); here the knob always applies.
-use super::common::{Design, Ring, comb_gain, design1, rom_biquad, scale, tbl};
+use super::common::{Biquad, Design, Ring, comb_gain, design1, rom_biquad, scale, tbl};
 use super::hall::{COMB_MS, EarlyInput, Hall, HallSettings, apf_feedback};
-use crate::dsp::Biquad;
+
 use crate::zoom::{ORIGINAL_RATE, curve};
 use crate::{Effect, Values, catalog::*};
 
@@ -302,7 +302,9 @@ impl Effect for Shimmer {
         self.input_line.advance();
         self.input_line.write(0, mono);
         let mut pitched = 0.0;
-        for (bank, gain) in BANK_GAINS.iter().enumerate() {
+        // The third bank's gain is 0: it would only add a signed zero.
+        const _: () = assert!(BANK_GAINS[2] == 0.0);
+        for (bank, &gain) in BANK_GAINS.iter().enumerate().take(2) {
             let (a, b) = Self::pair(
                 &self.input_line,
                 self.phases[bank],
@@ -320,7 +322,7 @@ impl Effect for Shimmer {
             self.depths[3],
             self.bases[3],
         );
-        self.feedback = crate::dsp::flush(LINE_GAIN * (a + b));
+        self.feedback = super::common::flush(LINE_GAIN * (a + b));
         let wet = self.wet_filter.process(self.feedback * LINE_MIX + pitched);
         let dry = self.dry_filter.process(mono);
         let post = self.post_filter.process(dry + wet);

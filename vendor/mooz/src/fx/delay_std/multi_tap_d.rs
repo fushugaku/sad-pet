@@ -18,13 +18,8 @@
 //! `v/100`, Level `v/100`, Tone one of eleven first-order sections (darker
 //! 0..6, flat 7, thinner and brighter 8..10). Pattern ROM tables at
 //! 0x800006d8 (positions), 0x80000358 (gains) and 0x80000ac0 (feedback).
-use super::common::{self, Fade, f};
-use crate::{
-    Effect, Values,
-    catalog::*,
-    dsp::{Biquad, Coefficients, DelayLine, flush},
-    zoom::{self, Ramp},
-};
+use super::common::{self, Biquad, DelayLine, Fade, Ramp, f, flush};
+use crate::{Effect, Values, catalog::*, dsp::Coefficients, zoom};
 
 pub const INFO: ModelInfo = ModelInfo {
     key: "mooz_multi_tap_d",

@@ -22,13 +22,8 @@
 //! eleven one-pole coefficients (~300 Hz..~8.6 kHz), Level `v/100`. Grain
 //! length and rate keep their time/Hz values at any host rate; the
 //! two-frame lag of the original's window weights is not reproduced.
-use super::common::{self, Gate, f, q31};
-use crate::{
-    Effect, Values,
-    catalog::*,
-    dsp::{Biquad, DelayLine, flush},
-    zoom::{self, Ramp},
-};
+use super::common::{self, Biquad, DelayLine, Gate, Ramp, f, flush, q31};
+use crate::{Effect, Values, catalog::*, zoom};
 
 pub const INFO: ModelInfo = ModelInfo {
     key: "mooz_pitch_dly",
