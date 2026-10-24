@@ -83,6 +83,14 @@ pub struct Effects {
     shifter_phase: f64,
     tone: f32,
     predelay_samples: f32,
+    /// Consecutive frames that wrote only zeros into every line and left the
+    /// tank filters at zero.
+    quiet: usize,
+    /// The longest line. After this many quiet frames every line holds only
+    /// zeros, so where its cursor stands no longer matters.
+    horizon: usize,
+    /// The type those quiet frames ran with.
+    quiet_type: ReverbType,
 }
 
 impl Effects {
@@ -115,6 +123,20 @@ impl Effects {
             shifter_phase: 0.0,
             tone: 0.5,
             predelay_samples: 1.0,
+            quiet: 0,
+            horizon: [
+                (sr * 0.25) as usize,
+                (sr * 0.18) as usize,
+                (sr * 0.013) as usize,
+                (sr * 0.019) as usize,
+                (sr * 0.6) as usize + 4,
+                (sr * 0.1) as usize + 8,
+            ]
+            .into_iter()
+            .max()
+            .unwrap_or(0)
+            .max(4),
+            quiet_type: ReverbType::PlateS,
         }
     }
 
@@ -136,6 +158,8 @@ impl Effects {
         storage
     }
     pub(crate) fn install_storage(&mut self, mut storage: Storage) {
+        // Lines from another slot may still ring.
+        self.quiet = 0;
         for (delay, frames) in self.delays().zip(storage.iter_mut()) {
             debug_assert!(delay.frames.is_empty());
             std::mem::swap(&mut delay.frames, frames);
@@ -160,9 +184,21 @@ impl Effects {
     }
 
     pub fn reverb(&mut self, frame: Stereo, p: &Params, wet: f32) -> Stereo {
+        // The reverse line is written only in Reverse: a type change may
+        // read lines the quiet frames did not fill with zeros.
+        if p.reverb_type != self.quiet_type {
+            self.quiet_type = p.reverb_type;
+            self.quiet = 0;
+        }
+        let zero = frame[0] == 0.0 && frame[1] == 0.0;
+        if zero && self.quiet >= self.horizon {
+            return self.sleep(frame, p, wet);
+        }
         self.predelay.push(frame);
+        let mut written = !zero;
         let mut input = self.predelay.read(self.predelay_samples);
         if p.reverb_type == ReverbType::Reverse {
+            written |= input[0] != 0.0 || input[1] != 0.0;
             self.reverse.push(input);
             let window = (self.sample_rate * 0.22) as usize;
             let phase = self.reverse_phase as f32 / window as f32;
@@ -179,10 +215,12 @@ impl Effects {
             let old =
                 self.diffuser[i].read(self.sample_rate * (if i == 0 { 0.0097 } else { 0.0151 }));
             let gain = p.diffuse * 0.7;
-            let next = std::array::from_fn(|c| fast::flush(input[c] + old[c] * gain));
+            let next: Stereo = std::array::from_fn(|c| fast::flush(input[c] + old[c] * gain));
+            written |= next[0] != 0.0 || next[1] != 0.0;
             self.diffuser[i].push(next);
             input = std::array::from_fn(|c| old[c] - next[c] * gain);
         }
+        written |= input[0] != 0.0 || input[1] != 0.0;
         self.shifter.push(input);
         let shift_window = self.sample_rate * 0.06;
         let phase = self.shifter_phase as f32;
@@ -210,8 +248,11 @@ impl Effects {
             } else {
                 value.clamp(-8.0, 8.0)
             };
+            written |= clean != 0.0;
             self.tank[i].push([clean, clean]);
         }
+        written |= self.tank_damping.iter().any(|&d| d != 0.0);
+        self.quiet = if written { 0 } else { self.quiet + 1 };
         let tail = [
             (taps[0] + taps[2] - taps[4] + taps[6]) * 0.5,
             (taps[1] + taps[3] - taps[5] + taps[7]) * 0.5,
@@ -219,14 +260,97 @@ impl Effects {
         std::array::from_fn(|i| frame[i] * (1.0 - wet * 0.4) + tail[i] * wet * 2.0)
     }
 
+    /// A zero frame into a reverb whose lines hold only zeros: the frame the
+    /// full path renders, without reading or writing the lines.
+    ///
+    /// The tank holds +0.0 (writes below 1e-20 store 0.0) and its filters
+    /// are +0.0 (flushed), so every tap and the tail are +0.0, exactly as
+    /// reading the lines would give; a zero of either sign in the lines
+    /// before the tank only ever meets a non-zero value or a flush on its way
+    /// in. The modulation phases advance as they do there.
+    fn sleep(&mut self, frame: Stereo, p: &Params, wet: f32) -> Stereo {
+        if p.reverb_type == ReverbType::Reverse {
+            let window = (self.sample_rate * 0.22) as usize;
+            self.reverse_phase = (self.reverse_phase + 1) % window;
+        }
+        let shift_window = self.sample_rate * 0.06;
+        self.shifter_phase =
+            super::sample::wrap_position(self.shifter_phase + 1.0 / shift_window as f64, 1.0);
+        let tail = [0.0_f32; 2];
+        std::array::from_fn(|i| frame[i] * (1.0 - wet * 0.4) + tail[i] * wet * 2.0)
+    }
+
     pub fn clear(&mut self) {
         self.tank_damping = [0.0; 8];
         self.reverse_phase = 0;
         self.shifter_phase = 0.0;
+        self.quiet = 0;
         self.predelay.clear();
         self.reverse.clear();
         self.shifter.clear();
         self.tank.iter_mut().for_each(Delay::clear);
         self.diffuser.iter_mut().for_each(Delay::clear);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tables::Random;
+
+    #[test]
+    fn a_sleeping_reverb_renders_the_frames_of_the_full_path() {
+        let rate = 8000;
+        let mut sleeping = Effects::new(rate);
+        let mut awake = Effects::new(rate);
+        let mut random = Random::default();
+        let mut p = Params {
+            reverb_decay: 0.0,
+            reverb_tone: 0.4,
+            predelay: 0.3,
+            shimmer: 0.6,
+            diffuse: 0.8,
+            ..Params::default()
+        };
+        let types = [
+            ReverbType::PlateS,
+            ReverbType::Reverse,
+            ReverbType::Room,
+            ReverbType::PlateL,
+            ReverbType::Reverse,
+        ];
+        let mut slept = 0;
+        for (round, kind) in types.into_iter().enumerate() {
+            p.reverb_decay = round as f32 * 0.05;
+            for n in 0..rate as usize * 6 {
+                // A type change in the middle of the silence, a burst at its start.
+                if n == rate as usize * 4 {
+                    p.reverb_type = kind;
+                }
+                if n % 4000 == 0 {
+                    sleeping.configure(&p);
+                    awake.configure(&p);
+                }
+                let frame = if n < 300 {
+                    [random.bipolar() * 0.5, if n % 7 == 0 { -0.0 } else { random.bipolar() }]
+                } else if n % 2 == 0 {
+                    [-0.0, 0.0]
+                } else {
+                    [0.0; 2]
+                };
+                if sleeping.quiet >= sleeping.horizon && frame == [0.0; 2] {
+                    slept += 1;
+                }
+                awake.quiet = 0;
+                let a = sleeping.reverb(frame, &p, 1.0);
+                let b = awake.reverb(frame, &p, 1.0);
+                assert_eq!(
+                    a.map(f32::to_bits),
+                    b.map(f32::to_bits),
+                    "round {round}, frame {n}"
+                );
+            }
+        }
+        assert!(slept > rate as usize * 5, "slept for only {slept} frames");
     }
 }
