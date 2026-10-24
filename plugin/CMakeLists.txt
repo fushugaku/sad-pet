@@ -61,6 +61,7 @@ set(editor_scripts
     "${SAD_PET_ROOT}/rust/web/library.js" "${SAD_PET_ROOT}/rust/web/selection.js"
     "${SAD_PET_ROOT}/rust/web/presets.js" "${SAD_PET_ROOT}/rust/web/sequence.js"
     "${SAD_PET_ROOT}/rust/web/panels.js" "${SAD_PET_ROOT}/rust/web/vocal.js"
+    "${SAD_PET_ROOT}/rust/web/midi.js"
     "${SAD_PET_ROOT}/rust/web/vocal.css"
     "${JUCE_MODULES_DIR}/juce_gui_extra/native/javascript/index.js"
     "${JUCE_MODULES_DIR}/juce_gui_extra/native/javascript/check_native_interop.js")

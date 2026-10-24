@@ -40,6 +40,9 @@ output device, sample rate, buffer size and MIDI inputs. All MIDI inputs are
 enabled automatically, including devices connected later. The computer
 keyboard plays notes as in the plug-ins.
 
+Right-click any knob and choose **MIDI learn**, then move a controller: that CC
+turns the knob from then on. See MIDI learn in [README.md](README.md).
+
 The app keeps its own transport: **Play** starts the sequencer, arpeggiator and
 drum patterns at the editor's BPM.
 
