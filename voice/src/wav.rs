@@ -95,6 +95,28 @@ pub fn write_float(rate: u32, samples: &[f32]) -> Vec<u8> {
     out
 }
 
+/// 16-bit mono WAV, a quarter of the size: for listening, not for analysis.
+pub fn write_pcm16(rate: u32, samples: &[f32]) -> Vec<u8> {
+    let data_len = samples.len() * 2;
+    let mut out = Vec::with_capacity(44 + data_len);
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(36 + data_len as u32).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&rate.to_le_bytes());
+    out.extend_from_slice(&(rate * 2).to_le_bytes());
+    out.extend_from_slice(&2u16.to_le_bytes());
+    out.extend_from_slice(&16u16.to_le_bytes());
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&(data_len as u32).to_le_bytes());
+    for s in samples {
+        out.extend_from_slice(&((s.clamp(-1.0, 1.0) * 32767.0).round() as i16).to_le_bytes());
+    }
+    out
+}
+
 /// Resamples by cubic interpolation; enough for analysis input, where the
 /// envelope does not depend on the rate.
 pub fn resample(samples: &[f32], from: u32, to: u32) -> Vec<f32> {

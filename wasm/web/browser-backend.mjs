@@ -255,6 +255,8 @@ export class BrowserBackend {
       const progress = await this.vocal.call("vocal", { type: "progress" });
       return { progress, error: this.vocalError || null };
     }
+    if (route === "/api/vocal/units")
+      return this.vocal.call("vocal", { type: "units", id: data?.id });
     if (route === "/api/vocal/phonemes")
       return this.vocal.call("vocal", { type: "phonemes", ...data });
     if (route === "/api/vocal/import-score")

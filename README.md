@@ -145,7 +145,11 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   how the pitch moves and the voice color. Three voices come with SAD PET —
   Kasane Teto (Japanese and English) and Kumi (Russian) — and a new Vocal timbre
   sings with the one for its language; **Steps** (or the marker on the ruler)
-  makes the score start over after that many grid steps. The synthetic formant
+  makes the score start over after that many grid steps; the loop's start
+  marker leaves an intro before it that is sung once. Under each note the
+  editor shows the voicebank units that sing it, and the note inspector's
+  **Unit** picks another one; **Edit ▾** copies, cuts, pastes and duplicates
+  notes. The synthetic formant
   voice sings without recordings; **Voices ▾** imports a UTAU voicebank (a folder,
   a `.zip` or a `.sadvoice` file): its `oto.ini` units are analyzed into
   spectral frames, then selected and joined in the spectral domain on the sung

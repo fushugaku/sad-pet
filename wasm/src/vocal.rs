@@ -47,7 +47,7 @@ impl super::timbres::Registry {
             // A new part has no clips yet: the worker sends all of them again.
             let fresh = part.vocal.is_none();
             let state = part.vocal.get_or_insert_with(VocalPart::new);
-            state.song.period = vocal::period(&settings.score, None, rate);
+            state.song.looping = vocal::looping(&settings.score, None, rate);
             if state.sent.as_ref() != Some(settings) || fresh {
                 state.sent = Some(settings.clone());
                 jobs.push(
@@ -63,6 +63,16 @@ impl super::timbres::Registry {
         }
         self.vocal_ids = present;
         self.vocal_jobs.extend(jobs);
+    }
+
+    /// The longest lead-in of a Vocal part's first note, before 0.
+    pub fn vocal_lead_in(&self) -> u64 {
+        self.parts
+            .iter()
+            .filter_map(|p| p.vocal.as_ref())
+            .map(|v| v.song.lead_in())
+            .max()
+            .unwrap_or(0)
     }
 
     pub fn vocal_command(&mut self, path: &str, data: &Value) -> Result<Value, String> {
@@ -91,11 +101,12 @@ impl super::timbres::Registry {
                 if let Some(start) = data["start"].as_f64() {
                     self.clock.start = (start.max(0.0) * rate) as u64;
                     if !self.clock.playing {
-                        self.clock.position = self.clock.start;
+                        self.clock.position = self.clock.start as i64;
                     }
                 }
                 if let Some(playing) = data["playing"].as_bool() {
-                    self.clock.play(playing);
+                    let lead_in = self.vocal_lead_in();
+                    self.clock.play(playing, lead_in);
                 }
                 json!({ "ok": true })
             }
@@ -134,7 +145,7 @@ pub extern "C" fn sad_vocal_jobs() -> u32 {
 struct Staged {
     part: u32,
     key: u64,
-    start: u64,
+    start: i64,
     samples: Vec<f32>,
 }
 thread_local! {
@@ -155,7 +166,7 @@ pub extern "C" fn sad_render_clip(part: u32, start: f64, length: usize) -> *mut 
             part,
             Clip {
                 key: 0,
-                start: start as u64,
+                start: start as i64,
                 samples,
             },
         ))
@@ -172,7 +183,7 @@ impl super::timbres::Registry {
         self.vocal_jobs.clear();
         for part in &mut self.parts {
             if let Some(vocal) = &mut part.vocal {
-                vocal.song = Song::new(
+                vocal.song.set_clips(
                     clips
                         .iter()
                         .filter(|(id, _)| *id == part.meta.id)
@@ -221,13 +232,13 @@ pub extern "C" fn sad_vocal_plan(count: usize) -> *mut f64 {
 /// changed) and drops the rest. Returns how many planned clips are missing.
 #[unsafe(no_mangle)]
 pub extern "C" fn sad_vocal_plan_commit(part: u32, count: usize) -> usize {
-    let plan: Vec<(u64, u64)> = PLAN.with(|p| {
+    let plan: Vec<(u64, i64)> = PLAN.with(|p| {
         p.borrow()
             .as_chunks::<3>()
             .0
             .iter()
             .take(count)
-            .map(|t| (t[0] as u64, t[1] as u64))
+            .map(|t| (t[0] as u64, t[1] as i64))
             .collect()
     });
     registry(|r| {
@@ -250,9 +261,7 @@ pub extern "C" fn sad_vocal_plan_commit(part: u32, count: usize) -> usize {
             }
         }
         let missing = plan.len() - clips.len();
-        let period = state.song.period;
-        state.song = Song::new(clips);
-        state.song.period = period;
+        state.song.set_clips(clips);
         missing
     })
 }
@@ -262,7 +271,7 @@ pub extern "C" fn sad_vocal_clip_begin(part: u32, key: f64, start: f64, length: 
         let mut staged = Staged {
             part,
             key: key as u64,
-            start: start as u64,
+            start: start as i64,
             samples: vec![0.0; length.min(64 << 20)],
         };
         let pointer = staged.samples.as_mut_ptr();
@@ -291,7 +300,7 @@ pub extern "C" fn sad_vocal_clip_commit() -> u32 {
             start: staged.start,
             samples: staged.samples.into(),
         });
-        state.song = Song::new(clips);
+        state.song.set_clips(clips);
         1
     })
 }
@@ -364,7 +373,8 @@ fn worker_command(w: &mut Worker, request: Value) -> Result<Value, String> {
             let job = Job {
                 settings,
                 rate: request["rate"].as_u64().map_or(w.rate, |r| r as u32),
-                host_bpm: request["host_bpm"].as_f64().map(|b| b as f32),
+                // A browser has no host transport.
+                host_tempo: None,
             };
             let plan = w.renderer.plan(&job);
             w.jobs.insert(id, (job, plan));
@@ -407,6 +417,21 @@ fn worker_command(w: &mut Worker, request: Value) -> Result<Value, String> {
                 .map(|(id, (job, plan))| (id.to_string(), json!(w.renderer.progress(job, plan))))
                 .collect::<serde_json::Map<_, _>>()
         )),
+        "units" => {
+            // Which units the editor's notes are sung with, by note id.
+            let id = request["id"].as_u64().ok_or("Missing timbre")? as u32;
+            let units = w
+                .jobs
+                .get(&id)
+                .map(|(_, plan)| w.renderer.units(plan))
+                .unwrap_or_default();
+            Ok(json!(
+                units
+                    .into_iter()
+                    .map(|(note, u)| (note.to_string(), json!(u)))
+                    .collect::<serde_json::Map<_, _>>()
+            ))
+        }
         "phonemes" => {
             // Lyrics as phonemes, for the editor's phoneme row.
             let language = voice::Language::parse(request["language"].as_str().unwrap_or("ja"))

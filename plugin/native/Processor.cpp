@@ -199,6 +199,7 @@ void SadPetProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     }
     const auto frames = buffer.getNumSamples();
     sad_audio_time_signature(audio, numerator, denominator);
+    sad_audio_offline(audio, isNonRealtime());
     sad_audio_begin(audio, renderValues.data(), renderValues.size(), bpm, beat, hasBeat, playing, static_cast<std::size_t>(frames));
     auto* left = buffer.getWritePointer(0);
     auto* right = buffer.getWritePointer(1);

@@ -8,9 +8,12 @@
 use sad_pet_voice::bank::Voicebank;
 use sad_pet_voice::phoneme::Language;
 use sad_pet_voice::render::{self, Voice};
-use sad_pet_voice::score::{Note, Score, TICKS_PER_BEAT};
+use sad_pet_voice::score::{Note, Score};
 use sad_pet_voice::{analysis, utau, wav};
 use std::path::PathBuf;
+
+// The listening set and its measures (command line only).
+mod listen;
 use std::sync::Arc;
 
 struct Args {
@@ -62,52 +65,12 @@ fn output(args: &Args) -> PathBuf {
 }
 
 fn demo(language: Language) -> Score {
-    // A short tune in each language; one syllable per note.
-    let (lyrics, keys): (&[&str], &[u8]) = match language {
-        Language::Ja => (
-            &[
-                "さ", "く", "ら", "さ", "く", "ら", "や", "よ", "い", "の", "そ", "ら", "は",
-            ],
-            &[69, 69, 71, 69, 69, 71, 69, 71, 72, 71, 69, 71, 69],
-        ),
-        Language::En => (
-            &[
-                "twin-", "kle", "twin-", "kle", "lit-", "tle", "star", "how", "I", "won-", "der",
-                "what", "you", "are",
-            ],
-            &[60, 60, 67, 67, 69, 69, 67, 65, 65, 64, 64, 62, 62, 60],
-        ),
-        Language::Ru => (
-            &[
-                "в ле-", "су", "ро-", "ди-", "лась", "ё-", "лоч-", "ка", "в ле-", "су", "о-", "на",
-                "рос-", "ла",
-            ],
-            &[60, 69, 69, 67, 69, 65, 60, 60, 60, 69, 69, 70, 67, 72],
-        ),
-    };
-    let mut score = Score {
-        language,
-        ..Default::default()
-    };
-    let mut tick = TICKS_PER_BEAT * 2;
-    for (i, (lyric, key)) in lyrics.iter().zip(keys).enumerate() {
-        let length = if i + 1 == lyrics.len() || i % 7 == 6 {
-            TICKS_PER_BEAT * 2
-        } else {
-            TICKS_PER_BEAT
-        };
-        score.notes.push(Note {
-            id: i as u32 + 1,
-            start: tick,
-            length,
-            key: *key,
-            lyric: lyric.to_string(),
-            ..Default::default()
-        });
-        tick += length + if i % 7 == 6 { TICKS_PER_BEAT } else { 0 };
-    }
-    score.sanitize();
-    score
+    // The first phrase of the listening set in that language.
+    listen::phrases()
+        .into_iter()
+        .find(|p| p.language == language)
+        .map(|p| p.score())
+        .unwrap_or_default()
 }
 
 fn write(path: &PathBuf, rate: u32, samples: &[f32]) {
@@ -455,6 +418,26 @@ fn main() {
                     .find(|s| s.name.eq_ignore_ascii_case(style))
                     .unwrap_or_else(|| fail(format!("unknown style {style}")));
             }
+            if args.options.contains_key("units") {
+                // Which voicebank units each phrase joins, with its syllables.
+                let timeline = score.timeline(None);
+                for phrase in render::plan(&score, &timeline, &id, rate, None) {
+                    let units: Vec<String> = render::units(&score, &timeline, &phrase, &voice)
+                        .into_iter()
+                        .map(|(n, u)| {
+                            let others: Vec<&str> =
+                                u.options.iter().take(5).map(String::as_str).collect();
+                            format!(
+                                "{} = {} (or {})",
+                                score.notes[n].lyric,
+                                u.used.join(" + "),
+                                others.join(", ")
+                            )
+                        })
+                        .collect();
+                    eprintln!("{}", units.join(" | "));
+                }
+            }
             let started = std::time::Instant::now();
             let samples = render::render_song(&score, &voice, &id, rate, None);
             let elapsed = started.elapsed().as_secs_f64();
@@ -467,73 +450,66 @@ fn main() {
         }
         "reconstruct" => reconstruct(&args),
         "hnr" => {
-            // Harmonics-to-noise ratio of the voiced frames, from the
-            // normalized autocorrelation at the period (independent of the
-            // analysis' aperiodicity), full band and above ~2 kHz.
+            // Noise, harmonics and formant measures of renders or recordings.
             for path in &args.positional[1..] {
                 let audio = wav::read(&std::fs::read(path).unwrap_or_else(|e| fail(e)))
                     .unwrap_or_else(|e| fail(e));
-                let frames =
-                    analysis::analyze(&audio.samples, audio.rate, &analysis::Options::default());
-                let x = &audio.samples;
-                let high: Vec<f32> = (0..x.len())
-                    .map(|i| {
-                        let at = |k: usize| x.get(i.wrapping_sub(k)).copied().unwrap_or(0.0);
-                        at(0) - 2.0 * at(1) + at(2)
-                    })
-                    .collect();
-                let rate = audio.rate as f32;
-                let ratio = |s: &[f32], center: usize, period: f32| {
-                    let n = (0.04 * rate) as usize;
-                    let start = center.saturating_sub(n / 2);
-                    let mut best = 0.0f32;
-                    let lo = (period * 0.9) as usize;
-                    let hi = (period * 1.1).ceil() as usize;
-                    for lag in lo.max(1)..=hi {
-                        if start + n + lag >= s.len() {
-                            return None;
-                        }
-                        let (mut xy, mut xx, mut yy) = (0.0f64, 0.0f64, 0.0f64);
-                        for i in start..start + n {
-                            let (a, b) = (s[i] as f64, s[i + lag] as f64);
-                            xy += a * b;
-                            xx += a * a;
-                            yy += b * b;
-                        }
-                        best = best.max((xy / (xx * yy).sqrt().max(1e-12)) as f32);
-                    }
-                    let r = best.clamp(1e-3, 0.9999);
-                    Some(10.0 * (r / (1.0 - r)).log10())
-                };
-                let loudest = frames.iter().map(|f| f.level()).fold(f32::MIN, f32::max);
-                let (mut full, mut top, mut count, mut voiced, mut loud) = (0.0, 0.0, 0, 0, 0);
-                for (i, f) in frames.iter().enumerate().step_by(4) {
-                    if f.level() < loudest - 30.0 {
-                        continue;
-                    }
-                    loud += 1;
-                    if !f.voiced() {
-                        continue;
-                    }
-                    voiced += 1;
-                    let center = (i as f32 * 0.005 * rate) as usize;
-                    let period = rate / f.f0;
-                    if let (Some(a), Some(b)) =
-                        (ratio(x, center, period), ratio(&high, center, period))
-                    {
-                        full += a;
-                        top += b;
-                        count += 1;
-                    }
-                }
-                let n = count.max(1) as f32;
+                let m = listen::measure(&audio.samples, audio.rate);
                 println!(
-                    "{path}: HNR {:.1} dB, above 2 kHz {:.1} dB, voiced {:.0}% of loud frames",
-                    full / n,
-                    top / n,
-                    100.0 * voiced as f32 / loud.max(1) as f32
+                    "{path}: hiss {:.0}% (loudest {:+.1} dB from the vowels), HNR {:.1} dB \
+                     (above 2 kHz {:.1}), formant contrast {:.2} dB, 2-5 kHz {:+.1} dB, \
+                     frame-to-frame change {:.2} dB",
+                    m.hiss_share * 100.0,
+                    m.hiss_db,
+                    m.hnr,
+                    m.hnr_high,
+                    m.contrast,
+                    m.brightness,
+                    m.flux
                 );
             }
+        }
+        "profile" => {
+            // The average voiced envelope and aperiodicity, to set renders
+            // beside recordings.
+            let hz: Vec<String> = listen::PROFILE_HZ
+                .iter()
+                .map(|h| format!("{h:>6.0}"))
+                .collect();
+            println!("{:>28} {} | aperiodicity per band", "Hz", hz.join(""));
+            for path in &args.positional[1..] {
+                let audio = wav::read(&std::fs::read(path).unwrap_or_else(|e| fail(e)))
+                    .unwrap_or_else(|e| fail(e));
+                let (env, ap) = listen::profile(&audio.samples, audio.rate);
+                let name = path.rsplit('/').next().unwrap_or(path);
+                let env: Vec<String> = env.iter().map(|v| format!("{v:>6.1}")).collect();
+                let ap: Vec<String> = ap.iter().map(|v| format!("{v:.2}")).collect();
+                println!("{:>28} {} | {}", name, env.join(""), ap.join(" "));
+            }
+        }
+        "listen" => {
+            let dir = args
+                .positional
+                .get(1)
+                .unwrap_or_else(|| fail("missing output folder"));
+            let packs = args
+                .options
+                .get("packs")
+                .map_or("voice/packs", String::as_str);
+            let rate = args
+                .options
+                .get("rate")
+                .and_then(|r| r.parse().ok())
+                .unwrap_or(32_000);
+            listen::run(
+                std::path::Path::new(dir),
+                args.options.get("before").map(std::path::Path::new),
+                std::path::Path::new(packs),
+                rate,
+                args.options
+                    .get("label")
+                    .map_or("This build", String::as_str),
+            );
         }
         "resynth" => {
             // Analysis and resynthesis of a recording at its own pitch, with
@@ -590,7 +566,9 @@ fn main() {
             }
         }
         _ => {
-            eprintln!("usage: sad-voice import|info|render|demo|analyze|resynth|reconstruct ...");
+            eprintln!(
+                "usage: sad-voice import|info|render|demo|analyze|resynth|reconstruct|hnr|listen ..."
+            );
             std::process::exit(2);
         }
     }

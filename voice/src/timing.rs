@@ -246,7 +246,51 @@ pub fn layout(
         }
         merged.push(seg);
     }
-    merged
+    release_stops(merged)
+}
+
+/// How long a released stop opens into its vowel, seconds.
+const RELEASE: f64 = 0.035;
+
+/// A Russian stop right before a nasal releases through the nose and is
+/// barely heard (the «д» of «звёздный»).
+/// Sung for clarity, it opens into a short vowel first: «ы», or «и» next to
+/// a soft consonant. The time comes from the stop, down to 20 ms, then from
+/// the sound after it.
+fn release_stops(mut segments: Vec<Segment>) -> Vec<Segment> {
+    let ru = crate::phoneme::Language::Ru;
+    let mut i = 0;
+    while i + 1 < segments.len() {
+        let (stop, next) = (segments[i], segments[i + 1]);
+        let muffled = next.phoneme.class() == Class::Nasal;
+        let soft = stop.phoneme.info().soft || next.phoneme.info().soft;
+        let vowel = if soft { "i" } else { "y" };
+        let vowel = Phoneme::parse(ru, vowel).filter(|_| {
+            stop.phoneme.language() == Some(ru) && stop.phoneme.class() == Class::Stop && muffled
+        });
+        if let Some(vowel) = vowel {
+            let from_stop = (stop.length() - 0.02).clamp(0.0, RELEASE);
+            let from_next = (RELEASE - from_stop).min((next.length() - 0.03).max(0.0));
+            let start = stop.end - from_stop;
+            let end = stop.end + from_next;
+            if end - start >= 0.015 {
+                segments[i].end = start;
+                segments[i + 1].start = end;
+                segments.insert(
+                    i + 1,
+                    Segment {
+                        phoneme: vowel,
+                        start,
+                        end,
+                        ..stop
+                    },
+                );
+                i += 1;
+            }
+        }
+        i += 1;
+    }
+    segments
 }
 
 #[cfg(test)]
@@ -284,6 +328,35 @@ mod tests {
             .map(|s| format!("{}@{:.2}", s.phoneme.symbol(), s.start))
             .collect::<Vec<_>>()
             .join(" ")
+    }
+
+    #[test]
+    fn russian_stops_open_before_a_nasal() {
+        let ru = |t: &'static str| Lyric {
+            text: t,
+            phonemes: None,
+            language: Language::Ru,
+        };
+        let sung: Vec<SungNote> = g2p::assign(&[ru("звёзд-"), ru("ный")], "ла", None)
+            .into_iter()
+            .zip([(0.5, 1.0), (1.0, 1.5)])
+            .map(|(text, (start, end))| SungNote {
+                start,
+                end,
+                text,
+                velocity: 64,
+            })
+            .collect();
+        let s = show(&layout(&sung, &fixed, None, 2.0));
+        assert!(
+            s.contains("d@0.") && s.contains(" y@0.") && s.contains(" n@"),
+            "{s}"
+        );
+        let d = s.find("d@").unwrap();
+        assert!(
+            s[d..].starts_with("d@") && s[d..].split(' ').nth(1).unwrap().starts_with("y@"),
+            "{s}"
+        );
     }
 
     #[test]

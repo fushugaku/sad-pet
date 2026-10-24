@@ -70,7 +70,15 @@
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
 }
 .vocal-menu-items button {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
   text-align: left;
+}
+.vocal-menu-items kbd {
+  color: var(--muted, #8a948a);
+  font: inherit;
+  font-size: 11px;
 }
 .vocal-roll {
   position: relative;
