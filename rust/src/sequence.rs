@@ -13,7 +13,12 @@ pub const STAGE_FIELDS: u8 = 19;
 pub enum Target {
     #[default]
     MainPitch,
+    /// A Resynth oscillator's transpose, as a signed offset.
     Oscillator {
+        index: u8,
+    },
+    /// A Synth engine oscillator's transpose, as a signed offset.
+    SynthOscillator {
         index: u8,
     },
     Parameter {
@@ -24,6 +29,12 @@ pub enum Target {
     Pad {
         pad: u32,
     },
+}
+impl Target {
+    /// Oscillator lanes edit a signed offset instead of notes from a root.
+    pub fn oscillator(&self) -> bool {
+        matches!(self, Self::Oscillator { .. } | Self::SynthOscillator { .. })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -206,7 +217,7 @@ impl Track {
         if let Some(stage) = edit.stage {
             if let Some(s) = self.steps.get_mut(stage as usize) {
                 s.set(edit.field, edit.value);
-                if matches!(self.target, Target::Oscillator { .. }) {
+                if self.target.oscillator() {
                     s.pitch = s.pitch.clamp(36, 84);
                     if s.pitch_override >= 0 {
                         s.pitch_override = s.pitch_override.clamp(36, 84);
@@ -220,7 +231,7 @@ impl Track {
                 43 => self.amount = edit.value.clamp(-1.0, 1.0),
                 44 => self.absolute = edit.value >= 0.5,
                 45 => self.gate_output = edit.value >= 0.5,
-                46 if !matches!(self.target, Target::Oscillator { .. }) => {
+                46 if !self.target.oscillator() => {
                     self.root_note = edit.value.round().clamp(0.0, 127.0) as u8;
                 }
                 49..=52 => self.pitch_oscillators[(edit.field - 49) as usize] = edit.value >= 0.5,
@@ -354,7 +365,9 @@ impl Program {
             }
             track.amount = track.amount.clamp(-1.0, 1.0);
             track.root_note = track.root_note.min(127);
-            if let Target::Oscillator { index } = &mut track.target {
+            if let Target::Oscillator { index } | Target::SynthOscillator { index } =
+                &mut track.target
+            {
                 *index = (*index).min(3);
                 // Keep older root-relative patterns at the same offset while
                 // giving every oscillator lane a consistent signed editor.

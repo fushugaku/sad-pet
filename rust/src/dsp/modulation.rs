@@ -322,7 +322,8 @@ impl Envelope {
         if self.rustias.mode != EnvMode::Legacy {
             return self.rustias.on();
         }
-        self.value = 0.0;
+        // A retrigger attacks from the level still sounding: a jump to zero
+        // under a held or releasing note clicks.
         self.stage = Stage::Attack;
     }
     pub fn off(&mut self) {

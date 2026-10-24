@@ -89,6 +89,8 @@ async function api(path, data, headers) {
 // with only what changed; omitted parts keep their objects, so the editor and
 // its waveform cache can tell they did not change.
 let stateCache = null;
+// Polls come faster while a MIDI controller moves, so a learned knob follows it.
+let midiMovedAt = -Infinity;
 async function readState() {
   if (window.sadPetState) return window.sadPetState();
   const token = stateCache?.state_token;
@@ -106,6 +108,13 @@ async function readState() {
     delete next.knob_changes;
   }
   stateCache = next;
+  // Native engines list the controllers moved on their MIDI input since the
+  // last answer; the browser build hands them to MIDI learn directly.
+  if (next.midi_controls?.length) {
+    midiMovedAt = performance.now();
+    for (const [channel, controller, value] of next.midi_controls)
+      window.SadMidiLearn?.input(channel, controller, value);
+  }
   return next;
 }
 async function request(path, data) {
@@ -515,8 +524,13 @@ function createKnob(
   binding = null,
 ) {
   const get = () => (binding ? binding.get() : preset.params[key]);
+  // When this knob last changed here. Feedback describing the value before
+  // that is stale: a native host publishes it only 30 times a second, so its
+  // old "current" would hold the pointer back while the knob is turned.
+  let edited = -Infinity;
   const set = (v) => {
     if (dial.getAttribute("aria-disabled") === "true") return;
+    edited = Date.now();
     const result = binding ? binding.set(v) : setParam(key, v);
     update();
     return result;
@@ -547,7 +561,10 @@ function createKnob(
   let shown = null;
   const modulation = (feedback) => {
     const base = get();
-    const active = Boolean(feedback?.modulated);
+    const since = Date.now() - edited,
+      stale = !!drag || since < 300 ||
+        (since < 2000 && Math.abs((feedback?.base ?? base) - base) > Math.abs(max - min) * 1e-6);
+    const active = Boolean(feedback?.modulated) && !stale;
     const signature = active
       ? [base, feedback.current, feedback.min, feedback.max, !!drag,
           document.activeElement === dial, format(base),
@@ -621,6 +638,8 @@ function createKnob(
   dial.addEventListener("blur", update);
   dial.addEventListener("pointerdown", (e) => {
     if (!preset || dial.getAttribute("aria-disabled") === "true") return;
+    // The right button opens the knob's menu (MIDI learn) instead.
+    if (e.button === 2) return;
     dial.focus();
     dial.setPointerCapture(e.pointerId);
     drag = { x: e.clientX, y: e.clientY, value: get() };
@@ -644,6 +663,8 @@ function createKnob(
   dial.addEventListener("pointerup", release);
   dial.addEventListener("pointercancel", release);
   dial.addEventListener("lostpointercapture", release);
+  // A macOS Control-click opens the menu after its press began a drag.
+  dial.addEventListener("contextmenu", release);
   dial.addEventListener("keydown", (e) => {
     let v = get();
     const step = binding?.step ?? null;
@@ -679,10 +700,20 @@ function createKnob(
     },
     { passive: false },
   );
+  // A learned MIDI controller turns the knob across its whole range.
+  globalThis.SadMidiLearn?.attach(dial, key, aria, (unit) => {
+    if (!preset) return;
+    let v = clamp(fromUnit(unit));
+    if (binding?.quantize) v = binding.quantize(v, get());
+    else if (binding?.step) v = min + Math.round((v - min) / binding.step) * binding.step;
+    v = clamp(v);
+    if (v !== get()) set(v);
+  });
   if (binding?.register !== false) {
     controls.set(key, update);
     modulationViews.set(key, modulation);
   }
+  knobUnits.set(key, { format, min, max, get });
   (typeof bank === "string" ? $(bank) : bank).append(box);
   return update;
 }
@@ -2753,9 +2784,7 @@ function fillDestination(select, destination) {
       ...take("Synth engine"),
       ...pull(/^Synth OSC \d+$/).map(([label, choices]) => section(label, choices)),
     ] },
-    // Drum voices go by their kit names ("Closed HH · Decay").
-    { label: "Drums", choices: pull(/^Drum \d+$/).map(([, choices]) =>
-      section(choices[0][1].split(" · ")[0], choices)) },
+    ...drumDestinations(pull(/^Drum \d+$/)),
     { label: "Performance", choices: take("Performance") },
     { label: "Sequencer steps", choices: Array.from({ length: 16 }, (_, i) =>
       section(`Step ${i + 1}`, steps.filter(([, text]) => text.startsWith(`Step ${i + 1} ·`)))) },
@@ -2776,6 +2805,25 @@ function fillDestination(select, destination) {
     }
   }
   window.SadLazySelect.configure(select, value, groups);
+}
+// Each drum voice is a top-level section, its controls grouped by module like
+// the voice editor: "Snare → Filter 1 → Cutoff". Drum voices go by their kit
+// names ("Closed HH · Decay").
+function drumDestinations(voices) {
+  const section = window.SadLazySelect.section,
+    sections = window.SadDrums?.controlSections;
+  if (!voices.length) return [];
+  if (!sections)
+    return [{ label: "Drums", choices: voices.map(([, choices]) =>
+      section(choices[0][1].split(" · ")[0], choices)) }];
+  const specs = new Map((sequenceCatalog?.modulation || []).map((spec) => [spec.id, spec]));
+  return window.SadDrums.voiceNames.map((voice, v) => ({
+    label: voice,
+    choices: sections(v).map(([module, controls]) => section(module, controls.flatMap(([id, name]) => {
+      const spec = specs.get(`drum${v + 1}_${id}`);
+      return spec ? [[destinationValue({ control: { index: spec.index } }), name, `${voice} · ${name}`]] : [];
+    }))),
+  }));
 }
 function refreshColorDestinations() {
   for (const [i, scope] of scopes.entries())
@@ -3013,7 +3061,8 @@ function syncMatrix() {
       };
       depth.oninput = () => {
         preset.matrix[i].depth = Number(depth.value);
-        row.querySelector("output").textContent = signedPercent(
+        row.querySelector("output").textContent = depthText(
+          preset.matrix[i].destination,
           preset.matrix[i].depth,
         );
         scheduleParameter(`matrix${i + 1}_depth`, preset.matrix[i].depth);
@@ -3042,7 +3091,7 @@ function syncMatrix() {
     if (document.activeElement !== destination)
       fillDestination(destination, route.destination);
     if (document.activeElement !== depth) depth.value = route.depth;
-    row.querySelector("output").textContent = signedPercent(route.depth);
+    row.querySelector("output").textContent = depthText(route.destination, route.depth);
     row
       .querySelector(".matrix-bypass")
       .setAttribute("aria-pressed", String(!route.enabled));
@@ -3169,7 +3218,7 @@ function syncLfos() {
         else input.value = l[field];
       }
     }
-    card.querySelector(".depth-value").textContent = signedPercent(l.depth);
+    card.querySelector(".depth-value").textContent = depthText(l.destination, l.depth);
     card.querySelector(".sync").checked = l.sync;
     card.querySelector(".rate").disabled = l.sync;
     card.querySelector(".division").disabled = !l.sync;
@@ -3235,6 +3284,68 @@ const envTime = (seconds) =>
   seconds < 1 ? `${Math.round(seconds * 1000)} ms` : `${seconds.toFixed(2)} s`;
 const signedPercent = (value) =>
   `${value > 0 ? "+" : ""}${Math.round(value * 100)}%`;
+// Each knob's display, so modulation depths read in their target's units.
+const knobUnits = new Map();
+// Ranges the engine scales Parameter routes by (matrix.rs route ranges),
+// with the knobs that show them.
+const PARAMETER_ROUTES = {
+  filter_env_depth: [-1, 1], filter_keytrack: [0, 1], filter2_env_depth: [-1, 1],
+  filter2_keytrack: [0, 1], filter_drive: [0, 1], filter_morph: [0, 1],
+  filter2_drive: [0, 1], filter2_morph: [0, 1], sample_tune_semis: [-48, 48],
+  sample_tune_cents: [-100, 100],
+};
+/** The display of a route's target: its format, the range a depth of 1
+ * spans and the current value; null when it has no knob. */
+function destinationUnit(destination) {
+  if (!destination || destination === "none") return null;
+  if (typeof destination === "string")
+    // Main destinations add the depth to a 0…1 control.
+    return knobUnits.get(destination === "volume" ? "master_volume" : destination) ?? null;
+  if (destination.parameter) {
+    const key = destination.parameter.parameter,
+      unit = knobUnits.get(key);
+    return unit && PARAMETER_ROUTES[key]
+      ? { ...unit, min: PARAMETER_ROUTES[key][0], max: PARAMETER_ROUTES[key][1] }
+      : null;
+  }
+  if (destination.color)
+    return knobUnits.get(`color:${destination.color.slot}:${destination.color.parameter}`) ?? null;
+  if (destination.control) {
+    const id = sequenceCatalog?.modulation?.find((s) => s.index === destination.control.index)?.id;
+    return id ? parameterUnit(id) : null;
+  }
+  return null;
+}
+/** A catalog control's display; drum voices not on screen ask the editor. */
+function parameterUnit(id) {
+  const spec = sequenceCatalog?.parameters?.find((p) => p.id === id),
+    drum = /^drum(\d+)_(\d+)$/.exec(id),
+    unit = knobUnits.get(id) ??
+      (drum && window.SadDrums?.controlUnit?.(Number(drum[2]),
+        () => preset.drums?.params?.[drum[1] - 1]?.[drum[2]] ?? 0));
+  return spec && unit ? { ...unit, min: spec.min, max: spec.max } : null;
+}
+// "+12.0 st" from a format like "-24.0 st": a display linear in the value
+// reads as a signed amount; any other shows where full depth takes it.
+const depthText = (destination, depth) => unitDepth(destinationUnit(destination), depth);
+function unitDepth(unit, depth) {
+  if (!unit) return signedPercent(depth);
+  const { format, min, max, get } = unit,
+    delta = depth * (max - min),
+    read = (v) => {
+      const m = /^([+\-−]?\d[\d,]*(?:\.(\d+))?)\s*(.*)$/.exec(String(format(v)).trim());
+      return m && { n: Number(m[1].replace(/,/g, "").replace("−", "-")), digits: m[2]?.length ?? 0, unit: m[3] };
+    },
+    [low, mid, high] = [min, (min + max) / 2, max].map(read);
+  if (low && mid && high && low.unit === high.unit && mid.unit === low.unit &&
+      Math.abs(mid.n - (low.n + high.n) / 2) <= Math.abs(high.n - low.n) * 0.01) {
+    const amount = ((high.n - low.n) / (max - min)) * delta,
+      text = Math.abs(amount).toFixed(low.digits);
+    return `${Number(text) === 0 ? "" : amount > 0 ? "+" : "−"}${text}${low.unit === "%" ? "%" : low.unit ? ` ${low.unit}` : ""}`;
+  }
+  const target = String(format(Math.max(min, Math.min(max, get() + delta))));
+  return /^[←→]/.test(target) ? target : `→ ${target}`;
+}
 function buildEnvs() {
   $("env-remove").onclick = () => removeModulator("env");
   $("env-add").onclick = () => {
@@ -3355,7 +3466,7 @@ function syncEnvs() {
         window.SadLazySelect.setValue(route.select, destinationValue(env[route.destination]));
       if (document.activeElement !== route.input)
         route.input.value = env[route.depth];
-      route.output.textContent = signedPercent(env[route.depth]);
+      route.output.textContent = depthText(env[route.destination], env[route.depth]);
     }
   }
 }
@@ -3529,6 +3640,7 @@ function buildSequence() {
     fxName: (slot) => COLOR_TYPES.find(([kind]) => kind === slot.kind)?.[1],
     knob: (schema, container, binding) =>
       createKnob(schema, container, binding),
+    depthText: (parameter, depth) => unitDepth(parameterUnit(parameter), depth),
     view: (offset) =>
       flushEdits()
         .then(() => request("/api/sequencer/view", { offset }))
@@ -4442,7 +4554,7 @@ async function poll() {
     }
   } finally {
     // A hidden editor still notices finished recordings and audio errors.
-    setTimeout(poll, document.hidden ? 500 : 80);
+    setTimeout(poll, document.hidden ? 500 : performance.now() - midiMovedAt < 400 ? 20 : 80);
   }
 }
 async function init() {
@@ -4505,6 +4617,14 @@ async function init() {
         notify,
         download,
       });
+    window.SadMidiLearn?.setup({
+      notify,
+      // The browser and desktop builds play the MIDI input chosen by Keyboard.
+      hint: () =>
+        getComputedStyle($("midi")).display !== "none" && !$("midi").value
+          ? "choose a MIDI input next to Keyboard"
+          : "",
+    });
     buildKeyboard();
     bind();
     sampleSelection = new window.SadSampleSelection({

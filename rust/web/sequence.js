@@ -514,8 +514,17 @@ window.SadNeuropolis = class {
       (Math.floor(n / 12) - 1)
     );
   }
+  // A depth in its target's units ("+12.0 st"); percent without one.
+  depthText(parameter, depth) {
+    return (parameter && this.hooks.depthText?.(parameter, depth)) ||
+      `${depth > 0 ? "+" : ""}${Math.round(depth * 100)}%`;
+  }
+  // Resynth and Synth engine oscillator lanes edit a signed offset.
+  relative(track) {
+    return ["oscillator", "synth_oscillator"].includes(track?.target.kind);
+  }
   pitchText(track, value) {
-    return track.target.kind === "oscillator"
+    return this.relative(track)
       ? `${value >= 60 ? "+" : ""}${Math.round(value - 60)} st`
       : this.note(value);
   }
@@ -550,7 +559,9 @@ window.SadNeuropolis = class {
       : t.target.kind === "notes"
         ? this.hooks.read().sampler ? "Notes → pads by key" : "Notes → grains + ENV"
         : t.target.kind === "oscillator"
-          ? `OSC ${t.target.index + 1} offset`
+          ? `${this.hooks.read().synth ? "Resynth " : ""}OSC ${t.target.index + 1} offset`
+          : t.target.kind === "synth_oscillator"
+            ? `Synth OSC ${t.target.index + 1} offset`
           : this.catalog.parameters.find((p) => p.id === t.target.parameter)
               ?.name || t.target.parameter;
   }
@@ -621,6 +632,8 @@ window.SadNeuropolis = class {
           input.value = input.dataset.optional && raw < 0 ? "" : Number(value);
       }
     }
+    const units = this.root.querySelector(".neuro-depth-units");
+    if (units) units.textContent = this.depthText(track.target.parameter, track.amount);
     for (const update of this.knobs) update();
     const valueLayer = track.target.kind === "parameter" ? "cv" : "pitch";
     this.root.querySelectorAll(".neuro-stage").forEach((card, i) => {
@@ -632,7 +645,9 @@ window.SadNeuropolis = class {
         valueLayer === "pitch"
           ? this.pitchText(track, value)
           : valueLayer === "cv"
-            ? `${value > 0 ? "+" : ""}${(value / 50).toFixed(0)}%`
+            ? track.absolute
+              ? `${value > 0 ? "+" : ""}${(value / 50).toFixed(0)}%`
+              : this.depthText(track.target.parameter, (value / 5000) * track.amount)
             : typeof value === "boolean"
               ? value
                 ? "On"
@@ -754,8 +769,8 @@ window.SadNeuropolis = class {
       steps: Array.from({ length: stages.at(-1) - stages[0] + 1 }, (_, i) =>
         this.selection.has(stages[0] + i) ? { ...track.steps[stages[0] + i] } : null,
       ),
-      oscillator: track.target.kind === "oscillator",
-      root: track.target.kind === "oscillator" ? 60 : track.root_note,
+      oscillator: this.relative(track),
+      root: this.relative(track) ? 60 : track.root_note,
     };
     this.sync();
   }
@@ -766,7 +781,7 @@ window.SadNeuropolis = class {
       clip = this.clipboard,
       stages = [...this.selection].sort((a, b) => a - b);
     if (!track || !clip || !stages.length) return;
-    const oscillator = track.target.kind === "oscillator",
+    const oscillator = this.relative(track),
       shift =
         oscillator === clip.oscillator
           ? 0
@@ -968,8 +983,9 @@ window.SadNeuropolis = class {
   // Destination menu sections. Numbered filters, LFOs, envelopes, effect slots,
   // oscillators and drum voices each get a submenu inside their family.
   parameterGroups(prefix = "") {
-    const preset = this.hooks.read(), families = new Map(),
-      order = ["Main", "Filters", "LFO", "Envelopes", "Arpeggiator", "Pre-filter FX", "Post-filter FX", "Resynth", "Synth engine", "Drums"];
+    const preset = this.hooks.read(), families = new Map(), drums = new Map(),
+      order = ["Main", "Filters", "LFO", "Envelopes", "Arpeggiator", "Pre-filter FX", "Post-filter FX", "Resynth", "Synth engine", "Drums"],
+      voices = window.SadDrums?.controlSections;
     for (const spec of this.catalog.parameters) {
       const id = spec.id, fx = /^(pre_)?fx(\d+)_/.exec(id);
       let slot = null;
@@ -979,6 +995,11 @@ window.SadNeuropolis = class {
           continue;
       }
       if (id.startsWith("drum") && !preset.drums) continue;
+      const drum = /^drum(\d+)_(\d+)$/.exec(id);
+      if (drum && voices) {
+        drums.set(id, spec.name);
+        continue;
+      }
       const n = /\d+/.exec(id)?.[0], filter = /^(?:filter|vcf)(\d*)(?:_|$)/.exec(id),
         slotName = fx && `${fx[1] ? "Pre FX" : "FX"} ${fx[2]}`, kind = slot && this.hooks.fxName?.(slot);
       const [family, sub, strip = sub] = fx
@@ -1005,11 +1026,24 @@ window.SadNeuropolis = class {
       .sort(([a], [b]) => order.indexOf(a) - order.indexOf(b))
       .map(([family, { targets, subs }]) => section(family, [
         ...targets, ...[...subs].map(([label, s]) => section(label, s.choices, s.strip)),
-      ]));
+      ]))
+      .concat(this.drumGroups(drums, prefix));
+  }
+  // Each drum voice is a top-level section, its controls grouped by module
+  // like the voice editor: Drum 1 → Filter 1 → Cutoff.
+  drumGroups(drums, prefix) {
+    if (!drums.size) return [];
+    const { section } = window.SadLazySelect;
+    return window.SadDrums.voiceNames.map((voice, v) => ({
+      label: voice,
+      choices: window.SadDrums.controlSections(v).map(([module, controls]) => section(module,
+        controls.filter(([id]) => drums.has(`drum${v + 1}_${id}`))
+          .map(([id, name]) => [`${prefix}drum${v + 1}_${id}`, name, `${voice} · ${name}`]))),
+    }));
   }
   buildStages(editor, track) {
     const parameter = track.target.kind === "parameter",
-      relative = track.target.kind === "oscillator",
+      relative = this.relative(track),
       field = parameter ? 12 : 0,
       min = parameter ? -5000 : relative ? -24 : 0,
       max = parameter ? 5000 : relative ? 24 : 127;
@@ -1194,7 +1228,7 @@ window.SadNeuropolis = class {
         this.knobs.push(this.hooks.knob(
           [
             `sequence_${track.id}_${i}_${key}`, "",
-            (v) => `${v > 0 ? "+" : ""}${Math.round(v * 100)}%`,
+            (v) => this.depthText(this.track(track.id)?.destinations?.[destination], v),
             -1, 1, `Stage ${i + 1} destination ${destination + 1} amount`,
           ], slot, {
             register: false,
@@ -1301,14 +1335,18 @@ window.SadNeuropolis = class {
     };
     const target = document.createElement("button");
     target.setAttribute("aria-label", "Track destination");
-    const pads = this.hooks.read().sampler?.pads || [];
+    const pads = this.hooks.read().sampler?.pads || [],
+      synth = !!this.hooks.read().synth;
     window.SadLazySelect.configure(target,
       track.target.kind === "oscillator" ? `osc:${track.target.index}`
+        : track.target.kind === "synth_oscillator" ? `synth-osc:${track.target.index}`
         : track.target.kind === "pad" ? `pad:${track.target.pad}`
         : track.target.kind === "parameter" ? `param:${track.target.parameter}` : track.target.kind,
       [{ label: "Pitch & notes", choices: [
         ["main_pitch", "Main track pitch"], ["notes", pads.length ? "Notes → pads by key" : "Notes → grains + ENV"],
-        ...[0, 1, 2, 3].map(i => [`osc:${i}`, `OSC ${i + 1} pitch offset`]),
+        // A Synth engine timbre plays its own oscillators; Resynth's follow.
+        ...(synth ? [0, 1, 2, 3].map(i => [`synth-osc:${i}`, `Synth OSC ${i + 1} pitch offset`]) : []),
+        ...[0, 1, 2, 3].map(i => [`osc:${i}`, `${synth ? "Resynth " : ""}OSC ${i + 1} pitch offset`]),
       ] },
       // A kit's pads, each played by its own track whatever its keys.
       ...(pads.length ? [{ label: "Sampler pads", choices: pads
@@ -1319,12 +1357,14 @@ window.SadNeuropolis = class {
       const current = this.track(track.id);
       current.target = target.value.startsWith("osc:")
         ? { kind: "oscillator", index: Number(target.value.slice(4)) }
+        : target.value.startsWith("synth-osc:")
+          ? { kind: "synth_oscillator", index: Number(target.value.slice(10)) }
         : target.value.startsWith("pad:")
           ? { kind: "pad", pad: Number(target.value.slice(4)) }
           : target.value.startsWith("param:")
           ? { kind: "parameter", parameter: target.value.slice(6) }
           : { kind: target.value };
-      if (current.target.kind === "oscillator") {
+      if (this.relative(current)) {
         const shift = 60 - current.root_note;
         current.config[5] = (((current.config[5] + shift) % 12) + 12) % 12;
         current.steps.forEach((step) => {
@@ -1360,7 +1400,7 @@ window.SadNeuropolis = class {
       const routing = document.createElement("div");
       routing.className = "neuro-pitch-routing";
       const label = document.createElement("span");
-      label.textContent = "Main pitch →";
+      label.textContent = this.hooks.read().synth ? "Main pitch → Resynth" : "Main pitch →";
       routing.append(label);
       for (let i = 0; i < 4; i++) {
         const check = document.createElement("label");
@@ -1394,12 +1434,16 @@ window.SadNeuropolis = class {
     this.configControl(controls, "Gate %", 7, null, 0, 100);
     this.configControl(controls, "Transpose", 6, null, -60, 60);
     if (track.target.kind === "parameter") {
-      this.configControl(controls, "Depth", 43, null, -1, 1, 0.01);
+      const depth = this.configControl(controls, "Depth", 43, null, -1, 1, 0.01),
+        units = document.createElement("output");
+      units.className = "neuro-depth-units";
+      units.setAttribute("aria-label", "Track depth in target units");
+      depth.after(units);
       this.configControl(controls, "Mapping", 44, [
         [0, "Relative"],
         [1, "Absolute"],
       ]);
-    } else if (track.target.kind !== "oscillator") {
+    } else if (!this.relative(track)) {
       this.configControl(
         controls,
         "Root note",
@@ -1408,7 +1452,7 @@ window.SadNeuropolis = class {
       );
       this.configControl(controls, "Depth", 43, null, -1, 1, 0.01);
     } else this.configControl(controls, "Depth", 43, null, -1, 1, 0.01);
-    if (track.target.kind === "oscillator")
+    if (this.relative(track))
       this.configControl(
         controls,
         "Gate oscillator",
@@ -1547,7 +1591,7 @@ window.SadNeuropolis = class {
     const out = this.root.querySelector(".neuro-live");
     if (out && selected)
       out.textContent = active
-        ? this.track()?.target.kind === "oscillator"
+        ? this.relative(this.track())
           ? `${selected.value >= 0 ? "+" : ""}${selected.value.toFixed(2)} st`
           : `${this.note(selected.pitch)} · ${selected.value > 0 ? "+" : ""}${selected.value.toFixed(2)}${this.track()?.target.kind === "parameter" ? "" : " st"}`
         : "—";

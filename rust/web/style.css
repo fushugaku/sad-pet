@@ -1350,6 +1350,45 @@ h2 {
   margin-top: 1px;
   font-variant-numeric: tabular-nums;
 }
+/* MIDI learn: a learned knob shows its controller number; a knob waiting
+   for a controller pulses. */
+.knob-midi {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  min-width: 17px;
+  height: 13px;
+  padding: 0 3px;
+  border: 1px solid var(--accent-dim);
+  border-radius: 7px;
+  background: #222b20;
+  color: var(--accent);
+  font:
+    9px/11px ui-monospace,
+    monospace;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  pointer-events: none;
+}
+.knob.midi-learning .dial::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: midi-learn 0.8s ease-in-out infinite alternate;
+}
+@keyframes midi-learn {
+  from {
+    opacity: 0.2;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .knob.midi-learning .dial::after {
+    animation: none;
+  }
+}
 .effects-bank .arc {
   stroke: var(--blue);
 }
@@ -3433,6 +3472,16 @@ input[type="range"] {
   min-height: 13px;
   white-space: nowrap;
 }
+.neuro-depth-units {
+  overflow: hidden;
+  color: var(--text);
+  font:
+    11px ui-monospace,
+    monospace;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .neuro-control input,
 .neuro-control select,
 .neuro-control .sad-select {
@@ -4242,6 +4291,32 @@ input[type="range"] {
   grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
   gap: 10px;
 }
+/* The Envelopes module: one labelled row of knobs per envelope. */
+.drum-module-rows {
+  display: grid;
+  gap: 8px;
+}
+.drum-module-row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+.drum-module-row + .drum-module-row {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.drum-module-row h4 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.drum-module.off .drum-module-rows {
+  opacity: 0.45;
+}
 .drum-voice.all .drum-voice-body {
   display: block;
 }
@@ -4255,6 +4330,9 @@ input[type="range"] {
 }
 .drum-voice.all .drum-module {
   padding-inline: 10px;
+}
+.drum-voice.all .drum-module.wide {
+  grid-column: 1 / -1;
 }
 .filter-card .filter-graph {
   height: 96px;

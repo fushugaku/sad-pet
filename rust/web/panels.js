@@ -475,11 +475,11 @@
       summary: (p) => show(p, 7, 8) },
     { title: "Transient", menus: [27], knobs: [11, 34],
       summary: (p) => show(p, 27, 11) },
-    { title: "Amp env", knobs: [3, 2, 4, 28, 29],
+    // Every envelope on one page, a row each.
+    { title: "Envelopes", wide: true,
+      rows: [["Amp", [3, 2, 4, 28, 29]], ["Pitch", [5, 6, 37]],
+        ["Filter", [39, 40, 41]], ["Assign", [43, 44, 45]]],
       summary: (p) => `${show(p, 3)} / ${show(p, 2)}` },
-    { title: "Pitch env", knobs: [5, 6, 37], summary: (p) => show(p, 5, 6) },
-    { title: "Filter env", knobs: [39, 40, 41],
-      summary: (p) => `${show(p, 39)} / ${show(p, 40)}` },
     // A modeled Filter 1 replaces the LXR type.
     { title: "Filter 1", menus: [55, 14], knobs: [12, 13, 36, 53, 42],
       idle: { 14: (p) => p[55] > 0 },
@@ -497,9 +497,25 @@
       summary: (p) => (p[21] ? `→ ${show(p, 22, 21)}` : "Off") },
     { title: "Velocity", menus: [30], knobs: [31], off: (p) => !p[30],
       summary: (p) => (p[30] ? `→ ${show(p, 30, 31)}` : "Off") },
-    { title: "Assign env", knobs: [43, 44, 45],
-      summary: (p) => `${show(p, 43)} / ${show(p, 44)}` },
   ];
+  // Knob rows of a module: [row label or null, ids].
+  const rowsOf = (module) => module.rows ?? [[null, module.knobs]];
+  // Only the hat voice (6, shared by Closed and Open HH) has Open decay.
+  const shown = (id, voice) => id !== 29 || voice === 5;
+  // A voice's controls grouped like its modules, for destination menus:
+  // [module title, [[id, name], ...]]. Envelope rows prefix their knobs.
+  function controlSections(voice) {
+    const name = (row, id) => {
+      if (!row) return defs[id].name;
+      const knob = id === 2 && voice === 5 ? "Closed decay" : short[id];
+      return `${row} ${knob.toLowerCase()}`;
+    };
+    return modules.map((module) => [module.title, [
+      ...(module.menus ?? []).map((id) => [id, defs[id].name]),
+      ...rowsOf(module).flatMap(([row, ids]) =>
+        ids.filter((id) => shown(id, voice)).map((id) => [id, name(row, id)])),
+    ]]);
+  }
   const LAYOUT_KEY = "evil-pet-drum-voice-layout";
   class Drums {
     constructor(root, catalog, hooks) {
@@ -1044,9 +1060,9 @@
         const summary = el("span");
         tab.append(el("b", "", module.title), summary);
         this.chain.append(tab);
-        const panel = el("section", "drum-module"),
+        const panel = el("section", module.wide ? "drum-module wide" : "drum-module"),
           heading = el("div", "drum-module-head"),
-          grid = el("div", "drum-module-knobs");
+          grid = el("div", module.rows ? "drum-module-rows" : "drum-module-knobs");
         panel.setAttribute("aria-label", `${name} ${module.title}`);
         heading.append(el("h3", "", module.title));
         let graph = null;
@@ -1074,33 +1090,42 @@
             set(id),
             short[id],
           ).parentNode;
-        for (const id of module.knobs) {
-          if (id === 29 && voice !== 5) continue;
-          const d = defs[id];
-          this.knobs.push(
-            this.hooks.knob(
-              [
-                `drum${voice + 1}_${id}`,
-                (id === 2 && voice === 5 ? "Closed decay" : short[id]).toUpperCase(),
-                (v) => format(d, v),
-                d.min,
-                d.max,
-                `${name} ${d.name}`,
-              ],
-              grid,
-              {
-                register: false,
-                ariaScale: 1,
-                normalize: d.log ? (v) => normalize(d, v) : undefined,
-                denormalize: d.log ? (v) => denormalize(d, v) : undefined,
-                step: d.unit === "integer" ? 1 : undefined,
-                get: () => this.settings().params[voice][id],
-                set: set(id),
-                reset: () => this.catalog.defaults[voice][id],
-              },
-            ),
-          );
-          controls[id] = grid.lastElementChild;
+        for (const [row, ids] of rowsOf(module)) {
+          let knobs = grid;
+          if (row) {
+            const line = el("div", "drum-module-row");
+            knobs = el("div", "drum-module-knobs");
+            line.append(el("h4", "", row), knobs);
+            grid.append(line);
+          }
+          for (const id of ids) {
+            if (!shown(id, voice)) continue;
+            const d = defs[id];
+            this.knobs.push(
+              this.hooks.knob(
+                [
+                  `drum${voice + 1}_${id}`,
+                  (id === 2 && voice === 5 ? "Closed decay" : short[id]).toUpperCase(),
+                  (v) => format(d, v),
+                  d.min,
+                  d.max,
+                  `${name} ${d.name}`,
+                ],
+                knobs,
+                {
+                  register: false,
+                  ariaScale: 1,
+                  normalize: d.log ? (v) => normalize(d, v) : undefined,
+                  denormalize: d.log ? (v) => denormalize(d, v) : undefined,
+                  step: d.unit === "integer" ? 1 : undefined,
+                  get: () => this.settings().params[voice][id],
+                  set: set(id),
+                  reset: () => this.catalog.defaults[voice][id],
+                },
+              ),
+            );
+            controls[id] = knobs.lastElementChild;
+          }
         }
         return { module, tab, summary, panel, controls, graph };
       });
@@ -1179,6 +1204,11 @@
   }
   window.SadTimbres = Timbres;
   Drums.filterGain = filterGain;
+  Drums.controlSections = controlSections;
+  // A control's display for modulation depths in its own units.
+  Drums.controlUnit = (id, get) =>
+    defs[id] && { format: (v) => format(defs[id], v), min: defs[id].min, max: defs[id].max, get };
+  Drums.voiceNames = names.slice(0, 6);
   window.SadDrums = Drums;
   window.SadFilterGraph = { markup: GRAPH, draw: drawResponse };
 })();

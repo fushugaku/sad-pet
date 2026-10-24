@@ -15,7 +15,7 @@ use rtrb::{Consumer, Producer, RingBuffer};
 use sad_pet::{
     Stereo,
     dsp::{Engine, Fades, Region, SampleBuffer, sample::LiveInput, telemetry::RealtimeView},
-    midi::{Message, Parser},
+    midi::{Controls, Message, Parser},
     performance::Mode,
     preset::Preset,
     wav,
@@ -213,6 +213,8 @@ pub struct Controller {
     song_position: i64,
     /// The prepared audio has render workers, or a queued update brings them.
     workers_started: bool,
+    /// Controllers moved on the host's MIDI input, for the editor's MIDI learn.
+    controls: Arc<Controls>,
 }
 
 pub struct Audio {
@@ -230,6 +232,7 @@ pub struct Audio {
     retired: Producer<Update>,
     feedback: Producer<Feedback>,
     parser: Parser,
+    controls: Arc<Controls>,
     parameters: Vec<f32>,
     revision: u64,
     sync: bool,
@@ -421,6 +424,7 @@ impl Controller {
             song_position: 0,
             preview_generation: 0,
             workers_started: false,
+            controls: Arc::default(),
         }
     }
 
@@ -593,6 +597,7 @@ impl Controller {
             retired: retire,
             feedback: publish,
             parser: Parser::default(),
+            controls: self.controls.clone(),
             parameters: vec![f32::NAN; parameters::specs().len()],
             revision: self.revision,
             sync: self.sync,
@@ -1660,6 +1665,7 @@ pub unsafe extern "C" fn sad_audio_midi(audio: *mut Audio, data: *const u8, len:
     let audio = unsafe { &mut *audio };
     for &byte in unsafe { std::slice::from_raw_parts(data, len) } {
         if let Some(message) = audio.parser.feed(byte) {
+            audio.controls.record(message);
             audio.midi(message);
         }
     }

@@ -715,6 +715,8 @@ export class BrowserBackend {
       this.selectedMidi = data.port === null ? null : this.midiPorts[data.port];
       if (this.selectedMidi) {
         this.selectedMidi.onmidimessage = (event) => {
+          // MIDI learn sees controllers here, without waiting for a state poll.
+          window.SadMidiLearn?.bytes(event.data);
           this.resume();
           this.audio
             .call("request", [...event.data], [], "/api/midi-bytes")

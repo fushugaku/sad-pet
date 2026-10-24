@@ -155,6 +155,10 @@ fn handle(
                     include_bytes!("../web/vocal.js").to_vec(),
                     "application/javascript",
                 )),
+                "/midi.js" => Ok((
+                    include_bytes!("../web/midi.js").to_vec(),
+                    "application/javascript",
+                )),
                 "/vocal.css" => Ok((
                     include_bytes!("../web/vocal.css").to_vec(),
                     "text/css; charset=utf-8",
@@ -174,7 +178,19 @@ fn handle(
                 "/api/sequencer/catalog" => json(&crate::sequence::catalog()),
                 "/api/drums/catalog" => json(&crate::drums::catalog()),
                 "/favicon.ico" => Ok((Vec::new(), "image/x-icon")),
-                "/api/state" => json(&*state.lock().map_err(|e| e.to_string())?),
+                "/api/state" => {
+                    let mut value =
+                        serde_json::to_value(&*state.lock().map_err(|e| e.to_string())?)
+                            .map_err(|e| e.to_string())?;
+                    // Controllers moved since the last poll, for the editor's MIDI learn.
+                    let moved = connection
+                        .lock()
+                        .map_err(|e| e.to_string())?
+                        .as_ref()
+                        .map_or_else(Vec::new, |c| c.controls.changes());
+                    value["midi_controls"] = serde_json::json!(moved);
+                    json(&value)
+                }
                 "/api/preset" => json(&state.lock().map_err(|e| e.to_string())?.preset),
                 "/api/presets" => json(&(0..5).map(Preset::builtin).collect::<Vec<_>>()),
                 "/api/samples" => json(&crate::samples::TRACKS),

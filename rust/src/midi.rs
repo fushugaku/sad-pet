@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicU32, Ordering::Relaxed};
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -130,6 +131,54 @@ impl Parser {
     }
 }
 
+const CONTROLLERS: usize = 16 * 128;
+
+/// The latest value of every controller on every channel, for the editor's
+/// MIDI learn. The audio or MIDI thread records without waiting or
+/// allocating; the editor's state poll collects the controllers that moved.
+pub struct Controls {
+    latest: Box<[AtomicU32]>,
+    seen: Box<[AtomicU32]>,
+}
+impl Default for Controls {
+    fn default() -> Self {
+        let slots = || (0..CONTROLLERS).map(|_| AtomicU32::new(0)).collect();
+        Self {
+            latest: slots(),
+            seen: slots(),
+        }
+    }
+}
+impl Controls {
+    /// A slot keeps a write count above the 7-bit value, so a controller
+    /// moved away and back between two polls still reads as moved.
+    pub fn record(&self, message: Message) {
+        if let Message::Control {
+            channel,
+            controller,
+            value,
+        } = message
+            && channel < 16
+            && controller < 128
+        {
+            let slot = &self.latest[channel as usize * 128 + controller as usize];
+            let count = (slot.load(Relaxed) >> 7).wrapping_add(1);
+            slot.store(count << 7 | value.min(127) as u32, Relaxed);
+        }
+    }
+    /// [channel, controller, value] of each controller moved since the last call.
+    pub fn changes(&self) -> Vec<[u8; 3]> {
+        let mut changes = Vec::new();
+        for (i, (latest, seen)) in self.latest.iter().zip(&self.seen).enumerate() {
+            let word = latest.load(Relaxed);
+            if seen.swap(word, Relaxed) != word {
+                changes.push([(i / 128) as u8, (i % 128) as u8, (word & 127) as u8]);
+            }
+        }
+        changes
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct Port {
     pub id: usize,
@@ -156,6 +205,8 @@ pub fn ports() -> Result<Vec<Port>, String> {
 pub struct Connection {
     _input: midir::MidiInputConnection<Parser>,
     pub name: String,
+    /// Controllers moved on this input, for the editor's MIDI learn.
+    pub controls: std::sync::Arc<Controls>,
 }
 #[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
 impl Connection {
@@ -168,6 +219,8 @@ impl Connection {
         let ports = input.ports();
         let port = ports.get(id).ok_or("MIDI port is no longer available")?;
         let name = input.port_name(port).map_err(|e| e.to_string())?;
+        let controls = std::sync::Arc::new(Controls::default());
+        let moved = controls.clone();
         let connection = input
             .connect(
                 port,
@@ -175,6 +228,7 @@ impl Connection {
                 move |_, bytes, parser| {
                     for &byte in bytes {
                         if let Some(message) = parser.feed(byte) {
+                            moved.record(message);
                             let _ = commands.try_send(crate::audio::Command::Midi(message));
                         }
                     }
@@ -185,6 +239,43 @@ impl Connection {
         Ok(Self {
             _input: connection,
             name,
+            controls,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn control(channel: u8, controller: u8, value: u8) -> Message {
+        Message::Control {
+            channel,
+            controller,
+            value,
+        }
+    }
+
+    #[test]
+    fn controls_report_each_moved_controller_once_with_its_latest_value() {
+        let controls = Controls::default();
+        assert!(controls.changes().is_empty());
+        controls.record(control(0, 74, 10));
+        controls.record(control(0, 74, 90));
+        controls.record(control(15, 1, 127));
+        controls.record(Message::NoteOn {
+            channel: 0,
+            note: 74,
+            velocity: 100,
+        });
+        assert_eq!(controls.changes(), [[0, 74, 90], [15, 1, 127]]);
+        assert!(controls.changes().is_empty());
+        // Away and back between two polls is still a move.
+        controls.record(control(0, 74, 20));
+        controls.record(control(0, 74, 90));
+        assert_eq!(controls.changes(), [[0, 74, 90]]);
+        controls.record(control(16, 1, 1));
+        controls.record(control(0, 128, 1));
+        assert!(controls.changes().is_empty());
     }
 }

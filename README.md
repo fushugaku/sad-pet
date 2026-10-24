@@ -243,6 +243,8 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   Original fixed-point kernels and Depth transfer, plus per-slot Mix and bypass.
   Depth accepts LFO, envelope, matrix and DAW automation; SubOSC/Pickup follow MIDI pitch.
 - Live modulation feedback on controls, MIDI input and stereo WAV/MP3 recording.
+- MIDI learn on every knob: right-click it, choose **MIDI learn** and move a
+  controller. The web version reads the MIDI input chosen next to Keyboard.
 - Dry/Wet blends the original source with grains before pre-filter FX, note
   filters and post-filter FX, so even fully dry audio receives the full chain.
 - Waveform loop selection, adjustable fade in/out and sample-exact trimming to new library files.

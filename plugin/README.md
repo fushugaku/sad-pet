@@ -252,6 +252,17 @@ pressure and polyphonic pressure. Notes engage the engine's MIDI gate, including
 in the effect, so they can trigger envelopes and gate the processed input.
 Use Play to return to continuous playback when the keys are released.
 
+**MIDI learn**: right-click any knob (or press the menu key on a focused knob),
+choose **MIDI learn** and move a controller; from then on that CC turns the knob
+across its range and its number shows on the knob. Esc cancels. One CC turns one
+knob, so learning it again moves it; **Forget CC…** and **Forget all MIDI
+mappings** in the same menu remove mappings. A mapping names the knob, not the
+timbre: the controller turns that knob on whichever timbre the editor shows.
+Mappings are kept by the editor for every project and preset of that host
+(the browser, or the DAW's plug-in web view). The editor applies them, so a
+learned controller turns knobs while the plug-in window is open; use the DAW's
+own MIDI learn on host parameters to automate with the window closed.
+
 **DAW · … BPM** follows the host tempo and starts/stops the sequencer/arpeggiator
 with the host transport. Moving or looping the playhead repositions those modes.
 **Free tempo** enables the instrument's own tempo control. The MIDI keyboard
