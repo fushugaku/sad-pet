@@ -98,7 +98,7 @@ function editor() {
     document, localStorage, innerWidth: 1200, innerHeight: 800,
     addEventListener() {}, removeEventListener() {},
     preset: {}, state: { knobs: {} }, editing: 0,
-    controls: new Map(), modulationViews: new Map(),
+    controls: new Map(), modulationViews: new Map(), knobUnits: new Map(),
   });
   context.window = context;
   vm.runInContext(midi, context);

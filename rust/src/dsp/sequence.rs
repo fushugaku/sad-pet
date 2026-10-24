@@ -12,6 +12,7 @@ use metropolix_core::sequencer::{PPQN, Sequencer, field};
 enum Binding {
     MainPitch,
     Oscillator(usize),
+    SynthOscillator(usize),
     Parameter(usize),
     Notes,
     Unbound,
@@ -105,6 +106,7 @@ impl Runtime {
                 let binding = match &t.target {
                     Target::MainPitch => Binding::MainPitch,
                     Target::Oscillator { index } => Binding::Oscillator(*index as usize),
+                    Target::SynthOscillator { index } => Binding::SynthOscillator(*index as usize),
                     Target::Notes | Target::Pad { .. } => Binding::Notes,
                     Target::Parameter { parameter } => parameters::specs()
                         .iter()
@@ -117,6 +119,10 @@ impl Runtime {
                         .position(|s| s.id == "sample_tune_semis"),
                     Binding::Oscillator(index) => {
                         let id = format!("resynth_osc{}_transpose", index + 1);
+                        parameters::specs().iter().position(|s| s.id == id)
+                    }
+                    Binding::SynthOscillator(index) => {
+                        let id = format!("synth_osc{}_transpose", index + 1);
                         parameters::specs().iter().position(|s| s.id == id)
                     }
                     Binding::Parameter(index) => Some(index),
@@ -187,7 +193,12 @@ impl Runtime {
             .filter(|&i| lanes[i].binding == Binding::MainPitch)
             .collect();
         let oscillator_routes = (0..lanes.len())
-            .filter(|&i| matches!(lanes[i].binding, Binding::Oscillator(_)))
+            .filter(|&i| {
+                matches!(
+                    lanes[i].binding,
+                    Binding::Oscillator(_) | Binding::SynthOscillator(_)
+                )
+            })
             .collect();
         Self {
             core,
@@ -480,7 +491,10 @@ impl Runtime {
                     self.core.stage(i).map_or(0.0, |stage| {
                         l.destinations[stage as usize][destination] * (spec.max - spec.min)
                     })
-                } else if matches!(l.binding, Binding::MainPitch | Binding::Oscillator(_)) {
+                } else if matches!(
+                    l.binding,
+                    Binding::MainPitch | Binding::Oscillator(_) | Binding::SynthOscillator(_)
+                ) {
                     (l.pitch.value(now) - l.root as f32) * l.amount
                 } else {
                     let cv = self.core.cv(i) as f32 / 5000.0;
@@ -502,12 +516,13 @@ impl Runtime {
         }
         for &i in &self.oscillator_routes {
             let l = &self.lanes[i];
-            if l.gate_output
-                && self.core.tracks[i].config[field::MUTE] == 0
-                && !self.core.gate(i)
-                && let Binding::Oscillator(index) = l.binding
-            {
-                m.resynth.oscillators[index].level = 0.0;
+            if l.gate_output && self.core.tracks[i].config[field::MUTE] == 0 && !self.core.gate(i) {
+                // Layer gains slew towards zero, so a closed gate never clicks.
+                match l.binding {
+                    Binding::Oscillator(index) => m.resynth.oscillators[index].level = 0.0,
+                    Binding::SynthOscillator(index) => m.synth.oscillators[index].level = 0.0,
+                    _ => {}
+                }
             }
         }
     }
@@ -622,6 +637,38 @@ mod tests {
         assert_eq!(
             m.resynth.oscillators.map(|o| o.transpose),
             [-2.0, -2.0, 12.0, -8.0]
+        );
+    }
+
+    #[test]
+    fn synth_oscillator_lanes_offset_and_gate_synth_layers_only() {
+        let mut osc = lane(1, Target::SynthOscillator { index: 1 }, 67);
+        osc.gate_output = true;
+        let mut r = Runtime::new(&[osc]);
+        r.tick(8000, 120.0, true);
+        let mut p = Preset::default();
+        let mut synth = crate::synth::Settings::default();
+        synth.oscillators[1].transpose = -5.0;
+        synth.oscillators[1].level = 0.8;
+        p.synth = Some(Box::new(synth));
+        p.resynth.oscillators[1].transpose = 2.0;
+        let m = current(&r, &p);
+        assert_eq!(m.synth.oscillators[1].transpose, 2.0);
+        assert_eq!(m.synth.oscillators[1].level, 0.8);
+        assert_eq!(m.resynth.oscillators[1].transpose, 2.0);
+        // The step's gate closes after its gate time; then the layer mutes.
+        for _ in 0..8000 {
+            if !r.core.gate(0) {
+                break;
+            }
+            r.tick(8000, 120.0, true);
+        }
+        assert!(!r.core.gate(0));
+        let m = current(&r, &p);
+        assert_eq!(m.synth.oscillators[1].level, 0.0);
+        assert_eq!(
+            m.resynth.oscillators[1].level,
+            p.resynth.oscillators[1].level
         );
     }
 
