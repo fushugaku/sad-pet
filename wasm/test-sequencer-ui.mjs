@@ -418,6 +418,22 @@ assert.deepEqual(menuRows(1), ["Mix", "OSC 2"]);
 menuKey("Escape");
 assert.equal(menuLayer(), undefined);
 assert.equal(picker.getAttribute("aria-expanded"), "false");
+
+// A Synth engine timbre offers its own oscillators beside Resynth's.
+preset.synth = { count: 1, oscillators: [] };
+ui.buildEditor();
+const synthPicker = control("Track destination");
+assert.equal(synthPicker.textContent, "Resynth OSC 2 pitch offset");
+synthPicker.value = "synth-osc:3";
+synthPicker.onchange();
+assert.deepEqual({ ...ui.track().target }, { kind: "synth_oscillator", index: 3 });
+ui.buildEditor();
+assert.equal(control("Stage 1 pitch offset").min, -24);
+assert.equal(ui.targetName(ui.track()), "Synth OSC 4 offset");
+assert.equal(ui.pitchText(ui.track(), 67), "+7 st");
+ui.track().target = { kind: "oscillator", index: 1 };
+delete preset.synth;
+ui.buildEditor();
 assert.equal(document.activeElement, picker);
 assert.equal(picker.value, "osc:1", "Escape keeps the value");
 picker.onclick();

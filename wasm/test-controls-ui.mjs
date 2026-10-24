@@ -36,7 +36,7 @@ const app = await readFile(new URL("../rust/web/app.js", import.meta.url), "utf8
 const knobSource = app.slice(app.indexOf("function createKnob("), app.indexOf("function syncControl("));
 const context = vm.createContext({
   document, preset: {}, state: { knobs: {} }, editing: 0,
-  controls: new Map(), modulationViews: new Map(),
+  controls: new Map(), modulationViews: new Map(), knobUnits: new Map(),
 });
 vm.runInContext(knobSource, context);
 let value = 0.2, writes = 0;
@@ -224,4 +224,56 @@ selection.sync({ ...drumState, preset: {} });
 assert.equal(selection.available(), true);
 assert.equal(selectionNodes.get("sample-selection").hidden, false);
 assert.equal(selection.gainAt(0.25), 0, "Returning to the sample lost its fade display");
+// A native host reports knob feedback 30 times a second. Right after an edit
+// its "current" still shows the old value: that is stale, not modulation.
+let mix = 0.2;
+context.state.knobs.resynth_mix = { base: 0.2, current: 0.2, min: 0.2, max: 0.6, modulated: true };
+const lagBank = new Element("div");
+const lagUpdate = context.createKnob(["resynth_mix", "MIX", (v) => `${Math.round(v * 100)}%`], lagBank, {
+  register: false, get: () => mix, set: (v) => { mix = v; }, reset: () => 0.2,
+});
+lagUpdate();
+const lagBox = lagBank.children[0];
+assert.equal(lagBox.querySelector("output").textContent, "20%");
+document.activeElement = null;
+lagBox.querySelector(".dial").events.keydown({ key: "End", preventDefault() {} });
+assert.equal(mix, 1);
+assert.equal(lagBox.querySelector("output").textContent, "100%", "Stale feedback held the knob back");
+assert.equal(lagBox.querySelector(".knob-mod-range").textContent, "");
+
+// Drum destination menus group each voice's controls like its modules, every
+// control once; the Envelopes page holds the amp, pitch, filter and assign rows.
+for (const [voice, count] of [[0, 55], [5, 56]]) {
+  const sections = panels.window.SadDrums.controlSections(voice);
+  const ids = sections.flatMap(([, controls]) => controls.map(([id]) => id));
+  assert.equal(new Set(ids).size, count, `Voice ${voice} menu must list each control once`);
+  const envelopes = new Map(sections).get("Envelopes").map(([, name]) => name);
+  for (const name of ["Amp attack", "Pitch sweep", "Filter attack", "Assign decay"])
+    assert.ok(envelopes.includes(name), `${name} missing from Envelopes`);
+}
+assert.equal(new Map(panels.window.SadDrums.controlSections(0)).get("Filter 1")
+  .find(([id]) => id === 12)[1], "Filter 1 cutoff");
+
+// Modulation depths read in the target's units: semitones for pitch, percent
+// for a 0…1 control and the reached value on a curved display.
+const unitsSource = app.slice(app.indexOf("const signedPercent ="), app.indexOf("function buildEnvs("));
+const units = vm.createContext({
+  window: {}, preset: { params: { pitch: 0.5, filter: 0.5 } },
+  sequenceCatalog: {
+    modulation: [{ index: 7, id: "resynth_osc1_transpose" }],
+    parameters: [{ id: "resynth_osc1_transpose", min: -48, max: 48 }],
+  },
+});
+vm.runInContext(`${unitsSource};this.depthText=depthText;this.knobUnits=knobUnits;this.unitDepth=unitDepth;this.parameterUnit=parameterUnit;`, units);
+units.knobUnits.set("pitch", { min: 0, max: 1, get: () => 0.5, format: (v) => `${((v * 2 - 1) * 24).toFixed(1)} st` });
+units.knobUnits.set("grain_shape", { min: 0, max: 1, get: () => 0.5, format: (v) => `${Math.round(v * 100)}%` });
+units.knobUnits.set("filter", { min: 0, max: 1, get: () => 0.5, format: (v) => `${Math.round(20 * 1000 ** v).toLocaleString("en")} Hz` });
+units.knobUnits.set("resynth_osc1_transpose", { min: -48, max: 48, get: () => 0, format: (v) => `${v > 0 ? "+" : ""}${Math.round(v)} st` });
+assert.equal(units.depthText("pitch", 0.25), "+12.0 st");
+assert.equal(units.depthText("pitch", -0.5), "−24.0 st");
+assert.equal(units.depthText("grain_shape", 0.3), "+30%");
+assert.equal(units.depthText("filter", 0.5), "→ 20,000 Hz");
+assert.equal(units.depthText({ control: { index: 7 } }, 0.125), "+12 st");
+assert.equal(units.depthText("cloud", 0.4), "+40%", "A target without a knob keeps percent");
+assert.equal(units.unitDepth(units.parameterUnit("resynth_osc1_transpose"), -0.25), "−24 st");
 console.log("Controls: immediate drum-knob paint, linked track/voice selection and extra LFO/ENV removal passed.");

@@ -59,7 +59,7 @@ fn preset() -> Preset {
 }
 
 #[test]
-fn adsr_reaches_sustain_releases_and_retriggers_from_zero() {
+fn adsr_reaches_sustain_releases_and_retriggers_from_its_level() {
     let config = Env {
         attack: 0.1,
         decay: 0.1,
@@ -79,8 +79,9 @@ fn adsr_reaches_sustain_releases_and_retriggers_from_zero() {
         env.next_sample();
     }
     assert!((env.next_sample() - 0.4).abs() < 0.00001);
+    // A retrigger attacks from the sounding level instead of clicking to zero.
     env.on();
-    assert!((env.next_sample() - 0.1).abs() < 0.00001);
+    assert!((env.next_sample() - 0.5).abs() < 0.00001);
     env.off();
     for _ in 0..30 {
         env.next_sample();
@@ -294,4 +295,46 @@ fn envelopes_retrigger_in_hold_arp_and_sequence_and_render_is_block_independent(
         run(&mut a, 100);
         assert_eq!(a.env_values, [0.0; sad_pet::preset::MODULATORS]);
     }
+}
+
+#[test]
+fn retriggered_and_stolen_grain_voices_do_not_click() {
+    // A 110 Hz tone at 48 kHz moves at most ~0.0072 per frame at full scale.
+    let tone = Arc::new(
+        SampleBuffer::new(
+            "tone".into(),
+            48000,
+            (0..48000)
+                .map(|i| {
+                    let value = (i as f32 / 48000.0 * 110.0 * std::f32::consts::TAU).sin() * 0.5;
+                    [value, value]
+                })
+                .collect(),
+        )
+        .unwrap(),
+    );
+    let mut p = preset();
+    p.color_chain.clear();
+    p.pre_color_chain.clear();
+    p.params.grains = 0.9;
+    p.params.mix = 1.0;
+    // Long releases keep every voice sounding, so later notes steal them.
+    p.envs[0].release = 0.6;
+    let mut engine = Engine::new(48000, tone, p);
+    let (mut previous, mut jump, mut peak) = (0.0f32, 0.0f32, 0.0f32);
+    for n in 0..40u8 {
+        let note = 48 + n % 12;
+        engine.midi(on(0, note));
+        let mut block = vec![[0.0; 2]; 3000];
+        engine.process(&mut block[..2400]);
+        engine.midi(off(0, note));
+        engine.process(&mut block[2400..]);
+        for frame in &block {
+            jump = jump.max((frame[0] - previous).abs());
+            peak = peak.max(frame[0].abs());
+            previous = frame[0];
+        }
+    }
+    assert!(peak > 0.1);
+    assert!(jump < peak * 0.05, "jump {jump} at peak {peak}");
 }

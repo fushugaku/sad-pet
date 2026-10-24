@@ -874,7 +874,10 @@ impl Engine {
         self.voices[0].velocity = 1.0;
         self.voices[0].note = 60;
         self.voices[0].held = true;
-        self.clear_voice_filters(0);
+        // ENV gates retrigger a voice that may still sound: keep its filters.
+        if !self.voices[0].active() {
+            self.clear_voice_filters(0);
+        }
         self.voices[0].on(self.preset.env_count as usize);
         self.mod_note_on(0, 60, 127);
         self.configure_voice_filter(0);
@@ -1499,10 +1502,24 @@ impl Engine {
                             && self.voices[i].channel == channel
                     })
                     .or_else(|| (1..VOICES).find(|&i| !self.voices[i].active()))
-                    .unwrap_or(1 + self.next_voice % (VOICES - 1));
+                    // Steal the quietest voice, released ones first.
+                    .unwrap_or_else(|| {
+                        (1..VOICES)
+                            .min_by(|&a, &b| {
+                                let (a, b) = (&self.voices[a], &self.voices[b]);
+                                (a.held || a.sustained)
+                                    .cmp(&(b.held || b.sustained))
+                                    .then(a.value.total_cmp(&b.value))
+                            })
+                            .unwrap()
+                    });
                 self.next_voice = index;
-                self.kill_voice_grains(index);
-                self.clear_voice_filters(index);
+                // A sounding voice keeps its grains and filter state: its
+                // envelope attacks again from the level it has reached.
+                if !self.voices[index].active() {
+                    self.kill_voice_grains(index);
+                    self.clear_voice_filters(index);
+                }
                 let v = &mut self.voices[index];
                 v.note = note;
                 v.owner = owner;
