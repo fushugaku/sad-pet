@@ -65,17 +65,19 @@ core.request("/api/parameters", {
   position: 0,
 });
 assert.ok(peakOf(160) > 0.01, "The granular stage is silent");
+// Only rendering is checked: the editor's state answer below may grow the
+// heap depending on where earlier allocations left free space.
+assert.equal(
+  core.wasm.memory.buffer.byteLength,
+  memory,
+  "Rendering grew WASM memory",
+);
 state = core.request("/api/state");
 assert.ok(state.active_grains > 0, "No grains read the synth history");
 assert.equal(state.sample_seconds, 1);
 assert.ok(
   state.waveform.some((bin) => bin.some((value) => Math.abs(value) > 0.001)),
   "The live synth waveform is missing",
-);
-assert.equal(
-  core.wasm.memory.buffer.byteLength,
-  memory,
-  "Rendering grew WASM memory",
 );
 core.request("/api/note", {
   kind: "note_off",

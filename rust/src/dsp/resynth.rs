@@ -30,6 +30,10 @@ struct Bands {
     a: [f32; BANDS],
     /// [channel][state][band]
     z: [[[f32; BANDS]; 2]; 2],
+    /// Every state is +0.0. `flush` stores zeros as +0.0, so a zero input
+    /// (of either sign) then gives v1 = a * (+0 + g * ±0) = +0 in every band
+    /// and leaves the states at +0: the output is exactly zero.
+    silent: bool,
 }
 
 impl Bands {
@@ -39,13 +43,27 @@ impl Bands {
             g,
             a: g.map(|g| 1.0 / (1.0 + g * (g + 1.0 / 2.8))),
             z: [[[0.0; BANDS]; 2]; 2],
+            silent: true,
         }
     }
     fn clear(&mut self) {
         self.z = [[[0.0; BANDS]; 2]; 2];
+        self.silent = true;
     }
     #[inline]
     fn next(&mut self, input: Stereo) -> [Stereo; BANDS] {
+        let zero = input[0] == 0.0 && input[1] == 0.0;
+        if zero && self.silent {
+            return [[0.0; 2]; BANDS];
+        }
+        let out = self.filter(input);
+        // Only a zero input can lead into silence; checking then costs one
+        // pass over the states, and nothing while signal flows.
+        self.silent = zero && self.z.iter().flatten().flatten().all(|&z| z == 0.0);
+        out
+    }
+    #[inline]
+    fn filter(&mut self, input: Stereo) -> [Stereo; BANDS] {
         let mut out = [[0.0; 2]; BANDS];
         for (c, [z0, z1]) in self.z.iter_mut().enumerate() {
             for i in 0..BANDS {
@@ -83,6 +101,11 @@ impl Lowpass {
         }
     }
     pub(super) fn next(&mut self, input: Stereo) -> Stereo {
+        // With +0.0 states (flush stores zeros as +0.0) a zero input gives
+        // y = b0 * ±0 + +0 = +0 and keeps the states at +0.
+        if input[0] == 0.0 && input[1] == 0.0 && self.z == [[0.0; 2]; 2] {
+            return [0.0; 2];
+        }
         std::array::from_fn(|c| {
             let y = self.b[0] * input[c] + self.z[c][0];
             self.z[c] = [
@@ -246,6 +269,9 @@ pub struct Resynth {
     lfo: i16,
     /// Advances with every configuration that can change carrier controls.
     control_epoch: u64,
+    /// The last frame paused every carrier, so all taps, feedback and wraps
+    /// hold zero.
+    taps_clear: bool,
 }
 impl Resynth {
     pub fn new(sr: u32) -> Self {
@@ -287,6 +313,7 @@ impl Resynth {
             frame: 0,
             lfo: 0,
             control_epoch: 0,
+            taps_clear: false,
         }
     }
     pub fn clear(&mut self) {
@@ -595,6 +622,10 @@ impl Resynth {
         // resume from their own phases. During playback they always run, so
         // rendered audio is unchanged.
         let paused = !running && self.gains.iter().all(|&gain| gain == 0.0);
+        // A paused frame only stores zero taps for every layer; once one has,
+        // the next paused frames would store the same zeros again.
+        let idle = paused && self.taps_clear;
+        self.taps_clear = paused;
         let mut wet = [0.0; 2];
         for sub in 0..self.oversample {
             wet = [0.0; 2];
@@ -605,6 +636,9 @@ impl Resynth {
                 self.frame & !3
             };
             for (layer_id, &filters) in layer_filters.iter().enumerate() {
+                if idle {
+                    break;
+                }
                 let layer = &mut self.layers[layer_id];
                 if paused
                     || (!self.needed[layer_id] && layer.target_gain == 0.0 && layer.gain == 0.0)
