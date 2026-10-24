@@ -126,7 +126,8 @@ README). In the DAW the score plays at the host's song position and tempo while
 a background thread as soon as the score changes and are ready long before
 playback; a phrase that is still rendering stays silent for that pass, so let
 the status line read *ready* before an offline bounce. The project saves the
-score, not the rendered audio. Imported voicebanks are stored as `.sadvoice`
+score, not the rendered audio. The voicebanks that come with SAD PET are built
+into the plug-in. Imported voicebanks are stored as `.sadvoice`
 files in the **Voices** folder next to the User presets
 (`~/Library/Application Support/SAD PET/Voices`, `%APPDATA%\SAD PET\Voices`),
 so every instance and the app share them.

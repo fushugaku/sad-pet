@@ -2,6 +2,7 @@
 """Build the standalone static site; no server, Node packages or wasm-bindgen needed."""
 import argparse
 import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -10,6 +11,24 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parent.parent
 
+
+def copy_voice_packs(folder):
+    """The voicebanks that come with SAD PET, and a list of them the browser
+    reads before fetching one: id, header info, size and a content version."""
+    folder.mkdir(parents=True, exist_ok=True)
+    packs = []
+    for pack in sorted((ROOT / "voice" / "packs").glob("*.sadvoice")):
+        data = pack.read_bytes()
+        assert data[:8] == b"SADVOICE", f"{pack} is not a voicebank"
+        length = int.from_bytes(data[12:16], "little")
+        info = json.loads(data[16:16 + length])["info"]
+        shutil.copy2(pack, folder / pack.name)
+        packs.append({"id": pack.stem, "file": pack.name, "name": info["name"], "language": info["language"],
+                      "author": info.get("author", ""), "size": len(data),
+                      "version": hashlib.sha256(data).hexdigest()[:12]})
+    # In the order of the editor's languages, as `vocal::PACKS` lists them.
+    packs.sort(key=lambda p: (["ja", "en", "ru"].index(p["language"]), p["name"]))
+    (folder / "packs.json").write_text(json.dumps(packs, ensure_ascii=False, indent=1) + "\n")
 
 def strip_debug_names(data):
     """Remove metadata only; preserve every executable/data section byte."""
@@ -123,6 +142,7 @@ def main():
     (output / "index.html").write_text(index)
     shutil.copytree(ROOT / "wasm" / "web", output, dirs_exist_ok=True)
     shutil.copytree(ROOT / "rust/assets/samples/loops-256", output / "samples/loops-256", dirs_exist_ok=True)
+    copy_voice_packs(output / "voices")
     if not args.tail_call:
         # Without the variant the loader must not spend a request on it.
         backend = output / "browser-backend.mjs"

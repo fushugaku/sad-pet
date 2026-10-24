@@ -561,13 +561,60 @@ impl<'a> Importer<'a> {
                 .clamp(0.0, frames.len() as f32 - 1.0) as usize;
             frames[i].level() > loudest - 35.0
         };
+        let siblings = list.clone();
         for (entry, phonemes) in list {
             let Some(ms) = boundaries(&entry, &phonemes, file_ms, &audible) else {
                 continue;
             };
-            let bounds: Vec<u32> = ms.iter().map(|&t| to_frame(t)).collect();
+            let mut bounds: Vec<u32> = ms.iter().map(|&t| to_frame(t)).collect();
             if bounds.last() <= bounds.first() {
                 continue;
+            }
+            let last = phonemes[phonemes.len() - 1];
+            if !last.is_vowel() && !last.is_pause() && !phonemes.iter().any(|p| p.is_vowel()) {
+                // A consonant alone ("t", "-z"): its oto entry runs on into the
+                // recording's vowel or its release's decay. Keep the consonant.
+                let level = |f: u32| frames[(f - first) as usize].level();
+                let voiced = |f: u32| frames[(f - first) as usize].voiced();
+                let n = phonemes.len();
+                if n == 1 {
+                    // The preutterance marks its burst or onset; a stop keeps
+                    // 30 ms of closure before it.
+                    let closure = if matches!(last.class(), Class::Stop | Class::Affricate) {
+                        30.0
+                    } else {
+                        0.0
+                    };
+                    let onset = to_frame(entry.offset + entry.preutter - closure);
+                    bounds[0] = onset.clamp(bounds[0], bounds[1].saturating_sub(2));
+                }
+                let start = bounds[n - 1];
+                let mut end = bounds[n];
+                // Where the vowel starts: a sibling alias with that vowel says
+                // so; else the first run of loud voiced frames (one frame of a
+                // burst the tracker calls voiced does not count).
+                let sibling = siblings.iter().find(|(e, p)| {
+                    p.len() == n + 1
+                        && p[..n] == phonemes[..]
+                        && p[n].is_vowel()
+                        && (e.offset - entry.offset).abs() < 150.0
+                });
+                if let Some((e, _)) = sibling {
+                    end = end.min(to_frame(e.offset + e.preutter)).max(start + 2);
+                } else if n > 1 {
+                    let loudest = (start..end).map(level).fold(-300.0f32, f32::max);
+                    if let Some(v) = (start + 2..end.saturating_sub(3))
+                        .find(|&f| (f..f + 4).all(|g| voiced(g) && level(g) >= loudest - 6.0))
+                    {
+                        end = v.max(start + 2);
+                    }
+                }
+                // Trim the release's decay into silence.
+                let peak = (start..end).map(level).fold(-300.0f32, f32::max);
+                if let Some(loud) = (start..end).rev().find(|&f| level(f) >= peak - 12.0) {
+                    end = end.min(loud + 3);
+                }
+                bounds[n] = end.max(start + 2);
             }
             let start = bounds[0];
             let end = *bounds.last().unwrap();

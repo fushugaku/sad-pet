@@ -11,16 +11,37 @@ use crate::spectrum::{ENV_POINTS, FLOOR_DB, FRAME_SECONDS, Frame, grid_position}
 use crate::timing::Segment;
 
 const FRAME: f64 = FRAME_SECONDS as f64;
+/// How incomplete a candidate's last consonant is, 0 (as long as the voice
+/// sings it) to 1 (only the start of it): Kumi's VC units end a stop or an
+/// affricate just after its closure, so «ч» from «ач» before «к» is silent.
+fn stub(bank: &Voicebank, c: &Candidate) -> f32 {
+    let Some(u) = c.unit else { return 0.0 };
+    let unit = &bank.units[u as usize];
+    let k = c.first + (c.b - c.a);
+    let p = unit.phonemes[k];
+    if p.is_vowel() || p.is_pause() {
+        return 0.0;
+    }
+    let (a, b) = unit.span(k);
+    let span = (b - a) as f32 * FRAME_SECONDS;
+    let full = bank
+        .duration(p)
+        .unwrap_or_else(|| crate::utau::default_duration(p));
+    (1.0 - span / (0.6 * full)).clamp(0.0, 1.0)
+}
+
 /// Cross-fade half-width at a join between two phonemes (a hard join).
 const EDGE: f64 = 0.012;
 /// Candidates kept per phrase range, by their own cost.
 const KEEP: usize = 6;
 
 /// How far a vowel's middle moves toward the voice's typical shape of it
-/// (0 keeps each take as recorded). Benchmarked on three UTAU banks by
-/// rebuilding recordings from the rest of the bank: 0.7 cut the envelope
-/// error from 5.1 to 4.3 dB and cost 0.6 dB when the take itself is used.
-const MEAN_PULL: f32 = 0.7;
+/// (0 keeps each take as recorded). Rebuilding recordings of three UTAU
+/// banks from the rest of their bank, 0.7 cut the envelope error most (5.1
+/// to 4.3 dB) but blurred the formants: their contrast fell from 8.4 to
+/// 7.3 dB in Kumi, under the recordings' own. 0.3 keeps it (7.9 dB) and still
+/// cuts the error to 4.7 dB.
+const MEAN_PULL: f32 = 0.3;
 
 /// One phoneme of the phrase as synthesis sees it.
 #[derive(Clone, Debug)]
@@ -30,7 +51,19 @@ struct Item {
     start: f64,
     end: f64,
     pause: bool,
+    /// The phrase's note whose syllable this is.
+    note: Option<usize>,
 }
+
+/// The units a note's syllable is joined from, and others that could sing it.
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize)]
+pub struct NoteUnits {
+    pub used: Vec<String>,
+    pub options: Vec<String>,
+}
+
+/// A note's chosen unit outweighs every other way to sing its syllable.
+const PREFERRED: f32 = 4.0;
 
 #[derive(Clone, Copy, Debug)]
 struct Candidate {
@@ -61,6 +94,7 @@ fn items(bank: &Voicebank, segments: &[Segment]) -> Vec<Item> {
             start: s.start,
             end: s.end,
             pause,
+            note: s.note,
         });
     }
     out
@@ -78,7 +112,8 @@ fn target_pitch(pitch: &[f32], start: f64, end: f64) -> f32 {
     v[v.len() / 2]
 }
 
-fn candidates(bank: &Voicebank, items: &[Item], pitch: &[f32]) -> Vec<Candidate> {
+/// `prefer[n]`: the unit alias the phrase's note `n` asks for ("" for any).
+fn candidates(bank: &Voicebank, items: &[Item], pitch: &[f32], prefer: &[&str]) -> Vec<Candidate> {
     let mut out = Vec::new();
     // Phoneme → (unit, index) occurrences.
     let mut occurrences: std::collections::HashMap<Phoneme, Vec<(u32, usize)>> =
@@ -116,15 +151,15 @@ fn candidates(bank: &Voicebank, items: &[Item], pitch: &[f32]) -> Vec<Candidate>
             // Every prefix of the match is a candidate.
             for l in 1..=len {
                 let b = a + l - 1;
-                // Cutting into a phoneme loses its transition; cutting off a
-                // recorded silence only loses the context, a smaller loss.
-                let cut = |p: Phoneme| if p.is_pause() { 0.25 } else { 0.7 };
-                let cut_left = if k > 0 {
-                    cut(unit.phonemes[k - 1])
-                } else {
-                    0.0
-                };
-                let cut_right = unit.phonemes.get(k + l).map_or(0.0, |&p| cut(p));
+                let target_left = a.checked_sub(1).map_or(Phoneme::SIL, |i| items[i].phoneme);
+                let target_right = items.get(b + 1).map_or(Phoneme::SIL, |i| i.phoneme);
+                let cut_left = k
+                    .checked_sub(1)
+                    .map_or(0.0, |i| cut_cost(unit.phonemes[i], target_left));
+                let cut_right = unit
+                    .phonemes
+                    .get(k + l)
+                    .map_or(0.0, |&p| cut_cost(p, target_right));
                 // A unit of only pauses adds nothing.
                 if unit.phonemes[k..k + l].iter().all(|p| p.is_pause()) {
                     continue;
@@ -136,7 +171,16 @@ fn candidates(bank: &Voicebank, items: &[Item], pitch: &[f32]) -> Vec<Candidate>
                 let target =
                     target_pitch(pitch, items[a + main - k].start, items[a + main - k].end);
                 let semitones = (unit.pitch - target).abs();
-                let cost = 0.3 + cut_left + cut_right + if unit.variant { 0.5 } else { 0.0 };
+                let unwanted = items[a..=b].iter().any(|item| {
+                    item.note
+                        .and_then(|n| prefer.get(n))
+                        .is_some_and(|alias| !alias.is_empty() && *alias != unit.alias)
+                });
+                let cost = 0.3
+                    + cut_left
+                    + cut_right
+                    + if unit.variant { 0.5 } else { 0.0 }
+                    + if unwanted { PREFERRED } else { 0.0 };
                 by_range.entry(b).or_default().push((
                     Candidate {
                         unit: Some(u),
@@ -195,7 +239,19 @@ fn join_cost(bank: &Voicebank, items: &[Item], p: &Candidate, c: &Candidate) -> 
             Some(class + 0.03 * spectral_distance(&x, &y))
         }
         (_, _) if p.b == c.a => None,
-        (Some(_), Some(_)) if p.b + 1 == c.a => Some(1.4),
+        (Some(_), Some(_)) if p.b + 1 == c.a => {
+            // Where the cut falls decides how much it is heard: in a stop's
+            // closure, near silence, hardly; between a consonant's release
+            // and its vowel, the transition is lost.
+            // A consonant cut short before the join is a stub of itself.
+            let (left, right) = (items[p.b].phoneme.class(), items[c.a].phoneme.class());
+            let place = match (left, right) {
+                (_, Class::Stop | Class::Affricate) => 0.6,
+                (Class::Stop | Class::Affricate | Class::Fricative, Class::Vowel) => 2.2,
+                _ => 1.4,
+            };
+            Some(place + 1.5 * stub(bank, p))
+        }
         // Next to a pause, a cut is a natural onset or ending.
         (_, _) if p.b + 1 == c.a => Some(0.25),
         _ => None,
@@ -275,6 +331,7 @@ impl Placement {
         if t < self.fade_in.0 || t > self.fade_out.1 {
             return 0.0;
         }
+        // A ramp of no length is no fade: inside the span, full weight.
         let ramp = |x: f64, a: f64, b: f64| {
             if b <= a {
                 1.0
@@ -283,7 +340,11 @@ impl Placement {
             }
         };
         let up = ramp(t, self.fade_in.0, self.fade_in.1);
-        let down = 1.0 - ramp(t, self.fade_out.0, self.fade_out.1);
+        let down = if self.fade_out.1 <= self.fade_out.0 {
+            1.0
+        } else {
+            1.0 - ramp(t, self.fade_out.0, self.fade_out.1)
+        };
         let w = up.min(down);
         // Equal-power-ish raised cosine.
         0.5 - 0.5 * (std::f64::consts::PI * w).cos()
@@ -424,9 +485,12 @@ fn place(bank: &Voicebank, items: &[Item], chain: &[Candidate]) -> Vec<Placement
                 }
             }
             if !phoneme.class().sustainable() && !incoming && !outgoing {
-                // Consonants are not stretched: the target is the natural
-                // length, centered where the timing put it.
+                // A stop or an affricate keeps its recorded speed, its
+                // release at the end of its time: squeezed, a burst of one
+                // frame would be skipped; given more time, it holds its
+                // closure.
                 p.stable = None;
+                p.s0 = s1 - (t1 - t0) / FRAME;
             }
             if hard_in && !incoming {
                 p.t0 -= EDGE;
@@ -483,12 +547,14 @@ fn micro_pitch(bank: &Voicebank, position: f64, f0: f32) -> f32 {
 }
 
 /// Frames for laid-out phonemes from a voicebank. `pitch` is MIDI per frame;
-/// `modulation` (0–1) keeps that share of the recording's own pitch detail.
+/// `modulation` (0–1) keeps that share of the recording's own pitch detail;
+/// `prefer[n]` names a unit the phrase's note `n` asks for ("" for any).
 pub fn frames(
     bank: &Voicebank,
     segments: &[Segment],
     pitch: &[f32],
     modulation: f32,
+    prefer: &[&str],
 ) -> Vec<Frame> {
     let count = pitch.len();
     let mut out = vec![Frame::SILENT; count];
@@ -496,7 +562,7 @@ pub fn frames(
     if items.is_empty() || bank.units.is_empty() {
         return out;
     }
-    let cands = candidates(bank, &items, pitch);
+    let cands = candidates(bank, &items, pitch, prefer);
     let chain = select(bank, &items, &cands);
     let placements = place(bank, &items, &chain);
     // Index placements by frame range for speed.
@@ -515,8 +581,9 @@ pub fn frames(
             }
             let s = p.source(t);
             let f = bank.frame_at(s as f32);
-            for (e, v) in env.iter_mut().zip(&f.env) {
-                *e += w * (*v + p.gain_db) as f64;
+            let mut own = f.env;
+            for v in own.iter_mut() {
+                *v += p.gain_db;
             }
             if let Some((shape, a, b)) = p.shape.as_ref().filter(|_| f.voiced()) {
                 // Takes of a vowel differ; pull its middle toward the voice's
@@ -524,9 +591,14 @@ pub fn frames(
                 let edge = ((s - a).min(b - s) / ((b - a) * 0.25).max(1.0)).clamp(0.0, 1.0);
                 let pull = MEAN_PULL * (edge * edge * (3.0 - 2.0 * edge)) as f32;
                 let level = crate::spectrum::color_level(&f.env);
-                for ((e, v), m) in env.iter_mut().zip(&f.env).zip(shape) {
-                    *e += w * (pull * (m - (v - level))) as f64;
+                for ((o, v), m) in own.iter_mut().zip(&f.env).zip(shape) {
+                    *o += pull * (m - (v - level));
                 }
+            }
+            // Mixed as power: a fade into a closure is not a dB average
+            // falling 20 dB below both.
+            for (e, v) in env.iter_mut().zip(&own) {
+                *e += w * 10f64.powf(*v as f64 / 10.0);
             }
             for (a, v) in ap.iter_mut().zip(&f.ap) {
                 *a += w * *v as f64;
@@ -547,7 +619,7 @@ pub fn frames(
         let presence = weight.min(1.0);
         let fade_db = 20.0 * presence.max(1e-4).log10();
         for (o, e) in frame.env.iter_mut().zip(&env) {
-            *o = ((e / weight) + fade_db).max(FLOOR_DB as f64) as f32;
+            *o = (10.0 * (e / weight).max(1e-30).log10() + fade_db).max(FLOOR_DB as f64) as f32;
         }
         for (o, a) in frame.ap.iter_mut().zip(&ap) {
             *o = (a / weight).clamp(0.0, 1.0) as f32;
@@ -578,32 +650,97 @@ pub fn frames(
     out
 }
 
+/// What cutting a unit short of its recorded `neighbour` costs, next to the
+/// phrase's `target` phoneme there. Cutting off a recorded silence only
+/// loses the context; cutting into a phoneme loses its transition, more so
+/// the less the neighbour is like the phrase's: «у» from «лю» serves «рю»
+/// better than «у» from «ду».
+fn cut_cost(neighbour: Phoneme, target: Phoneme) -> f32 {
+    if neighbour.is_pause() {
+        return 0.25;
+    }
+    0.35 + 0.7 * (1.0 - (-neighbour.distance(target) / 2.5).exp())
+}
+
+/// A chosen unit's alias, with the phonemes used when it is cut.
+fn label(bank: &Voicebank, c: &Candidate) -> String {
+    let Some(u) = c.unit else {
+        return "·".into();
+    };
+    let unit = &bank.units[u as usize];
+    let used = &unit.phonemes[c.first..c.first + (c.b - c.a) + 1];
+    if used.len() == unit.phonemes.len() {
+        unit.alias.clone()
+    } else {
+        let symbols: Vec<_> = used.iter().map(|p| p.symbol()).collect();
+        format!("{}[{}]", unit.alias, symbols.join(" "))
+    }
+}
+
 /// Which unit aliases a phrase would use (for tests and the editor).
 pub fn describe(bank: &Voicebank, segments: &[Segment], pitch: &[f32]) -> Vec<String> {
     let items = items(bank, segments);
-    let cands = candidates(bank, &items, pitch);
+    let cands = candidates(bank, &items, pitch, &[]);
     select(bank, &items, &cands)
         .iter()
-        .map(|c| match c.unit {
-            Some(u) => {
-                let unit = &bank.units[u as usize];
-                let used = &unit.phonemes[c.first..c.first + (c.b - c.a) + 1];
-                if used.len() == unit.phonemes.len() {
-                    unit.alias.clone()
-                } else {
-                    format!(
-                        "{}[{}]",
-                        unit.alias,
-                        used.iter()
-                            .map(|p| p.symbol())
-                            .collect::<Vec<_>>()
-                            .join(" ")
-                    )
-                }
-            }
-            None => "·".into(),
-        })
+        .map(|c| label(bank, c))
         .collect()
+}
+
+/// For each of the phrase's `notes`: the units its syllable is joined from,
+/// and the units that could sing its main sound instead, best first.
+pub fn note_units(
+    bank: &Voicebank,
+    segments: &[Segment],
+    pitch: &[f32],
+    prefer: &[&str],
+    notes: usize,
+) -> Vec<NoteUnits> {
+    let mut out = vec![NoteUnits::default(); notes];
+    let items = items(bank, segments);
+    if items.is_empty() || bank.units.is_empty() {
+        return out;
+    }
+    let cands = candidates(bank, &items, pitch, prefer);
+    let chain = select(bank, &items, &cands);
+    for (n, units) in out.iter_mut().enumerate() {
+        let mine: Vec<usize> = (0..items.len())
+            .filter(|&i| items[i].note == Some(n) && !items[i].pause)
+            .collect();
+        let Some(&last) = mine.last() else { continue };
+        for c in chain.iter().filter(|c| c.unit.is_some()) {
+            let name = label(bank, c);
+            if mine.iter().any(|&i| (c.a..=c.b).contains(&i)) && !units.used.contains(&name) {
+                units.used.push(name);
+            }
+        }
+        // The syllable's vowel, else its last sound.
+        let main = mine
+            .iter()
+            .copied()
+            .find(|&i| items[i].phoneme.is_vowel())
+            .unwrap_or(last);
+        let mut options: Vec<(f32, &str)> = cands
+            .iter()
+            .filter(|c| (c.a..=c.b).contains(&main))
+            .filter_map(|c| {
+                c.unit
+                    .map(|u| (c.cost, bank.units[u as usize].alias.as_str()))
+            })
+            .collect();
+        options.sort_by(|x, y| x.0.total_cmp(&y.0));
+        for (_, alias) in options {
+            if units.options.len() < 16 && !units.options.iter().any(|o| o == alias) {
+                units.options.push(alias.to_string());
+            }
+        }
+        if let Some(alias) = prefer.get(n).filter(|a| !a.is_empty())
+            && !units.options.iter().any(|o| o == alias)
+        {
+            units.options.insert(0, alias.to_string());
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -686,6 +823,62 @@ mod tests {
     }
 
     #[test]
+    fn a_note_can_ask_for_another_unit() {
+        let b = bank(&[
+            ("- ka", "sil k a"),
+            ("a ki", "a k i"),
+            ("i -", "i sil"),
+            ("ka", "k a"),
+            ("ki", "k i"),
+        ]);
+        let s = segments(&[
+            ("sil", 0.0, 0.3),
+            ("k", 0.3, 0.37),
+            ("a", 0.37, 0.8),
+            ("sil", 0.8, 1.0),
+        ]);
+        let pitch = vec![57.0; 200];
+        let auto = note_units(&b, &s, &pitch, &[""], 1);
+        assert_eq!(auto[0].used, ["- ka"]);
+        assert!(
+            auto[0].options.iter().any(|o| o == "ka"),
+            "{:?}",
+            auto[0].options
+        );
+        let chosen = note_units(&b, &s, &pitch, &["ka"], 1);
+        assert_eq!(chosen[0].used, ["ka"]);
+        assert!(frames(&b, &s, &pitch, 0.0, &["ka"])[110].level() > -100.0);
+    }
+
+    #[test]
+    fn a_cut_after_a_release_costs_more_than_one_in_a_closure() {
+        // "o d' i": joining at the stop's closure keeps the d'→i release.
+        let ru = |p| Phoneme::parse(Language::Ru, p).unwrap();
+        let item = |p| Item {
+            phoneme: ru(p),
+            start: 0.0,
+            end: 0.1,
+            pause: false,
+            note: None,
+        };
+        let items = [item("o"), item("d'"), item("i")];
+        let b = bank(&[("ka", "k a"), ("ki", "k i")]);
+        let unit = |a, b| Candidate {
+            unit: Some(0),
+            first: 0,
+            a,
+            b,
+            cost: 0.0,
+        };
+        let in_closure = join_cost(&b, &items, &unit(0, 0), &unit(1, 2)).unwrap();
+        let after_release = join_cost(&b, &items, &unit(0, 1), &unit(2, 2)).unwrap();
+        assert!(
+            in_closure < after_release,
+            "{in_closure} vs {after_release}"
+        );
+    }
+
+    #[test]
     fn cv_banks_join_at_boundaries() {
         let b = bank(&[("ka", "k a"), ("ki", "k i")]);
         let s = segments(&[
@@ -698,9 +891,11 @@ mod tests {
         ]);
         let pitch = vec![57.0; 300];
         assert_eq!(describe(&b, &s, &pitch), ["·", "ka", "ki", "·"]);
-        let f = frames(&b, &s, &pitch, 0.0);
+        let f = frames(&b, &s, &pitch, 0.0, &[]);
         // Silent before the phrase, voiced in the vowels at the sung pitch.
         assert_eq!(f[10].f0, 0.0);
+        // The consonant inside "ka" sounds too (it once had no weight).
+        assert!(f[67].level() > -150.0, "{}", f[67].level());
         assert!((f[120].f0 - 220.0).abs() < 0.5);
         assert!(f[120].level() > -100.0);
         assert!(f[290].level() < -150.0);
@@ -733,7 +928,7 @@ mod tests {
             ("sil", 3.0, 3.2),
         ]);
         let pitch = vec![57.0; 640];
-        let f = frames(&b, &s, &pitch, 0.0);
+        let f = frames(&b, &s, &pitch, 0.0, &[]);
         let voiced = f.iter().filter(|f| f.voiced()).count();
         assert!(voiced > 540, "{voiced}");
     }

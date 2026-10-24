@@ -87,6 +87,9 @@
       this.selected = new Set();
       this.view = { tick: 0, key: 79, pixels: 0.12, keyHeight: 14 };
       this.snap = TPB / 2;
+      // Under each note: its phonemes, or the voicebank units that sing it.
+      this.underNotes = "units";
+      this.units = new Map();
       this.lane = "dynamics";
       this.undo = [];
       this.redo = [];
@@ -130,11 +133,53 @@
       item("Export voicebank…", () => this.exportVoice());
       item("Remove voicebank", () => this.removeVoice());
       voiceMenu.append(voiceSummary, menu);
+      // Note editing, with the keys that do the same
+      const editMenu = el("details", "vocal-menu");
+      const editItems = el("div", "vocal-menu-items");
+      const mac = /Mac|iPhone|iPad/.test(navigator.platform || "");
+      const keys = (k) => (mac ? `⌘${k}` : `Ctrl+${k}`);
+      for (const [text, shortcut, action] of [
+        ["Copy", keys("C"), () => this.copyNotes()],
+        ["Cut", keys("X"), () => this.copyNotes(true)],
+        ["Paste at the cursor", keys("V"), () => this.pasteNotes()],
+        ["Duplicate", keys("D"), () => this.duplicateNotes()],
+        ["Delete", "⌫", () => this.deleteNotes()],
+        ["Select all", keys("A"), () => {
+          this.selected = new Set(this.score.notes.map((n) => n.id));
+          this.syncInspector();
+          this.draw();
+        }],
+        ["Under notes: phonemes / units", "", () => {
+          this.underNotes = this.underNotes === "units" ? "phonemes" : "units";
+          this.draw();
+        }],
+      ]) {
+        const b = el("button", "", text);
+        b.append(el("kbd", "", shortcut));
+        b.onclick = () => {
+          editMenu.open = false;
+          try {
+            action();
+          } catch (error) {
+            this.hooks.notify(error.message);
+          }
+          this.canvas.focus();
+        };
+        editItems.append(b);
+      }
+      editMenu.append(el("summary", "", "Edit ▾"), editItems);
       // Language, style, tempo, snap
       this.languageSelect = el("select");
       this.languageSelect.setAttribute("aria-label", "Lyrics language");
       this.languageSelect.append(...LANGUAGES.map(([v, l]) => option(v, l)));
-      this.languageSelect.onchange = () => this.edit((s) => (s.language = this.languageSelect.value));
+      this.languageSelect.onchange = () =>
+        this.edit((s) => {
+          s.language = this.languageSelect.value;
+          // A voice that comes with SAD PET gives way to the one for the new language.
+          const current = this.voices?.find((v) => v.id === s.voice);
+          const pack = this.voices?.find((v) => v.bundled && v.language === s.language);
+          if (pack && current?.bundled) s.voice = pack.id;
+        });
       this.style = el("select");
       this.style.setAttribute("aria-label", "Singing style");
       this.style.append(...Object.keys(STYLES).map((name) => option(name, name)));
@@ -159,8 +204,24 @@
       for (const [value, label] of [[TPB, "1/4"], [TPB / 2, "1/8"], [TPB / 4, "1/16"], [TPB / 8, "1/32"], [TPB / 3, "1/8T"], [1, "Off"]])
         this.snapSelect.append(option(value, label));
       this.snapSelect.value = String(this.snap);
-      this.snapSelect.onchange = () => (this.snap = Number(this.snapSelect.value));
+      this.snapSelect.onchange = () => {
+        this.snap = Number(this.snapSelect.value);
+        this.syncControls();
+      };
       snapLabel.append(this.snapSelect);
+      const loopLabel = el("label", "vocal-field", "Steps");
+      loopLabel.title =
+        "The loop's length in grid steps; empty sings the score once. Drag its two markers on the ruler: notes before the first one are an intro sung once.";
+      this.loopSteps = el("input");
+      Object.assign(this.loopSteps, { type: "number", min: 0, max: 4096, step: 1, placeholder: "∞" });
+      this.loopSteps.setAttribute("aria-label", "Loop length in grid steps");
+      this.loopSteps.onchange = () =>
+        this.edit((s) => {
+          const steps = Math.round(clamp(Number(this.loopSteps.value) || 0, 0, 4096));
+          s.loop_start = steps ? s.loop_start || 0 : 0;
+          s.loop_ticks = steps ? s.loop_start + steps * this.stepTicks() : 0;
+        });
+      loopLabel.append(this.loopSteps);
       // Actions
       this.lyricsButton = el("button", "", "Lyrics…");
       this.lyricsButton.title = "Type lyrics for the selected notes (or all)";
@@ -178,7 +239,7 @@
       this.play = el("button", "vocal-play", "▶ Play");
       this.play.setAttribute("aria-pressed", "false");
       this.play.onclick = () => this.transport(!this.status.playing);
-      tools.append(this.voice, voiceMenu, this.languageSelect, this.style, tempoLabel, followLabel, snapLabel, this.lyricsButton, this.scoreButton, this.step, this.play);
+      tools.append(this.voice, voiceMenu, editMenu, this.languageSelect, this.style, tempoLabel, followLabel, snapLabel, loopLabel, this.lyricsButton, this.scoreButton, this.step, this.play);
       // Canvas
       this.frame = el("div", "vocal-roll");
       this.canvas = el("canvas");
@@ -284,7 +345,12 @@
         attackAmount: number("Amount", 0, 1, 0.05, (n, v) => (n.attack = { kind: n.attack?.kind ?? "none", amount: v ?? 0.5 })),
         release: select("Release", RELEASES, (n, v) => (n.release = { kind: v, amount: n.release?.amount ?? 0.5 })),
         releaseAmount: number("Amount", 0, 1, 0.05, (n, v) => (n.release = { kind: n.release?.kind ?? "none", amount: v ?? 0.5 })),
+        unit: select("Unit", ["auto"], (n, v) => {
+          if (v === "auto") delete n.unit;
+          else n.unit = v;
+        }),
       };
+      this.fields.unit.title = "The voicebank unit this note's syllable is sung with; auto lets the engine choose";
       this.fields.velocity.placeholder = "64";
       this.fields.attackAmount.placeholder = "0.5";
       this.fields.releaseAmount.placeholder = "0.5";
@@ -308,6 +374,16 @@
     tickAt(seconds) {
       const tempo = this.status.hostBpm || this.bpm();
       return (seconds * tempo * TPB) / 60;
+    }
+    nearLoopEnd(x) {
+      return !!this.score?.loop_ticks && Math.abs(x - this.x(this.score.loop_ticks)) <= 7;
+    }
+    nearLoopStart(x) {
+      return !!this.score?.loop_ticks && Math.abs(x - this.x(this.score.loop_start || 0)) <= 7;
+    }
+    /** Ticks of one grid step (a 1/16 when the grid is off). */
+    stepTicks() {
+      return this.snap > 1 ? this.snap : TPB / 4;
     }
     snapTick(tick) {
       return this.snap <= 1 ? Math.round(tick) : Math.round(tick / this.snap) * this.snap;
@@ -421,23 +497,28 @@
       try {
         this.voices = await this.hooks.request("/api/vocal/voices");
       } catch {
-        this.voices = [{ id: "", name: "SAD PET (built-in)", builtin: true }];
+        this.voices = [{ id: "", name: "Synthetic (no voicebank)", builtin: true }];
       }
       this.syncControls();
     }
     syncControls() {
       const s = this.score;
       if (!s) return;
-      const voices = this.voices || [{ id: "", name: "SAD PET (built-in)" }];
+      const voices = this.voices || [{ id: "", name: "Synthetic (no voicebank)" }];
       const signature = JSON.stringify(voices.map((v) => [v.id, v.name]));
       if (signature !== this.voiceSignature) {
-        this.voice.replaceChildren(...voices.map((v) => option(v.id, v.language ? `${v.name} (${v.language})` : v.name)));
+        const label = (v) => (v.bundled || !v.language ? v.name : `${v.name} (${v.language})`);
+        this.voice.replaceChildren(...voices.map((v) => option(v.id, label(v))));
         this.voiceSignature = signature;
       }
       if (s.voice && !voices.some((v) => v.id === s.voice))
         this.voice.append(option(s.voice, `${s.voice} (missing)`));
       this.voice.value = s.voice || "";
       this.languageSelect.value = s.language || "ja";
+      if (document.activeElement !== this.loopSteps)
+        this.loopSteps.value = s.loop_ticks
+          ? String(+((s.loop_ticks - (s.loop_start || 0)) / this.stepTicks()).toFixed(2))
+          : "";
       this.style.value = STYLES[s.style?.name] ? s.style.name : "Natural";
       if (document.activeElement !== this.tempo) this.tempo.value = this.bpm();
       this.follow.checked = s.follow_host !== false;
@@ -480,6 +561,16 @@
       set(this.fields.attackAmount, n.attack?.kind && n.attack.kind !== "none" ? n.attack.amount : "");
       set(this.fields.release, n.release?.kind || "none");
       set(this.fields.releaseAmount, n.release?.kind && n.release.kind !== "none" ? n.release.amount : "");
+      // The units that could sing this note, best first.
+      const units = this.units?.get(n.id);
+      const choices = ["auto", ...(units?.options ?? [])];
+      if (n.unit && !choices.includes(n.unit)) choices.push(n.unit);
+      if (this.fields.unit.dataset.choices !== choices.join("\n")) {
+        this.fields.unit.replaceChildren(...choices.map((c) => option(c, c)));
+        this.fields.unit.dataset.choices = choices.join("\n");
+      }
+      set(this.fields.unit, n.unit || "auto");
+      if (notes.length === 1 && units?.used?.length) this.noteLabel.textContent += ` · ${units.used.join(" + ")}`;
     }
     startPolling() {
       if (this.poll) return;
@@ -500,6 +591,7 @@
           progress = all.progress?.[String(this.hooks.context()?.active)] ?? null;
           this.renderError = all.error;
         }
+        await this.refreshUnits(progress);
         const plugin = this.hooks.host?.();
         this.status = {
           playing: state.playing,
@@ -516,11 +608,26 @@
         this.polling = false;
       }
     }
+    /** The voicebank units each note is sung with, after the score or the plan changed. */
+    async refreshUnits(progress) {
+      const voice = this.voices?.find((v) => v.id === (this.score?.voice || ""));
+      if (!this.score || !voice || voice.builtin) {
+        this.units = new Map();
+        return;
+      }
+      const signature = JSON.stringify([this.score.voice, this.score.language, this.score.notes, progress?.phrases]);
+      if (signature === this.unitsSignature && !(progress?.missing_voice)) return;
+      const units = await this.hooks.request("/api/vocal/units", { id: this.hooks.context()?.active });
+      // The worker may not have planned the newest score yet; ask again until it has.
+      if (Object.keys(units || {}).length || !this.score.notes.length) this.unitsSignature = signature;
+      this.units = new Map(Object.entries(units || {}).map(([id, u]) => [Number(id), u]));
+      this.syncInspector();
+    }
     showStatus() {
       const p = this.status.progress;
       const voice = this.voices?.find((v) => v.id === (this.score?.voice || ""));
-      let text = voice ? voice.name : "Built-in voice";
-      if (p?.missing_voice) text = "Voicebank missing: the built-in voice sings";
+      let text = voice ? voice.name : "Synthetic voice";
+      if (p?.missing_voice) text = "Voicebank missing: the synthetic voice sings";
       if (p && p.rendered < p.phrases) text += ` · rendering ${p.rendered}/${p.phrases}`;
       else if (p?.phrases) text += ` · ${p.phrases} phrase${p.phrases === 1 ? "" : "s"} ready`;
       if (this.renderError) text += ` · ${this.renderError}`;
@@ -593,7 +700,7 @@
     }
     async exportVoice() {
       const id = this.score?.voice;
-      if (!id) throw new Error("The built-in voice has no file to export");
+      if (!id) throw new Error("The synthetic voice has no file to export");
       if (window.sadPetNative) {
         await window.sadPetNative.dialog("/api/vocal/export", { id }, { title: "Export voicebank", mode: "save", filename: `${id}.sadvoice`, patterns: "*.sadvoice" });
         return;
@@ -603,12 +710,14 @@
     }
     async removeVoice() {
       const id = this.score?.voice;
-      if (!id) throw new Error("The built-in voice cannot be removed");
+      if (!id) throw new Error("The synthetic voice cannot be removed");
+      if (this.voices?.find((v) => v.id === id)?.bundled) throw new Error("Voices that come with SAD PET cannot be removed");
       if (!confirm(`Remove the voicebank “${this.voice.selectedOptions[0]?.textContent}”?`)) return;
       await this.hooks.request("/api/vocal/voice/remove", { id });
       this.voices = null;
       await this.loadVoices();
-      this.edit((s) => (s.voice = ""));
+      const pack = this.voices?.find((v) => v.bundled && v.language === this.score.language);
+      this.edit((s) => (s.voice = pack?.id ?? ""));
     }
     async importScore() {
       let score;
@@ -839,13 +948,26 @@
         c.fillText(lyric, r.x + 3, r.y + r.h - 3);
         c.restore();
         const phonemes = this.phonemes[i];
-        if (phonemes && view.keyHeight >= 12) {
-          c.fillStyle = muted;
+        const units = this.underNotes === "units" ? this.units?.get(n.id)?.used : null;
+        if ((units?.length || phonemes) && view.keyHeight >= 12) {
+          c.fillStyle = units?.length ? (n.unit ? accent : blue) : muted;
           c.font = "9px Inter, sans-serif";
-          c.fillText(n.phonemes ? `[${n.phonemes}]` : phonemes, r.x + 1, r.y + r.h + 10);
+          const label = units?.length ? units.join(" + ") : n.phonemes ? `[${n.phonemes}]` : phonemes;
+          c.fillText(label, r.x + 1, r.y + r.h + 10);
           c.font = "11px Inter, sans-serif";
         }
       });
+      // Past the loop's end nothing is sung
+      const loopX = this.score.loop_ticks ? this.x(this.score.loop_ticks) : Infinity;
+      if (loopX < width) {
+        const x = Math.max(KEYS, loopX);
+        c.fillStyle = "rgba(10,12,10,0.55)";
+        c.fillRect(x, RULER, width - x, bottom - RULER);
+        if (loopX >= KEYS) {
+          c.fillStyle = blue;
+          c.fillRect(Math.round(loopX) - 1, RULER, 2, bottom - RULER);
+        }
+      }
       // Selection rectangle
       if (this.marquee) {
         const m = this.marquee;
@@ -863,6 +985,21 @@
       for (let bar = Math.floor(view.tick / (TPB * 4)); bar * TPB * 4 < view.tick + visible; bar++) {
         const x = this.x(bar * TPB * 4);
         if (x >= KEYS) c.fillText(String(bar + 1), x + 3, 14);
+      }
+      if (loopX >= KEYS && loopX < width) {
+        c.fillStyle = blue;
+        c.fillRect(Math.round(loopX) - 1, 4, 2, RULER - 4);
+        c.fillRect(Math.round(loopX) - 7, 4, 6, 8);
+      }
+      // The loop's start: a flag facing the other way, and a line down the roll.
+      const startX = this.score.loop_ticks ? this.x(this.score.loop_start || 0) : -Infinity;
+      if (startX >= KEYS && startX < width) {
+        c.fillStyle = blue;
+        c.fillRect(Math.round(startX) - 1, 4, 2, RULER - 4);
+        c.fillRect(Math.round(startX) + 1, 4, 6, 8);
+        c.globalAlpha = 0.5;
+        c.fillRect(Math.round(startX) - 1, RULER, 1, bottom - RULER);
+        c.globalAlpha = 1;
       }
       // Cursor (play start) and playhead
       const cursorX = this.x(this.cursor ?? 0);
@@ -935,6 +1072,11 @@
         canvas.focus();
         const p = local(e);
         canvas.setPointerCapture(e.pointerId);
+        if (p.y < RULER && (this.nearLoopEnd(p.x) || this.nearLoopStart(p.x))) {
+          const edge = this.nearLoopEnd(p.x) ? "end" : "start";
+          this.drag = { kind: "loop", edge, x: p.x, before: JSON.stringify(this.score), moved: false };
+          return;
+        }
         if (p.y < RULER) {
           this.cursor = Math.max(0, this.snapTick(this.tickX(Math.max(KEYS, p.x))));
           this.hooks.request("/api/vocal/transport", { start: this.secondsAt(this.cursor) }).catch(() => {});
@@ -987,11 +1129,27 @@
           const p = local(e);
           const note = p.y > RULER && p.y < this.rollBottom ? this.noteAt(p.x, p.y) : null;
           const r = note && this.noteRect(note);
-          canvas.style.cursor = note ? (p.x > r.x + r.w - 6 ? "ew-resize" : "grab") : p.y < RULER ? "pointer" : "crosshair";
+          canvas.style.cursor = note
+            ? p.x > r.x + r.w - 6 ? "ew-resize" : "grab"
+            : p.y < RULER
+              ? this.nearLoopEnd(p.x) || this.nearLoopStart(p.x) ? "ew-resize" : "pointer"
+              : "crosshair";
           return;
         }
         const p = local(e);
         if (d.kind === "lane") return this.paintCurve(p);
+        if (d.kind === "loop") {
+          const step = this.stepTicks();
+          const ticks = Math.max(0, Math.round(this.tickX(Math.max(KEYS, p.x)) / step) * step);
+          const s = this.score;
+          const before = [s.loop_start || 0, s.loop_ticks];
+          if (d.edge === "end") s.loop_ticks = Math.max((s.loop_start || 0) + step, ticks);
+          else s.loop_start = Math.min(s.loop_ticks - step, ticks);
+          d.moved ||= before[0] !== (s.loop_start || 0) || before[1] !== s.loop_ticks;
+          this.syncControls();
+          this.draw();
+          return;
+        }
         if (d.kind === "marquee") {
           Object.assign(this.marquee, { x1: p.x, y1: p.y });
           const [x0, x1] = [Math.min(this.marquee.x0, p.x), Math.max(this.marquee.x0, p.x)];
@@ -1028,7 +1186,14 @@
           this.draw();
         }
         if (!d) return;
-        if ((d.kind === "move" || d.kind === "resize") && d.moved) {
+        if (d.kind === "loop" && !d.moved) {
+          // A click on a loop marker still places the play cursor.
+          this.cursor = Math.max(0, this.snapTick(this.tickX(Math.max(KEYS, d.x))));
+          this.hooks.request("/api/vocal/transport", { start: this.secondsAt(this.cursor) }).catch(() => {});
+          this.draw();
+          return;
+        }
+        if ((d.kind === "move" || d.kind === "resize" || d.kind === "loop") && d.moved) {
           this.undo.push(d.before);
           this.redo = [];
           this.commit();
@@ -1096,6 +1261,48 @@
       this.syncLanes();
       this.draw();
     }
+    /** Copies the selected notes (from the first one's start); `cut` removes them. */
+    copyNotes(cut = false) {
+      const selected = this.score?.notes.filter((n) => this.selected.has(n.id)) ?? [];
+      if (!selected.length) throw new Error("Select notes to copy");
+      const first = Math.min(...selected.map((n) => n.start));
+      this.clipboard = selected.map((n) => ({ ...structuredClone(n), start: n.start - first }));
+      if (cut) {
+        this.edit((s) => (s.notes = s.notes.filter((n) => !this.selected.has(n.id))));
+        this.selected.clear();
+        this.syncInspector();
+      }
+    }
+    /** Pastes at the cursor and moves the cursor past them, so pastes line up. */
+    pasteNotes(at = this.cursor ?? 0) {
+      if (!this.clipboard?.length) throw new Error("Copy notes first");
+      let id = this.nextId();
+      const pasted = this.clipboard.map((n) => ({ ...structuredClone(n), id: id++, start: n.start + at }));
+      this.edit((s) => s.notes.push(...pasted));
+      this.selected = new Set(pasted.map((n) => n.id));
+      const end = Math.max(...pasted.map((n) => n.start + n.length));
+      this.cursor = this.snap > 1 ? Math.ceil(end / this.snap) * this.snap : end;
+      this.syncInspector();
+      this.draw();
+    }
+    /** Repeats the selected notes right after themselves. */
+    duplicateNotes() {
+      const selected = this.score?.notes.filter((n) => this.selected.has(n.id)) ?? [];
+      if (!selected.length) throw new Error("Select notes to duplicate");
+      const first = Math.min(...selected.map((n) => n.start));
+      const end = Math.max(...selected.map((n) => n.start + n.length));
+      const span = this.snap > 1 ? Math.ceil((end - first) / this.snap) * this.snap : end - first;
+      const clipboard = this.clipboard;
+      this.copyNotes();
+      this.pasteNotes(first + span);
+      this.clipboard = clipboard;
+    }
+    deleteNotes() {
+      if (!this.selected.size) throw new Error("Select notes to delete");
+      this.edit((s) => (s.notes = s.notes.filter((n) => !this.selected.has(n.id))));
+      this.selected.clear();
+      this.syncInspector();
+    }
     key(e) {
       const mod = e.metaKey || e.ctrlKey;
       const selected = this.score?.notes.filter((n) => this.selected.has(n.id)) ?? [];
@@ -1113,17 +1320,13 @@
         this.draw();
       } else if (mod && (e.key.toLowerCase() === "c" || e.key.toLowerCase() === "x") && selected.length) {
         e.preventDefault();
-        const first = Math.min(...selected.map((n) => n.start));
-        this.clipboard = selected.map((n) => ({ ...structuredClone(n), start: n.start - first }));
-        if (e.key.toLowerCase() === "x") this.edit((s) => (s.notes = s.notes.filter((n) => !this.selected.has(n.id))));
+        this.copyNotes(e.key.toLowerCase() === "x");
       } else if (mod && e.key.toLowerCase() === "v" && this.clipboard?.length) {
         e.preventDefault();
-        const at = this.cursor ?? 0;
-        let id = this.nextId();
-        const pasted = this.clipboard.map((n) => ({ ...structuredClone(n), id: id++, start: n.start + at }));
-        this.edit((s) => s.notes.push(...pasted));
-        this.selected = new Set(pasted.map((n) => n.id));
-        this.syncInspector();
+        this.pasteNotes();
+      } else if (mod && e.key.toLowerCase() === "d" && selected.length) {
+        e.preventDefault();
+        this.duplicateNotes();
       } else if ((e.key === "Delete" || e.key === "Backspace") && selected.length) {
         e.preventDefault();
         this.edit((s) => (s.notes = s.notes.filter((n) => !this.selected.has(n.id))));

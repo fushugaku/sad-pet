@@ -10,6 +10,40 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 
+/// The voicebanks that come with SAD PET (`vocal::PACKS`), built in.
+const BUNDLED: [(&str, &[u8]); 3] = [
+    (
+        "kasane-teto",
+        include_bytes!("../../voice/packs/kasane-teto.sadvoice"),
+    ),
+    (
+        "kasane-teto-en",
+        include_bytes!("../../voice/packs/kasane-teto-en.sadvoice"),
+    ),
+    (
+        "kumi-ru",
+        include_bytes!("../../voice/packs/kumi-ru.sadvoice"),
+    ),
+];
+
+fn bundled(id: &str) -> Option<&'static [u8]> {
+    BUNDLED.iter().find(|(i, _)| *i == id).map(|(_, b)| *b)
+}
+
+/// A voicebank's file contents: built in, or from the Voices folder.
+fn voice_bytes(id: &str) -> Result<std::borrow::Cow<'static, [u8]>, String> {
+    if let Some(bytes) = bundled(id) {
+        return Ok(bytes.into());
+    }
+    if id.is_empty() || id.contains(['/', '\\', '.']) {
+        return Err("Choose a voicebank".into());
+    }
+    let folder = voices_folder().ok_or("No folder for voicebanks")?;
+    std::fs::read(folder.join(format!("{id}.sadvoice")))
+        .map(Into::into)
+        .map_err(|e| format!("Cannot read the voicebank: {e}"))
+}
+
 /// The folder that holds imported voicebanks.
 pub fn voices_folder() -> Option<PathBuf> {
     std::env::var_os("SAD_PET_VOICE_DIR")
@@ -37,6 +71,8 @@ struct State {
     stop: bool,
     /// Voicebanks to drop from the renderer (removed files).
     forgotten: Vec<String>,
+    /// The units each timbre's notes are sung with, by note id.
+    units: BTreeMap<u32, Vec<(u32, voice::concat::NoteUnits)>>,
 }
 
 struct Shared {
@@ -72,20 +108,32 @@ impl Service {
                     job: Job {
                         settings: settings.clone(),
                         rate,
-                        host_bpm: None,
+                        host_tempo: None,
                     },
                     mailbox: mailbox.clone(),
                     generation,
                 },
             );
         }
+        // An offline bounce waits for the edited score.
+        mailbox.set_complete(None);
         self.shared.wake.notify_one();
     }
     pub fn forget(&self, id: u32) {
         if let Ok(mut state) = self.shared.state.lock() {
             state.entries.remove(&id);
             state.progress.remove(&id);
+            state.units.remove(&id);
         }
+    }
+    /// The units a timbre's notes were last planned with, by note id.
+    pub fn units(&self, id: u32) -> Vec<(u32, voice::concat::NoteUnits)> {
+        self.shared
+            .state
+            .lock()
+            .ok()
+            .and_then(|s| s.units.get(&id).cloned())
+            .unwrap_or_default()
     }
     /// Progress of the latest submitted score; nothing while it is unplanned.
     pub fn progress(&self, id: u32) -> Progress {
@@ -131,21 +179,11 @@ fn load_voice(renderer: &mut Renderer, id: &str) {
     if id.is_empty() || renderer.has_voice(id) {
         return;
     }
-    let Some(folder) = voices_folder() else {
-        return;
-    };
-    let path = folder.join(format!("{id}.sadvoice"));
-    if let Ok(bytes) = std::fs::read(&path)
+    if let Ok(bytes) = voice_bytes(id)
         && let Ok(bank) = voice::bank::Voicebank::from_bytes(&bytes)
     {
         renderer.add_voice(id, Arc::new(bank));
     }
-}
-
-/// The host tempo a score renders at: the DAW's, when it follows the host.
-fn host_bpm(job: &Job, mailbox: &Mailbox) -> Option<f32> {
-    let bpm = f32::from_bits(mailbox.host_bpm.load(Ordering::Relaxed));
-    (job.settings.score.follow_host && bpm > 0.0).then_some(bpm)
 }
 
 fn run(shared: Arc<Shared>) {
@@ -175,24 +213,32 @@ fn run(shared: Arc<Shared>) {
         let mut rendered = false;
         for (id, generation, mut job, mailbox) in work {
             mailbox.collect();
-            job.host_bpm = host_bpm(&job, &mailbox);
-            let stale = plans
-                .get(&id)
-                .is_none_or(|(g, _, planned)| *g != generation || planned.host_bpm != job.host_bpm);
+            // The DAW's tempo map as the audio thread learned it, when the
+            // score follows the host.
+            let (tempo, tempo_version) = mailbox.tempo();
+            job.host_tempo = tempo.filter(|_| job.settings.score.follow_host);
+            let stale = plans.get(&id).is_none_or(|(g, _, planned)| {
+                *g != generation || planned.host_tempo != job.host_tempo
+            });
             if stale {
                 load_voice(&mut renderer, &job.settings.score.voice);
                 let plan = renderer.plan(&job);
                 mailbox.post(renderer.song(&plan));
+                let units = renderer.units(&plan);
+                if let Ok(mut state) = shared.state.lock() {
+                    state.units.insert(id, units);
+                }
                 plans.insert(id, (generation, plan, job.clone()));
             }
             let (planned, plan, job) = &plans[&id];
             let near = mailbox.position.load(Ordering::Relaxed);
-            if renderer.render_next(job, plan, near) {
+            if renderer.render_next(plan, near) {
                 mailbox.post(renderer.song(plan));
                 rendered = true;
             }
+            let progress = renderer.progress(job, plan);
+            mailbox.set_complete((progress.rendered == progress.phrases).then_some(tempo_version));
             if let Ok(mut state) = shared.state.lock() {
-                let progress = renderer.progress(job, plan);
                 state.progress.insert(id, (*planned, progress));
             }
             if rendered {
@@ -237,10 +283,8 @@ impl super::Controller {
                     .map(|_| json!({"ok":true}))
             }
             ("/api/vocal/voices", _) => {
-                let mut list = vec![
-                    json!({"id":"","name":"SAD PET (built-in)","language":null,"builtin":true}),
-                ];
-                list.extend(list_voices());
+                let mut list = list_voices();
+                list.push(json!({"id":"","name":"Synthetic (no voicebank)","language":null,"builtin":true}));
                 Ok(json!(list))
             }
             ("/api/vocal/phonemes", _) => {
@@ -312,8 +356,8 @@ impl super::Controller {
             })(),
             ("/api/vocal/voice/remove", true) => (|| {
                 let id = data["id"].as_str().ok_or("Choose a voicebank")?;
-                if id.is_empty() || id.contains(['/', '\\', '.']) {
-                    return Err("The built-in voice cannot be removed".into());
+                if id.is_empty() || bundled(id).is_some() || id.contains(['/', '\\', '.']) {
+                    return Err("Voices that come with SAD PET cannot be removed".into());
                 }
                 let folder = voices_folder().ok_or("No folder for voicebanks")?;
                 std::fs::remove_file(folder.join(format!("{id}.sadvoice")))
@@ -323,12 +367,7 @@ impl super::Controller {
             })(),
             ("/api/vocal/export", true) => (|| {
                 let id = data["id"].as_str().ok_or("Choose a voicebank")?;
-                if id.is_empty() || id.contains(['/', '\\', '.']) {
-                    return Err("Choose an imported voicebank".into());
-                }
-                let folder = voices_folder().ok_or("No folder for voicebanks")?;
-                let bytes = std::fs::read(folder.join(format!("{id}.sadvoice")))
-                    .map_err(|e| format!("Cannot read the voicebank: {e}"))?;
+                let bytes = voice_bytes(id)?;
                 match data["path"].as_str() {
                     Some(path) => super::audio_library::write_file(Path::new(path), &bytes)
                         .map(|_| json!({"ok":true})),
@@ -376,8 +415,24 @@ impl super::Controller {
     }
 }
 
-/// Lists the Voices folder: `{id, name, language, units, author}`.
+/// Lists the voicebanks that come with SAD PET, then the Voices folder:
+/// `{id, name, language, author}`, with `bundled` on the former.
 pub fn list_voices() -> Vec<serde_json::Value> {
+    let mut out: Vec<serde_json::Value> = BUNDLED
+        .iter()
+        .filter_map(|(id, bytes)| {
+            let info = voice::bank::Voicebank::read_info(bytes)?;
+            Some(
+                serde_json::json!({ "id": id, "name": info.name, "language": info.language,
+                "author": info.author, "bundled": true }),
+            )
+        })
+        .collect();
+    out.extend(imported_voices());
+    out
+}
+
+fn imported_voices() -> Vec<serde_json::Value> {
     let Some(folder) = voices_folder() else {
         return Vec::new();
     };
@@ -390,7 +445,11 @@ pub fn list_voices() -> Vec<serde_json::Value> {
         if path.extension().is_none_or(|e| e != "sadvoice") {
             continue;
         }
-        let Some(id) = path.file_stem().map(|s| s.to_string_lossy().to_string()) else {
+        let Some(id) = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .filter(|id| bundled(id).is_none())
+        else {
             continue;
         };
         if let Some(info) = read_info(&path) {
@@ -414,10 +473,10 @@ fn read_info(path: &Path) -> Option<voice::bank::Info> {
         return None;
     }
     let length = u32::from_le_bytes(head[12..16].try_into().ok()?) as usize;
-    let mut header = vec![0u8; length.min(64 << 20)];
-    file.read_exact(&mut header).ok()?;
-    let value: serde_json::Value = serde_json::from_slice(&header).ok()?;
-    serde_json::from_value(value["info"].clone()).ok()
+    let mut bytes = head.to_vec();
+    bytes.resize(16 + length.min(64 << 20), 0);
+    file.read_exact(&mut bytes[16..]).ok()?;
+    voice::bank::Voicebank::read_info(&bytes)
 }
 
 /// An id for a new voicebank from its name, unique in the Voices folder.
@@ -438,7 +497,7 @@ pub fn new_id(name: &str, folder: &Path) -> String {
     };
     let mut id = base.clone();
     let mut n = 2;
-    while folder.join(format!("{id}.sadvoice")).exists() {
+    while folder.join(format!("{id}.sadvoice")).exists() || bundled(&id).is_some() {
         id = format!("{base}-{n}");
         n += 1;
     }
@@ -520,6 +579,27 @@ mod tests {
         assert!(out.iter().any(|s| s.abs() > 0.01));
         assert_eq!(service.progress(7).phrases, 1);
         service.forget(7);
+    }
+
+    #[test]
+    fn the_voices_that_come_with_sad_pet_are_listed_and_load() {
+        for ((id, bytes), (pack, language)) in BUNDLED.iter().zip(vocal::PACKS) {
+            assert_eq!(*id, pack);
+            let info = voice::bank::Voicebank::read_info(bytes).unwrap();
+            assert_eq!(info.language, language, "{id}");
+            assert!(!info.author.is_empty(), "{id} credits its author");
+        }
+        let listed = list_voices();
+        assert_eq!(listed[0]["id"], "kasane-teto");
+        assert_eq!(listed[0]["bundled"], true);
+        let mut renderer = Renderer::new();
+        load_voice(&mut renderer, "kumi-ru");
+        assert!(renderer.has_voice("kumi-ru"));
+        assert_eq!(
+            vocal::Settings::new().score.voice,
+            "kasane-teto",
+            "a new Vocal timbre sings with a voice that comes with SAD PET"
+        );
     }
 
     #[test]

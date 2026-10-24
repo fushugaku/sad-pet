@@ -189,6 +189,39 @@ export class BrowserBackend {
       this.stoppingInput = null;
     }
   }
+  /** The voicebanks that come with SAD PET (voices/packs.json). */
+  packs() {
+    this.packList ??= fetch(new URL("./voices/packs.json", import.meta.url))
+      .then((response) => (response.ok ? response.json() : []))
+      .catch(() => []);
+    return this.packList;
+  }
+  /** Fetches the packs these voice ids name into the vocal worker, once. */
+  async loadPacks(ids) {
+    const packs = await this.packs();
+    this.packLoads ??= new Map();
+    await Promise.all(
+      [...new Set(ids)].map((id) => {
+        const pack = packs.find((p) => p.id === id);
+        if (!pack) return null;
+        if (!this.packLoads.has(id))
+          this.packLoads.set(
+            id,
+            fetch(new URL(`./voices/${pack.file}?v=${pack.version}`, import.meta.url))
+              .then((response) => {
+                if (!response.ok) throw new Error(`${pack.name}: ${response.status}`);
+                return response.arrayBuffer();
+              })
+              .then((bytes) => this.vocal.call("vocal-voice", { id, bytes }, [bytes]))
+              .catch((error) => {
+                this.packLoads.delete(id);
+                this.vocalError = `The voicebank could not be loaded: ${error.message}`;
+              }),
+          );
+        return this.packLoads.get(id);
+      }),
+    );
+  }
   async loadVoices() {
     try {
       for (const voice of await listVoices())
@@ -208,18 +241,29 @@ export class BrowserBackend {
   }
   async vocalRequest(route, data, options) {
     if (route === "/api/vocal/voices") {
-      const voices = await this.vocal.call("vocal", { type: "voices" });
-      return [{ id: "", name: "SAD PET (built-in)", language: null, builtin: true }, ...voices];
+      const [packs, voices] = await Promise.all([
+        this.packs(),
+        this.vocal.call("vocal", { type: "voices" }),
+      ]);
+      const bundled = packs.map(({ id, name, language, author, size }) => ({
+        id, name, language, author, size, bundled: true,
+      }));
+      const imported = voices.filter((v) => !packs.some((p) => p.id === v.id));
+      return [...bundled, ...imported, { id: "", name: "Synthetic (no voicebank)", language: null, builtin: true }];
     }
     if (route === "/api/vocal/progress") {
       const progress = await this.vocal.call("vocal", { type: "progress" });
       return { progress, error: this.vocalError || null };
     }
+    if (route === "/api/vocal/units")
+      return this.vocal.call("vocal", { type: "units", id: data?.id });
     if (route === "/api/vocal/phonemes")
       return this.vocal.call("vocal", { type: "phonemes", ...data });
     if (route === "/api/vocal/import-score")
       return this.vocal.call("vocal", { type: "import-score", ...data });
     if (route === "/api/vocal/voice/remove") {
+      if ((await this.packs()).some((p) => p.id === data.id))
+        throw new Error("Voices that come with SAD PET cannot be removed");
       await removeVoice(data.id);
       return this.vocal.call("vocal", { type: "voice-remove", id: data.id });
     }
@@ -236,13 +280,22 @@ export class BrowserBackend {
           files.map((f) => f.data),
         );
       }
-      const existing = new Set((await listVoices()).map((v) => v.id));
+      const existing = new Set([
+        ...(await listVoices()).map((v) => v.id),
+        ...(await this.packs()).map((p) => p.id),
+      ]);
       const id = voiceId(body.name || voiceInfo(bytes).name || "Voice", existing);
       const info = await this.vocal.call("vocal-voice", { id, bytes: bytes.slice(0) });
       await saveVoice({ id, name: info.name, language: info.language, bytes });
       return info;
     }
     if (route === "/api/vocal/export") {
+      const pack = (await this.packs()).find((p) => p.id === data?.id);
+      if (pack) {
+        const response = await fetch(new URL(`./voices/${pack.file}?v=${pack.version}`, import.meta.url));
+        if (!response.ok) throw new Error(`${pack.name}: ${response.status}`);
+        return response.arrayBuffer();
+      }
       const voice = (await listVoices()).find((v) => v.id === data?.id);
       if (!voice) throw new Error("Unknown voicebank");
       return voice.bytes;
@@ -253,9 +306,14 @@ export class BrowserBackend {
   }
   audioMessage(message) {
     if (message.type === "vocal-jobs") {
-      this.vocal.call("vocal-jobs", message.jobs).catch((error) => {
-        this.vocalError = error.message;
-      });
+      // A score sung by a pack waits for the pack, in order with other jobs.
+      const voices = message.jobs.map((job) => job.settings?.score?.voice).filter(Boolean);
+      this.vocalJobs = (this.vocalJobs ?? Promise.resolve())
+        .then(() => this.loadPacks(voices))
+        .then(() => this.vocal.call("vocal-jobs", message.jobs))
+        .catch((error) => {
+          this.vocalError = error.message;
+        });
       return;
     }
     if (message.type === "source-ready") {

@@ -9,7 +9,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 const MAGIC: &[u8; 8] = b"SADVOICE";
-const VERSION: u32 = 1;
+/// Version 1 stored the frames raw; version 2 deflates them, with every
+/// envelope and aperiodicity byte stored as its change from the frame before.
+const VERSION: u32 = 2;
 const ENV_STEP: f32 = 0.75;
 const AP_STEP_DB: f32 = 0.25;
 
@@ -93,6 +95,18 @@ fn quantize_ap(a: f32) -> u8 {
         .clamp(0.0, 240.0) as u8
 }
 
+/// Each byte of rows of `width` as its (wrapping) change from the row before.
+fn deltas(rows: &[u8], width: usize) -> impl Iterator<Item = u8> + '_ {
+    rows.iter()
+        .enumerate()
+        .map(move |(i, &b)| b.wrapping_sub(if i >= width { rows[i - width] } else { 0 }))
+}
+fn undo_deltas(rows: &mut [u8], width: usize) {
+    for i in width..rows.len() {
+        rows[i] = rows[i].wrapping_add(rows[i - width]);
+    }
+}
+
 impl Voicebank {
     pub fn new(info: Info) -> Self {
         Self {
@@ -162,9 +176,17 @@ impl Voicebank {
                 .push(i as u32);
             for (k, &p) in unit.phonemes.iter().enumerate() {
                 seen.insert(p);
-                // A consonant fully inside a unit, between two other phonemes,
-                // shows its natural length.
-                if !p.is_vowel() && !p.is_pause() && k > 0 && k + 1 < unit.phonemes.len() {
+                // A consonant's natural length, where both its ends were
+                // measured: between two sounds (VCV, CVC), or a CV's onset
+                // (oto offset to preutterance). Not the halves of a VC- tail
+                // or a -CV onset, which the import divides by a guess.
+                let len = unit.phonemes.len();
+                let measured = (k > 0
+                    && k + 1 < len
+                    && !unit.phonemes[k - 1].is_pause()
+                    && !unit.phonemes[k + 1].is_pause())
+                    || (k == 0 && len > 1 && unit.phonemes[1].is_vowel());
+                if !p.is_vowel() && !p.is_pause() && measured {
                     let (a, b) = unit.span(k);
                     lengths
                         .entry(p)
@@ -298,18 +320,31 @@ impl Voicebank {
             frames: self.f0.len() as u32,
         })
         .expect("voicebank header");
-        let mut out =
-            Vec::with_capacity(16 + header.len() + self.f0.len() * (4 + ENV_POINTS + AP_BANDS));
+        let mut out = Vec::with_capacity(16 + header.len() + self.f0.len() * 40);
         out.extend_from_slice(MAGIC);
         out.extend_from_slice(&VERSION.to_le_bytes());
         out.extend_from_slice(&(header.len() as u32).to_le_bytes());
         out.extend_from_slice(&header);
+        let mut body = Vec::with_capacity(self.f0.len() * (4 + ENV_POINTS + AP_BANDS));
         for f in &self.f0 {
-            out.extend_from_slice(&f.to_le_bytes());
+            body.extend_from_slice(&f.to_le_bytes());
         }
-        out.extend_from_slice(&self.env);
-        out.extend_from_slice(&self.ap);
-        out
+        body.extend(deltas(&self.env, ENV_POINTS));
+        body.extend(deltas(&self.ap, AP_BANDS));
+        use std::io::Write;
+        let mut encoder = flate2::write::DeflateEncoder::new(out, flate2::Compression::best());
+        encoder.write_all(&body).expect("deflate into memory");
+        encoder.finish().expect("deflate into memory")
+    }
+
+    /// The `Info` of a voicebank file, from its header alone.
+    pub fn read_info(bytes: &[u8]) -> Option<Info> {
+        if bytes.get(..8)? != MAGIC {
+            return None;
+        }
+        let length = u32::from_le_bytes(bytes.get(12..16)?.try_into().ok()?) as usize;
+        let header: serde_json::Value = serde_json::from_slice(bytes.get(16..16 + length)?).ok()?;
+        serde_json::from_value(header["info"].clone()).ok()
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
@@ -325,7 +360,8 @@ impl Voicebank {
                     .unwrap(),
             ))
         };
-        if word(8)? != VERSION {
+        let version = word(8)?;
+        if version != 1 && version != VERSION {
             return Err("unsupported voicebank version".into());
         }
         let header_len = word(12)? as usize;
@@ -336,7 +372,25 @@ impl Voicebank {
         )
         .map_err(|e| format!("voicebank header: {e}"))?;
         let n = header.frames as usize;
-        let mut at = 16 + header_len;
+        let size = n * (4 + ENV_POINTS + AP_BANDS);
+        let inflated;
+        let (bytes, mut at) = if version == 1 {
+            (bytes, 16 + header_len)
+        } else {
+            use std::io::Read;
+            let mut body = Vec::with_capacity(size);
+            flate2::read::DeflateDecoder::new(&bytes[16 + header_len..])
+                .take(size as u64)
+                .read_to_end(&mut body)
+                .map_err(|e| format!("voicebank frames: {e}"))?;
+            if body.len() != size {
+                return Err("truncated frames".into());
+            }
+            undo_deltas(&mut body[n * 4..n * (4 + ENV_POINTS)], ENV_POINTS);
+            undo_deltas(&mut body[n * (4 + ENV_POINTS)..], AP_BANDS);
+            inflated = body;
+            (&inflated[..], 0)
+        };
         let f0_bytes = bytes.get(at..at + n * 4).ok_or("truncated frames")?;
         let f0 = f0_bytes
             .as_chunks::<4>()

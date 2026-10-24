@@ -170,6 +170,9 @@ pub struct Note {
     pub vibrato: Vibrato,
     pub attack: Effect<Attack>,
     pub release: Effect<Release>,
+    /// A voicebank unit (its alias) this note's syllable should use.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub unit: String,
 }
 impl Default for Note {
     fn default() -> Self {
@@ -185,6 +188,7 @@ impl Default for Note {
             vibrato: Vibrato::default(),
             attack: Effect::default(),
             release: Effect::default(),
+            unit: String::new(),
         }
     }
 }
@@ -355,6 +359,10 @@ pub struct Score {
     pub voice: String,
     /// Semitones added to every note.
     pub transpose: i8,
+    /// Tick where the score goes back to `loop_start`; 0 sings it once.
+    pub loop_ticks: u32,
+    /// Tick the loop goes back to; notes before it are an intro sung once.
+    pub loop_start: u32,
 }
 impl Default for Score {
     fn default() -> Self {
@@ -371,6 +379,8 @@ impl Default for Score {
             style: Style::default(),
             voice: String::new(),
             transpose: 0,
+            loop_ticks: 0,
+            loop_start: 0,
         }
     }
 }
@@ -410,6 +420,10 @@ impl Score {
                 .take(64)
                 .collect();
         }
+        self.loop_ticks = self.loop_ticks.min(TICKS_PER_BEAT * 4 * 1024);
+        if self.loop_start >= self.loop_ticks {
+            self.loop_start = 0;
+        }
         self.tempo.retain(|t| t.bpm.is_finite() && t.bpm > 0.0);
         self.tempo.sort_by_key(|t| t.tick);
         self.tempo.dedup_by_key(|t| t.tick);
@@ -432,10 +446,27 @@ impl Score {
         self.curves.retain(|_, c| !c.is_empty());
     }
 
-    /// Tempo map with an optional host tempo replacing it.
-    pub fn timeline(&self, host_bpm: Option<f32>) -> Timeline {
-        match host_bpm.filter(|b| self.follow_host && b.is_finite() && *b > 0.0) {
-            Some(bpm) => Timeline::constant(bpm),
+    /// What one pass of a looping score sings: the notes that start before
+    /// the loop's end, cut at it. A score that does not loop stays whole.
+    pub fn one_pass(&self) -> std::borrow::Cow<'_, Score> {
+        let end = self.loop_ticks;
+        if end == 0 || self.notes.iter().all(|n| n.start + n.length <= end) {
+            return std::borrow::Cow::Borrowed(self);
+        }
+        let mut score = self.clone();
+        score.notes.retain(|n| n.start < end);
+        for n in &mut score.notes {
+            n.length = n.length.min(end - n.start);
+        }
+        std::borrow::Cow::Owned(score)
+    }
+
+    /// Tempo map, or the host's (in ticks) when the score follows it.
+    pub fn timeline(&self, host: Option<&[Tempo]>) -> Timeline {
+        let valid =
+            |t: &[Tempo]| !t.is_empty() && t.iter().all(|t| t.bpm.is_finite() && t.bpm > 0.0);
+        match host.filter(|t| self.follow_host && valid(t)) {
+            Some(tempo) => Timeline::new(tempo),
             None => Timeline::new(&self.tempo),
         }
     }
@@ -540,6 +571,38 @@ mod tests {
         score.style.color.insert(Param::Brightness, 100.0);
         assert_eq!(score.param(Param::Brightness, 0.0), 127.0);
     }
+    #[test]
+    fn one_pass_cuts_the_score_at_the_loop() {
+        let note = |start, length| Note {
+            start,
+            length,
+            ..Default::default()
+        };
+        let mut score = Score {
+            notes: vec![note(0, 480), note(1440, 960), note(1920, 480)],
+            ..Default::default()
+        };
+        assert_eq!(score.one_pass().notes.len(), 3);
+        score.loop_ticks = 1920;
+        let pass = score.one_pass();
+        assert_eq!(pass.notes.len(), 2);
+        assert_eq!(pass.notes[1].length, 480);
+    }
+
+    #[test]
+    fn a_loop_starts_before_it_ends() {
+        let mut score = Score {
+            loop_ticks: 1920,
+            loop_start: 2400,
+            ..Default::default()
+        };
+        score.sanitize();
+        assert_eq!(score.loop_start, 0);
+        score.loop_start = 960;
+        score.sanitize();
+        assert_eq!(score.loop_start, 960);
+    }
+
     #[test]
     fn sanitize_orders_and_numbers_notes() {
         let mut score = Score {

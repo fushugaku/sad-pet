@@ -8,9 +8,12 @@
 use sad_pet_voice::bank::Voicebank;
 use sad_pet_voice::phoneme::Language;
 use sad_pet_voice::render::{self, Voice};
-use sad_pet_voice::score::{Note, Score, TICKS_PER_BEAT};
+use sad_pet_voice::score::{Note, Score};
 use sad_pet_voice::{analysis, utau, wav};
 use std::path::PathBuf;
+
+// The listening set and its measures (command line only).
+mod listen;
 use std::sync::Arc;
 
 struct Args {
@@ -62,52 +65,12 @@ fn output(args: &Args) -> PathBuf {
 }
 
 fn demo(language: Language) -> Score {
-    // A short tune in each language; one syllable per note.
-    let (lyrics, keys): (&[&str], &[u8]) = match language {
-        Language::Ja => (
-            &[
-                "さ", "く", "ら", "さ", "く", "ら", "や", "よ", "い", "の", "そ", "ら", "は",
-            ],
-            &[69, 69, 71, 69, 69, 71, 69, 71, 72, 71, 69, 71, 69],
-        ),
-        Language::En => (
-            &[
-                "twin-", "kle", "twin-", "kle", "lit-", "tle", "star", "how", "I", "won-", "der",
-                "what", "you", "are",
-            ],
-            &[60, 60, 67, 67, 69, 69, 67, 65, 65, 64, 64, 62, 62, 60],
-        ),
-        Language::Ru => (
-            &[
-                "в ле-", "су", "ро-", "ди-", "лась", "ё-", "лоч-", "ка", "в ле-", "су", "о-", "на",
-                "рос-", "ла",
-            ],
-            &[60, 69, 69, 67, 69, 65, 60, 60, 60, 69, 69, 70, 67, 72],
-        ),
-    };
-    let mut score = Score {
-        language,
-        ..Default::default()
-    };
-    let mut tick = TICKS_PER_BEAT * 2;
-    for (i, (lyric, key)) in lyrics.iter().zip(keys).enumerate() {
-        let length = if i + 1 == lyrics.len() || i % 7 == 6 {
-            TICKS_PER_BEAT * 2
-        } else {
-            TICKS_PER_BEAT
-        };
-        score.notes.push(Note {
-            id: i as u32 + 1,
-            start: tick,
-            length,
-            key: *key,
-            lyric: lyric.to_string(),
-            ..Default::default()
-        });
-        tick += length + if i % 7 == 6 { TICKS_PER_BEAT } else { 0 };
-    }
-    score.sanitize();
-    score
+    // The first phrase of the listening set in that language.
+    listen::phrases()
+        .into_iter()
+        .find(|p| p.language == language)
+        .map(|p| p.score())
+        .unwrap_or_default()
 }
 
 fn write(path: &PathBuf, rate: u32, samples: &[f32]) {
@@ -371,6 +334,13 @@ fn main() {
                     report.missing_files.join(", ")
                 );
             }
+            let mut bank = bank;
+            if let Some(author) = args.options.get("author") {
+                bank.info.author = author.clone();
+            }
+            if let Some(description) = args.options.get("description") {
+                bank.info.description = description.clone();
+            }
             let path = output(&args);
             let bytes = bank.to_bytes();
             std::fs::write(&path, &bytes).unwrap_or_else(|e| fail(e));
@@ -448,6 +418,26 @@ fn main() {
                     .find(|s| s.name.eq_ignore_ascii_case(style))
                     .unwrap_or_else(|| fail(format!("unknown style {style}")));
             }
+            if args.options.contains_key("units") {
+                // Which voicebank units each phrase joins, with its syllables.
+                let timeline = score.timeline(None);
+                for phrase in render::plan(&score, &timeline, &id, rate, None) {
+                    let units: Vec<String> = render::units(&score, &timeline, &phrase, &voice)
+                        .into_iter()
+                        .map(|(n, u)| {
+                            let others: Vec<&str> =
+                                u.options.iter().take(5).map(String::as_str).collect();
+                            format!(
+                                "{} = {} (or {})",
+                                score.notes[n].lyric,
+                                u.used.join(" + "),
+                                others.join(", ")
+                            )
+                        })
+                        .collect();
+                    eprintln!("{}", units.join(" | "));
+                }
+            }
             let started = std::time::Instant::now();
             let samples = render::render_song(&score, &voice, &id, rate, None);
             let elapsed = started.elapsed().as_secs_f64();
@@ -459,6 +449,68 @@ fn main() {
             write(&output(&args), rate, &samples);
         }
         "reconstruct" => reconstruct(&args),
+        "hnr" => {
+            // Noise, harmonics and formant measures of renders or recordings.
+            for path in &args.positional[1..] {
+                let audio = wav::read(&std::fs::read(path).unwrap_or_else(|e| fail(e)))
+                    .unwrap_or_else(|e| fail(e));
+                let m = listen::measure(&audio.samples, audio.rate);
+                println!(
+                    "{path}: hiss {:.0}% (loudest {:+.1} dB from the vowels), HNR {:.1} dB \
+                     (above 2 kHz {:.1}), formant contrast {:.2} dB, 2-5 kHz {:+.1} dB, \
+                     frame-to-frame change {:.2} dB",
+                    m.hiss_share * 100.0,
+                    m.hiss_db,
+                    m.hnr,
+                    m.hnr_high,
+                    m.contrast,
+                    m.brightness,
+                    m.flux
+                );
+            }
+        }
+        "profile" => {
+            // The average voiced envelope and aperiodicity, to set renders
+            // beside recordings.
+            let hz: Vec<String> = listen::PROFILE_HZ
+                .iter()
+                .map(|h| format!("{h:>6.0}"))
+                .collect();
+            println!("{:>28} {} | aperiodicity per band", "Hz", hz.join(""));
+            for path in &args.positional[1..] {
+                let audio = wav::read(&std::fs::read(path).unwrap_or_else(|e| fail(e)))
+                    .unwrap_or_else(|e| fail(e));
+                let (env, ap) = listen::profile(&audio.samples, audio.rate);
+                let name = path.rsplit('/').next().unwrap_or(path);
+                let env: Vec<String> = env.iter().map(|v| format!("{v:>6.1}")).collect();
+                let ap: Vec<String> = ap.iter().map(|v| format!("{v:.2}")).collect();
+                println!("{:>28} {} | {}", name, env.join(""), ap.join(" "));
+            }
+        }
+        "listen" => {
+            let dir = args
+                .positional
+                .get(1)
+                .unwrap_or_else(|| fail("missing output folder"));
+            let packs = args
+                .options
+                .get("packs")
+                .map_or("voice/packs", String::as_str);
+            let rate = args
+                .options
+                .get("rate")
+                .and_then(|r| r.parse().ok())
+                .unwrap_or(32_000);
+            listen::run(
+                std::path::Path::new(dir),
+                args.options.get("before").map(std::path::Path::new),
+                std::path::Path::new(packs),
+                rate,
+                args.options
+                    .get("label")
+                    .map_or("This build", String::as_str),
+            );
+        }
         "resynth" => {
             // Analysis and resynthesis of a recording at its own pitch, with
             // the log-spectral distance to the original as a fidelity measure.
@@ -514,7 +566,9 @@ fn main() {
             }
         }
         _ => {
-            eprintln!("usage: sad-voice import|info|render|demo|analyze|resynth|reconstruct ...");
+            eprintln!(
+                "usage: sad-voice import|info|render|demo|analyze|resynth|reconstruct|hnr|listen ..."
+            );
             std::process::exit(2);
         }
     }

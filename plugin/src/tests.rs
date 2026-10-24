@@ -1829,6 +1829,22 @@ fn vocal_timbres_sing_at_the_daw_position_and_survive_project_recall() {
     recalled_audio.begin(&values, 120., Some(1.0), true, 2048);
     assert!(render(&mut recalled_audio, 2048, [0.; 2]) > 0.01);
 
+    // An offline bounce waits for a phrase the edit just added.
+    let added = json!({"score":{"language":"ja","style":{"auto_breath":false},"notes":[
+        {"id":1,"start":480,"length":480,"key":64,"lyric":"ら"},
+        {"id":2,"start":960,"length":480,"key":67,"lyric":"ら"},
+        {"id":3,"start":3840,"length":480,"key":69,"lyric":"ら"}]}});
+    call(&mut control, "/api/vocal/score", added);
+    audio.offline = true;
+    no_heap(|| {
+        audio.begin(&values, 120., Some(8.0), true, 2048);
+        assert!(
+            render(&mut audio, 2048, [0.; 2]) > 0.01,
+            "the bounce sings the new note"
+        );
+    });
+    audio.offline = false;
+
     // The app's own song clock plays without a host transport.
     call(
         &mut control,

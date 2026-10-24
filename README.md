@@ -160,8 +160,15 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   sensitivity — draw with the mouse; notes have VEL, vibrato and Attack/Release
   effects (scoop, bend, soft, accent, breathy, turn; fall, rise, soft, breathy,
   swell), and **Styles** (Natural, Pop, Ballad, Rock, Whisper, Opera, Robot) set
-  how the pitch moves and the voice color. The built-in formant voice sings every
-  language without recordings; **Voices ▾** imports a UTAU voicebank (a folder,
+  how the pitch moves and the voice color. Three voices come with SAD PET —
+  Kasane Teto (Japanese and English) and Kumi (Russian) — and a new Vocal timbre
+  sings with the one for its language; **Steps** (or the marker on the ruler)
+  makes the score start over after that many grid steps; the loop's start
+  marker leaves an intro before it that is sung once. Under each note the
+  editor shows the voicebank units that sing it, and the note inspector's
+  **Unit** picks another one; **Edit ▾** copies, cuts, pastes and duplicates
+  notes. The synthetic formant
+  voice sings without recordings; **Voices ▾** imports a UTAU voicebank (a folder,
   a `.zip` or a `.sadvoice` file): its `oto.ini` units are analyzed into
   spectral frames, then selected and joined in the spectral domain on the sung
   pitch. **Import score…** reads Standard MIDI files with lyric events, UTAU
