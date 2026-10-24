@@ -485,9 +485,12 @@ fn place(bank: &Voicebank, items: &[Item], chain: &[Candidate]) -> Vec<Placement
                 }
             }
             if !phoneme.class().sustainable() && !incoming && !outgoing {
-                // Consonants are not stretched: the target is the natural
-                // length, centered where the timing put it.
+                // A stop or an affricate keeps its recorded speed, its
+                // release at the end of its time: squeezed, a burst of one
+                // frame would be skipped; given more time, it holds its
+                // closure.
                 p.stable = None;
+                p.s0 = s1 - (t1 - t0) / FRAME;
             }
             if hard_in && !incoming {
                 p.t0 -= EDGE;
