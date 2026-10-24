@@ -604,11 +604,11 @@ impl Registry {
                     part.host
                         .engine
                         .process_input_block(&source[..n], &mut part.host.frames[range.clone()]);
-                    for i in 0..n {
+                    for (i, mixed) in mix[..n].iter_mut().enumerate() {
                         let level = gain(part, !part.meta.mix.muted);
                         let out = part.host.frames[start + i];
                         for c in 0..2 {
-                            mix[i][c] += out[c] * level;
+                            mixed[c] += out[c] * level;
                         }
                     }
                 }
@@ -618,9 +618,9 @@ impl Registry {
                 part.host
                     .engine
                     .process_input_block(&mix[..n], &mut part.host.frames[range.clone()]);
-                for i in 0..n {
+                for (i, mixed) in mix[..n].iter_mut().enumerate() {
                     let level = gain(part, !part.meta.mix.muted);
-                    mix[i] = part.host.frames[start + i].map(|v| v * level);
+                    *mixed = part.host.frames[start + i].map(|v| v * level);
                 }
             }
             self.parts[0].host.frames[range].copy_from_slice(&mix[..n]);
