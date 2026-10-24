@@ -264,20 +264,26 @@ fn worker(shared: &Shared, index: usize) {
 fn read_fp() -> u64 {
     let value: u64;
     // SAFETY: reads this thread's floating-point control register.
-    unsafe { core::arch::asm!("mrs {}, fpcr", out(reg) value, options(nomem, nostack, preserves_flags)) };
+    unsafe {
+        core::arch::asm!("mrs {}, fpcr", out(reg) value, options(nomem, nostack, preserves_flags))
+    };
     value
 }
 #[cfg(target_arch = "aarch64")]
 fn write_fp(value: u64) {
     // SAFETY: rounding, flush-to-zero and default-NaN modes of this thread
     // only; the value came from another thread's FPCR.
-    unsafe { core::arch::asm!("msr fpcr, {}", in(reg) value, options(nomem, nostack, preserves_flags)) };
+    unsafe {
+        core::arch::asm!("msr fpcr, {}", in(reg) value, options(nomem, nostack, preserves_flags))
+    };
 }
 #[cfg(target_arch = "x86_64")]
 fn read_fp() -> u64 {
     let mut value = 0_u32;
     // SAFETY: stores this thread's MXCSR into a local.
-    unsafe { core::arch::asm!("stmxcsr [{}]", in(reg) &mut value, options(nostack, preserves_flags)) };
+    unsafe {
+        core::arch::asm!("stmxcsr [{}]", in(reg) &mut value, options(nostack, preserves_flags))
+    };
     value as u64
 }
 #[cfg(target_arch = "x86_64")]

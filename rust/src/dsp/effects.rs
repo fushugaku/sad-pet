@@ -332,7 +332,10 @@ mod tests {
                     awake.configure(&p);
                 }
                 let frame = if n < 300 {
-                    [random.bipolar() * 0.5, if n % 7 == 0 { -0.0 } else { random.bipolar() }]
+                    [
+                        random.bipolar() * 0.5,
+                        if n % 7 == 0 { -0.0 } else { random.bipolar() },
+                    ]
                 } else if n % 2 == 0 {
                     [-0.0, 0.0]
                 } else {
