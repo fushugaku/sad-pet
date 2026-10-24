@@ -499,6 +499,7 @@ enum Color {
     Glass,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn pitched(
     bank: &mut Bank,
     beat: f64,
@@ -643,8 +644,7 @@ fn basses(bank: &mut Bank, v: usize) {
 }
 
 fn keys(bank: &mut Bank, v: usize) {
-    for step in 0..16 {
-        let interval = PHRASES[v][step];
+    for (step, &interval) in PHRASES[v].iter().enumerate() {
         if interval < 0 {
             continue;
         }
@@ -788,7 +788,11 @@ fn plucks(bank: &mut Bank, v: usize) {
             bank.note(beat + 0.08, note, tone, decay, 1.0 - pan, 0.12);
         }
     }
-    bank.echo(bank.beat * if v % 2 == 0 { 0.75 } else { 1.5 }, 0.23, 3);
+    bank.echo(
+        bank.beat * if v.is_multiple_of(2) { 0.75 } else { 1.5 },
+        0.23,
+        3,
+    );
 }
 
 fn pads(bank: &mut Bank, v: usize) {
