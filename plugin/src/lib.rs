@@ -239,6 +239,8 @@ pub struct Audio {
     clock: sad_pet::vocal::Clock,
     /// This block's song state: playing, position in frames.
     song: (bool, u64),
+    /// This part's render buffers for one chunk of the block.
+    chunk: Box<timbres::Chunk>,
 }
 
 /// A Vocal part's audio side: rendered clips, read a chunk at a time.
@@ -560,6 +562,7 @@ impl Controller {
             vocal,
             clock: Default::default(),
             song: (false, 0),
+            chunk: timbres::Chunk::new(),
         }
     }
 
@@ -1561,25 +1564,35 @@ pub unsafe extern "C" fn sad_audio_process(
         return;
     }
     let audio = unsafe { &mut *audio };
-    // Read each input frame before writing it; DAWs normally supply in-place buffers.
-    for i in 0..frames {
-        let input = [
-            if left.is_null() {
-                0.0
-            } else {
-                unsafe { *left.add(i) }
-            },
-            if right.is_null() {
-                0.0
-            } else {
-                unsafe { *right.add(i) }
-            },
-        ];
-        let frame = audio.process_frame(input);
-        unsafe {
-            *out_left.add(i) = frame[0];
-            *out_right.add(i) = frame[1];
+    // Each chunk's input is read before any of it is written; DAWs normally
+    // supply in-place buffers.
+    let mut input = [[0.0; 2]; timbres::CHUNK];
+    let mut output = [[0.0; 2]; timbres::CHUNK];
+    let mut start = 0;
+    while start < frames {
+        let n = (frames - start).min(timbres::CHUNK);
+        for (i, frame) in input[..n].iter_mut().enumerate() {
+            *frame = [
+                if left.is_null() {
+                    0.0
+                } else {
+                    unsafe { *left.add(start + i) }
+                },
+                if right.is_null() {
+                    0.0
+                } else {
+                    unsafe { *right.add(start + i) }
+                },
+            ];
         }
+        audio.process_block(&input[..n], &mut output[..n]);
+        for (i, frame) in output[..n].iter().enumerate() {
+            unsafe {
+                *out_left.add(start + i) = frame[0];
+                *out_right.add(start + i) = frame[1];
+            }
+        }
+        start += n;
     }
 }
 /// # Safety

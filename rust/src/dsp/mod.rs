@@ -2588,4 +2588,13 @@ impl Engine {
             *frame = self.process_frame();
         }
     }
+
+    /// One block of input frames to the same number of output frames: the
+    /// per-frame path, frame after frame, so one engine's state stays in cache
+    /// for the whole block instead of alternating with other engines' states.
+    pub fn process_input_block(&mut self, input: &[Stereo], output: &mut [Stereo]) {
+        for (input, output) in input.iter().zip(output) {
+            *output = self.process_input_frame(*input);
+        }
+    }
 }

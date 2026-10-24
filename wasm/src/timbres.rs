@@ -549,27 +549,47 @@ impl Registry {
             }
         }
         self.clock.advance(count);
-        for i in 0..count {
-            let input = self.parts[0].host.audio_input[i];
-            let mut frame = [0.; 2];
-            let mut sends = [[0.; 2]; MAX_BUSES];
+        // Each part renders a whole chunk before the next part starts, so its
+        // engine state stays in cache; the frame-wise sums keep their order
+        // (timbres in list order, then buses, then Master), so the mix is the
+        // same as the earlier frame-by-frame loop.
+        let mut start = 0;
+        while start < count {
+            let n = (count - start).min(CHUNK);
+            let range = start..start + n;
+            let mut input = [[0.; 2]; CHUNK];
+            input[..n].copy_from_slice(&self.parts[0].host.audio_input[range.clone()]);
+            let mut mix = [[0.; 2]; CHUNK];
+            let mut sends = [[[0.; 2]; MAX_BUSES]; CHUNK];
+            let mut source = [[0.; 2]; CHUNK];
             for part in &mut self.parts {
                 if part.meta.kind.routing() {
                     continue;
                 }
-                let mix = part.meta.mix;
-                let audible = !mix.muted && (!solo || mix.solo);
-                let level = gain(part, audible);
+                let part_mix = part.meta.mix;
+                let audible = !part_mix.muted && (!solo || part_mix.solo);
                 let source = match &part.vocal {
-                    Some(vocal) => [vocal.buffer[i]; 2],
-                    None => input,
+                    Some(vocal) => {
+                        for (frame, &v) in source[..n].iter_mut().zip(&vocal.buffer[range.clone()])
+                        {
+                            *frame = [v; 2];
+                        }
+                        &source[..n]
+                    }
+                    None => &input[..n],
                 };
-                let out = part.host.engine.process_input_frame(source);
-                for c in 0..2 {
-                    frame[c] += out[c] * level;
-                }
-                if buses {
-                    part.sends.send(&mix.sends, audible, out, &mut sends);
+                part.host
+                    .engine
+                    .process_input_block(source, &mut part.host.frames[range.clone()]);
+                for i in 0..n {
+                    let level = gain(part, audible);
+                    let out = part.host.frames[start + i];
+                    for c in 0..2 {
+                        mix[i][c] += out[c] * level;
+                    }
+                    if buses {
+                        part.sends.send(&part_mix.sends, audible, out, &mut sends[i]);
+                    }
                 }
             }
             if buses {
@@ -577,30 +597,41 @@ impl Registry {
                     if part.meta.kind != Kind::Bus || part.meta.bus == 0 {
                         continue;
                     }
-                    let level = gain(part, !part.meta.mix.muted);
-                    let out = part
-                        .host
+                    let bus = part.meta.bus as usize - 1;
+                    for (frame, sends) in source[..n].iter_mut().zip(&sends[..n]) {
+                        *frame = sends[bus];
+                    }
+                    part.host
                         .engine
-                        .process_input_frame(sends[part.meta.bus as usize - 1]);
-                    for c in 0..2 {
-                        frame[c] += out[c] * level;
+                        .process_input_block(&source[..n], &mut part.host.frames[range.clone()]);
+                    for i in 0..n {
+                        let level = gain(part, !part.meta.mix.muted);
+                        let out = part.host.frames[start + i];
+                        for c in 0..2 {
+                            mix[i][c] += out[c] * level;
+                        }
                     }
                 }
             }
             if let Some(m) = master {
                 let part = &mut self.parts[m];
-                let level = gain(part, !part.meta.mix.muted);
-                frame = part
-                    .host
+                part.host
                     .engine
-                    .process_input_frame(frame)
-                    .map(|v| v * level);
+                    .process_input_block(&mix[..n], &mut part.host.frames[range.clone()]);
+                for i in 0..n {
+                    let level = gain(part, !part.meta.mix.muted);
+                    mix[i] = part.host.frames[start + i].map(|v| v * level);
+                }
             }
-            self.parts[0].host.frames[i] = frame;
+            self.parts[0].host.frames[range].copy_from_slice(&mix[..n]);
+            start += n;
         }
         self.parts[0].host.frames.as_ptr()
     }
 }
+
+/// Frames a part renders at a time before the parts are summed.
+const CHUNK: usize = 128;
 
 #[derive(Serialize, Deserialize)]
 struct PartState {

@@ -57,6 +57,40 @@ pub(super) struct PartAudio {
     pub next: Option<Box<PartAudio>>,
 }
 
+/// Frames a part renders at a time before the parts are summed.
+pub(super) const CHUNK: usize = 128;
+
+/// One part's chunk: its input, its level-scaled output and its bus sends,
+/// one slot per frame and bus, with the buses it wrote as a mask.
+pub(super) struct Chunk {
+    pub input: [Stereo; CHUNK],
+    pub out: [Stereo; CHUNK],
+    pub sends: [[Stereo; MAX_BUSES]; CHUNK],
+    pub mask: u8,
+}
+impl Chunk {
+    pub(super) fn new() -> Box<Self> {
+        Box::new(Self {
+            input: [[0.; 2]; CHUNK],
+            out: [[0.; 2]; CHUNK],
+            sends: [[[0.; 2]; MAX_BUSES]; CHUNK],
+            mask: 0,
+        })
+    }
+}
+
+/// Adds one part's send slots of a frame to the bus inputs, for the buses
+/// in `mask`. A slot starts from zero, so adding it later is the same sum.
+#[inline]
+fn add_sends(sum: &mut [Stereo; MAX_BUSES], part: &[Stereo; MAX_BUSES], mut mask: u8) {
+    while mask != 0 {
+        let bus = mask.trailing_zeros() as usize;
+        mask &= mask - 1;
+        sum[bus][0] += part[bus][0];
+        sum[bus][1] += part[bus][1];
+    }
+}
+
 pub(super) fn remove_part(
     head: &mut Option<Box<PartAudio>>,
     id: u32,
@@ -384,67 +418,148 @@ impl Audio {
             }
         }
     }
-    /// One part's level-scaled output, plus its sends into the bus inputs.
-    fn source_frame(
-        &mut self,
-        input: Stereo,
-        sends: &mut [Stereo; MAX_BUSES],
-        buses: bool,
-    ) -> Stereo {
-        let target = if self.audible { self.meta.mix.gain } else { 0. };
-        self.smooth_part_gain += (target - self.smooth_part_gain) * 0.004;
-        let input = match &mut self.vocal {
-            Some(vocal) => [vocal.next(); 2],
-            None => input,
-        };
-        let out = self.engine.process_input_frame(input);
-        if buses {
-            self.sends
-                .send(&self.meta.mix.sends, self.audible, out, sends);
+    /// One part's level-scaled output for a chunk, plus its sends into its
+    /// own bus slots. Every part renders its whole chunk before the parts
+    /// are summed, so one engine's state stays in cache for the chunk; the
+    /// per-frame arithmetic, and so the rendered audio, is unchanged.
+    fn source_chunk(&mut self, input: &[Stereo], buses: bool) {
+        let n = input.len();
+        let chunk = &mut *self.chunk;
+        match &mut self.vocal {
+            Some(vocal) => {
+                for frame in &mut chunk.input[..n] {
+                    *frame = [vocal.next(); 2];
+                }
+            }
+            None => chunk.input[..n].copy_from_slice(input),
         }
-        out.map(|v| v * self.smooth_part_gain)
+        self.engine
+            .process_input_block(&chunk.input[..n], &mut chunk.out[..n]);
+        // A bus slot is written while its send gain is non-zero or ramping;
+        // a send that is zero and stays zero is skipped, as before.
+        chunk.mask = 0;
+        if buses {
+            for (bus, (&gain, &level)) in self.sends.0.iter().zip(&self.meta.mix.sends).enumerate()
+            {
+                if gain != 0.0 || (self.audible && level != 0.0) {
+                    chunk.mask |= 1 << bus;
+                }
+            }
+            if chunk.mask != 0 {
+                for sends in &mut chunk.sends[..n] {
+                    *sends = [[0.; 2]; MAX_BUSES];
+                }
+            }
+        }
+        let target = if self.audible { self.meta.mix.gain } else { 0. };
+        for (out, sends) in chunk.out[..n].iter_mut().zip(&mut chunk.sends[..n]) {
+            self.smooth_part_gain += (target - self.smooth_part_gain) * 0.004;
+            if chunk.mask != 0 {
+                self.sends
+                    .send(&self.meta.mix.sends, self.audible, *out, sends);
+            }
+            *out = out.map(|v| v * self.smooth_part_gain);
+        }
     }
     /// Timbres sum into Master and send to buses; buses then feed Master,
     /// whose engine renders the output. With no buses and Master at its
     /// defaults, the output is the plain sum of the timbres as before.
     pub(super) fn process_frame(&mut self, input: Stereo) -> Stereo {
+        let mut output = [[0.; 2]];
+        self.process_block(&[input], &mut output);
+        output[0]
+    }
+    /// `output` frames from the same number of `input` frames, a chunk of up
+    /// to `CHUNK` frames at a time, each chunk part by part.
+    pub(super) fn process_block(&mut self, input: &[Stereo], output: &mut [Stereo]) {
+        for (input, output) in input.chunks(CHUNK).zip(output.chunks_mut(CHUNK)) {
+            self.process_chunk(input, output);
+        }
+    }
+    fn process_chunk(&mut self, input: &[Stereo], output: &mut [Stereo]) {
+        let n = input.len();
         let buses = self.buses;
-        let mut sends = [[0.; 2]; MAX_BUSES];
-        let mut output = self.source_frame(input, &mut sends, buses);
+        self.source_chunk(input, buses);
         let mut part = self.parts.as_mut();
         while let Some(p) = part {
             if !p.audio.meta.kind.routing() {
-                let frame = p.audio.source_frame(input, &mut sends, buses);
-                output[0] += frame[0];
-                output[1] += frame[1];
+                p.audio.source_chunk(input, buses);
             }
             part = p.next.as_mut();
         }
+        // The frame-wise order of the sums is kept: this part, then every
+        // timbre in list order, into the output and into each bus input.
+        output.copy_from_slice(&self.chunk.out[..n]);
+        let mut sends = [[[0.; 2]; MAX_BUSES]; CHUNK];
+        let mut send_mask = 0;
+        if buses {
+            send_mask = self.chunk.mask;
+            for (sum, part) in sends[..n].iter_mut().zip(&self.chunk.sends[..n]) {
+                add_sends(sum, part, self.chunk.mask);
+            }
+        }
+        let mut part = self.parts.as_mut();
+        while let Some(p) = part {
+            if !p.audio.meta.kind.routing() {
+                let chunk = &*p.audio.chunk;
+                for (out, frame) in output.iter_mut().zip(&chunk.out[..n]) {
+                    out[0] += frame[0];
+                    out[1] += frame[1];
+                }
+                if buses && chunk.mask != 0 {
+                    send_mask |= chunk.mask;
+                    for (sum, part) in sends[..n].iter_mut().zip(&chunk.sends[..n]) {
+                        add_sends(sum, part, chunk.mask);
+                    }
+                }
+            }
+            part = p.next.as_mut();
+        }
+        let _ = send_mask;
         let mut master = None;
         let mut part = self.parts.as_mut();
         while let Some(p) = part {
             match p.audio.meta.kind {
                 Kind::Bus if buses && p.audio.meta.bus > 0 => {
-                    let bus = sends[p.audio.meta.bus as usize - 1];
-                    let frame = p.audio.source_frame(bus, &mut [[0.; 2]; MAX_BUSES], false);
-                    output[0] += frame[0];
-                    output[1] += frame[1];
+                    let bus = p.audio.meta.bus as usize - 1;
+                    let input = &mut p.audio.chunk.input;
+                    for (input, sends) in input[..n].iter_mut().zip(&sends[..n]) {
+                        *input = sends[bus];
+                    }
+                    p.audio.source_bus_chunk(n);
+                    for (out, frame) in output.iter_mut().zip(&p.audio.chunk.out[..n]) {
+                        out[0] += frame[0];
+                        out[1] += frame[1];
+                    }
                 }
                 Kind::Master => master = Some(&mut p.audio),
                 _ => {}
             }
             part = p.next.as_mut();
         }
-        let output = match master {
-            Some(master) => master.source_frame(output, &mut [[0.; 2]; MAX_BUSES], false),
-            None => output,
-        };
-        match &mut self.preview {
-            Some(preview) => {
+        if let Some(master) = master {
+            master.chunk.input[..n].copy_from_slice(output);
+            master.source_bus_chunk(n);
+            output.copy_from_slice(&master.chunk.out[..n]);
+        }
+        // A sound being previewed plays on top of the scene's output.
+        if let Some(preview) = &mut self.preview {
+            for out in output.iter_mut() {
                 let frame = preview.next();
-                [output[0] + frame[0], output[1] + frame[1]]
+                *out = [out[0] + frame[0], out[1] + frame[1]];
             }
-            None => output,
+        }
+    }
+    /// A Bus or Master renders the input already in its chunk buffer.
+    fn source_bus_chunk(&mut self, n: usize) {
+        let chunk = &mut *self.chunk;
+        self.engine
+            .process_input_block(&chunk.input[..n], &mut chunk.out[..n]);
+        chunk.mask = 0;
+        let target = if self.audible { self.meta.mix.gain } else { 0. };
+        for out in &mut chunk.out[..n] {
+            self.smooth_part_gain += (target - self.smooth_part_gain) * 0.004;
+            *out = out.map(|v| v * self.smooth_part_gain);
         }
     }
     pub(super) fn midi(&mut self, message: Message) {
