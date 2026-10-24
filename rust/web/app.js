@@ -89,6 +89,8 @@ async function api(path, data, headers) {
 // with only what changed; omitted parts keep their objects, so the editor and
 // its waveform cache can tell they did not change.
 let stateCache = null;
+// Polls come faster while a MIDI controller moves, so a learned knob follows it.
+let midiMovedAt = -Infinity;
 async function readState() {
   if (window.sadPetState) return window.sadPetState();
   const token = stateCache?.state_token;
@@ -106,6 +108,13 @@ async function readState() {
     delete next.knob_changes;
   }
   stateCache = next;
+  // Native engines list the controllers moved on their MIDI input since the
+  // last answer; the browser build hands them to MIDI learn directly.
+  if (next.midi_controls?.length) {
+    midiMovedAt = performance.now();
+    for (const [channel, controller, value] of next.midi_controls)
+      window.SadMidiLearn?.input(channel, controller, value);
+  }
   return next;
 }
 async function request(path, data) {
@@ -621,6 +630,8 @@ function createKnob(
   dial.addEventListener("blur", update);
   dial.addEventListener("pointerdown", (e) => {
     if (!preset || dial.getAttribute("aria-disabled") === "true") return;
+    // The right button opens the knob's menu (MIDI learn) instead.
+    if (e.button === 2) return;
     dial.focus();
     dial.setPointerCapture(e.pointerId);
     drag = { x: e.clientX, y: e.clientY, value: get() };
@@ -644,6 +655,8 @@ function createKnob(
   dial.addEventListener("pointerup", release);
   dial.addEventListener("pointercancel", release);
   dial.addEventListener("lostpointercapture", release);
+  // A macOS Control-click opens the menu after its press began a drag.
+  dial.addEventListener("contextmenu", release);
   dial.addEventListener("keydown", (e) => {
     let v = get();
     const step = binding?.step ?? null;
@@ -679,6 +692,15 @@ function createKnob(
     },
     { passive: false },
   );
+  // A learned MIDI controller turns the knob across its whole range.
+  globalThis.SadMidiLearn?.attach(dial, key, aria, (unit) => {
+    if (!preset) return;
+    let v = clamp(fromUnit(unit));
+    if (binding?.quantize) v = binding.quantize(v, get());
+    else if (binding?.step) v = min + Math.round((v - min) / binding.step) * binding.step;
+    v = clamp(v);
+    if (v !== get()) set(v);
+  });
   if (binding?.register !== false) {
     controls.set(key, update);
     modulationViews.set(key, modulation);
@@ -4442,7 +4464,7 @@ async function poll() {
     }
   } finally {
     // A hidden editor still notices finished recordings and audio errors.
-    setTimeout(poll, document.hidden ? 500 : 80);
+    setTimeout(poll, document.hidden ? 500 : performance.now() - midiMovedAt < 400 ? 20 : 80);
   }
 }
 async function init() {
@@ -4505,6 +4527,14 @@ async function init() {
         notify,
         download,
       });
+    window.SadMidiLearn?.setup({
+      notify,
+      // The browser and desktop builds play the MIDI input chosen by Keyboard.
+      hint: () =>
+        getComputedStyle($("midi")).display !== "none" && !$("midi").value
+          ? "choose a MIDI input next to Keyboard"
+          : "",
+    });
     buildKeyboard();
     bind();
     sampleSelection = new window.SadSampleSelection({

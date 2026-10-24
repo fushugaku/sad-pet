@@ -494,6 +494,7 @@ impl Controller {
         if route == "/api/state" {
             result["timbres"] = json!(self.context());
             result["preset_selection"] = json!(self.selection);
+            result["midi_controls"] = json!(self.controls.changes());
             self.sent.answer(&mut result, query);
         } else if request["method"] == "POST"
             && !matches!(

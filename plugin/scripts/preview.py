@@ -2,7 +2,8 @@
 """Browser QA of the plugin and app editors against the real native engine (no sound output).
 
 /?app stands in for the SAD PET app: native file dialogs open --open files or save
-into <library>/Exports, and Record writes a short tone as the take."""
+into <library>/Exports, and Record writes a short tone as the take. POST raw MIDI
+bytes to /midi (?app or ?fx for those editors) to play the host's MIDI input."""
 import argparse
 import ctypes as c
 import json
@@ -50,6 +51,7 @@ def main():
     lib.sad_audio_begin.argtypes = [c.c_void_p, c.POINTER(c.c_float), c.c_size_t, c.c_float, c.c_double, c.c_bool, c.c_bool, c.c_size_t]
     lib.sad_audio_process.argtypes = [c.c_void_p] + [c.POINTER(c.c_float)] * 4 + [c.c_size_t]
     lib.sad_audio_end.argtypes = [c.c_void_p, c.c_size_t]
+    lib.sad_audio_midi.argtypes = [c.c_void_p, c.c_char_p, c.c_size_t]
 
     def take(result):
         data = c.string_at(result.data, result.length)
@@ -139,10 +141,17 @@ def main():
 
         def do_POST(self):
             url = urlparse(self.path)
-            if url.path != "/native":
+            if url.path not in ("/native", "/midi"):
                 self.send_error(404)
                 return
             data = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            if url.path == "/midi":
+                # QA: raw MIDI bytes reach the engine as the host's MIDI input would.
+                instance = instances[2 if "app" in url.query else 1 if "fx" in url.query else 0]
+                lib.sad_audio_midi(instance[1], data, len(data))
+                self.send_response(204)
+                self.end_headers()
+                return
             request = json.loads(data)
             app = "app" in url.query
             controller, audio, values = instances[2 if app else 1 if "fx" in url.query else 0]
@@ -174,7 +183,7 @@ def main():
             name = url.path.rsplit("/", 1)[-1] or "index.html"
             paths = {
                 "index.html": PROJECT / "rust/web/index.html",
-                **{name: PROJECT / "rust/web" / name for name in ["app.js", "style.css", "library.js", "selection.js", "presets.js", "sequence.js", "panels.js"]},
+                **{name: PROJECT / "rust/web" / name for name in ["app.js", "style.css", "library.js", "selection.js", "presets.js", "sequence.js", "panels.js", "midi.js"]},
                 **{name: ROOT / "web" / name for name in ["plugin-backend.js", "plugin.css", "standalone-backend.js", "native-library.js", "standalone.css"]},
             }
             file = paths.get(name)

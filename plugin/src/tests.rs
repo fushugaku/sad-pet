@@ -1856,3 +1856,19 @@ fn vocal_timbres_sing_at_the_daw_position_and_survive_project_recall() {
     control.drain();
     recalled.drain();
 }
+
+#[test]
+fn host_midi_controllers_reach_the_editor_for_midi_learn_without_heap_work() {
+    let mut control = Controller::new(false);
+    let mut audio = control.prepare(48000);
+    // The editor shows another timbre; the scene still reports the host input.
+    call(&mut control, "/api/timbres/add", json!({"kind":"synth"}));
+    let bytes = [
+        0xb2, 74, 10, 0xb2, 74, 0xf8, 101, 0x90, 60, 100, 0xb0, 1, 64,
+    ];
+    no_heap(|| unsafe { sad_audio_midi(&mut audio, bytes.as_ptr(), bytes.len()) });
+    let state = call(&mut control, "/api/state", Value::Null);
+    assert_eq!(state["midi_controls"], json!([[0, 1, 64], [2, 74, 101]]));
+    let state = call(&mut control, "/api/state", Value::Null);
+    assert_eq!(state["midi_controls"], json!([]));
+}
