@@ -53,3 +53,20 @@ Events and their release/echo tails wrap around the loop instead of truncating
 the end or shortening the musical duration. Each WAV is stereo 48 kHz float,
 DC-corrected and peak-normalized to 0.78, saved in the user's IndexedDB library
 and available for download through the same controls as the existing sources.
+
+Original categorized expansion (128 sounds)
+-------------------------------------------
+Sixteen sources in each of Drums, Percussion, Vocals, Bass, Keys,
+Plucks & mallets, Pads & strings, and Textures & FX. Names, descriptions,
+tempos and the complete original arrangements are in:
+  rust/src/samples/bank/expansion.rs
+
+All audio is synthesized locally by project-authored Rust code. Vocals are
+wordless formant synthesis (including humming, chants, breathy phrases and
+layered harmonies), not human recordings or voicebank excerpts. Named acoustic
+instruments and environmental sounds describe synthesized approximations.
+No third-party recordings, soundfonts or existing compositions are used.
+The sources vary in rhythm, melody, register, synthesis and articulation.
+Every addition is a four-bar stereo loop, rendered at 48 kHz on demand,
+with circular tails, DC removal and a peak ceiling of 0.78. The preceding
+30 entries retain their indices, factory IDs and audio generators.

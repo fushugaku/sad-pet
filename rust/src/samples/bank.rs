@@ -4,6 +4,9 @@ use super::{Track, hz, sine};
 use crate::{Stereo, dsp::SampleBuffer, tables::Random};
 use std::f64::consts::TAU;
 
+mod expansion;
+pub(super) use expansion::TRACKS as EXPANSION_TRACKS;
+
 struct Bank {
     frames: Vec<Stereo>,
     rate: u32,
@@ -312,6 +315,12 @@ impl Bank {
 }
 
 pub(super) fn generate(track: &Track, rate: u32) -> SampleBuffer {
+    if let Some(index) = EXPANSION_TRACKS
+        .iter()
+        .position(|entry| entry.id == track.id)
+    {
+        return expansion::generate(track, rate, index);
+    }
     let mut bank = Bank::new(track, rate);
     match track.id {
         "lofi-beat" => {

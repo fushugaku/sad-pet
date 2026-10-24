@@ -81,17 +81,13 @@
       this.renderSources();
       this.renderCurrent();
     }
-    renderSources() {
-      super.renderSources();
+    sourceGroups() {
+      const groups = super.sourceGroups();
       // Audio recalled from a preset may not be a library file; show its name.
       if (this.currentId && !this.files.some((file) => file.id === this.currentId)) {
-        const select = byId("sample-select");
-        const group = document.createElement("optgroup");
-        group.label = "Current";
-        group.append(new Option(this.currentName || "Preset audio", this.currentId));
-        select.append(group);
-        select.value = this.currentId;
+        groups.push({ label: "Current", choices: [[this.currentId, this.currentName || "Preset audio"]] });
       }
+      return groups;
     }
     async activateId(id) {
       const record = this.files.find((file) => file.id === id);

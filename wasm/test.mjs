@@ -345,7 +345,8 @@ assert.deepEqual(regionAudio.request("/api/state").fades, {
 // Recorded/cover bank entries must work through the same prepare/load path as files,
 // without a runtime request to the source video or a music service.
 const catalog = utility.request("/api/samples");
-assert.equal(catalog.length, 30, "the source bank must include 20 new tracks");
+assert.equal(catalog.length, 158, "the source bank must retain 30 sources and add 128");
+assert.ok(catalog.every((track) => typeof track.category === "string" && track.category.length));
 const bankPlayer = new Core(module, 48000);
 for (const [index, track] of catalog.entries()) {
   if (index < 10) continue;
@@ -359,8 +360,13 @@ for (const [index, track] of catalog.entries()) {
   bankPlayer.json("sad_load", utility.call("sad_pack"));
   assert.equal(bankPlayer.request("/api/state").sample_name, track.name);
   bankPlayer.request("/api/transport", { playing: true, bypass: true });
-  const output = bankPlayer.process(4096);
-  assert.ok(output.some((v) => Math.abs(v) > 0.001), `${track.id} must load and play`);
+  // Some percussion phrases open with a rest. Render through the first bar,
+  // stopping at the first audible block rather than requiring a downbeat hit.
+  const firstBar = Math.ceil(4 * 60 / (track.bpm || 60) * 48000);
+  let audible = false;
+  for (let frame = 0; frame < firstBar && !audible; frame += 4096)
+    audible = bankPlayer.process(4096).some((v) => Math.abs(v) > 0.001);
+  assert.ok(audible, `${track.id} must load and play`);
 }
 assert.ok(
   utility.wasm.memory.buffer.byteLength < 128 * 1024 * 1024,
@@ -499,5 +505,5 @@ assert.deepEqual(
 );
 assert.ok(!messages.some((m) => m.error || m.type === "fatal"));
 console.log(
-  "WASM checks passed: 30 factory sources, bounded bank memory, stereo audio at 44.1/48 kHz, deterministic quanta, chord entry, MIDI, effect stack, live microphone, sample-exact recording, region loops and non-destructive trims/renders.",
+  "WASM checks passed: 158 factory sources, bounded bank memory, stereo audio at 44.1/48 kHz, deterministic quanta, chord entry, MIDI, effect stack, live microphone, sample-exact recording, region loops and non-destructive trims/renders.",
 );

@@ -14,6 +14,7 @@ mod harvest_cover;
 pub struct Track {
     pub id: &'static str,
     pub name: &'static str,
+    pub category: &'static str,
     pub character: &'static str,
     pub seconds: f64,
     pub bpm: Option<u32>,
@@ -24,19 +25,22 @@ const fn loop_track(
     name: &'static str,
     character: &'static str,
     bpm: u32,
+    category: &'static str,
 ) -> Track {
     Track {
         id,
         name,
         character,
+        category,
         seconds: 16.0 * 60.0 / bpm as f64,
         bpm: Some(bpm),
     }
 }
 
-pub const TRACKS: [Track; 30] = [
+const ORIGINAL_TRACKS: [Track; 30] = [
     Track {
         id: "glass-sequence",
+        category: "Plucks & mallets",
         name: "Glass sequence",
         character: "Glass plucks",
         seconds: 8.0,
@@ -44,6 +48,7 @@ pub const TRACKS: [Track; 30] = [
     },
     Track {
         id: "warm-chords",
+        category: "Pads & strings",
         name: "Warm chords",
         character: "Slow analog pad",
         seconds: 16.0,
@@ -51,6 +56,7 @@ pub const TRACKS: [Track; 30] = [
     },
     Track {
         id: "analog-bass",
+        category: "Bass",
         name: "Analog bass",
         character: "Pulsing bass line",
         seconds: 8.0,
@@ -58,6 +64,7 @@ pub const TRACKS: [Track; 30] = [
     },
     Track {
         id: "drum-machine",
+        category: "Drums",
         name: "Drum machine",
         character: "Kick, snare & hats",
         seconds: 8.0,
@@ -65,6 +72,7 @@ pub const TRACKS: [Track; 30] = [
     },
     Track {
         id: "dusty-keys",
+        category: "Keys",
         name: "Dusty keys",
         character: "Soft electric keys",
         seconds: 12.0,
@@ -72,6 +80,7 @@ pub const TRACKS: [Track; 30] = [
     },
     Track {
         id: "vowel-choir",
+        category: "Vocals",
         name: "Vowel choir",
         character: "Synthetic vocal phrases",
         seconds: 8.0,
@@ -79,6 +88,7 @@ pub const TRACKS: [Track; 30] = [
     },
     Track {
         id: "metallic-textures",
+        category: "Percussion",
         name: "Metallic textures",
         character: "Inharmonic struck tones",
         seconds: 12.0,
@@ -86,6 +96,7 @@ pub const TRACKS: [Track; 30] = [
     },
     Track {
         id: "air-and-rain",
+        category: "Textures & FX",
         name: "Air & rain",
         character: "Noise, droplets & air",
         seconds: 12.0,
@@ -93,6 +104,7 @@ pub const TRACKS: [Track; 30] = [
     },
     Track {
         id: "matrix-pov",
+        category: "Recordings",
         name: "Matrix POV",
         character: "Audio from the Matrix POV video",
         seconds: 7.453625,
@@ -100,6 +112,7 @@ pub const TRACKS: [Track; 30] = [
     },
     Track {
         id: "harvest-dawn-loop",
+        category: "Plucks & mallets",
         name: "Harvest Dawn · harp loop",
         character: "Jeremy Soule · Harp & chamber strings cover · 16 bars",
         seconds: harvest_cover::SECONDS,
@@ -110,76 +123,95 @@ pub const TRACKS: [Track; 30] = [
         "Lo-fi beat",
         "Swung drums & mellow keys · 4 bars",
         85,
+        "Drums",
     ),
     loop_track(
         "breakbeat",
         "Breakbeat",
         "Syncopated drums & ghost snares · 4 bars",
         132,
+        "Drums",
     ),
     loop_track(
         "four-on-floor",
         "Four on the floor",
         "House kick, clap & offbeat hats · 4 bars",
         124,
+        "Drums",
     ),
     loop_track(
         "electro-percussion",
         "Electro percussion",
         "Toms, rims & metallic shakers · 4 bars",
         112,
+        "Percussion",
     ),
     loop_track(
         "dub-chords",
         "Dub chords",
         "Minor stabs & stereo echoes · 4 bars",
         96,
+        "Keys",
     ),
     loop_track(
         "acid-line",
         "Acid line",
         "Resonant bass & sliding accents · 4 bars",
         128,
+        "Bass",
     ),
     loop_track(
         "fm-marimba",
         "FM marimba",
         "Wooden FM mallets · 4 bars",
         110,
+        "Plucks & mallets",
     ),
     loop_track(
         "kalimba-garden",
         "Kalimba garden",
         "Interlocking thumb-piano plucks · 4 bars",
         90,
+        "Plucks & mallets",
     ),
     loop_track(
         "nylon-harmonics",
         "Nylon harmonics",
         "Plucked strings & overtones · 4 bars",
         100,
+        "Plucks & mallets",
     ),
-    loop_track("music-box", "Music box", "Tiny metallic tines · 4 bars", 72),
+    loop_track(
+        "music-box",
+        "Music box",
+        "Tiny metallic tines · 4 bars",
+        72,
+        "Plucks & mallets",
+    ),
     loop_track(
         "tape-piano",
         "Tape piano",
         "Felt keys & gentle tape flutter · 4 bars",
         78,
+        "Keys",
     ),
     loop_track(
         "string-orbit",
         "String orbit",
         "Slow bowed chord movement · 4 bars",
         68,
+        "Pads & strings",
     ),
     loop_track(
         "shimmer-pad",
         "Shimmer pad",
         "Airy chords & octave trails · 4 bars",
         60,
+        "Pads & strings",
     ),
     Track {
         id: "dark-drone",
+        category: "Pads & strings",
         name: "Dark drone",
         character: "Evolving sub, beating partials & air",
         seconds: 16.0,
@@ -187,6 +219,7 @@ pub const TRACKS: [Track; 30] = [
     },
     Track {
         id: "singing-bowl",
+        category: "Percussion",
         name: "Singing bowl",
         character: "Long bronze resonance",
         seconds: 12.0,
@@ -197,15 +230,18 @@ pub const TRACKS: [Track; 30] = [
         "Resonant bells",
         "Wide, overlapping bell patterns · 4 bars",
         80,
+        "Plucks & mallets",
     ),
     loop_track(
         "circuit-glitches",
         "Circuit glitches",
         "Digital clicks, stutters & bleeps · 4 bars",
         140,
+        "Textures & FX",
     ),
     Track {
         id: "space-transmission",
+        category: "Textures & FX",
         name: "Space transmission",
         character: "Radio chirps, pulses & static",
         seconds: 12.0,
@@ -213,6 +249,7 @@ pub const TRACKS: [Track; 30] = [
     },
     Track {
         id: "ocean-swell",
+        category: "Textures & FX",
         name: "Ocean swell",
         character: "Soft stereo surf & rolling waves",
         seconds: 16.0,
@@ -220,12 +257,29 @@ pub const TRACKS: [Track; 30] = [
     },
     Track {
         id: "vinyl-dust",
+        category: "Textures & FX",
         name: "Vinyl dust",
         character: "Record crackle, hiss & low hum",
         seconds: 12.0,
         bpm: None,
     },
 ];
+
+// Append only: existing factory indices and IDs remain stable in saved scenes.
+pub const TRACKS: &[Track] = &{
+    let mut tracks = [ORIGINAL_TRACKS[0]; ORIGINAL_TRACKS.len() + bank::EXPANSION_TRACKS.len()];
+    let mut i = 0;
+    while i < ORIGINAL_TRACKS.len() {
+        tracks[i] = ORIGINAL_TRACKS[i];
+        i += 1;
+    }
+    let mut j = 0;
+    while j < bank::EXPANSION_TRACKS.len() {
+        tracks[i + j] = bank::EXPANSION_TRACKS[j];
+        j += 1;
+    }
+    tracks
+};
 
 static CACHE: [OnceLock<Arc<SampleBuffer>>; TRACKS.len()] =
     [const { OnceLock::new() }; TRACKS.len()];

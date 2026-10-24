@@ -46,7 +46,7 @@ fn every_track_has_unique_identity_valid_audio_and_exact_duration() {
 
 #[test]
 fn expanded_bank_preserves_four_bar_timing_and_loop_seams() {
-    assert_eq!(samples::TRACKS.len(), 30);
+    assert_eq!(samples::TRACKS.len(), 158);
     for (index, track) in samples::TRACKS.iter().enumerate().skip(10) {
         if let Some(bpm) = track.bpm {
             assert!((track.seconds * bpm as f64 / 60.0 - 16.0).abs() < 1e-10);
@@ -69,6 +69,66 @@ fn expanded_bank_preserves_four_bar_timing_and_loop_seams() {
             );
         }
     }
+}
+
+#[test]
+fn categorized_expansion_adds_128_sources_without_moving_original_entries() {
+    let original_ids = [
+        "glass-sequence",
+        "warm-chords",
+        "analog-bass",
+        "drum-machine",
+        "dusty-keys",
+        "vowel-choir",
+        "metallic-textures",
+        "air-and-rain",
+        "matrix-pov",
+        "harvest-dawn-loop",
+        "lofi-beat",
+        "breakbeat",
+        "four-on-floor",
+        "electro-percussion",
+        "dub-chords",
+        "acid-line",
+        "fm-marimba",
+        "kalimba-garden",
+        "nylon-harmonics",
+        "music-box",
+        "tape-piano",
+        "string-orbit",
+        "shimmer-pad",
+        "dark-drone",
+        "singing-bowl",
+        "resonant-bells",
+        "circuit-glitches",
+        "space-transmission",
+        "ocean-swell",
+        "vinyl-dust",
+    ];
+    assert_eq!(
+        samples::TRACKS[..30]
+            .iter()
+            .map(|t| t.id)
+            .collect::<Vec<_>>(),
+        original_ids
+    );
+    let mut categories = std::collections::BTreeMap::new();
+    let mut names = HashSet::new();
+    for track in samples::TRACKS {
+        assert!(
+            names.insert(track.name),
+            "duplicate display name: {}",
+            track.name
+        );
+        assert!(!track.category.is_empty());
+        let json = serde_json::to_value(track).unwrap();
+        assert_eq!(json["category"], track.category);
+    }
+    for track in &samples::TRACKS[30..] {
+        *categories.entry(track.category).or_insert(0) += 1;
+    }
+    assert_eq!(categories.len(), 8);
+    assert!(categories.values().all(|&count| count == 16));
 }
 
 #[test]

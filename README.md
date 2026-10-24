@@ -42,7 +42,7 @@ are shared across the three FX racks and all timbres of the same effect type.
 Portable `.sadfx` import/export moves settings between the web and native
 plug-ins, including modes, tempo sync, Smooth and Mix.
 
-- Thirty built-in audio sources, WAV import and an IndexedDB file library, including
+- 158 categorized built-in audio sources, WAV import and an IndexedDB file library, including
   Matrix POV video audio and a 42.67-second Harvest Dawn harp/chamber-string cover
   loop: 16 bars at 90 BPM, with the recognizable eight-bar introduction played
   in two variations. Note pitches/rhythm are checked against published transcriptions.
@@ -54,6 +54,12 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   nylon harmonics, music box, tape piano, strings, shimmer pad, drone, singing
   bowl, bells, glitches, radio transmissions, ocean surf and vinyl texture.
   Rhythmic additions are four-bar loops with BPM; tails and echoes wrap at the seam.
+- 128 more original synthesized sources: sixteen each of drums, percussion,
+  wordless vocal phrases, bass, keys, plucks/mallets, pads/strings and textures/FX.
+  The source button uses the same category submenu as Destination, with BPM in
+  the choices and in-place category navigation on phones. Factory audio is
+  generated and cached when loaded or downloaded; opening the library does not
+  render or store the entire bank. Existing source IDs and indices are preserved.
 - Browser microphone input with device selection, gain and level metering:
   direct filters/effects or granular processing of an eight-second live buffer.
 - Polyphonic keyboard, note/chord hold and arpeggiator.

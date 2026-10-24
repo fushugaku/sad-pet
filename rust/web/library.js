@@ -3,7 +3,6 @@
   const fetch = (...args) => (window.sadPetFetch || window.fetch)(...args);
   const byId = (id) => document.getElementById(id);
   const factoryId = (track) => `factory:${track.id}:v1`;
-  const makeOption = (value, label) => new Option(label, value);
   const sizeLabel = (bytes) =>
     bytes >= 1024 * 1024
       ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
@@ -98,9 +97,20 @@
         byId("file-library").hidden = !expanded;
         byId("library-toggle").setAttribute("aria-expanded", String(expanded));
       };
-      byId("sample-select").onchange = (event) => {
-        this.activateId(event.target.value).catch((error) => this.error(error));
-        event.target.blur();
+      byId("sample-select").onchange = async (event) => {
+        const select = event.target;
+        const restoreFocus = document.activeElement === select;
+        select.disabled = true;
+        try {
+          await this.activateId(select.value);
+        } catch (error) {
+          this.error(error);
+        } finally {
+          select.disabled = !this.ready;
+          this.renderSources();
+          if (restoreFocus && document.activeElement === document.body)
+            select.focus({ preventScroll: true });
+        }
       };
       byId("library-search").oninput = (event) => {
         this.search = event.target.value.trim().toLocaleLowerCase();
@@ -182,7 +192,6 @@
       this.initializing = false;
       byId("source-mic").disabled = false;
       this.render();
-      this.seed().catch((error) => this.error(error));
     }
     changed() {
       this.channel?.postMessage("files");
@@ -215,7 +224,25 @@
       if (id) await this.store.setting(`sample-fades:${id}`, fades);
     }
     async refresh() {
-      this.files = await this.store.read("files");
+      const saved = await this.store.read("files");
+      const stored = new Map(saved.map((file) => [file.id, file]));
+      // Catalog entries are immediately browsable. Generate/cache audio only
+      // when it is loaded or downloaded, rather than seeding the entire bank.
+      this.files = this.catalog.map((track) => ({
+        id: factoryId(track),
+        kind: "audio",
+        factory: true,
+        name: `${track.id}.wav`,
+        displayName: track.name,
+        character: track.character,
+        seconds: track.seconds,
+        bpm: track.bpm,
+        size: 0,
+        trashedAt: null,
+        ...stored.get(factoryId(track)),
+      }));
+      const catalogIds = new Set(this.catalog.map(factoryId));
+      this.files.push(...saved.filter((file) => !catalogIds.has(file.id)));
       const order = new Map(
         this.catalog.map((track, index) => [factoryId(track), index]),
       );
@@ -224,7 +251,7 @@
           return a.factory ? -1 : 1;
         if (a.factory)
           return (
-            (order.get(a.id) ?? 100) - (order.get(b.id) ?? 100) ||
+            (order.get(a.id) ?? Infinity) - (order.get(b.id) ?? Infinity) ||
             a.id.localeCompare(b.id)
           );
         return b.addedAt - a.addedAt || a.name.localeCompare(b.name);
@@ -269,24 +296,6 @@
         );
       }
       return this.inflight.get(id);
-    }
-    async seed() {
-      const queue = [...this.catalog];
-      const catalogIds = new Set(queue.map(factoryId));
-      const worker = async () => {
-        while (queue.length) {
-          const track = queue.shift();
-          this.status = `Saving tracks ${this.files.filter((file) => catalogIds.has(file.id)).length} / ${this.catalog.length}…`;
-          this.render();
-          await this.ensureFactory(track);
-        }
-      };
-      try {
-        await Promise.all([worker(), worker()]);
-      } finally {
-        this.status = "";
-        this.render();
-      }
     }
     async rememberNative(native) {
       this.instanceId = native.instance_id;
@@ -552,7 +561,8 @@
       await this.refresh();
     }
     async download(id, format = "wav") {
-      const record = await this.store.read("files", id);
+      const track = this.catalog.find((track) => factoryId(track) === id);
+      const record = track ? await this.ensureFactory(track) : await this.store.read("files", id);
       if (!record) throw new Error("File is no longer in the library.");
       if (format === "mp3") {
         if (!record.mp3Blob)
@@ -563,14 +573,21 @@
         );
       } else this.actions.download(record.blob, record.name);
     }
-    renderSources() {
-      const select = byId("sample-select");
-      const factory = document.createElement("optgroup");
-      factory.label = "Built-in tracks";
-      for (const track of this.catalog)
-        factory.append(makeOption(factoryId(track), track.name));
-      const user = document.createElement("optgroup");
-      user.label = "Your audio";
+    sourceGroups() {
+      const categories = new Map([
+        "Drums", "Percussion", "Vocals", "Bass", "Keys", "Plucks & mallets",
+        "Pads & strings", "Textures & FX", "Recordings",
+      ].map((label) => [label, []]));
+      for (const track of this.catalog) {
+        const category = track.category || "Other";
+        if (!categories.has(category)) categories.set(category, []);
+        categories.get(category).push([
+          factoryId(track),
+          track.bpm ? `${track.name} · ${track.bpm} BPM` : track.name,
+          track.name,
+        ]);
+      }
+      const user = [];
       const catalogIds = new Set(this.catalog.map(factoryId));
       for (const file of this.files.filter(
         (file) =>
@@ -578,17 +595,21 @@
           file.kind !== "preset" &&
           (!file.trashedAt || file.id === this.currentId),
       ))
-        user.append(makeOption(file.id, file.displayName || stem(file.name)));
-      select.replaceChildren(
-        factory,
-        ...(user.childElementCount ? [user] : []),
+        user.push([file.id, file.displayName || stem(file.name)]);
+      return [
+        ...[...categories].map(([label, choices]) => ({ label, choices })),
+        { label: "Your audio", choices: user },
+      ];
+    }
+    renderSources() {
+      window.SadLazySelect.configure(
+        byId("sample-select"),
+        this.currentId || (this.catalog.length ? factoryId(this.catalog[0]) : ""),
+        this.sourceGroups(),
       );
-      if (this.currentId) select.value = this.currentId;
-      if (!select.value && this.catalog.length)
-        select.value = factoryId(this.catalog[0]);
     }
     renderCurrent() {
-      byId("sample-select").value = this.currentId || "";
+      if (this.currentId) window.SadLazySelect.setValue(byId("sample-select"), this.currentId);
       for (const row of document.querySelectorAll(".library-file")) {
         const current = row.dataset.fileId === this.currentId;
         row.classList.toggle("current", current);
@@ -641,7 +662,7 @@
           file.kind === "preset" && file.factory ? "Preset" : null,
           file.seconds ? `${file.seconds.toFixed(2)} s` : null,
           file.bpm ? `${file.bpm} BPM` : null,
-          sizeLabel(file.size),
+          file.size ? sizeLabel(file.size) : null,
           !file.factory
             ? new Date(file.addedAt).toLocaleString(undefined, {
                 month: "short",
