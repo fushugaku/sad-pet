@@ -2,7 +2,8 @@
 //! modules' `TBL_TO_VAL` table interpolation, `EQ_Calc_2Pole_Shelv`, the
 //! parabolic LFO both callbacks bend a Q31 triangle with, and the tap-mute
 //! fader their editors put around delay changes.
-use crate::dsp::{Coefficients, DelayLine};
+use super::fast::DelayLine;
+use crate::dsp::Coefficients;
 
 /// `TBL_TO_VAL(count, value, table, len)`: linear interpolation of a float
 /// table at `value * (len - 1) / (count - 1)`.
@@ -109,7 +110,7 @@ impl Glide {
         self.target = value;
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn tick(&mut self) -> f32 {
         if self.current != self.target {
             let difference = self.target - self.current;
@@ -178,7 +179,7 @@ impl TapMute {
     }
 
     /// One sample. Returns true when the caller should apply its new delays.
-    #[inline]
+    #[inline(always)]
     pub fn tick(&mut self) -> bool {
         if self.holding > 0 {
             self.holding -= 1;

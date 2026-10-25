@@ -21,15 +21,14 @@
 //! tempo notes.
 use super::{
     common::{
-        CrossfadeTime, Kind, MuteSwap, Q31, Stage, clip1, design, one_pole_at, rom, samples, table,
-        table_step, time_ms, words,
+        CrossfadeTime, DelayLine, Kind, MuteSwap, Q31, Settled, Stage, Stage1, clip1, design,
+        flush, one_pole_at, rom, samples, table, table_step, time_ms, words,
     },
     trem_delay::FEEDBACK_HP,
 };
 use crate::{
     Effect, Values,
     catalog::*,
-    dsp::{DelayLine, flush},
     zoom::{DEFAULT_STEP, Ramp, is_synced},
 };
 
@@ -179,14 +178,14 @@ fn wave(phase: u32) -> f32 {
 }
 
 struct Channel {
-    feedback_hp: Stage,
+    feedback_hp: Stage1,
     line: DelayLine,
     time: CrossfadeTime,
     short: DelayLine,
     modulation: f32,
     depth: f32,
     depth_target: f32,
-    fltr: Stage,
+    fltr: Stage1,
     filtered: f32,
     feedback: Ramp,
 }
@@ -216,14 +215,14 @@ impl DualDigiD {
     fn new(sample_rate: f32) -> Self {
         let sr = sample_rate;
         let channel = || Channel {
-            feedback_hp: Stage::from(rom(FEEDBACK_HP, sr)),
+            feedback_hp: Stage1::from(rom(FEEDBACK_HP, sr)),
             line: DelayLine::with_seconds(MAX_MS * 0.001 + 0.01, sr),
             time: CrossfadeTime::new(1.0, 200.0, sr),
             short: DelayLine::new(samples(445.0, sr) as usize + 4),
             modulation: 0.5,
             depth: 0.0,
             depth_target: 0.0,
-            fltr: Stage::new(Stage::IDENTITY),
+            fltr: Stage1::new(Stage::IDENTITY),
             filtered: 0.0,
             feedback: Ramp::new(0.0, DEFAULT_STEP, sr),
         };
@@ -344,7 +343,7 @@ impl Effect for DualDigiD {
             self.fltr_pending = words;
             if first || high == self.high_shelf {
                 for ch in &mut self.channels {
-                    ch.fltr.c = words;
+                    ch.fltr.load(words);
                 }
             } else {
                 self.fltr_swap.start();
@@ -388,14 +387,14 @@ impl Effect for DualDigiD {
         let (fltr_gain, swap) = self.fltr_swap.tick();
         if swap {
             for ch in &mut self.channels {
-                ch.fltr.c = self.fltr_pending;
+                ch.fltr.load(self.fltr_pending);
             }
         }
         let (mg, mp) = self.modulation_smooth;
         let (dg, dp) = self.depth_smooth;
         let mut wet = [0.0; 2];
         for (ch, channel) in self.channels.iter_mut().enumerate() {
-            let feedback = channel.feedback.tick();
+            let feedback = channel.feedback.step();
             let fed = channel
                 .feedback_hp
                 .process(clip1(feedback * channel.filtered))
@@ -403,8 +402,7 @@ impl Effect for DualDigiD {
             channel.line.write(flush(fed));
             let blend = channel.time.tick();
             let taps = channel.time.taps;
-            let long = blend * channel.line.read_linear(taps[0])
-                + (1.0 - blend) * channel.line.read_linear(taps[1]);
+            let long = channel.line.read_crossfade(blend, taps);
             channel.short.write(long);
             channel.modulation = mg * waves[ch] + mp * channel.modulation;
             channel.depth = dg * channel.depth_target + dp * channel.depth;
@@ -418,13 +416,13 @@ impl Effect for DualDigiD {
             self.stereo = self.pending_stereo;
         }
         let m = [
-            self.matrix[0].tick(),
-            self.matrix[1].tick(),
-            self.matrix[2].tick(),
-            self.matrix[3].tick(),
+            self.matrix[0].step(),
+            self.matrix[1].step(),
+            self.matrix[2].step(),
+            self.matrix[3].step(),
         ];
-        let wet_gain = self.wet.tick();
-        let dry_gain = self.dry.tick();
+        let wet_gain = self.wet.step();
+        let dry_gain = self.dry.step();
         if self.stereo {
             let w = 0.96 * wet_gain;
             [

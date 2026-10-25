@@ -25,8 +25,8 @@
 //! sample rate. The unused delay LFO and grit section are omitted.
 use super::{
     common::{
-        Cascade, DurationRamp, Glide, MuteSwap, Q31, RAMP_SAMPLES, Stage, clip1, pole, rom,
-        rom_set, table, time_ms,
+        Cascade, DelayLine, DurationRamp, Glide, MuteSwap, Q31, RAMP_SAMPLES, Settled, Stage,
+        Stage1, clip1, flush, pole, rom, rom_set, table, time_ms,
     },
     tables::{DAMP, LOFI_FILTER},
     trem_delay::{FB_TBL, FEEDBACK_HP, MIX_DRY, MIX_WET},
@@ -34,7 +34,6 @@ use super::{
 use crate::{
     Effect, Values,
     catalog::*,
-    dsp::{DelayLine, flush},
     zoom::{DEFAULT_STEP, Ramp, is_synced},
 };
 
@@ -195,8 +194,12 @@ pub fn quantize(scaled: f32, step: f32, shift: u32, lfsr: i32) -> f32 {
 }
 
 struct Channel {
-    feedback_hp: Stage,
+    feedback_hp: Stage1,
     held: f32,
+    /// `quantize(held · 3.46, step, shift, lfsr)` for LFSR bit 0 clear / set
+    /// (the only LFSR bit the quantizer's mask keeps), updated with `held`
+    /// and the BITS setting.
+    levels: [f32; 2],
     damp: Cascade<4>,
     line: DelayLine,
     tap: f32,
@@ -229,7 +232,7 @@ struct LoFiDly {
     amount_rise: f32,
     amount_decay: f32,
     click_eq: [Stage; 3],
-    hiss_lp: Stage,
+    hiss_lp: Stage1,
     vinyl_gain: DurationRamp,
     last: [f32; 9],
     bpm: f32,
@@ -239,8 +242,9 @@ impl LoFiDly {
     fn new(sample_rate: f32) -> Self {
         let sr = sample_rate;
         let channel = || Channel {
-            feedback_hp: Stage::from(rom(FEEDBACK_HP, sr)),
+            feedback_hp: Stage1::from(rom(FEEDBACK_HP, sr)),
             held: 0.0,
+            levels: [0.0; 2],
             damp: Cascade::default(),
             line: DelayLine::with_seconds(MAX_MS * 0.001 + 0.01, sr),
             tap: 0.0,
@@ -271,7 +275,7 @@ impl LoFiDly {
             amount_rise: 3e-5 * 44_100.0 / sr,
             amount_decay: pole(0.999_9, sr),
             click_eq: CLICK_EQ.map(|w| Stage::from(rom(w, sr))),
-            hiss_lp: Stage::from(rom(HISS_LP, sr)),
+            hiss_lp: Stage1::from(rom(HISS_LP, sr)),
             vinyl_gain: DurationRamp::new(0.0, RAMP_SAMPLES, sr),
             last: [f32::NAN; 9],
             bpm: 0.0,
@@ -288,6 +292,16 @@ impl LoFiDly {
         }
         effect.vinyl_gain.jump(effect.vinyl_gain.target);
         effect
+    }
+
+    /// The quantized hold for both values of the LFSR's low bit.
+    #[inline]
+    fn levels(held: f32, step: f32, shift: u32) -> [f32; 2] {
+        let scaled = held * 3.46;
+        [
+            quantize(scaled, step, shift, 0),
+            quantize(scaled, step, shift, 1),
+        ]
     }
 
     #[inline]
@@ -344,6 +358,9 @@ impl Effect for LoFiDly {
         let bits = values[4].round().clamp(0.0, 20.0) as usize;
         self.step = BIT_STEP[bits];
         self.shift = BIT_SHIFT[bits];
+        for ch in &mut self.channels {
+            ch.levels = Self::levels(ch.held, self.step, self.shift);
+        }
         self.blend.set(values[5].round().clamp(0.0, 100.0) * 0.01);
         if values[6] != self.last[6] {
             let damp = values[6].round().clamp(0.0, 10.0) as usize;
@@ -393,8 +410,8 @@ impl Effect for LoFiDly {
             self.hold_phase = (self.hold_phase - self.hold_samples).min(self.hold_samples);
         }
         let delay = self.time.tick();
-        let feedback = self.feedback.tick();
-        let blend = self.blend.tick();
+        let feedback = self.feedback.step();
+        let blend = self.blend.step();
         let (damp_gain, damp_swap) = self.damp_swap.tick();
         let (filter_gain, filter_swap) = self.filter_swap.tick();
         if damp_swap {
@@ -412,8 +429,9 @@ impl Effect for LoFiDly {
             let combined = channel.feedback_hp.process(clip1(feedback * channel.tap)) + frame[ch];
             if hold {
                 channel.held = combined;
+                channel.levels = Self::levels(combined, self.step, self.shift);
             }
-            let lofi = 0.286_522 * quantize(channel.held * 3.46, self.step, self.shift, old);
+            let lofi = 0.286_522 * channel.levels[(old & 1) as usize];
             let blended = (1.0 - blend) * combined + blend * lofi;
             let damped = damp_gain * channel.damp.process(damp_gain * blended);
             channel.line.write(flush(damped));
@@ -427,8 +445,8 @@ impl Effect for LoFiDly {
             0.0
         };
         let feed = [wet[0] + noise, wet[1] - noise];
-        let wet_gain = self.wet.tick();
-        let dry_gain = self.dry.tick();
+        let wet_gain = self.wet.step();
+        let dry_gain = self.dry.step();
         let mut out = [0.0; 2];
         for (ch, channel) in self.channels.iter_mut().enumerate() {
             let filtered = filter_gain * channel.filter.process(feed[ch]);
@@ -441,6 +459,7 @@ impl Effect for LoFiDly {
         for ch in &mut self.channels {
             ch.feedback_hp.clear();
             ch.held = 0.0;
+            ch.levels = [0.0; 2];
             ch.damp.clear();
             ch.line.clear();
             ch.tap = 0.0;

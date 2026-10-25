@@ -19,8 +19,10 @@
 //! - `tone_edit`: low-pass at `round(1000 + 4000·(Tone/100)^0.6)` Hz.
 //! - `mix_edit`: wet and dry from *_WET_MIX_tbl / *_DRY_MIX_tbl.
 //! - `predly_edit`: `floor(PreD · 44.1) + 1` samples.
-use super::common::{BLOCK, Design, FirstOrder, FirstOrderState, Ramps, Ring, design, scale, tbl};
-use crate::dsp::{Biquad, Coefficients};
+use super::common::{
+    BLOCK, Biquad, Design, FirstOrder, FirstOrderState, Ramps, Ring, design, scale, tbl,
+};
+use crate::dsp::Coefficients;
 use crate::zoom::ORIGINAL_RATE;
 use crate::{Effect, Values};
 

@@ -39,10 +39,11 @@
 //! reproduced: the slewed read head glides instead. ROM filters designed for
 //! 44.1 kHz are re-derived for the host rate with `Coefficients::resample`,
 //! delay lengths are scaled.
+use super::common::{Biquad, DelayLine, Ramp, flush};
 use crate::{
     Effect, Values,
     catalog::*,
-    dsp::{self, Biquad, Coefficients, DelayLine},
+    dsp::{self, Coefficients},
     zoom,
 };
 
@@ -298,12 +299,10 @@ impl Arena {
         let second = ARENA_DIFFUSE_OUT * first + d1;
         let shared = ARENA_SHARED * second;
         self.predelay.write(input);
-        self.diffusers[0].write(dsp::flush(
-            ARENA_DIFFUSE_FB * d0 + ARENA_DIFFUSE_IN * predelayed,
-        ));
-        self.diffusers[1].write(dsp::flush(ARENA_DIFFUSE_FB * d1 + ARENA_DIFFUSE_IN * first));
+        self.diffusers[0].write(flush(ARENA_DIFFUSE_FB * d0 + ARENA_DIFFUSE_IN * predelayed));
+        self.diffusers[1].write(flush(ARENA_DIFFUSE_FB * d1 + ARENA_DIFFUSE_IN * first));
         for (i, comb) in self.combs.iter_mut().enumerate() {
-            comb.write(dsp::flush(shared + ARENA_COMB_GAINS[i] * fed[i]));
+            comb.write(flush(shared + ARENA_COMB_GAINS[i] * fed[i]));
         }
         [
             ARENA_OUTPUT * (input + ARENA_WET * left),
@@ -336,7 +335,7 @@ struct Echo {
     tone_countdown: u32,
     input_highpass: Biquad,
     feedback_dc: Biquad,
-    feedback: zoom::Ramp,
+    feedback: Ramp,
     // Diffusers and tail.
     combs: [DelayLine; 2],
     comb_delays: [usize; 2],
@@ -350,16 +349,16 @@ struct Echo {
     arena: Arena,
     // Output.
     output_eq: [Biquad; 2],
-    wet: zoom::Ramp,
-    dry: zoom::Ramp,
-    stereo: zoom::Ramp,
+    wet: Ramp,
+    dry: Ramp,
+    stereo: Ramp,
 }
 
 impl Echo {
     fn new(sample_rate: f32) -> Self {
         let resample = |c: Coefficients| c.resample(zoom::ORIGINAL_RATE, sample_rate);
         let max_delay = (MAX_TIME_MS * 0.001 * sample_rate).ceil() as usize + 2;
-        let ramp = |value| zoom::Ramp::new(value, zoom::DEFAULT_STEP, sample_rate);
+        let ramp = |value| Ramp::new(value, zoom::DEFAULT_STEP, sample_rate);
         let mut echo = Self {
             sample_rate,
             line: DelayLine::new(max_delay),
@@ -390,7 +389,7 @@ impl Echo {
             output_eq: [Biquad::new(resample(OUTPUT_EQ)); 2],
             wet: ramp(0.0),
             dry: ramp(0.0),
-            stereo: zoom::Ramp::new(0.0, 1.0 / (0.016 * zoom::ORIGINAL_RATE), sample_rate),
+            stereo: Ramp::new(0.0, 1.0 / (0.016 * zoom::ORIGINAL_RATE), sample_rate),
         };
         echo.design_tone(TONE_HZ[7], TONE_Q[7]);
         echo
@@ -433,23 +432,23 @@ impl Echo {
         let feedback = (self.feedback.tick() * self.delayed).clamp(-1.0, 1.0);
         let feedback = self.feedback_dc.process(feedback);
         let input = self.input_highpass.process(self.tone.process(mono));
-        self.line.write(dsp::flush(feedback + input));
+        self.line.write(flush(feedback + input));
         self.distance += (self.target_distance - self.distance) * self.slew;
         let delayed = self.line.read_linear(self.distance);
         self.delayed = delayed;
 
         // Two combs (c101 = c103 = -1, c104 = 1, c100 = c105 = 1).
         let first_in = -delayed;
-        self.combs[0].write(dsp::flush(first_in + COMB_FEEDBACK * self.comb_out[0]));
+        self.combs[0].write(flush(first_in + COMB_FEEDBACK * self.comb_out[0]));
         self.comb_out[0] = self.combs[0].read(self.comb_delays[0]);
         let second_in = -(delayed + self.comb_out[0]);
-        self.combs[1].write(dsp::flush(second_in + COMB_FEEDBACK * self.comb_out[1]));
+        self.combs[1].write(flush(second_in + COMB_FEEDBACK * self.comb_out[1]));
         self.comb_out[1] = self.combs[1].read(self.comb_delays[1]);
 
         // Two all-pass sections (c108 = c112 = 1).
         let mut x = delayed + self.comb_out[0] + self.comb_out[1];
         for i in 0..2 {
-            self.allpasses[i].write(dsp::flush(x + ALLPASS_GAIN * self.allpass_out[i]));
+            self.allpasses[i].write(flush(x + ALLPASS_GAIN * self.allpass_out[i]));
             let y = self.allpasses[i].read(self.allpass_delays[i]) - ALLPASS_GAIN * x;
             self.allpass_out[i] = y;
             x = y;
@@ -457,8 +456,7 @@ impl Echo {
 
         // Tail comb (c93 = c96 = c97 = 1).
         let sum = DELAYED_LEVEL * delayed + DIFFUSED_LEVEL * x;
-        self.tail
-            .write(dsp::flush(sum + TAIL_FEEDBACK * self.tail_out));
+        self.tail.write(flush(sum + TAIL_FEEDBACK * self.tail_out));
         self.tail_out = self.tail.read(self.tail_delay);
         sum + TAIL_LEVEL * self.tail_out
     }

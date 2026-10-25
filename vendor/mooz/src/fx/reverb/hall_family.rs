@@ -185,7 +185,7 @@ impl HallCore {
     }
 
     /// One frame of the mono reverb input; returns the filtered wet pair.
-    #[inline]
+    #[inline(always)]
     pub fn process(&mut self, input: f32) -> [f32; 2] {
         self.glides.tick();
         if let Some(value) = self.pending_predelay
@@ -198,42 +198,43 @@ impl HallCore {
         let g = &self.glides.value;
         let ring = &self.ring;
         let r = &self.read;
-        let t: [f32; 15] = std::array::from_fn(|j| ring.read(r[j]));
+        // Taps read where used (all before the frame's writes), kept in locals.
+        let t = |j: usize| ring.read(r[j]);
 
         let first = self.input.process(input);
         let third = self.tone_in.process(first);
 
-        let x = g[DUCK] * t[0];
+        let x = g[DUCK] * t(0);
         let (c32, c33) = (g[C32], g[C33]);
-        let w1 = self.c31 * x + c32 * t[1];
-        let mid = self.c34 * t[1] + c33 * x;
-        let w2 = self.c31 * mid + c32 * t[2];
-        let diffusion = self.c34 * t[2] + c33 * mid;
+        let w1 = self.c31 * x + c32 * t(1);
+        let mid = self.c34 * t(1) + c33 * x;
+        let w2 = self.c31 * mid + c32 * t(2);
+        let diffusion = self.c34 * t(2) + c33 * mid;
         let shared = self.c35 * diffusion;
         let mut combs = [0.0f32; 4];
         for (k, comb) in combs.iter_mut().enumerate() {
             let lowpass = &mut self.lowpass[k];
-            *lowpass = crate::dsp::flush(
-                self.damp_pole * *lowpass + self.damp_gain * (g[GAIN + k] * t[3 + k]),
+            *lowpass = super::common::flush(
+                self.damp_pole * *lowpass + self.damp_gain * (g[GAIN + k] * t(3 + k)),
             );
             *comb = shared + *lowpass;
         }
-        let wet_left = self.c42 * t[0] + self.c43 * (t[7] + t[9] + t[11] + t[13]);
-        let wet_right = self.c42 * t[0] + self.c44 * (t[8] + t[10] + t[12] + t[14]);
+        let wet_left = self.c42 * t(0) + self.c43 * (t(7) + t(9) + t(11) + t(13));
+        let wet_right = self.c42 * t(0) + self.c44 * (t(8) + t(10) + t(12) + t(14));
         let out = [
             self.tone_out[0].process(wet_left),
             self.tone_out[1].process(wet_right),
         ];
 
         let w = &self.write;
-        let ring = &mut self.ring;
-        ring.write(w[0], third);
+        let mut ring = self.ring.writer();
+        ring.write_flushed(w[0], third); // tone_in's output is flushed
         ring.write(w[1], w1);
         ring.write(w[2], w2);
         for (k, comb) in combs.into_iter().enumerate() {
             ring.write(w[3 + k], comb);
         }
-        ring.advance();
+        self.ring.advance();
         out
     }
 

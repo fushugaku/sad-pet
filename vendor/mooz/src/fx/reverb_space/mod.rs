@@ -2,6 +2,7 @@ pub mod ambience;
 mod dual_common;
 pub mod dual_rev;
 pub mod dyna_rev;
+mod fast;
 pub mod mangled_sp;
 pub mod particle_r;
 mod space_common;

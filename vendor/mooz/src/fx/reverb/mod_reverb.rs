@@ -193,7 +193,7 @@ impl Effect for ModReverb {
         }
         let triangle = 1.0 - (2.0 * self.phase - 1.0).abs();
         self.smoothed =
-            crate::dsp::flush(self.smooth_gain * triangle + self.smooth_pole * self.smoothed);
+            super::common::flush(self.smooth_gain * triangle + self.smooth_pole * self.smoothed);
         self.line.write(0.5 * (left + right));
         let delay = depth * self.smoothed * self.delay_scale;
         let tap = self.line.read_linear(delay);

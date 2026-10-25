@@ -16,8 +16,8 @@
 //! ReverseRv, the level compensation *_WetGain_Tbl; `tone_edit` designs a
 //! Main type-8 high shelf at 12 kHz with *_ToneGain_Tbl dB (five points);
 //! `Level_edit` reads *_Level_Tbl; `Dry` switches the dry path.
-use super::common::{BLOCK, Design, Ramps, Ring, design, rom_biquad, scale, tbl};
-use crate::dsp::{Biquad, Coefficients};
+use super::common::{BLOCK, Biquad, Design, Ramps, Ring, design, rom_biquad, scale, split, tbl};
+use crate::dsp::Coefficients;
 use crate::zoom::ORIGINAL_RATE;
 use crate::{Effect, Values};
 
@@ -70,6 +70,9 @@ pub struct FirReverb {
     shelf: [Biquad; 2],
     peak: [Biquad; 2],
     pending_feedback: f32,
+    /// The current tap positions, split once per ramp step.
+    tap_whole: [usize; 19],
+    tap_fraction: [f32; 19],
     ramps: Ramps<RAMPS>,
     moving: bool,
     counter: usize,
@@ -103,6 +106,8 @@ impl FirReverb {
             shelf: [biquad(SHELF), biquad(SHELF)],
             peak: [biquad(PEAK), biquad(PEAK)],
             pending_feedback: 0.0,
+            tap_whole: [0; 19],
+            tap_fraction: [0.0; 19],
             ramps: Ramps::new(STEP, BLOCK, sample_rate),
             moving: false,
             counter: 0,
@@ -134,6 +139,9 @@ impl FirReverb {
         for ch in 0..2 {
             self.tone[ch].coefficients = tone;
             self.hpf[ch].coefficients = hpf;
+        }
+        for n in 0..19 {
+            (self.tap_whole[n], self.tap_fraction[n]) = split(t[R_TAPS + n]);
         }
     }
 }
@@ -207,27 +215,29 @@ impl Effect for FirReverb {
         }
         let mono = 0.5 * (filtered[0] + filtered[1]);
 
+        let r = &self.reads;
         let mut writes = [0.0; 9];
         let mut x = mono;
-        for (write, &offset) in writes.iter_mut().zip(&self.reads).take(4) {
-            let d = ring.read(offset);
-            *write = x + apf * d;
+        for k in 0..4 {
+            let d = ring.read(r[k]);
+            writes[k] = x + apf * d;
             x = d + c.direct * x;
         }
         let diffused = x;
-        for (write, &offset) in writes.iter_mut().zip(&self.reads).skip(4).take(4) {
-            let d = ring.read(offset);
+        for k in 4..8 {
+            let d = ring.read(r[k]);
             let a = d - apf * x;
-            *write = x + apf * a;
+            writes[k] = x + apf * a;
             x = a;
         }
         let feedback = c.feedback[0] * diffused + c.feedback[1] * x;
 
-        let mut sum = c.fir_gains[0] * ring.read(self.reads[8]);
+        let (whole, fraction) = (&self.tap_whole, &self.tap_fraction);
+        let mut sum = c.fir_gains[0] * ring.read(r[8]);
         for n in 0..18 {
-            sum += c.fir_gains[n + 1] * ring.read_frac(g[R_TAPS + n]);
+            sum += c.fir_gains[n + 1] * ring.read_split(whole[n], fraction[n]);
         }
-        let last = c.fir_gains[19] * ring.read_frac(g[R_TAPS + 18]);
+        let last = c.fir_gains[19] * ring.read_split(whole[18], fraction[18]);
         let wet = self.fir_lowpass.process(sum) + last;
 
         let ring = &mut self.ring;
@@ -243,18 +253,17 @@ impl Effect for FirReverb {
         ring.write(self.writes[8], line);
 
         let (level, dry) = (g[R_LEVEL], g[R_DRY]);
-        let mut out = [0.0; 2];
-        for ch in 0..2 {
-            let mut y = self.tone[ch].process(wet);
-            y = self.lowpass[ch].process(y);
-            y = self.shelf[ch].process(y);
-            y = self.peak[ch].process(y);
-            if !c.hpf_at_input {
-                y = self.hpf[ch].process(y);
-            }
-            out[ch] = level * y + dry * frame[ch];
+        // Both output chains get the same mono `wet` with the same
+        // coefficients from the same (cleared) state, so they stay identical:
+        // run the left one and use it for both sides.
+        let mut y = self.tone[0].process(wet);
+        y = self.lowpass[0].process(y);
+        y = self.shelf[0].process(y);
+        y = self.peak[0].process(y);
+        if !c.hpf_at_input {
+            y = self.hpf[0].process(y);
         }
-        out
+        [level * y + dry * frame[0], level * y + dry * frame[1]]
     }
 
     fn clear(&mut self) {

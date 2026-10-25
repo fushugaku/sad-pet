@@ -27,10 +27,10 @@
 //!   later in LOFI's ROM than the editor assumes, so its right predelay is
 //!   477 samples shorter — kept as in the original.
 use super::common::{
-    BLOCK, Design, FirstOrder, FirstOrderState, Ramps, Ring, comb_gain, design, design1,
+    BLOCK, Biquad, Design, FirstOrder, FirstOrderState, Ramps, Ring, comb_gain, design, design1,
     rom_biquad, scale,
 };
-use crate::dsp::Biquad;
+
 use crate::zoom::ORIGINAL_RATE;
 
 /// Per-model ROM constants (offsets in 44.1 kHz samples).
@@ -145,6 +145,11 @@ pub struct LofiChurch {
     loop_reads: [usize; 2],
     diffuser_reads: [usize; 8],
     comb_reads: [f32; 8],
+    /// `comb_reads` as whole offsets (all of them are integral).
+    comb_whole: [usize; 8],
+    /// False when LFO2 has no depth (Church): its offset is then always 0
+    /// and the modulated reads land exactly on `comb_whole`.
+    comb_modulated: bool,
     output_taps: [usize; 8],
     right_offset: f32,
     right_shift: f32,
@@ -200,6 +205,11 @@ impl LofiChurch {
                 let modulated = matches!(n, 0 | 1 | 4 | 5);
                 scale(config.comb_reads[n], sample_rate) as f32 - if modulated { 1.0 } else { 0.0 }
             }),
+            comb_whole: std::array::from_fn(|n| {
+                let modulated = matches!(n, 0 | 1 | 4 | 5);
+                scale(config.comb_reads[n], sample_rate) - usize::from(modulated)
+            }),
+            comb_modulated: config.lfo[1].0 != 0.0,
             output_taps: config.output_taps.map(|o| scale(o, sample_rate)),
             right_offset: scale(config.writes[1], sample_rate) as f32,
             right_shift: (8949.0 - config.writes[1] as f32) * ratio,
@@ -319,16 +329,20 @@ impl LofiChurch {
 
         // Cross feedback loop: the left path hears the right line and back.
         let complement = 1.0 - self.split;
-        let mut loop_in = [0.0; 2];
-        for (path, read) in [(0usize, 1usize), (1, 0)] {
-            let x = ring.read(self.loop_reads[read]);
-            let previous = self.loop_low[path];
-            let low = self.split * x + complement * previous;
-            let high = complement * (x - previous);
-            self.loop_low[path] = low;
-            let [a, b] = &mut self.loop_state[path];
-            let damped = a.process(&damp, g[R_LOOP] * low + g[R_LOOP + 1] * high);
-            loop_in[path] = b.process(&self.comb_shelf, damped) + predelayed[path];
+        // Without the cross loop (Church) its gains stay 0, so both sections
+        // only ever output +0 and `loop_in` is the predelayed input.
+        let mut loop_in = predelayed;
+        if c.cross_loop.is_some() {
+            for (path, read) in [(0usize, 1usize), (1, 0)] {
+                let x = ring.read(self.loop_reads[read]);
+                let previous = self.loop_low[path];
+                let low = self.split * x + complement * previous;
+                let high = complement * (x - previous);
+                self.loop_low[path] = low;
+                let [a, b] = &mut self.loop_state[path];
+                let damped = a.process(&damp, g[R_LOOP] * low + g[R_LOOP + 1] * high);
+                loop_in[path] = b.process(&self.comb_shelf, damped) + predelayed[path];
+            }
         }
 
         // Four diffusers per side.
@@ -348,11 +362,10 @@ impl LofiChurch {
         // Eight combs.
         let mut comb_writes = [0.0; 8];
         for n in 0..8 {
-            let offset = self.comb_reads[n];
-            let x = if matches!(n, 0 | 1 | 4 | 5) {
-                ring.read_frac(offset + comb_mod)
+            let x = if self.comb_modulated && matches!(n, 0 | 1 | 4 | 5) {
+                ring.read_frac(self.comb_reads[n] + comb_mod)
             } else {
-                ring.read(offset as usize)
+                ring.read(self.comb_whole[n])
             };
             let previous = self.comb_low[n];
             let low = self.split * x + complement * previous;

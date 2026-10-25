@@ -34,13 +34,8 @@
 //! run every 16 samples with a linear ramp in between; a Color change fades
 //! the phaser out and in around the swap instead of the original's
 //! immediately retargeted ramp.
-use super::common::FadeTap;
-use crate::{
-    Effect, Values,
-    catalog::*,
-    dsp::{DelayLine, flush},
-    zoom::{self, Ramp},
-};
+use super::common::{DelayLine, FadeTap, Ramp, flush};
+use crate::{Effect, Values, catalog::*, zoom};
 
 pub const INFO: ModelInfo = ModelInfo {
     key: "mooz_phase_dly",

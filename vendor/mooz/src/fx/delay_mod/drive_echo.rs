@@ -39,13 +39,8 @@
 //! `context[7]` (c5/c6/c7/c62/c119) ramp over 705.6 samples at 44.1 kHz;
 //! Mode crossfades instead of muting the wet path; Main's output fader c4 is
 //! taken as 1. TIME shows `value + 20` ms, as the pedal does.
-use super::common::FirstOrder;
-use crate::{
-    Effect, Values,
-    catalog::*,
-    dsp::{Biquad, Coefficients, DelayLine},
-    zoom::{self, Ramp},
-};
+use super::common::{Biquad, DelayLine, FirstOrder, Ramp};
+use crate::{Effect, Values, catalog::*, dsp::Coefficients, zoom};
 
 pub const INFO: ModelInfo = ModelInfo {
     key: "mooz_drive_echo",
@@ -307,15 +302,21 @@ fn clip1(x: f32) -> f32 {
 
 /// The preamp clipper on `driven = c62 · 16 · x`: odd, slope 1.26 at zero,
 /// 0.2 above |0.755| and flat at ±1 beyond ±3.
+///
+/// Written on `|driven|`: for a negative input `-CLIP_T · driven` is
+/// `CLIP_T · |driven|` and `clip1(-CLIP_G0 + CLIP_G1 · driven)` is
+/// `-clip1(CLIP_G0 + CLIP_G1 · |driven|)` exactly (negation and clamping are
+/// symmetric), so only the sign of `t · g` depends on the branch (`-0.0`
+/// takes the positive branch with `t = -0.0`, also a negative zero product).
+/// Both products are non-negative, so only the upper clamp can act.
 #[inline]
 fn clipper(driven: f32) -> f32 {
-    let (t, g) = if driven < 0.0 {
-        (clip1(-CLIP_T * driven), clip1(-CLIP_G0 + CLIP_G1 * driven))
-    } else {
-        (clip1(CLIP_T * driven), clip1(CLIP_G0 + CLIP_G1 * driven))
-    };
+    let magnitude = driven.abs();
+    let upper = |x: f32| if x > 1.0 { 1.0 } else { x };
+    let t = upper(CLIP_T * magnitude);
+    let tg = t * upper(CLIP_G0 + CLIP_G1 * magnitude);
     let p = clip1(CLIP_P * driven);
-    t * g + p * (t - 1.0).abs()
+    tg.copysign(driven) + p * (t - 1.0).abs()
 }
 
 /// One channel of `SUB_KawaOD_EP_Booster`.

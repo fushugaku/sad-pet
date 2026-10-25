@@ -28,13 +28,8 @@
 //! then `1 − ((v−71)/29)^1.41`, both with 16 ms ramps. P-Amp only decides
 //! whether the preamp stays on while the effect is bypassed; a mooz effect is
 //! never bypassed, so the preamp always runs and P-Amp has no audible effect.
-use super::common::{self, Fade, f, q31};
-use crate::{
-    Effect, Values,
-    catalog::*,
-    dsp::{Biquad, Coefficients, DelayLine, flush},
-    zoom::{self, Ramp},
-};
+use super::common::{self, Biquad, DelayLine, Fade, FirstOrder, Ramp, f, flush, q31};
+use crate::{Effect, Values, catalog::*, dsp::Coefficients, zoom};
 
 pub const INFO: ModelInfo = ModelInfo {
     key: "mooz_tape_echo3",
@@ -122,9 +117,17 @@ const DOWN: [u32; 21] = [
     0x39318001, 0x3c0d2d00, 0x3c0d2d00, 0x39318001, 0xba105800,
 ];
 
-fn rom_section(at: usize, sample_rate: f32) -> Biquad {
+fn rom_coefficients(at: usize, sample_rate: f32) -> Coefficients {
     let words = [ROM[at], ROM[at + 1], ROM[at + 2], ROM[at + 3], ROM[at + 4]];
-    Biquad::new(common::rom_biquad(words, sample_rate))
+    common::rom_biquad(words, sample_rate)
+}
+
+fn rom_section(at: usize, sample_rate: f32) -> Biquad {
+    Biquad::new(rom_coefficients(at, sample_rate))
+}
+
+fn rom_first(at: usize, sample_rate: f32) -> FirstOrder {
+    FirstOrder::new(rom_coefficients(at, sample_rate))
 }
 
 /// Main's filter designer (`context[25]`, c00bc2e0) for the two kinds the
@@ -160,9 +163,21 @@ fn first_order(sample_rate: f32, hz: f32, low_shelf_db: Option<f32>) -> Coeffici
     }
 }
 
+/// The six input and six output ROM biquads; the ROM leaves eight of them
+/// first order (b2 = a2 = 0), which run as [`FirstOrder`] (bit-identical).
 struct Preamp {
-    input: [Biquad; 6],
-    output: [Biquad; 6],
+    in0: Biquad,
+    in1: Biquad,
+    in2: FirstOrder,
+    in3: FirstOrder,
+    in4: Biquad,
+    in5: FirstOrder,
+    out0: FirstOrder,
+    out1: FirstOrder,
+    out2: FirstOrder,
+    out3: FirstOrder,
+    out4: Biquad,
+    out5: FirstOrder,
     up: [f32; 16],
     down: [f32; 21],
     history: [f32; 3],
@@ -174,8 +189,18 @@ struct Preamp {
 impl Preamp {
     fn new(sample_rate: f32) -> Self {
         Self {
-            input: std::array::from_fn(|j| rom_section(14 + 5 * j, sample_rate)),
-            output: std::array::from_fn(|j| rom_section(44 + 5 * j, sample_rate)),
+            in0: rom_section(14, sample_rate),
+            in1: rom_section(19, sample_rate),
+            in2: rom_first(24, sample_rate),
+            in3: rom_first(29, sample_rate),
+            in4: rom_section(34, sample_rate),
+            in5: rom_first(39, sample_rate),
+            out0: rom_first(44, sample_rate),
+            out1: rom_first(49, sample_rate),
+            out2: rom_first(54, sample_rate),
+            out3: rom_first(59, sample_rate),
+            out4: rom_section(64, sample_rate),
+            out5: rom_first(69, sample_rate),
             up: UP.map(f),
             down: DOWN.map(f),
             history: [0.0; 3],
@@ -199,10 +224,12 @@ impl Preamp {
 
     #[inline]
     fn process(&mut self, x: f32) -> f32 {
-        let mut value = x;
-        for section in &mut self.input {
-            value = section.process(value);
-        }
+        let value = self.in0.process(x);
+        let value = self.in1.process(value);
+        let value = self.in2.process(value);
+        let value = self.in3.process(value);
+        let value = self.in4.process(value);
+        let value = self.in5.process(value);
         let [h0, h1, h2] = self.history;
         let mut shaped = [0.0; 4];
         for (phase, out) in shaped.iter_mut().enumerate() {
@@ -229,15 +256,29 @@ impl Preamp {
             history.copy_within(..4, 1);
             history[0] = flush(new);
         }
-        let mut out = 4.0 * sum;
-        for section in &mut self.output {
-            out = section.process(out);
-        }
+        let out = self.out0.process(4.0 * sum);
+        let out = self.out1.process(out);
+        let out = self.out2.process(out);
+        let out = self.out3.process(out);
+        let out = self.out4.process(out);
+        let out = self.out5.process(out);
         out * self.gain
     }
 
     fn clear(&mut self) {
-        for section in self.input.iter_mut().chain(self.output.iter_mut()) {
+        for section in [&mut self.in0, &mut self.in1, &mut self.in4, &mut self.out4] {
+            section.clear();
+        }
+        for section in [
+            &mut self.in2,
+            &mut self.in3,
+            &mut self.in5,
+            &mut self.out0,
+            &mut self.out1,
+            &mut self.out2,
+            &mut self.out3,
+            &mut self.out5,
+        ] {
             section.clear();
         }
         self.history = [0.0; 3];
@@ -248,8 +289,8 @@ impl Preamp {
 pub struct TapeEcho3 {
     sample_rate: f32,
     line: DelayLine,
-    shelf: Biquad,
-    low_pass: Biquad,
+    shelf: FirstOrder,
+    low_pass: FirstOrder,
     head: Biquad,
     preamp: Preamp,
     target: f32,
@@ -279,8 +320,8 @@ impl TapeEcho3 {
         let mut effect = Self {
             sample_rate,
             line: common::line_for_ms(MAX_MS, depth.ceil() as usize + 2, sample_rate),
-            shelf: Biquad::default(),
-            low_pass: Biquad::default(),
+            shelf: FirstOrder::default(),
+            low_pass: FirstOrder::default(),
             head: rom_section(108, sample_rate),
             preamp: Preamp::new(sample_rate),
             target: 1.0,
@@ -323,8 +364,9 @@ impl TapeEcho3 {
         let boost = f(0x3fa12478);
         shelf.b0 *= boost;
         shelf.b1 *= boost;
-        self.shelf.coefficients = shelf;
-        self.low_pass.coefficients = first_order(self.sample_rate, 1770.0 - 546.0 * excess, None);
+        self.shelf.set(shelf);
+        self.low_pass
+            .set(first_order(self.sample_rate, 1770.0 - 546.0 * excess, None));
         1.0 - 0.3 * excess
     }
 

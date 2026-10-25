@@ -28,13 +28,12 @@
 //! modulating TIME stays audible. The feedback write passes a soft safety
 //! limiter above ±2 (the callback has none and 100 % feedback is unity).
 use super::common::{
-    DurationRamp, Glide, MuteSwap, Q31, RAMP_SAMPLES, Stage, one_pole_at, pole_at, rom_at, safety,
-    samples, time_ms,
+    DelayLine, DurationRamp, Glide, MuteSwap, Q31, RAMP_SAMPLES, Settled, Stage1, flush,
+    one_pole_at, pole_at, rom_at, safety, samples, time_ms,
 };
 use crate::{
     Effect, Values,
     catalog::*,
-    dsp::{DelayLine, flush},
     zoom::{DEFAULT_STEP, Ramp, curve, is_synced},
 };
 
@@ -165,7 +164,7 @@ pub fn mix_gains(p: f32) -> (f32, f32) {
 struct SlwAtkDly {
     sample_rate: f32,
     // detector (two iterations per frame)
-    detector_hp: Stage,
+    detector_hp: Stage1,
     peak_decay: f32,
     fast: (f32, f32),
     slow: (f32, f32),
@@ -179,7 +178,9 @@ struct SlwAtkDly {
     gain: f32,
     // delays
     short: [DelayLine; 2],
-    short_delay: f32,
+    /// The short lines' 470-sample (at 44.1 kHz) tap, prepared for
+    /// `read_fixed`.
+    short_tap: (usize, f32),
     long: [DelayLine; 2],
     feedback_tap: [f32; 2],
     time: Glide,
@@ -206,7 +207,7 @@ impl SlwAtkDly {
         let (mix_wet, mix_dry) = mix_gains(64.0);
         let mut effect = Self {
             sample_rate,
-            detector_hp: Stage::new(super::common::words(rom_at(
+            detector_hp: Stage1::new(super::common::words(rom_at(
                 [0.992_926_5, -0.992_926_5, 0.0, 0.985_853, 0.0],
                 DETECTOR_RATE,
                 detector_rate,
@@ -226,7 +227,7 @@ impl SlwAtkDly {
                 DelayLine::new(short_delay as usize + 4),
                 DelayLine::new(short_delay as usize + 4),
             ],
-            short_delay,
+            short_tap: (0, 0.0),
             long: [
                 DelayLine::with_seconds(max_delay / sample_rate, sample_rate),
                 DelayLine::with_seconds(max_delay / sample_rate, sample_rate),
@@ -258,6 +259,7 @@ impl SlwAtkDly {
             last: [f32::NAN; 6],
             bpm: 0.0,
         };
+        effect.short_tap = effect.short[0].fixed(short_delay);
         let defaults = crate::Model::SlwAtkDly.defaults();
         effect.set(&defaults, 120.0);
         effect.time.value = effect.time.target;
@@ -341,7 +343,7 @@ impl Effect for SlwAtkDly {
         let mut swelled = [0.0; 2];
         for (ch, gain) in [gain_left, gain_right].into_iter().enumerate() {
             self.short[ch].write(frame[ch]);
-            swelled[ch] = gain * self.short[ch].read_linear(self.short_delay);
+            swelled[ch] = gain * self.short[ch].read_fixed(self.short_tap);
         }
 
         let (mode_gain, switch) = self.mode_fade.tick();
@@ -359,7 +361,7 @@ impl Effect for SlwAtkDly {
             0.5 * (tri(self.lfo[0]) + tri(self.lfo[2])),
             0.5 * (tri(self.lfo[1]) + tri(self.lfo[3])),
         ];
-        let feedback = self.feedback.tick();
+        let feedback = self.feedback.step();
         let mut tap_a = [0.0; 2];
         let mut tap_b = [0.0; 2];
         for ch in 0..2 {

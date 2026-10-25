@@ -24,12 +24,12 @@
 //! Deviations: the 8-frame feedback block delay is kept as 8 samples scaled
 //! to the host rate; ROM filters are re-derived for the host rate; a Mode
 //! change crossfades over 16 ms instead of muting c54 around the switch.
-use super::common::{FadeTap, FirstOrder};
+use super::common::{Biquad, DelayLine, FadeTap, FirstOrder, Ramp, flush};
 use crate::{
     Effect, Values,
     catalog::*,
-    dsp::{Biquad, Coefficients, DelayLine, flush, scale_samples},
-    zoom::{self, DEFAULT_STEP, Ramp},
+    dsp::{Coefficients, scale_samples},
+    zoom::{self, DEFAULT_STEP},
 };
 
 pub const INFO: ModelInfo = ModelInfo {

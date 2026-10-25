@@ -23,12 +23,12 @@
 //! Approximated: a PreD change crossfades the tap over 16 ms instead of the
 //! original's mute/jump/reopen; the ROM filters are re-derived for the host
 //! rate through their bilinear prototypes.
+use super::fast::Ramp;
+use super::fast::{Bank, Biquad};
 use super::tc_common::{
-    Comb, Design, Diffuser, FirstOrder, Glide, Line, TapFade, decay_gain, design, one_pole_rom,
+    CombBank, Design, FirstOrder, Glide, Line, TapFade, decay_gain, design, diffuse, one_pole_rom,
     rom_biquad, samples, table,
 };
-use crate::dsp::Biquad;
-use crate::zoom::Ramp;
 use crate::{Effect, Values, catalog::*};
 
 pub const INFO: ModelInfo = ModelInfo {
@@ -139,12 +139,13 @@ struct Ambience {
     injection: Line,
     predelay: TapFade,
     second_tap: f32,
-    early: [Line; 2],
+    early: Bank<2>,
     early_lp: [f32; 2],
     early_tone: [FirstOrder; 2],
     early_shelf: [FirstOrder; 2],
-    diffusers: [[Diffuser; 6]; 2],
-    combs: [Comb; 8],
+    /// Right chain in regions 0..6, left chain in 6..12.
+    diffusers: Bank<12>,
+    combs: CombBank<8>,
     output_taps: [[usize; 4]; 2],
     output_eq: [Biquad; 2],
     output_hp: [FirstOrder; 2],
@@ -162,7 +163,6 @@ impl Ambience {
     fn new(sample_rate: f32) -> Self {
         let rom1 = |c: (f32, f32, f32)| FirstOrder::rom(c.0, c.1, c.2, sample_rate);
         let shelf = rom1(LOOP_SHELF);
-        let line = |d: f32| Line::new(samples(d, sample_rate));
         let max_predelay = samples(200.0 * 44.1 + SECOND_TAP + 2.0, sample_rate);
         let ramp = |v: f32| Ramp::new(v, GAIN_STEP, sample_rate);
         let mut effect = Self {
@@ -170,23 +170,25 @@ impl Ambience {
             input_eq: std::array::from_fn(|_| INPUT_EQ.map(|w| rom_biquad(w, sample_rate))),
             input_hp: [rom1(INPUT_HP); 2],
             input_lp: [rom1(INPUT_LP); 2],
-            injection: Line::with_capacity(1, max_predelay),
+            injection: Line::new(max_predelay),
             predelay: TapFade::new(1.0, sample_rate),
             second_tap: SECOND_TAP * sample_rate / 44_100.0,
-            early: EARLY.map(line),
+            early: Bank::new(EARLY.map(|d| samples(d, sample_rate)), 0),
             early_lp: [0.0; 2],
             early_tone: [FirstOrder::IDENTITY; 2],
             early_shelf: [shelf; 2],
-            diffusers: std::array::from_fn(|_| {
-                DIFFUSER.map(|d| Diffuser::new(samples(d, sample_rate)))
-            }),
-            combs: std::array::from_fn(|i| {
-                Comb::new(
-                    samples(COMB[i % 4], sample_rate),
-                    FirstOrder::IDENTITY,
-                    shelf,
-                )
-            }),
+            diffusers: Bank::new(
+                std::array::from_fn(|i| samples(DIFFUSER[i % 6], sample_rate)),
+                0,
+            ),
+            combs: CombBank::new(
+                Bank::new(
+                    std::array::from_fn(|i| samples(COMB[i % 4], sample_rate)),
+                    0,
+                ),
+                FirstOrder::IDENTITY,
+                shelf,
+            ),
             output_taps: OUTPUT_TAPS.map(|side| side.map(|d| samples(d, sample_rate))),
             output_eq: [rom_biquad(OUTPUT_EQ, sample_rate); 2],
             output_hp: [FirstOrder::IDENTITY; 2],
@@ -256,7 +258,7 @@ impl Ambience {
         let gain = table(&TONE, 101, tone.clamp(0.0, 100.0));
         let shelf = design(Design::HighShelf, 16_000.0, gain, self.sample_rate);
         self.early_tone.iter_mut().for_each(|f| f.set(shelf));
-        self.combs.iter_mut().for_each(|c| c.tone.set(shelf));
+        self.combs.set_tone(shelf);
     }
 }
 
@@ -319,34 +321,37 @@ impl Effect for Ambience {
 
         // Cross-coupled early loop.
         let gains = [self.early_gain[0].tick(), self.early_gain[1].tick()];
-        let delayed = [self.early[0].out(), self.early[1].out()];
+        let delayed = [self.early.out(0), self.early.out(1)];
         let mut early = [0.0; 2];
         for (side, &d) in delayed.iter().enumerate() {
             let lp = &mut self.early_lp[side];
-            *lp = crate::dsp::flush(*lp + self.crossover * (d - *lp));
+            *lp = super::fast::flush(*lp + self.crossover * (d - *lp));
             let v = gains[0] * *lp + gains[1] * (d - *lp);
             early[side] = self.early_shelf[side].process(self.early_tone[side].process(v));
         }
         // early[0] (from C55 via 4631) + tap0 goes to C56; early[1] + tap1 to C55.
         let v139 = early[0] + pre0;
         let v137 = early[1] + pre1;
-        self.early[0].write(v137);
-        self.early[1].write(v139);
+        self.early.write(0, v137);
+        self.early.write(1, v139);
+        self.early.advance();
 
         // Diffusers: v137 -> right chain, v139 -> left chain.
         let (g, c, h) = DIFFUSION;
         let mut diffused = [v137, v139];
-        for (chain, x) in self.diffusers.iter_mut().zip(diffused.iter_mut()) {
-            for stage in chain.iter_mut() {
-                *x = stage.process(*x, g, c, h);
+        let mut stages = self.diffusers.frame();
+        for (chain, x) in diffused.iter_mut().enumerate() {
+            for stage in 0..6 {
+                *x = diffuse(&mut stages, chain * 6 + stage, *x, g, c, h);
             }
         }
+        self.diffusers.advance();
 
         // Output taps are read before this frame's comb writes.
         let mut sums = [0.0; 2];
         for (side, sum) in sums.iter_mut().enumerate() {
             for (k, &tap) in self.output_taps[side].iter().enumerate() {
-                *sum += self.combs[side * 4 + k].line.tap(tap);
+                *sum += self.combs.lines.tap(side * 4 + k, tap);
             }
         }
         let low = [
@@ -361,11 +366,12 @@ impl Effect for Ambience {
             self.comb_high[2].tick(),
             self.comb_high[3].tick(),
         ];
-        for (i, comb) in self.combs.iter_mut().enumerate() {
-            let input = COMB_INPUT * diffused[i / 4];
-            let delayed = comb.line.out();
-            comb.process(delayed, input, self.crossover, low[i % 4], high[i % 4]);
-        }
+        self.combs.run(
+            std::array::from_fn(|i| COMB_INPUT * diffused[i / 4]),
+            self.crossover,
+            std::array::from_fn(|i| low[i % 4]),
+            std::array::from_fn(|i| high[i % 4]),
+        );
 
         let wet = self.wet.tick();
         let dry = self.dry.tick();
@@ -384,16 +390,16 @@ impl Effect for Ambience {
             self.input_eq[side].iter_mut().for_each(Biquad::clear);
             self.input_hp[side].clear();
             self.input_lp[side].clear();
-            self.early[side].clear();
             self.early_lp[side] = 0.0;
             self.early_tone[side].clear();
             self.early_shelf[side].clear();
-            self.diffusers[side].iter_mut().for_each(|d| d.line.clear());
             self.output_eq[side].clear();
             self.output_hp[side].clear();
         }
         self.injection.clear();
-        self.combs.iter_mut().for_each(Comb::clear);
+        self.early.clear();
+        self.diffusers.clear();
+        self.combs.clear();
     }
 }
 

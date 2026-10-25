@@ -19,15 +19,14 @@
 //! Delay times change by the editors' 200 ms two-tap crossfade.
 use super::{
     common::{
-        CrossfadeTime, DurationRamp, Q31, RAMP_SAMPLES, Stage, clip1, one_pole_at, rom, samples,
-        table, time_ms,
+        Bank, CrossfadeTime, DelayLine, DurationRamp, Lane, Q31, RAMP_SAMPLES, Settled, Stage1,
+        clip1, flush, one_pole_at, rom, samples, table, time_ms,
     },
     trem_delay::FEEDBACK_HP,
 };
 use crate::{
     Effect, Values,
     catalog::*,
-    dsp::{DelayLine, flush},
     zoom::{DEFAULT_STEP, Ramp, is_synced},
 };
 
@@ -211,7 +210,7 @@ impl Svf {
 }
 
 struct Diffuser {
-    line: DelayLine,
+    lane: Lane,
     delay: usize,
 }
 
@@ -231,10 +230,12 @@ struct FltrPpd {
     sweep_smooth: (f32, f32),
     lines: [DelayLine; 2],
     times: [CrossfadeTime; 2],
-    feedback_hp: Stage,
+    feedback_hp: Stage1,
     feedback_src: f32,
-    diff_hp: Stage,
-    diff_lp: Stage,
+    diff_hp: Stage1,
+    diff_lp: Stage1,
+    /// The diffusers' lines.
+    bank: Bank,
     diffusers: [Diffuser; 4],
     apf_feedback: f32,
     apf_mix: DurationRamp,
@@ -263,9 +264,10 @@ impl FltrPpd {
             *f = 2.0 * (std::f32::consts::PI * hz / sr).sin();
         }
         let n = |d: usize| (samples(d as f32, sr).round() as usize).max(1);
-        let diffuser = |d: usize| Diffuser {
-            line: DelayLine::new(n(d) + 2),
-            delay: n(d),
+        let (bank, lanes) = Bank::new(DIFFUSION.map(|d| n(d) + 2));
+        let diffuser = |k: usize| Diffuser {
+            lane: lanes[k],
+            delay: n(DIFFUSION[k]),
         };
         let mut effect = Self {
             sample_rate,
@@ -286,11 +288,12 @@ impl FltrPpd {
                 DelayLine::with_seconds(MAX_MS * 0.001 + 0.01, sr),
             ],
             times: [CrossfadeTime::new(1.0, 200.0, sr); 2],
-            feedback_hp: Stage::from(rom(FEEDBACK_HP, sr)),
+            feedback_hp: Stage1::from(rom(FEEDBACK_HP, sr)),
             feedback_src: 0.0,
-            diff_hp: Stage::from(rom([0.998_577, -0.998_577, 0.0, 0.997_155, 0.0], sr)),
-            diff_lp: Stage::from(rom([0.463_426, 0.463_426, 0.0, 0.073_149, 0.0], sr)),
-            diffusers: DIFFUSION.map(diffuser),
+            diff_hp: Stage1::from(rom([0.998_577, -0.998_577, 0.0, 0.997_155, 0.0], sr)),
+            diff_lp: Stage1::from(rom([0.463_426, 0.463_426, 0.0, 0.073_149, 0.0], sr)),
+            bank,
+            diffusers: std::array::from_fn(diffuser),
             apf_feedback: 0.3,
             apf_mix: DurationRamp::new(0.0, RAMP_SAMPLES, sr),
             filter_mix: Ramp::new(0.0, DEFAULT_STEP, sr),
@@ -328,7 +331,9 @@ impl FltrPpd {
     fn sweep_coefficients(&self, w: f32) -> (f32, f32) {
         let position = (w.clamp(0.0, SWEEP_MAX) * (SWEEP_POINTS as f32 / SWEEP_MAX))
             .min(SWEEP_POINTS as f32 - 1e-3);
-        let i = position as usize;
+        // `position < SWEEP_POINTS`: the `min` only lets the indexing go
+        // unchecked
+        let i = (position as usize).min(SWEEP_POINTS - 1);
         let t = position - i as f32;
         let f = self.sweep_f[i] + (self.sweep_f[i + 1] - self.sweep_f[i]) * t;
         (f, 0.45 - 0.355 * w)
@@ -434,9 +439,9 @@ impl Effect for FltrPpd {
         let mono = 0.5 * (frame[0] + frame[1]);
         let stage = clip1(self.svf[0].process(mono, f, q));
         let filtered = self.svf[1].process(stage, f, q);
-        let filter_mix = self.filter_mix.tick();
+        let filter_mix = self.filter_mix.step();
         let mixed = (1.0 - filter_mix) * mono + 0.53 * filter_mix * filtered;
-        let feedback = self.feedback.tick();
+        let feedback = self.feedback.step();
         let fed = mixed
             + self
                 .feedback_hp
@@ -450,17 +455,17 @@ impl Effect for FltrPpd {
             let line = &mut self.lines[ch];
             line.write(flush(input));
             let taps = self.times[ch].taps;
-            *out = blend * line.read_linear(taps[0]) + (1.0 - blend) * line.read_linear(taps[1]);
+            *out = line.read_crossfade(blend, taps);
             input = *out;
         }
 
         // diffusion of delay B into the feedback
         let mut x = self.diff_lp.process(self.diff_hp.process(outs[1]));
-        for diffuser in &mut self.diffusers {
-            let tap = diffuser.line.read(diffuser.delay - 1);
-            diffuser
-                .line
-                .write(flush(self.apf_feedback * tap + 0.45 * x));
+        let bank = &mut self.bank;
+        bank.advance();
+        for diffuser in &self.diffusers {
+            let tap = bank.ago(diffuser.lane, diffuser.delay);
+            bank.write(diffuser.lane, flush(self.apf_feedback * tap + 0.45 * x));
             x = 0.93 * tap - 0.79 * x;
         }
         let apf = self.apf_mix.tick();
@@ -471,10 +476,10 @@ impl Effect for FltrPpd {
             self.stereo = self.pending_stereo;
             self.dry_att = if self.stereo { 1.0 } else { 0.5 };
         }
-        let wet = self.wet.tick() * self.wet_att.tick();
-        let dry = self.dry.tick() * self.dry_att;
-        let left = dry * frame[0] + wet * self.balance[0].tick() * outs[0];
-        let right = wet * self.balance[1].tick() * outs[1] + dry * frame[1];
+        let wet = self.wet.step() * self.wet_att.step();
+        let dry = self.dry.step() * self.dry_att;
+        let left = dry * frame[0] + wet * self.balance[0].step() * outs[0];
+        let right = wet * self.balance[1].step() * outs[1] + dry * frame[1];
         if self.stereo {
             [mode * left, mode * right]
         } else {
@@ -492,9 +497,7 @@ impl Effect for FltrPpd {
         self.feedback_src = 0.0;
         self.diff_hp.clear();
         self.diff_lp.clear();
-        for d in &mut self.diffusers {
-            d.line.clear();
-        }
+        self.bank.clear();
     }
 }
 

@@ -18,13 +18,8 @@
 //! `10^((-20 - v)/20)` (−20..−50 dB), Mix `(v/100)^1.41` with a 16 ms ramp,
 //! Level `v/100`. The detector listens to the effect input (the original's
 //! TrgIn editor selects the chain's dry input, the same signal here).
-use super::common::{self, Fade, Gate, f};
-use crate::{
-    Effect, Values,
-    catalog::*,
-    dsp::{Biquad, DelayLine, flush},
-    zoom::{self, Ramp},
-};
+use super::common::{self, Biquad, DelayLine, Fade, Gate, Ramp, f, flush};
+use crate::{Effect, Values, catalog::*, zoom};
 
 pub const INFO: ModelInfo = ModelInfo {
     key: "mooz_trg_hld_dly",

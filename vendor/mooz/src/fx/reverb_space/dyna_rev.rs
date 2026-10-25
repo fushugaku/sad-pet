@@ -31,12 +31,13 @@
 //! never opened by any editor, so it is left out.
 //! Approximated: PreD changes crossfade the taps over 16 ms (the original
 //! mutes, jumps and reopens); ROM filters are re-derived for the host rate.
+use super::fast::Ramp;
+use super::fast::{Bank, Biquad, flush};
 use super::tc_common::{
-    Comb, Design, Diffuser, FirstOrder, Glide, Line, TapFade, decay_gain, design, one_pole_rom,
+    CombBank, Design, FirstOrder, Glide, Line, TapFade, decay_gain, design, diffuse, one_pole_rom,
     rom_biquad, samples, table, table_int,
 };
-use crate::dsp::{Biquad, flush};
-use crate::zoom::{DEFAULT_STEP, ORIGINAL_RATE, Ramp};
+use crate::zoom::{DEFAULT_STEP, ORIGINAL_RATE};
 use crate::{Effect, Values, catalog::*};
 
 pub const INFO: ModelInfo = ModelInfo {
@@ -290,8 +291,9 @@ struct DynaRev {
     lfo_phase: f32,
     lfo_step: f32,
     lfo_depth: f32,
-    chains: [[Diffuser; 4]; 2],
-    combs: [Comb; 4],
+    /// Chain 0 in regions 0..4, chain 1 in 4..8.
+    chains: Bank<8>,
+    combs: CombBank<4>,
     output_taps: [[usize; 4]; 2],
     output_eq: [Biquad; 2],
     output_lp: [FirstOrder; 2],
@@ -322,14 +324,21 @@ impl DynaRev {
             detector: Detector::new(sample_rate),
             input_shelf: [rom1(INPUT_SHELF); 2],
             input_lp: [rom1(INPUT_LP); 2],
-            injection: Line::with_capacity(1, max_predelay),
+            injection: Line::new(max_predelay),
             predelay: TapFade::new(1.0, sample_rate),
             second_tap: SECOND_TAP * sample_rate / ORIGINAL_RATE,
             lfo_phase: 0.0,
             lfo_step: LFO_HZ / sample_rate,
             lfo_depth: LFO_DEPTH * sample_rate / ORIGINAL_RATE,
-            chains: CHAINS.map(|chain| chain.map(|d| Diffuser::new(samples(d, sample_rate)))),
-            combs: COMB.map(|d| Comb::new(samples(d, sample_rate), tone, shelf)),
+            chains: Bank::new(
+                std::array::from_fn(|i| samples(CHAINS[i / 4][i % 4], sample_rate)),
+                0,
+            ),
+            combs: CombBank::new(
+                Bank::new(COMB.map(|d| samples(d, sample_rate)), 0),
+                tone,
+                shelf,
+            ),
             output_taps: OUTPUT_TAPS.map(|side| side.map(|d| samples(d, sample_rate))),
             output_eq: [rom_biquad(OUTPUT_EQ, sample_rate); 2],
             output_lp: [rom1(OUTPUT_LP); 2],
@@ -485,25 +494,28 @@ impl Effect for DynaRev {
         let g = self.diffusion.tick();
         let (c, h) = DIFFUSER_OUT;
         let mut diffused = pre;
-        for (chain, x) in self.chains.iter_mut().zip(diffused.iter_mut()) {
-            for stage in chain.iter_mut() {
-                *x = stage.process(*x, g, c, h);
+        let mut stages = self.chains.frame();
+        for (chain, x) in diffused.iter_mut().enumerate() {
+            for stage in 0..4 {
+                *x = diffuse(&mut stages, chain * 4 + stage, *x, g, c, h);
             }
         }
+        self.chains.advance();
 
         let mut sums = [0.0; 2];
         for (side, sum) in sums.iter_mut().enumerate() {
-            for (comb, &tap) in self.combs.iter().zip(&self.output_taps[side]) {
-                *sum += comb.line.tap(tap);
+            for (i, &tap) in self.output_taps[side].iter().enumerate() {
+                *sum += self.combs.lines.tap(i, tap);
             }
         }
         let input = COMB_INPUT * (diffused[0] + diffused[1]);
-        for (i, comb) in self.combs.iter_mut().enumerate() {
-            let low = self.comb_low[i].tick();
-            let high = self.comb_high[i].tick();
-            let delayed = comb.line.out();
-            comb.process(delayed, input, self.crossover, low, high);
+        let mut low = [0.0; 4];
+        let mut high = [0.0; 4];
+        for i in 0..4 {
+            low[i] = self.comb_low[i].tick();
+            high[i] = self.comb_high[i].tick();
         }
+        self.combs.run([input; 4], self.crossover, low, high);
 
         let direct = self.direct.tick();
         let diffused_gain = self.diffused.tick();
@@ -525,13 +537,13 @@ impl Effect for DynaRev {
         for side in 0..2 {
             self.input_shelf[side].clear();
             self.input_lp[side].clear();
-            self.chains[side].iter_mut().for_each(|d| d.line.clear());
             self.output_eq[side].clear();
             self.output_lp[side].clear();
             self.output_shelf[side].clear();
         }
         self.injection.clear();
-        self.combs.iter_mut().for_each(Comb::clear);
+        self.chains.clear();
+        self.combs.clear();
         self.lfo_phase = 0.0;
     }
 }

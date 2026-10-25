@@ -178,17 +178,19 @@ impl HdReverb {
 
     fn network(&mut self, drive: f32) {
         let ring = &self.ring;
-        let t: [f32; 27] = std::array::from_fn(|j| ring.read(self.read[j]));
+        let read = &self.read;
+        // Taps read where used (all before the frame's writes), kept in locals.
+        let t = |j: usize| ring.read(read[j]);
         let g = &self.glides.value;
         let (c43, c46, c47) = (c(43), 1.0, c(47));
         let gain = g[ALLPASS];
-        let a = g[DUCK] * t[0];
-        let b = g[DUCK] * t[1];
+        let a = g[DUCK] * t(0);
+        let b = g[DUCK] * t(1);
         let mut feedback = a + b;
         let mut weighted = c(57) * a + c(58) * b;
         let mut nodes = [0.0f32; 4];
         for (i, node) in nodes.iter_mut().enumerate() {
-            let tap = t[2 + i];
+            let tap = t(2 + i);
             *node = gain * tap + c43 * feedback;
             feedback = -gain * *node + c46 * tap;
             weighted += c(59 + i) * tap;
@@ -196,24 +198,24 @@ impl HdReverb {
         let first = self.body[0].process(weighted);
         let body = self.body[1].process(first);
         let seed = c47 * feedback;
-        let combs: [f32; 6] = std::array::from_fn(|k| seed + g[COMB + k] * t[6 + k]);
-        let o = &t[12..];
-        let wet_left = c(69) * (o[0] + o[2] + o[4] + o[6] + o[8] + o[10]);
-        // The right sum repeats tap 22 (o[10]) as the original LDW schedule does.
-        let wet_right = c(70) * (o[1] + o[3] + o[5] + o[7] + o[9] + o[10]);
+        let combs: [f32; 6] = std::array::from_fn(|k| seed + g[COMB + k] * t(6 + k));
+        let o = |j: usize| t(12 + j);
+        let wet_left = c(69) * (o(0) + o(2) + o(4) + o(6) + o(8) + o(10));
+        // The right sum repeats tap 22 (o(10)) as the original LDW schedule does.
+        let wet_right = c(70) * (o(1) + o(3) + o(5) + o(7) + o(9) + o(10));
         let allpass_pair = |x: f32, d1: f32, d2: f32| {
             let first = c43 * x + gain * d1;
             let between = -gain * first + c46 * d1;
             let second = c43 * between + gain * d2;
             (first, second, -gain * second + c46 * d2)
         };
-        let (left_a, left_b, left_out) = allpass_pair(wet_left, o[11], o[12]);
-        let (right_a, right_b, right_out) = allpass_pair(wet_right, o[13], o[14]);
+        let (left_a, left_b, left_out) = allpass_pair(wet_left, o(11), o(12));
+        let (right_a, right_b, right_out) = allpass_pair(wet_right, o(13), o(14));
         let shared = c(71) * body;
         self.wet = [c(73) * left_out + shared, c(73) * right_out + shared];
 
         let w = &self.write;
-        let ring = &mut self.ring;
+        let mut ring = self.ring.writer();
         ring.write(w[0], c(41) * drive);
         for (i, node) in nodes.into_iter().enumerate() {
             ring.write(w[1 + i], node);
@@ -225,7 +227,7 @@ impl HdReverb {
         ring.write(w[12], left_b);
         ring.write(w[13], right_a);
         ring.write(w[14], right_b);
-        ring.advance();
+        self.ring.advance();
     }
 }
 

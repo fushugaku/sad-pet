@@ -2,7 +2,7 @@
 //! the original callbacks use, first-order sections in the firmware's
 //! `y = b0 x + b1 x1 + f1 y1` form, Main's filter designer (`context[25]`,
 //! c00bc2e0), `TBL_TO_VAL` and the `Calc_*_Decay` comb gain.
-use crate::dsp::{Coefficients, flush};
+use crate::dsp::Coefficients;
 use crate::zoom::ORIGINAL_RATE;
 use std::f64::consts::PI;
 
@@ -10,6 +10,13 @@ use std::f64::consts::PI;
 #[inline]
 pub fn scale(offset: u32, sample_rate: f32) -> usize {
     (f64::from(offset) * f64::from(sample_rate) / f64::from(ORIGINAL_RATE)).round() as usize
+}
+
+/// Whole and fractional part of a fractional ring offset (as `read_frac`).
+#[inline]
+pub fn split(offset: f32) -> (usize, f32) {
+    let whole = offset as usize;
+    (whole, offset - whole as f32)
 }
 
 /// The single circular buffer of the original callbacks. Every frame the
@@ -39,13 +46,21 @@ impl Ring {
     }
     #[inline]
     pub fn read(&self, offset: usize) -> f32 {
-        self.buffer[(self.position + offset) & self.mask]
+        let index = (self.position + offset) & self.mask;
+        debug_assert_eq!(self.buffer.len(), self.mask + 1);
+        // SAFETY: `buffer.len() == mask + 1` (a power of two, fixed in `new`),
+        // so a masked index is always in bounds.
+        unsafe { *self.buffer.get_unchecked(index) }
     }
     /// Linear interpolation between `offset` and `offset + 1`.
     #[inline]
     pub fn read_frac(&self, offset: f32) -> f32 {
-        let whole = offset as usize;
-        let fraction = offset - whole as f32;
+        let (whole, fraction) = split(offset);
+        self.read_split(whole, fraction)
+    }
+    /// [`Self::read_frac`] of an offset already [`split`].
+    #[inline]
+    pub fn read_split(&self, whole: usize, fraction: f32) -> f32 {
         let a = self.read(whole);
         let b = self.read(whole + 1);
         a + (b - a) * fraction
@@ -53,10 +68,58 @@ impl Ring {
     #[inline]
     pub fn write(&mut self, offset: usize, value: f32) {
         let index = (self.position + offset) & self.mask;
-        self.buffer[index] = value;
+        debug_assert_eq!(self.buffer.len(), self.mask + 1);
+        // SAFETY: as in `read`.
+        unsafe { *self.buffer.get_unchecked_mut(index) = value };
     }
     pub fn clear(&mut self) {
         self.buffer.fill(0.0);
+    }
+}
+
+/// `crate::dsp::flush` (zero below 1e-20 in magnitude and for non-finite
+/// values) with one integer compare: the magnitude bits lie in
+/// `[bits(1e-20), bits(inf))` exactly when the value is kept.
+#[inline(always)]
+pub fn flush(x: f32) -> f32 {
+    const LOW: u32 = 0x1e3c_e508; // 1e-20f32
+    const HIGH: u32 = 0x7f80_0000; // +inf
+    let magnitude = x.to_bits() & 0x7fff_ffff;
+    if magnitude.wrapping_sub(LOW) < HIGH - LOW {
+        x
+    } else {
+        0.0
+    }
+}
+
+/// `crate::dsp::Biquad` (transposed direct form II, same arithmetic) with the
+/// integer [`flush`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Biquad {
+    pub coefficients: Coefficients,
+    s1: f32,
+    s2: f32,
+}
+
+impl Biquad {
+    pub fn new(coefficients: Coefficients) -> Self {
+        Self {
+            coefficients,
+            s1: 0.0,
+            s2: 0.0,
+        }
+    }
+    #[inline]
+    pub fn process(&mut self, x: f32) -> f32 {
+        let c = &self.coefficients;
+        let y = c.b0 * x + self.s1;
+        self.s1 = flush(c.b1 * x - c.a1 * y + self.s2);
+        self.s2 = flush(c.b2 * x - c.a2 * y);
+        y
+    }
+    pub fn clear(&mut self) {
+        self.s1 = 0.0;
+        self.s2 = 0.0;
     }
 }
 
@@ -349,6 +412,35 @@ mod tests {
             if n >= 12 {
                 assert_eq!(read, (n - 12) as f32);
             }
+        }
+    }
+
+    #[test]
+    fn flush_matches_the_shared_one() {
+        let mut x = 0x1234_5678u32;
+        let specials = [
+            0.0f32,
+            -0.0,
+            1e-20,
+            -1e-20,
+            f32::from_bits(0x1e3c_e507),
+            f32::from_bits(0x1e3c_e509),
+            f32::MAX,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+            f32::MIN_POSITIVE,
+            1.0,
+        ];
+        for v in specials {
+            assert_eq!(flush(v).to_bits(), crate::dsp::flush(v).to_bits(), "{v}");
+        }
+        for _ in 0..1_000_000 {
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            let v = f32::from_bits(x);
+            assert_eq!(flush(v).to_bits(), crate::dsp::flush(v).to_bits(), "{v}");
         }
     }
 

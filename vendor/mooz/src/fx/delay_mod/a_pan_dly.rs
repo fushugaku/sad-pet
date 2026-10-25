@@ -31,12 +31,12 @@
 //! always uses ∓½ for the L/R side. The tap mute around non-knob time
 //! edits is not reproduced (time always glides). A soft limit above ±2 in
 //! the loop keeps F.B 100 bounded. Integer ramps are 16 ms glides.
-use super::common::Glide;
+use super::common::{DelayLine, Glide, Ramp, flush};
 use crate::{
     Effect, Values,
     catalog::*,
-    dsp::{DelayLine, flush, scale_samples},
-    zoom::{self, DEFAULT_STEP, Ramp},
+    dsp::scale_samples,
+    zoom::{self, DEFAULT_STEP},
 };
 
 pub const INFO: ModelInfo = ModelInfo {

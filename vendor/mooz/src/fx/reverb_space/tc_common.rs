@@ -4,7 +4,8 @@
 //! combs with output taps and an output filter chain), and their editors call
 //! the same Main services: the filter designer (`context[25]`, Main c00bc2e0),
 //! `TBL_TO_VAL`/`TBL_TO_VAL_int` and the RT60 rule `g^(delay_ms / T60_ms)`.
-use crate::dsp::{Biquad, Coefficients, DelayLine, flush};
+use super::fast::{Bank, BankFrame, Biquad, DelayLine, flush};
+use crate::dsp::Coefficients;
 use crate::zoom::ORIGINAL_RATE;
 use std::f64::consts::PI;
 
@@ -87,7 +88,7 @@ impl FirstOrder {
         (self.b0, self.b1, self.fb) = coefficients;
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn process(&mut self, x: f32) -> f32 {
         let y = flush(self.b0 * x + self.b1 * self.x1 + self.fb * self.y1);
         self.x1 = x;
@@ -190,44 +191,27 @@ pub fn samples(at_44k: f32, sample_rate: f32) -> usize {
     ((at_44k * sample_rate / ORIGINAL_RATE).round() as usize).max(1)
 }
 
-/// One fixed region of the original ring: written once per frame after it has
-/// been read, read `delay` frames later.
+/// The pre-delay region of the original ring: written once per frame after
+/// its fractional taps have been read.
 #[derive(Debug, Clone)]
 pub struct Line {
     line: DelayLine,
-    pub delay: usize,
 }
 
 impl Line {
-    pub fn new(delay: usize) -> Self {
+    /// Room for taps up to `capacity` frames back.
+    pub fn new(capacity: usize) -> Self {
         Self {
-            line: DelayLine::new(delay + 2),
-            delay: delay.max(1),
+            line: DelayLine::new(capacity.max(1) + 2),
         }
-    }
-    pub fn with_capacity(delay: usize, capacity: usize) -> Self {
-        Self {
-            line: DelayLine::new(capacity.max(delay) + 2),
-            delay: delay.max(1),
-        }
-    }
-    /// The sample written `delay` frames ago (read before this frame's write).
-    #[inline]
-    pub fn out(&self) -> f32 {
-        self.line.read(self.delay - 1)
-    }
-    /// An extra tap `delay` frames back.
-    #[inline]
-    pub fn tap(&self, delay: usize) -> f32 {
-        self.line.read(delay - 1)
     }
     /// A fractional tap, linearly interpolated like the modulated taps of the
     /// original (`delay >= 1`).
-    #[inline]
+    #[inline(always)]
     pub fn tap_linear(&self, delay: f32) -> f32 {
         self.line.read_linear(delay - 1.0)
     }
-    #[inline]
+    #[inline(always)]
     pub fn write(&mut self, x: f32) {
         self.line.write(flush(x));
     }
@@ -261,7 +245,7 @@ impl Glide {
             self.step = (target - self.current).abs() / self.samples;
         }
     }
-    #[inline]
+    #[inline(always)]
     pub fn tick(&mut self) -> f32 {
         if self.current != self.target {
             let difference = self.target - self.current;
@@ -306,7 +290,7 @@ impl TapFade {
         self.previous = self.target;
         self.fade = 1.0;
     }
-    #[inline]
+    #[inline(always)]
     pub fn tick(&mut self) {
         if self.fade >= 1.0 {
             if self.target != self.current {
@@ -319,7 +303,7 @@ impl TapFade {
         }
     }
     /// The tap `offset` samples beyond the pre-delay, crossfaded while moving.
-    #[inline]
+    #[inline(always)]
     pub fn read(&self, line: &Line, offset: f32) -> f32 {
         let new = line.tap_linear(self.current + offset);
         if self.fade >= 1.0 {
@@ -331,70 +315,80 @@ impl TapFade {
     }
 }
 
-/// The lossy all-pass of both diffusers: `w = x + g d` is written and
-/// `y = c x + h d` leaves (C47..50 in Ambience, C62..65 in DynaRev; with
-/// `c = -g` and `h = 1 - g^2` it would be a true all-pass).
-#[derive(Debug, Clone)]
-pub struct Diffuser {
-    pub line: Line,
+/// The lossy all-pass of both diffusers, one per region of the bank:
+/// `w = x + g d` is written and `y = c x + h d` leaves (C47..50 in Ambience,
+/// C62..65 in DynaRev; with `c = -g` and `h = 1 - g^2` it would be a true
+/// all-pass). Call [`Bank::advance`] after every stage has run.
+#[inline(always)]
+pub fn diffuse<const N: usize>(
+    bank: &mut BankFrame<N>,
+    stage: usize,
+    x: f32,
+    g: f32,
+    c: f32,
+    h: f32,
+) -> f32 {
+    let d = bank.out(stage);
+    bank.write(stage, x + g * d);
+    c * x + h * d
 }
 
-impl Diffuser {
-    pub fn new(delay: usize) -> Self {
-        Self {
-            line: Line::new(delay),
-        }
-    }
-    #[inline]
-    pub fn process(&mut self, x: f32, g: f32, c: f32, h: f32) -> f32 {
-        let d = self.line.out();
-        self.line.write(x + g * d);
-        c * x + h * d
-    }
-}
-
-/// A two-band damped comb: the delayed signal is split by a one-pole
+/// `N` two-band damped combs: the delayed signal is split by a one-pole
 /// crossover, the low band scaled by `low`, the high band by `high`, the input
-/// added, then two first-order sections (tone / fixed shelf) before the write.
+/// added, then two first-order sections (tone / fixed shelf, the same
+/// coefficients in every comb) before the write.
 #[derive(Debug, Clone)]
-pub struct Comb {
-    pub line: Line,
-    lp: f32,
-    pub tone: FirstOrder,
-    pub shelf: FirstOrder,
+pub struct CombBank<const N: usize> {
+    pub lines: Bank<N>,
+    lp: [f32; N],
+    tone: (f32, f32, f32),
+    shelf: (f32, f32, f32),
+    tone_state: [(f32, f32); N],
+    shelf_state: [(f32, f32); N],
 }
 
-impl Comb {
-    pub fn new(delay: usize, tone: FirstOrder, shelf: FirstOrder) -> Self {
+impl<const N: usize> CombBank<N> {
+    pub fn new(lines: Bank<N>, tone: FirstOrder, shelf: FirstOrder) -> Self {
         Self {
-            line: Line::new(delay),
-            lp: 0.0,
-            tone,
-            shelf,
+            lines,
+            lp: [0.0; N],
+            tone: (tone.b0, tone.b1, tone.fb),
+            shelf: (shelf.b0, shelf.b1, shelf.fb),
+            tone_state: [(0.0, 0.0); N],
+            shelf_state: [(0.0, 0.0); N],
         }
     }
-    /// `delayed` is this frame's read of the comb line (possibly a modulated
-    /// tap); returns the value written.
-    #[inline]
-    pub fn process(
-        &mut self,
-        delayed: f32,
-        input: f32,
-        crossover: f32,
-        low: f32,
-        high: f32,
-    ) -> f32 {
-        self.lp = flush(self.lp + crossover * (delayed - self.lp));
-        let v = low * self.lp + high * (delayed - self.lp) + input;
-        let v = self.shelf.process(self.tone.process(v));
-        self.line.write(v);
-        v
+    pub fn set_tone(&mut self, coefficients: (f32, f32, f32)) {
+        self.tone = coefficients;
+    }
+    /// One frame of every comb: comb `i` reads its line, adds `input[i]`
+    /// and writes the damped, filtered sum.
+    #[inline(always)]
+    pub fn run(&mut self, input: [f32; N], crossover: f32, low: [f32; N], high: [f32; N]) {
+        let mut lines = self.lines.frame();
+        let (t0, t1, tf) = self.tone;
+        let (s0, s1, sf) = self.shelf;
+        for i in 0..N {
+            let delayed = lines.out(i);
+            let lp = flush(self.lp[i] + crossover * (delayed - self.lp[i]));
+            self.lp[i] = lp;
+            let v = low[i] * lp + high[i] * (delayed - lp) + input[i];
+            let (x1, y1) = self.tone_state[i];
+            let t = flush(t0 * v + t1 * x1 + tf * y1);
+            self.tone_state[i] = (v, t);
+            let (x1, y1) = self.shelf_state[i];
+            let y = flush(s0 * t + s1 * x1 + sf * y1);
+            self.shelf_state[i] = (t, y);
+            // `y` is flushed already (the original `Line::write` flush is a no-op).
+            lines.write_raw(i, y);
+        }
+        self.lines.advance();
     }
     pub fn clear(&mut self) {
-        self.line.clear();
-        self.lp = 0.0;
-        self.tone.clear();
-        self.shelf.clear();
+        self.lines.clear();
+        self.lp = [0.0; N];
+        self.tone_state = [(0.0, 0.0); N];
+        self.shelf_state = [(0.0, 0.0); N];
     }
 }
 

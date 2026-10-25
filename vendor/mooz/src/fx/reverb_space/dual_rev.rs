@@ -24,8 +24,9 @@
 //! the combs for 210 ms and restoring them through the deferred decayAB_edit;
 //! each pre-delay uses its own interpolation fraction (the original applies
 //! the previous frame's).
-use super::dual_common::{self as common, FirstOrder, Gains, Glide};
-use crate::dsp::{Biquad, Coefficients, DelayLine};
+use super::dual_common::{self as common, FirstOrder, FirstOrderBank, Gains, Glide};
+use super::fast::{Bank, Biquad, DelayLine};
+use crate::dsp::Coefficients;
 use crate::zoom::ORIGINAL_RATE;
 use crate::{Effect, Values, catalog::*};
 
@@ -204,13 +205,82 @@ const G_LEVEL: usize = 10; // 10, 11: 1.4 * C105, 0.57 * C106
 const GAINS: usize = 12;
 
 struct Reverb {
-    diffusers: [DelayLine; 4],
+    diffusers: Bank<4>,
     early: DelayLine,
-    combs: [DelayLine; 4],
+    /// The four combs, also read by the output taps.
+    combs: Bank<4>,
     /// High then low shelf inside each comb loop.
-    damping: [[FirstOrder; 2]; 4],
+    damping: [FirstOrderBank<4>; 2],
     /// ROM low-pass, Tone low shelf, Tone high shelf per output side.
     output: [[FirstOrder; 3]; 2],
+}
+
+/// The per-frame read positions both reverbs share.
+struct Delays<'a> {
+    pre: &'a DelayLine,
+    sweep: f32,
+    diffuser: &'a [[usize; 4]; 2],
+    early: &'a [[usize; 8]; 2],
+    comb: &'a [[usize; 4]; 2],
+    taps: &'a [[[usize; 4]; 2]; 2],
+}
+
+impl Reverb {
+    /// One reverb (`R` = 0 for A, 1 for B) for one frame, its output added to
+    /// `wet`. Written per reverb so the ROM constants fold (and the zero
+    /// early-reflection weights of A drop out, as the skipped taps did).
+    #[inline(always)]
+    fn process<const R: usize>(
+        &mut self,
+        delays: &Delays,
+        pre_delay: f32,
+        g: &[f32; GAINS],
+        wet: &mut [f32; 2],
+    ) {
+        let x = delays
+            .pre
+            .read_linear(pre_delay + SWEEP[R] * delays.sweep - 1.0);
+
+        let mut y = x;
+        let gain = DIFFUSION[R];
+        let mut diffusers = self.diffusers.frame();
+        for (i, &delay) in delays.diffuser[R].iter().enumerate() {
+            let d = diffusers.tap(i, delay);
+            let w = y + gain * d;
+            diffusers.write_raw(i, w);
+            y = d - gain * w;
+        }
+        self.diffusers.advance();
+
+        let early_line = &mut self.early;
+        let mut early = 0.0;
+        for (&delay, &weight) in delays.early[R].iter().zip(&EARLY_GAIN[R]) {
+            if weight != 0.0 {
+                early += weight * early_line.read(delay - 1);
+            }
+        }
+        // C109/C110 diffused (A 0.75, B 1.0); C111/C112 direct are zero.
+        early_line.write(if R == 0 { 0.75 * y } else { y });
+
+        let feed = 0.43 * early;
+        let mut sums = [0.0; 2];
+        let mut combs = self.combs.frame();
+        let [high, low] = &mut self.damping;
+        for i in 0..4 {
+            let feedback = combs.tap(i, delays.comb[R][i]);
+            sums[0] += combs.tap(i, delays.taps[R][0][i]);
+            sums[1] += combs.tap(i, delays.taps[R][1][i]);
+            let input = feed + g[G_COMB + R * 4 + i] * feedback;
+            combs.write_raw(i, low.process(i, high.process(i, input)));
+        }
+        self.combs.advance();
+
+        for side in 0..2 {
+            let sum = EARLY_OUT[R] * early + TAP_OUT[R][side] * sums[side] + DIRECT_OUT[R] * x;
+            let [lowpass, low, high] = &mut self.output[side];
+            wet[side] += g[G_LEVEL + R] * high.process(low.process(lowpass.process(sum)));
+        }
+    }
 }
 
 struct DualReverb {
@@ -235,11 +305,17 @@ impl DualReverb {
         let ratio = sample_rate / ORIGINAL_RATE;
         let samples = |at_44k: f32| ((at_44k * ratio).round() as usize).max(1);
         let line = |at_44k: f32| DelayLine::new(samples(at_44k) + 4);
+        let longest = |delays: &[f32]| samples(delays.iter().fold(0.0f32, |a, &b| a.max(b)));
         let reverbs = std::array::from_fn(|r| Reverb {
-            diffusers: std::array::from_fn(|i| line(DIFFUSER[r][i])),
+            diffusers: Bank::new([1; 4], longest(&DIFFUSER[r])),
             early: line(EARLY_DELAY[r][7]),
-            combs: std::array::from_fn(|i| line(COMB[r][i])),
-            damping: [[FirstOrder::default(); 2]; 4],
+            combs: Bank::new(
+                [1; 4],
+                longest(&COMB[r])
+                    .max(longest(&OUTPUT_TAP[r][0]))
+                    .max(longest(&OUTPUT_TAP[r][1])),
+            ),
+            damping: [FirstOrderBank::default(); 2],
             output: std::array::from_fn(|_| {
                 let mut chain = [FirstOrder::default(); 3];
                 chain[0].set(rom_lowpass(r, sample_rate));
@@ -328,10 +404,8 @@ impl DualReverb {
                     common::table(9, index, &LO_DAMP_HZ),
                     common::table(9, index, &LO_DAMP_DB),
                 );
-                for loop_filters in reverb.damping.iter_mut() {
-                    loop_filters[0].set(high);
-                    loop_filters[1].set(low);
-                }
+                reverb.damping[0].set(high);
+                reverb.damping[1].set(low);
             }
         }
 
@@ -370,48 +444,17 @@ impl Effect for DualReverb {
 
         let filtered = self.input.process(0.5 * (left + right));
         let mut wet = [0.0; 2];
-        for (r, reverb) in self.reverbs.iter_mut().enumerate() {
-            let x = self
-                .pre
-                .read_linear(self.pre_delay.current[r] + SWEEP[r] * sweep - 1.0);
-
-            let mut y = x;
-            let gain = DIFFUSION[r];
-            for (line, &delay) in reverb.diffusers.iter_mut().zip(&self.diffuser[r]) {
-                let d = line.read(delay - 1);
-                let w = y + gain * d;
-                line.write(w);
-                y = d - gain * w;
-            }
-
-            let early_line = &mut reverb.early;
-            let mut early = 0.0;
-            for (&delay, &weight) in self.early[r].iter().zip(&EARLY_GAIN[r]) {
-                if weight != 0.0 {
-                    early += weight * early_line.read(delay - 1);
-                }
-            }
-            // C109/C110 diffused (A 0.75, B 1.0); C111/C112 direct are zero.
-            early_line.write(if r == 0 { 0.75 * y } else { y });
-
-            let feed = 0.43 * early;
-            let mut sums = [0.0; 2];
-            for (i, (line, filters)) in reverb.combs.iter_mut().zip(&mut reverb.damping).enumerate()
-            {
-                let feedback = line.read(self.comb[r][i] - 1);
-                sums[0] += line.read(self.taps[r][0][i] - 1);
-                sums[1] += line.read(self.taps[r][1][i] - 1);
-                let [high, low] = filters;
-                let input = feed + g[G_COMB + r * 4 + i] * feedback;
-                line.write(low.process(high.process(input)));
-            }
-
-            for side in 0..2 {
-                let sum = EARLY_OUT[r] * early + TAP_OUT[r][side] * sums[side] + DIRECT_OUT[r] * x;
-                let [lowpass, low, high] = &mut reverb.output[side];
-                wet[side] += g[G_LEVEL + r] * high.process(low.process(lowpass.process(sum)));
-            }
-        }
+        let [a, b] = &mut self.reverbs;
+        let delays = Delays {
+            pre: &self.pre,
+            sweep,
+            diffuser: &self.diffuser,
+            early: &self.early,
+            comb: &self.comb,
+            taps: &self.taps,
+        };
+        a.process::<0>(&delays, self.pre_delay.current[0], g, &mut wet);
+        b.process::<1>(&delays, self.pre_delay.current[1], g, &mut wet);
         self.pre.write(filtered);
         [
             g[G_DRY] * left + g[G_WET] * wet[0],
@@ -423,13 +466,10 @@ impl Effect for DualReverb {
         self.input.clear();
         self.pre.clear();
         for reverb in &mut self.reverbs {
-            for line in reverb.diffusers.iter_mut().chain(&mut reverb.combs) {
-                line.clear();
-            }
+            reverb.diffusers.clear();
+            reverb.combs.clear();
             reverb.early.clear();
-            for filter in reverb.damping.iter_mut().flatten() {
-                filter.clear();
-            }
+            reverb.damping.iter_mut().for_each(FirstOrderBank::clear);
             for filter in reverb.output.iter_mut().flatten() {
                 filter.clear();
             }

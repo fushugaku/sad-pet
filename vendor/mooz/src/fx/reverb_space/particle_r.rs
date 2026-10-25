@@ -48,10 +48,11 @@
 //! lane-4 glide starts at its target on create/clear (the original starts
 //! from 0 ms). ROM filters are moved to the host rate through their analog
 //! prototypes. Delays, LFO rates and the glide are rescaled.
+use super::fast::{Biquad, Biquad1, DelayLine, Tap, flush};
 use crate::{
     Effect, Values,
     catalog::*,
-    dsp::{Biquad, Coefficients, DelayLine, flush},
+    dsp::Coefficients,
     zoom::{ORIGINAL_RATE, curve},
 };
 
@@ -251,7 +252,7 @@ impl Glide {
         self.target = target;
         self.step = (target - self.current).abs() / samples.max(1.0);
     }
-    #[inline]
+    #[inline(always)]
     fn tick(&mut self) -> f32 {
         if self.current != self.target {
             let difference = self.target - self.current;
@@ -275,16 +276,26 @@ struct Lane {
 impl Lane {
     /// The firmware's LFO shapes for a phase in turns: the parabolic sine
     /// `0.5 + 2c(1 - |c|)`, the triangle `|p|` and the rising saw `0.5 + p/2`.
-    #[inline]
+    #[inline(always)]
     fn shapes(&mut self) -> (f32, f32, f32) {
         self.phase += self.increment;
         if self.phase >= 1.0 {
             self.phase -= 1.0;
         }
-        let p = if self.phase < 0.5 {
-            2.0 * self.phase
+        Self::shape(self.phase)
+    }
+
+    /// The parabolic sine at the current phase (a still lane's every read).
+    fn peek_sine(&self) -> f32 {
+        Self::shape(self.phase).0
+    }
+
+    #[inline(always)]
+    fn shape(phase: f32) -> (f32, f32, f32) {
+        let p = if phase < 0.5 {
+            2.0 * phase
         } else {
-            2.0 * self.phase - 2.0
+            2.0 * phase - 2.0
         };
         let a = p.abs();
         let c = a - 0.5;
@@ -294,7 +305,8 @@ impl Lane {
 
 struct Comb {
     line: DelayLine,
-    length: f32,
+    /// The constant read at the comb length.
+    end: Tap,
     damping: f32,
     gain: Glide,
 }
@@ -303,9 +315,11 @@ struct ParticleR {
     ratio: f32,
     fresh: bool,
     // Front.
-    input_shelf: Biquad,
+    input_shelf: Biquad1,
     input_highpass: Biquad,
     lanes: [Lane; 8],
+    /// Lanes 0 and 1 never move (zero LFO increment): their reads, split once.
+    still: [Tap; 2],
     /// Host-rate base delays and depths (lane 4: glide target, current, depth).
     base: [f32; 8],
     depth: f32,
@@ -314,21 +328,23 @@ struct ParticleR {
     lane4_depth: f32,
     lane4_weights: [f32; 3],
     glide: f32,
-    lane7_filter: Biquad,
+    lane7_filter: Biquad1,
     feedback: Glide,
     gains: [Glide; 8],
-    output_filters: [[Biquad; 3]; 2],
+    output_filters: [([Biquad; 2], Biquad1); 2],
     // Arena.
-    arena_highpass: Biquad,
-    arena_lowpass: Biquad,
+    arena_highpass: Biquad1,
+    arena_lowpass: Biquad1,
     pre_delay: DelayLine,
-    pre_length: f32,
+    pre_tap: Tap,
     diffusers: [DelayLine; 2],
-    diffuser_length: [f32; 2],
+    diffuser_taps: [Tap; 2],
     combs: [Comb; 4],
     pole: f32,
-    taps: [f32; 6],
-    tone: [Biquad; 2],
+    /// `1 - pole`, as the damping update computes it.
+    pole_in: f32,
+    taps: [Tap; 6],
+    tone: [Biquad1; 2],
     wet_level: f32,
     // Output.
     dry: Glide,
@@ -350,29 +366,42 @@ impl ParticleR {
             increment: INCREMENT[i] as f32 / 4_294_967_296.0 / ratio,
         });
         let output = |rate| {
-            [
-                Biquad::new(rom_biquad(
-                    [
-                        0.997_966_77,
-                        -1.995_933_5,
-                        0.997_966_77,
-                        1.995_929_5,
-                        -0.995_937_5,
-                    ],
-                    rate,
-                )),
-                Biquad::new(rom_biquad(
-                    [0.980_542_1, -1.513_202_2, 0.661_608, 1.513_202_2, -0.642_15],
-                    rate,
-                )),
-                Biquad::new(first_order(0.922_350_3, -0.350_402_4, 0.428_052_1, rate)),
-            ]
+            (
+                [
+                    Biquad::new(rom_biquad(
+                        [
+                            0.997_966_77,
+                            -1.995_933_5,
+                            0.997_966_77,
+                            1.995_929_5,
+                            -0.995_937_5,
+                        ],
+                        rate,
+                    )),
+                    Biquad::new(rom_biquad(
+                        [0.980_542_1, -1.513_202_2, 0.661_608, 1.513_202_2, -0.642_15],
+                        rate,
+                    )),
+                ],
+                Biquad1::new(first_order(0.922_350_3, -0.350_402_4, 0.428_052_1, rate)),
+            )
         };
+        let pre_delay = line(PRE_DELAY);
+        let diffusers = DIFFUSER.map(line);
+        let combs = COMB.map(|samples| {
+            let line = line(samples);
+            Comb {
+                end: line.fixed(samples * ratio - 1.0),
+                line,
+                damping: 0.0,
+                gain: Glide::new(0.0),
+            }
+        });
         let pole = (1.0 - DAMPING).powf(1.0 / ratio);
         let mut effect = Self {
             ratio,
             fresh: true,
-            input_shelf: Biquad::new(first_order(1.191_918_8, -0.122_35, -0.069_568_9, rate)),
+            input_shelf: Biquad1::new(first_order(1.191_918_8, -0.122_35, -0.069_568_9, rate)),
             input_highpass: Biquad::new(rom_biquad(
                 [
                     0.998_982_8,
@@ -384,6 +413,7 @@ impl ParticleR {
                 rate,
             )),
             lanes,
+            still: [Tap::default(); 2],
             base: BASE.map(|samples| samples * ratio),
             depth: DEPTH * ratio,
             lane4_target: MODES[0].0 * ratio,
@@ -391,31 +421,32 @@ impl ParticleR {
             lane4_depth: MODES[0].1 * ratio,
             lane4_weights: MODES[0].3,
             glide: 1.0 - (1.0 - GLIDE).powf(1.0 / ratio),
-            lane7_filter: Biquad::new(first_order(0.614_416_8, -0.160_420_5, 0.546_003_7, rate)),
+            lane7_filter: Biquad1::new(first_order(0.614_416_8, -0.160_420_5, 0.546_003_7, rate)),
             feedback: Glide::new(FEEDBACK[0]),
             gains: std::array::from_fn(|_| Glide::new(0.0)),
             output_filters: [output(rate), output(rate)],
-            arena_highpass: Biquad::new(first_order(
+            arena_highpass: Biquad1::new(first_order(
                 2.0 * 1.960_345_9,
                 2.0 * -1.960_345_9,
                 0.965_000_6,
                 rate,
             )),
-            arena_lowpass: Biquad::new(first_order(0.117_227_73, 0.117_227_73, 0.668_822_8, rate)),
-            pre_delay: line(PRE_DELAY),
-            pre_length: PRE_DELAY * ratio,
-            diffusers: DIFFUSER.map(line),
-            diffuser_length: DIFFUSER.map(|samples| samples * ratio),
-            combs: COMB.map(|samples| Comb {
-                line: line(samples),
-                length: samples * ratio,
-                damping: 0.0,
-                gain: Glide::new(0.0),
+            arena_lowpass: Biquad1::new(first_order(0.117_227_73, 0.117_227_73, 0.668_822_8, rate)),
+            pre_tap: pre_delay.fixed(PRE_DELAY * ratio - 1.0),
+            pre_delay,
+            diffuser_taps: std::array::from_fn(|i| diffusers[i].fixed(DIFFUSER[i] * ratio - 1.0)),
+            diffusers,
+            taps: std::array::from_fn(|i| {
+                // Taps 0..3 read combs 0, 0, 1, 1; 4 reads comb 2 and 5 comb 3.
+                combs[[0, 0, 1, 1, 2, 3][i]]
+                    .line
+                    .fixed(TAPS[i] * ratio - 1.0)
             }),
+            combs,
             pole,
-            taps: TAPS.map(|samples| samples * ratio),
+            pole_in: 1.0 - pole,
             tone: [0, 1]
-                .map(|_| Biquad::new(first_order(1.360_784, -1.109_879_9, 0.749_096, rate))),
+                .map(|_| Biquad1::new(first_order(1.360_784, -1.109_879_9, 0.749_096, rate))),
             wet_level: curve(1.0, 0.0, 101, 59.0, 5),
             dry: Glide::new(1.0),
             wet: Glide::new(0.0),
@@ -428,6 +459,12 @@ impl ParticleR {
             .map(|model| model.defaults())
             .unwrap_or_default();
         effect.set(&defaults, 120.0);
+        effect.still = std::array::from_fn(|i| {
+            let lane = &effect.lanes[i];
+            debug_assert_eq!(lane.increment, 0.0);
+            let delay = effect.base[i] - lane.peek_sine() * effect.depth;
+            lane.line.fixed(delay + effect.ratio - 1.0)
+        });
         effect
     }
 
@@ -461,17 +498,18 @@ impl ParticleR {
             lane.phase = if i == 4 { 0.0 } else { i as f32 / 8.0 };
         }
         self.lane4_base = self.lane4_target;
+        self.input_highpass.clear();
         for filter in [
             &mut self.input_shelf,
-            &mut self.input_highpass,
             &mut self.lane7_filter,
             &mut self.arena_highpass,
             &mut self.arena_lowpass,
         ] {
             filter.clear();
         }
-        for filter in self.output_filters.iter_mut().flatten() {
-            filter.clear();
+        for (biquads, first) in &mut self.output_filters {
+            biquads.iter_mut().for_each(Biquad::clear);
+            first.clear();
         }
         for filter in &mut self.tone {
             filter.clear();
@@ -555,7 +593,9 @@ impl Effect for ParticleR {
         let mono = 0.5 * (frame[0] + frame[1]);
         let input = self.input_highpass.process(self.input_shelf.process(mono));
         let mut taps = [0.0f32; 8];
-        for (i, (lane, tap)) in self.lanes.iter_mut().zip(&mut taps).enumerate() {
+        taps[0] = self.lanes[0].line.read_fixed(self.still[0]);
+        taps[1] = self.lanes[1].line.read_fixed(self.still[1]);
+        for (i, (lane, tap)) in self.lanes.iter_mut().zip(&mut taps).enumerate().skip(2) {
             let (sine, triangle, saw) = lane.shapes();
             let delay = if i == 4 {
                 self.lane4_base += (self.lane4_target - self.lane4_base) * self.glide;
@@ -591,35 +631,38 @@ impl Effect for ParticleR {
         let mut right = taps[2] * RIGHT_FIXED[2] + taps[3] * RIGHT_FIXED[3] + taps[1];
         left += taps[4] * gains[0] + taps[5] * gains[1] + taps[6] * gains[2] + last * gains[3];
         right += taps[4] * gains[4] + taps[5] * gains[5] + taps[6] * gains[6] + last * gains[7];
-        for filter in &mut self.output_filters[0] {
+        let [(left_biquads, left_first), (right_biquads, right_first)] = &mut self.output_filters;
+        for filter in left_biquads {
             left = filter.process(left);
         }
-        for filter in &mut self.output_filters[1] {
+        let left = left_first.process(left);
+        for filter in right_biquads {
             right = filter.process(right);
         }
+        let right = right_first.process(right);
 
         // Arena: input filters, pre-delay, two diffusers and four damped combs.
         let arena_in = self
             .arena_lowpass
             .process(self.arena_highpass.process(0.5 * (left + right)));
-        let pre = self.pre_delay.read_linear(self.pre_length - 1.0);
+        let pre = self.pre_delay.read_fixed(self.pre_tap);
         self.pre_delay.write(arena_in);
         let mut x = pre;
-        for (line, &length) in self.diffusers.iter_mut().zip(&self.diffuser_length) {
-            let delayed = line.read_linear(length - 1.0);
+        for (line, &tap) in self.diffusers.iter_mut().zip(&self.diffuser_taps) {
+            let delayed = line.read_fixed(tap);
             line.write(flush(DIFFUSER_IN * x + DIFFUSER_FEEDBACK * delayed));
             x = DIFFUSER_DIRECT * x + delayed;
         }
         let tank_in = x * TANK_INPUT;
         let t = &self.taps;
         let [c0, c1, c2, c3] = &mut self.combs;
-        let shared = c2.line.read_linear(t[4] - 1.0) + c3.line.read_linear(t[5] - 1.0);
-        let tank_left = c0.line.read_linear(t[0] - 1.0) + c1.line.read_linear(t[2] - 1.0) + shared;
-        let tank_right = c0.line.read_linear(t[1] - 1.0) + c1.line.read_linear(t[3] - 1.0) + shared;
+        let shared = c2.line.read_fixed(t[4]) + c3.line.read_fixed(t[5]);
+        let tank_left = c0.line.read_fixed(t[0]) + c1.line.read_fixed(t[2]) + shared;
+        let tank_right = c0.line.read_fixed(t[1]) + c1.line.read_fixed(t[3]) + shared;
         for comb in &mut self.combs {
-            let end = comb.line.read_linear(comb.length - 1.0);
+            let end = comb.line.read_fixed(comb.end);
             let gain = comb.gain.tick();
-            comb.damping = flush(self.pole * comb.damping + (1.0 - self.pole) * gain * end);
+            comb.damping = flush(self.pole * comb.damping + self.pole_in * gain * end);
             comb.line.write(tank_in + comb.damping);
         }
         let wet_left = left + self.wet_level * self.tone[0].process(tank_left * TAP_GAIN);

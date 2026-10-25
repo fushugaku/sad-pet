@@ -121,9 +121,9 @@ impl FirstOrder {
         self.b1 = c.b1;
         self.a1 = c.a1;
     }
-    #[inline]
+    #[inline(always)]
     pub fn process(&mut self, x: f32) -> f32 {
-        let y = crate::dsp::flush(self.b0 * x + self.b1 * self.x1 - self.a1 * self.y1);
+        let y = super::fast::flush(self.b0 * x + self.b1 * self.x1 - self.a1 * self.y1);
         self.x1 = x;
         self.y1 = y;
         y
@@ -134,10 +134,49 @@ impl FirstOrder {
     }
 }
 
+/// `N` [`FirstOrder`] sections with the same coefficients (one per comb).
+#[derive(Debug, Clone, Copy)]
+pub struct FirstOrderBank<const N: usize> {
+    b0: f32,
+    b1: f32,
+    a1: f32,
+    state: [(f32, f32); N],
+}
+
+impl<const N: usize> Default for FirstOrderBank<N> {
+    fn default() -> Self {
+        Self {
+            b0: 0.0,
+            b1: 0.0,
+            a1: 0.0,
+            state: [(0.0, 0.0); N],
+        }
+    }
+}
+
+impl<const N: usize> FirstOrderBank<N> {
+    pub fn set(&mut self, c: Coefficients) {
+        self.b0 = c.b0;
+        self.b1 = c.b1;
+        self.a1 = c.a1;
+    }
+    /// [`FirstOrder::process`] of section `i`.
+    #[inline(always)]
+    pub fn process(&mut self, i: usize, x: f32) -> f32 {
+        let (x1, y1) = self.state[i];
+        let y = super::fast::flush(self.b0 * x + self.b1 * x1 - self.a1 * y1);
+        self.state[i] = (x, y);
+        y
+    }
+    pub fn clear(&mut self) {
+        self.state = [(0.0, 0.0); N];
+    }
+}
+
 /// The LFO shape both callbacks evaluate on a Q31 phase `P` in [-1, 1):
 /// `u = |P| - 1/2`, `0.5 + 2 u (1 - |u|)`, a parabolic raised cosine in
 /// [0, 1] whose period is one wrap of the phase. `phase` is in turns.
-#[inline]
+#[inline(always)]
 pub fn lfo_shape(phase: f32) -> f32 {
     let p = 2.0 * phase - 1.0;
     let u = p.abs() - 0.5;
@@ -145,7 +184,7 @@ pub fn lfo_shape(phase: f32) -> f32 {
 }
 
 /// Advance a phase in turns, wrapping at 1.
-#[inline]
+#[inline(always)]
 pub fn advance(phase: &mut f32, increment: f32) {
     *phase += increment;
     if *phase >= 1.0 {
@@ -192,7 +231,7 @@ impl<const N: usize> Glide<N> {
         }
     }
     /// One sample of glide; clears `moving` once every length has arrived.
-    #[inline]
+    #[inline(always)]
     pub fn tick(&mut self) {
         let mut arrived = true;
         for ((current, &target), &step) in self.current.iter_mut().zip(&self.target).zip(&self.step)
@@ -234,7 +273,7 @@ impl<const N: usize> Gains<N> {
             self.settled = false;
         }
     }
-    #[inline]
+    #[inline(always)]
     pub fn tick(&mut self) {
         if self.settled {
             return;

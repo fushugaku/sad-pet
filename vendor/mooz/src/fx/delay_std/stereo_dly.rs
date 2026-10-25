@@ -13,13 +13,8 @@
 //! it `ms + 10` ms later. LchFB/RchFB `0.95·v/100`. The wet gains multiply two
 //! Main power-1.41 curves: `[9] = (LchLv/100)^1.41·(Mix/100)^1.41` and likewise
 //! [10] for the right channel. Level `v/100`.
-use super::common::{self, Gate};
-use crate::{
-    Effect, Values,
-    catalog::*,
-    dsp::{DelayLine, flush},
-    zoom::{self, Ramp},
-};
+use super::common::{self, DelayLine, Gate, Ramp, flush};
+use crate::{Effect, Values, catalog::*, zoom};
 
 pub const INFO: ModelInfo = ModelInfo {
     key: "mooz_stereo_dly",

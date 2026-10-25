@@ -15,13 +15,8 @@
 //! F.B `1.1·(v/100)²` (self-oscillates above ~95, bounded by the clip), HiDMP
 //! one of ten second-order low-passes or flat (10). Changing Mode fades the
 //! output out and back in over 16 ms each way.
-use super::common::{self, Fade, f, q31};
-use crate::{
-    Effect, Values,
-    catalog::*,
-    dsp::{Biquad, Coefficients, DelayLine, flush},
-    zoom::{self, Ramp},
-};
+use super::common::{self, Biquad, DelayLine, Fade, Ramp, f, flush, q31};
+use crate::{Effect, Values, catalog::*, dsp::Coefficients, zoom};
 
 pub const INFO: ModelInfo = ModelInfo {
     key: "mooz_stomp_dly",

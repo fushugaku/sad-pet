@@ -16,13 +16,8 @@
 //! curves 1 and 5), Level `v/100`, HiDMP copies one of eleven second-order
 //! low-passes. All ROM filters are re-derived for the host rate; the modulation
 //! keeps its rate in Hz and depth in milliseconds.
-use super::common::{self, f, q31};
-use crate::{
-    Effect, Values,
-    catalog::*,
-    dsp::{Biquad, Coefficients, DelayLine, flush},
-    zoom::{self, Ramp},
-};
+use super::common::{self, Biquad, DelayLine, Ramp, f, flush, q31};
+use crate::{Effect, Values, catalog::*, dsp::Coefficients, zoom};
 
 pub const INFO: ModelInfo = ModelInfo {
     key: "mooz_tape_echo",
