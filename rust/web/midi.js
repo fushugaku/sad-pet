@@ -1,8 +1,9 @@
 "use strict";
-// MIDI learn: right-click a knob, choose MIDI learn and move a controller;
-// from then on that controller turns the knob. A mapping names the knob, not
-// a timbre, so the controller turns that knob on whichever timbre the editor
-// shows. Mappings stay in this browser (or app) for every scene and preset.
+// MIDI learn: right-click a knob or slider, choose MIDI learn and move a
+// controller; from then on that controller turns the knob. A mapping names the
+// knob, not a timbre, so the controller turns that knob on whichever timbre the
+// editor shows. Mappings stay in this browser (or app) for every scene and
+// preset. The same menu holds the knob's modulation (hooks.menu).
 window.SadMidiLearn = (() => {
   const STORAGE = "sad-pet-midi-map";
   // CC 120–127 are channel mode messages (all notes off, reset…).
@@ -26,9 +27,8 @@ window.SadMidiLearn = (() => {
   index();
   /** knob key → the knobs showing it: { dial, label, apply(unit) } */
   const knobs = new Map();
-  let hooks = { notify() {}, hint: () => "" },
+  let hooks = { notify() {}, hint: () => "", menu: () => null },
     learning = null,
-    menu = null,
     attached = 0;
   const name = ([channel, controller]) => `CC ${controller} · ch ${channel + 1}`;
   function save() {
@@ -45,7 +45,12 @@ window.SadMidiLearn = (() => {
       const box = dial.closest(".knob") || dial;
       box.classList.toggle("midi-mapped", !!cc);
       box.classList.toggle("midi-learning", learning === key);
-      let badge = dial.querySelector(".knob-midi");
+      // A slider holds no children: its badge follows it.
+      const slider = dial.tagName === "INPUT",
+        next = dial.nextElementSibling;
+      let badge = slider
+        ? next?.classList.contains("knob-midi") ? next : null
+        : dial.querySelector(".knob-midi");
       if (!cc) {
         badge?.remove();
         delete dial.dataset.midi;
@@ -53,9 +58,9 @@ window.SadMidiLearn = (() => {
       }
       if (!badge) {
         badge = document.createElement("span");
-        badge.className = "knob-midi";
+        badge.className = slider ? "knob-midi slider-midi" : "knob-midi";
         badge.setAttribute("aria-hidden", "true");
-        dial.append(badge);
+        slider ? dial.after(badge) : dial.append(badge);
       }
       badge.textContent = String(cc[1]);
       dial.dataset.midi = name(cc);
@@ -72,7 +77,8 @@ window.SadMidiLearn = (() => {
       if (!set.size) knobs.delete(key);
     }
   }
-  /** createKnob registers every knob; apply(unit) sets it from 0–1. */
+  /** createKnob registers every knob, and sliders register themselves;
+   * apply(unit) sets it from 0–1. */
   function attach(dial, key, text, apply) {
     const knob = { dial, label: text, apply };
     const set = knobs.get(key) || new Set();
@@ -150,92 +156,35 @@ window.SadMidiLearn = (() => {
     if (data?.length >= 3 && (data[0] & 0xf0) === 0xb0) input(data[0] & 15, data[1], data[2]);
   }
 
-  // The knob's menu, styled like the editor's other menus.
+  // The knob's menu: MIDI learn, then its modulation. Rows are values the
+  // menu hands back; MIDI's own start with "midi:".
   function open(key, dial, event) {
-    close();
-    const cc = map.get(key);
-    const items = [
-      learning === key
-        ? ["Cancel MIDI learn", cancel]
-        : ["MIDI learn", () => learn(key)],
-    ];
-    if (cc) items.push([`Forget ${name(cc)}`, () => forget(key)]);
-    if (map.size > (cc ? 1 : 0))
-      items.push([`Forget all MIDI mappings (${map.size})`, forgetAll]);
-    const layer = document.createElement("div"),
-      list = document.createElement("div");
-    layer.className = "sad-menu-layer";
-    list.className = "sad-menu";
-    list.setAttribute("role", "menu");
-    list.setAttribute("aria-label", `${label(key)} MIDI`);
-    list.tabIndex = -1;
-    for (const [text, action] of items) {
-      const item = document.createElement("div"),
-        span = document.createElement("span");
-      item.className = "sad-menu-item";
-      item.setAttribute("role", "menuitem");
-      item.tabIndex = -1;
-      span.textContent = text;
-      item.append(span);
-      item.onclick = () => {
-        close(true);
-        action();
+    const cc = map.get(key),
+      actions = new Map(),
+      item = (text, run) => {
+        const value = `midi:${actions.size}`;
+        actions.set(value, run);
+        return [value, text];
       };
-      item.onpointermove = () => focus(item);
-      list.append(item);
-    }
-    layer.append(list);
-    document.body.append(layer);
-    menu = { layer, list, dial };
-    layer.onkeydown = keydown;
-    document.addEventListener("pointerdown", outside, true);
-    window.addEventListener("scroll", dismiss, true);
-    window.addEventListener("resize", dismiss);
-    window.addEventListener("blur", dismiss);
-    // A keyboard context menu has no pointer position: open by the knob.
-    const box = dial.getBoundingClientRect(),
-      pointer = event.clientX || event.clientY,
-      x = pointer ? event.clientX : box.left,
-      y = pointer ? event.clientY : box.bottom,
-      size = list.getBoundingClientRect(),
-      gap = 8;
-    list.style.left = `${Math.max(gap, Math.min(x, innerWidth - gap - size.width))}px`;
-    list.style.top = `${Math.max(gap, y + size.height + gap > innerHeight ? y - size.height : y)}px`;
-    focus(list.firstElementChild);
-  }
-  function focus(item) {
-    if (!item) return;
-    for (const other of menu.list.children) other.classList.toggle("is-active", other === item);
-    item.focus({ preventScroll: true });
-  }
-  function close(refocus = false) {
-    if (!menu) return;
-    const { layer, dial } = menu;
-    menu = null;
-    layer.remove();
-    document.removeEventListener("pointerdown", outside, true);
-    window.removeEventListener("scroll", dismiss, true);
-    window.removeEventListener("resize", dismiss);
-    window.removeEventListener("blur", dismiss);
-    if (refocus && dial.isConnected) dial.focus({ preventScroll: true });
-  }
-  const dismiss = () => close();
-  function outside(event) {
-    if (!menu.layer.contains(event.target)) close();
-  }
-  function keydown(event) {
-    // Menu keys never reach the editor's shortcuts (Space plays).
-    event.stopPropagation();
-    const items = [...menu.list.children],
-      at = items.findIndex((item) => item.classList.contains("is-active"));
-    if (event.key === "ArrowDown") focus(items[(at + 1) % items.length]);
-    else if (event.key === "ArrowUp") focus(items[(at - 1 + items.length) % items.length]);
-    else if (event.key === "Home") focus(items[0]);
-    else if (event.key === "End") focus(items.at(-1));
-    else if (event.key === "Enter" || event.key === " ") items[at]?.click();
-    else if (event.key === "Escape" || event.key === "Tab") close(true);
-    else return;
-    event.preventDefault();
+    const choices = [
+      learning === key ? item("Cancel MIDI learn", cancel) : item("MIDI learn", () => learn(key)),
+    ];
+    if (cc) choices.push(item(`Forget ${name(cc)}`, () => forget(key)));
+    if (map.size > (cc ? 1 : 0))
+      choices.push(item(`Forget all MIDI mappings (${map.size})`, forgetAll));
+    const more = hooks.menu(key, label(key)),
+      // A keyboard context menu has no pointer position: open by the knob.
+      pointer = event.clientX || event.clientY;
+    window.SadLazySelect.popup(
+      dial,
+      [{ choices }, ...(more?.groups || [])],
+      (value) => (actions.has(value) ? actions.get(value)() : more?.choose(value)),
+      {
+        title: label(key),
+        point: pointer ? [event.clientX, event.clientY] : null,
+        checked: (value) => !!more?.checked?.(value),
+      },
+    );
   }
 
   return {

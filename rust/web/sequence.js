@@ -3,6 +3,7 @@
 // menu, like a macOS plug-in menu. Menu nodes exist only while it is open, so a
 // closed picker is one button however many targets it routes to. The button
 // keeps a <select>'s value and fires the same input and change events.
+// popup() opens the same menu as a control's context menu of actions.
 window.SadLazySelect = (() => {
   const models = new WeakMap();
   let menu = null,
@@ -15,8 +16,8 @@ window.SadLazySelect = (() => {
       : { text: choice.label, items: entries(choice.choices) };
   const entries = (choices) =>
     choices.map(entry).filter((e) => !e.items || e.items.length);
-  const holds = (e, value) =>
-    e.items ? e.items.some((i) => holds(i, value)) : e.value === value;
+  const holds = (e, checked) =>
+    e.items ? e.items.some((i) => holds(i, checked)) : checked(e.value);
   function labels(items, map = new Map()) {
     for (const e of items) e.items ? labels(e.items, map) : map.set(e.value, e.label);
     return map;
@@ -27,15 +28,17 @@ window.SadLazySelect = (() => {
     anchor.textContent = label;
     anchor.title = label;
   }
-  function show(anchor) {
+  function show(anchor, model = models.get(anchor)) {
     hide(false);
     const layer = document.createElement("div"),
-      view = viewport();
+      view = viewport(),
+      value = anchor.value;
     // Phones drill into a section in place instead of flying out.
     menu = {
       anchor, layer, levels: [], drill: view.right - view.left < 600,
       timer: 0, pointer: null, hovered: null, typed: "", typedAt: 0,
-      preview: models.get(anchor).preview,
+      preview: model.preview, popup: model.choose ?? null, point: model.point ?? null,
+      checked: model.checked ?? ((v) => v === value),
     };
     layer.className = menu.drill ? "sad-menu-layer is-drill" : "sad-menu-layer";
     layer.onkeydown = key;
@@ -44,12 +47,12 @@ window.SadLazySelect = (() => {
     layer.onpointerleave = () => clearTimeout(menu?.timer);
     layer.addEventListener("focusout", blurred);
     document.body.append(layer);
-    anchor.setAttribute("aria-expanded", "true");
+    if (!menu.popup) anchor.setAttribute("aria-expanded", "true");
     document.addEventListener("pointerdown", outside, true);
     window.addEventListener("scroll", scrolled, true);
     window.addEventListener("resize", dismiss);
     window.addEventListener("blur", dismiss);
-    const root = level(models.get(anchor).items, anchor.getAttribute("aria-label") || "", 0);
+    const root = level(model.items, model.title ?? anchor.getAttribute("aria-label") ?? "", 0);
     menu.levels.push(root);
     layer.append(root.list);
     place(root.list);
@@ -57,12 +60,12 @@ window.SadLazySelect = (() => {
   }
   function hide(refocus) {
     if (!menu) return;
-    const { anchor, layer, timer, preview } = menu;
+    const { anchor, layer, timer, preview, popup } = menu;
     menu = null;
     preview?.stop();
     clearTimeout(timer);
     layer.remove();
-    anchor.setAttribute("aria-expanded", "false");
+    if (!popup) anchor.setAttribute("aria-expanded", "false");
     document.removeEventListener("pointerdown", outside, true);
     window.removeEventListener("scroll", scrolled, true);
     window.removeEventListener("resize", dismiss);
@@ -70,8 +73,11 @@ window.SadLazySelect = (() => {
     if (refocus && anchor.isConnected) anchor.focus({ preventScroll: true });
   }
   const dismiss = () => hide(false);
+  // A press on a picker's own button toggles it there instead; a control's
+  // menu closes for any press outside it.
   function outside(event) {
-    if (!menu.layer.contains(event.target) && !menu.anchor.contains(event.target)) hide(false);
+    if (!menu.layer.contains(event.target) && (menu.popup || !menu.anchor.contains(event.target)))
+      hide(false);
   }
   function scrolled(event) {
     if (!menu.layer.contains(event.target)) hide(false);
@@ -95,16 +101,16 @@ window.SadLazySelect = (() => {
   function row(e, index) {
     const node = document.createElement("div"),
       text = document.createElement("span"),
-      value = menu.anchor.value;
+      checked = menu.checked;
     node.className = e.back ? "sad-menu-item sad-menu-back" : "sad-menu-item";
     node.tabIndex = -1;
     node.dataset.index = index;
-    node.setAttribute("role", e.items || e.back ? "menuitem" : "menuitemradio");
+    node.setAttribute("role", e.items || e.back ? "menuitem" : menu.popup ? "menuitemcheckbox" : "menuitemradio");
     if (e.items) {
       node.setAttribute("aria-haspopup", "menu");
       node.setAttribute("aria-expanded", "false");
-    } else if (!e.back) node.setAttribute("aria-checked", String(e.value === value));
-    if (!e.back && holds(e, value)) node.classList.add("is-current");
+    } else if (!e.back) node.setAttribute("aria-checked", String(checked(e.value)));
+    if (!e.back && holds(e, checked)) node.classList.add("is-current");
     text.textContent = e.text;
     node.append(text);
     if (!e.items && !e.back && menu.preview) {
@@ -139,7 +145,8 @@ window.SadLazySelect = (() => {
     });
   }
   function start({ rows }) {
-    const i = rows.findIndex((e) => !e.back && holds(e, menu.anchor.value));
+    // A control's menu opens on its first action, not on what is checked.
+    const i = menu.popup ? -1 : rows.findIndex((e) => !e.back && holds(e, menu.checked));
     return i >= 0 ? i : rows[0]?.back ? 1 : 0;
   }
   // The visible page: inside its scrollbars and, on a zoomed phone, the
@@ -156,7 +163,10 @@ window.SadLazySelect = (() => {
   function place(list, from) {
     const gap = 8,
       view = viewport(),
-      anchor = menu.anchor.getBoundingClientRect(),
+      point = menu.point,
+      anchor = point
+        ? { left: point[0], right: point[0], top: point[1], bottom: point[1], width: 0 }
+        : menu.anchor.getBoundingClientRect(),
       style = list.style;
     style.left = style.top = "0px";
     style.maxHeight = `${view.bottom - view.top - 2 * gap}px`;
@@ -253,8 +263,9 @@ window.SadLazySelect = (() => {
     else choose(e.value);
   }
   function choose(value) {
-    const anchor = menu.anchor;
+    const { anchor, popup } = menu;
     hide(true);
+    if (popup) return popup(value);
     if (!anchor.isConnected || value === anchor.value) return;
     render(anchor, value);
     for (const type of ["input", "change"])
@@ -374,6 +385,13 @@ window.SadLazySelect = (() => {
       value = String(value);
       if (anchor.value !== value) render(anchor, value);
     },
+    // A menu of actions for a control, at the pointer when there is one:
+    // choosing calls choose(value), and checked(value) ticks a row.
+    popup(anchor, groups, choose, { title = "", point = null, checked = () => false } = {}) {
+      const items = entries(groups.flatMap((g) => (g.label ? [g] : g.choices)));
+      show(anchor, { items, choose, title, point, checked });
+    },
+    close: () => hide(false),
     // A section whose targets drop its name: "LFO 1 rate" reads "Rate" inside
     // LFO 1 and keeps its full name on the closed button.
     section(label, choices, prefix = label) {

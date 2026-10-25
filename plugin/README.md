@@ -264,6 +264,14 @@ Mappings are kept by the editor for every project and preset of that host
 learned controller turns knobs while the plug-in window is open; use the DAW's
 own MIDI learn on host parameters to automate with the window closed.
 
+The same menu routes **modulation** to the knob or slider: an existing or new
+LFO, ENV, Neuropolis track or macro, or another mod matrix source (velocity, mod
+wheel, pitch bend…), and **Remove modulation** lists every route to it. LFOs and
+envelopes each have three routes of their own and fall back to the matrix when
+those are taken; a new track plays the control and is selected for drawing.
+**Macros** are knobs of your own that each turn up to eight destinations; their
+values are host parameters `macro1`–`macro8`.
+
 **DAW · … BPM** follows the host tempo and starts/stops the sequencer/arpeggiator
 with the host transport. Moving or looping the playhead repositions those modes.
 **Free tempo** enables the instrument's own tempo control. The MIDI keyboard

@@ -237,7 +237,14 @@ fn synth_controls_append_after_every_other_host_parameter() {
     // shares, then the send and bus of the other five sections.
     assert_eq!(later[7..9], ["resynth_send", "resynth_bus"]);
     assert_eq!(later[9], "tap_source_chain");
-    assert_eq!(later.len(), 9 + 6 + 5 * 2);
+    // Then routes 2 and 3 of each LFO with route 3 of its ENV, then the macros.
+    let taps = 9 + 6 + 5 * 2;
+    assert_eq!(
+        later[taps..taps + 3],
+        ["lfo1_depth2", "lfo1_depth3", "env1_depth3"]
+    );
+    assert_eq!(later[taps + 8 * 3], "macro1");
+    assert_eq!(later.len(), taps + 8 * 3 + 8);
 }
 
 #[test]

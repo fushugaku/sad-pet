@@ -323,8 +323,18 @@ impl ControlFeedback<'_> {
             }
         }
         let mut ranges: Vec<(Destination, [f32; 2])> = Vec::new();
-        for (destination, source, depth) in terms {
-            let delta = product_range(source_range(source), [depth; 2]);
+        // A macro reaches anywhere its knob can turn it.
+        let macros = self.preset.macros.iter().flat_map(|m| {
+            m.targets
+                .iter()
+                .filter(|t| t.depth != 0.0 && t.destination != Destination::None)
+                .map(|t| (t.destination, product_range([0.0, 1.0], [t.depth; 2])))
+        });
+        for (destination, delta) in terms
+            .into_iter()
+            .map(|(d, source, depth)| (d, product_range(source_range(source), [depth; 2])))
+            .chain(macros)
+        {
             if let Some((_, range)) = ranges.iter_mut().find(|(d, _)| *d == destination) {
                 range[0] += delta[0];
                 range[1] += delta[1];
@@ -345,8 +355,11 @@ impl ControlFeedback<'_> {
             .take(self.preset.lfo_count as usize)
             .enumerate()
         {
-            let range = product_range([-0.5, 0.5], [low_lfos[i].depth, high_lfos[i].depth]);
-            apply(&mut low, &mut high, lfo.destination, range);
+            let (lows, highs) = (low_lfos[i].routes(), high_lfos[i].routes());
+            for (r, (destination, _)) in lfo.routes().into_iter().enumerate() {
+                let range = product_range([-0.5, 0.5], [lows[r].1, highs[r].1]);
+                apply(&mut low, &mut high, destination, range);
+            }
         }
         let low_envs = low.envs;
         let high_envs = high.envs;
@@ -357,19 +370,10 @@ impl ControlFeedback<'_> {
             .take(self.preset.env_count as usize)
             .enumerate()
         {
-            for (destination, depths) in [
-                (env.destination, [low_envs[i].depth, high_envs[i].depth]),
-                (
-                    env.extra_destination,
-                    [low_envs[i].extra_depth, high_envs[i].extra_depth],
-                ),
-            ] {
-                apply(
-                    &mut low,
-                    &mut high,
-                    destination,
-                    product_range([0.0, 1.0], depths),
-                );
+            let (lows, highs) = (low_envs[i].routes(), high_envs[i].routes());
+            for (r, (destination, _)) in env.routes().into_iter().enumerate() {
+                let range = product_range([0.0, 1.0], [lows[r].1, highs[r].1]);
+                apply(&mut low, &mut high, destination, range);
             }
         }
         (low, high)

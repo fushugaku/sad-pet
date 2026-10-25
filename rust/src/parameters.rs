@@ -11,6 +11,8 @@ use std::sync::OnceLock;
 enum Address {
     Host(usize),
     MatrixDepth(usize),
+    /// A macro's target depth: macro, then target.
+    MacroDepth(usize, usize),
 }
 
 /// Validated off-thread; applying a change only writes a numeric field.
@@ -24,7 +26,7 @@ impl Change {
     pub fn host_index(self) -> Option<usize> {
         match self.address {
             Address::Host(index) => Some(index),
-            Address::MatrixDepth(_) => None,
+            Address::MatrixDepth(_) | Address::MacroDepth(..) => None,
         }
     }
 
@@ -45,6 +47,19 @@ impl Change {
                     false
                 }
             }
+            Address::MacroDepth(index, target) => {
+                if let Some(target) = preset
+                    .macros
+                    .get_mut(index)
+                    .and_then(|m| m.targets.get_mut(target))
+                {
+                    let changed = target.depth != self.value;
+                    target.depth = self.value;
+                    changed
+                } else {
+                    false
+                }
+            }
         }
     }
 }
@@ -53,7 +68,11 @@ impl Change {
 /// The whole message is validated before any of its changes are applied.
 pub fn parse(data: &serde_json::Value) -> Result<Vec<Change>, String> {
     let values = data.as_object().ok_or("Expected numeric parameters")?;
-    if values.len() > specs().len() + crate::matrix::MAX_ROUTES {
+    if values.len()
+        > specs().len()
+            + crate::matrix::MAX_ROUTES
+            + crate::macros::MAX_MACROS * crate::macros::MAX_TARGETS
+    {
         return Err("Too many parameter changes".into());
     }
     values
@@ -79,6 +98,28 @@ pub fn parse(data: &serde_json::Value) -> Result<Vec<Change>, String> {
             {
                 return Ok(Change {
                     address: Address::MatrixDepth(index),
+                    value: value.clamp(-1.0, 1.0),
+                });
+            }
+            // "macro2_depth3": the third target of the second macro.
+            let numbered = |n: &str, max: usize| {
+                n.parse::<usize>()
+                    .ok()
+                    .and_then(|n| n.checked_sub(1))
+                    .filter(|&n| n < max)
+            };
+            if let Some((index, target)) = id
+                .strip_prefix("macro")
+                .and_then(|id| id.split_once("_depth"))
+                .and_then(|(m, t)| {
+                    Some((
+                        numbered(m, crate::macros::MAX_MACROS)?,
+                        numbered(t, crate::macros::MAX_TARGETS)?,
+                    ))
+                })
+            {
+                return Ok(Change {
+                    address: Address::MacroDepth(index, target),
                     value: value.clamp(-1.0, 1.0),
                 });
             }
@@ -124,6 +165,8 @@ enum Target {
     FilterSlot(usize, usize),
     /// A section's Chain share or bus send.
     Tap(Stage, TapField),
+    /// A macro knob's value.
+    Macro(usize),
 }
 
 /// Host controls of each added filter, in host order.
@@ -181,7 +224,10 @@ impl Spec {
         ) && self.id != "bpm"
             && !matches!(
                 self.target,
-                Target::SourceFx(_) | Target::Performance(3..) | Target::Tap(_, TapField::Bus)
+                Target::SourceFx(_)
+                    | Target::Performance(3..)
+                    | Target::Tap(_, TapField::Bus)
+                    | Target::Macro(_)
             )
     }
     pub(crate) fn frame_get(&self, m: &crate::dsp::Modulated) -> Option<f32> {
@@ -194,17 +240,14 @@ impl Spec {
             | Target::DrumGrain
             | Target::DrumBuffer
             | Target::SynthGrain
-            | Target::SynthBuffer => return None,
+            | Target::SynthBuffer
+            | Target::Macro(_) => return None,
             Target::ResynthOsc(i, field) => oscillator_get(m.resynth.oscillators[i], field),
             Target::SynthOsc(i, field) => oscillator_get(m.synth.oscillators[i], field),
             Target::FilterSlot(i, field) => {
                 filter_slot_get(m.filter_slots[..m.filter_len].get(i)?, field)
             }
-            Target::Lfo(i, field) => match field {
-                0 => m.lfos[i].rate_hz,
-                1 => m.lfos[i].depth,
-                _ => m.lfos[i].division,
-            },
+            Target::Lfo(i, field) => lfo_get(&m.lfos[i], field),
             Target::Env(i, field) => env_get(&m.envs[i], field),
             Target::Fx(pre, i, field) => {
                 let slots = if pre {
@@ -259,7 +302,8 @@ impl Spec {
             | Target::DrumGrain
             | Target::DrumBuffer
             | Target::SynthGrain
-            | Target::SynthBuffer => {}
+            | Target::SynthBuffer
+            | Target::Macro(_) => {}
             Target::ResynthOsc(i, field) => {
                 oscillator_set(&mut m.resynth.oscillators[i], field, value)
             }
@@ -269,13 +313,7 @@ impl Spec {
                     filter_slot_set(slot, field, value);
                 }
             }
-            Target::Lfo(i, field) => {
-                *match field {
-                    0 => &mut m.lfos[i].rate_hz,
-                    1 => &mut m.lfos[i].depth,
-                    _ => &mut m.lfos[i].division,
-                } = value
-            }
+            Target::Lfo(i, field) => *lfo_field(&mut m.lfos[i], field) = value,
             Target::Env(i, field) => env_set(&mut m.envs[i], field, value),
             Target::Fx(pre, i, field) => {
                 let slots = if pre {
@@ -351,15 +389,9 @@ impl Spec {
             }
             Target::Core { get, .. } => get(preset),
             Target::Tap(stage, field) => tap_get(preset.taps.get(stage), field),
-            Target::Lfo(i, field) => {
-                let l = preset.lfos[i];
-                match field {
-                    0 => l.rate_hz,
-                    1 => l.depth,
-                    _ => l.division,
-                }
-            }
+            Target::Lfo(i, field) => lfo_get(&preset.lfos[i], field),
             Target::Env(i, field) => env_get(&preset.envs[i], field),
+            Target::Macro(i) => preset.macros.get(i).map_or(0.0, |m| m.value),
             Target::Fx(pre, i, field) => *(if pre {
                 &preset.pre_color_chain
             } else {
@@ -458,15 +490,13 @@ impl Spec {
             }
             Target::Core { set, .. } => set(preset, value),
             Target::Tap(stage, field) => tap_set(preset.taps.get_mut(stage), field, value),
-            Target::Lfo(i, field) => {
-                let l = &mut preset.lfos[i];
-                *match field {
-                    0 => &mut l.rate_hz,
-                    1 => &mut l.depth,
-                    _ => &mut l.division,
-                } = value;
-            }
+            Target::Lfo(i, field) => *lfo_field(&mut preset.lfos[i], field) = value,
             Target::Env(i, field) => env_set(&mut preset.envs[i], field, value),
+            Target::Macro(i) => {
+                if let Some(m) = preset.macros.get_mut(i) {
+                    m.value = value;
+                }
+            }
             Target::Fx(pre, i, field) => {
                 if let Some(slot) = (if pre {
                     &mut preset.pre_color_chain
@@ -544,6 +574,19 @@ fn oscillator_set(o: &mut crate::resynth::Oscillator, field: usize, value: f32) 
     }
 }
 
+fn lfo_get(l: &crate::preset::Lfo, field: usize) -> f32 {
+    let mut l = *l;
+    *lfo_field(&mut l, field)
+}
+fn lfo_field(l: &mut crate::preset::Lfo, field: usize) -> &mut f32 {
+    match field {
+        0 => &mut l.rate_hz,
+        1 => &mut l.depth,
+        2 => &mut l.division,
+        3 => &mut l.depth2,
+        _ => &mut l.depth3,
+    }
+}
 fn env_get(e: &crate::preset::Env, field: usize) -> f32 {
     match field {
         0 => e.attack,
@@ -556,7 +599,8 @@ fn env_get(e: &crate::preset::Env, field: usize) -> f32 {
         7 => e.attack_level,
         8 => e.decay2,
         9 => e.sustain2,
-        _ => f32::from(e.curve),
+        10 => f32::from(e.curve),
+        _ => e.depth3,
     }
 }
 fn env_set(e: &mut crate::preset::Env, field: usize, value: f32) {
@@ -571,7 +615,8 @@ fn env_set(e: &mut crate::preset::Env, field: usize, value: f32) {
         7 => e.attack_level = value,
         8 => e.decay2 = value,
         9 => e.sustain2 = value,
-        _ => e.curve = value.round() as u8,
+        10 => e.curve = value.round() as u8,
+        _ => e.depth3 = value,
     }
 }
 
@@ -1176,6 +1221,38 @@ pub fn specs() -> &'static [Spec] {
         for stage in Stage::ALL.into_iter().filter(|&s| s != Stage::Resynth) {
             result.push(tap_spec(stage, TapField::Send));
             result.push(tap_spec(stage, TapField::Bus));
+        }
+        // Routes 2 and 3 of every LFO and route 3 of every ENV append after
+        // the taps, then the macro knobs.
+        for i in 0..crate::preset::MODULATORS {
+            for (field, key) in [(3, "depth2"), (4, "depth3")] {
+                result.push(Spec {
+                    id: format!("lfo{}_{key}", i + 1),
+                    name: format!("LFO {} depth {}", i + 1, field - 1),
+                    min: -1.0,
+                    max: 1.0,
+                    default: 0.0,
+                    target: Target::Lfo(i, field),
+                });
+            }
+            result.push(Spec {
+                id: format!("env{}_depth3", i + 1),
+                name: format!("ENV {} depth 3", i + 1),
+                min: -1.0,
+                max: 1.0,
+                default: 0.0,
+                target: Target::Env(i, 11),
+            });
+        }
+        for i in 0..crate::macros::MAX_MACROS {
+            result.push(Spec {
+                id: format!("macro{}", i + 1),
+                name: format!("Macro {}", i + 1),
+                min: 0.0,
+                max: 1.0,
+                default: 0.0,
+                target: Target::Macro(i),
+            });
         }
         result
     })

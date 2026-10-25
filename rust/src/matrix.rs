@@ -89,6 +89,7 @@ pub enum EnvParameter {
     Release,
     Depth,
     ExtraDepth,
+    Depth3,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -96,6 +97,8 @@ pub enum LfoParameter {
     Rate,
     Depth,
     Division,
+    Depth2,
+    Depth3,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

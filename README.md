@@ -98,7 +98,8 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   solo and MIDI channel. Each owns its source, effects, Resynth, envelopes, LFOs
   and Neuropolis program. Save/recall includes the entire scene and all sources.
 - Up to **8 LFOs** with tempo sync up to 8 bars and **8 ADSR envelopes** per timbre,
-  plus eight modulation-matrix routes. OSC 1–4 shape, mode, tuning, level, pan,
+  each with **three routes** of its own (destination and depth), plus eight
+  modulation-matrix routes. OSC 1–4 shape, mode, tuning, level, pan,
   Ring/Sync and other realtime numeric controls are available as destinations.
   Existing three-modulator patches retain their sound and routing.
   Each envelope has a **Type**: SAD PET (the original ADSR, default) or a Rustias
@@ -107,6 +108,9 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   Older presets keep the original envelope.
   **− LFO** / **− ENV** removes the last added modulator while keeping the first
   three and the remaining assignments intact.
+- **Macros**: up to 8 knobs of your own per timbre, each turning up to 8
+  destinations at once by its own depth. Name them, MIDI-learn them, or automate
+  them from the DAW as `Macro 1`–`Macro 8`.
 - **DXM-088 / LXR-02 drum timbres**, using the original Rust synthesis engine:
   three drum voices, snare, clap/cymbal and shared closed/open hi-hat. All 56 voice
   controls are available, including FM, transients, envelopes and both filters.
@@ -261,8 +265,13 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   Original fixed-point kernels and Depth transfer, plus per-slot Mix and bypass.
   Depth accepts LFO, envelope, matrix and DAW automation; SubOSC/Pickup follow MIDI pitch.
 - Live modulation feedback on controls, MIDI input and stereo WAV/MP3 recording.
-- MIDI learn on every knob: right-click it, choose **MIDI learn** and move a
-  controller. The web version reads the MIDI input chosen next to Keyboard.
+- MIDI learn on every knob and modulation slider: right-click it, choose **MIDI
+  learn** and move a controller. The web version reads the MIDI input chosen next
+  to Keyboard.
+- The same right-click menu routes modulation to the control: pick an **LFO**,
+  **ENV**, **Sequencer** track, **Macro** or **Mod matrix** source, or a new LFO,
+  ENV, track or macro, and **Remove modulation** takes a route away. An LFO or ENV
+  uses a free route of its own, then the matrix once its three are taken.
 - Dry/Wet blends the original source with grains before pre-filter FX, note
   filters and post-filter FX, so even fully dry audio receives the full chain.
 - Waveform loop selection, adjustable fade in/out and sample-exact trimming to new library files.

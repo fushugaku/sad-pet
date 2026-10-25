@@ -16,6 +16,7 @@
     <script src="./sampler-library.js" defer></script>
     <script src="./sampler.js" defer></script>
     <script src="./midi.js" defer></script>
+    <script src="./modulation.js" defer></script>
     <script src="./app.js" defer></script>
   </head>
   <body>
@@ -657,6 +658,17 @@
           <button id="env-add">+ ENV</button>
         </div>
         <div id="envs" class="env-grid"></div>
+      </section>
+      <section class="bank macro-bank" aria-label="Macros">
+        <div class="section-heading">
+          <h2>Macros <span id="macro-count">0 / 8</span></h2>
+          <button id="macro-add">+ Macro</button>
+        </div>
+        <p id="macro-empty" class="macro-empty">
+          A macro turns several controls with one knob. Add one here, or
+          right-click any knob or slider and choose Macro.
+        </p>
+        <div id="macros" class="macro-grid"></div>
       </section>
       <section class="bank matrix-bank" aria-label="Modulation matrix">
         <div class="section-heading">

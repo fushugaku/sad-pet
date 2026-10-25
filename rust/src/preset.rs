@@ -402,6 +402,11 @@ pub struct Lfo {
     pub destination: Destination,
     pub sync: bool,
     pub division: f32,
+    /// Routes 2 and 3; route 1 is `destination` and `depth`.
+    pub destination2: Destination,
+    pub depth2: f32,
+    pub destination3: Destination,
+    pub depth3: f32,
 }
 impl Default for Lfo {
     fn default() -> Self {
@@ -412,7 +417,30 @@ impl Default for Lfo {
             destination: Destination::None,
             sync: false,
             division: 1.0,
+            destination2: Destination::None,
+            depth2: 0.0,
+            destination3: Destination::None,
+            depth3: 0.0,
         }
+    }
+}
+/// Each LFO and envelope routes to this many destinations of its own,
+/// besides any matrix routes that use it as a source.
+pub const MODULATOR_ROUTES: usize = 3;
+impl Lfo {
+    pub fn routes(&self) -> [(Destination, f32); MODULATOR_ROUTES] {
+        [
+            (self.destination, self.depth),
+            (self.destination2, self.depth2),
+            (self.destination3, self.depth3),
+        ]
+    }
+    pub fn destinations_mut(&mut self) -> [&mut Destination; MODULATOR_ROUTES] {
+        [
+            &mut self.destination,
+            &mut self.destination2,
+            &mut self.destination3,
+        ]
     }
 }
 
@@ -469,6 +497,9 @@ pub struct Env {
     pub sustain2: f32,
     /// RADIAS decay/release curve, 0..=7.
     pub curve: u8,
+    /// Route 3; routes 1 and 2 are `destination` and `extra_destination`.
+    pub destination3: Destination,
+    pub depth3: f32,
 }
 impl Default for Env {
     fn default() -> Self {
@@ -487,10 +518,26 @@ impl Default for Env {
             decay2: 0.5,
             sustain2: 0.5,
             curve: 1,
+            destination3: Destination::None,
+            depth3: 0.0,
         }
     }
 }
 impl Env {
+    pub fn routes(&self) -> [(Destination, f32); MODULATOR_ROUTES] {
+        [
+            (self.destination, self.depth),
+            (self.extra_destination, self.extra_depth),
+            (self.destination3, self.depth3),
+        ]
+    }
+    pub fn destinations_mut(&mut self) -> [&mut Destination; MODULATOR_ROUTES] {
+        [
+            &mut self.destination,
+            &mut self.extra_destination,
+            &mut self.destination3,
+        ]
+    }
     /// A 0..1 control as the 0..=127 value the Rustias EG types read.
     pub fn rustias_control(value: f32) -> u8 {
         (value.clamp(0.0, 1.0) * 127.0).round() as u8
@@ -512,6 +559,7 @@ impl Env {
         finite_clamp(&mut self.release, 0.0, 1.0, fallback.release);
         finite_clamp(&mut self.depth, -1.0, 1.0, 0.0);
         finite_clamp(&mut self.extra_depth, -1.0, 1.0, 0.0);
+        finite_clamp(&mut self.depth3, -1.0, 1.0, 0.0);
         finite_clamp(&mut self.attack_level, 0.0, 1.0, fallback.attack_level);
         finite_clamp(&mut self.decay2, 0.0, 1.0, fallback.decay2);
         finite_clamp(&mut self.sustain2, 0.0, 1.0, fallback.sustain2);
@@ -758,6 +806,9 @@ pub struct Preset {
     #[serde(skip)]
     pub imported_effects: crate::imported_fx::PreparedEffects,
     pub matrix: Vec<crate::matrix::Route>,
+    /// Knobs of the user's own, each turning several destinations at once.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub macros: Vec<crate::macros::Macro>,
     /// Filters 3 and up, in processing order within each position.
     pub filter_slots: Vec<FilterSlot>,
     #[serde(skip)]
@@ -795,6 +846,7 @@ impl Default for Preset {
             fx_chain_version: 1,
             imported_effects: Default::default(),
             matrix: Vec::new(),
+            macros: Vec::new(),
             filter_slots: Vec::new(),
             filter_banks: Default::default(),
         }
@@ -826,6 +878,7 @@ impl<'de> Deserialize<'de> for Preset {
             color_chain: Option<Vec<crate::color::ColorSlot>>,
             fx_chain_version: u8,
             matrix: Vec<crate::matrix::Route>,
+            macros: Vec<crate::macros::Macro>,
             filter_slots: Vec<FilterSlot>,
         }
         impl Default for Data {
@@ -853,6 +906,7 @@ impl<'de> Deserialize<'de> for Preset {
                     color_chain: None,
                     fx_chain_version: 0,
                     matrix: Vec::new(),
+                    macros: Vec::new(),
                     filter_slots: Vec::new(),
                 }
             }
@@ -909,11 +963,8 @@ impl<'de> Deserialize<'de> for Preset {
             color_chain.truncate(crate::color::MAX_COLOR_SLOTS - 1);
             let referenced = lfos
                 .iter()
-                .map(|l| l.destination)
-                .chain(
-                    envs.iter()
-                        .flat_map(|e| [e.destination, e.extra_destination]),
-                )
+                .flat_map(|l| l.routes().map(|(d, _)| d))
+                .chain(envs.iter().flat_map(|e| e.routes().map(|(d, _)| d)))
                 .chain(matrix.iter().map(|r| r.destination));
             let mut reserved: Vec<_> = color_chain
                 .iter()
@@ -938,12 +989,12 @@ impl<'de> Deserialize<'de> for Preset {
                     };
                 }
             };
-            for lfo in &mut lfos {
-                migrate(&mut lfo.destination);
-            }
-            for env in &mut envs {
-                migrate(&mut env.destination);
-                migrate(&mut env.extra_destination);
+            for destination in lfos
+                .iter_mut()
+                .flat_map(Lfo::destinations_mut)
+                .chain(envs.iter_mut().flat_map(Env::destinations_mut))
+            {
+                migrate(destination);
             }
             for route in &mut matrix {
                 migrate(&mut route.destination);
@@ -999,6 +1050,7 @@ impl<'de> Deserialize<'de> for Preset {
             fx_chain_version: 1,
             imported_effects: Default::default(),
             matrix,
+            macros: d.macros,
             filter_slots: d.filter_slots,
             filter_banks: Default::default(),
         })
@@ -1121,13 +1173,14 @@ impl Preset {
         reserved.extend(
             self.lfos
                 .iter()
-                .map(|l| l.destination)
-                .chain(
-                    self.envs
-                        .iter()
-                        .flat_map(|e| [e.destination, e.extra_destination]),
-                )
+                .flat_map(|l| l.routes().map(|(d, _)| d))
+                .chain(self.envs.iter().flat_map(|e| e.routes().map(|(d, _)| d)))
                 .chain(self.matrix.iter().map(|r| r.destination))
+                .chain(
+                    self.macros
+                        .iter()
+                        .flat_map(|m| m.targets.iter().map(|t| t.destination)),
+                )
                 .filter_map(|d| {
                     if let Destination::Color { slot, .. } = d {
                         Some(slot)
@@ -1180,8 +1233,14 @@ impl Preset {
         }
         for env in &mut self.envs {
             env.sanitize();
-            validate(&mut env.destination);
-            validate(&mut env.extra_destination);
+            env.destinations_mut().into_iter().for_each(&validate);
+        }
+        self.macros.truncate(crate::macros::MAX_MACROS);
+        for m in &mut self.macros {
+            m.sanitize();
+            for target in &mut m.targets {
+                validate(&mut target.destination);
+            }
         }
         self.params.adsr_attack = self.envs[0].attack;
         self.params.adsr_decay = self.envs[0].decay;
@@ -1194,9 +1253,11 @@ impl Preset {
             .reserve(32 - self.performance.chord.len());
         self.name = self.name.chars().take(80).collect();
         for lfo in &mut self.lfos {
-            validate(&mut lfo.destination);
+            lfo.destinations_mut().into_iter().for_each(&validate);
             finite_clamp(&mut lfo.rate_hz, 0.01, 40.0, 0.2);
             finite_clamp(&mut lfo.depth, -1.0, 1.0, 0.0);
+            finite_clamp(&mut lfo.depth2, -1.0, 1.0, 0.0);
+            finite_clamp(&mut lfo.depth3, -1.0, 1.0, 0.0);
             finite_clamp(&mut lfo.division, 0.0625, 32.0, 1.0);
         }
     }

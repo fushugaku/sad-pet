@@ -159,6 +159,10 @@ fn handle(
                     include_bytes!("../web/midi.js").to_vec(),
                     "application/javascript",
                 )),
+                "/modulation.js" => Ok((
+                    include_bytes!("../web/modulation.js").to_vec(),
+                    "application/javascript",
+                )),
                 "/vocal.css" => Ok((
                     include_bytes!("../web/vocal.css").to_vec(),
                     "text/css; charset=utf-8",

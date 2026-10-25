@@ -946,16 +946,19 @@ function addFilter() {
   preset.filter_slots.push({ ...FILTER_SLOT_DEFAULT, id });
   editAddedFilters();
 }
+// Unroute every LFO, ENV, matrix and macro route whose destination matches.
+function unroute(matches) {
+  for (const holder of [...preset.lfos, ...preset.envs])
+    for (const field of ["destination", "destination2", "destination3", "extra_destination"])
+      if (matches(holder[field])) holder[field] = "none";
+  for (const route of preset.matrix)
+    if (matches(route.destination)) route.destination = "none";
+  for (const knob of preset.macros || [])
+    knob.targets = knob.targets.filter((t) => !matches(t.destination));
+}
 function removeFilter(id) {
   preset.filter_slots = preset.filter_slots.filter((s) => s.id !== id);
-  const unrouted = (d) => d?.filter_slot?.slot === id;
-  for (const lfo of preset.lfos)
-    if (unrouted(lfo.destination)) lfo.destination = "none";
-  for (const env of preset.envs)
-    for (const field of ["destination", "extra_destination"])
-      if (unrouted(env[field])) env[field] = "none";
-  for (const route of preset.matrix)
-    if (unrouted(route.destination)) route.destination = "none";
+  unroute((d) => d?.filter_slot?.slot === id);
   syncLfos();
   syncEnvs();
   syncMatrix();
@@ -1209,6 +1212,7 @@ function syncAll() {
   syncLfos();
   syncEnvs();
   syncMatrix();
+  window.SadModulation?.sync();
   syncPerformance();
   neuroEditor?.sync();
 }
@@ -2584,13 +2588,7 @@ function editColorChain() {
 function removeColor(id) {
   for (const rack of COLOR_RACKS)
     preset[rack.key] = preset[rack.key].filter((s) => s.id !== id);
-  for (const lfo of preset.lfos)
-    if (lfo.destination?.color?.slot === id) lfo.destination = "none";
-  for (const env of preset.envs)
-    for (const field of ["destination", "extra_destination"])
-      if (env[field]?.color?.slot === id) env[field] = "none";
-  for (const route of preset.matrix)
-    if (route.destination?.color?.slot === id) route.destination = "none";
+  unroute((d) => d?.color?.slot === id);
   editColorChain();
 }
 function moveColor(id, delta) {
@@ -2880,8 +2878,9 @@ function syncColors() {
     preset.env_count,
     !!preset.drums,
     !!preset.synth,
-    preset.lfos.map((l) => l.destination),
-    preset.envs.map((e) => [e.destination, e.extra_destination]),
+    preset.lfos.map((l) => LFO_ROUTES.map(([field]) => l[field])),
+    preset.envs.map((e) => ENV_ROUTES.map(([field]) => e[field])),
+    (preset.macros || []).map((m) => m.targets.map((t) => t.destination)),
   ]);
   if (routesSignature !== colorRoutesSignature) {
     colorRoutesSignature = routesSignature;
@@ -2960,7 +2959,25 @@ function syncGainReduction(next) {
 }
 // Destination menus: sections, then a submenu per filter, LFO, envelope,
 // effect slot, oscillator, drum voice or sequencer step.
-function fillDestination(select, destination) {
+// Pickers filled together share one set of groups.
+function fillDestination(select, destination, shared = null) {
+  const groups = [...(shared ?? destinationGroups())],
+    value = destinationValue(destination),
+    listed = (choices) => choices.some((c) => (Array.isArray(c) ? c[0] === value : listed(c.choices)));
+  if (typeof destination !== "string" && !listed(groups)) {
+    if (destination.filter_slot) {
+      const index = (preset.filter_slots || []).findIndex(s => s.id === destination.filter_slot.slot);
+      const label = destination.filter_slot.parameter.replaceAll("_", " ");
+      groups.push({ choices: [[value, `${index >= 0 ? `Filter ${index + 3}` : "Filter"} · ${label} (inactive)`]] });
+    } else {
+      const entry = colorEntries().find(e => e.slot.id === destination.color?.slot);
+      const label = destination.color?.parameter.replaceAll("_", " ") || "Unassigned";
+      groups.push({ choices: [[value, `${entry ? `${entry.rack.label} ${entry.index + 1}` : "FX"} · ${label} (inactive)`]] });
+    }
+  }
+  window.SadLazySelect.configure(select, value, groups);
+}
+function destinationGroups() {
   const section = window.SadLazySelect.section,
     sentence = (label) => label.charAt(0) + label.slice(1).toLowerCase(),
     named = new Map(modulationGroups().map(([label, choices]) => [
@@ -3016,20 +3033,52 @@ function fillDestination(select, destination) {
     { label: "Global controls", choices: take("Global controls") },
     ...[...named].map(([label, choices]) => ({ label, choices })),
   ];
-  const value = destinationValue(destination),
-    listed = (choices) => choices.some((c) => (Array.isArray(c) ? c[0] === value : listed(c.choices)));
-  if (typeof destination !== "string" && !listed(groups)) {
-    if (destination.filter_slot) {
-      const index = (preset.filter_slots || []).findIndex(s => s.id === destination.filter_slot.slot);
-      const label = destination.filter_slot.parameter.replaceAll("_", " ");
-      groups.push({ choices: [[value, `${index >= 0 ? `Filter ${index + 3}` : "Filter"} · ${label} (inactive)`]] });
-    } else {
-      const entry = colorEntries().find(e => e.slot.id === destination.color?.slot);
-      const label = destination.color?.parameter.replaceAll("_", " ") || "Unassigned";
-      groups.push({ choices: [[value, `${entry ? `${entry.rack.label} ${entry.index + 1}` : "FX"} · ${label} (inactive)`]] });
-    }
+  return groups;
+}
+// A knob's or slider's control key and the route destination that turns it,
+// so its menu can route a source to it.
+const PARAMETER_KEYS = {
+  tempo: "bpm",
+  input_gain: "in_gain",
+  output_gain: "out_gain",
+  pitch_bend_range: "midi_pitchbend_range",
+};
+function destinationKey(destination) {
+  if (!destination || destination === "none") return null;
+  if (typeof destination === "string")
+    return destination === "volume" ? "master_volume" : destination;
+  const [[kind, d]] = Object.entries(destination);
+  if (kind === "parameter") return PARAMETER_KEYS[d.parameter] ?? d.parameter;
+  if (kind === "color" || kind === "filter_slot") return `${kind}:${d.slot}:${d.parameter}`;
+  if (kind === "lfo" || kind === "env") return `${kind}${d.index + 1}_${d.parameter}`;
+  if (kind === "performance") return d.parameter;
+  if (kind === "control")
+    return sequenceCatalog?.modulation?.find((s) => s.index === d.index)?.id ?? null;
+  return null;
+}
+/** The destination the menus list for this control key; null when none does. */
+function knobDestination(key) {
+  const flat = (choices) => choices.flatMap((c) => (Array.isArray(c) ? [c] : flat(c.choices))),
+    choice = flat(destinationGroups()).find(
+      ([value]) => value !== "none" && destinationKey(parseDestination(value)) === key,
+    );
+  return choice ? parseDestination(choice[0]) : null;
+}
+/** The sequencer lane parameter for this control key, if a lane can play it:
+ * effects and added filters go by position there. */
+function sequencerParameter(key) {
+  const color = /^color:(\d+):(.+)$/.exec(key),
+    filter = /^filter_slot:(\d+):(.+)$/.exec(key);
+  let id = key;
+  if (color) {
+    const entry = colorEntries().find((e) => e.slot.id === Number(color[1]));
+    id = entry?.rack.key !== "source_color_chain" && entry &&
+      `${entry.rack.key === "pre_color_chain" ? "pre_" : ""}fx${entry.index + 1}_${color[2]}`;
+  } else if (filter) {
+    const index = (preset.filter_slots || []).findIndex((s) => s.id === Number(filter[1]));
+    id = index >= 0 && `filter${index + 3}_${filter[2]}`;
   }
-  window.SadLazySelect.configure(select, value, groups);
+  return id && sequenceCatalog?.parameters?.some((p) => p.id === id) ? id : null;
 }
 // Each drum voice is a top-level section, its controls grouped by module like
 // the voice editor: "Snare → Filter 1 → Cutoff". Drum voices go by their kit
@@ -3058,19 +3107,20 @@ function drumDestinations(voices) {
   }));
 }
 function refreshColorDestinations() {
+  const groups = destinationGroups();
   for (const [i, scope] of scopes.entries())
-    fillDestination(
-      scope.card.querySelector(".destination"),
-      preset.lfos[i].destination,
-    );
+    for (const route of scope.routes)
+      fillDestination(route.select, preset.lfos[i][route.destination] ?? "none", groups);
   for (const [i, card] of envCards.entries())
     for (const route of card.routes)
-      fillDestination(route.select, preset.envs[i][route.destination]);
+      fillDestination(route.select, preset.envs[i][route.destination] ?? "none", groups);
   for (const [i, row] of matrixRows.entries())
     fillDestination(
       row.querySelector(".matrix-destination"),
       preset.matrix[i].destination,
+      groups,
     );
+  window.SadModulation?.fill(groups);
 }
 function modulationGroups() {
   const parameter = (key, label) => [{ parameter: { parameter: key } }, label];
@@ -3095,7 +3145,9 @@ function modulationGroups() {
         `LFO ${index + 1}`,
         [
           ["rate", "Rate"],
-          ["depth", "Depth"],
+          ["depth", "Route 1 depth"],
+          ["depth2", "Route 2 depth"],
+          ["depth3", "Route 3 depth"],
           ["division", "Sync division"],
         ].map(([key, label]) => [
           { lfo: { index, parameter: key } },
@@ -3112,6 +3164,7 @@ function modulationGroups() {
           ["release", "Release"],
           ["depth", "Route 1 depth"],
           ["extra_depth", "Route 2 depth"],
+          ["depth3", "Route 3 depth"],
         ]
           .map(([key, label]) => [
             { env: { index, parameter: key } },
@@ -3393,27 +3446,24 @@ function buildLfos() {
   for (let i = 0; i < 8; i++) {
     const card = document.createElement("div");
     card.className = "lfo-card";
-    card.innerHTML = `<div class="lfo-title"><strong>LFO ${i + 1}</strong><canvas class="lfo-scope" width="144" height="40"></canvas></div><div class="lfo-row"><select aria-label="LFO ${i + 1} waveform" class="waveform"></select><button aria-label="LFO ${i + 1} destination" class="destination"></button></div><div class="lfo-row"><label>RATE<input aria-label="LFO ${i + 1} rate" class="rate" type="number" min="0.01" max="40" step="0.01"></label><label class="lfo-depth">DEPTH<input aria-label="LFO ${i + 1} depth" class="depth" type="range" min="-1" max="1" step="0.01"><output class="depth-value" aria-label="LFO ${i + 1} depth value"></output></label></div><div class="lfo-row"><label class="check"><input type="checkbox" class="sync">Tempo sync</label><select class="division" aria-label="LFO ${i + 1} tempo division"><option value="0.25">1/16</option><option value="0.5">1/8</option><option value="1">1/4</option><option value="2">1/2</option><option value="4">1 bar</option><option value="8">2 bars</option><option value="16">4 bars</option><option value="32">8 bars</option></select></div>`;
+    card.innerHTML = `<div class="lfo-title"><strong>LFO ${i + 1}</strong><canvas class="lfo-scope" width="144" height="40"></canvas></div><div class="lfo-row"><select aria-label="LFO ${i + 1} waveform" class="waveform"></select><label>RATE<input aria-label="LFO ${i + 1} rate" class="rate" type="number" min="0.01" max="40" step="0.01"></label></div><div class="lfo-row"><label class="check"><input type="checkbox" class="sync">Tempo sync</label><select class="division" aria-label="LFO ${i + 1} tempo division"><option value="0.25">1/16</option><option value="0.5">1/8</option><option value="1">1/4</option><option value="2">1/2</option><option value="4">1 bar</option><option value="8">2 bars</option><option value="16">4 bars</option><option value="32">8 bars</option></select></div>`;
     for (const [value, label] of WAVEFORMS)
       card.querySelector(".waveform").append(option(value, label));
     for (const [field, selector] of [
       ["waveform", ".waveform"],
-      ["destination", ".destination"],
       ["rate_hz", ".rate"],
-      ["depth", ".depth"],
       ["sync", ".sync"],
       ["division", ".division"],
     ]) {
       const input = card.querySelector(selector);
       input.addEventListener("input", () => {
         let value = input.type === "checkbox" ? input.checked : input.value;
-        if (field === "destination") value = parseDestination(value);
-        if (["rate_hz", "depth", "division"].includes(field)) {
+        if (["rate_hz", "division"].includes(field)) {
           value = Number(value);
           if (!Number.isFinite(value)) return;
         }
         preset.lfos[i][field] = value;
-        if (field === "sync" || field === "depth") syncLfos();
+        if (field === "sync") syncLfos();
         if (typeof value === "number")
           scheduleParameter(
             `lfo${i + 1}_${field === "rate_hz" ? "rate" : field}`,
@@ -3422,9 +3472,73 @@ function buildLfos() {
         else schedulePreset();
       });
     }
+    const routes = modulatorRoutes(card, "lfo", i, LFO_ROUTES, syncLfos);
     $("lfos").append(card);
-    scopes.push({ card, canvas: card.querySelector("canvas"), values: [] });
+    scopes.push({ card, canvas: card.querySelector("canvas"), values: [], routes });
   }
+}
+// Each LFO and ENV routes to three destinations of its own: a picker and a
+// depth slider each, under the host IDs of their depths.
+const LFO_ROUTES = [
+  ["destination", "depth"],
+  ["destination2", "depth2"],
+  ["destination3", "depth3"],
+];
+const ENV_ROUTES = [
+  ["destination", "depth"],
+  ["extra_destination", "extra_depth"],
+  ["destination3", "depth3"],
+];
+function modulatorRoutes(card, kind, i, fields, sync) {
+  const name = `${kind.toUpperCase()} ${i + 1}`,
+    bank = kind === "lfo" ? "lfos" : "envs";
+  return fields.map(([destination, depth], j) => {
+    const row = document.createElement("div");
+    row.className = "env-route";
+    row.innerHTML = `<button aria-label="${name} destination ${j + 1}"></button><label><input type="range" min="-1" max="1" step="0.01" aria-label="${name} depth ${j + 1}"><output></output></label>`;
+    const select = row.querySelector("button"),
+      input = row.querySelector("input"),
+      id = `${kind}${i + 1}_${depth}`;
+    select.oninput = () => {
+      preset[bank][i][destination] = parseDestination(select.value);
+      sync();
+      schedulePreset();
+    };
+    input.oninput = () => {
+      preset[bank][i][depth] = Number(input.value);
+      sync();
+      scheduleParameter(id, preset[bank][i][depth]);
+    };
+    sliderMenu(input, id, `${name} depth ${j + 1}`);
+    card.append(row);
+    return { select, input, output: row.querySelector("output"), destination, depth };
+  });
+}
+function syncModulatorRoutes(routes, holder) {
+  for (const route of routes) {
+    const destination = holder[route.destination] ?? "none",
+      depth = holder[route.depth] ?? 0;
+    if (document.activeElement !== route.select)
+      window.SadLazySelect.setValue(route.select, destinationValue(destination));
+    if (document.activeElement !== route.input) route.input.value = depth;
+    route.output.textContent = depthText(destination, depth);
+    route.select.closest(".env-route").classList.toggle("is-unrouted", destination === "none");
+  }
+}
+// A slider's right-click menu: MIDI learn and modulation, like a knob's.
+function sliderMenu(input, key, label) {
+  input.dataset.controlKey = key;
+  window.SadMidiLearn?.attach(input, key, label, (unit) => {
+    if (!preset || input.disabled) return;
+    const min = Number(input.min),
+      max = Number(input.max),
+      step = Number(input.step) || 0,
+      raw = min + unit * (max - min),
+      value = step ? min + Math.round((raw - min) / step) * step : raw;
+    input.value = String(Math.max(min, Math.min(max, value)));
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
 }
 function syncLfos() {
   const count = preset.lfo_count || 3;
@@ -3439,18 +3553,13 @@ function syncLfos() {
     if (!l) continue;
     for (const [field, selector] of [
       ["waveform", ".waveform"],
-      ["destination", ".destination"],
       ["rate_hz", ".rate"],
-      ["depth", ".depth"],
       ["division", ".division"],
     ]) {
       const input = card.querySelector(selector);
-      if (document.activeElement !== input) {
-        if (field === "destination") window.SadLazySelect.setValue(input, destinationValue(l[field]));
-        else input.value = l[field];
-      }
+      if (document.activeElement !== input) input.value = l[field];
     }
-    card.querySelector(".depth-value").textContent = depthText(l.destination, l.depth);
+    syncModulatorRoutes(scopes[i].routes, l);
     card.querySelector(".sync").checked = l.sync;
     card.querySelector(".rate").disabled = l.sync;
     card.querySelector(".division").disabled = !l.sync;
@@ -3625,36 +3734,10 @@ function buildEnvs() {
         syncEnvs();
         scheduleParameter(`env${i + 1}_${field}`, preset.envs[i][field]);
       };
+      sliderMenu(input, `env${i + 1}_${field}`, `ENV ${i + 1} ${field.replace("_", " ")}`);
       card.querySelector(".env-controls").append(label);
     }
-    const routes = [];
-    for (let j = 0; j < 2; j++) {
-      const row = document.createElement("div");
-      row.className = "env-route";
-      row.innerHTML = `<button aria-label="ENV ${i + 1} destination ${j + 1}"></button><label><input type="range" min="-1" max="1" step="0.01" aria-label="ENV ${i + 1} depth ${j + 1}"><output></output></label>`;
-      const select = row.querySelector("button"),
-        input = row.querySelector("input");
-      const destination = j === 0 ? "destination" : "extra_destination",
-        depth = j === 0 ? "depth" : "extra_depth";
-      select.oninput = () => {
-        preset.envs[i][destination] = parseDestination(select.value);
-        syncEnvs();
-        schedulePreset();
-      };
-      input.oninput = () => {
-        preset.envs[i][depth] = Number(input.value);
-        syncEnvs();
-        scheduleParameter(`env${i + 1}_${depth}`, preset.envs[i][depth]);
-      };
-      routes.push({
-        select,
-        input,
-        output: row.querySelector("output"),
-        destination,
-        depth,
-      });
-      card.append(row);
-    }
+    const routes = modulatorRoutes(card, "env", i, ENV_ROUTES, syncEnvs);
     $("envs").append(card);
     envCards.push({
       card,
@@ -3696,13 +3779,7 @@ function syncEnvs() {
         ? percent(envLevel(env, field))
         : envTime(envSeconds(env, field));
     }
-    for (const route of routes) {
-      if (document.activeElement !== route.select)
-        window.SadLazySelect.setValue(route.select, destinationValue(env[route.destination]));
-      if (document.activeElement !== route.input)
-        route.input.value = env[route.depth];
-      route.output.textContent = depthText(env[route.destination], env[route.depth]);
-    }
+    syncModulatorRoutes(routes, env);
   }
 }
 function drawEnvs() {
@@ -3883,12 +3960,14 @@ function buildSequence() {
   });
 }
 /** A Neuropolis track that plays one Sampler pad, and the sequencer on. */
-function addPadTrack(pad, name) {
+const addPadTrack = (pad, name) => addTrack(name, { kind: "pad", pad });
+/** A new Neuropolis track for the target, selected and shown, sequencer on. */
+function addTrack(name, target) {
   const track = structuredClone(sequenceCatalog.track);
   const tracks = preset.sequencer.tracks;
   track.id = tracks.reduce((max, t) => Math.max(max, t.id), 0) + 1;
   track.name = name;
-  track.target = { kind: "pad", pad };
+  track.target = target;
   tracks.push(track);
   preset.sequencer.enabled = true;
   if (neuroEditor) {
@@ -3898,6 +3977,7 @@ function addPadTrack(pad, name) {
   schedulePreset();
   syncAll();
   $("neuropolis").scrollIntoView({ behavior: "smooth", block: "start" });
+  return track;
 }
 function syncPerformance() {
   const p = preset.performance;
@@ -4318,6 +4398,8 @@ function bind() {
   $("mix").oninput = (e) => setParam("mix", Number(e.target.value));
   $("volume").oninput = (e) =>
     setParam("master_volume", Number(e.target.value));
+  sliderMenu($("mix"), "mix", "Dry / wet");
+  sliderMenu($("volume"), "master_volume", "Output volume");
   $("antialias").onchange = (e) => setParam("antialiasing", e.target.checked);
   $("loop-one-bar").onchange = (e) =>
     setParam("loop_one_bar", e.target.checked);
@@ -4855,6 +4937,29 @@ async function init() {
         notify,
         download,
       });
+    window.SadModulation?.setup({
+      read: () => preset,
+      defaults: () => presets[0],
+      catalog: () => sequenceCatalog,
+      sources: MOD_SOURCES,
+      destination: knobDestination,
+      key: destinationKey,
+      sequencer: sequencerParameter,
+      value: destinationValue,
+      parse: parseDestination,
+      fill: fillDestination,
+      depthText,
+      knob: createKnob,
+      parameter: scheduleParameter,
+      notify,
+      addTrack,
+      // A structural edit: send the preset, then show it everywhere.
+      changed() {
+        if (neuroEditor) neuroEditor.signature = "";
+        schedulePreset();
+        syncAll();
+      },
+    });
     window.SadMidiLearn?.setup({
       notify,
       // The browser and desktop builds play the MIDI input chosen by Keyboard.
@@ -4862,6 +4967,7 @@ async function init() {
         getComputedStyle($("midi")).display !== "none" && !$("midi").value
           ? "choose a MIDI input next to Keyboard"
           : "",
+      menu: (key, label) => window.SadModulation?.menu(key, label) ?? null,
     });
     buildKeyboard();
     bind();

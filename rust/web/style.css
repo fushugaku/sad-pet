@@ -4007,6 +4007,137 @@ input[type="range"] {
 .env-parameter[hidden] {
   display: none;
 }
+/* A route without a destination keeps its depth, dimmed. */
+.env-route.is-unrouted label {
+  opacity: 0.45;
+}
+/* LFOs, envelopes and macros a knob menu just made flash once. */
+.lfo-card.is-new,
+.env-card.is-new,
+.macro-card.is-new {
+  animation: modulator-new 1.2s ease-out;
+}
+@keyframes modulator-new {
+  from {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px #c4f48633;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lfo-card.is-new,
+  .env-card.is-new,
+  .macro-card.is-new {
+    animation: none;
+    border-color: var(--accent);
+  }
+}
+/* A slider's MIDI badge sits after it instead of on a dial. */
+.knob-midi.slider-midi {
+  position: static;
+  flex: none;
+  display: inline-block;
+  box-sizing: border-box;
+}
+#macro-count {
+  color: var(--muted);
+  font-size: 10px;
+  margin-left: 8px;
+}
+.macro-empty {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.macro-empty[hidden] {
+  display: none;
+}
+.macro-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.macro-card {
+  min-width: 0;
+  background: #1b211b;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 11px 15px 13px;
+}
+.macro-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.macro-name {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--accent);
+  font:
+    10px ui-monospace,
+    monospace;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.macro-name:hover,
+.macro-name:focus {
+  border-color: var(--line);
+  background: #141b15;
+  outline: none;
+}
+.macro-remove,
+.macro-target-remove {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  color: var(--muted);
+}
+.macro-body {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  margin-top: 6px;
+}
+.macro-card.is-empty .macro-body {
+  grid-template-columns: 1fr;
+  justify-items: center;
+}
+.macro-targets {
+  min-width: 0;
+}
+.macro-target {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr) 26px;
+  gap: 8px;
+}
+.macro-target:first-child {
+  margin-top: 0;
+}
+.macro-target output {
+  white-space: nowrap;
+}
+.macro-target-add {
+  height: 29px;
+  margin-top: 10px;
+  font-size: 11px;
+}
+@media (max-width: 760px) {
+  .macro-grid {
+    grid-template-columns: 1fr;
+  }
+  .macro-body {
+    grid-template-columns: 1fr;
+    justify-items: center;
+  }
+  .macro-targets {
+    width: 100%;
+  }
+}
 .color-import-options label {
   display: grid;
   gap: 6px;

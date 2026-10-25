@@ -259,8 +259,9 @@ fn tap_controls_append_after_the_drum_note_shifts() {
         ids[start - 3..start],
         ["drum7_note_shift", "resynth_send", "resynth_bus"]
     );
+    // Controls added later (LFO/ENV routes, macros) follow the taps.
     assert_eq!(
-        ids[start..],
+        ids[start..start + 16],
         [
             "tap_source_chain",
             "tap_grains_chain",
@@ -280,6 +281,7 @@ fn tap_controls_append_after_the_drum_note_shifts() {
             "tap_post_fx_bus",
         ]
     );
+    assert_eq!(ids[start + 16], "lfo1_depth2");
     let mut preset = Preset::default();
     let changes = parameters::parse(&serde_json::json!({
         "tap_filters_chain": 0.25, "tap_filters_send": 0.5, "tap_filters_bus": 3,

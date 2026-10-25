@@ -520,6 +520,7 @@ fn main() {
                 destination: DESTINATIONS[(i * 8 + k) % DESTINATIONS.len()],
                 sync: k % 2 == 1,
                 division: 0.5,
+                ..Lfo::default()
             };
             let env = &mut p.envs[k];
             env.mode = EnvMode::ALL[(i + k) % EnvMode::ALL.len()];

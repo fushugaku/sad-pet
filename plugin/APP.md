@@ -41,7 +41,8 @@ enabled automatically, including devices connected later. The computer
 keyboard plays notes as in the plug-ins.
 
 Right-click any knob and choose **MIDI learn**, then move a controller: that CC
-turns the knob from then on. See MIDI learn in [README.md](README.md).
+turns the knob from then on. The same menu routes an LFO, ENV, sequencer track,
+macro or matrix source to the knob. See MIDI learn in [README.md](README.md).
 
 The app keeps its own transport: **Play** starts the sequencer, arpeggiator and
 drum patterns at the editor's BPM.

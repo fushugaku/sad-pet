@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 
-// Just enough DOM for createKnob, the knob menu and its badge.
+// Just enough DOM for createKnob, the knob menu (SadLazySelect) and its badge.
 class ClassList {
   constructor() { this.names = new Set(); }
   add(...names) { names.forEach((n) => this.names.add(n)); }
@@ -72,7 +72,10 @@ class Element {
   dispatch(name, event = {}) {
     for (const callback of this.events[name] || []) callback({ preventDefault() {}, stopPropagation() {}, target: this, ...event });
   }
-  click() { this.onclick?.(); }
+  // Clicks bubble: the menu handles its rows' clicks on its layer.
+  click() {
+    for (let node = this; node; node = node.parentNode) node.onclick?.({ target: this, detail: 1 });
+  }
   focus() { document.activeElement = this; }
   setPointerCapture() {}
   getBoundingClientRect() { return { left: 10, top: 10, right: 87, bottom: 87, width: 120, height: 60 }; }
@@ -81,6 +84,7 @@ const listeners = new Set();
 const document = {
   activeElement: null,
   body: new Element("body"),
+  documentElement: { clientWidth: 1200, clientHeight: 800 },
   createElement: (tag) => new Element(tag),
   addEventListener: (name, callback) => listeners.add(callback),
   removeEventListener: (name, callback) => listeners.delete(callback),
@@ -91,16 +95,19 @@ const localStorage = {
   setItem: (key, value) => stored.set(key, String(value)),
 };
 const midi = await readFile(new URL("../rust/web/midi.js", import.meta.url), "utf8");
+const sequence = await readFile(new URL("../rust/web/sequence.js", import.meta.url), "utf8");
+const menus = sequence.slice(0, sequence.indexOf("/* Neuropolis"));
 const app = await readFile(new URL("../rust/web/app.js", import.meta.url), "utf8");
 const knobSource = app.slice(app.indexOf("function createKnob("), app.indexOf("function syncControl("));
 function editor() {
   const context = vm.createContext({
     document, localStorage, innerWidth: 1200, innerHeight: 800,
-    addEventListener() {}, removeEventListener() {},
+    addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout,
     preset: {}, state: { knobs: {} }, editing: 0,
     controls: new Map(), modulationViews: new Map(), knobUnits: new Map(),
   });
   context.window = context;
+  vm.runInContext(menus, context);
   vm.runInContext(midi, context);
   vm.runInContext(knobSource, context);
   return context;

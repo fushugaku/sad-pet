@@ -237,6 +237,7 @@ impl Modulated {
                     E::Release => (&mut e.release, 0.0, 1.0, false),
                     E::Depth => (&mut e.depth, -1.0, 1.0, false),
                     E::ExtraDepth => (&mut e.extra_depth, -1.0, 1.0, false),
+                    E::Depth3 => (&mut e.depth3, -1.0, 1.0, false),
                 })
             }
             Destination::Lfo { index, parameter }
@@ -247,6 +248,8 @@ impl Modulated {
                     L::Rate => (&mut l.rate_hz, 0.01, 40.0, true),
                     L::Depth => (&mut l.depth, -1.0, 1.0, false),
                     L::Division => (&mut l.division, 0.0625, 32.0, true),
+                    L::Depth2 => (&mut l.depth2, -1.0, 1.0, false),
+                    L::Depth3 => (&mut l.depth3, -1.0, 1.0, false),
                 })
             }
             Destination::Performance { parameter } => {
@@ -1796,12 +1799,21 @@ impl Engine {
         for i in 0..target_count {
             m.route(targets[i], amounts[i]);
         }
+        // Macros act with the matrix, so they can set LFO and ENV depths too.
+        for knob in &self.preset.macros {
+            for target in &knob.targets {
+                m.route(target.destination, knob.value * target.depth);
+            }
+        }
         for (i, lfo) in m.lfos.into_iter().take(m.lfo_count).enumerate() {
-            m.route(lfo.destination, self.lfo_values[i] * lfo.depth * 0.5);
+            for (destination, depth) in lfo.routes() {
+                m.route(destination, self.lfo_values[i] * depth * 0.5);
+            }
         }
         for (i, env) in m.envs.into_iter().take(m.env_count).enumerate() {
-            m.route(env.destination, self.env_values[i] * env.depth);
-            m.route(env.extra_destination, self.env_values[i] * env.extra_depth);
+            for (destination, depth) in env.routes() {
+                m.route(destination, self.env_values[i] * depth);
+            }
         }
         if self.frozen && (m.params.position - self.last_position).abs() > 0.00001 {
             let range = self.source_range();
