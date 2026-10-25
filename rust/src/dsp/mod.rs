@@ -2333,6 +2333,10 @@ impl Engine {
         };
         let bus = self.preset.bus.as_deref().copied();
         if bus.is_some() && self.bus_passthrough() {
+            // A bus with nothing switched on still runs its sequencer.
+            if self.playing && self.sampler.is_none() {
+                self.tick_events();
+            }
             return self.pass_bus(input);
         }
         let input = if let Some(drums) = &mut self.drums {

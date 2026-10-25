@@ -144,3 +144,38 @@ fn bus_presets_keep_their_kind_and_round_trip() {
     let granular = serde_json::to_value(Preset::default()).unwrap();
     assert!(granular.get("bus").is_none());
 }
+
+#[test]
+fn a_bus_with_nothing_switched_on_still_runs_its_sequencer() {
+    use sad_pet::sequence::{Target, Track};
+    // Odd steps of a Volume lane mute the bus; nothing else is on, so the
+    // bus stays on its passthrough path.
+    let mut volume = Track {
+        id: 2,
+        target: Target::Parameter {
+            parameter: "master_volume".into(),
+        },
+        ..Track::default()
+    };
+    for (i, step) in volume.steps.iter_mut().enumerate() {
+        step.cv = if i % 2 == 1 { -5_000 } else { 0 };
+    }
+    let mut e = engine(Kind::Bus, |p| {
+        p.sequencer.enabled = true;
+        p.sequencer.tracks.push(volume);
+    });
+    e.set_playing(true);
+    let (mut steps, mut loud, mut quiet) = (0_u16, 0.0_f32, f32::MAX);
+    for n in 0..96_000 {
+        let x = [0.5; 2];
+        let y = e.process_input_frame(x);
+        steps |= 1 << e.sequence_view().tracks[0].step;
+        if n > 1_000 {
+            loud = loud.max(y[0]);
+            quiet = quiet.min(y[0]);
+        }
+    }
+    assert_eq!(steps, u16::MAX, "every step played ({steps:016b})");
+    assert!(loud > 0.49, "even steps pass the input ({loud})");
+    assert!(quiet < 0.01, "odd steps mute the bus ({quiet})");
+}
