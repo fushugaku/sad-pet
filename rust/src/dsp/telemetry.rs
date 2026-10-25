@@ -506,5 +506,6 @@ pub fn knob_states_from_view(
     m.lfos = view.modulated_lfos;
     m.envs = view.modulated_envs;
     m.drums = view.drum_controls;
+    m.drum_shifts = view.drums.shifts.map(|s| s as f32);
     ControlFeedback { preset }.knob_states_at(&m, view.filter_cutoffs)
 }

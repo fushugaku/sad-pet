@@ -225,10 +225,14 @@ fn synth_controls_append_after_every_other_host_parameter() {
     assert_eq!(specs[start + 3].id, "synth_osc1_enabled");
     let end = start + 3 + 4 * 14;
     assert_eq!(specs[end - 1].id, "synth_osc4_interaction_source");
-    // Then the mooz controls of every FX/Pre/Source slot.
-    assert_eq!(specs.len(), end + (2 * 12 + 1) * 9);
+    // Then the mooz controls of every FX/Pre/Source slot, then each drum
+    // track's pattern note shift.
+    let mooz = end + (2 * 12 + 1) * 9;
     assert_eq!(specs[end].id, "fx1_mooz_p1");
-    assert_eq!(specs.last().unwrap().id, "source_fx1_mooz_p9");
+    assert_eq!(specs[mooz - 1].id, "source_fx1_mooz_p9");
+    let later: Vec<_> = specs[mooz..].iter().map(|s| s.id.as_str()).collect();
+    let shifts: Vec<_> = (1..=7).map(|t| format!("drum{t}_note_shift")).collect();
+    assert_eq!(later, shifts);
 }
 
 #[test]

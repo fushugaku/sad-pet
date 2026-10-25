@@ -113,7 +113,11 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   Each drum track has 1–128 steps, its own clock, swing/groove, MIDI note, level,
   mute and solo. Steps expose velocity, chance, pitch, ratchet, microtiming,
   conditions and two parameter locks. The drum page has its own Neuropolis mod
-  sequencer. **Granular** routes the drum mix through the shared Grain Engine;
+  sequencer. **Pattern note shift** (one host control per track, ±16 steps, a
+  target for LFOs, envelopes, the matrix and sequencer lanes) plays a track's
+  steps that many places later, or earlier when negative, wrapping inside its
+  length. The steps you set stay green where you placed them; blue marks where
+  the notes sound now, including steps added while shifted. **Granular** routes the drum mix through the shared Grain Engine;
   turn it off for direct processing through the remaining filter/FX chain.
   Every engine keeps the Granular page order: its own section on top, then the
   waveform, the transport row with the **Granular** switch beside Dry/Wet, Source

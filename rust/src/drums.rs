@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize, ser::SerializeSeq};
 
 pub const TRACKS: usize = params::TRACKS;
 pub const STEPS: usize = seq::STEPS;
+/// Steps a track's pattern note shift moves its notes, either way.
+pub const MAX_SHIFT: i8 = 16;
 pub const NAMES: [&str; TRACKS] = [
     "Drum 1",
     "Drum 2",
@@ -19,6 +21,9 @@ pub struct View {
     pub positions: [i32; TRACKS],
     pub levels: [f32; TRACKS],
     pub playing: bool,
+    /// The note shift each track plays with now, modulation included.
+    #[serde(default)]
+    pub shifts: [i32; TRACKS],
 }
 pub const PARAM_NAMES: [&str; params::PARAMS] = [
     "Pitch",
@@ -165,6 +170,9 @@ pub struct Track {
     pub muted: bool,
     pub solo: bool,
     pub midi_note: u8,
+    /// Plays the steps this many places later (earlier when negative),
+    /// wrapping inside the track length. The steps themselves stay put.
+    pub shift: i8,
 }
 impl Default for Track {
     fn default() -> Self {
@@ -180,6 +188,7 @@ impl Default for Track {
             muted: false,
             solo: false,
             midi_note: 36,
+            shift: 0,
         }
     }
 }
@@ -251,6 +260,7 @@ impl Settings {
             track.swing = finite(track.swing, 0., 0.5, 0.);
             track.level = finite(track.level, 0., 1.25, 0.85);
             track.midi_note = track.midi_note.min(127);
+            track.shift = track.shift.clamp(-MAX_SHIFT, MAX_SHIFT);
             track.steps.truncate(STEPS);
             track.steps.resize(STEPS, Step::default());
             for s in &mut track.steps {
@@ -278,6 +288,8 @@ pub struct Runtime {
     pub engine: Engine,
     /// Prepared off audio. Also retires a previous live input on a type change.
     pub live: Option<LiveInput>,
+    /// The note shift each engine track was copied with.
+    pub shifts: [i32; TRACKS],
 }
 #[derive(Default)]
 pub struct Prepared(pub Option<Box<Runtime>>);
@@ -305,11 +317,17 @@ impl Prepared {
             engine.params = s.params.0;
             engine.master = s.master;
             engine.swing = s.swing;
+            let mut shifts = [0; TRACKS];
             for (i, track) in s.tracks.iter().enumerate() {
-                copy_track(&mut engine, i, track);
+                shifts[i] = track.shift as i32;
+                copy_track(&mut engine, i, track, shifts[i]);
             }
             engine.configure_params(&s.params.0);
-            Box::new(Runtime { engine, live: None })
+            Box::new(Runtime {
+                engine,
+                live: None,
+                shifts,
+            })
         });
     }
     pub fn prepare_input(&mut self, settings: Option<&Settings>, rate: u32) {
@@ -320,12 +338,20 @@ impl Prepared {
         }
     }
 }
-fn copy_track(engine: &mut Engine, i: usize, track: &Track) {
+/// The engine plays step `s` of a shifted track at `s + shift`, wrapped inside
+/// the length; steps past the length keep their places.
+fn copy_track(engine: &mut Engine, i: usize, track: &Track, shift: i32) {
     let out = &mut engine.patterns[0].tracks[i];
     out.length = track.length;
     out.swing = track.swing;
-    for (to, from) in out.steps.iter_mut().zip(&track.steps) {
-        *to = seq::Step {
+    let length = track.length.clamp(1, STEPS);
+    for (s, from) in track.steps.iter().enumerate().take(STEPS) {
+        let to = if s < length {
+            (s as i64 + shift as i64).rem_euclid(length as i64) as usize
+        } else {
+            s
+        };
+        out.steps[to] = seq::Step {
             velocity: from.velocity,
             probability: from.probability,
             note: from.note,
@@ -369,13 +395,23 @@ impl Runtime {
     }
     pub fn sync_tracks(&mut self, settings: &Settings) {
         for (i, track) in settings.tracks.iter().enumerate() {
-            copy_track(&mut self.engine, i, track);
+            copy_track(&mut self.engine, i, track, self.shifts[i]);
+        }
+    }
+    /// Recopies a track whose modulated note shift moved to another step.
+    pub fn shift(&mut self, settings: &Settings, shifts: [f32; TRACKS]) {
+        for (i, track) in settings.tracks.iter().enumerate() {
+            let shift = shifts[i].round() as i32;
+            if self.shifts[i] != shift {
+                self.shifts[i] = shift;
+                copy_track(&mut self.engine, i, track, shift);
+            }
         }
     }
 }
 
 pub fn catalog() -> serde_json::Value {
-    serde_json::json!({"tracks":NAMES,"steps":STEPS,"divisions":sad_pet_dxm088::performance::DIVISIONS,"defaults":Controls(params::kit(0)),"controls":PARAM_NAMES.iter().enumerate().map(|(i,n)| serde_json::json!({"name":n,"min":params::MIN[i],"max":params::MAX[i],"discrete":params::DISCRETE.contains(&i)})).collect::<Vec<_>>()})
+    serde_json::json!({"tracks":NAMES,"steps":STEPS,"max_shift":MAX_SHIFT,"divisions":sad_pet_dxm088::performance::DIVISIONS,"defaults":Controls(params::kit(0)),"controls":PARAM_NAMES.iter().enumerate().map(|(i,n)| serde_json::json!({"name":n,"min":params::MIN[i],"max":params::MAX[i],"discrete":params::DISCRETE.contains(&i)})).collect::<Vec<_>>()})
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
