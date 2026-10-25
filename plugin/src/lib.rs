@@ -1312,11 +1312,13 @@ impl Audio {
             if (self.engine.preset.sequencer.enabled || drums) && playing && !self.engine.playing {
                 self.engine.set_playing(true);
             }
+            let moved = started || jumped || sequence_started;
+            let sequencer = self.engine.preset.sequencer.enabled;
             self.engine.host_transport(
                 bpm,
                 beat,
-                (performance || drums || self.engine.preset.sequencer.enabled)
-                    && (started || jumped || preset_changed || sequence_started),
+                (performance || drums || sequencer) && (moved || preset_changed),
+                sequencer && moved,
             );
         } else {
             self.engine.set_sequence_transport(true);

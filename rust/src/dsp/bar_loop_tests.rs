@@ -108,7 +108,7 @@ fn meter_and_tempo_changes_keep_phase_and_use_quarter_note_beats() {
     let voice = note(&mut e, 60);
     advance(&mut e, 6000);
     phase(&e, voice, 0.5);
-    e.host_transport(240.0, None, false);
+    e.host_transport(240.0, None, false, false);
     e.refresh_parameters();
     phase(&e, voice, 0.5);
     advance(&mut e, 3000);

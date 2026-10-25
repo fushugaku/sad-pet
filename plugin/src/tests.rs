@@ -921,6 +921,49 @@ fn host_sync_uses_bpm_and_restarts_sequence_at_the_daw_position() {
 }
 
 #[test]
+fn preset_edits_while_the_daw_plays_keep_neuropolis_on_the_host_grid() {
+    use sad_pet::sequence::{Target, Track};
+    fn play(audio: &mut Audio, values: &[f32], beat: &mut f64, blocks: usize) {
+        for _ in 0..blocks {
+            audio.begin(values, 120.0, Some(*beat), true, 128);
+            render(audio, 128, [0.0; 2]);
+            *beat += 128.0 * 120.0 / (60.0 * 48000.0);
+        }
+    }
+    let mut control = Controller::new(false);
+    let mut preset = control.preset.clone();
+    preset.sequencer.enabled = true;
+    preset.sequencer.tracks = (1..=2)
+        .map(|id| Track {
+            id,
+            target: Target::Notes,
+            ..Track::default()
+        })
+        .collect();
+    call(&mut control, "/api/preset", json!(preset));
+    let mut audio = control.prepare(48000);
+    let values = control.values();
+    let mut beat = 0.0;
+    // 3.2 beats: the 13th sixteenth.
+    play(&mut audio, &values, &mut beat, 600);
+    assert_eq!(audio.engine.sequence_view().tracks[0].step, 12);
+    // A rename and a new track rebuild the preset. Neither restarts the
+    // pattern at the current beat; the new track joins the others.
+    let mut changed = control.preset.clone();
+    changed.sequencer.tracks[1].name = "Bass".into();
+    let mut added = changed.sequencer.tracks[0].clone();
+    added.id = 3;
+    changed.sequencer.tracks.push(added);
+    call(&mut control, "/api/preset", json!(changed));
+    no_heap(|| play(&mut audio, &values, &mut beat, 20));
+    let view = audio.engine.sequence_view();
+    assert_eq!(view.count, 3);
+    for t in &view.tracks[..3] {
+        assert_eq!(t.step, 13, "track {} left the host grid", t.id);
+    }
+}
+
+#[test]
 fn queue_backpressure_never_frees_or_blocks_on_the_audio_thread() {
     let mut control = Controller::new(false);
     let mut audio = control.prepare(48000);

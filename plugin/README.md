@@ -332,12 +332,18 @@ accumulation** contains pitch overrides, accumulation and CV ramps.
 Scale, slide & accumulation holds the other
 track settings and independent track/accumulator resets. Duplicate copies a
 track; M mutes only that lane. Adding, removing or retargeting a lane preserves
-the other playheads by stable track ID.
+the other playheads by stable track ID. An edit that moves a track in time (Clock,
+Length, Order, direction, Swing, Offset, pulse settings, a step's pulses or skip)
+puts it where its new settings would have it had it played since the transport
+started, or since its own **Restart track**, so undoing an edit brings it back
+in step with the other tracks. A track added while playing waits silently for
+its place in the same way.
 
 There is no fixed track-count limit. The list pages its readouts in groups of 64;
 all tracks continue processing. Note tracks share SAD PET's existing eight-note
 audio polyphony. DAW sync follows host tempo and starts each pattern at the first
-96 PPQN grid tick after transport starts or seeks. Stopping the sequencer releases
+96 PPQN grid tick after transport starts or seeks; preset changes while the host
+plays keep the patterns running. Stopping the sequencer releases
 its own notes while input processing and keyboard audition remain available.
 Turn off DAW sync to use the editor's transport instead.
 

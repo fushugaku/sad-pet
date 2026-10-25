@@ -330,7 +330,9 @@ fn unlimited_tracks_recall_and_id_based_adoption_do_not_allocate_or_reset_other_
     for old in before.tracks {
         if old.id >= 194 {
             let new = after.tracks.iter().find(|t| t.id == old.id).unwrap();
-            assert_eq!(old.step, new.step, "track {} lost phase", old.id);
+            // The swing edit moves 220 onto its swung grid: a long first pulse.
+            let step = if old.id == 220 { 0 } else { old.step };
+            assert_eq!(new.step, step, "track {} lost phase", old.id);
         }
     }
     let encoded = serde_json::to_vec(&e.preset).unwrap();
@@ -589,4 +591,89 @@ fn main_pitch_steps_can_gate_envelopes_like_notes() {
     assert_eq!(sad_pet::sequence::parse_edits(&json).unwrap()[0].field, 53);
     let json = serde_json::json!([{"track":1,"field":54,"value":1}]);
     assert!(sad_pet::sequence::parse_edits(&json).is_err());
+}
+
+#[test]
+fn timing_edits_and_tracks_added_while_playing_stay_on_the_grid_of_the_others() {
+    // Pairs of twins: 1 and 2 play Linear, 3 and 4 Pendulum, whose relock
+    // replays from the transport start instead of the last Linear pass.
+    let mut p = Preset::default();
+    p.sequencer.enabled = true;
+    p.sequencer.tracks = (1..=4).map(|id| track(id, 1, Target::Notes)).collect();
+    for t in &mut p.sequencer.tracks[2..] {
+        t.config[field::ORDER] = 2;
+    }
+    let mut e = engine(p);
+    e.set_playing(true);
+    let steps = |e: &Engine| {
+        let v = e.sequence_view();
+        v.tracks[..v.count]
+            .iter()
+            .map(|t| (t.id, t.step))
+            .collect::<Vec<_>>()
+    };
+    let step = |e: &Engine, id| steps(e).into_iter().find(|t| t.0 == id).unwrap().1;
+    let in_step = |e: &mut Engine, pairs: &[(u32, u32)]| {
+        // One bar, sampled every 1/64 note.
+        for _ in 0..64 {
+            frames(e, 250);
+            for &(a, b) in pairs {
+                assert_eq!(step(e, a), step(e, b), "track {b} left the grid of {a}");
+            }
+        }
+    };
+    let edit = |track, stage, field, value| Edit {
+        track,
+        stage,
+        field,
+        value,
+    };
+    // Each edit lands mid-pulse and is undone later: the old core kept every
+    // one of them as a permanent shift against the twin.
+    frames(&mut e, 3100);
+    e.apply_sequence_edits(&[edit(2, None, 3, 2.0), edit(4, None, 1, 8.0)]);
+    frames(&mut e, 5130);
+    e.apply_sequence_edits(&[
+        edit(2, Some(3), 1, 3.0),
+        edit(2, None, 0, 2.0),
+        edit(4, None, 11, 70.0),
+    ]);
+    frames(&mut e, 4170);
+    assert_ne!(
+        steps(&e)[0].1,
+        steps(&e)[1].1,
+        "the edits did not move track 2"
+    );
+    let undo = [
+        edit(2, None, 3, 1.0),
+        edit(2, Some(3), 1, 1.0),
+        edit(2, None, 0, 0.0),
+        edit(4, None, 1, 16.0),
+        edit(4, None, 11, 50.0),
+    ];
+    no_heap(|| {
+        e.apply_sequence_edits(&undo);
+        frames(&mut e, 2000);
+    });
+    in_step(&mut e, &[(1, 2), (3, 4)]);
+
+    // A track added while playing, and one moved to another destination,
+    // join the grid instead of starting their pattern at that moment.
+    let mut next = e.preset.clone();
+    let mut linear = next.sequencer.tracks[0].clone();
+    linear.id = 5;
+    let mut pendulum = next.sequencer.tracks[2].clone();
+    pendulum.id = 6;
+    next.sequencer.tracks.extend([linear, pendulum]);
+    next.sequencer.tracks[1].target = Target::MainPitch;
+    next.sanitize();
+    no_heap(|| {
+        e.exchange_preset(&mut next);
+        assert!(
+            !e.sequence_view().tracks[4].gate,
+            "a new track sounded off the grid"
+        );
+        frames(&mut e, 2000);
+    });
+    in_step(&mut e, &[(1, 2), (1, 5), (3, 4), (3, 6)]);
 }
