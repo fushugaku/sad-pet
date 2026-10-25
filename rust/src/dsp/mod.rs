@@ -814,7 +814,10 @@ impl Engine {
         }
     }
 
-    pub fn host_transport(&mut self, bpm: f32, beat: Option<f64>, restart: bool) {
+    /// `restart` moves the parts that read the beat (drums, Hold/Arp and synced
+    /// LFOs) to `beat`. Neuropolis counts ticks from its own start instead and
+    /// keeps its playheads across preset changes: `sequencer` restarts it too.
+    pub fn host_transport(&mut self, bpm: f32, beat: Option<f64>, restart: bool, sequencer: bool) {
         if bpm.is_finite() && (20.0..=300.0).contains(&bpm) {
             self.preset.params.bpm = bpm;
         }
@@ -826,10 +829,10 @@ impl Engine {
             }
             if self.performance.mode() != Mode::Keys {
                 self.release_notes();
-            } else {
+            } else if sequencer {
                 self.release_sequence_notes();
             }
-            if let Some(runtime) = &mut self.preset.sequencer.runtime {
+            if sequencer && let Some(runtime) = &mut self.preset.sequencer.runtime {
                 runtime.seek(beat.filter(|b| b.is_finite()).unwrap_or(0.0));
             }
             if let Some(beat) = beat.filter(|b| b.is_finite()) {
