@@ -25,6 +25,7 @@ pub mod server;
 pub mod startup;
 pub mod synth;
 pub mod tables;
+pub mod taps;
 pub mod timbres;
 pub mod vocal;
 pub mod wav;

@@ -152,6 +152,20 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   no grains, no history writes and no filters run. Solo selects timbres while
   buses and Master keep processing them; MIDI never reaches a bus. Scenes saved
   before buses existed open with a default Master and render unchanged.
+- **Section outputs.** Source FX, Grain engine, Resynth, Pre-filter FX, Filters
+  and Post-filter FX each end in an **Output** row with two knobs. **CHAIN** is
+  the share of the section's output that goes on down the chain; the rest is the
+  section's input, so at 0% the chain skips the section and its clean input goes
+  on. **SEND** feeds the section's output to the bus chosen beside it, whatever
+  CHAIN is: Grain engine at CHAIN 0% and SEND 100% plays the source dry and sends
+  only the grains to a bus. Sends follow the notes' VCA, the timbre's Output
+  level, Mute and Solo, and crossfade when the bus changes; a send to a removed
+  bus goes nowhere. **+ New bus** in the bus menu adds a Bus timbre without
+  leaving the section. The section heading shows **Skipped** or **→ Bus** while
+  either is set. Buses, Master and Pad FX have CHAIN only. A Synth's grain
+  engine follows its filters, and so does its Grain engine output. The knobs
+  are host parameters (`tap_grains_chain`, `tap_grains_send`, `tap_grains_bus`…;
+  Resynth keeps `resynth_send` and `resynth_bus`).
 - **Vocal timbres** sing a score, in the manner of VOCALOID5 (browser, DAW
   plug-ins and app). Draw notes in the piano roll, double-click one to type its
   lyric (Tab moves on) or use **Lyrics…** for a whole line, in **Japanese**

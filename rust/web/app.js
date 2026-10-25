@@ -1195,6 +1195,7 @@ function syncAll() {
   syncTimbreRouting();
   syncColors();
   syncResynth();
+  syncTaps();
   for (const update of controls.values()) update();
   syncSliders();
   $("antialias").checked = preset.params.antialiasing;
@@ -1469,6 +1470,153 @@ function syncResynth() {
   $("resynth-add").disabled = r.count >= 4;
   $("resynth-spectrum").classList.toggle("inactive", !r.enabled);
   syncOscillators("resynth");
+}
+// Every section hands its output on down the chain (CHAIN) and to one Bus
+// (SEND). At CHAIN 0% the chain skips the section and its input goes on,
+// while the bus still hears the section. Host order: source → post FX.
+const TAP_STAGES = [
+  ["source", "Source FX"],
+  ["grains", "Grain engine"],
+  ["resynth", "Resynth"],
+  ["pre_fx", "Pre-filter FX"],
+  ["filters", "Filters"],
+  ["post_fx", "Post-filter FX"],
+];
+const tapViews = new Map();
+// Resynth keeps the send IDs it was released with.
+const tapId = (stage, field) =>
+  stage === "resynth" && field !== "chain"
+    ? `resynth_${field}`
+    : `tap_${stage}_${field}`;
+// Reading leaves the preset alone: the host omits taps at their defaults.
+const tapSettings = (stage) => ({ chain: 1, send: 0, bus: 0, ...preset.taps?.[stage] });
+function editTap(stage, field, value) {
+  preset.taps = { ...preset.taps, [stage]: { ...tapSettings(stage), [field]: value } };
+  scheduleParameter(tapId(stage, field), value);
+  syncTaps();
+}
+function buildTaps() {
+  for (const [stage, label] of TAP_STAGES) {
+    const section = document.querySelector(`[data-tap="${stage}"]`);
+    const row = document.createElement("div");
+    row.className = "tap";
+    row.innerHTML = `<svg class="tap-flow" viewBox="0 0 30 52" aria-hidden="true"><path class="tap-chain" d="M9 0V52"/><path class="tap-branch" d="M9 26H23"/><path class="tap-branch" d="M19 21.5l4.5 4.5-4.5 4.5"/></svg><div class="tap-name"><strong>Output</strong><span>${label}</span></div><div class="tap-knobs"></div><label class="tap-bus">to<select aria-label="${label} bus"></select></label><output class="tap-status"></output>`;
+    section.append(row);
+    const knobs = row.querySelector(".tap-knobs");
+    createKnob(
+      [tapId(stage, "chain"), "CHAIN", percent, 0, 1, `${label} chain`],
+      knobs,
+      {
+        get: () => tapSettings(stage).chain,
+        set: (v) => editTap(stage, "chain", v),
+        reset: () => 1,
+      },
+    );
+    createKnob(
+      [tapId(stage, "send"), "SEND", percent, 0, 1, `${label} bus send`],
+      knobs,
+      {
+        get: () => tapSettings(stage).send,
+        set: (v) => editTap(stage, "send", v),
+        reset: () => 0,
+      },
+    );
+    const [chain, send] = knobs.querySelectorAll(".dial");
+    chain.title = "Share of this output that goes on down the chain. At 0% the chain skips the section: its input goes on, and the bus still hears the section.";
+    send.closest(".knob").title = "Share of this output sent to the chosen bus, whatever CHAIN is";
+    const select = row.querySelector("select");
+    select.onchange = () => {
+      if (select.value === "new") addTapBus(stage);
+      else editTap(stage, "bus", Number(select.value));
+    };
+    const chips = document.createElement("span");
+    chips.className = "tap-chips";
+    section.querySelector(".section-heading h2").append(chips);
+    tapViews.set(stage, { section, row, select, send, chips, label, signature: "" });
+  }
+}
+/** Adds the next Bus timbre for this section and stays on the timbre. */
+function addTapBus(stage) {
+  const context = state?.timbres;
+  if (!context) return;
+  const used = new Set(context.timbres.filter((t) => t.kind === "bus").map((t) => t.bus));
+  const bus = [1, 2, 3, 4, 5, 6, 7, 8].find((b) => !used.has(b));
+  if (!bus) return;
+  editTap(stage, "bus", bus);
+  const home = context.active;
+  changeTimbre("/api/timbres/add", { kind: "bus" });
+  changeTimbre("/api/timbres/select", { id: home });
+}
+function syncTaps() {
+  if (!preset || !tapViews.size) return;
+  const context = state?.timbres,
+    part = context?.timbres?.find((t) => t.id === context.active),
+    // Buses, Master and Pad FX take no sends, so they do not send either.
+    sends = !!part && !["bus", "master", "pad_fx"].includes(part.kind),
+    buses = sends
+      ? context.timbres
+          .filter((t) => t.kind === "bus" && t.bus > 0)
+          .sort((a, b) => a.bus - b.bus)
+      : [];
+  for (const [stage, view] of tapViews) {
+    const { section, row, select, send, chips, label } = view;
+    const tap = tapSettings(stage),
+      target = buses.find((b) => b.bus === tap.bus),
+      sending = !!target && tap.send > 0,
+      skipped = tap.chain === 0;
+    // A Synth's grains read its filtered voices.
+    setText(
+      row.querySelector(".tap-name span"),
+      stage === "grains" && preset.synth ? `${label}, after Filters` : label,
+    );
+    row.classList.toggle("no-sends", !sends);
+    row.classList.toggle("sending", sending);
+    row.classList.toggle("skipped", skipped);
+    row.style.setProperty("--chain", String(tap.chain));
+    section.classList.toggle("tap-skipped", skipped);
+    const signature = JSON.stringify([tap.bus, buses.map((b) => [b.bus, b.name])]);
+    if (signature !== view.signature) {
+      view.signature = signature;
+      select.replaceChildren(
+        option(0, buses.length ? "No bus" : "No bus yet"),
+        ...buses.map((b) => option(b.bus, b.name)),
+      );
+      // A removed bus stays chosen until another is, and receives nothing.
+      if (tap.bus && !target) select.append(option(tap.bus, `Bus ${tap.bus} (removed)`));
+      if (buses.length < 8) select.append(option("new", "+ New bus"));
+      select.value = String(tap.bus);
+    } else if (document.activeElement !== select) select.value = String(tap.bus);
+    setAttr(send, "aria-disabled", !tap.bus);
+    send.tabIndex = tap.bus ? 0 : -1;
+    send.closest(".knob").classList.toggle("filter-unused", !tap.bus);
+    const name = target?.name ?? `Bus ${tap.bus}`;
+    setText(
+      row.querySelector(".tap-status"),
+      !sends
+        ? skipped ? "Skipped: its input goes on" : ""
+        : tap.bus && !target
+          ? `${name} is gone: nothing is sent`
+          : skipped
+            ? sending ? `${name} only: the chain skips this section` : "Skipped: its input goes on"
+            : target && !sending ? `Turn SEND up to feed ${name}` : "",
+    );
+    const labels = [
+      ...(skipped ? [["skip", "Skipped"]] : tap.chain < 1 ? [["chain", `Chain ${percent(tap.chain)}`]] : []),
+      ...(sending ? [["send", `→ ${target.name} ${percent(tap.send)}`]] : []),
+    ];
+    const text = JSON.stringify(labels);
+    if (chips.dataset.labels !== text) {
+      chips.dataset.labels = text;
+      chips.replaceChildren(
+        ...labels.map(([kind, caption]) => {
+          const chip = document.createElement("span");
+          chip.className = `tap-chip ${kind}`;
+          chip.textContent = caption;
+          return chip;
+        }),
+      );
+    }
+  }
 }
 function bindGranularToggle() {
   $("history-granular").onchange = () => {
@@ -4580,6 +4728,7 @@ async function poll() {
     updateResynthMeter(next.resynth);
     neuroEditor?.update(next.sequencer, next.playing);
     timbreEditor?.sync(next.timbres);
+    syncTaps();
     drumEditor?.update(next.drums);
     sampleSelection?.sync(next);
     setText($("sample-end"), formatTime(next.sample_seconds));
@@ -4656,6 +4805,7 @@ async function init() {
     buildFilters();
     buildColors();
     buildResynth();
+    buildTaps();
     buildSynth();
     buildLfos();
     buildEnvs();

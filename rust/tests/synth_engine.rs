@@ -232,7 +232,12 @@ fn synth_controls_append_after_every_other_host_parameter() {
     assert_eq!(specs[mooz - 1].id, "source_fx1_mooz_p9");
     let later: Vec<_> = specs[mooz..].iter().map(|s| s.id.as_str()).collect();
     let shifts: Vec<_> = (1..=7).map(|t| format!("drum{t}_note_shift")).collect();
-    assert_eq!(later, shifts);
+    assert_eq!(later[..7], shifts);
+    // Then each section's tap: Resynth's send and bus, the six Chain
+    // shares, then the send and bus of the other five sections.
+    assert_eq!(later[7..9], ["resynth_send", "resynth_bus"]);
+    assert_eq!(later[9], "tap_source_chain");
+    assert_eq!(later.len(), 9 + 6 + 5 * 2);
 }
 
 #[test]

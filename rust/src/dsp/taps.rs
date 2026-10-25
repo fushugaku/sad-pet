@@ -1,0 +1,272 @@
+//! The stage taps at audio rate. A Chain share ramps, so that leaving a stage
+//! out of the chain crossfades to its input; each send ramps per bus, so that
+//! choosing another bus crossfades between the two.
+use crate::{
+    Stereo,
+    bus::MAX_BUSES,
+    taps::{STAGES, Stage, Taps},
+};
+
+/// About 10 ms at 48 kHz from one end of a share to the other.
+const STEP: f32 = 1.0 / 512.0;
+
+#[derive(Clone)]
+pub(crate) struct Runtime {
+    settings: Taps,
+    /// Bit n set for each Bus n that exists to take a send.
+    open: u16,
+    chain: [f32; STAGES],
+    chain_targets: [f32; STAGES],
+    gains: [[f32; MAX_BUSES]; STAGES],
+    targets: [[f32; MAX_BUSES]; STAGES],
+    /// Every share is at its target: a frame costs one compare.
+    settled: bool,
+    /// Bit s set while stage s has a send gain above zero.
+    sending: u8,
+    /// Some send has a target above zero.
+    targeted: bool,
+    /// Bit b set for each Bus b + 1 that a section is routed to, and for
+    /// each one a send still fades out of.
+    routed: u8,
+    fading: u8,
+    /// What the taps sent into each bus in this frame.
+    out: [Stereo; MAX_BUSES],
+    filled: bool,
+    /// The first settings apply at once: a loaded preset starts where it is.
+    configured: bool,
+}
+impl Runtime {
+    pub(crate) fn new() -> Self {
+        Self {
+            settings: Taps::default(),
+            open: 0,
+            chain: [1.0; STAGES],
+            chain_targets: [1.0; STAGES],
+            gains: [[0.0; MAX_BUSES]; STAGES],
+            targets: [[0.0; MAX_BUSES]; STAGES],
+            settled: true,
+            sending: 0,
+            targeted: false,
+            routed: 0,
+            fading: 0,
+            out: [[0.0; 2]; MAX_BUSES],
+            filled: false,
+            configured: false,
+        }
+    }
+    /// Takes the modulated settings once per control block.
+    pub(crate) fn configure(&mut self, settings: &Taps) {
+        if *settings != self.settings {
+            self.settings = *settings;
+            self.retarget();
+        }
+        if !self.configured {
+            self.configured = true;
+            self.chain = self.chain_targets;
+        }
+    }
+    /// Without its bus, a send goes nowhere; the chain is unaffected.
+    pub(crate) fn set_open_buses(&mut self, open: u16) {
+        if open != self.open {
+            self.open = open;
+            self.retarget();
+        }
+    }
+    fn retarget(&mut self) {
+        self.targeted = false;
+        self.routed = 0;
+        for stage in Stage::ALL {
+            let tap = self.settings.get(stage);
+            let s = stage as usize;
+            self.chain_targets[s] = tap.chain;
+            let open = tap.bus > 0 && self.open & 1 << tap.bus != 0;
+            if open {
+                self.routed |= 1 << (tap.bus - 1);
+            }
+            for (b, target) in self.targets[s].iter_mut().enumerate() {
+                *target = if open && b + 1 == tap.bus as usize {
+                    tap.send
+                } else {
+                    0.0
+                };
+                self.targeted |= *target > 0.0;
+            }
+        }
+        self.settled = false;
+    }
+    /// Ramps every share one frame towards its target.
+    #[inline]
+    pub(crate) fn begin_frame(&mut self) {
+        if self.filled {
+            self.out = [[0.0; 2]; MAX_BUSES];
+            self.filled = false;
+        }
+        if self.settled {
+            return;
+        }
+        let mut settled = true;
+        let mut sending = 0;
+        let mut fading = 0;
+        for s in 0..STAGES {
+            settled &= ramp(&mut self.chain[s], self.chain_targets[s]);
+            for (b, (gain, &target)) in self.gains[s].iter_mut().zip(&self.targets[s]).enumerate() {
+                settled &= ramp(gain, target);
+                if *gain != 0.0 {
+                    sending |= 1 << s;
+                    fading |= 1 << b;
+                }
+            }
+        }
+        self.settled = settled;
+        self.sending = sending;
+        self.fading = fading;
+    }
+    /// Some send is running or about to: the stages must be rendered.
+    pub(crate) fn active(&self) -> bool {
+        self.targeted || self.sending != 0
+    }
+    /// The buses the next frames may send to (bit b for Bus b + 1).
+    pub(crate) fn buses(&self) -> u8 {
+        self.routed | self.fading
+    }
+    #[inline]
+    pub(crate) fn chain(&self, stage: Stage) -> f32 {
+        self.chain[stage as usize]
+    }
+    /// The stage's input and output blended as its Chain share says.
+    #[inline]
+    pub(crate) fn mix(&self, stage: Stage, input: Stereo, output: Stereo) -> Stereo {
+        let chain = self.chain(stage);
+        if chain == 1.0 {
+            output
+        } else if chain == 0.0 {
+            input
+        } else {
+            std::array::from_fn(|c| input[c] + (output[c] - input[c]) * chain)
+        }
+    }
+    /// The stage sends this frame: worth summing its output for.
+    #[inline]
+    pub(crate) fn sends(&self, stage: Stage) -> bool {
+        self.sending & 1 << stage as u8 != 0
+    }
+    #[inline]
+    pub(crate) fn send(&mut self, stage: Stage, frame: Stereo) {
+        for (out, &gain) in self.out.iter_mut().zip(&self.gains[stage as usize]) {
+            if gain != 0.0 {
+                out[0] += frame[0] * gain;
+                out[1] += frame[1] * gain;
+                self.filled = true;
+            }
+        }
+    }
+    /// Scales this frame's sends by the timbre's volume, or silences them.
+    #[inline]
+    pub(crate) fn finish(&mut self, gain: f32, silent: bool) {
+        if !self.filled {
+            return;
+        }
+        for out in &mut self.out {
+            for x in out {
+                let value = if silent { 0.0 } else { *x * gain };
+                *x = if value.is_finite() { value } else { 0.0 };
+            }
+        }
+    }
+    /// This frame's input of each bus, or None when no tap sent anything.
+    pub(crate) fn output(&self) -> Option<&[Stereo; MAX_BUSES]> {
+        self.filled.then_some(&self.out)
+    }
+}
+
+/// Moves `value` one step towards `target`; true once it is there.
+#[inline]
+fn ramp(value: &mut f32, target: f32) -> bool {
+    let delta = target - *value;
+    if delta.abs() <= STEP {
+        *value = target;
+        true
+    } else {
+        *value += STEP.copysign(delta);
+        false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::taps::Tap;
+
+    fn settled(runtime: &mut Runtime) {
+        for _ in 0..1024 {
+            runtime.begin_frame();
+        }
+    }
+
+    #[test]
+    fn a_send_needs_its_bus_and_crossfades_to_another() {
+        let mut runtime = Runtime::new();
+        let mut taps = Taps {
+            grains: Tap {
+                chain: 1.0,
+                send: 0.5,
+                bus: 3,
+            },
+            ..Default::default()
+        };
+        runtime.configure(&taps);
+        settled(&mut runtime);
+        assert!(!runtime.active(), "Bus 3 does not exist yet");
+        assert_eq!(runtime.buses(), 0);
+        runtime.set_open_buses(1 << 3 | 1 << 5);
+        assert_eq!(runtime.buses(), 1 << 2, "routed to Bus 3");
+        runtime.begin_frame();
+        assert!(runtime.sends(Stage::Grains) && !runtime.sends(Stage::Filters));
+        settled(&mut runtime);
+        runtime.begin_frame();
+        runtime.send(Stage::Grains, [1.0, -1.0]);
+        runtime.finish(0.5, false);
+        assert_eq!(runtime.output().unwrap()[2], [0.25, -0.25]);
+        taps.grains.bus = 5;
+        runtime.configure(&taps);
+        runtime.begin_frame();
+        assert_eq!(runtime.buses(), 1 << 4 | 1 << 2, "Bus 3 still fades out");
+        runtime.send(Stage::Grains, [1.0, 1.0]);
+        let out = runtime.output().unwrap();
+        assert!(out[2][0] > 0.0 && out[2][0] < 0.5 && out[4][0] > 0.0);
+        settled(&mut runtime);
+        runtime.begin_frame();
+        runtime.send(Stage::Grains, [1.0, 1.0]);
+        assert_eq!(runtime.output().unwrap()[2], [0.0; 2]);
+        runtime.begin_frame();
+        assert!(runtime.output().is_none(), "a frame without sends is empty");
+    }
+
+    #[test]
+    fn chain_shares_blend_input_and_output_and_land_exactly() {
+        let mut runtime = Runtime::new();
+        let mut taps = Taps::default();
+        taps.filters.chain = 0.0;
+        runtime.configure(&taps);
+        assert_eq!(
+            runtime.mix(Stage::Filters, [1.0; 2], [3.0; 2]),
+            [1.0; 2],
+            "a loaded preset starts at its shares"
+        );
+        taps.filters.chain = 1.0;
+        runtime.configure(&taps);
+        settled(&mut runtime);
+        assert_eq!(runtime.mix(Stage::Filters, [1.0; 2], [3.0; 2]), [3.0; 2]);
+        taps.filters.chain = 0.0;
+        runtime.configure(&taps);
+        runtime.begin_frame();
+        let halfway = runtime.mix(Stage::Filters, [1.0; 2], [3.0; 2]);
+        assert!(halfway[0] > 2.9 && halfway[0] < 3.0);
+        settled(&mut runtime);
+        assert_eq!(runtime.mix(Stage::Filters, [1.0; 2], [3.0; 2]), [1.0; 2]);
+        taps.filters.chain = 0.25;
+        runtime.configure(&taps);
+        settled(&mut runtime);
+        assert_eq!(runtime.mix(Stage::Filters, [1.0; 2], [3.0; 2]), [1.5; 2]);
+    }
+}

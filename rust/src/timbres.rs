@@ -211,8 +211,16 @@ impl Meta {
 }
 /// The smoothed send levels of one timbre, ramped like its level into Master.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct SendGains(pub [f32; MAX_BUSES]);
+pub struct SendGains {
+    gains: [f32; MAX_BUSES],
+    /// Mute and Solo of the section sends, whose levels ramp in the engine.
+    taps: f32,
+}
 impl SendGains {
+    /// The mixer send gains, ramping towards their levels.
+    pub fn gains(&self) -> &[f32; MAX_BUSES] {
+        &self.gains
+    }
     /// Adds a timbre's output to the bus inputs; a silent send costs a compare.
     #[inline]
     pub fn send(
@@ -222,7 +230,7 @@ impl SendGains {
         frame: crate::Stereo,
         buses: &mut [crate::Stereo; MAX_BUSES],
     ) {
-        for ((gain, &level), bus) in self.0.iter_mut().zip(sends).zip(buses) {
+        for ((gain, &level), bus) in self.gains.iter_mut().zip(sends).zip(buses) {
             let target = if audible { level } else { 0.0 };
             if target == 0.0 && *gain == 0.0 {
                 continue;
@@ -232,13 +240,42 @@ impl SendGains {
             bus[1] += frame[1] * *gain;
         }
     }
+    /// Adds what a timbre's sections sent (`Engine::bus_sends`).
+    #[inline]
+    pub fn send_taps(
+        &mut self,
+        audible: bool,
+        taps: Option<&[crate::Stereo; MAX_BUSES]>,
+        buses: &mut [crate::Stereo; MAX_BUSES],
+    ) {
+        let target = f32::from(audible);
+        if self.taps != target {
+            let delta = target - self.taps;
+            self.taps = if delta.abs() < 1e-4 {
+                target
+            } else {
+                self.taps + delta * 0.004
+            };
+        }
+        let Some(taps) = taps.filter(|_| self.taps > 0.0) else {
+            return;
+        };
+        for (bus, tap) in buses.iter_mut().zip(taps) {
+            bus[0] += tap[0] * self.taps;
+            bus[1] += tap[1] * self.taps;
+        }
+    }
+}
+/// Bit n set for each Bus n that a timbre can send to.
+pub fn open_buses<'a>(timbres: impl IntoIterator<Item = &'a Meta>) -> u16 {
+    timbres
+        .into_iter()
+        .filter(|m| m.kind == Kind::Bus)
+        .fold(0, |open, m| open | 1 << m.bus)
 }
 /// The lowest Bus number (1–8) that no existing bus uses.
 pub fn free_bus<'a>(timbres: impl IntoIterator<Item = &'a Meta>) -> Option<u8> {
-    let used = timbres
-        .into_iter()
-        .filter(|m| m.kind == Kind::Bus)
-        .fold(0_u16, |used, m| used | 1 << m.bus);
+    let used = open_buses(timbres);
     (1..=MAX_BUSES as u8).find(|b| used & (1 << b) == 0)
 }
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

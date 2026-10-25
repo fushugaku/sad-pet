@@ -727,6 +727,9 @@ pub struct Preset {
     pub performance: crate::performance::Settings,
     pub sequencer: crate::sequence::Program,
     pub resynth: crate::resynth::Settings,
+    /// Where each section's output goes: on down the chain and to a Bus.
+    #[serde(skip_serializing_if = "crate::taps::Taps::is_default")]
+    pub taps: crate::taps::Taps,
     pub drums: Option<Box<crate::drums::Settings>>,
     #[serde(skip)]
     pub drum_runtime: crate::drums::Prepared,
@@ -774,6 +777,7 @@ impl Default for Preset {
             performance: crate::performance::Settings::default(),
             sequencer: crate::sequence::Program::default(),
             resynth: crate::resynth::Settings::default(),
+            taps: Default::default(),
             drums: None,
             drum_runtime: Default::default(),
             synth: None,
@@ -810,7 +814,8 @@ impl<'de> Deserialize<'de> for Preset {
             env_count: u8,
             performance: crate::performance::Settings,
             sequencer: Option<crate::sequence::Program>,
-            resynth: crate::resynth::Settings,
+            resynth: Option<serde_json::Value>,
+            taps: Option<crate::taps::Taps>,
             drums: Option<Box<crate::drums::Settings>>,
             synth: Option<Box<crate::synth::Settings>>,
             bus: Option<Box<crate::bus::Settings>>,
@@ -836,7 +841,8 @@ impl<'de> Deserialize<'de> for Preset {
                     env_count: p.env_count,
                     performance: p.performance,
                     sequencer: None,
-                    resynth: p.resynth,
+                    resynth: None,
+                    taps: None,
                     drums: None,
                     synth: None,
                     bus: None,
@@ -943,6 +949,26 @@ impl<'de> Deserialize<'de> for Preset {
                 migrate(&mut route.destination);
             }
         }
+        let mut taps = d.taps.unwrap_or_default();
+        let resynth = match d.resynth {
+            Some(value) => {
+                // Earlier builds split a share of the wet Resynth off to a bus:
+                // its timbre and bus shares become the Resynth tap's Chain/Send.
+                let send = value.get("send").and_then(serde_json::Value::as_f64);
+                let bus = value.get("bus").and_then(serde_json::Value::as_u64);
+                if let (None, Some(send), Some(bus @ 1..=8)) = (d.taps, send, bus)
+                    && send > 0.0
+                {
+                    taps.resynth = crate::taps::Tap {
+                        chain: 1.0 - send as f32,
+                        send: send as f32,
+                        bus: bus as u8,
+                    };
+                }
+                serde_json::from_value(value).map_err(serde::de::Error::custom)?
+            }
+            None => crate::resynth::Settings::default(),
+        };
         let mut performance = d.performance;
         let sequencer = d
             .sequencer
@@ -957,7 +983,8 @@ impl<'de> Deserialize<'de> for Preset {
             env_count: d.env_count,
             performance,
             sequencer,
-            resynth: d.resynth,
+            resynth,
+            taps,
             drums: d.drums,
             drum_runtime: Default::default(),
             synth: d.synth,
@@ -1043,6 +1070,7 @@ impl Preset {
         self.lfo_count = self.lfo_count.clamp(1, MODULATORS as u8);
         self.env_count = self.env_count.clamp(1, MODULATORS as u8);
         self.resynth.sanitize();
+        self.taps.sanitize();
         if let Some(vocal) = &mut self.vocal {
             // A Vocal timbre's engine is a bus fed by its voice, never Master.
             vocal.sanitize();

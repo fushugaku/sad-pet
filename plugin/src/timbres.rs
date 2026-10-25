@@ -139,21 +139,39 @@ impl Render<'_> {
             }
             None => chunk.input[..n].copy_from_slice(input),
         }
-        self.engine
-            .process_input_block(&chunk.input[..n], &mut chunk.out[..n]);
         // A bus slot is written while its send gain is non-zero or ramping;
-        // a send that is zero and stays zero is skipped, as before.
+        // a send that is zero and stays zero is skipped, as before. So is a
+        // bus that no section of this part is routed to.
         chunk.mask = 0;
+        let taps = if buses { self.engine.tap_buses() } else { 0 };
         if buses {
-            for (bus, (&gain, &level)) in self.sends.0.iter().zip(&self.mix.sends).enumerate() {
+            for (bus, (&gain, &level)) in self.sends.gains().iter().zip(&self.mix.sends).enumerate()
+            {
                 if gain != 0.0 || (self.audible && level != 0.0) {
                     chunk.mask |= 1 << bus;
                 }
             }
+            chunk.mask |= taps;
             if chunk.mask != 0 {
                 for sends in &mut chunk.sends[..n] {
                     *sends = [[0.; 2]; MAX_BUSES];
                 }
+            }
+        }
+        if taps == 0 {
+            self.engine
+                .process_input_block(&chunk.input[..n], &mut chunk.out[..n]);
+        } else {
+            // Section sends change from frame to frame: take each frame's
+            // as it renders, the way the block renders anyway.
+            for ((input, out), sends) in chunk.input[..n]
+                .iter()
+                .zip(&mut chunk.out[..n])
+                .zip(&mut chunk.sends[..n])
+            {
+                *out = self.engine.process_input_frame(*input);
+                self.sends
+                    .send_taps(self.audible, self.engine.bus_sends(), sends);
             }
         }
         let target = if self.audible { self.mix.gain } else { 0. };

@@ -1352,6 +1352,100 @@ fn timbres_reach_master_directly_or_through_a_bus_without_audio_allocation() {
 }
 
 #[test]
+fn sections_send_to_a_bus_and_leave_the_chain_as_their_chain_share_says() {
+    let mut control = Controller::new_plugin(false);
+    let context = call(&mut control, "/api/timbres/add", json!({"kind":"bus"}));
+    let bus = context["timbres"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["kind"] == "bus")
+        .unwrap()["id"]
+        .clone();
+    call(&mut control, "/api/timbres/select", json!({"id":0}));
+    // Fully wet, one voice, no effect tails, and the filters left out of
+    // the chain: the timbre plays what Resynth hands on.
+    let mut preset = control.preset.clone();
+    preset.sequencer.enabled = false;
+    preset.color_chain.clear();
+    preset.pre_color_chain.clear();
+    preset.resynth.enabled = true;
+    preset.resynth.mix = 1.0;
+    preset.taps.resynth.bus = 1;
+    preset.taps.filters.chain = 0.0;
+    call(&mut control, "/api/preset", json!(preset));
+    call(
+        &mut control,
+        "/api/transport",
+        json!({"playing":true,"midi_gate":false}),
+    );
+    // A fresh engine per case, so no tail carries over between them.
+    let level = |control: &mut Controller, changes: Value| {
+        call(control, "/api/parameters", changes);
+        let mut audio = control.prepare(8000);
+        let values = control.values();
+        let mut peak = 0.0_f32;
+        no_heap(|| {
+            for block in 0..16 {
+                audio.begin(&values, 120., None, true, 1024);
+                let block_peak = render(&mut audio, 1024, [0.; 2]);
+                if block >= 8 {
+                    peak = peak.max(block_peak);
+                }
+            }
+        });
+        peak
+    };
+    let kept = level(&mut control, json!({"resynth_send":0}));
+    assert!(kept > 0.01, "Resynth plays in the timbre ({kept})");
+    let dry = level(&mut control, json!({"resynth_enabled":0}));
+    assert!(
+        (dry - kept).abs() > kept * 0.05,
+        "Resynth changes the timbre ({dry} vs {kept})"
+    );
+    call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":0,"gain":0}),
+    );
+    let through_bus = level(&mut control, json!({"resynth_enabled":1,"resynth_send":1}));
+    assert!(
+        (through_bus - kept).abs() < kept * 0.01,
+        "the bus passes the Resynth output to Master ({through_bus} vs {kept})"
+    );
+    call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":0,"muted":true}),
+    );
+    let muted = level(&mut control, json!({}));
+    assert!(muted < kept * 0.001, "Mute silences the sends ({muted})");
+    call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":0,"gain":1,"muted":false}),
+    );
+    call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":bus,"muted":true}),
+    );
+    // Out of the chain, Resynth only feeds the bus: the timbre plays dry.
+    let left = level(&mut control, json!({"tap_resynth_chain":0}));
+    assert!(
+        (left - dry).abs() < dry * 0.01,
+        "the timbre plays without Resynth ({left} vs {dry})"
+    );
+    // Without its bus, the send goes nowhere and the chain is unchanged.
+    call(&mut control, "/api/timbres/remove", json!({"id":bus}));
+    let missing = level(&mut control, json!({"tap_resynth_chain":1}));
+    assert!(
+        (missing - kept).abs() < kept * 0.01,
+        "a missing bus leaves the timbre as it was ({missing} vs {kept})"
+    );
+}
+
+#[test]
 fn projects_with_master_and_buses_survive_repeated_save_and_restore() {
     let mut control = Controller::new_plugin(false);
     call(&mut control, "/api/timbres/add", json!({"kind":"bus"}));

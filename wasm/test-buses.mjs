@@ -85,6 +85,52 @@ assert.equal(context.timbres.find((t) => t.id === 0).sends[0], 1);
 // Removing the bus clears the sends to its number.
 context = core.request("/api/timbres/remove", { id: bus.id });
 assert.equal(context.timbres.find((t) => t.id === 0).sends[0], 0);
+// Each section sends its output to a bus; its Chain share decides what goes
+// on down the timbre's chain.
+const split = new Core(module, 8000);
+split.call("sad_load", utility.call("sad_pack"));
+const resynthBus = split
+  .request("/api/timbres/add", { kind: "bus" })
+  .timbres.find((t) => t.kind === "bus");
+split.request("/api/timbres/select", { id: 0 });
+// Fully wet, one voice, no effect tails and the filters out of the chain:
+// the timbre plays what Resynth hands on.
+const wet = split.request("/api/preset");
+wet.sequencer.enabled = false;
+wet.color_chain = [];
+wet.pre_color_chain = [];
+Object.assign(wet.resynth, { enabled: true, mix: 1 });
+wet.taps = { resynth: { chain: 1, send: 0, bus: 1 }, filters: { chain: 0 } };
+split.request("/api/preset", wet);
+assert.deepEqual(split.request("/api/preset").taps.resynth, { chain: 1, send: 0, bus: 1 });
+split.request("/api/transport", { playing: true, midi_gate: false });
+const splitLevel = (changes) => {
+  split.request("/api/parameters", changes);
+  let peak = 0;
+  for (let i = 0; i < 60; i++)
+    for (const x of split.process(128)) {
+      assert.ok(Number.isFinite(x));
+      if (i >= 40) peak = Math.max(peak, Math.abs(x));
+    }
+  return peak;
+};
+const near = (a, b) => a > b * 0.7 && a < b * 1.4;
+const kept = splitLevel({ resynth_send: 0 });
+assert.ok(kept > 0.01, `Resynth plays in the timbre (${kept})`);
+const dry = splitLevel({ resynth_enabled: 0 });
+split.request("/api/timbres/update", { id: 0, gain: 0 });
+const throughBus = splitLevel({ resynth_enabled: 1, resynth_send: 1 });
+assert.ok(near(throughBus, kept), `The bus passes the Resynth output to Master (${throughBus} vs ${kept})`);
+split.request("/api/timbres/update", { id: 0, muted: true });
+const muted = splitLevel({});
+assert.ok(muted < kept * 0.001, `Mute silences the sends (${muted})`);
+split.request("/api/timbres/update", { id: 0, gain: 1, muted: false });
+split.request("/api/timbres/update", { id: resynthBus.id, muted: true });
+const left = splitLevel({ tap_resynth_chain: 0 });
+assert.ok(near(left, dry), `Out of the chain, the timbre plays without Resynth (${left} vs ${dry})`);
+split.request("/api/timbres/remove", { id: resynthBus.id });
+const missing = splitLevel({ tap_resynth_chain: 1 });
+assert.ok(near(missing, kept), `A missing bus leaves the timbre as it was (${missing} vs ${kept})`);
 console.log(
-  "Buses: Master always present, sends reach Master through Bus 1, roles survive preset loads, scenes keep routing.",
+  "Buses: Master always present, sends reach Master through Bus 1, roles survive preset loads, scenes keep routing, sections send to a bus.",
 );

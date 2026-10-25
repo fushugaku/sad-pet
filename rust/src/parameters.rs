@@ -2,6 +2,7 @@
 use crate::{
     color::{ColorParameter, ColorSlot, MAX_COLOR_SLOTS},
     preset::Preset,
+    taps::Stage,
 };
 use serde::Serialize;
 use std::sync::OnceLock;
@@ -121,6 +122,8 @@ enum Target {
     SynthBuffer,
     /// An added filter by list position: a FILTER_SLOT_FIELDS index.
     FilterSlot(usize, usize),
+    /// A section's Chain share or bus send.
+    Tap(Stage, TapField),
 }
 
 /// Host controls of each added filter, in host order.
@@ -176,13 +179,17 @@ impl Spec {
             self.target,
             Target::DrumGrain | Target::DrumBuffer | Target::SynthGrain | Target::SynthBuffer
         ) && self.id != "bpm"
-            && !matches!(self.target, Target::SourceFx(_) | Target::Performance(3..))
+            && !matches!(
+                self.target,
+                Target::SourceFx(_) | Target::Performance(3..) | Target::Tap(_, TapField::Bus)
+            )
     }
     pub(crate) fn frame_get(&self, m: &crate::dsp::Modulated) -> Option<f32> {
         Some(match self.target {
             Target::Core { frame_get, .. } => frame_get(m),
             Target::Drum(i, field) => m.drums.0[i][field],
             Target::DrumShift(i) => m.drum_shifts[i],
+            Target::Tap(stage, field) => tap_get(m.taps.get(stage), field),
             Target::SourceFx(_)
             | Target::DrumGrain
             | Target::DrumBuffer
@@ -247,6 +254,7 @@ impl Spec {
                     sad_pet_dxm088::params::constrain(field, value).unwrap_or(self.default);
             }
             Target::DrumShift(i) => m.drum_shifts[i] = value,
+            Target::Tap(stage, field) => tap_set(m.taps.get_mut(stage), field, value),
             Target::SourceFx(_)
             | Target::DrumGrain
             | Target::DrumBuffer
@@ -342,6 +350,7 @@ impl Spec {
                 }
             }
             Target::Core { get, .. } => get(preset),
+            Target::Tap(stage, field) => tap_get(preset.taps.get(stage), field),
             Target::Lfo(i, field) => {
                 let l = preset.lfos[i];
                 match field {
@@ -448,6 +457,7 @@ impl Spec {
                 }
             }
             Target::Core { set, .. } => set(preset, value),
+            Target::Tap(stage, field) => tap_set(preset.taps.get_mut(stage), field, value),
             Target::Lfo(i, field) => {
                 let l = &mut preset.lfos[i];
                 *match field {
@@ -1156,8 +1166,62 @@ pub fn specs() -> &'static [Spec] {
                 target: Target::DrumShift(i),
             });
         }
+        // Then each section's tap: the Resynth bus send under the IDs its
+        // first builds used, every Chain share, then the other bus sends.
+        result.push(tap_spec(Stage::Resynth, TapField::Send));
+        result.push(tap_spec(Stage::Resynth, TapField::Bus));
+        for stage in Stage::ALL {
+            result.push(tap_spec(stage, TapField::Chain));
+        }
+        for stage in Stage::ALL.into_iter().filter(|&s| s != Stage::Resynth) {
+            result.push(tap_spec(stage, TapField::Send));
+            result.push(tap_spec(stage, TapField::Bus));
+        }
         result
     })
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum TapField {
+    Chain,
+    Send,
+    Bus,
+}
+/// `resynth_send` and `resynth_bus` keep the IDs they were released with.
+fn tap_id(stage: Stage, field: &str) -> String {
+    match (stage, field) {
+        (Stage::Resynth, "send" | "bus") => format!("resynth_{field}"),
+        _ => format!("tap_{}_{field}", stage.key()),
+    }
+}
+fn tap_spec(stage: Stage, field: TapField) -> Spec {
+    let (key, name, max) = match field {
+        TapField::Chain => ("chain", "chain", 1.0),
+        TapField::Send => ("send", "bus send", 1.0),
+        TapField::Bus => ("bus", "bus", crate::bus::MAX_BUSES as f32),
+    };
+    Spec {
+        id: tap_id(stage, key),
+        name: format!("{} {name}", stage.label()),
+        min: 0.0,
+        max,
+        default: tap_get(&crate::taps::Tap::default(), field),
+        target: Target::Tap(stage, field),
+    }
+}
+fn tap_get(tap: &crate::taps::Tap, field: TapField) -> f32 {
+    match field {
+        TapField::Chain => tap.chain,
+        TapField::Send => tap.send,
+        TapField::Bus => tap.bus as f32,
+    }
+}
+fn tap_set(tap: &mut crate::taps::Tap, field: TapField, value: f32) {
+    match field {
+        TapField::Chain => tap.chain = value,
+        TapField::Send => tap.send = value,
+        TapField::Bus => tap.bus = value.round() as u8,
+    }
 }
 
 pub fn mirror(preset: &mut Preset) {

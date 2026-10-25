@@ -1412,7 +1412,7 @@ impl Audio {
         }
         let mut part = self.parts.as_mut();
         let mut solo = self.meta.mix.solo;
-        let mut buses = false;
+        let mut open = 0;
         while let Some(p) = part {
             p.audio.begin(&[], bpm, beat, playing, frames);
             if let Some(vocal) = &mut p.audio.vocal {
@@ -1420,16 +1420,22 @@ impl Audio {
             }
             let kind = p.audio.meta.kind;
             solo |= p.audio.meta.mix.solo && !kind.routing();
-            buses |= kind == sad_pet::timbres::Kind::Bus;
+            if kind == sad_pet::timbres::Kind::Bus {
+                open |= 1_u16 << p.audio.meta.bus;
+            }
             part = p.next.as_mut();
         }
-        self.buses = buses;
+        self.buses = open != 0;
         self.audible = !self.meta.mix.muted && (!solo || self.meta.mix.solo);
+        // Buses take no sends: a bus's sections only pass on down its chain.
+        let routes = |kind: sad_pet::timbres::Kind| if kind.routing() { 0 } else { open };
+        self.engine.set_open_buses(routes(self.meta.kind));
         let mut part = self.parts.as_mut();
         while let Some(p) = part {
             let mix = p.audio.meta.mix;
             // Solo selects timbres; buses and Master keep processing them.
             p.audio.audible = !mix.muted && (p.audio.meta.kind.routing() || !solo || mix.solo);
+            p.audio.engine.set_open_buses(routes(p.audio.meta.kind));
             part = p.next.as_mut();
         }
     }

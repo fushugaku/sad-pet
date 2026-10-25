@@ -21,6 +21,7 @@ pub mod source_fx;
 #[cfg(all(feature = "source-worker", not(target_arch = "wasm32")))]
 pub mod source_fx_worker;
 pub mod synth;
+mod taps;
 pub mod telemetry;
 
 use crate::{
@@ -31,6 +32,7 @@ use crate::{
     performance::{Mode, Performance},
     preset::{Destination, Env, FilterPosition, FilterSlot, Lfo, MAX_FILTER_SLOTS, Params, Preset},
     tables::{self, Random},
+    taps::Stage,
 };
 use color::ColorRack;
 use filter::FilterBank;
@@ -131,6 +133,7 @@ pub(crate) struct Modulated {
     pub(crate) env_count: usize,
     pub(crate) performance: crate::performance::Modulation,
     pub(crate) resynth: crate::resynth::Settings,
+    pub(crate) taps: crate::taps::Taps,
     pub(crate) drums: crate::drums::Controls,
     /// Each drum track's pattern note shift, in steps.
     pub(crate) drum_shifts: [f32; crate::drums::TRACKS],
@@ -163,6 +166,7 @@ impl Modulated {
         self.env_count = preset.env_count as usize;
         self.performance = crate::performance::Modulation::from_settings(&preset.performance);
         self.resynth = preset.resynth;
+        self.taps = preset.taps;
         self.drums = preset
             .drums
             .as_ref()
@@ -384,6 +388,8 @@ pub struct Engine {
     pre_color_rack: ColorRack,
     source_color: color::ColorProcessor,
     resynth: resynth::Resynth,
+    /// Each section's Chain share and bus send.
+    taps: taps::Runtime,
     drums: Option<Box<crate::drums::Runtime>>,
     synth: Option<Box<synth::Runtime>>,
     /// Present while the preset is a Sampler kit: its pads replace the input.
@@ -475,6 +481,7 @@ impl Engine {
             pre_color_rack: ColorRack::new(sr),
             source_color: color::ColorProcessor::new(sr),
             resynth: resynth::Resynth::new(sr),
+            taps: taps::Runtime::new(),
             drums: None,
             synth: None,
             sampler: None,
@@ -1055,6 +1062,7 @@ impl Engine {
                 && !self.bus_history()
                 && !self.bypass
                 && !self.resynth.active()
+                && !self.taps.active()
                 && !self.pre_color_rack.is_active()
                 && !self.color_rack.is_active()
                 && self.preset.source_color_chain.is_empty()
@@ -1844,6 +1852,7 @@ impl Engine {
         }
         self.resynth
             .configure(m.resynth, &self.sample, m.params.sample_root_note);
+        self.taps.configure(&m.taps);
         let shaper_note = self.source_note as f32
             + self.bend[self.source_channel as usize] * m.params.midi_pitchbend_range
             + (m.params.pitch * 2.0 - 1.0) * m.params.pitch_range
@@ -1916,6 +1925,21 @@ impl Engine {
         self.overlap = fast::flush(
             self.overlap + (count - self.overlap) * if count > self.overlap { 0.9 } else { 0.2 },
         );
+    }
+    /// Buses (bit n for Bus n) that this timbre's sections may send to. A
+    /// host without buses leaves this empty and nothing is sent.
+    pub fn set_open_buses(&mut self, open: u16) {
+        self.taps.set_open_buses(open);
+    }
+    /// What the sections sent into each bus in the last frame, at the
+    /// timbre's volume; None when nothing was sent.
+    pub fn bus_sends(&self) -> Option<&[Stereo; crate::bus::MAX_BUSES]> {
+        self.taps.output()
+    }
+    /// The buses (bit b for Bus b + 1) that the sections may send to in the
+    /// coming frames: those they are routed to and those still fading out.
+    pub fn tap_buses(&self) -> u8 {
+        self.taps.buses()
     }
     pub fn resynth_meter(&self) -> crate::resynth::Meter {
         crate::resynth::Meter {
@@ -2331,6 +2355,7 @@ impl Engine {
     }
 
     pub fn process_input_frame(&mut self, input: Stereo) -> Stereo {
+        self.taps.begin_frame();
         let input = if self.sampler.is_some() {
             // A kit plays its sequencer even while its chain passes through.
             if self.playing {
@@ -2383,13 +2408,19 @@ impl Engine {
             self.live_input.as_ref().is_some_and(|i| i.effects_only)
         };
         let source_input = if self.live_input.is_some() || bus.is_some() {
-            self.source_color.process(input.map(|x| {
+            let clean = input.map(|x| {
                 if x.is_finite() {
                     x.clamp(-16.0, 16.0)
                 } else {
                     0.0
                 }
-            }))
+            });
+            let processed = self.source_color.process(clean);
+            if self.taps.sends(Stage::Source) {
+                let gain = self.input_gain;
+                self.taps.send(Stage::Source, processed.map(|x| x * gain));
+            }
+            self.taps.mix(Stage::Source, clean, processed)
         } else {
             input
         };
@@ -2421,20 +2452,37 @@ impl Engine {
                 }
             })
         } else {
-            source_fx::read(
+            let fade = self
+                .fades
+                .gain(self.cursor, self.sample.sample_rate, &self.file_range);
+            let level = self.sample.level_for_rate(source_rate, true);
+            let processed = source_fx::read(
                 &self.sample,
                 &self.processed_source,
                 &self.previous_source,
                 self.source_fade_remaining,
                 self.cursor,
-                self.sample.level_for_rate(source_rate, true),
+                level,
                 &self.file_range,
             )
-            .map(|v| {
-                v * self
-                    .fades
-                    .gain(self.cursor, self.sample.sample_rate, &self.file_range)
-            })
+            .map(|v| v * fade);
+            if self.taps.sends(Stage::Source) {
+                let gain = self.input_gain;
+                self.taps.send(Stage::Source, processed.map(|x| x * gain));
+            }
+            if self.taps.chain(Stage::Source) < 1.0
+                && (self.processed_source.is_some() || self.source_fade_remaining != 0)
+            {
+                // Source FX are rendered ahead into a copy of the file; leaving
+                // them out of the chain blends back to the file itself.
+                let raw = self
+                    .sample
+                    .read_region_level(self.cursor, level, &self.file_range)
+                    .map(|v| v * fade);
+                self.taps.mix(Stage::Source, raw, processed)
+            } else {
+                processed
+            }
         };
         let level = source[0].abs().max(source[1].abs());
         self.follower = fast::flush(
@@ -2507,6 +2555,7 @@ impl Engine {
         let fading = file_source && self.fades != Fades::default();
         let antialiasing = self.preset.params.antialiasing;
         let whole_file = !source_effects && range.start == 0 && range.end == sample.len();
+        let source_chain = self.taps.chain(Stage::Source);
         let top_level = sample.active_levels() - 1;
         let mut pending = self.live_grains;
         while pending != 0 {
@@ -2519,7 +2568,7 @@ impl Engine {
             let mut frame = if whole_file {
                 sample.read_level(grain.position, level.min(top_level))
             } else if source_effects {
-                source_fx::read(
+                let processed = source_fx::read(
                     &self.sample,
                     &self.processed_source,
                     &self.previous_source,
@@ -2527,7 +2576,13 @@ impl Engine {
                     grain.position,
                     level,
                     &range,
-                )
+                );
+                if source_chain < 1.0 {
+                    let raw = sample.read_region_level(grain.position, level, &range);
+                    std::array::from_fn(|c| raw[c] + (processed[c] - raw[c]) * source_chain)
+                } else {
+                    processed
+                }
             } else {
                 sample.read_region_level(grain.position, level, &range)
             };
@@ -2568,6 +2623,19 @@ impl Engine {
         } else {
             (dry_scale * (1.0 - self.smooth_mix), norm * self.smooth_mix)
         };
+        // Without the grain engine in the chain, voices get the source as
+        // Dry/Wet would at fully dry; the bus still hears the blend.
+        let grain_chain = self.taps.chain(Stage::Grains);
+        let (chain_dry, chain_grain) = if grain_chain == 1.0 {
+            (dry_amount, grain_amount)
+        } else {
+            (
+                dry_scale + (dry_amount - dry_scale) * grain_chain,
+                grain_amount * grain_chain,
+            )
+        };
+        let grain_sends = self.synth.is_none() && self.taps.sends(Stage::Grains);
+        let mut grain_send = [0.0; 2];
         let mut mixed_frames = [[0.0; 2]; VOICES];
         let mut before_fx = [0.0; 2];
         let mut grain_tap = [0.0; 2];
@@ -2609,12 +2677,22 @@ impl Engine {
                 Instance::Voice(i),
             );
             mixed_frames[i] = std::array::from_fn(|c| {
-                (source[c] * dry_amount + frame[c] * grain_amount) * input_gain
+                (source[c] * chain_dry + frame[c] * chain_grain) * input_gain
             });
             for (c, total) in before_fx.iter_mut().enumerate() {
                 *total += mixed_frames[i][c] * self.voices[i].value;
                 grain_tap[c] += frame[c] * norm * input_gain * self.voices[i].value;
             }
+            if grain_sends {
+                for (c, total) in grain_send.iter_mut().enumerate() {
+                    *total += (source[c] * dry_amount + frame[c] * grain_amount)
+                        * input_gain
+                        * self.voices[i].value;
+                }
+            }
+        }
+        if grain_sends {
+            self.taps.send(Stage::Grains, grain_send);
         }
         // One stereo pre-filter rack, with its own tails and delay clock. The
         // shared return enters each note's filter before its VCA. Normalizing
@@ -2649,7 +2727,19 @@ impl Engine {
             resynth_output,
             Instance::Shared,
         );
+        // The shared stages reach every voice and are weighted by each, so
+        // what they send follows the notes' VCA as their return does.
+        if self.taps.sends(Stage::Resynth) {
+            self.taps
+                .send(Stage::Resynth, resynth_output.map(|x| x * voice_sum));
+        }
+        let resynth_output = self.taps.mix(Stage::Resynth, before_fx, resynth_output);
         let pre_output = self.pre_color_rack.process(resynth_output);
+        if self.taps.sends(Stage::PreFx) {
+            self.taps
+                .send(Stage::PreFx, pre_output.map(|x| x * voice_sum));
+        }
+        let pre_output = self.taps.mix(Stage::PreFx, resynth_output, pre_output);
         let correction = if self.pre_color_rack.is_active() || resynth_active || after_resynth != 0
         {
             std::array::from_fn(|c| pre_output[c] - before_fx[c])
@@ -2657,14 +2747,17 @@ impl Engine {
             [0.0; 2]
         };
         let mut filtered = [0.0; 2];
+        let filter_sends = self.taps.sends(Stage::Filters);
+        let mut filter_send = [0.0; 2];
         for (i, mixed) in mixed_frames.into_iter().enumerate() {
             if self.voices[i].value <= 0.0 {
                 continue;
             }
+            let unfiltered = std::array::from_fn(|c| mixed[c] + correction[c]);
             let voice = filter_slots::chain(
                 &mut self.filter_banks,
                 masks[FilterPosition::BeforeFilters as usize],
-                std::array::from_fn(|c| mixed[c] + correction[c]),
+                unfiltered,
                 Instance::Voice(i),
             );
             let voice = if bus.is_some_and(|b| !b.filters) {
@@ -2678,9 +2771,18 @@ impl Engine {
                 voice,
                 Instance::Voice(i),
             );
+            if filter_sends {
+                for c in 0..2 {
+                    filter_send[c] += voice[c] * self.voices[i].value;
+                }
+            }
+            let voice = self.taps.mix(Stage::Filters, unfiltered, voice);
             for c in 0..2 {
                 filtered[c] += voice[c] * self.voices[i].value;
             }
+        }
+        if filter_sends {
+            self.taps.send(Stage::Filters, filter_send);
         }
         if let Some(synth) = &mut self.synth {
             synth.set_output(filtered);
@@ -2690,13 +2792,18 @@ impl Engine {
             } else {
                 filtered
             };
-            filtered = if effects_only {
+            // A Synth's grain engine follows its filters.
+            let grains = if effects_only {
                 dry
             } else {
                 std::array::from_fn(|c| {
                     dry[c] * (1.0 - self.smooth_mix) + voice_frames[0][c] * norm * self.smooth_mix
                 })
             };
+            if self.taps.sends(Stage::Grains) {
+                self.taps.send(Stage::Grains, grains);
+            }
+            filtered = self.taps.mix(Stage::Grains, dry, grains);
         }
         let processed = self
             .color_rack
@@ -2707,6 +2814,10 @@ impl Engine {
             processed,
             Instance::Shared,
         );
+        if self.taps.sends(Stage::PostFx) {
+            self.taps.send(Stage::PostFx, processed);
+        }
+        let processed = self.taps.mix(Stage::PostFx, filtered, processed);
         let volume = if self.bypass {
             self.preset.params.master_volume
         } else {
@@ -2723,6 +2834,7 @@ impl Engine {
                 }) - self.smooth_bypass_gate)
                     * 0.002,
         );
+        self.taps.finish(self.smooth_gain, self.bypass);
         let bypass_source = if self.bypass
             && (self.processed_source.is_some()
                 || self.previous_source.is_some()

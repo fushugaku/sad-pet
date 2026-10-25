@@ -557,7 +557,13 @@ impl Registry {
             .parts
             .iter()
             .any(|p| p.meta.mix.solo && !p.meta.kind.routing());
-        let buses = self.parts.iter().any(|p| p.meta.kind == Kind::Bus);
+        let open = sad_pet::timbres::open_buses(self.parts.iter().map(|p| &p.meta));
+        let buses = open != 0;
+        // Buses take no sends: a bus's sections only pass on down its chain.
+        for part in &mut self.parts {
+            let open = if part.meta.kind.routing() { 0 } else { open };
+            part.host.engine.set_open_buses(open);
+        }
         let master = self.parts.iter().position(|p| p.meta.kind == Kind::Master);
         let gain = |part: &mut Part, audible: bool| {
             let target = if audible { part.meta.mix.gain } else { 0. };
@@ -626,6 +632,8 @@ impl Registry {
                 }
                 if buses {
                     part.sends.send(&mix.sends, audible, out, &mut sends);
+                    part.sends
+                        .send_taps(audible, part.host.engine.bus_sends(), &mut sends);
                 }
             }
             if buses {

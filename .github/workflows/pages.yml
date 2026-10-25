@@ -50,6 +50,7 @@ jobs:
           node wasm/test-timbres.mjs
           node wasm/test-buses.mjs
           node wasm/test-bus-ui.mjs
+          node wasm/test-taps-ui.mjs
           node wasm/test-synth.mjs
           node wasm/test-sequencer-ui.mjs
           node wasm/test-microphone.mjs
