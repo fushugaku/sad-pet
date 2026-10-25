@@ -18,6 +18,11 @@
     <script src="./app.js" defer></script>
   </head>
   <body>
+    <svg class="svg-defs" aria-hidden="true">
+      <symbol id="power-glyph" viewBox="0 0 24 24">
+        <path d="M12 3v9M6.86 6.87A8 8 0 1 0 17.14 6.87" />
+      </symbol>
+    </svg>
     <main>
       <header>
         <div class="brand">
@@ -178,12 +183,16 @@
           </button>
         </div>
         <div class="output-controls">
-          <label id="granular-toggle" class="check granular-toggle" hidden
-            ><input
+          <label id="granular-toggle" class="granular-toggle" hidden
+            ><button
               id="history-granular"
-              type="checkbox"
-              aria-label="Granular processing of this timbre's live history"
-            />Granular</label
+              class="power"
+              aria-label="Granular"
+              aria-pressed="false"
+              title="Granular processing of this timbre's live history"
+            >
+              <svg aria-hidden="true"><use href="#power-glyph" /></svg></button
+            >Granular</label
           ><label
             >DRY / WET<input
               id="mix"
@@ -271,13 +280,6 @@
           <h2 id="bus-title">Bus <span>sends from timbres</span></h2>
           <div class="resynth-actions">
             <button id="bus-back" hidden></button>
-            <label class="check"
-              ><input
-                id="bus-filters"
-                type="checkbox"
-                aria-label="Bus filters 1 and 2"
-              />Filters</label
-            >
           </div>
         </div>
         <p id="bus-hint" class="muted bus-hint">
@@ -565,20 +567,24 @@
       </section>
       <section class="bank resynth-bank" aria-label="Resynth">
         <div class="section-heading">
-          <h2>Resynth</h2>
+          <div class="section-title">
+            <button
+              id="resynth-enabled"
+              class="power"
+              aria-label="Resynth"
+              aria-pressed="false"
+              title="Switch Resynth on or off"
+            >
+              <svg aria-hidden="true"><use href="#power-glyph" /></svg>
+            </button>
+            <h2>Resynth</h2>
+          </div>
           <div class="resynth-actions">
             <select id="resynth-input" aria-label="Resynth analysis input">
               <option value="source">Source</option>
               <option value="grains">Grains</option>
             </select>
             <button id="resynth-add">+ Oscillator</button>
-            <label class="check"
-              ><input
-                id="resynth-enabled"
-                type="checkbox"
-                aria-label="Enable Resynth"
-              />On</label
-            >
           </div>
         </div>
         <div
@@ -606,7 +612,19 @@
       </section>
       <section class="bank filter-bank" aria-label="Filters">
         <div class="section-heading">
-          <h2>Filters</h2>
+          <div class="section-title">
+            <button
+              id="bus-filters"
+              class="power"
+              aria-label="Filters 1 and 2"
+              aria-pressed="false"
+              title="Switch Filters 1 and 2 of this bus on or off"
+              hidden
+            >
+              <svg aria-hidden="true"><use href="#power-glyph" /></svg>
+            </button>
+            <h2>Filters</h2>
+          </div>
           <div class="filter-routing">
             <output id="filter-path">IN → F1 → OUT</output>
             <select id="filter-routing" aria-label="Filter routing">

@@ -1144,7 +1144,7 @@ function syncTimbreRouting() {
   // Filter 1 and 2 of a bus stay visible but are bypassed until switched on.
   $("filters").classList.toggle("bypassed", !!bus && !bus.filters);
   $("filters").title = bus && !bus.filters
-    ? "Bypassed: switch on Filters in the bus heading" : "";
+    ? "Bypassed: switch Filters on with the power button in their heading" : "";
   if ($("grain-engine-home").nextElementSibling !== grains)
     $("grain-engine-home").after(grains);
   $("drum-grain-count").hidden = !history;
@@ -1153,7 +1153,7 @@ function syncTimbreRouting() {
   // One Granular switch beside Dry/Wet for every engine with a live history.
   const own = historySettings();
   $("granular-toggle").hidden = !own;
-  $("history-granular").checked = !!own?.granular;
+  setAttr($("history-granular"), "aria-pressed", !!own?.granular);
   $("mix").disabled = !!own && !own.granular;
   $("mix").title = own && !own.granular
     ? "Switch on Granular to blend in grains"
@@ -1427,8 +1427,8 @@ function buildResynth() {
     bar.innerHTML = "<i></i>";
     $("resynth-spectrum").append(bar);
   }
-  $("resynth-enabled").onchange = () => {
-    editResynth("enabled", $("resynth-enabled").checked);
+  $("resynth-enabled").onclick = () => {
+    editResynth("enabled", !resynthSettings().enabled);
     syncResynth();
   };
   $("resynth-input").onchange = () =>
@@ -1442,15 +1442,15 @@ function buildResynth() {
 }
 function syncResynth() {
   const r = resynthSettings();
-  $("resynth-enabled").checked = r.enabled;
+  setAttr($("resynth-enabled"), "aria-pressed", r.enabled);
   $("resynth-input").value = r.input;
   $("resynth-add").disabled = r.count >= 4;
   $("resynth-spectrum").classList.toggle("inactive", !r.enabled);
   syncOscillators("resynth");
 }
 function bindGranularToggle() {
-  $("history-granular").onchange = () => {
-    const on = $("history-granular").checked;
+  $("history-granular").onclick = () => {
+    const on = $("history-granular").getAttribute("aria-pressed") !== "true";
     if (preset?.drums) {
       preset.drums.granular = on;
       scheduleParameter("drum_granular", Number(on));
@@ -1504,9 +1504,9 @@ function syncGrainBuffer() {
   if (document.activeElement !== buffer) buffer.value = String(seconds);
 }
 function buildBus() {
-  $("bus-filters").onchange = () => {
+  $("bus-filters").onclick = () => {
     if (!preset?.bus) return;
-    preset.bus.filters = $("bus-filters").checked;
+    preset.bus.filters = !preset.bus.filters;
     schedulePreset();
     syncTimbreRouting();
   };
@@ -1514,6 +1514,8 @@ function buildBus() {
 function syncBus() {
   const bus = preset?.bus;
   $("bus-engine").hidden = !bus;
+  // Only a bus can switch Filter 1 and 2 off; elsewhere they always run.
+  $("bus-filters").hidden = !bus;
   if (!bus) return;
   const title = $("bus-title");
   const vocal = !!preset.vocal;
@@ -1534,7 +1536,7 @@ function syncBus() {
   $("bus-back").hidden = !owner;
   $("bus-back").textContent = owner ? `◀ ${owner.name}` : "";
   $("bus-back").onclick = () => owner && changeTimbre("/api/timbres/select", { id: owner.id });
-  $("bus-filters").checked = !!bus.filters;
+  setAttr($("bus-filters"), "aria-pressed", !!bus.filters);
   const effects = [preset.color_chain, preset.pre_color_chain, preset.source_color_chain]
     .some((chain) => chain?.some((slot) => slot.enabled && slot.mix > 0));
   $("bus-hint").hidden =
