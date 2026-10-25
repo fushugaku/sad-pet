@@ -46,7 +46,10 @@ const _: () = assert!(
     MAX_GRAINS == u128::BITS as usize,
     "one occupancy bit per grain slot"
 );
-const VOICES: usize = 9;
+/// Voice 0 is the free voice; notes take the other 32, so long releases
+/// overlap under fast sequences before a tail is stolen.
+const VOICES: usize = 33;
+const _: () = assert!(VOICES <= u64::BITS as usize, "one sounding bit per voice");
 const CONTROL_INTERVAL: u64 = 32;
 /// Sampler pads auditioned from the editor own their notes under this bit.
 const AUDITION: u32 = 1 << 31;
@@ -61,6 +64,17 @@ struct Grain {
     shape: f32,
     pan: Stereo,
     voice: usize,
+}
+
+/// Set bits of `mask`, lowest first.
+fn bits(mut mask: u64) -> impl Iterator<Item = usize> {
+    std::iter::from_fn(move || {
+        (mask != 0).then(|| {
+            let bit = mask.trailing_zeros() as usize;
+            mask &= mask - 1;
+            bit
+        })
+    })
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -405,6 +419,9 @@ pub struct Engine {
     last_position: f32,
     grain_clock: f64,
     next_voice: usize,
+    /// Voices whose envelopes may still run, bit n for voice n. The frame
+    /// loop advances only these, so idle voices cost nothing per frame.
+    sounding: u64,
     bend: [f32; 16],
     sustain: [bool; 16],
     follower: f32,
@@ -493,6 +510,7 @@ impl Engine {
             last_position: 0.0,
             grain_clock: 1.0,
             next_voice: 0,
+            sounding: 0,
             bend: [0.0; 16],
             sustain: [false; 16],
             follower: 0.0,
@@ -880,6 +898,11 @@ impl Engine {
             }
         }
     }
+    /// Starts a voice's envelopes and lets the frame loop advance them.
+    fn start_voice(&mut self, index: usize) {
+        self.voices[index].on(self.preset.env_count as usize);
+        self.sounding |= 1 << index;
+    }
     /// Voice 0 is the note held while playing without keys or note tracks.
     fn start_free_voice(&mut self) {
         self.voices[0].velocity = 1.0;
@@ -889,7 +912,7 @@ impl Engine {
         if !self.voices[0].active() {
             self.clear_voice_filters(0);
         }
-        self.voices[0].on(self.preset.env_count as usize);
+        self.start_voice(0);
         self.mod_note_on(0, 60, 127);
         self.configure_voice_filter(0);
     }
@@ -1153,7 +1176,7 @@ impl Engine {
                 self.voices[0].note = 60;
                 self.voices[0].held = true;
                 self.clear_voice_filters(0);
-                self.voices[0].on(self.preset.env_count as usize);
+                self.start_voice(0);
                 self.mod_note_on(0, 60, 127);
                 self.configure_voice_filter(0);
             }
@@ -1186,7 +1209,7 @@ impl Engine {
             self.voices[0].velocity = 1.0;
             self.voices[0].held = true;
             self.clear_voice_filters(0);
-            self.voices[0].on(self.preset.env_count as usize);
+            self.start_voice(0);
             self.mod_note_on(0, 60, 127);
             self.configure_voice_filter(0);
         }
@@ -1538,7 +1561,7 @@ impl Engine {
                 v.velocity = velocity as f32 / 127.0;
                 v.held = true;
                 v.sustained = false;
-                v.on(self.preset.env_count as usize);
+                self.start_voice(index);
                 self.mod_note_on(channel, note, velocity);
                 self.configure_voice_filter(index);
                 self.grain_clock = 1.0;
@@ -2461,7 +2484,11 @@ impl Engine {
         self.env_values = [0.0; crate::preset::MODULATORS];
         let mut loudest_voice = 0.0_f32;
         let mut voice_sum = 0.0_f32;
-        for v in &mut self.voices {
+        // A voice leaves the set on the frame its envelopes end at zero, so
+        // the others keep the zero levels and gain that frame left.
+        for index in bits(self.sounding) {
+            let v = &mut self.voices[index];
+            let mut active = false;
             for (i, env) in v
                 .envelopes
                 .iter_mut()
@@ -2469,6 +2496,7 @@ impl Engine {
                 .enumerate()
             {
                 let value = env.next_sample();
+                active |= env.active();
                 v.env_values[i] = value;
                 self.env_values[i] = self.env_values[i].max(value);
                 if i == 0 {
@@ -2476,6 +2504,9 @@ impl Engine {
                     loudest_voice = loudest_voice.max(v.value);
                     voice_sum += v.value;
                 }
+            }
+            if !active {
+                self.sounding &= !(1 << index);
             }
         }
         if bus.is_some() {
@@ -2575,11 +2606,14 @@ impl Engine {
         let mut before_fx = [0.0; 2];
         let mut grain_tap = [0.0; 2];
         let masks = self.filter_masks;
+        // Voices outside the sounding set have no gain, except a bus's voice.
+        let mixing = self.sounding | u64::from(bus.is_some());
         if let Some(synth) = &mut self.synth {
             // Oscillators replace each voice's source and grains before its
             // filter; the grains of voice slot 0 follow the VCA instead.
             synth.begin_frame(self.lfo_values[0]);
-            for (i, voice) in self.voices.iter().enumerate() {
+            for i in bits(mixing) {
+                let voice = &self.voices[i];
                 if voice.value <= 0.0 {
                     continue;
                 }
@@ -2601,14 +2635,14 @@ impl Engine {
             }
             grain_tap = before_fx;
         }
-        for (i, frame) in voice_frames.into_iter().enumerate() {
+        for i in bits(mixing) {
             if self.voices[i].value <= 0.0 || self.synth.is_some() {
                 continue;
             }
             let frame = filter_slots::chain(
                 &mut self.filter_banks,
                 masks[FilterPosition::AfterGrains as usize],
-                frame,
+                voice_frames[i],
                 Instance::Voice(i),
             );
             mixed_frames[i] = std::array::from_fn(|c| {
@@ -2660,7 +2694,8 @@ impl Engine {
             [0.0; 2]
         };
         let mut filtered = [0.0; 2];
-        for (i, mixed) in mixed_frames.into_iter().enumerate() {
+        for i in bits(mixing) {
+            let mixed = mixed_frames[i];
             if self.voices[i].value <= 0.0 {
                 continue;
             }

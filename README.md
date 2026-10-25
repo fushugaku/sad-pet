@@ -64,7 +64,8 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   pulses, Rest/Single/Multi/Hold gates, ratchets, probability, Analog/Tempo/Acid
   slide, CV ramps and pitch accumulation. Tracks and assignments save with presets
   and DAW projects; old chord patterns migrate into note tracks. Track count has
-  no fixed cap; the instrument retains its eight-note audio polyphony.
+  no fixed cap; the instrument plays 32 notes at once, so long releases
+  overlap under fast steps.
   Pitch, a per-step Gate length knob, Pulses, Ratchet, Slide, Probability and
   Velocity are available together. Main pitch can also target any combination
   of OSC 1–4; their own tracks add −24…+24 semitones to that pitch, at independent
