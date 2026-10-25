@@ -835,6 +835,20 @@
         () => this.settings().tracks[track].division,
         (v) => this.edit(track, null, 1, v),
       );
+      // A host control, so automation and modulation reach it too.
+      this.field(
+        settings,
+        `${names[track]} note shift`,
+        -this.catalog.max_shift,
+        this.catalog.max_shift,
+        1,
+        () => this.settings().tracks[track].shift,
+        (v) => {
+          this.settings().tracks[track].shift = Math.round(v);
+          this.hooks.parameter(`drum${track + 1}_note_shift`, Math.round(v));
+          this.sync();
+        },
+      );
       this.field(
         settings,
         `${names[track]} MIDI note`,
@@ -1183,6 +1197,7 @@
         hit.classList.toggle("outside", s >= settings.tracks[t].length);
         hit.style.setProperty("--velocity", step.velocity);
       }
+      this.paintShift();
       for (const [track, row] of [...this.root.querySelectorAll(".drum-track-label")].entries())
         row.querySelector("button").setAttribute(
           "aria-pressed", String(track === v.track),
@@ -1190,6 +1205,21 @@
       this.fields.forEach((update) => update());
       this.knobs.forEach((update) => update());
       this.refreshVoice();
+    }
+    // A note shift plays each step `shift` places later inside the track
+    // length: blue marks where the notes sound now, green where they were set.
+    paintShift() {
+      const settings = this.settings();
+      for (const hit of this.hits || []) {
+        const t = Number(hit.dataset.track),
+          s = Number(hit.dataset.step),
+          { length, steps } = settings.tracks[t],
+          shift = this.shifts?.[t] ?? 0,
+          from = (((s - shift) % length) + length) % length,
+          velocity = s < length && from !== s ? steps[from].velocity : 0;
+        hit.classList.toggle("moved", velocity > 0);
+        hit.style.setProperty("--moved-velocity", velocity);
+      }
     }
     update(view) {
       if (!this.settings()) return;
@@ -1200,6 +1230,12 @@
             view.positions[Number(hit.dataset.track)] ===
               Number(hit.dataset.step),
         );
+      const shifts = String(view?.shifts ?? "");
+      if (shifts !== this.shiftKey) {
+        this.shiftKey = shifts;
+        this.shifts = view?.shifts;
+        this.paintShift();
+      }
     }
   }
   window.SadTimbres = Timbres;
@@ -1209,6 +1245,7 @@
   Drums.controlUnit = (id, get) =>
     defs[id] && { format: (v) => format(defs[id], v), min: defs[id].min, max: defs[id].max, get };
   Drums.voiceNames = names.slice(0, 6);
+  Drums.trackNames = names;
   window.SadDrums = Drums;
   window.SadFilterGraph = { markup: GRAPH, draw: drawResponse };
 })();

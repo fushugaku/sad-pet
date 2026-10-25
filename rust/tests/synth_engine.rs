@@ -223,8 +223,13 @@ fn synth_controls_append_after_every_other_host_parameter() {
     assert_eq!(specs[start + 1].id, "synth_granular");
     assert_eq!(specs[start + 2].id, "synth_buffer_seconds");
     assert_eq!(specs[start + 3].id, "synth_osc1_enabled");
-    assert_eq!(specs.len(), start + 3 + 4 * 14);
-    assert_eq!(specs.last().unwrap().id, "synth_osc4_interaction_source");
+    let end = start + 3 + 4 * 14;
+    assert_eq!(specs[end - 1].id, "synth_osc4_interaction_source");
+    // Later controls append after the Synth block: each drum track's
+    // pattern note shift first.
+    let later: Vec<_> = specs[end..].iter().map(|s| s.id.as_str()).collect();
+    let shifts: Vec<_> = (1..=7).map(|t| format!("drum{t}_note_shift")).collect();
+    assert_eq!(later, shifts);
 }
 
 #[test]

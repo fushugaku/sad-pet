@@ -8,6 +8,7 @@
   --accent: #c4f486;
   --accent-dim: #536947;
   --blue: #b6d5c8;
+  --shifted: #7fb2ee;
   --modulation: #8cdcd1;
   --overlay: #232923;
   --error: #efb4a9;
@@ -3985,6 +3986,32 @@ input[type="range"] {
   background: var(--accent);
   border-radius: 3px;
   opacity: calc(0.3 + var(--velocity) * 0.7);
+}
+/* A note shift moved a step here: blue is where it sounds now. A step still
+   set by the user keeps its green half beside the blue one. */
+.drum-hit.moved {
+  background: #233447;
+  border-color: #5a86b8;
+}
+.drum-hit.moved::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  background: var(--shifted);
+  border-radius: 3px;
+  opacity: calc(0.3 + var(--moved-velocity) * 0.7);
+}
+.drum-hit[aria-pressed="true"].moved {
+  background: linear-gradient(90deg, #34462b 50%, #233447 50%);
+  border-color: #79965a #5a86b8 #5a86b8 #79965a;
+}
+.drum-hit[aria-pressed="true"].moved::after {
+  right: 50%;
+  border-radius: 3px 0 0 3px;
+}
+.drum-hit[aria-pressed="true"].moved::before {
+  left: 50%;
+  border-radius: 0 3px 3px 0;
 }
 .drum-hit.selected {
   outline: 1px solid var(--text);

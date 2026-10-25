@@ -276,4 +276,61 @@ assert.equal(units.depthText("filter", 0.5), "→ 20,000 Hz");
 assert.equal(units.depthText({ control: { index: 7 } }, 0.125), "+12 st");
 assert.equal(units.depthText("cloud", 0.4), "+40%", "A target without a knob keeps percent");
 assert.equal(units.unitDepth(units.parameterUnit("resynth_osc1_transpose"), -0.25), "−24 st");
-console.log("Controls: immediate drum-knob paint, linked track/voice selection and extra LFO/ENV removal passed.");
+// A pattern note shift paints blue where each note sounds now; the green
+// steps stay where they were set, and a step added later shows in both.
+{
+  const tracks = Array.from({ length: 7 }, () => ({
+    length: 16, steps: Array.from({ length: 128 }, () => ({ velocity: 0 })),
+  }));
+  tracks[3].steps[0].velocity = 1;
+  tracks[3].steps[4].velocity = 0.5;
+  tracks[3].steps[20].velocity = 1;
+  const hits = Array.from({ length: 7 * 32 }, (_, i) => {
+    const classes = new Set(), style = new Map();
+    return {
+      dataset: { track: String(Math.floor(i / 32)), step: String(i % 32) }, classes, style,
+      classList: { toggle: (name, on) => (on ? classes.add(name) : classes.delete(name)) },
+    };
+  });
+  for (const hit of hits) hit.style.setProperty = (key, value) => hit.style.set(key, value);
+  const editor = Object.assign(Object.create(panels.window.SadDrums.prototype), {
+    hits, settings: () => ({ tracks }),
+  });
+  const view = (shift) => ({ playing: false, positions: Array(7).fill(-1), shifts: [0, 0, 0, shift, 0, 0, 0] });
+  const moved = () => hits.filter((h) => h.classes.has("moved"))
+    .map((h) => [Number(h.dataset.step), h.style.get("--moved-velocity")]);
+  editor.update(view(-1));
+  assert.deepEqual(moved(), [[3, 0.5], [15, 1]], "A left shift wraps inside the track length");
+  tracks[3].steps[8].velocity = 0.7;
+  editor.paintShift();
+  assert.deepEqual(moved(), [[3, 0.5], [7, 0.7], [15, 1]], "A new step must also play shifted");
+  assert.equal(tracks[3].steps[0].velocity, 1, "The shift moved the step itself");
+  editor.update(view(16));
+  assert.deepEqual(moved(), [], "A whole-length shift plays every note in place");
+  editor.update(view(0));
+  assert.deepEqual(moved(), []);
+}
+
+// Every drum track, Open HH included, routes to its Pattern note shift from
+// the modulation and sequencer destination menus.
+{
+  const menus = vm.createContext({ window: {}, document });
+  vm.runInContext(await readFile(new URL("../rust/web/sequence.js", import.meta.url), "utf8"), menus);
+  vm.runInContext(await readFile(new URL("../rust/web/panels.js", import.meta.url), "utf8"), menus);
+  const tracks = [...menus.window.SadDrums.trackNames];
+  const shifts = tracks.map((_, t) => `drum${t + 1}_note_shift`);
+  // Plain copies: the menus are built in another realm.
+  const pattern = (groups) => JSON.parse(JSON.stringify(groups.map(({ label, choices }) =>
+    [label, choices.find((c) => c.label === "Pattern")?.choices])));
+  const lanes = menus.window.SadNeuropolis.prototype.drumGroups(
+    new Map([["drum1_12", "Drum 1 · Filter 1 cutoff"], ...shifts.map((id) => [id, ""])]), "param:");
+  assert.deepEqual(pattern(lanes), tracks.map((track, t) =>
+    [track, [[`param:${shifts[t]}`, "Note shift", `${track} · Pattern note shift`]]]));
+  assert.equal(lanes[6].choices.length, 1, "Open HH has no voice controls of its own");
+  vm.runInContext(app.slice(app.indexOf("function drumDestinations("), app.indexOf("function refreshColorDestinations(")), menus);
+  menus.destinationValue = (d) => `control:${d.control.index}`;
+  menus.sequenceCatalog = { modulation: shifts.map((id, index) => ({ id, index: 900 + index })) };
+  assert.deepEqual(pattern(menus.drumDestinations([["Drum 1", []]])), tracks.map((track, t) =>
+    [track, [[`control:${900 + t}`, "Note shift", `${track} · Pattern note shift`]]]));
+}
+console.log("Controls: immediate drum-knob paint, linked track/voice selection, drum note shift and extra LFO/ENV removal passed.");

@@ -2795,12 +2795,19 @@ function drumDestinations(voices) {
     return [{ label: "Drums", choices: voices.map(([, choices]) =>
       section(choices[0][1].split(" · ")[0], choices)) }];
   const specs = new Map((sequenceCatalog?.modulation || []).map((spec) => [spec.id, spec]));
-  return window.SadDrums.voiceNames.map((voice, v) => ({
-    label: voice,
-    choices: sections(v).map(([module, controls]) => section(module, controls.flatMap(([id, name]) => {
-      const spec = specs.get(`drum${v + 1}_${id}`);
-      return spec ? [[destinationValue({ control: { index: spec.index } }), name, `${voice} · ${name}`]] : [];
-    }))),
+  const control = (id, name, label) => {
+    const spec = specs.get(id);
+    return spec ? [[destinationValue({ control: { index: spec.index } }), name, label]] : [];
+  };
+  // Every track shifts its pattern too; Open HH plays the Closed HH voice.
+  const voiceCount = window.SadDrums.voiceNames.length;
+  return window.SadDrums.trackNames.map((track, t) => ({
+    label: track,
+    choices: [
+      ...(t < voiceCount ? sections(t) : []).map(([module, controls]) => section(module,
+        controls.flatMap(([id, name]) => control(`drum${t + 1}_${id}`, name, `${track} · ${name}`)))),
+      section("Pattern", control(`drum${t + 1}_note_shift`, "Note shift", `${track} · Pattern note shift`)),
+    ],
   }));
 }
 function refreshColorDestinations() {
@@ -3298,9 +3305,12 @@ function destinationUnit(destination) {
 function parameterUnit(id) {
   const spec = sequenceCatalog?.parameters?.find((p) => p.id === id),
     drum = /^drum(\d+)_(\d+)$/.exec(id),
+    shift = /^drum(\d+)_note_shift$/.exec(id),
     unit = knobUnits.get(id) ??
       (drum && window.SadDrums?.controlUnit?.(Number(drum[2]),
-        () => preset.drums?.params?.[drum[1] - 1]?.[drum[2]] ?? 0));
+        () => preset.drums?.params?.[drum[1] - 1]?.[drum[2]] ?? 0)) ??
+      (shift && { format: (v) => `${v > 0 ? "+" : ""}${Math.round(v)} steps`,
+        get: () => preset.drums?.tracks?.[shift[1] - 1]?.shift ?? 0 });
   return spec && unit ? { ...unit, min: spec.min, max: spec.max } : null;
 }
 // "+12.0 st" from a format like "-24.0 st": a display linear in the value

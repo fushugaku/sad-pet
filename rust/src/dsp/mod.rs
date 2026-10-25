@@ -132,6 +132,8 @@ pub(crate) struct Modulated {
     pub(crate) performance: crate::performance::Modulation,
     pub(crate) resynth: crate::resynth::Settings,
     pub(crate) drums: crate::drums::Controls,
+    /// Each drum track's pattern note shift, in steps.
+    pub(crate) drum_shifts: [f32; crate::drums::TRACKS],
     pub(crate) synth: crate::synth::Settings,
     /// A modulation route wrote into a color slot of this frame. Clean frames
     /// carry the preset's own slots, so the racks need no reconfiguration.
@@ -165,6 +167,12 @@ impl Modulated {
             .drums
             .as_ref()
             .map_or_else(Default::default, |d| d.params);
+        self.drum_shifts = [0.0; crate::drums::TRACKS];
+        if let Some(d) = &preset.drums {
+            for (to, track) in self.drum_shifts.iter_mut().zip(&d.tracks) {
+                *to = track.shift as f32;
+            }
+        }
         self.synth = preset.synth.as_deref().copied().unwrap_or_default();
         self.color_dirty = false;
         self.filter_len = preset.filter_slots.len();
@@ -1851,6 +1859,7 @@ impl Engine {
         if let (Some(drums), Some(settings)) = (&mut self.drums, &self.preset.drums) {
             let transpose = if settings.granular { 0. } else { direct_tune };
             drums.configure(settings, m.drums, m.params.bpm, transpose);
+            drums.shift(settings, m.drum_shifts);
         }
         if let Some(synth) = &mut self.synth {
             let transpose = if m.synth.granular { 0. } else { direct_tune };
@@ -2317,6 +2326,7 @@ impl Engine {
                 positions: d.engine.positions,
                 levels: d.engine.meters,
                 playing: d.engine.playing,
+                shifts: d.shifts,
             })
     }
 

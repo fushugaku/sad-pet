@@ -952,7 +952,7 @@ window.SadNeuropolis = class {
           continue;
       }
       if (id.startsWith("drum") && !preset.drums) continue;
-      const drum = /^drum(\d+)_(\d+)$/.exec(id);
+      const drum = /^drum(\d+)_(\d+|note_shift)$/.exec(id);
       if (drum && voices) {
         drums.set(id, spec.name);
         continue;
@@ -986,16 +986,21 @@ window.SadNeuropolis = class {
       ]))
       .concat(this.drumGroups(drums, prefix));
   }
-  // Each drum voice is a top-level section, its controls grouped by module
-  // like the voice editor: Drum 1 → Filter 1 → Cutoff.
+  // Each drum track is a top-level section, its voice controls grouped by
+  // module like the voice editor (Drum 1 → Filter 1 → Cutoff), then its
+  // Pattern note shift. Open HH plays the Closed HH voice.
   drumGroups(drums, prefix) {
     if (!drums.size) return [];
-    const { section } = window.SadLazySelect;
-    return window.SadDrums.voiceNames.map((voice, v) => ({
-      label: voice,
-      choices: window.SadDrums.controlSections(v).map(([module, controls]) => section(module,
-        controls.filter(([id]) => drums.has(`drum${v + 1}_${id}`))
-          .map(([id, name]) => [`${prefix}drum${v + 1}_${id}`, name, `${voice} · ${name}`]))),
+    const { section } = window.SadLazySelect, { voiceNames, trackNames } = window.SadDrums;
+    return trackNames.map((track, t) => ({
+      label: track,
+      choices: [
+        ...(t < voiceNames.length ? window.SadDrums.controlSections(t) : []).map(([module, controls]) => section(module,
+          controls.filter(([id]) => drums.has(`drum${t + 1}_${id}`))
+            .map(([id, name]) => [`${prefix}drum${t + 1}_${id}`, name, `${track} · ${name}`]))),
+        section("Pattern", drums.has(`drum${t + 1}_note_shift`)
+          ? [[`${prefix}drum${t + 1}_note_shift`, "Note shift", `${track} · Pattern note shift`]] : []),
+      ],
     }));
   }
   buildStages(editor, track) {

@@ -114,6 +114,8 @@ enum Target {
     Drum(usize, usize),
     DrumGrain,
     DrumBuffer,
+    /// A drum track's pattern note shift, in steps.
+    DrumShift(usize),
     SynthOsc(usize, usize),
     SynthGrain,
     SynthBuffer,
@@ -180,6 +182,7 @@ impl Spec {
         Some(match self.target {
             Target::Core { frame_get, .. } => frame_get(m),
             Target::Drum(i, field) => m.drums.0[i][field],
+            Target::DrumShift(i) => m.drum_shifts[i],
             Target::SourceFx(_)
             | Target::DrumGrain
             | Target::DrumBuffer
@@ -243,6 +246,7 @@ impl Spec {
                 m.drums.0[i][field] =
                     sad_pet_dxm088::params::constrain(field, value).unwrap_or(self.default);
             }
+            Target::DrumShift(i) => m.drum_shifts[i] = value,
             Target::SourceFx(_)
             | Target::DrumGrain
             | Target::DrumBuffer
@@ -306,6 +310,11 @@ impl Spec {
                 .drums
                 .as_ref()
                 .map_or(self.default, |d| d.params.0[i][field]),
+            Target::DrumShift(i) => preset
+                .drums
+                .as_ref()
+                .and_then(|d| d.tracks.get(i))
+                .map_or(self.default, |t| t.shift as f32),
             Target::SourceFx(field) => *preset
                 .source_color_chain
                 .first()
@@ -405,6 +414,11 @@ impl Spec {
                 if let Some(d) = &mut preset.drums {
                     d.params.0[i][field] =
                         sad_pet_dxm088::params::constrain(field, value).unwrap_or(self.default);
+                }
+            }
+            Target::DrumShift(i) => {
+                if let Some(t) = preset.drums.as_mut().and_then(|d| d.tracks.get_mut(i)) {
+                    t.shift = value.round() as i8;
                 }
             }
             Target::ResynthOsc(i, field) => {
@@ -1091,6 +1105,17 @@ pub fn specs() -> &'static [Spec] {
                     target: Target::SynthOsc(i, field),
                 });
             }
+        }
+        // Drum pattern note shifts, one per track, append after the Synth controls.
+        for (i, name) in crate::drums::NAMES.iter().enumerate() {
+            result.push(Spec {
+                id: format!("drum{}_note_shift", i + 1),
+                name: format!("{name} · Pattern note shift"),
+                min: -crate::drums::MAX_SHIFT as f32,
+                max: crate::drums::MAX_SHIFT as f32,
+                default: 0.0,
+                target: Target::DrumShift(i),
+            });
         }
         result
     })
