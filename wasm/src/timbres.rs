@@ -61,6 +61,8 @@ pub(super) struct Registry {
     /// Render-worker messages waiting for the worklet to post them.
     pub vocal_jobs: Vec<Value>,
     pub vocal_ids: Vec<u32>,
+    /// The MIDI clock the scene follows, and its beat for clock out.
+    pub midi_clock: super::clock::MidiClock,
 }
 impl Registry {
     pub fn new(rate: u32) -> Self {
@@ -83,6 +85,7 @@ impl Registry {
             clock: Default::default(),
             vocal_jobs: Vec::new(),
             vocal_ids: Vec::new(),
+            midi_clock: super::clock::MidiClock::new(rate),
         };
         r.ensure_master();
         r.refresh_context();
@@ -423,6 +426,9 @@ impl Registry {
             self.refresh_context();
             return Ok(json!({"ok":true}));
         }
+        if path == "/api/clock" {
+            return self.clock_command(data);
+        }
         if path == "/api/midi-bytes" && !data.is_null() {
             // Each parser keeps running status across packets; filtering follows decoding.
             for part in &mut self.parts {
@@ -571,6 +577,7 @@ impl Registry {
             part.gain
         };
         let count = count.min(BLOCK);
+        self.clock_block(count);
         // A pad's chain runs on the pad's voices of the previous frame and
         // returns into its Sampler; a bounced pad needs no chain.
         let links: Vec<(usize, usize, u32)> = self
@@ -662,6 +669,7 @@ impl Registry {
             }
             self.parts[0].host.frames[i] = frame;
         }
+        self.midi_clock.advance(count);
         self.parts[0].host.frames.as_ptr()
     }
 }

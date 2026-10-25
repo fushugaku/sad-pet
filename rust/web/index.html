@@ -16,6 +16,7 @@
     <script src="./sampler-library.js" defer></script>
     <script src="./sampler.js" defer></script>
     <script src="./midi.js" defer></script>
+    <script src="./clock.js" defer></script>
     <script src="./modulation.js" defer></script>
     <script src="./app.js" defer></script>
   </head>
@@ -782,6 +783,32 @@
               ↻
             </button>
           </div>
+        </div>
+        <div class="clock-controls" id="clock-controls" hidden>
+          <span class="led off" id="clock-led"></span>
+          <span class="clock-title">MIDI CLOCK</span>
+          <label
+            class="check"
+            title="Follow tempo, song position, Start and Stop from the MIDI input"
+            ><input type="checkbox" id="clock-follow" />Follow input</label
+          >
+          <label
+            class="clock-lead"
+            title="Play this far ahead of the clock (behind when negative), to make up for a slow link"
+            >OFFSET<input
+              id="clock-lead"
+              type="number"
+              min="-500"
+              max="500"
+              step="1"
+              value="0"
+              aria-label="Clock offset in milliseconds"
+            />MS</label
+          >
+          <select id="clock-out" aria-label="Send MIDI clock to">
+            <option value="">No clock out</option>
+          </select>
+          <output id="clock-status" aria-live="polite"></output>
         </div>
         <div class="keyboard-tools">
           <div class="octave-controls">

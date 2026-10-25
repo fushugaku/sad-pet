@@ -41,6 +41,10 @@ pub enum Message {
     Continue,
     Stop,
     Reset,
+    /// Song Position Pointer: where Continue resumes, in sixteenth notes.
+    SongPosition {
+        sixteenths: u16,
+    },
 }
 
 /// Byte stream parser corresponding to the framing seen at c00361ac.
@@ -66,7 +70,10 @@ impl Parser {
         }
         if byte & 0x80 != 0 {
             self.count = 0;
-            if byte >= 0xf0 {
+            if byte == 0xf2 {
+                self.status = byte;
+                self.sysex = false;
+            } else if byte >= 0xf0 {
                 self.status = 0;
                 self.sysex = byte == 0xf0;
             } else {
@@ -89,6 +96,13 @@ impl Parser {
         let channel = self.status & 0xf;
         let a = self.data[0];
         let b = self.data[1];
+        if self.status == 0xf2 {
+            // System common messages have no running status.
+            self.status = 0;
+            return Some(Message::SongPosition {
+                sixteenths: (b as u16) << 7 | a as u16,
+            });
+        }
         Some(match kind {
             8 => Message::NoteOff {
                 channel,

@@ -63,7 +63,8 @@ set(editor_scripts
     "${SAD_PET_ROOT}/rust/web/panels.js" "${SAD_PET_ROOT}/rust/web/vocal.js"
     "${SAD_PET_ROOT}/rust/web/vocal.css" "${SAD_PET_ROOT}/rust/web/sampler.js"
     "${SAD_PET_ROOT}/rust/web/sampler-library.js" "${SAD_PET_ROOT}/rust/web/sampler.css"
-    "${SAD_PET_ROOT}/rust/web/midi.js" "${SAD_PET_ROOT}/rust/web/modulation.js"
+    "${SAD_PET_ROOT}/rust/web/midi.js" "${SAD_PET_ROOT}/rust/web/clock.js"
+    "${SAD_PET_ROOT}/rust/web/modulation.js"
     "${JUCE_MODULES_DIR}/juce_gui_extra/native/javascript/index.js"
     "${JUCE_MODULES_DIR}/juce_gui_extra/native/javascript/check_native_interop.js")
 # Writes <folder>/index.html: the editor with the given stylesheet and backend module.

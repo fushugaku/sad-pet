@@ -4300,6 +4300,7 @@ async function refreshMidi(ask = false) {
       if (found) select.value = String(found.id);
     }
     $("midi-led").classList.toggle("off", !data.connected);
+    window.SadMidiClock?.refresh();
   } catch (e) {
     notify(`MIDI: ${e.message}`);
   }
@@ -4819,6 +4820,7 @@ async function poll() {
     setText($("position-info"), formatTime(next.center * next.sample_seconds));
     setText($("grain-count"), next.active_grains);
     setText($("drum-grain-count"), `${next.active_grains} grains`);
+    window.SadMidiClock?.sync(next);
     setAttr($("play"), "aria-pressed", next.playing);
     setText($("play-icon"), next.playing ? "Ⅱ" : "▶");
     setText($("play-label"), next.playing ? "Pause" : "Play");
@@ -4973,6 +4975,16 @@ async function init() {
     });
     buildKeyboard();
     bind();
+    window.SadMidiClock?.setup({
+      request,
+      notify,
+      // The app takes every MIDI input; the browser plays the one chosen.
+      hasInput: () =>
+        getComputedStyle($("midi")).display === "none" || !!$("midi").value,
+      released: () => {
+        if (preset) $("bpm").value = preset.params.bpm;
+      },
+    });
     sampleSelection = new window.SadSampleSelection({
       params: () => preset?.params,
       request,

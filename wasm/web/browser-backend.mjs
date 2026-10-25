@@ -1,4 +1,5 @@
 import { Microphone } from "./microphone.mjs";
+import { MidiClock } from "./midi-clock.mjs";
 import { compileEngine } from "./compile.mjs";
 import { listVoices, saveVoice, removeVoice, voiceId, voiceInfo, unzip } from "./voices.mjs";
 
@@ -92,6 +93,7 @@ export class BrowserBackend {
       error: null,
     };
     this.midiPorts = [];
+    this.midiClock = new MidiClock(this);
     this.status = "Loading WebAssembly…";
     this.ready = this.initialize();
   }
@@ -459,6 +461,10 @@ export class BrowserBackend {
     return wave(take.chunks, this.rate);
   }
   audioMessage(message) {
+    if (message.type === "clock") {
+      this.midiClock.report(message);
+      return;
+    }
     if (message.type === "vocal-jobs") {
       // A score sung by a pack waits for the pack, in order with other jobs.
       const voices = message.jobs.map((job) => job.settings?.score?.voice).filter(Boolean);
@@ -657,6 +663,7 @@ export class BrowserBackend {
       ...this.state,
       features: { sampler: true },
       instance_id: this.instanceId,
+      clock: this.midiClock?.status(),
       audio_enabled: this.context.state === "running" && !this.fatal,
       audio_error: this.fatal || null,
       recording: { ...this.recording },
@@ -715,6 +722,7 @@ export class BrowserBackend {
       this.selectedMidi = data.port === null ? null : this.midiPorts[data.port];
       if (this.selectedMidi) {
         this.selectedMidi.onmidimessage = (event) => {
+          if (this.midiClock.input(event)) return;
           // MIDI learn sees controllers here, without waiting for a state poll.
           window.SadMidiLearn?.bytes(event.data);
           this.resume();
@@ -813,6 +821,7 @@ export class BrowserBackend {
         result = await this.audio.call("capture-input");
         mime = "audio/wav";
       } else if (route === "/api/midi") result = await this.midi(url, data);
+      else if (route === "/api/clock") result = await this.midiClock.request(data);
       else if (route === "/api/wav") {
         // Keep utility sample state, worklet state and the generation in one
         // order, including two file selections made before either load returns.

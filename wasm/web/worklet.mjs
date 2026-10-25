@@ -19,8 +19,30 @@ class SadPetProcessor extends AudioWorkletProcessor {
       sampleRate * 30 * 60,
       Math.floor((512 * 1024 * 1024 - 4096) / 8),
     );
+    // MIDI clock: context frames minus the scene's rendered frames, and the
+    // reports clock out and the editor read while either is on.
+    this.clockOffset = 0;
+    this.clockActive = false;
+    this.clockFrames = 0;
+    this.clockEpoch = -1;
     this.port.onmessage = ({ data: message }) => {
       const { id, type, data } = message;
+      if (type === "clock-event") {
+        // [context seconds its beat sounds, status, data bytes]
+        const [time, status, first = 0, second = 0] = data;
+        this.core.wasm.sad_clock_event(
+          time * sampleRate - this.clockOffset,
+          status,
+          first,
+          second,
+        );
+        return;
+      }
+      if (type === "clock-active") {
+        this.clockActive = !!data;
+        this.clockEpoch = -1;
+        return;
+      }
       if (type === "prepare-idle") {
         while (this.preparingTimbre) this.advanceTimbre();
         return;
@@ -232,6 +254,23 @@ class SadPetProcessor extends AudioWorkletProcessor {
       [buffer.buffer],
     );
   }
+  /** The scene's transport at the next block, often and on every move. */
+  reportClock(count) {
+    const wasm = this.core.wasm;
+    this.clockFrames += count;
+    const epoch = wasm.sad_clock_epoch();
+    if (epoch === this.clockEpoch && this.clockFrames < sampleRate / 40) return;
+    this.clockFrames = 0;
+    this.clockEpoch = epoch;
+    const view = Array.from(
+      new Float64Array(wasm.memory.buffer, wasm.sad_clock_view(), 10),
+    );
+    this.port.postMessage({
+      type: "clock",
+      view,
+      time: (view[0] + this.clockOffset) / sampleRate,
+    });
+  }
   flushRecording() {
     if (!this.recordLength) return;
     const buffer = this.recordBuffer;
@@ -275,7 +314,10 @@ class SadPetProcessor extends AudioWorkletProcessor {
           this.sourceTransfer = null;
         }
       }
+      if (typeof currentFrame === "number")
+        this.clockOffset = currentFrame - this.core.wasm.sad_clock_frame();
       const frames = this.core.process(count, inputs[0]);
+      if (this.clockActive) this.reportClock(count);
       for (let c = 0; c < channels.length; c++)
         for (let i = 0; i < count; i++)
           channels[c][i] = frames[i * 2 + Math.min(c, 1)];
