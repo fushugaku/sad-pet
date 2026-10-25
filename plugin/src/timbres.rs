@@ -2,7 +2,7 @@
 use super::*;
 use sad_pet::{
     bus::MAX_BUSES,
-    timbres::{Context, Kind, Meta, Mix, SendGains},
+    timbres::{Context, DESTINATIONS, Entered, Kind, Meta, Mix, SendGains},
 };
 
 /// Adds a Master when the scene has none (new instances and older projects).
@@ -61,12 +61,15 @@ pub(super) struct PartAudio {
 pub(super) const CHUNK: usize = 128;
 
 /// One part's chunk: its input, its level-scaled output and its bus sends,
-/// one slot per frame and bus, with the buses it wrote as a mask.
+/// one slot per frame and bus, with the buses it wrote as a mask. A Bus or
+/// Master also takes what enters its chain after the input while `entering`.
 pub(super) struct Chunk {
     pub input: [Stereo; CHUNK],
     pub out: [Stereo; CHUNK],
     pub sends: [[Stereo; MAX_BUSES]; CHUNK],
     pub mask: u8,
+    pub entered: [Entered; CHUNK],
+    pub entering: bool,
 }
 impl Chunk {
     pub(super) fn new() -> Box<Self> {
@@ -75,6 +78,8 @@ impl Chunk {
             out: [[0.; 2]; CHUNK],
             sends: [[[0.; 2]; MAX_BUSES]; CHUNK],
             mask: 0,
+            entered: [Default::default(); CHUNK],
+            entering: false,
         })
     }
 }
@@ -185,8 +190,19 @@ impl Render<'_> {
     }
     fn routing(self, n: usize) {
         let chunk = &mut *self.chunk;
-        self.engine
-            .process_input_block(&chunk.input[..n], &mut chunk.out[..n]);
+        if chunk.entering {
+            for ((input, out), entered) in chunk.input[..n]
+                .iter()
+                .zip(&mut chunk.out[..n])
+                .zip(&chunk.entered[..n])
+            {
+                self.engine.enter(*entered);
+                *out = self.engine.process_input_frame(*input);
+            }
+        } else {
+            self.engine
+                .process_input_block(&chunk.input[..n], &mut chunk.out[..n]);
+        }
         chunk.mask = 0;
         let target = if self.audible { self.mix.gain } else { 0. };
         for out in &mut chunk.out[..n] {
@@ -194,6 +210,65 @@ impl Render<'_> {
             *out = out.map(|v| v * *self.gain);
         }
     }
+}
+
+/// Adds one part's chunk to the Master input (`output`) and, with `buses`, to
+/// the bus inputs; a destination it enters after the input gets the shares
+/// of its other entries in `entered`. The scene's own part comes `first` and
+/// starts the Master input. Returns the destinations it split.
+#[allow(clippy::too_many_arguments)]
+fn add_part(
+    chunk: &Chunk,
+    gains: &mut SendGains,
+    mix: &Mix,
+    buses: bool,
+    first: bool,
+    output: &mut [Stereo],
+    sends: &mut [[Stereo; MAX_BUSES]],
+    entered: &mut [[Entered; CHUNK]; DESTINATIONS],
+) -> u16 {
+    let n = output.len();
+    let split = gains.plan(&mix.entries);
+    if split & 1 != 0 {
+        if first {
+            output.fill([0.; 2]);
+        }
+        for ((out, frame), slot) in output.iter_mut().zip(&chunk.out[..n]).zip(&mut entered[0]) {
+            gains.enter(0, &mix.entries[0], *frame, out, slot);
+        }
+    } else if first {
+        output.copy_from_slice(&chunk.out[..n]);
+    } else {
+        for (out, frame) in output.iter_mut().zip(&chunk.out[..n]) {
+            out[0] += frame[0];
+            out[1] += frame[1];
+        }
+    }
+    if buses {
+        let routed = (split >> 1) as u8;
+        let plain = chunk.mask & !routed;
+        if plain != 0 {
+            for (sum, part) in sends.iter_mut().zip(&chunk.sends[..n]) {
+                add_sends(sum, part, plain);
+            }
+        }
+        let mut pending = routed;
+        while pending != 0 {
+            let bus = pending.trailing_zeros() as usize;
+            pending &= pending - 1;
+            // A silent send still ramps its entries.
+            let sent = chunk.mask & 1 << bus != 0;
+            for ((sum, part), slot) in sends
+                .iter_mut()
+                .zip(&chunk.sends[..n])
+                .zip(&mut entered[bus + 1])
+            {
+                let frame = if sent { part[bus] } else { [0.; 2] };
+                gains.enter(bus + 1, &mix.entries[bus + 1], frame, &mut sum[bus], slot);
+            }
+        }
+    }
+    split
 }
 
 /// Adds one part's send slots of a frame to the bus inputs, for the buses
@@ -406,7 +481,9 @@ impl Controller {
                             .clone()
                     };
                     let mut value = serde_json::to_value(&meta).unwrap();
-                    for key in ["name", "gain", "muted", "solo", "channel", "sends"] {
+                    for key in [
+                        "name", "gain", "muted", "solo", "channel", "sends", "entries",
+                    ] {
                         if let Some(v) = data.get(key) {
                             value[key] = v.clone();
                         }
@@ -442,14 +519,11 @@ impl Controller {
                     }
                     if removed.kind == Kind::Bus && removed.bus > 0 {
                         // Nothing keeps sending to the removed bus number.
-                        let index = removed.bus as usize - 1;
-                        if self.meta.mix.sends[index] != 0. {
-                            self.meta.mix.sends[index] = 0.;
+                        if self.meta.mix.forget_bus(removed.bus) {
                             self.enqueue(Command::PartMix(0, self.meta.mix))?;
                         }
                         for i in 0..self.parts.len() {
-                            if self.parts[i].meta.mix.sends[index] != 0. {
-                                self.parts[i].meta.mix.sends[index] = 0.;
+                            if self.parts[i].meta.mix.forget_bus(removed.bus) {
                                 let (id, mix) = (self.parts[i].meta.id, self.parts[i].meta.mix);
                                 self.enqueue(Command::PartMix(id, mix))?;
                             }
@@ -631,26 +705,34 @@ impl Audio {
         }
         // The frame-wise order of the sums is kept: this part, then every
         // timbre in list order, into the output and into each bus input.
-        output.copy_from_slice(&self.chunk.out[..n]);
+        // Destinations a timbre enters after their input (bit 0 Master,
+        // bit b Bus b) also get the other entries' shares.
         let mut sends = [[[0.; 2]; MAX_BUSES]; CHUNK];
-        if buses {
-            for (sum, part) in sends[..n].iter_mut().zip(&self.chunk.sends[..n]) {
-                add_sends(sum, part, self.chunk.mask);
-            }
-        }
+        let mut entered = [[Entered::default(); CHUNK]; DESTINATIONS];
+        let mut split = add_part(
+            &self.chunk,
+            &mut self.sends,
+            &self.meta.mix,
+            buses,
+            true,
+            output,
+            &mut sends[..n],
+            &mut entered,
+        );
         let mut part = self.parts.as_mut();
         while let Some(p) = part {
             if !p.audio.meta.kind.routing() {
-                let chunk = &*p.audio.chunk;
-                for (out, frame) in output.iter_mut().zip(&chunk.out[..n]) {
-                    out[0] += frame[0];
-                    out[1] += frame[1];
-                }
-                if buses && chunk.mask != 0 {
-                    for (sum, part) in sends[..n].iter_mut().zip(&chunk.sends[..n]) {
-                        add_sends(sum, part, chunk.mask);
-                    }
-                }
+                let audio = &mut p.audio;
+                split |= add_part(
+                    &audio.chunk,
+                    &mut audio.sends,
+                    &audio.meta.mix,
+                    buses,
+                    false,
+                    output,
+                    &mut sends[..n],
+                    &mut entered,
+                );
             }
             part = p.next.as_mut();
         }
@@ -664,8 +746,13 @@ impl Audio {
             while let Some(p) = part {
                 if p.audio.meta.kind == Kind::Bus && p.audio.meta.bus > 0 {
                     let bus = p.audio.meta.bus as usize - 1;
-                    for (input, sends) in p.audio.chunk.input[..n].iter_mut().zip(&sends[..n]) {
+                    let chunk = &mut *p.audio.chunk;
+                    for (input, sends) in chunk.input[..n].iter_mut().zip(&sends[..n]) {
                         *input = sends[bus];
+                    }
+                    chunk.entering = split & 1 << (bus + 1) != 0;
+                    if chunk.entering {
+                        chunk.entered[..n].copy_from_slice(&entered[bus + 1][..n]);
                     }
                     let job = workers::Job::Routing {
                         audio: &mut p.audio,
@@ -689,10 +776,17 @@ impl Audio {
             let mut part = self.parts.as_mut();
             while let Some(p) = part {
                 if p.audio.meta.kind == Kind::Bus && p.audio.meta.bus > 0 {
-                    for (out, frame) in output.iter_mut().zip(&p.audio.chunk.out[..n]) {
-                        out[0] += frame[0];
-                        out[1] += frame[1];
-                    }
+                    let audio = &mut p.audio;
+                    split |= add_part(
+                        &audio.chunk,
+                        &mut audio.sends,
+                        &audio.meta.mix,
+                        false,
+                        false,
+                        output,
+                        &mut [],
+                        &mut entered,
+                    );
                 }
                 part = p.next.as_mut();
             }
@@ -700,7 +794,12 @@ impl Audio {
         let mut part = self.parts.as_mut();
         while let Some(p) = part {
             if p.audio.meta.kind == Kind::Master {
-                p.audio.chunk.input[..n].copy_from_slice(output);
+                let chunk = &mut *p.audio.chunk;
+                chunk.input[..n].copy_from_slice(output);
+                chunk.entering = split & 1 != 0;
+                if chunk.entering {
+                    chunk.entered[..n].copy_from_slice(&entered[0][..n]);
+                }
                 p.audio.source_routing_chunk(n);
                 output.copy_from_slice(&p.audio.chunk.out[..n]);
                 break;

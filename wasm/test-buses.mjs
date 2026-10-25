@@ -131,6 +131,39 @@ assert.ok(near(left, dry), `Out of the chain, the timbre plays without Resynth (
 split.request("/api/timbres/remove", { id: resynthBus.id });
 const missing = splitLevel({ tap_resynth_chain: 1 });
 assert.ok(near(missing, kept), `A missing bus leaves the timbre as it was (${missing} vs ${kept})`);
+// The mixer chooses where a timbre enters Master: at Post-filter FX it skips
+// Master's filters, at the input it runs them. Each case starts a fresh scene.
+const entering = (entries, filters) => {
+  const scene = new Core(module, 8000);
+  scene.call("sad_load", utility.call("sad_pack"));
+  const id = scene.request("/api/timbres").timbres.find((t) => t.kind === "master").id;
+  scene.request("/api/timbres/select", { id });
+  const preset = scene.request("/api/preset");
+  preset.bus.filters = filters;
+  preset.params.filter = 0.05;
+  scene.request("/api/preset", preset);
+  scene.request("/api/timbres/select", { id: 0 });
+  if (entries) scene.request("/api/timbres/update", { id: 0, entries });
+  scene.request("/api/transport", { playing: true, midi_gate: false });
+  const out = [];
+  for (let i = 0; i < 64; i++) out.push(...scene.process(128));
+  return { out: out.slice(out.length / 2), scene };
+};
+const atPost = Array.from({ length: 9 }, () => [1, 0, 0, 0]);
+atPost[0] = [0, 0, 0, 1];
+const open = entering(null, false).out;
+const closedMaster = entering(null, true).out;
+const { out: skipped, scene: mixed } = entering(atPost, true);
+const most = (a, b) => a.reduce((m, x, i) => Math.max(m, Math.abs(x - (b ? b[i] : 0))), 0);
+const loud = most(open);
+assert.ok(loud > 0.01, `The timbre plays (${loud})`);
+assert.ok(most(closedMaster, open) > loud * 0.1, "Master's filters shape what enters at its input");
+assert.ok(most(skipped, open) < loud * 1e-3, `Post-filter FX entry skips Master's filters (${most(skipped, open)})`);
+assert.deepEqual(mixed.request("/api/timbres").timbres[0].entries[0], [0, 0, 0, 1]);
+const reloaded = new Core(module, 8000);
+reloaded.call("sad_load", utility.call("sad_pack"));
+reloaded.call("sad_scene_load", mixed.call("sad_scene_pack"));
+assert.deepEqual(reloaded.request("/api/timbres").timbres[0].entries[0], [0, 0, 0, 1], "Scenes keep the entries");
 console.log(
-  "Buses: Master always present, sends reach Master through Bus 1, roles survive preset loads, scenes keep routing, sections send to a bus.",
+  "Buses: Master always present, sends reach Master through Bus 1, roles survive preset loads, scenes keep routing, sections send to a bus, timbres enter Master after its filters.",
 );

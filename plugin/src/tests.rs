@@ -1395,6 +1395,93 @@ fn timbres_reach_master_directly_or_through_a_bus_without_audio_allocation() {
 }
 
 #[test]
+fn a_timbre_entering_a_bus_after_its_filters_skips_them() {
+    let mut control = Controller::new_plugin(false);
+    let context = call(&mut control, "/api/timbres/add", json!({"kind":"bus"}));
+    let bus = context["timbres"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["kind"] == "bus")
+        .unwrap()["id"]
+        .clone();
+    // Bus 1 runs its filters, nearly closed.
+    call(&mut control, "/api/timbres/select", json!({"id":bus}));
+    let mut preset = call(&mut control, "/api/preset", Value::Null);
+    preset["bus"]["filters"] = json!(true);
+    preset["params"]["filter"] = json!(0.05);
+    call(&mut control, "/api/preset", preset);
+    call(&mut control, "/api/timbres/select", json!({"id":0}));
+    call(
+        &mut control,
+        "/api/transport",
+        json!({"playing":true,"midi_gate":false}),
+    );
+    // A fresh engine per case renders the same timbre from its start.
+    let output = |control: &mut Controller, mix: Value| {
+        call(control, "/api/timbres/update", mix);
+        let mut audio = control.prepare(8000);
+        let values = control.values();
+        let mut output = vec![[0.0_f32; 2]; 8 * 1024];
+        no_heap(|| {
+            for block in output.chunks_mut(1024) {
+                audio.begin(&values, 120., None, true, 1024);
+                audio.process_block(&[[0.0; 2]; 1024], block);
+                audio.end(1024);
+            }
+        });
+        output
+    };
+    let direct = output(&mut control, json!({"id":0,"gain":1}));
+    let mut sends = [0.0; 8];
+    sends[0] = 1.0;
+    let mut entries = [[1.0_f32, 0.0, 0.0, 0.0]; 9];
+    let filtered = output(
+        &mut control,
+        json!({"id":0,"gain":0,"sends":sends,"entries":entries}),
+    );
+    entries[1] = [0.0, 0.0, 0.0, 1.0];
+    let post = output(&mut control, json!({"id":0,"entries":entries}));
+    // Past the entry and send ramps, compare the second half.
+    let difference = |a: &[Stereo], b: &[Stereo]| {
+        a[4096..]
+            .iter()
+            .zip(&b[4096..])
+            .flat_map(|(a, b)| [(a[0] - b[0]).abs(), (a[1] - b[1]).abs()])
+            .fold(0.0_f32, f32::max)
+    };
+    let level = direct[4096..]
+        .iter()
+        .fold(0.0_f32, |p, s| p.max(s[0].abs()));
+    assert!(level > 0.01, "the timbre plays ({level})");
+    let skipped = difference(&post, &direct);
+    assert!(
+        skipped < level * 1e-3,
+        "Post-filter FX entry skips the filters ({skipped})"
+    );
+    let changed = difference(&filtered, &direct);
+    assert!(
+        changed > level * 0.1,
+        "the input runs the filters ({changed})"
+    );
+    // Scenes keep the entries; removing the bus resets them.
+    let saved = control.save().unwrap();
+    let mut restored = Controller::new_plugin(false);
+    restored.restore(&saved).unwrap();
+    let context = call(&mut restored, "/api/timbres", Value::Null);
+    assert_eq!(
+        context["timbres"][0]["entries"][1],
+        json!([0.0, 0.0, 0.0, 1.0])
+    );
+    let context = call(&mut control, "/api/timbres/remove", json!({"id":bus}));
+    assert!(
+        context["timbres"][0]["entries"].is_null(),
+        "{}",
+        context["timbres"][0]
+    );
+}
+
+#[test]
 fn sections_send_to_a_bus_and_leave_the_chain_as_their_chain_share_says() {
     let mut control = Controller::new_plugin(false);
     let context = call(&mut control, "/api/timbres/add", json!({"kind":"bus"}));

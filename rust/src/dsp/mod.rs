@@ -393,6 +393,8 @@ pub struct Engine {
     resynth: resynth::Resynth,
     /// Each section's Chain share and bus send.
     taps: taps::Runtime,
+    /// What enters a Bus or Master chain after its input in the next frame.
+    entered: Option<crate::timbres::Entered>,
     drums: Option<Box<crate::drums::Runtime>>,
     synth: Option<Box<synth::Runtime>>,
     /// Present while the preset is a Sampler kit: its pads replace the input.
@@ -485,6 +487,7 @@ impl Engine {
             source_color: color::ColorProcessor::new(sr),
             resynth: resynth::Resynth::new(sr),
             taps: taps::Runtime::new(),
+            entered: None,
             drums: None,
             synth: None,
             sampler: None,
@@ -1946,6 +1949,12 @@ impl Engine {
     pub fn set_open_buses(&mut self, open: u16) {
         self.taps.set_open_buses(open);
     }
+    /// What enters this Bus or Master chain in the next frame after its
+    /// input: at Pre-filter FX, Filters and Post-filter FX, each at the
+    /// chain's input gain. Other timbres ignore it.
+    pub fn enter(&mut self, entered: crate::timbres::Entered) {
+        self.entered = Some(entered);
+    }
     /// What the sections sent into each bus in the last frame, at the
     /// timbre's volume; None when nothing was sent.
     pub fn bus_sends(&self) -> Option<&[Stereo; crate::bus::MAX_BUSES]> {
@@ -2382,6 +2391,15 @@ impl Engine {
             input
         };
         let bus = self.preset.bus.as_deref().copied();
+        let mut entered = self.entered.take().filter(|_| bus.is_some());
+        // With nothing to skip, what enters later is the same as input.
+        let input = match entered {
+            Some(e) if self.bypass || self.bus_passthrough() => {
+                entered = None;
+                std::array::from_fn(|c| input[c] + e[0][c] + e[1][c] + e[2][c])
+            }
+            _ => input,
+        };
         if bus.is_some() && self.bus_passthrough() {
             // A bus with nothing switched on still runs its sequencer.
             if self.playing && self.sampler.is_none() {
@@ -2749,15 +2767,24 @@ impl Engine {
                 .send(Stage::Resynth, resynth_output.map(|x| x * voice_sum));
         }
         let resynth_output = self.taps.mix(Stage::Resynth, before_fx, resynth_output);
+        let resynth_output = match entered {
+            Some(e) => std::array::from_fn(|c| resynth_output[c] + e[0][c] * input_gain),
+            None => resynth_output,
+        };
         let pre_output = self.pre_color_rack.process(resynth_output);
         if self.taps.sends(Stage::PreFx) {
             self.taps
                 .send(Stage::PreFx, pre_output.map(|x| x * voice_sum));
         }
         let pre_output = self.taps.mix(Stage::PreFx, resynth_output, pre_output);
-        let correction = if self.pre_color_rack.is_active() || resynth_active || after_resynth != 0
+        let correction = if self.pre_color_rack.is_active()
+            || resynth_active
+            || after_resynth != 0
+            || entered.is_some()
         {
-            std::array::from_fn(|c| pre_output[c] - before_fx[c])
+            // A bus has one voice, so what enters at Filters reaches it here.
+            let filters = entered.map_or([0.0; 2], |e| e[1].map(|x| x * input_gain));
+            std::array::from_fn(|c| pre_output[c] - before_fx[c] + filters[c])
         } else {
             [0.0; 2]
         };
@@ -2820,6 +2847,10 @@ impl Engine {
             }
             filtered = self.taps.mix(Stage::Grains, dry, grains);
         }
+        let filtered = match entered {
+            Some(e) => std::array::from_fn(|c| filtered[c] + e[2][c] * input_gain),
+            None => filtered,
+        };
         let processed = self
             .color_rack
             .process_with_voice_gain(filtered, loudest_voice);

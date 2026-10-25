@@ -157,6 +157,157 @@
       }
     }
   }
+  /** Where a timbre enters a Bus or Master chain, in chain order. */
+  const ENTRIES = [
+    ["IN", "the input, through the whole chain"],
+    ["PRE", "Pre-filter FX"],
+    ["FILT", "Filters"],
+    ["POST", "Post-filter FX"],
+  ];
+  const INPUT = [1, 0, 0, 0];
+  const KINDS = { granular: "Granular", drums: "Drums", synth: "Synth", vocal: "Vocal", sampler: "Sampler" };
+  const decibels = (v) => (v < 1e-4 ? "−∞ dB" : `${(20 * Math.log10(v)).toFixed(1)} dB`);
+  const percent = (v) => `${Math.round(v * 100)}%`;
+  /**
+   * The mixer at the top of a Bus or Master: one strip per timbre that can
+   * reach it (and, on Master, per bus), with its level there and where it
+   * enters the chain. A later entry skips the sections before it.
+   */
+  class Mixer {
+    constructor(root, hooks) {
+      this.root = root;
+      this.hooks = hooks;
+      root.innerHTML = `<div class="mixer-heading"><h3>Mixer</h3><span class="mixer-note"></span></div><div class="mixer-strips" role="group"></div>`;
+      this.note = root.querySelector(".mixer-note");
+      this.strips = root.querySelector(".mixer-strips");
+      this.views = [];
+    }
+    part(id) {
+      return this.context?.timbres.find((t) => t.id === id);
+    }
+    entries(part) {
+      return part?.entries?.[this.target] ?? INPUT;
+    }
+    /** The strip's level: into Master, or the send to this bus. */
+    level(part) {
+      return this.target === 0 ? part?.gain ?? 0 : part?.sends?.[this.target - 1] ?? 0;
+    }
+    /** Edits the context at once, so the controls show the value while the host answers. */
+    update(part, data) {
+      Object.assign(part, data);
+      this.hooks.change("/api/timbres/update", { id: part.id, ...data }, true);
+    }
+    setEntry(id, entry, value) {
+      const part = this.part(id);
+      if (!part) return;
+      const entries = Array.from({ length: 9 }, (_, d) => [...(part.entries?.[d] ?? INPUT)]);
+      entries[this.target][entry] = value;
+      this.update(part, { entries });
+    }
+    setLevel(id, value) {
+      const part = this.part(id);
+      if (!part) return;
+      if (this.target === 0) return this.update(part, { gain: value });
+      const sends = [...(part.sends ?? Array(8).fill(0))];
+      sends[this.target - 1] = value;
+      this.update(part, { sends });
+    }
+    sync(context) {
+      const active = context?.timbres?.find((t) => t.id === context.active);
+      const target = active?.kind === "master" ? 0 : active?.kind === "bus" && active.bus > 0 ? active.bus : null;
+      this.root.hidden = target === null;
+      if (target === null) return;
+      this.context = context;
+      this.target = target;
+      // Every timbre can reach a bus; Master also sums the buses.
+      const parts = context.timbres.filter((t) =>
+        KINDS[t.kind] || (target === 0 && t.kind === "bus" && t.bus > 0));
+      const signature = JSON.stringify([target, parts.map((t) => [t.id, t.name, t.kind, t.bus])]);
+      if (signature !== this.signature) {
+        this.signature = signature;
+        this.build(parts);
+      }
+      for (const view of this.views) view.sync(this.part(view.id));
+    }
+    build(parts) {
+      const master = this.target === 0;
+      this.note.textContent = master
+        ? "Level into Master and where each timbre and bus enters its chain"
+        : "Send level and where each timbre enters this bus";
+      this.strips.setAttribute("aria-label", master ? "Master mixer" : "Bus mixer");
+      this.strips.replaceChildren();
+      this.views = parts.map((part) => this.strip(part));
+      if (!parts.length) this.strips.append(el("p", "mixer-empty", "No timbres yet"));
+    }
+    strip(part) {
+      const { id } = part;
+      const box = el("div", "mixer-strip");
+      box.dataset.id = id;
+      const name = button(part.name, `Open ${part.name}`, () =>
+        this.hooks.change("/api/timbres/select", { id }));
+      name.className = "mixer-name";
+      name.title = part.name;
+      const kind = el("span", "mixer-kind", part.kind === "bus" ? `Bus ${part.bus}` : KINDS[part.kind]);
+      const body = el("div", "mixer-body");
+      const knobs = el("div", "mixer-entries");
+      const where = this.target === 0 ? "Master" : `Bus ${this.target}`;
+      const updates = ENTRIES.map(([text, title], entry) =>
+        this.hooks.knob([`mixer_${this.target}_${id}_${entry}`, text, percent, 0, 1,
+          `${part.name} into ${where} at ${title}`], knobs, {
+          register: false,
+          get: () => this.entries(this.part(id))[entry],
+          set: (v) => this.setEntry(id, entry, v),
+          reset: () => INPUT[entry],
+        }));
+      ENTRIES.forEach(([, title], entry) => (knobs.children[entry].title = `Enters at ${title}`));
+      const dials = [...knobs.querySelectorAll(".dial")];
+      const fader = el("label", "mixer-fader");
+      const range = el("input");
+      Object.assign(range, { type: "range", min: "0", max: "2", step: ".01" });
+      range.setAttribute("aria-label", this.target === 0 ? `${part.name} level into Master` : `${part.name} send to ${where}`);
+      range.oninput = () => this.setLevel(id, Number(range.value));
+      range.ondblclick = () => this.setLevel(id, this.target === 0 ? 1 : 0);
+      const value = el("output", "mixer-level");
+      fader.append(range, value);
+      body.append(knobs, fader);
+      box.append(name, kind, body);
+      // Mute and Solo act on the timbre itself, so only Master offers them.
+      let mute = null, solo = null;
+      if (this.target === 0) {
+        const buttons = el("div", "mixer-buttons");
+        mute = button("M", `Mute ${part.name}`, () => this.update(this.part(id), { muted: !this.part(id).muted }));
+        buttons.append(mute);
+        if (part.kind !== "bus") {
+          solo = button("S", `Solo ${part.name}`, () => this.update(this.part(id), { solo: !this.part(id).solo }));
+          buttons.append(solo);
+        }
+        box.append(buttons);
+      }
+      this.strips.append(box);
+      let shown = "";
+      return {
+        id,
+        sync: (part) => {
+          if (!part) return;
+          const level = this.level(part);
+          const entries = this.entries(part);
+          // Polls repeat the same values; repaint a strip only when they change.
+          const signature = JSON.stringify([level, entries, part.muted, part.solo]);
+          if (signature === shown) return;
+          shown = signature;
+          if (document.activeElement !== range) range.value = level;
+          value.textContent = decibels(level);
+          // A knob being turned shows its own value, not an older answer's.
+          updates.forEach((update, i) => dials[i] !== document.activeElement && update());
+          // A bus a timbre does not send to shows its strip dimmed.
+          box.classList.toggle("idle", this.target > 0 && level === 0);
+          box.classList.toggle("entered", entries.some((v, i) => v !== INPUT[i]));
+          mute?.setAttribute("aria-pressed", String(!!part.muted));
+          solo?.setAttribute("aria-pressed", String(!!part.solo));
+        },
+      };
+    }
+  }
   const filters = [
     "Bypass",
     "Lowpass",
@@ -1239,6 +1390,7 @@
     }
   }
   window.SadTimbres = Timbres;
+  window.SadMixer = Mixer;
   Drums.filterGain = filterGain;
   Drums.controlSections = controlSections;
   // A control's display for modulation depths in its own units.

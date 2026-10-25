@@ -156,6 +156,16 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   no grains, no history writes and no filters run. Solo selects timbres while
   buses and Master keep processing them; MIDI never reaches a bus. Scenes saved
   before buses existed open with a default Master and render unchanged.
+- **Bus and Master mixer.** A bus page opens with a strip for every timbre, and
+  Master's for every timbre and bus. The fader is the send to that bus (on
+  Master, the level into it), and four knobs set where the signal enters the
+  chain and how much: **IN** runs the whole chain, **PRE**, **FILT** and
+  **POST** enter at Pre-filter FX, Filters or Post-filter FX and skip the
+  sections before them. They add up, so IN 0% and POST 100% plays a timbre
+  through Master's post-filter effects only. Section sends to a bus enter the
+  same way. Master's strips also have Mute and Solo; a timbre that does not
+  send to a bus shows dimmed there. Entries crossfade when they change, live
+  in the scene and default to IN 100%, which renders as before.
 - **Section outputs.** Source FX, Grain engine, Resynth, Pre-filter FX, Filters
   and Post-filter FX each end in an **Output** row with two knobs. **CHAIN** is
   the share of the section's output that goes on down the chain; the rest is the

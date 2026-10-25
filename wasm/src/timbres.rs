@@ -2,7 +2,7 @@
 use super::*;
 use sad_pet::{
     bus::MAX_BUSES,
-    timbres::{Context, Kind, Meta, SendGains},
+    timbres::{Context, DESTINATIONS, Entered, Kind, Meta, SendGains},
 };
 
 pub(super) struct Part {
@@ -362,7 +362,9 @@ impl Registry {
                         .find(|p| p.meta.id == id)
                         .ok_or("Unknown timbre")?;
                     let mut value = json!(part.meta);
-                    for key in ["name", "gain", "muted", "solo", "channel", "sends"] {
+                    for key in [
+                        "name", "gain", "muted", "solo", "channel", "sends", "entries",
+                    ] {
                         if let Some(v) = data.get(key) {
                             value[key] = v.clone();
                         }
@@ -392,7 +394,7 @@ impl Registry {
                         .map(|p| p.meta.bus)
                     {
                         for part in &mut self.parts {
-                            part.meta.mix.sends[bus as usize - 1] = 0.;
+                            part.meta.mix.forget_bus(bus);
                         }
                     }
                     let active = self.parts[self.selected].meta.id;
@@ -565,6 +567,12 @@ impl Registry {
             part.host.engine.set_open_buses(open);
         }
         let master = self.parts.iter().position(|p| p.meta.kind == Kind::Master);
+        // Destinations (0 = Master, b = Bus b) that some timbre enters after
+        // their input; the others take the plain sum as before.
+        let split = self
+            .parts
+            .iter_mut()
+            .fold(0, |split, p| split | p.sends.plan(&p.meta.mix.entries));
         let gain = |part: &mut Part, audible: bool| {
             let target = if audible { part.meta.mix.gain } else { 0. };
             part.gain = sad_pet::dsp::fast::flush(part.gain + (target - part.gain) * 0.004);
@@ -598,10 +606,14 @@ impl Registry {
             }
         }
         self.clock.advance(count);
+        let mut entered: [Entered; DESTINATIONS] = Default::default();
         for i in 0..count {
             let input = self.parts[0].host.audio_input[i];
             let mut frame = [0.; 2];
             let mut sends = [[0.; 2]; MAX_BUSES];
+            if split != 0 {
+                entered = Default::default();
+            }
             for p in 0..self.parts.len() {
                 if self.parts[p].meta.kind.routing() {
                     continue;
@@ -618,8 +630,7 @@ impl Registry {
                     }
                 }
                 let part = &mut self.parts[p];
-                let mix = part.meta.mix;
-                let audible = !mix.muted && (!solo || mix.solo);
+                let audible = !part.meta.mix.muted && (!solo || part.meta.mix.solo);
                 let level = gain(part, audible);
                 let source = match &part.vocal {
                     Some(vocal) => [vocal.buffer[i]; 2],
@@ -627,13 +638,31 @@ impl Registry {
                     None => input,
                 };
                 let out = part.host.engine.process_input_frame(source);
-                for c in 0..2 {
-                    frame[c] += out[c] * level;
+                let Part {
+                    meta,
+                    host,
+                    sends: gains,
+                    ..
+                } = part;
+                let mix = &meta.mix;
+                if gains.split() & 1 == 0 {
+                    for c in 0..2 {
+                        frame[c] += out[c] * level;
+                    }
+                } else {
+                    let out = out.map(|v| v * level);
+                    gains.enter(0, &mix.entries[0], out, &mut frame, &mut entered[0]);
                 }
                 if buses {
-                    part.sends.send(&mix.sends, audible, out, &mut sends);
-                    part.sends
-                        .send_taps(audible, part.host.engine.bus_sends(), &mut sends);
+                    if gains.split() >> 1 == 0 {
+                        gains.send(&mix.sends, audible, out, &mut sends);
+                        gains.send_taps(audible, host.engine.bus_sends(), &mut sends);
+                    } else {
+                        let mut own = [[0.; 2]; MAX_BUSES];
+                        gains.send(&mix.sends, audible, out, &mut own);
+                        gains.send_taps(audible, host.engine.bus_sends(), &mut own);
+                        gains.enter_buses(&mix.entries, &own, &mut sends, &mut entered);
+                    }
                 }
             }
             if buses {
@@ -642,18 +671,29 @@ impl Registry {
                         continue;
                     }
                     let level = gain(part, !part.meta.mix.muted);
-                    let out = part
-                        .host
-                        .engine
-                        .process_input_frame(sends[part.meta.bus as usize - 1]);
-                    for c in 0..2 {
-                        frame[c] += out[c] * level;
+                    let bus = part.meta.bus as usize;
+                    if split & 1 << bus != 0 {
+                        part.host.engine.enter(entered[bus]);
+                    }
+                    let out = part.host.engine.process_input_frame(sends[bus - 1]);
+                    if part.sends.split() & 1 == 0 {
+                        for c in 0..2 {
+                            frame[c] += out[c] * level;
+                        }
+                    } else {
+                        let out = out.map(|v| v * level);
+                        let entries = &part.meta.mix.entries[0];
+                        part.sends
+                            .enter(0, entries, out, &mut frame, &mut entered[0]);
                     }
                 }
             }
             if let Some(m) = master {
                 let part = &mut self.parts[m];
                 let level = gain(part, !part.meta.mix.muted);
+                if split & 1 != 0 {
+                    part.host.engine.enter(entered[0]);
+                }
                 frame = part
                     .host
                     .engine

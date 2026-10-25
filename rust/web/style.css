@@ -4313,6 +4313,143 @@ input[type="range"] {
   margin: 8px 0 0;
   font-size: 12px;
 }
+/* The Bus and Master mixer: a strip per timbre (and, on Master, per bus) with
+   its level and the four places it enters the chain. */
+.bus-mixer {
+  margin-bottom: 14px;
+}
+.bus-mixer[hidden] {
+  display: none;
+}
+.mixer-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.mixer-heading h3 {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.mixer-note {
+  font-size: 11px;
+  color: var(--muted);
+}
+.mixer-strips {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+.mixer-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.mixer-strip {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 146px;
+  padding: 6px 8px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.mixer-strip.entered {
+  border-color: var(--accent-dim);
+}
+.mixer-strip .mixer-name {
+  height: 28px;
+  padding: 0 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+  font-size: 12px;
+  border-color: transparent;
+  background: none;
+}
+.mixer-strip .mixer-name:hover {
+  border-color: var(--line);
+}
+.mixer-kind {
+  padding: 0 6px 4px;
+  font-size: 9px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.mixer-body {
+  display: flex;
+  gap: 4px;
+}
+.mixer-entries {
+  display: grid;
+  grid-template-columns: repeat(2, 44px);
+  gap: 2px 4px;
+}
+.mixer-entries .dial,
+.mixer-entries .dial svg {
+  width: 34px;
+  height: 34px;
+}
+.mixer-entries .knob-label {
+  margin-top: 2px;
+  font-size: 8px;
+  line-height: 10px;
+}
+.mixer-entries .knob-value {
+  height: 14px;
+  line-height: 14px;
+  font-size: 10px;
+}
+.mixer-entries .knob-mod-range {
+  display: none;
+}
+.mixer-fader {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.mixer-fader input[type="range"] {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 20px;
+  height: 104px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.mixer-level {
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.mixer-buttons {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+.mixer-buttons button {
+  flex: 1;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  font-size: 11px;
+}
+/* A timbre that sends nothing to this bus. */
+.mixer-strip.idle .mixer-name,
+.mixer-strip.idle .mixer-kind,
+.mixer-strip.idle .mixer-entries {
+  opacity: 0.45;
+}
 .filter-grid.bypassed {
   opacity: 0.45;
 }

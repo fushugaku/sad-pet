@@ -24,6 +24,7 @@ const parameterEdits = new Map();
 const sequenceEdits = new Map();
 let neuroEditor = null;
 let timbreEditor = null,
+  busMixer = null,
   drumEditor = null,
   vocalEditor = null,
   samplerEditor = null,
@@ -1111,6 +1112,7 @@ function changeTimbre(path, data, scalar = false) {
         if (scalar) {
           state.timbres = context;
           timbreEditor?.sync(context);
+          busMixer?.sync(context);
           return;
         }
         const old = state?.timbres?.active;
@@ -1126,7 +1128,10 @@ function changeTimbre(path, data, scalar = false) {
           syncAll();
           sampleSelection?.sync(next);
           fileLibrary?.observe(next);
-        } else timbreEditor?.sync(context);
+        } else {
+          timbreEditor?.sync(context);
+          busMixer?.sync(context);
+        }
       } catch (e) {
         notify(e.message);
       } finally {
@@ -1189,6 +1194,7 @@ function syncTimbreRouting() {
   syncBus();
   syncEngineType();
   timbreEditor?.sync(state?.timbres);
+  busMixer?.sync(state?.timbres);
   drumEditor?.sync();
   vocalEditor?.sync();
   samplerEditor?.sync();
@@ -4812,6 +4818,7 @@ async function poll() {
     updateResynthMeter(next.resynth);
     neuroEditor?.update(next.sequencer, next.playing);
     timbreEditor?.sync(next.timbres);
+    busMixer?.sync(next.timbres);
     syncTaps();
     drumEditor?.update(next.drums);
     sampleSelection?.sync(next);
@@ -4899,6 +4906,11 @@ async function init() {
       change: changeTimbre,
       features: () => state?.features,
     });
+    if (window.SadMixer && state.timbres?.timbres)
+      busMixer = new window.SadMixer($("bus-mixer"), {
+        change: changeTimbre,
+        knob: createKnob,
+      });
     if (state.timbres?.timbres) {
       const drumCatalog = await request("/api/drums/catalog");
       drumEditor = new window.SadDrums($("drum-machine"), drumCatalog, {

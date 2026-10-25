@@ -96,6 +96,22 @@ impl Kind {
         Some(preset)
     }
 }
+/// Where a timbre's signal enters the chain of Master or a Bus, in chain
+/// order: its input (the whole chain), Pre-filter FX, Filters or Post-filter
+/// FX. A later entry skips the sections before it.
+pub const ENTRIES: usize = 4;
+/// Master, then Bus 1–8.
+pub const DESTINATIONS: usize = MAX_BUSES + 1;
+/// The level at each entry, 0–1.
+pub type Entries = [f32; ENTRIES];
+/// Everything at the input, as before the mixer had entries.
+pub const INPUT: Entries = [1., 0., 0., 0.];
+/// One frame of what enters a chain after its input.
+pub type Entered = [crate::Stereo; ENTRIES - 1];
+fn at_inputs(entries: &[Entries; DESTINATIONS]) -> bool {
+    entries.iter().all(|e| *e == INPUT)
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Mix {
@@ -107,6 +123,10 @@ pub struct Mix {
     pub channel: u8,
     /// Send levels to Bus 1–8; Bus and Master timbres do not send.
     pub sends: [f32; MAX_BUSES],
+    /// Where this timbre enters Master (0) and Bus 1–8; a Bus has only
+    /// Master's, and Master none.
+    #[serde(skip_serializing_if = "at_inputs")]
+    pub entries: [Entries; DESTINATIONS],
 }
 impl Default for Mix {
     fn default() -> Self {
@@ -116,6 +136,7 @@ impl Default for Mix {
             solo: false,
             channel: 0,
             sends: [0.; MAX_BUSES],
+            entries: [INPUT; DESTINATIONS],
         }
     }
 }
@@ -134,6 +155,22 @@ impl Mix {
                 0.
             };
         }
+        for level in self.entries.iter_mut().flatten() {
+            *level = if level.is_finite() {
+                level.clamp(0., 1.)
+            } else {
+                0.
+            };
+        }
+    }
+    /// Forgets the send to a removed Bus `bus` (1–8) and where it entered;
+    /// true when anything changed.
+    pub fn forget_bus(&mut self, bus: u8) -> bool {
+        let bus = bus as usize;
+        let changed = self.sends[bus - 1] != 0. || self.entries[bus] != INPUT;
+        self.sends[bus - 1] = 0.;
+        self.entries[bus] = INPUT;
+        changed
     }
     pub fn accepts(self, message: crate::midi::Message) -> bool {
         use crate::midi::Message::*;
@@ -189,6 +226,14 @@ impl Meta {
             self.mix.sends = [0.; MAX_BUSES];
             self.mix.channel = 0;
             self.mix.solo = false;
+            // A Bus enters Master; Master and Pad FX enter no chain.
+            let master = if self.kind == Kind::Bus {
+                self.mix.entries[0]
+            } else {
+                INPUT
+            };
+            self.mix.entries = [INPUT; DESTINATIONS];
+            self.mix.entries[0] = master;
         }
         if self.kind != Kind::Bus || self.bus as usize > MAX_BUSES {
             self.bus = 0;
@@ -210,13 +255,91 @@ impl Meta {
     }
 }
 /// The smoothed send levels of one timbre, ramped like its level into Master.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub struct SendGains {
     gains: [f32; MAX_BUSES],
     /// Mute and Solo of the section sends, whose levels ramp in the engine.
     taps: f32,
+    /// The entry levels into Master and each bus, ramping to `Mix::entries`.
+    entries: [Entries; DESTINATIONS],
+    /// Bit d set for each destination this block splits over its entries.
+    split: u16,
+}
+impl Default for SendGains {
+    fn default() -> Self {
+        Self {
+            gains: [0.; MAX_BUSES],
+            taps: 0.,
+            entries: [INPUT; DESTINATIONS],
+            split: 0,
+        }
+    }
 }
 impl SendGains {
+    /// Notes, once per block, the destinations whose entries are not all at
+    /// the input or are still ramping; the others take the plain sum.
+    pub fn plan(&mut self, levels: &[Entries; DESTINATIONS]) -> u16 {
+        self.split = 0;
+        for (d, (gains, levels)) in self.entries.iter().zip(levels).enumerate() {
+            if *gains != INPUT || *levels != INPUT {
+                self.split |= 1 << d;
+            }
+        }
+        self.split
+    }
+    /// The destinations split in this block (`plan`).
+    pub fn split(&self) -> u16 {
+        self.split
+    }
+    /// Ramps the entries of destination `d` one frame towards `levels` and
+    /// adds `frame` at each entry's gain: the input's to `input`, the
+    /// others' to `entered`.
+    #[inline]
+    pub fn enter(
+        &mut self,
+        d: usize,
+        levels: &Entries,
+        frame: crate::Stereo,
+        input: &mut crate::Stereo,
+        entered: &mut Entered,
+    ) {
+        let gains = &mut self.entries[d];
+        for (gain, &level) in gains.iter_mut().zip(levels) {
+            let delta = level - *gain;
+            if delta != 0.0 {
+                *gain = if delta.abs() < 1e-4 {
+                    level
+                } else {
+                    *gain + delta * 0.004
+                };
+            }
+        }
+        input[0] += frame[0] * gains[0];
+        input[1] += frame[1] * gains[0];
+        for (slot, &gain) in entered.iter_mut().zip(&gains[1..]) {
+            slot[0] += frame[0] * gain;
+            slot[1] += frame[1] * gain;
+        }
+    }
+    /// Adds a timbre's frame of bus sends (`own`) to the bus inputs, split
+    /// over the entries of the buses planned for it.
+    #[inline]
+    pub fn enter_buses(
+        &mut self,
+        levels: &[Entries; DESTINATIONS],
+        own: &[crate::Stereo; MAX_BUSES],
+        buses: &mut [crate::Stereo; MAX_BUSES],
+        entered: &mut [Entered; DESTINATIONS],
+    ) {
+        for (b, (frame, bus)) in own.iter().zip(buses).enumerate() {
+            if self.split & 1 << (b + 1) != 0 {
+                self.enter(b + 1, &levels[b + 1], *frame, bus, &mut entered[b + 1]);
+            } else {
+                bus[0] += frame[0];
+                bus[1] += frame[1];
+            }
+        }
+    }
     /// The mixer send gains, ramping towards their levels.
     pub fn gains(&self) -> &[f32; MAX_BUSES] {
         &self.gains
