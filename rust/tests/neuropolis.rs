@@ -449,6 +449,38 @@ fn note_tracks_trigger_envelopes_and_do_not_release_an_external_note_with_the_sa
 }
 
 #[test]
+fn long_releases_keep_ringing_under_sixteen_fast_note_steps() {
+    let mut p = Preset::default();
+    p.envs[0].release = 0.8;
+    p.sequencer.enabled = true;
+    let mut t = Track {
+        target: Target::Notes,
+        ..Track::default()
+    };
+    for (i, s) in t.steps.iter_mut().enumerate() {
+        s.pitch = 48 + 2 * i as u8;
+    }
+    p.sequencer.tracks = vec![t];
+    let mut e = engine(p);
+    e.set_playing(true);
+    // Each stage plays a new pitch; eight voices stole the first tail at the ninth.
+    let mut started = Vec::new();
+    for _ in 0..4 * 8000 / 8 {
+        frames(&mut e, 8);
+        for note in 0..128 {
+            if e.voice_filter_cutoffs(note).is_some() && !started.contains(&note) {
+                started.push(note);
+            }
+        }
+        if started.len() == 16 {
+            break;
+        }
+    }
+    assert_eq!(started.len(), 16);
+    assert!(e.voice_filter_cutoffs(started[0]).is_some());
+}
+
+#[test]
 fn old_chord_patterns_migrate_into_neuropolis_note_lanes() {
     let mut value = serde_json::to_value(Preset::default()).unwrap();
     value.as_object_mut().unwrap().remove("sequencer");
