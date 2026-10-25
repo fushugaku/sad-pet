@@ -477,16 +477,15 @@ kbd {
 .output-controls .granular-toggle {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 10px;
-  color: var(--text);
+  gap: 9px;
+  text-transform: uppercase;
+  cursor: pointer;
 }
 .output-controls .granular-toggle[hidden] {
   display: none;
 }
-.output-controls .granular-toggle input {
-  width: 16px;
-  height: 16px;
+.output-controls .granular-toggle:has([aria-pressed="true"]) {
+  color: var(--accent);
 }
 .output-controls input:disabled {
   opacity: 0.4;
@@ -553,6 +552,65 @@ h2 {
   accent-color: var(--accent);
   width: 12px;
   height: 12px;
+}
+/* Power switches for whole sections (Granular, Filters, Resynth, sequencer):
+   a lit accent square when on, a dark one when off. */
+.svg-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+.power {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 31px;
+  height: 31px;
+  padding: 0;
+  border-radius: 8px;
+  background: #191d19;
+  color: #6d7a6c;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s,
+    box-shadow 0.15s;
+}
+.power[hidden] {
+  display: none;
+}
+.power svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+}
+.power:hover {
+  background: #232923;
+  color: var(--text);
+}
+.power[aria-pressed="true"] {
+  border-color: #d9fbab;
+  background: linear-gradient(150deg, #d5f9a3 0 38%, #bdee7f 62%);
+  color: #172012;
+  box-shadow:
+    inset 0 1px 0 #fff6,
+    0 0 16px -3px #c4f48680;
+}
+.power[aria-pressed="true"]:hover {
+  background: linear-gradient(150deg, #e0fcb6 0 38%, #c9f48f 62%);
+}
+.neuro-bank.is-off .neuro-layout {
+  opacity: 0.55;
 }
 .knob-grid {
   display: grid;

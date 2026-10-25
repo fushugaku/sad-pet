@@ -425,9 +425,9 @@ window.SadNeuropolis = class {
     this.anchor = null;
     this.clipboard = null;
     document.addEventListener("keydown", (e) => this.shortcut(e));
-    root.innerHTML = `<div class="section-heading"><h2>Neuropolis <span class="neuro-count"></span></h2><div class="neuro-actions"><label class="check"><input class="neuro-enabled" type="checkbox">Enabled</label><button class="neuro-restart" title="Restart all sequencer tracks">Restart</button><button class="neuro-add">+ Add track</button></div></div><div class="neuro-layout"><aside><div class="neuro-tracks" role="tablist" aria-label="Sequencer tracks"></div><div class="neuro-pages"><button class="neuro-prev" aria-label="Previous tracks">←</button><output></output><button class="neuro-next" aria-label="Next tracks">→</button></div></aside><div class="neuro-editor"></div></div>`;
-    root.querySelector(".neuro-enabled").onchange = (e) =>
-      this.edit(null, null, 0, Number(e.target.checked));
+    root.innerHTML = `<div class="section-heading"><div class="section-title"><button class="power neuro-enabled" aria-label="Sequencer" aria-pressed="false" title="Switch the sequencer on or off"><svg aria-hidden="true"><use href="#power-glyph"/></svg></button><h2>Neuropolis <span class="neuro-count"></span></h2></div><div class="neuro-actions"><button class="neuro-restart" title="Restart all sequencer tracks">Restart</button><button class="neuro-add">+ Add track</button></div></div><div class="neuro-layout"><aside><div class="neuro-tracks" role="tablist" aria-label="Sequencer tracks"></div><div class="neuro-pages"><button class="neuro-prev" aria-label="Previous tracks">←</button><output></output><button class="neuro-next" aria-label="Next tracks">→</button></div></aside><div class="neuro-editor"></div></div>`;
+    root.querySelector(".neuro-enabled").onclick = () =>
+      this.edit(null, null, 0, Number(!this.program().enabled));
     root.querySelector(".neuro-restart").onclick = () =>
       this.edit(null, null, 1, 1);
     root.querySelector(".neuro-add").onclick = () => this.add();
@@ -607,7 +607,11 @@ window.SadNeuropolis = class {
       0,
       Math.min(this.page, Math.ceil(p.tracks.length / 64) - 1),
     );
-    this.root.querySelector(".neuro-enabled").checked = p.enabled;
+    const on = String(!!p.enabled),
+      power = this.root.querySelector(".neuro-enabled");
+    if (power.getAttribute("aria-pressed") !== on)
+      power.setAttribute("aria-pressed", on);
+    this.root.classList.toggle("is-off", !p.enabled);
     this.root.querySelector(".neuro-count").textContent =
       `${p.tracks.length} ${p.tracks.length === 1 ? "track" : "tracks"}`;
     const key = JSON.stringify([
