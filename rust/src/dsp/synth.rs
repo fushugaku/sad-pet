@@ -5,7 +5,7 @@
 //! stage follows the VCA. Rendering allocates nothing.
 use super::{
     SampleBuffer, VOICES, radias_oscillator, radias_wavefolder,
-    resynth::{Lowpass, PcmLoop},
+    resynth::{Decimator, PcmLoop},
     sample::LiveInput,
 };
 use crate::{
@@ -61,7 +61,7 @@ struct Voice {
     taps: [f32; MAX_OSCILLATORS],
     wraps: [bool; MAX_OSCILLATORS],
     initialized: [bool; MAX_OSCILLATORS],
-    lowpass: [Lowpass; 4],
+    decimator: Decimator,
     /// The engine voice's note-on count these carriers were reset for.
     generation: u32,
     /// Bits of the semitone pitch the carriers are tuned to.
@@ -74,7 +74,7 @@ impl Default for Voice {
             taps: [0.0; MAX_OSCILLATORS],
             wraps: [false; MAX_OSCILLATORS],
             initialized: [false; MAX_OSCILLATORS],
-            lowpass: Lowpass::QS.map(Lowpass::new),
+            decimator: Decimator::new(),
             generation: 0,
             pitch: None,
         }
@@ -438,9 +438,7 @@ impl Runtime {
                 }
             }
             if s.oversample == 2 {
-                for filter in &mut voice.lowpass {
-                    wet = filter.next(wet);
-                }
+                wet = voice.decimator.next(wet);
             }
             output = wet;
         }

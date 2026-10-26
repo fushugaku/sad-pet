@@ -837,6 +837,7 @@ dependencies = [
  "cpal",
  "ctrlc",
  "hound",
+ "libm",
  "metropolix-core",
  "midir",
  "mp3lame-encoder",

@@ -79,41 +79,61 @@ impl Bands {
     }
 }
 
-#[derive(Clone, Copy, Default)]
-pub(super) struct Lowpass {
-    b: [f32; 3],
-    a: [f32; 2],
-    z: [[f32; 2]; 2],
+/// The 2x decimator: an eighth-order minimum-phase anti-alias filter at
+/// 0.45 * host rate, as four biquad sections in series. The states are
+/// stored by channel within each section, so one vector operation covers
+/// both channels; every channel runs the per-section arithmetic unchanged.
+#[derive(Clone, Copy)]
+pub(super) struct Decimator {
+    b: [[f32; 3]; 4],
+    a: [[f32; 2]; 4],
+    /// [section][state][channel]
+    z: [[Stereo; 2]; 4],
 }
-impl Lowpass {
-    /// The four sections of the 2x decimator, in order.
-    pub(super) const QS: [f32; 4] = [0.5097956, 0.6013449, 0.8999762, 2.5629154];
-    pub(super) fn new(q: f32) -> Self {
-        // Eighth-order minimum-phase anti-alias filter at 0.45 * host rate.
+impl Decimator {
+    /// The four sections, in order.
+    const QS: [f32; 4] = [0.5097956, 0.6013449, 0.8999762, 2.5629154];
+    pub(super) fn new() -> Self {
         let w = 2.0 * PI * 0.225;
-        let alpha = w.sin() / (2.0 * q);
-        let scale = 1.0 / (1.0 + alpha);
-        let b = (1.0 - w.cos()) * 0.5 * scale;
+        let sections = Self::QS.map(|q| {
+            let alpha = w.sin() / (2.0 * q);
+            let scale = 1.0 / (1.0 + alpha);
+            let b = (1.0 - w.cos()) * 0.5 * scale;
+            (
+                [b, 2.0 * b, b],
+                [-2.0 * w.cos() * scale, (1.0 - alpha) * scale],
+            )
+        });
         Self {
-            b: [b, 2.0 * b, b],
-            a: [-2.0 * w.cos() * scale, (1.0 - alpha) * scale],
-            ..Self::default()
+            b: sections.map(|(b, _)| b),
+            a: sections.map(|(_, a)| a),
+            z: [[[0.0; 2]; 2]; 4],
         }
     }
+    pub(super) fn clear(&mut self) {
+        self.z = [[[0.0; 2]; 2]; 4];
+    }
+    #[inline]
     pub(super) fn next(&mut self, input: Stereo) -> Stereo {
         // With +0.0 states (flush stores zeros as +0.0) a zero input gives
-        // y = b0 * ±0 + +0 = +0 and keeps the states at +0.
-        if input[0] == 0.0 && input[1] == 0.0 && self.z == [[0.0; 2]; 2] {
+        // y = b0 * ±0 + +0 = +0 in each section and keeps its states at +0.
+        if input[0] == 0.0 && input[1] == 0.0 && self.z == [[[0.0; 2]; 2]; 4] {
             return [0.0; 2];
         }
-        std::array::from_fn(|c| {
-            let y = self.b[0] * input[c] + self.z[c][0];
-            self.z[c] = [
-                super::fast::flush(self.b[1] * input[c] - self.a[0] * y + self.z[c][1]),
-                super::fast::flush(self.b[2] * input[c] - self.a[1] * y),
+        let mut x = input;
+        for (([b0, b1, b2], [a0, a1]), [z0, z1]) in self.b.iter().zip(&self.a).zip(&mut self.z) {
+            let y = [b0 * x[0] + z0[0], b0 * x[1] + z0[1]];
+            *z0 = [
+                super::fast::flush(b1 * x[0] - a0 * y[0] + z1[0]),
+                super::fast::flush(b1 * x[1] - a0 * y[1] + z1[1]),
             ];
-            y
-        })
+            *z1 = [
+                super::fast::flush(b2 * x[0] - a1 * y[0]),
+                super::fast::flush(b2 * x[1] - a1 * y[1]),
+            ];
+            x = y;
+        }
+        x
     }
 }
 
@@ -255,7 +275,7 @@ pub struct Resynth {
     layers: [Layer; MAX_OSCILLATORS],
     tables: Box<radias_oscillator::Tables>,
     waveform: Box<WaveformTable>,
-    lowpass: [Lowpass; 4],
+    decimator: Decimator,
     settings: Settings,
     configured: bool,
     pcm_source: (usize, u32, usize, u32),
@@ -300,7 +320,7 @@ impl Resynth {
             layers: std::array::from_fn(|_| Layer::default()),
             tables: Box::new(radias_oscillator::Tables::new()),
             waveform: Box::new(radias_oscillator::waveform_table()),
-            lowpass: Lowpass::QS.map(Lowpass::new),
+            decimator: Decimator::new(),
             settings: Settings::default(),
             configured: false,
             pcm_source: (0, 0, 0, 0),
@@ -330,9 +350,7 @@ impl Resynth {
         self.source_signs.fill(0);
         self.grain_signs.fill(0);
         self.analysis_signs.fill(0);
-        for filter in &mut self.lowpass {
-            filter.z = [[0.0; 2]; 2];
-        }
+        self.decimator.clear();
         for layer in &mut self.layers {
             for carrier in &mut layer.carriers {
                 carrier.pcm_phase = 0.0;
@@ -660,6 +678,56 @@ impl Resynth {
                 } else {
                     0
                 };
+                // Wavefolder carriers fold two audible bands at a time. A fold
+                // reads only its own band's sync, so folding every band first
+                // and then taking the results in band order renders the same.
+                let mut folds = [(0.0_f32, false); BANDS];
+                if o.model == Model::Wavefolder
+                    && !matches!(o.waveform, Waveform::AudioIn | Waveform::Pcm)
+                {
+                    let increment = |c: &Carrier| c.increment.0 as f64 / 4294967296.0;
+                    let mut waiting = None;
+                    for band in 0..BANDS {
+                        if !layer.carriers[band].audible {
+                            continue;
+                        }
+                        let wrap = match o.interaction_source {
+                            0 => sub == 0 && source_wraps[band],
+                            1 => sub == 0 && grain_wraps[band],
+                            id => self.wraps[id as usize - 2][band],
+                        };
+                        let sync = o.interaction.sync() && wrap;
+                        let Some((first, first_sync)) = waiting.take() else {
+                            waiting = Some((band, sync));
+                            continue;
+                        };
+                        let [a, b] = layer.carriers.get_disjoint_mut([first, band]).unwrap();
+                        let phases = [a.folder.phase, b.folder.phase];
+                        let increments = [increment(a), increment(b)];
+                        let x = radias_wavefolder::Wavefolder::next_pair(
+                            [&mut a.folder, &mut b.folder],
+                            increments,
+                            o.waveform,
+                            o.fold_shape,
+                            layer.fold_controls,
+                            [first_sync, sync],
+                        );
+                        folds[first] = (x[0], a.folder.phase < phases[0]);
+                        folds[band] = (x[1], b.folder.phase < phases[1]);
+                    }
+                    if let Some((band, sync)) = waiting {
+                        let carrier = &mut layer.carriers[band];
+                        let phase = carrier.folder.phase;
+                        let x = carrier.folder.next(
+                            increment(carrier),
+                            o.waveform,
+                            o.fold_shape,
+                            layer.fold_controls,
+                            sync,
+                        );
+                        folds[band] = (x, carrier.folder.phase < phase);
+                    }
+                }
                 for (band, analyzed_band) in analyzed.iter().enumerate() {
                     let carrier = &mut layer.carriers[band];
                     if !carrier.audible && o.waveform != Waveform::AudioIn {
@@ -700,15 +768,8 @@ impl Resynth {
                             (pcm_loop.read(carrier, sample, range), wrapped)
                         }
                         _ if o.model == Model::Wavefolder => {
-                            let phase = carrier.folder.phase;
-                            let x = carrier.folder.next(
-                                carrier.increment.0 as f64 / 4294967296.0,
-                                o.waveform,
-                                o.fold_shape,
-                                layer.fold_controls,
-                                sync,
-                            );
-                            ([x; 2], carrier.folder.phase < phase)
+                            let (x, wrapped) = folds[band];
+                            ([x; 2], wrapped)
                         }
                         _ => {
                             let modulator = Sample(
@@ -773,9 +834,7 @@ impl Resynth {
                 }
             }
             if self.oversample == 2 {
-                for filter in &mut self.lowpass {
-                    wet = filter.next(wet);
-                }
+                wet = self.decimator.next(wet);
             }
         }
         self.frame = self.frame.wrapping_add(1);

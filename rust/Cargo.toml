@@ -31,6 +31,10 @@ radias-synth-domain = { git = "https://github.com/fushugaku/Rustias.git", rev = 
 radias-synth-application = { git = "https://github.com/fushugaku/Rustias.git", rev = "91cae3f57a868a80d32a2e6ebb113938efd65025" }
 metropolix-core = { git = "https://github.com/fushugaku/neuropolis.git", rev = "872a28c70de0cc6264dfab84aad8b78a2f224395" }
 
+[dev-dependencies]
+# The libm port behind std's sin in the browser build, to check `fast::sin`.
+libm = "0.2.16"
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 cpal = { version = "0.16", optional = true }
 ctrlc = { version = "3.4", optional = true }

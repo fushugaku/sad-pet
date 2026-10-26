@@ -61,18 +61,34 @@ impl Delay {
         let b = self.frames[if i + 1 == len { 0 } else { i + 1 }];
         [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]
     }
+    /// One channel of `read`, for a line that holds two mono lines.
+    #[inline(always)]
+    pub fn read_channel(&self, samples: f32, channel: usize) -> f32 {
+        let len = self.frames.len();
+        let samples = samples.clamp(1.0, (len - 2) as f32);
+        let whole = samples.ceil();
+        let f = whole - samples;
+        let i = self.cursor + len - whole as usize;
+        let i = if i >= len { i - len } else { i };
+        let a = self.frames[i][channel];
+        let b = self.frames[if i + 1 == len { 0 } else { i + 1 }][channel];
+        a + (b - a) * f
+    }
     pub fn clear(&mut self) {
         self.frames.fill([0.0; 2]);
         self.cursor = 0;
     }
 }
 
-pub(crate) type Storage = [Vec<Stereo>; 13];
+pub(crate) type Storage = [Vec<Stereo>; 9];
 
 pub struct Effects {
     sample_rate: f32,
     predelay: Delay,
-    tank: [Delay; 8],
+    /// Eight mono tank lines, two per line: line `i` is channel `i % 2` of
+    /// `tank[i / 2]`. All eight have one length and take a value every
+    /// frame, so a pair always shares its cursor.
+    tank: [Delay; 4],
     tank_damping: [f32; 8],
     feedback: [f32; 8],
     lengths: [f32; 8],
@@ -235,21 +251,24 @@ impl Effects {
         });
         let mut taps = [0.0_f32; 8];
         for (i, tap) in taps.iter_mut().enumerate() {
-            let x = self.tank[i].read(self.lengths[i])[0];
+            let x = self.tank[i / 2].read_channel(self.lengths[i], i % 2);
             self.tank_damping[i] =
                 fast::flush(self.tank_damping[i] + self.tone * (x - self.tank_damping[i]));
             *tap = self.tank_damping[i];
         }
         let reflection = taps.iter().sum::<f32>() * 0.25;
+        let mut clean = [0.0_f32; 8];
         for (i, &tap) in taps.iter().enumerate() {
             let value = input[i % 2] * 0.22 + (tap - reflection) * self.feedback[i];
-            let clean = if value.abs() < 1e-20 {
+            clean[i] = if value.abs() < 1e-20 {
                 0.0
             } else {
                 value.clamp(-8.0, 8.0)
             };
-            written |= clean != 0.0;
-            self.tank[i].push([clean, clean]);
+            written |= clean[i] != 0.0;
+        }
+        for (pair, line) in self.tank.iter_mut().enumerate() {
+            line.push([clean[2 * pair], clean[2 * pair + 1]]);
         }
         written |= self.tank_damping.iter().any(|&d| d != 0.0);
         self.quiet = if written { 0 } else { self.quiet + 1 };

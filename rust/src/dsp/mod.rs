@@ -528,6 +528,11 @@ pub struct Engine {
     /// Voices whose envelopes may still run, bit n for voice n. The frame
     /// loop advances only these, so idle voices cost nothing per frame.
     sounding: u64,
+    /// Voices that may have an active envelope: a superset of the voices
+    /// `Voice::active` finds. Only `Envelope::on` makes an envelope active,
+    /// and only `start_voice` calls it, so a voice joins here there and
+    /// leaves once a check finds every envelope idle.
+    maybe_active: u64,
     bend: [f32; 16],
     sustain: [bool; 16],
     follower: f32,
@@ -623,6 +628,7 @@ impl Engine {
             grain_clock: 1.0,
             next_voice: 0,
             sounding: 0,
+            maybe_active: 0,
             bend: [0.0; 16],
             sustain: [false; 16],
             follower: 0.0,
@@ -1035,6 +1041,7 @@ impl Engine {
         }
         self.voices[index].on(self.preset.env_count as usize);
         self.sounding |= 1 << index;
+        self.maybe_active |= 1 << index;
     }
     /// Voice 0 is the note held while playing without keys or note tracks.
     fn start_free_voice(&mut self) {
@@ -3310,10 +3317,13 @@ impl Engine {
             let bar_loop = self.bar_loop_active();
             let phase_step = self.bar_phase_step;
             if bar_loop && !self.frozen {
-                for voice in self.voices.iter_mut() {
+                for index in bits(self.maybe_active) {
+                    let voice = &mut self.voices[index];
                     if voice.active() {
                         voice.loop_phase =
                             sample::wrap_position(voice.loop_phase + phase_step, 1.0);
+                    } else {
+                        self.maybe_active &= !(1 << index);
                     }
                 }
             }
