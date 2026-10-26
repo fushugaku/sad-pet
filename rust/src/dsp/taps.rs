@@ -1,11 +1,16 @@
 //! The stage taps at audio rate. A Chain share ramps, so that leaving a stage
 //! out of the chain crossfades to its input; each send ramps per bus, so that
-//! choosing another bus crossfades between the two.
+//! choosing another bus crossfades between the two. The advanced mode grain
+//! groups have taps of their own after the stages'.
 use crate::{
     Stereo,
     bus::MAX_BUSES,
-    taps::{STAGES, Stage, Taps},
+    grain_groups::GROUPS,
+    taps::{STAGES, Stage, Tap, Taps},
 };
+
+/// The stages, then the grain groups.
+const SOURCES: usize = STAGES + GROUPS;
 
 /// About 10 ms at 48 kHz from one end of a share to the other.
 const STEP: f32 = 1.0 / 512.0;
@@ -13,16 +18,18 @@ const STEP: f32 = 1.0 / 512.0;
 #[derive(Clone)]
 pub(crate) struct Runtime {
     settings: Taps,
+    /// The grain groups' outputs; all at their defaults outside advanced mode.
+    groups: [Tap; GROUPS],
     /// Bit n set for each Bus n that exists to take a send.
     open: u16,
-    chain: [f32; STAGES],
-    chain_targets: [f32; STAGES],
-    gains: [[f32; MAX_BUSES]; STAGES],
-    targets: [[f32; MAX_BUSES]; STAGES],
+    chain: [f32; SOURCES],
+    chain_targets: [f32; SOURCES],
+    gains: [[f32; MAX_BUSES]; SOURCES],
+    targets: [[f32; MAX_BUSES]; SOURCES],
     /// Every share is at its target: a frame costs one compare.
     settled: bool,
-    /// Bit s set while stage s has a send gain above zero.
-    sending: u8,
+    /// Bit s set while source s has a send gain above zero.
+    sending: u16,
     /// Some send has a target above zero.
     targeted: bool,
     /// Bit b set for each Bus b + 1 that a section is routed to, and for
@@ -39,11 +46,12 @@ impl Runtime {
     pub(crate) fn new() -> Self {
         Self {
             settings: Taps::default(),
+            groups: [Tap::default(); GROUPS],
             open: 0,
-            chain: [1.0; STAGES],
-            chain_targets: [1.0; STAGES],
-            gains: [[0.0; MAX_BUSES]; STAGES],
-            targets: [[0.0; MAX_BUSES]; STAGES],
+            chain: [1.0; SOURCES],
+            chain_targets: [1.0; SOURCES],
+            gains: [[0.0; MAX_BUSES]; SOURCES],
+            targets: [[0.0; MAX_BUSES]; SOURCES],
             settled: true,
             sending: 0,
             targeted: false,
@@ -55,9 +63,10 @@ impl Runtime {
         }
     }
     /// Takes the modulated settings once per control block.
-    pub(crate) fn configure(&mut self, settings: &Taps) {
-        if *settings != self.settings {
+    pub(crate) fn configure(&mut self, settings: &Taps, groups: [Tap; GROUPS]) {
+        if *settings != self.settings || groups != self.groups {
             self.settings = *settings;
+            self.groups = groups;
             self.retarget();
         }
         if !self.configured {
@@ -75,9 +84,11 @@ impl Runtime {
     fn retarget(&mut self) {
         self.targeted = false;
         self.routed = 0;
-        for stage in Stage::ALL {
-            let tap = self.settings.get(stage);
-            let s = stage as usize;
+        let taps = Stage::ALL
+            .map(|stage| *self.settings.get(stage))
+            .into_iter()
+            .chain(self.groups);
+        for (s, tap) in taps.enumerate() {
             self.chain_targets[s] = tap.chain;
             let open = tap.bus > 0 && self.open & 1 << tap.bus != 0;
             if open {
@@ -107,7 +118,7 @@ impl Runtime {
         let mut settled = true;
         let mut sending = 0;
         let mut fading = 0;
-        for s in 0..STAGES {
+        for s in 0..SOURCES {
             settled &= ramp(&mut self.chain[s], self.chain_targets[s]);
             for (b, (gain, &target)) in self.gains[s].iter_mut().zip(&self.targets[s]).enumerate() {
                 settled &= ramp(gain, target);
@@ -152,7 +163,25 @@ impl Runtime {
     }
     #[inline]
     pub(crate) fn send(&mut self, stage: Stage, frame: Stereo) {
-        for (out, &gain) in self.out.iter_mut().zip(&self.gains[stage as usize]) {
+        self.send_source(stage as usize, frame);
+    }
+    /// The grain groups' Chain shares.
+    #[inline]
+    pub(crate) fn group_chains(&self) -> [f32; GROUPS] {
+        std::array::from_fn(|g| self.chain[STAGES + g])
+    }
+    /// Bit g set for each grain group that sends this frame.
+    #[inline]
+    pub(crate) fn group_sends(&self) -> u8 {
+        (self.sending >> STAGES) as u8
+    }
+    #[inline]
+    pub(crate) fn send_group(&mut self, group: usize, frame: Stereo) {
+        self.send_source(STAGES + group, frame);
+    }
+    #[inline]
+    fn send_source(&mut self, source: usize, frame: Stereo) {
+        for (out, &gain) in self.out.iter_mut().zip(&self.gains[source]) {
             if gain != 0.0 {
                 out[0] += frame[0] * gain;
                 out[1] += frame[1] * gain;
@@ -214,7 +243,7 @@ mod tests {
             },
             ..Default::default()
         };
-        runtime.configure(&taps);
+        runtime.configure(&taps, Default::default());
         settled(&mut runtime);
         assert!(!runtime.active(), "Bus 3 does not exist yet");
         assert_eq!(runtime.buses(), 0);
@@ -228,7 +257,7 @@ mod tests {
         runtime.finish(0.5, false);
         assert_eq!(runtime.output().unwrap()[2], [0.25, -0.25]);
         taps.grains.bus = 5;
-        runtime.configure(&taps);
+        runtime.configure(&taps, Default::default());
         runtime.begin_frame();
         assert_eq!(runtime.buses(), 1 << 4 | 1 << 2, "Bus 3 still fades out");
         runtime.send(Stage::Grains, [1.0, 1.0]);
@@ -247,25 +276,25 @@ mod tests {
         let mut runtime = Runtime::new();
         let mut taps = Taps::default();
         taps.filters.chain = 0.0;
-        runtime.configure(&taps);
+        runtime.configure(&taps, Default::default());
         assert_eq!(
             runtime.mix(Stage::Filters, [1.0; 2], [3.0; 2]),
             [1.0; 2],
             "a loaded preset starts at its shares"
         );
         taps.filters.chain = 1.0;
-        runtime.configure(&taps);
+        runtime.configure(&taps, Default::default());
         settled(&mut runtime);
         assert_eq!(runtime.mix(Stage::Filters, [1.0; 2], [3.0; 2]), [3.0; 2]);
         taps.filters.chain = 0.0;
-        runtime.configure(&taps);
+        runtime.configure(&taps, Default::default());
         runtime.begin_frame();
         let halfway = runtime.mix(Stage::Filters, [1.0; 2], [3.0; 2]);
         assert!(halfway[0] > 2.9 && halfway[0] < 3.0);
         settled(&mut runtime);
         assert_eq!(runtime.mix(Stage::Filters, [1.0; 2], [3.0; 2]), [1.0; 2]);
         taps.filters.chain = 0.25;
-        runtime.configure(&taps);
+        runtime.configure(&taps, Default::default());
         settled(&mut runtime);
         assert_eq!(runtime.mix(Stage::Filters, [1.0; 2], [3.0; 2]), [1.5; 2]);
     }

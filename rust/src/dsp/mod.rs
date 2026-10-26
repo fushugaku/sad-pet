@@ -1977,7 +1977,13 @@ impl Engine {
         }
         self.resynth
             .configure(m.resynth, &self.sample, m.params.sample_root_note);
-        self.taps.configure(&m.taps);
+        // Outside advanced mode the grain groups keep their taps closed.
+        let group_taps = if m.grain_groups.advanced {
+            m.grain_groups.groups.map(|g| g.output)
+        } else {
+            Default::default()
+        };
+        self.taps.configure(&m.taps, group_taps);
         let shaper_note = self.source_note as f32
             + self.bend[self.source_channel as usize] * m.params.midi_pitchbend_range
             + (m.params.pitch * 2.0 - 1.0) * m.params.pitch_range
@@ -2727,6 +2733,11 @@ impl Engine {
         let source_chain = self.taps.chain(Stage::Source);
         let top_level = sample.active_levels() - 1;
         let groups = &self.modulated.grain_groups;
+        // Each group's grains in the chain, and what it sends to its bus.
+        let group_chains = self.taps.group_chains();
+        let group_sends = self.taps.group_sends();
+        let mut group_sent = [[0.0; 2]; crate::grain_groups::GROUPS];
+        let synth_grains = self.synth.is_some();
         let mut pending = self.live_grains;
         while pending != 0 {
             let slot = pending.trailing_zeros() as usize;
@@ -2759,17 +2770,33 @@ impl Engine {
                 frame = frame.map(|v| v * gain);
             }
             // A group's grains take its amp envelope in place of the window.
-            let amplitude = if groups.advanced
-                && let Some(shaped) = self.group_grains.process(slot, grain.age, frame, groups)
+            if groups.advanced
+                && let Some((group, shaped)) =
+                    self.group_grains.process(slot, grain.age, frame, groups)
             {
-                frame = shaped;
-                1.0
+                let panned: Stereo = std::array::from_fn(|c| shaped[c] * grain.pan[c]);
+                let chain = group_chains[group];
+                for c in 0..2 {
+                    voice_frames[grain.voice][c] += panned[c] * chain;
+                }
+                if group_sends & 1 << group != 0 {
+                    // Sends follow the notes' VCA as the chain does; a
+                    // Synth's grains already read its voices after theirs.
+                    let weight = if synth_grains {
+                        1.0
+                    } else {
+                        self.voices[grain.voice].value.max(0.0)
+                    };
+                    for c in 0..2 {
+                        group_sent[group][c] += panned[c] * weight;
+                    }
+                }
             } else {
                 let phase = 2.0 * grain.age as f32 / (grain.duration - 1) as f32;
-                tables::grain_window(phase, grain.shape)
-            };
-            for c in 0..2 {
-                voice_frames[grain.voice][c] += frame[c] * amplitude * grain.pan[c];
+                let amplitude = tables::grain_window(phase, grain.shape);
+                for c in 0..2 {
+                    voice_frames[grain.voice][c] += frame[c] * amplitude * grain.pan[c];
+                }
             }
             grain.position = range.start as f64
                 + sample::wrap_position(
@@ -2787,6 +2814,14 @@ impl Engine {
             1.0
         };
         let input_gain = self.input_gain;
+        // A group's send carries its grains before Dry/Wet and the added
+        // filters, at the engine's overlap level.
+        for (group, sent) in group_sent.iter().enumerate() {
+            if group_sends & 1 << group != 0 {
+                self.taps
+                    .send_group(group, sent.map(|x| x * norm * input_gain));
+            }
+        }
         self.smooth_mix =
             fast::flush(self.smooth_mix + (self.modulated.params.mix - self.smooth_mix) * 0.002);
         // The source is shared by all notes. Distribute it across their filter

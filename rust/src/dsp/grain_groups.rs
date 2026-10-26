@@ -164,9 +164,10 @@ impl Runtime {
         let grain = &self.grains[slot];
         grain.grouped.then_some(grain.group)
     }
-    /// One frame of a grain through its filter, amp envelope and level, or
-    /// None for a grain outside the groups, which keeps the engine's window.
-    /// Filter and level follow the group's current settings while it plays.
+    /// A grain's group and one frame of it through its filter, amp envelope
+    /// and level, or None for a grain outside the groups, which keeps the
+    /// engine's window. Filter and level follow the group's current settings
+    /// while it plays.
     #[inline]
     pub(crate) fn process(
         &mut self,
@@ -174,16 +175,17 @@ impl Runtime {
         age: u32,
         frame: Stereo,
         settings: &Settings,
-    ) -> Option<Stereo> {
+    ) -> Option<(usize, Stereo)> {
         let grain = &mut self.grains[slot];
         if !grain.grouped {
             return None;
         }
-        let group = &settings.groups[grain.group as usize];
+        let index = grain.group as usize;
+        let group = &settings.groups[index];
         let age_f = age as f32;
         let gain = grain.amp.shaped(age_f, grain.shape) * group.level;
         if !grain.filtering {
-            return Some(frame.map(|x| x * gain));
+            return Some((index, frame.map(|x| x * gain)));
         }
         let cutoff = group.cutoff + group.env_depth * grain.filter_env.swept(age_f);
         let open = group.filter_type == FilterType::LowPass && cutoff >= 0.999;
@@ -200,23 +202,26 @@ impl Runtime {
         }
         let (k, band_gain) = (grain.k, grain.band_gain);
         let [a1, a2, a3] = grain.coefficients;
-        Some(std::array::from_fn(|c| {
-            let [ic1, ic2] = grain.state[c];
-            let v3 = frame[c] - ic2;
-            let band = a1 * ic1 + a2 * v3;
-            let low = ic2 + a2 * ic1 + a3 * v3;
-            grain.state[c] = [fast::flush(2.0 * band - ic1), fast::flush(2.0 * low - ic2)];
-            let out = if open {
-                frame[c]
-            } else {
-                match group.filter_type {
-                    FilterType::LowPass => low,
-                    FilterType::BandPass => band * band_gain,
-                    FilterType::HighPass => frame[c] - k * band - low,
-                }
-            };
-            out * gain
-        }))
+        Some((
+            index,
+            std::array::from_fn(|c| {
+                let [ic1, ic2] = grain.state[c];
+                let v3 = frame[c] - ic2;
+                let band = a1 * ic1 + a2 * v3;
+                let low = ic2 + a2 * ic1 + a3 * v3;
+                grain.state[c] = [fast::flush(2.0 * band - ic1), fast::flush(2.0 * low - ic2)];
+                let out = if open {
+                    frame[c]
+                } else {
+                    match group.filter_type {
+                        FilterType::LowPass => low,
+                        FilterType::BandPass => band * band_gain,
+                        FilterType::HighPass => frame[c] - k * band - low,
+                    }
+                };
+                out * gain
+            }),
+        ))
     }
 }
 

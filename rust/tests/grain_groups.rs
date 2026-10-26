@@ -244,7 +244,18 @@ fn grain_group_controls_append_after_the_macros() {
     assert_eq!(specs[macros + 2].id, "grain_group1_share");
     assert_eq!(specs[macros + 1 + 16].id, "grain_group1_filter_release");
     assert_eq!(specs[macros + 1 + 16 * 4].id, "grain_group4_filter_release");
-    assert_eq!(specs.len(), macros + 2 + 16 * 4);
+    // Each group's output follows every group's other controls.
+    let outputs = macros + 2 + 16 * 4;
+    let ids: Vec<_> = specs[outputs..].iter().map(|s| s.id.as_str()).collect();
+    assert_eq!(
+        ids[..3],
+        [
+            "grain_group1_chain",
+            "grain_group1_send",
+            "grain_group1_bus"
+        ]
+    );
+    assert_eq!(ids.len(), 4 * 3);
     let mut preset = Preset::default();
     let changes = parameters::parse(&serde_json::json!({
         "grain_advanced": 1.0,
@@ -268,6 +279,58 @@ fn grain_group_controls_append_after_the_macros() {
             .iter()
             .any(|s| s["id"] == "grain_group4_amp_attack")
     );
+    assert!(modulation.iter().any(|s| s["id"] == "grain_group2_send"));
+    assert!(!modulation.iter().any(|s| s["id"] == "grain_group2_bus"));
+}
+
+/// Only group B plays, sending to Bus 2.
+fn layer_to_bus(chain: f32, send: f32, advanced_mode: bool) -> Engine {
+    let mut e = engine(|p| {
+        p.grain_groups.advanced = advanced_mode;
+        for (i, g) in p.grain_groups.groups.iter_mut().enumerate() {
+            g.share = if i == 1 { 1.0 } else { 0.0 };
+        }
+        p.grain_groups.groups[1].output = sad_pet::taps::Tap {
+            chain,
+            send,
+            bus: 2,
+        };
+    });
+    e.set_open_buses(1 << 2 | 1 << 3);
+    e
+}
+fn render_with_sends(e: &mut Engine, frames: usize) -> (Vec<[f32; 2]>, Vec<[[f32; 2]; 8]>) {
+    (0..frames)
+        .map(|_| {
+            let out = e.process_frame();
+            (out, e.bus_sends().copied().unwrap_or([[0.0; 2]; 8]))
+        })
+        .unzip()
+}
+
+#[test]
+fn a_group_sends_its_grains_to_its_own_bus() {
+    let (kept, _) = render_with_sends(&mut layer_to_bus(1.0, 0.0, true), 24_000);
+    let mut sending = layer_to_bus(1.0, 1.0, true);
+    assert_eq!(sending.tap_buses(), 1 << 1, "routed to Bus 2 only");
+    let (out, sends) = render_with_sends(&mut sending, 24_000);
+    let bus = |n: usize| -> Vec<[f32; 2]> { sends[12_000..].iter().map(|s| s[n - 1]).collect() };
+    let heard = rms(&bus(2));
+    assert!(heard > 0.01, "{heard}");
+    assert_eq!(rms(&bus(3)), 0.0);
+    // SEND leaves the chain as it was.
+    assert_eq!(out, kept);
+    // At CHAIN 0 the group leaves the timbre and only the bus hears it.
+    let (only_bus, sends) = render_with_sends(&mut layer_to_bus(0.0, 1.0, true), 24_000);
+    assert!(rms(&only_bus[12_000..]) < 1e-6);
+    let sent: Vec<_> = sends[12_000..].iter().map(|s| s[1]).collect();
+    assert!((rms(&sent) - heard).abs() < heard * 1e-3);
+    // Outside advanced mode the groups send nothing and keep the chain.
+    let mut off = layer_to_bus(0.0, 1.0, false);
+    assert_eq!(off.tap_buses(), 0);
+    let (out, sends) = render_with_sends(&mut off, 24_000);
+    assert!(rms(&out[12_000..]) > 0.01);
+    assert!(sends.iter().all(|s| *s == [[0.0; 2]; 8]));
 }
 
 #[test]
