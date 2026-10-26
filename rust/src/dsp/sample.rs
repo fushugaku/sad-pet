@@ -115,6 +115,17 @@ impl LiveInput {
     pub fn for_drums(sample_rate: u32, effects_only: bool, seconds: f32) -> Self {
         Self::with_capacity(sample_rate, effects_only, 32, seconds)
     }
+    /// What a Rack's Grain engine hears of its chain, with the drum window.
+    pub fn for_rack(sample_rate: u32, seconds: f32) -> Self {
+        let mut input = Self::with_capacity(
+            sample_rate,
+            false,
+            crate::rack::MAX_BUFFER_SECONDS as usize,
+            seconds,
+        );
+        input.sample.name = "Rack".into();
+        input
+    }
     fn with_capacity(sample_rate: u32, effects_only: bool, seconds: usize, window: f32) -> Self {
         let capacity = sample_rate as usize * seconds;
         let mut length = capacity;

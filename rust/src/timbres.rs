@@ -17,6 +17,8 @@ pub enum Kind {
     /// The effect chain of one Sampler pad: a bus fed by that pad's voices,
     /// whose output returns into its Sampler.
     PadFx,
+    /// Built from modules in any order: sources, processors and a Mixer.
+    Rack,
     /// Processes the sends of other timbres and feeds Master.
     Bus,
     /// Always present: the sum of every timbre and bus, then the output.
@@ -31,6 +33,7 @@ impl Kind {
             Kind::Vocal => "Vocal",
             Kind::Sampler => "Sampler",
             Kind::PadFx => "Pad FX",
+            Kind::Rack => "Rack",
             Kind::Bus => "Bus",
             Kind::Master => "Master",
         }
@@ -51,7 +54,9 @@ impl Kind {
     /// Pad FX timbres cannot be told from a Bus by their preset; their Meta
     /// names the Sampler they belong to.
     pub fn of(preset: &crate::preset::Preset) -> Self {
-        if preset.vocal.is_some() {
+        if preset.rack.is_some() {
+            Kind::Rack
+        } else if preset.vocal.is_some() {
             Kind::Vocal
         } else if preset.sampler.is_some() {
             Kind::Sampler
@@ -76,6 +81,10 @@ impl Kind {
             Kind::Granular => return None,
             Kind::Drums => preset.drums = Some(Box::default()),
             Kind::Synth => preset.synth = Some(Box::default()),
+            Kind::Rack => {
+                preset.rack = Some(Box::default());
+                preset.sanitize();
+            }
             Kind::Bus | Kind::Master | Kind::Vocal | Kind::Sampler | Kind::PadFx => {
                 // Everything off: the input passes at unity and costs nothing.
                 preset.bus = Some(Box::new(crate::bus::Settings {

@@ -237,7 +237,12 @@ impl Registry {
             }
             3 if pending.kind != Kind::Granular && !pending.kind.keeps_role() => {
                 let preset = pending.preset.as_mut().unwrap();
-                let history = preset.history().unwrap();
+                // A Rack keeps a history only for a Grain engine that reads one.
+                let Some(history) = preset.history() else {
+                    pending.stage += 1;
+                    self.preparing = Some(pending);
+                    return Ok(false);
+                };
                 let input = pending.live.get_or_insert_with(|| {
                     sad_pet::dsp::sample::LiveInputPreparation::new(rate, !history.granular)
                 });
@@ -246,7 +251,10 @@ impl Registry {
                     return Ok(false);
                 }
                 let mut input = pending.live.take().unwrap().finish().unwrap();
-                if let Some(drums) = &mut preset.drum_runtime.0 {
+                if preset.rack.is_some() {
+                    input.sample.name = "Rack".into();
+                    preset.rack_runtime.0 = Some(input);
+                } else if let Some(drums) = &mut preset.drum_runtime.0 {
                     input.sample.name = "Drum machine".into();
                     drums.live = Some(input);
                 } else if let Some(synth) = &mut preset.synth_runtime.0 {
@@ -275,8 +283,10 @@ impl Registry {
                 host.file_generation = primary.file_generation;
                 if let Some(mut preset) = pending.preset.take() {
                     host.engine.exchange_preset(&mut preset);
-                    // Drums run free with the transport; a synth waits for notes.
-                    host.engine.set_midi_gate(pending.kind == Kind::Synth);
+                    // Drums run free with the transport; a synth waits for notes,
+                    // and so does a Rack, whose drums play their pattern anyway.
+                    host.engine
+                        .set_midi_gate(matches!(pending.kind, Kind::Synth | Kind::Rack));
                 }
                 host.engine.set_playing(primary.engine.playing);
                 let kind = pending.kind;

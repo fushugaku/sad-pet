@@ -161,6 +161,30 @@ files move instruments between the web version and the native app and plug-ins.
   destinations (`synth_osc1_waveform`…, `synth_granular`, `synth_buffer_seconds`).
   The desktop app, which has one engine, switches it with **Engine: Granular /
   Synth engine**. Presets of the other timbres serialize unchanged.
+- **Rack timbres** (browser and DAW plug-ins) are instruments you build from
+  modules in any order: **+ Timbre → Rack**. Sound runs from the top module down.
+  Sources — **Sample** (the loaded file), **Synth** (up to four oscillators per
+  note) and **Drums** (the drum machine with its own pattern) — each start a
+  chain of their own, and the modules under a source process its chain:
+  **Grain engine**, **Filters**, **Resynth**, **Insert FX** (one effect) and the
+  effect racks **FX A** and **FX B**. Chains meet in the **Mixer**, a strip per
+  chain with level, pan, Mute, Solo and a meter; the modules under the Mixer
+  process the sum, and a source under it plays beside the sum. Each chain has a
+  color, drawn down the left of its modules. The rack keeps one sequencer and
+  one set of LFOs, envelopes, macros and matrix routes, under the modules, with
+  the drum pattern beside Neuropolis. Drag a module by its grip (every module
+  folds while you drag, and takes the color of the chain it would join), move it
+  with ↑ ↓, fold it, switch it off or remove it (**Undo** brings it back); the +
+  between two modules adds one there. A Grain engine right under the Sample
+  granulates the file note by note, as a Granular timbre does; anywhere else it
+  granulates a live history of its chain (**Buffer** up to 32 s). Filters right
+  under a Synth or Sample run per note before the notes' VCA, as in those
+  timbres; elsewhere they filter the chain. Notes play the Synth and Sample; the
+  Drums play their pattern. A Sample, Grain engine, Filters and FX B rack plays
+  bit for bit as a Granular timbre, and a Synth over its Filters as a Synth
+  timbre (a frame sooner: no history stands between them). The strips are host parameters (`rack_sample_level` …
+  `rack_drums_solo`, then `rack_buffer_seconds`) that LFOs, envelopes, the
+  matrix, macros and sequencer lanes can move.
 - **Bus and Master** (browser and DAW plug-ins). Every scene has one **Master**
   tab that sums all timbres and buses into the output; add up to eight **Bus**
   timbres with **+ Timbre**. The tabs list the instruments on one row and the

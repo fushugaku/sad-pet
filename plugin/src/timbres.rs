@@ -446,8 +446,9 @@ impl Controller {
                         if let Some(preset) = kind.preset() {
                             part.preset = preset;
                             part.preset.sanitize();
-                            // Drums run free with the transport; a synth waits for notes.
-                            part.midi_gate = kind == Kind::Synth;
+                            // Drums run free with the transport; a synth waits for
+                            // notes, and so does a Rack, whose drums play anyway.
+                            part.midi_gate = matches!(kind, Kind::Synth | Kind::Rack);
                         }
                         part
                     };

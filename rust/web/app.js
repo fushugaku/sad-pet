@@ -26,6 +26,7 @@ const sequenceEdits = new Map();
 let neuroEditor = null;
 let timbreEditor = null,
   busMixer = null,
+  rackEditor = null,
   drumEditor = null,
   vocalEditor = null,
   samplerEditor = null,
@@ -482,8 +483,20 @@ function setParam(key, value) {
   else if (key === "loop_one_bar") scheduleParameter(key, Number(value));
   else schedulePreset();
 }
-/** Drum, Synth, Bus and Master timbres keep their sound in a windowed history. */
-const historySettings = () => preset?.drums ?? preset?.synth ?? preset?.bus;
+/** Drum, Synth, Bus and Master timbres keep their sound in a windowed history,
+ * and so does a Rack whose Grain engine does not read its Sample. */
+const historySettings = () => preset?.rack
+  ? rackHistory() && { granular: true, buffer_seconds: preset.rack.buffer_seconds ?? 8 }
+  : preset?.drums ?? preset?.synth ?? preset?.bus;
+/** A Rack module's place in the plan, or null when the Rack lacks it. */
+const rackStep = (module) =>
+  preset?.rack ? window.SadRack?.plan(preset.rack.modules).find((s) => s.module === module) ?? null : null;
+const rackHistory = () => {
+  const grains = rackStep("grains");
+  return !!grains?.enabled && !grains.readsFile;
+};
+/** A Rack plays a file when it has a Sample module. */
+const rackFile = () => !!rackStep("sample");
 function grainSeconds(value) {
   // They share the windowed history's grain scaling.
   const history = historySettings();
@@ -1599,29 +1612,36 @@ function changeInstrument(work, replaces) {
 }
 function syncTimbreRouting() {
   const bus = preset?.bus,
-    drums = !!preset?.drums,
-    synth = !drums && !!preset?.synth,
-    history = drums || synth || !!bus;
-  $("load-wav").hidden = history;
+    rack = !!preset?.rack,
+    drums = !rack && !!preset?.drums,
+    synth = !rack && !drums && !!preset?.synth,
+    // A Rack's waveform is its Sample's file, or else its Grain engine's input.
+    rackLive = rack && !rackFile() && rackHistory(),
+    history = drums || synth || !!bus || rackLive;
+  $("load-wav").hidden = rack ? !rackFile() : history;
   const samplePanel = document.querySelector(".sample-panel");
   samplePanel.classList.toggle("drum-waveform", history);
   // The transport stays on top of every timbre; below it each engine keeps the
   // Granular order: its own section, then the waveform, Source FX and Grain engine.
-  if ($("sample-panel-home").nextElementSibling !== samplePanel)
+  // A Rack places them with its modules instead.
+  if (!rack && $("sample-panel-home").nextElementSibling !== samplePanel)
     $("sample-panel-home").after(samplePanel);
   samplePanel.setAttribute("aria-label", drums ? "Drum waveform and grains"
-    : synth ? "Synth waveform and grains" : "Sample and grains");
+    : synth ? "Synth waveform and grains" : rackLive ? "Grain engine input and grains"
+    : "Sample and grains");
   $("drum-source-name").hidden = !history;
   $("drum-source-name").textContent = preset?.vocal ? "Vocal"
     : preset?.sampler ? "Kit"
     : bus ? bus.master ? "Master input" : "Bus input"
+    : rack ? "Grain engine input"
     : synth ? "Synth engine" : "Drum machine";
   $("wave").setAttribute("aria-label", drums
     ? "Live drum waveform and grains"
     : synth ? "Live synth waveform and grains"
+    : rackLive ? "Live Grain engine input and grains"
     : "Sample waveform. Drag to select a loop, click to change position");
   $("wave").title = history
-    ? `Live ${drums ? "drum" : bus ? "bus" : "synth"} signal · last ${(preset.drums ?? preset.synth ?? bus).buffer_seconds ?? 8} seconds`
+    ? `Live ${drums ? "drum" : bus ? "bus" : rack ? "Grain engine input" : "synth"} signal · last ${historySettings().buffer_seconds ?? 8} seconds`
     : "Drag to select a loop · drag the handles to adjust it";
   // A bus without Granular has no history to show or select from.
   samplePanel.hidden = !!bus && !bus.granular;
@@ -1632,7 +1652,7 @@ function syncTimbreRouting() {
   $("filters").classList.toggle("bypassed", !!bus && !bus.filters);
   $("filters").title = bus && !bus.filters
     ? "Bypassed: switch Filters on with the power button in their heading" : "";
-  if ($("grain-engine-home").nextElementSibling !== grains)
+  if (!rack && $("grain-engine-home").nextElementSibling !== grains)
     $("grain-engine-home").after(grains);
   $("drum-grain-count").hidden = !history;
   syncGrainBuffer();
@@ -1640,7 +1660,8 @@ function syncTimbreRouting() {
   // One Granular switch in the Grain engine heading for every engine with a
   // live history.
   const own = historySettings();
-  $("history-granular").hidden = !own;
+  // A Rack's Grain engine has the rack's own power button.
+  $("history-granular").hidden = !own || rack;
   setAttr($("history-granular"), "aria-pressed", !!own?.granular);
   $("mix").disabled = !!own && !own.granular;
   $("mix").title = own && !own.granular
@@ -1657,6 +1678,7 @@ function syncTimbreRouting() {
   vocalEditor?.sync();
   samplerEditor?.sync();
   syncSynth();
+  rackEditor?.sync();
 }
 function syncAll() {
   syncTimbreRouting();
@@ -2055,6 +2077,8 @@ function fillBusMenu(select, chosen, buses) {
   if (buses.length < 8) select.append(option("new", "+ New bus"));
   select.value = String(chosen);
 }
+/** A Rack names its effect racks by letter, wherever they stand. */
+const RACK_STAGE_LABELS = { source: "Insert FX", pre_fx: "FX A", post_fx: "FX B" };
 function syncTaps() {
   if (!preset || !tapViews.size) return;
   const { sends, buses } = sendTargets();
@@ -2067,7 +2091,8 @@ function syncTaps() {
     // A Synth's grains read its filtered voices.
     setText(
       row.querySelector(".tap-name span"),
-      stage === "grains" && preset.synth ? `${label}, after Filters` : label,
+      preset.rack ? RACK_STAGE_LABELS[stage] ?? label
+        : stage === "grains" && preset.synth ? `${label}, after Filters` : label,
     );
     row.classList.toggle("no-sends", !sends);
     row.classList.toggle("sending", sending);
@@ -2136,7 +2161,11 @@ function bindGrainBuffer() {
   const buffer = $("grain-buffer");
   buffer.onchange = () => {
     const seconds = Number(buffer.value);
-    if (preset?.drums) {
+    if (preset?.rack) {
+      // The history keeps 32 s, so its window moves without a new preset.
+      preset.rack.buffer_seconds = seconds;
+      scheduleParameter("rack_buffer_seconds", seconds);
+    } else if (preset?.drums) {
       preset.drums.buffer_seconds = seconds;
       scheduleParameter("drum_buffer_seconds", seconds);
     } else if (preset?.synth) editSynth("buffer_seconds", seconds);
@@ -2154,7 +2183,7 @@ function syncGrainBuffer() {
     buffer = $("grain-buffer");
   $("grain-buffer-field").hidden = !own;
   if (!own) return;
-  const bus = !preset.drums && !preset.synth,
+  const bus = !preset.rack && !preset.drums && !preset.synth,
     seconds = own.buffer_seconds ?? (bus ? 4 : 8),
     choices = historyBuffers(bus),
     custom = choices.includes(seconds) ? "" : seconds;
@@ -3732,6 +3761,15 @@ function modulationGroups() {
   ]);
   const extra = new Map();
   for (const spec of sequenceCatalog?.modulation || []) {
+    // A Rack's Mixer strips, for the chains it has.
+    const strip = /^rack_(sample|synth|drums)_(level|pan|mute|solo)$/.exec(spec.id);
+    if (spec.id.startsWith("rack_")) {
+      if (!strip || !preset.rack?.modules?.some((m) => m.module === strip[1])) continue;
+      if (!extra.has("Mixer")) extra.set("Mixer", []);
+      extra.get("Mixer").push([{ control: { index: spec.index } },
+        `${strip[1][0].toUpperCase()}${strip[1].slice(1)} · ${strip[2]}`]);
+      continue;
+    }
     if (spec.id.startsWith("drum") && !preset.drums) continue;
     if (spec.id.startsWith("synth_") && !preset.synth) continue;
     // Added filters have their own groups, addressed by slot id.
@@ -5075,7 +5113,7 @@ function bind() {
   for (const type of ["dragenter", "dragover"])
     drop.addEventListener(type, (e) => {
       e.preventDefault();
-      if (!preset?.drums && !preset?.synth) drop.classList.add("drag");
+      if (preset?.rack ? rackFile() : !preset?.drums && !preset?.synth) drop.classList.add("drag");
     });
   for (const type of ["dragleave", "drop"])
     drop.addEventListener(type, (e) => {
@@ -5083,7 +5121,7 @@ function bind() {
       drop.classList.remove("drag");
     });
   drop.addEventListener("drop", (e) => {
-    if (historySettings()) return;
+    if (preset?.rack ? !rackFile() : historySettings()) return;
     fileLibrary
       .importFiles([...e.dataTransfer.files])
       .catch((error) => notify(error.message, true));
@@ -5292,7 +5330,9 @@ function draw() {
     c.clearRect(0, 0, w, h);
     paintWaveform(c, w, h);
     sampleSelection?.draw(c, w, h);
-    for (const grain of state.grains) {
+    // A Rack's Grain engine may read another chain than the file shown.
+    const foreign = !!preset?.rack && rackFile() && !rackStep("grains")?.readsFile;
+    for (const grain of foreign ? [] : state.grains) {
       const x = grain.position * w,
         alpha = Math.sin(Math.PI * grain.age) * 0.6 + 0.15,
         // Advanced mode grains take their group's color.
@@ -5308,18 +5348,20 @@ function draw() {
       c.fill();
     }
     const x = state.center * w;
-    c.strokeStyle = "#d8f8b6";
-    c.lineWidth = 1;
-    c.beginPath();
-    c.moveTo(x, 0);
-    c.lineTo(x, h);
-    c.stroke();
-    c.fillStyle = "#d8f8b6";
-    c.beginPath();
-    c.moveTo(x - 4, 0);
-    c.lineTo(x + 4, 0);
-    c.lineTo(x, 5);
-    c.fill();
+    if (!foreign) {
+      c.strokeStyle = "#d8f8b6";
+      c.lineWidth = 1;
+      c.beginPath();
+      c.moveTo(x, 0);
+      c.lineTo(x, h);
+      c.stroke();
+      c.fillStyle = "#d8f8b6";
+      c.beginPath();
+      c.moveTo(x - 4, 0);
+      c.lineTo(x + 4, 0);
+      c.lineTo(x, 5);
+      c.fill();
+    }
   }
     for (let i = 0; i < scopes.length; i++) {
       if (!visibleCanvas(scopes[i].canvas)) continue;
@@ -5484,6 +5526,7 @@ async function poll() {
     neuroEditor?.update(next.sequencer, next.playing);
     timbreEditor?.sync(next.timbres);
     busMixer?.sync(next.timbres);
+    rackEditor?.meters(next.rack_peaks);
     syncTaps();
     syncGrainGroupOutputs();
     drumEditor?.update(next.drums);
@@ -5595,6 +5638,22 @@ async function init() {
           ),
       });
     }
+    if (window.SadRack && state.timbres?.timbres)
+      rackEditor = new window.SadRack({
+        read: () => preset,
+        state: () => state,
+        context: () => state?.timbres,
+        structure: schedulePreset,
+        // A new source starts from the host's settings for it.
+        reload: () => flushPreset().catch((e) => notify(e.message, true)),
+        sync: syncAll,
+        routing: syncTimbreRouting,
+        parameter: scheduleParameter,
+        knob: createKnob,
+        slider: sliderMenu,
+        drums: () => drumEditor,
+        effectName: (kind) => COLOR_TYPES.find(([key]) => key === kind)?.[1] ?? kind,
+      });
     if (window.SadSampler && state.timbres?.timbres)
       samplerEditor = new window.SadSampler($("sampler-editor"), {
         read: () => preset,

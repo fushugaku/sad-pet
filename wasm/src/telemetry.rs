@@ -208,7 +208,7 @@ impl Host {
                 self.view.input_peak[c] = self.view.input_peak[c].max(input_peak[c]);
             }
         }
-        let sample = self.engine.source_sample();
+        let sample = self.engine.shown_sample();
         let changed = self.sent_revision != Some(self.config_revision);
         let packet = Packet {
             source_generation: self.file_generation,
@@ -228,7 +228,10 @@ impl Host {
             },
             configuration: changed.then_some(Configuration {
                 preset: &self.engine.preset,
-                name: if self.engine.preset.drums.is_some() {
+                // A Rack shows the file, or the history its Grain engine reads.
+                name: if self.engine.preset.rack.is_some() {
+                    &sample.name
+                } else if self.engine.preset.drums.is_some() {
                     "Drum machine"
                 } else if self.engine.preset.synth.is_some() {
                     sad_pet::dsp::synth::NAME
@@ -236,8 +239,8 @@ impl Host {
                     &sample.name
                 },
                 id: &sample.library_id,
-                seconds: self.engine.source_duration(),
-                frames: self.engine.source_frames(),
+                seconds: self.engine.shown_duration(),
+                frames: self.engine.shown_frames(),
                 region: self.engine.region,
                 fades: self.engine.fades,
                 live: self.engine.live_input.is_some(),
@@ -395,14 +398,26 @@ fn decode_snapshot(
     state["timbres"] = json!(packet.context);
     state["source_generation"] = json!(packet.source_generation);
     state["drums"] = json!(v.drums);
-    if let Some(drums) = &preset.drums {
+    state["rack_peaks"] = json!(v.rack_peaks);
+    if let Some(history) = preset
+        .rack
+        .as_ref()
+        .filter(|r| !r.has(sad_pet::rack::Module::Sample))
+        .and_then(|r| r.history())
+    {
+        let frames = history.buffer_frames(rate);
+        state["sample_frames"] = json!(frames);
+        state["sample_seconds"] = json!(frames as f64 / rate as f64);
+    } else if preset.rack.is_some() {
+        // A Rack with a Sample shows its file.
+    } else if let Some(drums) = &preset.drums {
         state["playing"] = json!(v.drums.playing);
         // The drum history length follows its Buffer setting, not the file.
         let frames = drums.buffer_frames(rate);
         state["sample_frames"] = json!(frames);
         state["sample_seconds"] = json!(frames as f64 / rate as f64);
     }
-    if let Some(synth) = &preset.synth {
+    if let Some(synth) = preset.synth.as_ref().filter(|_| preset.rack.is_none()) {
         let frames = synth.history().buffer_frames(rate);
         state["sample_frames"] = json!(frames);
         state["sample_seconds"] = json!(frames as f64 / rate as f64);

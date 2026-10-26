@@ -384,10 +384,12 @@ fn sequencer_gates_reset_lfos_through_a_reset_lane_or_steps_set_to_one() {
 #[test]
 fn new_controls_append_after_every_released_host_id_and_take_modulation() {
     let specs = parameters::specs();
-    let ids: Vec<_> = specs[specs.len() - 40..]
+    // A Rack's Mixer controls followed them.
+    let end = specs
         .iter()
-        .map(|s| s.id.as_str())
-        .collect();
+        .position(|s| s.id == "rack_sample_level")
+        .unwrap();
+    let ids: Vec<_> = specs[end - 40..end].iter().map(|s| s.id.as_str()).collect();
     assert_eq!(
         ids[..5],
         [
@@ -399,7 +401,7 @@ fn new_controls_append_after_every_released_host_id_and_take_modulation() {
         ]
     );
     assert_eq!(ids[39], "lfo8_fade");
-    assert!(specs[specs.len() - 41].id.starts_with("grain_group4_"));
+    assert!(specs[end - 41].id.starts_with("grain_group4_"));
 
     let mut p = preset(lfo(Waveform::Saw));
     specs
