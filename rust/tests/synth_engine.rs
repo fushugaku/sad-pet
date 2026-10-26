@@ -292,7 +292,9 @@ fn synth_controls_append_after_every_other_host_parameter() {
     // Then advanced grain mode and its four groups' controls.
     let groups = taps + 8 * 3 + 8;
     assert_eq!(later[groups], "grain_advanced");
-    assert_eq!(later.len(), groups + 1 + 4 * 16);
+    // Then each group's output: chain, send and bus.
+    assert_eq!(later[groups + 1 + 4 * 16], "grain_group1_chain");
+    assert_eq!(later.len(), groups + 1 + 4 * 16 + 4 * 3);
 }
 
 #[test]

@@ -547,6 +547,8 @@ const grainGroupDefault = () => ({
   // The engine's window: up over the first half of a grain, down over the second.
   amp: { attack: 0.5, decay: 0, sustain: 1, release: 0.5 },
   filter_env: { attack: 0, decay: 0.5, sustain: 0, release: 0 },
+  // Kept in the timbre, sent nowhere.
+  output: { chain: 1, send: 0, bus: 0 },
 });
 // Reading leaves the preset alone: the host omits untouched groups.
 const grainGroupSettings = () =>
@@ -559,16 +561,20 @@ function ensureGrainGroups() {
 const grainGroupPath = (field) =>
   /^(amp|filter)_(attack|decay|sustain|release)$/.test(field)
     ? [field.startsWith("amp") ? "amp" : "filter_env", field.replace(/^(amp|filter)_/, "")]
-    : [field];
+    : ["chain", "send", "bus"].includes(field)
+      ? ["output", field]
+      : [field];
 function grainGroupField(group, field) {
   const [a, b] = grainGroupPath(field);
-  return b ? group[a][b] : group[a];
+  const value = b ? group[a]?.[b] : group[a];
+  return value ?? grainGroupField(grainGroupDefault(), field);
 }
 let grainGroupPage = 0;
+const grainOutputViews = [];
 function editGrainGroup(index, field, value) {
   const group = ensureGrainGroups().groups[index],
     [a, b] = grainGroupPath(field);
-  if (b) group[a] = { ...group[a], [b]: value };
+  if (b) group[a] = { ...grainGroupDefault()[a], ...group[a], [b]: value };
   else group[a] = value;
   const key = `grain_group${index + 1}_${field}`;
   controls.get(key)?.();
@@ -576,7 +582,7 @@ function editGrainGroup(index, field, value) {
     key,
     field === "filter_type" ? GRAIN_FILTER_TYPES.findIndex(([id]) => id === value) : value,
   );
-  syncGrainGroupTabs();
+  syncGrainGroupOutputs();
   drawGrainGroupCurve();
 }
 /** One grain's length in milliseconds at the engine's SIZE. */
@@ -673,6 +679,32 @@ function buildGrainGroups() {
       }
       page.append(card);
     }
+    // Where the group's grains go, as a section's Output row does.
+    const row = document.createElement("div");
+    row.className = "tap grain-group-output";
+    row.innerHTML = `<svg class="tap-flow" viewBox="0 0 30 52" aria-hidden="true"><path class="tap-chain" d="M9 0V52"/><path class="tap-branch" d="M9 26H23"/><path class="tap-branch" d="M19 21.5l4.5 4.5-4.5 4.5"/></svg><div class="tap-name"><strong>Output</strong><span>Group ${name}</span></div><div class="tap-knobs"></div><label class="tap-bus">to<select aria-label="Group ${name} bus"></select></label><output class="tap-status"></output>`;
+    const knobs = row.querySelector(".tap-knobs");
+    for (const [field, label, aria] of [["chain", "CHAIN", "chain"], ["send", "SEND", "bus send"]])
+      createKnob(
+        [`grain_group${index + 1}_${field}`, label, percent, 0, 1, `Group ${name} ${aria}`],
+        knobs,
+        {
+          get: () => grainGroupField(grainGroupSettings().groups[index], field),
+          set: (v) => editGrainGroup(index, field, v),
+          reset: () => grainGroupField(grainGroupDefault(), field),
+        },
+      );
+    const [chain, send] = knobs.querySelectorAll(".dial");
+    chain.title = "Share of this group's grains that stays in the timbre. At 0% only its bus hears them.";
+    send.closest(".knob").title = "Share of this group's grains sent to the chosen bus, whatever CHAIN is";
+    const select = row.querySelector("select");
+    select.onchange = () => {
+      if (select.value === "new")
+        addTapBus(null, (bus) => editGrainGroup(index, "bus", bus));
+      else editGrainGroup(index, "bus", Number(select.value));
+    };
+    page.append(row);
+    grainOutputViews.push({ row, select, send, signature: "" });
     pages.append(page);
   });
   $("grain-advanced").onclick = () => {
@@ -691,14 +723,56 @@ function buildGrainGroups() {
   };
 }
 function syncGrainGroupTabs() {
-  const { groups } = grainGroupSettings();
+  const { groups } = grainGroupSettings(),
+    { buses } = sendTargets();
   [...$("grain-group-tabs").children].forEach((tab, index) => {
-    const share = groups[index].share;
+    const share = groups[index].share,
+      { send, bus } = groups[index].output ?? grainGroupDefault().output,
+      target = send > 0 && buses.find((b) => b.bus === bus);
     setAttr(tab, "aria-selected", String(index === grainGroupPage));
     tab.tabIndex = index === grainGroupPage ? 0 : -1;
     tab.classList.toggle("is-off", share <= 0);
-    setText(tab.lastElementChild, share > 0 ? percent(share) : "Off");
+    setText(
+      tab.lastElementChild,
+      `${share > 0 ? percent(share) : "Off"}${target ? ` → ${target.name}` : ""}`,
+    );
   });
+}
+function syncGrainGroupOutputs() {
+  if (!preset || !grainOutputViews.length) return;
+  const { sends, buses } = sendTargets(),
+    { groups } = grainGroupSettings();
+  grainOutputViews.forEach((view, index) => {
+    const { row, select, send } = view,
+      out = { ...grainGroupDefault().output, ...groups[index].output },
+      target = buses.find((b) => b.bus === out.bus),
+      sending = !!target && out.send > 0,
+      muted = out.chain === 0;
+    row.classList.toggle("no-sends", !sends);
+    row.classList.toggle("sending", sending);
+    row.classList.toggle("skipped", muted);
+    row.style.setProperty("--chain", String(out.chain));
+    const signature = JSON.stringify([out.bus, buses.map((b) => [b.bus, b.name])]);
+    if (signature !== view.signature) {
+      view.signature = signature;
+      fillBusMenu(select, out.bus, buses);
+    } else if (document.activeElement !== select) select.value = String(out.bus);
+    setAttr(send, "aria-disabled", !out.bus);
+    send.tabIndex = out.bus ? 0 : -1;
+    send.closest(".knob").classList.toggle("filter-unused", !out.bus);
+    const name = target?.name ?? `Bus ${out.bus}`;
+    setText(
+      row.querySelector(".tap-status"),
+      !sends
+        ? muted ? "Muted: the group plays nowhere" : ""
+        : out.bus && !target
+          ? `${name} is gone: nothing is sent`
+          : muted
+            ? sending ? `${name} only: the timbre leaves this group out` : "Muted: the group plays nowhere"
+            : target && !sending ? `Turn SEND up to feed ${name}` : "",
+    );
+  });
+  syncGrainGroupTabs();
 }
 function syncGrainGroups() {
   const settings = grainGroupSettings(),
@@ -718,7 +792,7 @@ function syncGrainGroups() {
     page.hidden = index !== grainGroupPage;
     page.querySelector(".grain-filter-type").value = settings.groups[index].filter_type;
   });
-  syncGrainGroupTabs();
+  syncGrainGroupOutputs();
   drawGrainGroupCurve();
 }
 /** The selected group over one grain: its amp envelope as an area, the
@@ -1806,20 +1880,21 @@ function buildTaps() {
     tapViews.set(stage, { section, row, select, send, chips, label, signature: "" });
   }
 }
-/** Adds the next Bus timbre for this section and stays on the timbre. */
-function addTapBus(stage) {
+/** Adds the next Bus timbre for this section, or for what `choose` routes
+ * there, and stays on the timbre. */
+function addTapBus(stage, choose = (bus) => editTap(stage, "bus", bus)) {
   const context = state?.timbres;
   if (!context) return;
   const used = new Set(context.timbres.filter((t) => t.kind === "bus").map((t) => t.bus));
   const bus = [1, 2, 3, 4, 5, 6, 7, 8].find((b) => !used.has(b));
   if (!bus) return;
-  editTap(stage, "bus", bus);
+  choose(bus);
   const home = context.active;
   changeTimbre("/api/timbres/add", { kind: "bus" });
   changeTimbre("/api/timbres/select", { id: home });
 }
-function syncTaps() {
-  if (!preset || !tapViews.size) return;
+/** Whether this timbre may send, and the buses it can send to. */
+function sendTargets() {
   const context = state?.timbres,
     part = context?.timbres?.find((t) => t.id === context.active),
     // Buses, Master and Pad FX take no sends, so they do not send either.
@@ -1829,6 +1904,23 @@ function syncTaps() {
           .filter((t) => t.kind === "bus" && t.bus > 0)
           .sort((a, b) => a.bus - b.bus)
       : [];
+  return { sends, buses };
+}
+/** A bus menu: none, each bus, a removed one still chosen, then + New bus. */
+function fillBusMenu(select, chosen, buses) {
+  select.replaceChildren(
+    option(0, buses.length ? "No bus" : "No bus yet"),
+    ...buses.map((b) => option(b.bus, b.name)),
+  );
+  // A removed bus stays chosen until another is, and receives nothing.
+  if (chosen && !buses.some((b) => b.bus === chosen))
+    select.append(option(chosen, `Bus ${chosen} (removed)`));
+  if (buses.length < 8) select.append(option("new", "+ New bus"));
+  select.value = String(chosen);
+}
+function syncTaps() {
+  if (!preset || !tapViews.size) return;
+  const { sends, buses } = sendTargets();
   for (const [stage, view] of tapViews) {
     const { section, row, select, send, chips, label } = view;
     const tap = tapSettings(stage),
@@ -1848,14 +1940,7 @@ function syncTaps() {
     const signature = JSON.stringify([tap.bus, buses.map((b) => [b.bus, b.name])]);
     if (signature !== view.signature) {
       view.signature = signature;
-      select.replaceChildren(
-        option(0, buses.length ? "No bus" : "No bus yet"),
-        ...buses.map((b) => option(b.bus, b.name)),
-      );
-      // A removed bus stays chosen until another is, and receives nothing.
-      if (tap.bus && !target) select.append(option(tap.bus, `Bus ${tap.bus} (removed)`));
-      if (buses.length < 8) select.append(option("new", "+ New bus"));
-      select.value = String(tap.bus);
+      fillBusMenu(select, tap.bus, buses);
     } else if (document.activeElement !== select) select.value = String(tap.bus);
     setAttr(send, "aria-disabled", !tap.bus);
     send.tabIndex = tap.bus ? 0 : -1;
@@ -5106,6 +5191,7 @@ async function poll() {
     timbreEditor?.sync(next.timbres);
     busMixer?.sync(next.timbres);
     syncTaps();
+    syncGrainGroupOutputs();
     drumEditor?.update(next.drums);
     sampleSelection?.sync(next);
     setText($("sample-end"), formatTime(next.sample_seconds));

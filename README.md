@@ -197,10 +197,16 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   SHAPE. **ENV DEPTH** moves the cutoff by the FILTER envelope either way. The
   curve beside the tabs draws the selected group over one grain, and the
   waveform colors grains by group. The first switch-on starts every group from
-  the engine's SHAPE, so the sound stays the same until a group changes.
-  Every control is a host parameter
-  (`grain_advanced`, `grain_group1_share` … `grain_group4_filter_release`) that
-  LFOs, envelopes, the matrix, macros and sequencer lanes can reach.
+  the engine's SHAPE, so the sound stays the same until a group changes. Each
+  group ends in an **Output** row like a section's: **SEND** feeds its grains
+  to the bus chosen beside it (**+ New bus** adds one), and **CHAIN** is the
+  share that stays in the timbre, so at 0% the group plays only through its
+  bus. A group sends its grains before Dry/Wet and the added filters,
+  following the notes' VCA; its tab shows where it goes. Every control is a
+  host parameter (`grain_advanced`, `grain_group1_share` …
+  `grain_group4_filter_release`, then `grain_group1_chain`, `_send`, `_bus` for
+  each group) that LFOs, envelopes, the matrix, macros and sequencer lanes can
+  reach; a bus is chosen, not modulated.
 - **Vocal timbres** sing a score, in the manner of VOCALOID5 (browser, DAW
   plug-ins and app). Draw notes in the piano roll, double-click one to type its
   lyric (Tab moves on) or use **Lyrics…** for a whole line, in **Japanese**

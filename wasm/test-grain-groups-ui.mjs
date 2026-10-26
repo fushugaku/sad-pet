@@ -22,11 +22,19 @@ class Element {
     this.value = "";
   }
   set innerHTML(html) {
-    // Card shells: a title row, then the knob grid.
+    // Card shells: a title row, then the knob grid; Output rows: knobs, bus
+    // menu and status.
     this.children = [];
+    this.parts = new Map();
     if (html.includes("grain-group-card-title"))
       this.children.push(new Element(), new Element());
     else if (html.includes("<small>")) this.children.push(new Element("i"), new Element("small"));
+    else if (html.includes("tap-knobs"))
+      for (const [selector, tag] of [[".tap-knobs"], ["select", "select"], [".tap-status", "output"]]) {
+        const part = new Element(tag);
+        this.parts.set(selector, part);
+        this.children.push(part);
+      }
   }
   get firstElementChild() {
     return this.children[0];
@@ -38,8 +46,12 @@ class Element {
     this.children.push(...nodes);
   }
   querySelector(selector) {
+    if (this.parts?.has(selector)) return this.parts.get(selector);
     const all = (node) => [node, ...node.children.flatMap(all)];
     return all(this).slice(1).find((n) => selector === ".grain-filter-type" && n.tagName === "SELECT");
+  }
+  querySelectorAll(selector) {
+    return selector === ".dial" ? this.children.map((knob) => knob.dial) : [];
   }
   closest(selector) {
     return selector === ".knob" ? this.knob : null;
@@ -85,7 +97,18 @@ const context = vm.createContext({
   createKnob: ([key, label, format, min, max, aria], bank, binding) => {
     knobs.set(key, { label, format, min, max, aria, binding });
     controls.set(key, () => {});
-    bank.append(new Element());
+    const knob = new Element();
+    knob.dial = Object.assign(new Element(), { knob });
+    bank.append(knob);
+  },
+  sendTargets: () => ({ sends: true, buses: [{ bus: 1, name: "Bus 1" }, { bus: 2, name: "Verb" }] }),
+  fillBusMenu: (select, chosen, buses) => {
+    select.choices = [0, ...buses.map((b) => b.bus), "new"];
+    select.value = String(chosen);
+  },
+  addTapBus: (stage, choose) => {
+    calls.push(["new bus", stage]);
+    choose(3);
   },
   scheduleParameter: (id, value) => calls.push(["parameter", id, value]),
   schedulePreset: () => calls.push(["preset"]),
@@ -94,8 +117,9 @@ const context = vm.createContext({
 const run = (code) => vm.runInContext(code, context);
 run(`${source}\nbuildGrainGroups(); syncGrainGroups();`);
 
-// Four groups of fifteen knobs each, under the host IDs.
-assert.equal(knobs.size, 4 * 15);
+// Four groups of fifteen knobs each, and CHAIN and SEND, under the host IDs.
+assert.equal(knobs.size, 4 * 17);
+assert.equal(knobs.get("grain_group2_send").aria, "Group B bus send");
 assert.ok(knobs.has("grain_group1_share") && knobs.has("grain_group4_filter_release"));
 assert.equal(knobs.get("grain_group2_pitch").aria, "Group B pitch");
 assert.equal(knobs.get("grain_group3_amp_attack").aria, "Group C amp envelope attack");
@@ -155,6 +179,31 @@ assert.deepEqual(
   [...tabs].map((t) => t.getAttribute("aria-selected")),
   ["false", "true", "false", "false"],
 );
+
+// Each group's Output row routes its grains to a bus of its own.
+const output = pages[1].lastElementChild;
+const busMenu = output.querySelector("select"),
+  sendDial = knobs.get("grain_group2_send");
+assert.equal(output.className, "tap grain-group-output");
+busMenu.value = "2";
+busMenu.onchange();
+assert.deepEqual(calls.splice(0), [["parameter", "grain_group2_bus", 2]]);
+assert.deepEqual(groups().groups[1].output, { chain: 1, send: 0, bus: 2 });
+assert.equal(output.querySelector(".tap-status").textContent, "Turn SEND up to feed Verb");
+sendDial.binding.set(1);
+knobs.get("grain_group2_chain").binding.set(0);
+assert.deepEqual(calls.splice(0), [
+  ["parameter", "grain_group2_send", 1],
+  ["parameter", "grain_group2_chain", 0],
+]);
+assert.equal(output.querySelector(".tap-status").textContent, "Verb only: the timbre leaves this group out");
+assert.ok(output.classes.has("sending") && output.classes.has("skipped"));
+assert.equal(tabs[1].lastElementChild.textContent, "100% → Verb");
+// + New bus adds the next bus and routes the group to it.
+busMenu.value = "new";
+busMenu.onchange();
+assert.deepEqual(calls.splice(0), [["new bus", null], ["parameter", "grain_group2_bus", 3]]);
+assert.equal(output.querySelector(".tap-status").textContent, "Bus 3 is gone: nothing is sent");
 
 // Switching off again is one numeric change and keeps the groups.
 $("grain-advanced").onclick();

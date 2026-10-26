@@ -82,6 +82,9 @@ pub struct Group {
     /// The grains' window.
     pub amp: Envelope,
     pub filter_env: Envelope,
+    /// Where the group's grains go: CHAIN keeps them in the timbre, SEND
+    /// feeds them to a Bus whatever CHAIN is.
+    pub output: crate::taps::Tap,
 }
 impl Default for Group {
     fn default() -> Self {
@@ -96,6 +99,7 @@ impl Default for Group {
             env_depth: 0.0,
             amp: Envelope::default(),
             filter_env: Envelope::filter_default(),
+            output: Default::default(),
         }
     }
 }
@@ -111,6 +115,7 @@ impl Group {
         crate::preset::finite_clamp(&mut self.env_depth, -1.0, 1.0, 0.0);
         self.amp.sanitize(fallback.amp);
         self.filter_env.sanitize(fallback.filter_env);
+        self.output.sanitize();
     }
 }
 
@@ -150,6 +155,13 @@ pub const FIELDS: [(&str, &str, f32, f32); 16] = [
     ("filter_sustain", "filter sustain", 0.0, 1.0),
     ("filter_release", "filter release", 0.0, 1.0),
 ];
+/// Each group's output, appended after every group's FIELDS in host order;
+/// get and set number them on from `FIELDS.len()`.
+pub const OUTPUT_FIELDS: [(&str, &str, f32, f32); 3] = [
+    ("chain", "chain", 0.0, 1.0),
+    ("send", "bus send", 0.0, 1.0),
+    ("bus", "bus", 0.0, crate::bus::MAX_BUSES as f32),
+];
 pub fn get(group: &Group, field: usize) -> f32 {
     match field {
         0 => group.share,
@@ -167,7 +179,10 @@ pub fn get(group: &Group, field: usize) -> f32 {
         12 => group.filter_env.attack,
         13 => group.filter_env.decay,
         14 => group.filter_env.sustain,
-        _ => group.filter_env.release,
+        15 => group.filter_env.release,
+        16 => group.output.chain,
+        17 => group.output.send,
+        _ => group.output.bus as f32,
     }
 }
 pub fn set(group: &mut Group, field: usize, value: f32) {
@@ -187,6 +202,9 @@ pub fn set(group: &mut Group, field: usize, value: f32) {
         12 => group.filter_env.attack = value,
         13 => group.filter_env.decay = value,
         14 => group.filter_env.sustain = value,
-        _ => group.filter_env.release = value,
+        15 => group.filter_env.release = value,
+        16 => group.output.chain = value,
+        17 => group.output.send = value,
+        _ => group.output.bus = value.round() as u8,
     }
 }

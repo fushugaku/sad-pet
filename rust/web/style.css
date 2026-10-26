@@ -790,6 +790,14 @@ h2 {
 .grain-group-page .dial .arc {
   stroke: var(--group-color);
 }
+/* A group's Output row spans the page under its four cards. */
+.grain-group-page .grain-group-output {
+  grid-column: 1 / -1;
+  margin-top: 0;
+}
+.grain-group-page .grain-group-output.sending {
+  border-color: color-mix(in srgb, var(--group-color) 45%, var(--line));
+}
 /* A main control a group replaces while advanced mode is on. */
 .knob.is-replaced {
   opacity: 0.4;

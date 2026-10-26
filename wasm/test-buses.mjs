@@ -131,6 +131,43 @@ assert.ok(near(left, dry), `Out of the chain, the timbre plays without Resynth (
 split.request("/api/timbres/remove", { id: resynthBus.id });
 const missing = splitLevel({ tap_resynth_chain: 1 });
 assert.ok(near(missing, kept), `A missing bus leaves the timbre as it was (${missing} vs ${kept})`);
+// An advanced mode grain group sends its grains to a bus of its own. Each
+// case is a fresh scene rendered from the start, so all hear the same grains.
+const layerScene = (changes, edit = () => {}) => {
+  const scene = new Core(module, 8000);
+  scene.call("sad_load", utility.call("sad_pack"));
+  const bus = scene.request("/api/timbres/add", { kind: "bus" }).timbres.find((t) => t.kind === "bus");
+  scene.request("/api/timbres/select", { id: 0 });
+  const grainy = scene.request("/api/preset");
+  grainy.sequencer.enabled = false;
+  grainy.color_chain = [];
+  grainy.pre_color_chain = [];
+  grainy.params.mix = 1;
+  // Only group B plays.
+  grainy.grain_groups = { advanced: true, groups: [0, 1, 0, 0].map((share) => ({ share })) };
+  scene.request("/api/preset", grainy);
+  scene.request("/api/parameters", changes);
+  edit(scene, bus);
+  scene.request("/api/transport", { playing: true, midi_gate: false });
+  let peak = 0;
+  for (let i = 0; i < 60; i++)
+    for (const x of scene.process(128)) {
+      assert.ok(Number.isFinite(x));
+      if (i >= 40) peak = Math.max(peak, Math.abs(x));
+    }
+  return { scene, peak };
+};
+const onBus = { grain_group2_bus: 1, grain_group2_send: 1, grain_group2_chain: 0 };
+const layerKept = layerScene({}).peak;
+assert.ok(layerKept > 0.01, `Group B plays in the timbre (${layerKept})`);
+const routed = layerScene(onBus);
+assert.deepEqual(routed.scene.request("/api/preset").grain_groups.groups[1].output, { chain: 0, send: 1, bus: 1 });
+assert.ok(near(routed.peak, layerKept), `Bus 1 passes group B to Master (${routed.peak} vs ${layerKept})`);
+const layerOff = layerScene(onBus, (scene, bus) =>
+  scene.request("/api/timbres/update", { id: bus.id, muted: true })).peak;
+assert.ok(layerOff < layerKept * 0.001, `Out of the chain, group B plays only through its bus (${layerOff})`);
+const layerClosed = layerScene({ ...onBus, grain_advanced: 0 }).peak;
+assert.ok(near(layerClosed, layerKept), `Outside advanced mode the grains stay in the timbre (${layerClosed})`);
 // The mixer chooses where a timbre enters Master: at Post-filter FX it skips
 // Master's filters, at the input it runs them. Each case starts a fresh scene.
 const entering = (entries, filters) => {

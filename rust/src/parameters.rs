@@ -231,6 +231,7 @@ impl Spec {
                     | Target::Performance(3..)
                     | Target::Tap(_, TapField::Bus)
                     | Target::Macro(_)
+                    | Target::GrainGroup(_, GRAIN_GROUP_BUS)
             )
     }
     pub(crate) fn frame_get(&self, m: &crate::dsp::Modulated) -> Option<f32> {
@@ -1295,9 +1296,28 @@ pub fn specs() -> &'static [Spec] {
                 result.push(spec);
             }
         }
+        // Then each group's output: Chain share, bus send and bus.
+        for (i, name) in grain_groups::NAMES.iter().enumerate() {
+            for (offset, (key, label, min, max)) in
+                grain_groups::OUTPUT_FIELDS.into_iter().enumerate()
+            {
+                let mut spec = Spec {
+                    id: format!("grain_group{}_{key}", i + 1),
+                    name: format!("Grain group {name} {label}"),
+                    min,
+                    max,
+                    default: 0.0,
+                    target: Target::GrainGroup(i, grain_groups::FIELDS.len() + offset),
+                };
+                spec.default = spec.get(&preset);
+                result.push(spec);
+            }
+        }
         result
     })
 }
+/// A group's bus is chosen, never modulated, like a section's.
+const GRAIN_GROUP_BUS: usize = grain_groups::FIELDS.len() + 2;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum TapField {
