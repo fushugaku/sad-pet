@@ -799,10 +799,13 @@ h2 {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
-/* A group's Output row spans the page under its cards. */
+/* A group's Output row takes the cell beside its filter envelope. */
 .grain-group-page .grain-group-output {
-  grid-column: 1 / -1;
   margin-top: 0;
+  align-content: center;
+}
+.grain-group-card.is-idle .grain-group-knobs {
+  opacity: 0.45;
 }
 .grain-group-page .grain-group-output.sending {
   border-color: color-mix(in srgb, var(--group-color) 45%, var(--line));

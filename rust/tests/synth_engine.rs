@@ -298,7 +298,9 @@ fn synth_controls_append_after_every_other_host_parameter() {
     let play = groups + 1 + 4 * 16 + 4 * 3;
     assert_eq!(later[play], "grain_feedback");
     assert_eq!(later[play + 1], "grain_group1_size");
-    assert_eq!(later.len(), play + 1 + 4 * 8);
+    // Then each group's Filter 2 and filter routing.
+    assert_eq!(later[play + 1 + 4 * 8], "grain_group1_filter_routing");
+    assert_eq!(later.len(), play + 1 + 4 * 8 + 4 * 5);
 }
 
 #[test]
