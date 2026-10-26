@@ -1427,9 +1427,9 @@ function syncTimbreRouting() {
     : "Drag to select a loop · drag the handles to adjust it";
   // A bus without Granular has no history to show or select from.
   samplePanel.hidden = !!bus && !bus.granular;
+  // Grain engine stays in place with Granular off: its power button lives in
+  // the heading, and syncInput dims the knobs.
   const grains = $("grain-engine");
-  grains.hidden = (drums && !preset.drums.granular) || (synth && !preset.synth.granular)
-    || (!!bus && !bus.granular);
   // Filter 1 and 2 of a bus stay visible but are bypassed until switched on.
   $("filters").classList.toggle("bypassed", !!bus && !bus.filters);
   $("filters").title = bus && !bus.filters
@@ -1439,9 +1439,10 @@ function syncTimbreRouting() {
   $("drum-grain-count").hidden = !history;
   syncGrainBuffer();
   syncControl("grain_size");
-  // One Granular switch beside Dry/Wet for every engine with a live history.
+  // One Granular switch in the Grain engine heading for every engine with a
+  // live history.
   const own = historySettings();
-  $("granular-toggle").hidden = !own;
+  $("history-granular").hidden = !own;
   setAttr($("history-granular"), "aria-pressed", !!own?.granular);
   $("mix").disabled = !!own && !own.granular;
   $("mix").title = own && !own.granular
@@ -1901,6 +1902,7 @@ function bindGranularToggle() {
       schedulePreset();
     } else return;
     syncTimbreRouting();
+    if (state?.input) syncInput(state.input);
   };
 }
 /** The live history's length belongs to Granular, so it sits in Grain engine. */
