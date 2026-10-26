@@ -43,6 +43,11 @@ class Element {
     this.parentNode?.children.splice(this.parentNode.children.indexOf(this), 1);
     this.parentNode = null;
   }
+  after(node) {
+    const parent = this.parentNode;
+    parent.children.splice(parent.children.indexOf(this) + 1, 0, node);
+    node.parentNode = parent;
+  }
   replaceWith(node) {
     const parent = this.parentNode;
     parent.children[parent.children.indexOf(this)] = node;
@@ -81,6 +86,22 @@ class Element {
   }
   getAttribute(key) {
     return this.attributes.get(key);
+  }
+  // ".class" and "[data-key]" selectors, comma-separated, are all the editor
+  // looks up while it syncs.
+  matchesSelector(selector) {
+    return selector.split(",").some((s) => {
+      s = s.trim();
+      const data = /^\[data-([a-z-]+)\]$/.exec(s);
+      if (data) return data[1].replace(/-([a-z])/g, (_, c) => c.toUpperCase()) in this.dataset;
+      return s.startsWith(".") && this.classes.has(s.slice(1));
+    });
+  }
+  querySelectorAll(selector) {
+    return this.all().slice(1).filter((e) => e.matchesSelector(selector));
+  }
+  querySelector(selector) {
+    return this.querySelectorAll(selector)[0] ?? null;
   }
   all() {
     return [
@@ -150,6 +171,7 @@ const track = {
 track.config[1] = 16;
 track.config[3] = 1;
 track.config[7] = 55;
+track.config[41] = 127;
 let preset = {
   sequencer: { enabled: true, tracks: [structuredClone(track)] },
   color_chain: [],
@@ -318,13 +340,14 @@ assert.ok(
   "Gate ENV is a Main pitch option",
 );
 const offset = control("Stage 1 pitch offset");
-assert.equal(offset.min, -24);
-assert.equal(offset.max, 24);
-offset.value = "-24";
+// Chromatic: 49 positions, −24…+24 st.
+assert.equal(offset.min, 0);
+assert.equal(offset.max, 48);
+offset.value = "0";
 offset.oninput();
 assert.equal(ui.track().steps[0].pitch, 36);
 assert.equal(ui.pitchText(ui.track(), 36), "-24 st");
-offset.value = "24";
+offset.value = "48";
 offset.oninput();
 assert.equal(ui.track().steps[0].pitch, 84);
 assert.equal(ui.pitchText(ui.track(), 84), "+24 st");
@@ -433,7 +456,7 @@ synthPicker.value = "synth-osc:3";
 synthPicker.onchange();
 assert.deepEqual({ ...ui.track().target }, { kind: "synth_oscillator", index: 3 });
 ui.buildEditor();
-assert.equal(control("Stage 1 pitch offset").min, -24);
+assert.equal(control("Stage 1 pitch offset").max, 48);
 assert.equal(ui.targetName(ui.track()), "Synth OSC 4 offset");
 assert.equal(ui.pitchText(ui.track(), 67), "+7 st");
 ui.track().target = { kind: "oscillator", index: 1 };
@@ -719,3 +742,125 @@ console.log(
   ui.root = root;
 }
 console.log("Sequencer stages: page count with copied pages, tabs, edits, picks and pastes on the page shown, playing page passed.");
+
+// Notes: pitch sliders step through the Scale's notes, or notes picked by
+// hand, from the low to the high octave; a picked set that is a Scale
+// becomes that Scale.
+{
+  const saved = { root: ui.root, sync: ui.sync, buildTracks: ui.buildTracks, syncSelection: ui.syncSelection };
+  ui.catalog = { ...ui.catalog, scales: ["Major", "Maj Pent", "Chromatic"], scale_masks: [0xab5, 0x295, 0xfff] };
+  const main = { ...structuredClone(track), steps: Array.from({ length: 16 }, () => ({ ...step })) };
+  preset = { ...preset, sequencer: { enabled: true, tracks: [main] } };
+  const lane = () => preset.sequencer.tracks[0];
+  Object.assign(ui, { selected: 1, visiblePage: 0, selection: new Set(), clipboard: null, signature: "" });
+  // The real sync, on a root holding the editor.
+  const host = new Element("div"),
+    power = new Element("button"),
+    count = new Element("span");
+  power.className = "neuro-enabled";
+  count.className = "neuro-count";
+  editor.className = "neuro-editor";
+  host.append(power, count, editor);
+  delete ui.sync;
+  Object.assign(ui, { root: host, buildTracks: () => {}, syncSelection: () => {} });
+  edits.length = 0;
+  ui.sync();
+  const fader = (n) => control(`Stage ${n} pitch`),
+    shown = (n) => editor.all().filter((e) => e.classes.has("neuro-value"))[n - 1].textContent,
+    pressed = () => editor.all().filter((e) => e.classes.has("neuro-note") && e.getAttribute("aria-pressed") === "true").map((e) => e.textContent);
+  // C major over all of MIDI: 75 positions, C4 the 36th.
+  assert.equal(fader(1).max, 74);
+  assert.equal(fader(1).value, 35);
+  assert.deepEqual(pressed(), ["C", "D", "E", "F", "G", "A", "B"]);
+  assert.equal(control("Track low octave").value, -1);
+  assert.equal(control("Track high octave").value, 9);
+  assert.equal(control("Track high octave").children.at(-1).textContent, "G9");
+
+  // Octaves 3–4: fourteen notes; the other end follows a crossing octave.
+  control("Track low octave").value = "3";
+  control("Track low octave").onchange();
+  control("Track high octave").value = "4";
+  control("Track high octave").onchange();
+  assert.deepEqual([lane().config[40], lane().config[41]], [48, 71]);
+  assert.equal(fader(1).max, 13);
+  assert.equal(fader(1).value, 7, "C4 is the eighth note of C3–B4");
+  fader(1).value = "1";
+  fader(1).oninput();
+  assert.deepEqual({ ...edits.at(-1) }, { track: 1, stage: 0, field: 0, value: 50 });
+  assert.equal(shown(1), "D3");
+  // A step from before sits on, and shows, the note it plays.
+  lane().steps[1].pitch = 90;
+  lane().steps[2].pitch = 61;
+  ui.sync();
+  assert.equal(fader(2).value, 13);
+  assert.equal(shown(2), "B4");
+  assert.equal(shown(3), "D4", "C♯ plays D, the higher note on a tie");
+  control("Track low octave").value = "6";
+  control("Track low octave").onchange();
+  assert.deepEqual([lane().config[40], lane().config[41]], [84, 95]);
+  control("Track high octave").value = "2";
+  control("Track high octave").onchange();
+  assert.deepEqual([lane().config[40], lane().config[41]], [36, 47]);
+
+  // Picked notes: C♯ joins C major, a custom set; dropping it, F and B
+  // leaves C major, then the major pentatonic.
+  control("Note C♯").onclick();
+  assert.deepEqual({ ...edits.at(-1) }, { track: 1, stage: null, field: 55, value: 0xab7 });
+  assert.equal(lane().notes, 0xab7);
+  assert.equal(control("Track scale").value, -1, "the Scale shows Custom");
+  assert.equal(fader(1).max, 7, "C2–B2 with C♯");
+  control("Note C♯").onclick();
+  assert.deepEqual({ ...edits.at(-1) }, { track: 1, stage: null, field: 4, value: 0 });
+  assert.equal(lane().notes, 0);
+  control("Note F").onclick();
+  assert.equal(lane().notes, 0xa95);
+  control("Note B").onclick();
+  assert.deepEqual([lane().notes, lane().config[4]], [0, 1]);
+  assert.equal(control("Track scale").value, 1);
+  // The root moves the set; a Scale picked by name drops picked notes.
+  control("Track scale root").value = "2";
+  control("Track scale root").oninput();
+  assert.deepEqual(pressed(), ["D", "E", "F♯", "A", "B"]);
+  control("Note C♯").onclick();
+  assert.equal(lane().notes, 0xa95, "picked notes count from the root: C♯ is its 11th semitone");
+  assert.deepEqual(pressed(), ["C♯", "D", "E", "F♯", "A", "B"]);
+  control("Track scale").value = "2";
+  control("Track scale").oninput();
+  assert.deepEqual([lane().notes, lane().config[4]], [0, 2]);
+  assert.equal(fader(1).max, 11);
+  // The last note stays.
+  ui.edit(1, null, 55, 1);
+  ui.edit(1, null, 5, 0);
+  control("Note C").onclick();
+  assert.equal(lane().notes, 1);
+  assert.equal(fader(1).max, 0);
+
+  // Oscillator lanes: semitone keys and ±2 octaves around the offset 0.
+  lane().target = { kind: "oscillator", index: 0 };
+  ui.edit(1, null, 4, 0);
+  ui.signature = "";
+  ui.sync();
+  const offsets = control("Track low octave").children.map((o) => o.textContent);
+  assert.deepEqual(offsets, ["-24 st", "-12 st", "+0 st", "+12 st", "+24 st"]);
+  assert.equal(control("Track high octave").children.at(-1).textContent, "+24 st");
+  control("Track low octave").value = "-1";
+  control("Track low octave").onchange();
+  control("Track high octave").value = "0";
+  control("Track high octave").onchange();
+  assert.deepEqual([lane().config[40], lane().config[41]], [48, 71]);
+  assert.deepEqual(pressed(), ["0", "2", "4", "5", "7", "9", "11"]);
+  const offset = control("Stage 1 pitch offset");
+  assert.equal(offset.max, 13);
+  offset.value = "0";
+  offset.oninput();
+  assert.equal(lane().steps[0].pitch, 48, "−12 st");
+
+  // Parameter lanes have no notes.
+  lane().target = { kind: "parameter", parameter: "filter" };
+  ui.signature = "";
+  ui.sync();
+  assert.ok(!editor.all().some((e) => e.classes.has("neuro-notes")));
+  Object.assign(ui, saved);
+  editor.className = "";
+}
+console.log("Sequencer notes: Scale and picked notes, octave range, sliders stepping through the notes played, Scale matching and oscillator offsets passed.");
