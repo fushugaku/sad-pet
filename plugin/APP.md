@@ -61,7 +61,7 @@ Audio files, edits, renders and recordings are stored in
 - macOS: `~/Library/Application Support/SAD PET/Library`
 - Windows: `%APPDATA%\SAD PET\Library`
 
-User presets and effect presets share the plug-ins' folders, so a preset saved
+User, effect and instrument presets share the plug-ins' folders, so a preset saved
 in the app opens in the DAW and the other way round. Quitting the app saves the
 whole scene, including its samples, and the next launch restores it.
 

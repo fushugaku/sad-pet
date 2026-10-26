@@ -2096,3 +2096,325 @@ fn host_midi_controllers_reach_the_editor_for_midi_learn_without_heap_work() {
     let state = call(&mut control, "/api/state", Value::Null);
     assert_eq!(state["midi_controls"], json!([]));
 }
+
+#[test]
+fn instrument_presets_file_one_timbre_in_categories_and_load_it_in_place() {
+    let folder = PresetDirectory::new();
+    let mut control = folder.control(false);
+    let mut audio = control.prepare(48000);
+    let values = control.values();
+    let request = |control: &mut Controller, path: &str, data: Value| {
+        control.request(&json!({"path":path,"method":"POST","data":data}))
+    };
+    // The scene's own Granular timbre plays a sample of its own.
+    let frames: Vec<Stereo> = (0..4800)
+        .map(|n| [(n as f32 * 0.07).sin() * 0.4; 2])
+        .collect();
+    call(
+        &mut control,
+        "/api/wav",
+        json!({"base64":BASE64.encode(wav::bytes(8000, &frames).unwrap()),"name":"Glass.wav"}),
+    );
+    call(&mut control, "/api/region", json!({"start":0.2,"end":0.8}));
+    let glass = call(
+        &mut control,
+        "/api/instruments/save",
+        json!({"name":"Glass","category":""}),
+    );
+    assert_eq!(glass["kind"], "granular");
+
+    // A Synth timbre at half level on channel 3.
+    call(&mut control, "/api/timbres/add", json!({"kind":"synth"}));
+    call(
+        &mut control,
+        "/api/parameters",
+        json!({"synth_count":2,"synth_osc2_transpose":7}),
+    );
+    call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":1,"gain":0.5,"channel":3}),
+    );
+    let lead = call(
+        &mut control,
+        "/api/instruments/save",
+        json!({"name":"Wide Lead","category":"Leads"}),
+    );
+    assert_eq!([&lead["kind"], &lead["category"]], ["synth", "Leads"]);
+    // Names are unique within a category, not across them.
+    let taken = request(
+        &mut control,
+        "/api/instruments/save",
+        json!({"name":"wide lead","category":"Leads"}),
+    );
+    assert!(taken.is_err_and(|e| e.contains("Leads")));
+    let pad = call(
+        &mut control,
+        "/api/instruments/save",
+        json!({"name":"Wide Lead","category":"Pads"}),
+    );
+    let replaced = call(
+        &mut control,
+        "/api/instruments/save",
+        json!({"id":lead["id"],"name":"Wide Lead","category":"Leads"}),
+    );
+    assert_eq!(replaced["id"], lead["id"]);
+    assert_eq!(replaced["created_at"], lead["created_at"]);
+    let list = call(&mut control, "/api/instruments", Value::Null);
+    let names: Vec<_> = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| {
+            format!(
+                "{}/{}",
+                r["category"].as_str().unwrap(),
+                r["name"].as_str().unwrap()
+            )
+        })
+        .collect();
+    assert_eq!(names, ["/Glass", "Leads/Wide Lead", "Pads/Wide Lead"]);
+    assert!(
+        list.to_string().len() < 2000,
+        "the list holds no sample data"
+    );
+
+    // Glass into the Synth timbre: it becomes Granular in its place, with its
+    // level, channel and the scene's other timbres untouched, and the audio
+    // thread swaps it without heap work.
+    let context = call(
+        &mut control,
+        "/api/instruments/load",
+        json!({"id":glass["id"]}),
+    );
+    let part = &context["timbres"][1];
+    assert_eq!(
+        [
+            &part["id"],
+            &part["kind"],
+            &part["name"],
+            &part["gain"],
+            &part["channel"]
+        ],
+        [
+            &json!(1),
+            &json!("granular"),
+            &json!("Glass"),
+            &json!(0.5),
+            &json!(3)
+        ]
+    );
+    assert_eq!(context["timbres"][0]["kind"], "granular");
+    let state = call(&mut control, "/api/state", Value::Null);
+    assert_eq!(state["sample_name"], "Glass.wav");
+    assert_eq!(state["region"]["start"], 0.2);
+    assert_eq!(state["preset_selection"]["dirty"], true);
+    call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":0,"muted":true}),
+    );
+    call(
+        &mut control,
+        "/api/transport",
+        json!({"playing":true,"midi_gate":false}),
+    );
+    no_heap(|| {
+        audio.begin(&values, 120., None, false, 512);
+        render(&mut audio, 512, [0.; 2]);
+    });
+    audio.begin(&values, 120., None, false, 24000);
+    assert!(
+        render(&mut audio, 24000, [0.; 2]) > 0.001,
+        "the loaded timbre plays"
+    );
+    call(&mut control, "/api/transport", json!({"playing":false}));
+
+    // The Synth sound into the scene's own timbre: the scene keeps its name.
+    call(&mut control, "/api/timbres/select", json!({"id":0}));
+    let scene = control.preset.name.clone();
+    let context = call(
+        &mut control,
+        "/api/instruments/load",
+        json!({"id":lead["id"]}),
+    );
+    assert_eq!(context["name"], scene);
+    assert_eq!(
+        [
+            &context["timbres"][0]["kind"],
+            &context["timbres"][0]["name"]
+        ],
+        ["synth", "Wide Lead"]
+    );
+    let state = call(&mut control, "/api/state", Value::Null);
+    assert_eq!(state["preset"]["synth"]["count"], 2);
+    assert_eq!(state["preset"]["synth"]["oscillators"][1]["transpose"], 7.0);
+    no_heap(|| {
+        audio.begin(&values, 120., None, false, 512);
+        render(&mut audio, 512, [0.; 2]);
+    });
+
+    // As a new timbre: added before Master and selected.
+    let context = call(
+        &mut control,
+        "/api/instruments/load",
+        json!({"id":glass["id"],"new":true}),
+    );
+    let kinds: Vec<_> = context["timbres"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(kinds, ["synth", "granular", "granular"]);
+    let added = context["active"].clone();
+    assert_eq!(
+        context["timbres"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["id"] == added)
+            .unwrap()["name"],
+        "Glass"
+    );
+    // A project saved now recalls every timbre's new sound.
+    let mut recalled = Controller::new(false);
+    recalled.restore(&control.save().unwrap()).unwrap();
+    call(&mut recalled, "/api/timbres/select", json!({"id":1}));
+    assert_eq!(
+        call(&mut recalled, "/api/state", Value::Null)["sample_name"],
+        "Glass.wav"
+    );
+
+    // A Bus holds no instrument.
+    let context = call(&mut control, "/api/timbres/add", json!({"kind":"bus"}));
+    let bus = context["timbres"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["id"] == context["active"])
+        .unwrap();
+    assert_eq!(bus["kind"], "bus");
+    assert!(request(&mut control, "/api/instruments/save", json!({"name":"Out"})).is_err());
+    assert!(
+        request(
+            &mut control,
+            "/api/instruments/load",
+            json!({"id":lead["id"]})
+        )
+        .is_err()
+    );
+
+    // Renaming, moving and whole categories keep names unique per category.
+    assert!(
+        request(
+            &mut control,
+            "/api/instruments/category",
+            json!({"from":"Leads","to":"Pads"})
+        )
+        .is_err_and(|e| e.contains("Wide Lead"))
+    );
+    call(
+        &mut control,
+        "/api/instruments/edit",
+        json!({"id":lead["id"],"name":"Lead 2","category":"Leads"}),
+    );
+    call(
+        &mut control,
+        "/api/instruments/category",
+        json!({"from":"Leads","to":"Pads"}),
+    );
+    let list = call(&mut control, "/api/instruments", Value::Null);
+    assert!(
+        list.as_array()
+            .unwrap()
+            .iter()
+            .all(|r| r["category"] != "Leads")
+    );
+    let moved = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["id"] == lead["id"])
+        .unwrap();
+    assert_eq!([&moved["name"], &moved["category"]], ["Lead 2", "Pads"]);
+    // The moved preset still loads.
+    call(&mut control, "/api/timbres/select", json!({"id":1}));
+    call(
+        &mut control,
+        "/api/instruments/load",
+        json!({"id":lead["id"]}),
+    );
+
+    // Export and import: a copy of its own, renamed if its category has one.
+    let exported = call(
+        &mut control,
+        "/api/instruments/export",
+        json!({"id":pad["id"]}),
+    );
+    assert_eq!(exported["filename"], "Wide Lead.sadinst");
+    let imported = call(
+        &mut control,
+        "/api/instruments/import",
+        json!({"base64":exported["binary"]}),
+    );
+    assert_ne!(imported["id"], pad["id"]);
+    assert_eq!(
+        [&imported["name"], &imported["category"]],
+        ["Wide Lead (2)", "Pads"]
+    );
+    assert!(
+        request(
+            &mut control,
+            "/api/instruments/import",
+            json!({"base64":BASE64.encode(b"nope")})
+        )
+        .is_err_and(|e| e.contains(".sadinst"))
+    );
+    call(
+        &mut control,
+        "/api/instruments/delete",
+        json!({"id":imported["id"]}),
+    );
+    assert_eq!(
+        call(&mut control, "/api/instruments", Value::Null)
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    assert!(
+        folder
+            .0
+            .join("Instruments/Trash")
+            .read_dir()
+            .unwrap()
+            .next()
+            .is_some()
+    );
+    assert!(
+        request(
+            &mut control,
+            "/api/instruments/load",
+            json!({"id":imported["id"]})
+        )
+        .is_err()
+    );
+
+    // The standalone editor sends and receives no instrument files.
+    let mut standalone = folder.standalone();
+    let _standalone_audio = standalone.prepare(48000);
+    for (path, data) in [
+        (
+            "/api/instruments/import",
+            json!({"base64":exported["binary"]}),
+        ),
+        ("/api/instruments/export", json!({"id":pad["id"]})),
+    ] {
+        assert!(
+            request(&mut standalone, path, data).is_err_and(|e| e.contains("natively")),
+            "{path} was not refused"
+        );
+    }
+    without_audio(call(&mut standalone, "/api/instruments", Value::Null));
+}

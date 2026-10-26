@@ -789,6 +789,22 @@ export class BrowserBackend {
           const packed = await this.audio.call("scene-pack");
           result = await this.worker.call("scene-document", packed, [packed]);
         }
+      } else if (route === "/api/timbres/document") {
+        // The active timbre alone, as an instrument preset saves it.
+        const packed = await this.audio.call("scene-pack");
+        result = await this.worker.call("part-document", packed, [packed]);
+      } else if (route === "/api/timbres/load") {
+        // An instrument preset replaces one timbre's sound; the others play on.
+        await this.sourceLoadTail;
+        const generation = this.sourceGeneration + 1;
+        const prepared = await this.worker.call("instrument-prepare", { ...data, generation });
+        result = await this.audio.call("instrument-load", { prepared, generation }, [prepared]);
+        await this.worker.call("request", result, [], "/api/timbres/context");
+        this.queuedSource = null;
+        this.sourceRecipeKey = null;
+        this.state = await this.audio.call("request", null, [], "/api/state");
+        this.sourceGeneration = this.state.source_generation ?? generation;
+        this.viewStamp = this.audio.stamp || 0;
       } else if (route.startsWith("/api/timbres")) {
         await this.sourceLoadTail;
         result = route === "/api/timbres/add"

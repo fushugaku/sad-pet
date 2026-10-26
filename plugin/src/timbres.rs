@@ -337,7 +337,7 @@ impl Controller {
             self.parts.push(master);
         }
     }
-    fn context(&self) -> Context {
+    pub(super) fn context(&self) -> Context {
         Context {
             name: self.preset.name.clone(),
             active: self.active,
@@ -398,6 +398,9 @@ impl Controller {
         }
         if path.starts_with("/api/effect-presets") {
             return self.effect_presets_request(path, request["method"] == "POST", data);
+        }
+        if path.starts_with("/api/instruments") {
+            return self.instruments_request(path, request["method"] == "POST", data);
         }
         if let Some(result) = self.vocal_scene_request(path, request["method"] == "POST", data) {
             return result;

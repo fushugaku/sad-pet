@@ -83,6 +83,19 @@ class SadPetProcessor extends AudioWorkletProcessor {
         if (type === "scene-pack") result = this.core.call("sad_scene_pack");
         else if (type === "scene-load")
           result = this.core.json("sad_scene_load", data);
+        else if (type === "instrument-load") {
+          // The timbre's old sample goes with it, Source FX in flight too.
+          if (this.sourceTransfer)
+            this.port.postMessage({
+              type: "source-ready",
+              key: this.sourceTransfer.key,
+              generation: this.sourceTransfer.generation,
+              status: 2,
+            });
+          this.sourceTransfer = null;
+          result = this.core.json("sad_instrument_load", data.prepared);
+          this.sourceGeneration = data.generation;
+        }
         else if (type === "load") {
           if (this.sourceTransfer)
             this.port.postMessage({
