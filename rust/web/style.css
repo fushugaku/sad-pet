@@ -450,19 +450,6 @@ kbd {
   accent-color: var(--accent);
   margin: 0;
 }
-.output-controls .granular-toggle {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-.output-controls .granular-toggle[hidden] {
-  display: none;
-}
-.output-controls .granular-toggle:has([aria-pressed="true"]) {
-  color: var(--accent);
-}
 .output-controls input:disabled {
   opacity: 0.4;
 }

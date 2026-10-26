@@ -183,17 +183,7 @@
           </button>
         </div>
         <div class="output-controls">
-          <label id="granular-toggle" class="granular-toggle" hidden
-            ><button
-              id="history-granular"
-              class="power"
-              aria-label="Granular"
-              aria-pressed="false"
-              title="Granular processing of this timbre's live history"
-            >
-              <svg aria-hidden="true"><use href="#power-glyph" /></svg></button
-            >Granular</label
-          ><label
+          <label
             >DRY / WET<input
               id="mix"
               title="Blend source audio and grains before filters and effects"
@@ -550,7 +540,19 @@
       <div id="grain-engine-home" hidden></div>
       <section class="bank" id="grain-engine" aria-label="Grain engine">
         <div class="section-heading">
-          <h2>Grain engine <span id="drum-grain-count" hidden>0 grains</span></h2>
+          <div class="section-title">
+            <button
+              id="history-granular"
+              class="power"
+              aria-label="Granular"
+              aria-pressed="false"
+              title="Granular processing of this timbre's live history"
+              hidden
+            >
+              <svg aria-hidden="true"><use href="#power-glyph" /></svg>
+            </button>
+            <h2>Grain engine <span id="drum-grain-count" hidden>0 grains</span></h2>
+          </div>
           <div class="resynth-actions">
             <label id="grain-buffer-field" class="history-buffer" hidden
               >Buffer<select
