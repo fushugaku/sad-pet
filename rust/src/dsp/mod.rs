@@ -376,6 +376,9 @@ impl Modulated {
     }
 }
 
+/// The large members (per-voice state, color racks, Resynth) are boxed, so an
+/// engine stays small however many voices it has: debug builds copy it on the
+/// stack at every by-value move, and tests hold several on a 2 MB thread.
 pub struct Engine {
     pub sample_rate: u32,
     pub preset: Preset,
@@ -397,14 +400,14 @@ pub struct Engine {
     /// Occupied grain slots, bit n for slot n. Visiting set bits from the lowest
     /// keeps the order of a full slot scan, so voices still sum in that order.
     live_grains: u128,
-    voices: [Voice; VOICES],
+    voices: Box<[Voice; VOICES]>,
     oscillators: [Oscillator; crate::preset::MODULATORS],
     pub lfo_values: [f32; crate::preset::MODULATORS],
     pub env_values: [f32; crate::preset::MODULATORS],
-    color_rack: ColorRack,
-    pre_color_rack: ColorRack,
+    color_rack: Box<ColorRack>,
+    pre_color_rack: Box<ColorRack>,
     source_color: color::ColorProcessor,
-    resynth: resynth::Resynth,
+    resynth: Box<resynth::Resynth>,
     /// Each section's Chain share and bus send.
     taps: taps::Runtime,
     /// What enters a Bus or Master chain after its input in the next frame.
@@ -417,7 +420,7 @@ pub struct Engine {
     previous_source: Option<Arc<source_fx::ProcessedSource>>,
     source_fade_remaining: u32,
     pub source_fx_error: bool,
-    filters: [FilterBank; VOICES],
+    filters: Box<[FilterBank; VOICES]>,
     /// Banks of the added filters, in preset slot order.
     filter_banks: Vec<Box<filter_slots::Bank>>,
     /// Enabled added filters per position, refreshed at control rate.
@@ -493,16 +496,16 @@ impl Engine {
             sequence_running: true,
             grains: [Grain::default(); MAX_GRAINS],
             live_grains: 0,
-            voices: [Voice::default(); VOICES],
+            voices: Box::new([Voice::default(); VOICES]),
             oscillators: std::array::from_fn(|i| {
                 Oscillator::new(0x853c49e6748fea9b_u64.wrapping_add(i as u64 * 0x12345679))
             }),
             lfo_values: [0.0; crate::preset::MODULATORS],
             env_values: [0.0; crate::preset::MODULATORS],
-            color_rack: ColorRack::new(sr),
-            pre_color_rack: ColorRack::new(sr),
+            color_rack: Box::new(ColorRack::new(sr)),
+            pre_color_rack: Box::new(ColorRack::new(sr)),
             source_color: color::ColorProcessor::new(sr),
-            resynth: resynth::Resynth::new(sr),
+            resynth: Box::new(resynth::Resynth::new(sr)),
             taps: taps::Runtime::new(),
             entered: None,
             drums: None,
@@ -512,7 +515,7 @@ impl Engine {
             previous_source: None,
             source_fade_remaining: 0,
             source_fx_error: false,
-            filters: std::array::from_fn(|_| FilterBank::new(sr)),
+            filters: Box::new(std::array::from_fn(|_| FilterBank::new(sr))),
             filter_banks: Vec::new(),
             filter_masks: [0; filter_slots::POSITIONS],
             random: Random::default(),
@@ -560,7 +563,7 @@ impl Engine {
         // Idle voices need their initial coefficients even when the first preset
         // has the same envelopes as Modulated::default(). Later refreshes only
         // configure envelopes whose values actually changed.
-        for voice in &mut engine.voices {
+        for voice in engine.voices.iter_mut() {
             for (i, envelope) in voice.envelopes.iter_mut().enumerate() {
                 envelope.configure(sr as f32, &engine.modulated.envs[i]);
             }
@@ -632,7 +635,7 @@ impl Engine {
         ) {
             next.inherit(old);
         }
-        for voice in &mut self.voices {
+        for voice in self.voices.iter_mut() {
             if voice.owner != 0
                 && (!preset.sequencer.enabled
                     || !preset
@@ -940,7 +943,7 @@ impl Engine {
             .iter()
             .filter(|e| e.stage.is_none() && (e.field == 47 || (e.field == 8 && e.value >= 0.5)))
         {
-            for voice in &mut self.voices {
+            for voice in self.voices.iter_mut() {
                 if voice.owner == edit.track {
                     voice.held = false;
                     voice.sustained = false;
@@ -962,7 +965,7 @@ impl Engine {
         self.refresh_sequence_free_voice();
     }
     fn release_sequence_notes(&mut self) {
-        for voice in &mut self.voices {
+        for voice in self.voices.iter_mut() {
             if voice.owner != 0 {
                 voice.held = false;
                 voice.sustained = false;
@@ -1076,7 +1079,7 @@ impl Engine {
         self.invalidate_racks();
         self.clear_filters();
         if !self.playing {
-            for voice in &mut self.voices {
+            for voice in self.voices.iter_mut() {
                 voice.kill();
             }
             self.smooth_bypass_gate = 0.0;
@@ -1209,7 +1212,7 @@ impl Engine {
     pub fn set_midi_gate(&mut self, enabled: bool) {
         self.midi_gate = enabled;
         self.sustain.fill(false);
-        for voice in &mut self.voices {
+        for voice in self.voices.iter_mut() {
             voice.held = false;
             voice.sustained = false;
             voice.off();
@@ -1306,7 +1309,7 @@ impl Engine {
     }
 
     fn release_notes(&mut self) {
-        for voice in &mut self.voices {
+        for voice in self.voices.iter_mut() {
             voice.held = false;
             voice.sustained = false;
             voice.off();
@@ -1666,7 +1669,7 @@ impl Engine {
                 controller: 123,
                 ..
             } if channel < 16 => {
-                for v in &mut self.voices {
+                for v in self.voices.iter_mut() {
                     if v.channel == channel {
                         v.held = false;
                         v.sustained = false;
@@ -1918,7 +1921,7 @@ impl Engine {
         for (i, env) in m.envs.iter().enumerate() {
             if i >= m.env_count {
                 if i < self.modulated.env_count {
-                    for voice in &mut self.voices {
+                    for voice in self.voices.iter_mut() {
                         voice.envelopes[i].kill();
                         voice.env_values[i] = 0.0;
                     }
@@ -1926,7 +1929,7 @@ impl Engine {
                 continue;
             }
             if *env != self.modulated.envs[i] {
-                for voice in &mut self.voices {
+                for voice in self.voices.iter_mut() {
                     voice.envelopes[i].configure(self.sample_rate as f32, env);
                 }
             }
@@ -2962,7 +2965,7 @@ impl Engine {
             let bar_loop = self.bar_loop_active();
             let phase_step = self.bar_phase_step;
             if bar_loop && !self.frozen {
-                for voice in &mut self.voices {
+                for voice in self.voices.iter_mut() {
                     if voice.active() {
                         voice.loop_phase =
                             sample::wrap_position(voice.loop_phase + phase_step, 1.0);
