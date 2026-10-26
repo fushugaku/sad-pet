@@ -8,6 +8,7 @@ pub mod drums;
 pub mod dsp;
 pub mod effect_presets;
 pub mod firmware;
+pub mod grain_groups;
 pub mod imported_fx;
 pub mod macros;
 pub mod matrix;

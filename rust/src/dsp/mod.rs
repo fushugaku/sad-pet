@@ -7,6 +7,7 @@ pub mod effects;
 pub mod fast;
 pub mod filter;
 pub mod filter_slots;
+mod grain_groups;
 mod imported_rate;
 pub mod modulation;
 mod radias_filter;
@@ -131,6 +132,9 @@ pub struct GrainView {
     pub position: f32,
     pub age: f32,
     pub pan: f32,
+    /// 1–4 for the advanced mode group the grain joined, 0 outside it.
+    #[serde(default)]
+    pub group: u8,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -157,6 +161,7 @@ pub(crate) struct Modulated {
     pub(crate) color_dirty: bool,
     pub(crate) filter_slots: [FilterSlot; MAX_FILTER_SLOTS],
     pub(crate) filter_len: usize,
+    pub(crate) grain_groups: crate::grain_groups::Settings,
 }
 /// An LFO or ENV of a frame, by index.
 #[derive(Clone, Copy)]
@@ -201,6 +206,7 @@ impl Modulated {
         self.color_dirty = false;
         self.filter_len = preset.filter_slots.len();
         self.filter_slots[..self.filter_len].copy_from_slice(&preset.filter_slots);
+        self.grain_groups = preset.grain_groups;
     }
     /// An LFO's or ENV's routes, each at its depth as modulated so far.
     pub(crate) fn modulator_routes(
@@ -463,6 +469,8 @@ pub struct Engine {
     /// Occupied grain slots, bit n for slot n. Visiting set bits from the lowest
     /// keeps the order of a full slot scan, so voices still sum in that order.
     live_grains: u128,
+    /// Each grain's group, envelopes and filter in advanced mode.
+    group_grains: Box<grain_groups::Runtime>,
     voices: Box<[Voice; VOICES]>,
     oscillators: [Oscillator; crate::preset::MODULATORS],
     pub lfo_values: [f32; crate::preset::MODULATORS],
@@ -559,6 +567,7 @@ impl Engine {
             sequence_running: true,
             grains: [Grain::default(); MAX_GRAINS],
             live_grains: 0,
+            group_grains: Box::new(grain_groups::Runtime::new(sr)),
             voices: Box::new([Voice::default(); VOICES]),
             oscillators: std::array::from_fn(|i| {
                 Oscillator::new(0x853c49e6748fea9b_u64.wrapping_add(i as u64 * 0x12345679))
@@ -1216,6 +1225,7 @@ impl Engine {
     pub fn reset_grains(&mut self) {
         self.live_grains = 0;
         self.grain_clock = 1.0;
+        self.group_grains.reset();
     }
     pub fn set_playing(&mut self, playing: bool) {
         self.playing = playing;
@@ -1344,6 +1354,7 @@ impl Engine {
             Some(slot)
         })
     }
+    #[cfg(test)]
     fn live_grain_list(&self) -> impl Iterator<Item = &Grain> {
         self.live_grain_slots().map(|slot| &self.grains[slot])
     }
@@ -1362,13 +1373,18 @@ impl Engine {
             .collect()
     }
     pub fn grain_views(&self) -> Vec<GrainView> {
-        self.live_grain_list()
-            .map(|g| GrainView {
-                position: self.source_position(g.position) as f32,
-                age: g.age as f32 / g.duration as f32,
-                pan: (g.pan[1] - g.pan[0] + 1.0) * 0.5,
-            })
+        self.live_grain_slots()
+            .map(|slot| self.grain_view(slot))
             .collect()
+    }
+    fn grain_view(&self, slot: usize) -> GrainView {
+        let g = &self.grains[slot];
+        GrainView {
+            position: self.source_position(g.position) as f32,
+            age: g.age as f32 / g.duration as f32,
+            pan: (g.pan[1] - g.pan[0] + 1.0) * 0.5,
+            group: self.group_grains.group(slot).map_or(0, |group| group + 1),
+        }
     }
 
     fn release_notes(&mut self) {
@@ -2141,6 +2157,15 @@ impl Engine {
             self.next_voice = (voice + 1) % VOICES;
             voice
         };
+        let groups = &self.modulated.grain_groups;
+        let group = if groups.advanced {
+            let Some(index) = self.group_grains.deal(groups) else {
+                return;
+            };
+            Some((index, groups.groups[index]))
+        } else {
+            None
+        };
         let p = &self.modulated.params;
         let note = self.voices[voice];
         let bend = if synth {
@@ -2163,6 +2188,7 @@ impl Engine {
             + tune_semis
             + tune_cents * 0.01
             + bend
+            + group.map_or(0.0, |(_, g)| g.pitch)
             + self.random.unit() * tables::detune_range(p.detune);
         let range = self.source_range();
         let length = range.len() as f64;
@@ -2178,6 +2204,11 @@ impl Engine {
                 .rem_euclid(length);
         let pan =
             (self.modulated.pan + self.random.bipolar() * p.stereo_spread * 0.5).clamp(0.0, 1.0);
+        let shape = group.map_or(p.grain_shape, |(_, g)| g.shape);
+        match group {
+            Some((index, g)) => self.group_grains.start(slot, index, &g, duration),
+            None => self.group_grains.release(slot),
+        }
         self.live_grains |= 1 << slot;
         self.grains[slot] = Grain {
             position,
@@ -2185,7 +2216,7 @@ impl Engine {
             read_level: self.source_sample().level_for_rate(rate, true),
             age: 0,
             duration,
-            shape: p.grain_shape.clamp(0.0, 1.0),
+            shape: shape.clamp(0.0, 1.0),
             pan: tables::pan(pan),
             voice,
         };
@@ -2695,6 +2726,7 @@ impl Engine {
         let whole_file = !source_effects && range.start == 0 && range.end == sample.len();
         let source_chain = self.taps.chain(Stage::Source);
         let top_level = sample.active_levels() - 1;
+        let groups = &self.modulated.grain_groups;
         let mut pending = self.live_grains;
         while pending != 0 {
             let slot = pending.trailing_zeros() as usize;
@@ -2727,6 +2759,9 @@ impl Engine {
             if fading {
                 let gain = self.fades.gain(grain.position, sample.sample_rate, &range);
                 frame = frame.map(|v| v * gain);
+            }
+            if groups.advanced {
+                frame = self.group_grains.process(slot, grain.age, frame, groups);
             }
             for c in 0..2 {
                 voice_frames[grain.voice][c] += frame[c] * amplitude * grain.pan[c];

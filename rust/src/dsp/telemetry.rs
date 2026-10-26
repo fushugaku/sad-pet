@@ -243,12 +243,8 @@ impl Engine {
             view.note_count += 1;
         }
         view.grain_count = 0;
-        for grain in self.live_grain_list() {
-            view.grains[view.grain_count] = super::GrainView {
-                position: self.source_position(grain.position) as f32,
-                age: grain.age as f32 / grain.duration as f32,
-                pan: (grain.pan[1] - grain.pan[0] + 1.0) * 0.5,
-            };
+        for slot in self.live_grain_slots() {
+            view.grains[view.grain_count] = self.grain_view(slot);
             view.grain_count += 1;
         }
         let waveform = &self.source_sample().waveform;

@@ -778,6 +778,9 @@ pub struct Preset {
     /// Where each section's output goes: on down the chain and to a Bus.
     #[serde(skip_serializing_if = "crate::taps::Taps::is_default")]
     pub taps: crate::taps::Taps,
+    /// Advanced grain mode and its groups.
+    #[serde(skip_serializing_if = "crate::grain_groups::Settings::is_default")]
+    pub grain_groups: crate::grain_groups::Settings,
     pub drums: Option<Box<crate::drums::Settings>>,
     #[serde(skip)]
     pub drum_runtime: crate::drums::Prepared,
@@ -829,6 +832,7 @@ impl Default for Preset {
             sequencer: crate::sequence::Program::default(),
             resynth: crate::resynth::Settings::default(),
             taps: Default::default(),
+            grain_groups: Default::default(),
             drums: None,
             drum_runtime: Default::default(),
             synth: None,
@@ -868,6 +872,7 @@ impl<'de> Deserialize<'de> for Preset {
             sequencer: Option<crate::sequence::Program>,
             resynth: Option<serde_json::Value>,
             taps: Option<crate::taps::Taps>,
+            grain_groups: crate::grain_groups::Settings,
             drums: Option<Box<crate::drums::Settings>>,
             synth: Option<Box<crate::synth::Settings>>,
             bus: Option<Box<crate::bus::Settings>>,
@@ -896,6 +901,7 @@ impl<'de> Deserialize<'de> for Preset {
                     sequencer: None,
                     resynth: None,
                     taps: None,
+                    grain_groups: Default::default(),
                     drums: None,
                     synth: None,
                     bus: None,
@@ -1036,6 +1042,7 @@ impl<'de> Deserialize<'de> for Preset {
             sequencer,
             resynth,
             taps,
+            grain_groups: d.grain_groups,
             drums: d.drums,
             drum_runtime: Default::default(),
             synth: d.synth,
@@ -1123,6 +1130,7 @@ impl Preset {
         self.env_count = self.env_count.clamp(1, MODULATORS as u8);
         self.resynth.sanitize();
         self.taps.sanitize();
+        self.grain_groups.sanitize();
         if let Some(vocal) = &mut self.vocal {
             // A Vocal timbre's engine is a bus fed by its voice, never Master.
             vocal.sanitize();
