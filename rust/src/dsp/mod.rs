@@ -334,7 +334,7 @@ impl Modulated {
                 Some(match parameter {
                     L::Rate => (&mut l.rate_hz, 0.01, 40.0, true),
                     L::Depth => (&mut l.depth, -1.0, 1.0, false),
-                    L::Division => (&mut l.division, 0.0625, 32.0, true),
+                    L::Division => (&mut l.division, 0.0625, 128.0, true),
                     L::Depth2 => (&mut l.depth2, -1.0, 1.0, false),
                     L::Depth3 => (&mut l.depth3, -1.0, 1.0, false),
                 })

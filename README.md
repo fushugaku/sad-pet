@@ -98,7 +98,7 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   and **Synth engine** timbres as tabs across the top. They run together, with per-timbre level, mute,
   solo and MIDI channel. Each owns its source, effects, Resynth, envelopes, LFOs
   and Neuropolis program. Save/recall includes the entire scene and all sources.
-- Up to **8 LFOs** with tempo sync up to 8 bars and **8 ADSR envelopes** per timbre,
+- Up to **8 LFOs** with tempo sync up to 32 bars and **8 ADSR envelopes** per timbre,
   each with **three routes** of its own (destination and depth), plus eight
   modulation-matrix routes. OSC 1–4 shape, mode, tuning, level, pan,
   Ring/Sync and other realtime numeric controls are available as destinations.

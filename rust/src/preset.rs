@@ -401,6 +401,7 @@ pub struct Lfo {
     pub depth: f32,
     pub destination: Destination,
     pub sync: bool,
+    /// Beats per cycle under `sync`: a 1/16 note up to 32 bars.
     pub division: f32,
     /// Routes 2 and 3; route 1 is `destination` and `depth`.
     pub destination2: Destination,
@@ -1270,7 +1271,7 @@ impl Preset {
             finite_clamp(&mut lfo.depth, -1.0, 1.0, 0.0);
             finite_clamp(&mut lfo.depth2, -1.0, 1.0, 0.0);
             finite_clamp(&mut lfo.depth3, -1.0, 1.0, 0.0);
-            finite_clamp(&mut lfo.division, 0.0625, 32.0, 1.0);
+            finite_clamp(&mut lfo.division, 0.0625, 128.0, 1.0);
         }
     }
 

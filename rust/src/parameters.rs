@@ -639,7 +639,7 @@ fn append_modulators(result: &mut Vec<Spec>, preset: &Preset, i: usize) {
     for (field, (id, name, min, max)) in [
         ("rate", "rate", 0.01, 40.0),
         ("depth", "depth", -1.0, 1.0),
-        ("division", "division", 0.0625, 32.0),
+        ("division", "division", 0.0625, 128.0),
     ]
     .into_iter()
     .enumerate()
