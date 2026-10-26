@@ -158,6 +158,12 @@ pub(crate) struct Modulated {
     pub(crate) filter_slots: [FilterSlot; MAX_FILTER_SLOTS],
     pub(crate) filter_len: usize,
 }
+/// An LFO or ENV of a frame, by index.
+#[derive(Clone, Copy)]
+pub(crate) enum Modulator {
+    Lfo(usize),
+    Env(usize),
+}
 impl Modulated {
     fn from_preset(preset: &Preset) -> Self {
         let mut result = Self::default();
@@ -195,6 +201,63 @@ impl Modulated {
         self.color_dirty = false;
         self.filter_len = preset.filter_slots.len();
         self.filter_slots[..self.filter_len].copy_from_slice(&preset.filter_slots);
+    }
+    /// An LFO's or ENV's routes, each at its depth as modulated so far.
+    pub(crate) fn modulator_routes(
+        &self,
+        modulator: Modulator,
+    ) -> [(Destination, f32); crate::preset::MODULATOR_ROUTES] {
+        match modulator {
+            Modulator::Lfo(i) => self.lfos[i].routes(),
+            Modulator::Env(i) => self.envs[i].routes(),
+        }
+    }
+    /// The LFOs, then the ENVs, in the order their routes apply: each after
+    /// every one that routes into its depths, so its routes carry that
+    /// modulation. Where such routes loop, the first pending one goes first.
+    pub(crate) fn modulator_order(&self) -> impl Iterator<Item = Modulator> + use<> {
+        use crate::preset::MODULATORS as N;
+        use matrix::{EnvParameter as E, LfoParameter as L};
+        let node = |n: usize| {
+            if n < N {
+                Modulator::Lfo(n)
+            } else {
+                Modulator::Env(n - N)
+            }
+        };
+        // Bit n for node n: LFO i is node i, ENV i is node N + i.
+        let active =
+            ((1u16 << self.lfo_count.min(N)) - 1) | (((1u16 << self.env_count.min(N)) - 1) << N);
+        let mut inputs = [0u16; 2 * N];
+        for source in (0..2 * N).filter(|&n| active & (1 << n) != 0) {
+            for (destination, _) in self.modulator_routes(node(source)) {
+                let target = match destination {
+                    Destination::Lfo {
+                        index,
+                        parameter: L::Depth | L::Depth2 | L::Depth3,
+                    } if (index as usize) < N => index as usize,
+                    Destination::Env {
+                        index,
+                        parameter: E::Depth | E::ExtraDepth | E::Depth3,
+                    } if (index as usize) < N => N + index as usize,
+                    _ => continue,
+                };
+                if target != source {
+                    inputs[target] |= 1 << source;
+                }
+            }
+        }
+        let mut pending = active;
+        std::iter::from_fn(move || {
+            if pending == 0 {
+                return None;
+            }
+            let next = (0..2 * N)
+                .find(|&n| pending & (1 << n) != 0 && inputs[n] & pending == 0)
+                .unwrap_or(pending.trailing_zeros() as usize);
+            pending &= !(1 << next);
+            Some(node(next))
+        })
     }
     fn route(&mut self, destination: Destination, value: f32) {
         if value == 0.0 {
@@ -1837,14 +1900,16 @@ impl Engine {
                 m.route(target.destination, knob.value * target.depth);
             }
         }
-        for (i, lfo) in m.lfos.into_iter().take(m.lfo_count).enumerate() {
-            for (destination, depth) in lfo.routes() {
-                m.route(destination, self.lfo_values[i] * depth * 0.5);
-            }
-        }
-        for (i, env) in m.envs.into_iter().take(m.env_count).enumerate() {
-            for (destination, depth) in env.routes() {
-                m.route(destination, self.env_values[i] * depth);
+        // Each route reads its depth as it applies, after every LFO or ENV
+        // that routes into that depth, so one can open another's routes.
+        for modulator in m.modulator_order() {
+            let source = match modulator {
+                Modulator::Lfo(i) => self.lfo_values[i] * 0.5,
+                Modulator::Env(i) => self.env_values[i],
+            };
+            for r in 0..crate::preset::MODULATOR_ROUTES {
+                let (destination, depth) = m.modulator_routes(modulator)[r];
+                m.route(destination, source * depth);
             }
         }
         if self.frozen && (m.params.position - self.last_position).abs() > 0.00001 {

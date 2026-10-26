@@ -1,7 +1,10 @@
 //! Read-only control feedback. Reuse the DSP's destination arithmetic, without
 //! running processors or changing audio state. Called at UI publication time.
-use super::{Engine, Modulated, filter};
-use crate::{matrix::Source, preset::Destination};
+use super::{Engine, Modulated, Modulator, filter};
+use crate::{
+    matrix::Source,
+    preset::{Destination, MODULATOR_ROUTES},
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -346,34 +349,17 @@ impl ControlFeedback<'_> {
         for (destination, range) in ranges {
             apply(&mut low, &mut high, destination, range);
         }
-        // Match the order and snapshot boundaries in update_modulation().
-        let low_lfos = low.lfos;
-        let high_lfos = high.lfos;
-        for (i, lfo) in self
-            .preset
-            .lfos
-            .iter()
-            .take(self.preset.lfo_count as usize)
-            .enumerate()
-        {
-            let (lows, highs) = (low_lfos[i].routes(), high_lfos[i].routes());
-            for (r, (destination, _)) in lfo.routes().into_iter().enumerate() {
-                let range = product_range([-0.5, 0.5], [lows[r].1, highs[r].1]);
-                apply(&mut low, &mut high, destination, range);
-            }
-        }
-        let low_envs = low.envs;
-        let high_envs = high.envs;
-        for (i, env) in self
-            .preset
-            .envs
-            .iter()
-            .take(self.preset.env_count as usize)
-            .enumerate()
-        {
-            let (lows, highs) = (low_envs[i].routes(), high_envs[i].routes());
-            for (r, (destination, _)) in env.routes().into_iter().enumerate() {
-                let range = product_range([0.0, 1.0], [lows[r].1, highs[r].1]);
+        // Match update_modulation(): routes apply in modulator order, each
+        // over the depth range the routes before it left.
+        for modulator in low.modulator_order() {
+            let source = match modulator {
+                Modulator::Lfo(_) => [-0.5, 0.5],
+                Modulator::Env(_) => [0.0, 1.0],
+            };
+            for r in 0..MODULATOR_ROUTES {
+                let (destination, from) = low.modulator_routes(modulator)[r];
+                let to = high.modulator_routes(modulator)[r].1;
+                let range = product_range(source, [from, to]);
                 apply(&mut low, &mut high, destination, range);
             }
         }

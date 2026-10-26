@@ -143,6 +143,83 @@ fn route_depths_are_host_parameters_and_modulation_destinations() {
     assert!((knobs["lfo1_depth2"].current - 1.0).abs() < 1e-6);
     assert!((knobs["cloud"].current - 0.5).abs() < 1e-6);
 
+    // An LFO route opens another LFO's route the same way.
+    let mut p = quiet();
+    p.lfos[1] = Lfo {
+        waveform: Waveform::Square,
+        destination: Destination::Lfo {
+            index: 2,
+            parameter: LfoParameter::Depth,
+        },
+        depth: 1.0,
+        ..Lfo::default()
+    };
+    p.lfos[2] = Lfo {
+        waveform: Waveform::Square,
+        destination: Destination::Cloud,
+        depth: 0.0,
+        ..Lfo::default()
+    };
+    let mut e = Engine::new(8000, Arc::new(SampleBuffer::demo(8000)), p);
+    e.set_playing(true);
+    render(&mut e, 2000);
+    let knobs = e.knob_states();
+    assert!((knobs["lfo3_depth"].current - 1.0).abs() < 1e-6);
+    assert!((knobs["cloud"].current - 0.5).abs() < 1e-6);
+    assert_eq!((knobs["cloud"].min, knobs["cloud"].max), (0.0, 0.5));
+
+    // Routes into an earlier LFO, from an ENV too, apply before its own.
+    let mut p = quiet();
+    p.lfos[0] = Lfo {
+        waveform: Waveform::Square,
+        destination: Destination::Cloud,
+        depth: 0.0,
+        destination2: Destination::StereoSpread,
+        depth2: 0.0,
+        ..Lfo::default()
+    };
+    p.lfos[2] = Lfo {
+        waveform: Waveform::Square,
+        destination: Destination::Lfo {
+            index: 0,
+            parameter: LfoParameter::Depth,
+        },
+        depth: 0.6,
+        ..Lfo::default()
+    };
+    p.envs[1] = Env {
+        attack: 0.0,
+        decay: 0.0,
+        sustain: 1.0,
+        destination: Destination::Lfo {
+            index: 0,
+            parameter: LfoParameter::Depth2,
+        },
+        depth: 0.25,
+        ..Env::default()
+    };
+    let mut e = Engine::new(8000, Arc::new(SampleBuffer::demo(8000)), p);
+    e.set_playing(true);
+    render(&mut e, 2000);
+    assert_eq!(e.env_values[1], 1.0);
+    let knobs = e.knob_states();
+    assert!((knobs["cloud"].current - 0.3).abs() < 1e-6);
+    assert!((knobs["stereo_spread"].current - 0.25).abs() < 1e-6);
+    assert_eq!(knobs["stereo_spread"].max, 0.25);
+
+    // Two LFOs opening each other still render.
+    let mut p = e.preset.clone();
+    p.lfos[1].destination = Destination::Lfo {
+        index: 2,
+        parameter: LfoParameter::Depth,
+    };
+    p.lfos[2].destination = Destination::Lfo {
+        index: 1,
+        parameter: LfoParameter::Depth,
+    };
+    e.set_preset(p);
+    render(&mut e, 400);
+
     let mut p = Preset::default();
     let changes =
         parameters::parse(&json!({"lfo3_depth2":-0.5,"lfo8_depth3":2.0,"env5_depth3":0.3}))
