@@ -1314,6 +1314,36 @@ pub fn specs() -> &'static [Spec] {
                 result.push(spec);
             }
         }
+        // Then grain feedback and each group's placement, randomness and scale.
+        result.push(Spec {
+            id: "grain_feedback".into(),
+            name: "Grain feedback".into(),
+            min: 0.0,
+            max: 1.0,
+            default: 0.0,
+            target: Target::Core {
+                get: |p| p.params.grain_feedback,
+                set: |p, v| p.params.grain_feedback = v,
+                frame_get: |m| m.params.grain_feedback,
+                frame_set: |m, v| m.params.grain_feedback = v,
+            },
+        });
+        for (i, name) in grain_groups::NAMES.iter().enumerate() {
+            for (offset, (key, label, min, max)) in
+                grain_groups::PLAY_FIELDS.into_iter().enumerate()
+            {
+                let mut spec = Spec {
+                    id: format!("grain_group{}_{key}", i + 1),
+                    name: format!("Grain group {name} {label}"),
+                    min,
+                    max,
+                    default: 0.0,
+                    target: Target::GrainGroup(i, grain_groups::PLAY_FIELD + offset),
+                };
+                spec.default = spec.get(&preset);
+                result.push(spec);
+            }
+        }
         result
     })
 }

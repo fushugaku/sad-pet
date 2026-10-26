@@ -5,8 +5,11 @@ pub mod compressor;
 pub mod delay;
 pub mod effects;
 pub mod fast;
+mod feedback;
 pub mod filter;
 pub mod filter_slots;
+#[cfg(test)]
+mod grain_group_tests;
 mod grain_groups;
 mod imported_rate;
 pub mod modulation;
@@ -25,6 +28,7 @@ pub mod synth;
 mod taps;
 pub mod telemetry;
 
+use crate::grain_groups as grain_groups_settings;
 use crate::{
     Stereo,
     color::{ColorSlot, MAX_COLOR_SLOTS},
@@ -471,6 +475,8 @@ pub struct Engine {
     live_grains: u128,
     /// Each grain's group, envelopes and filter in advanced mode.
     group_grains: Box<grain_groups::Runtime>,
+    /// The grains' own output on its way back to later grains.
+    grain_feedback: feedback::Feedback,
     voices: Box<[Voice; VOICES]>,
     oscillators: [Oscillator; crate::preset::MODULATORS],
     pub lfo_values: [f32; crate::preset::MODULATORS],
@@ -568,6 +574,7 @@ impl Engine {
             grains: [Grain::default(); MAX_GRAINS],
             live_grains: 0,
             group_grains: Box::new(grain_groups::Runtime::new(sr)),
+            grain_feedback: feedback::Feedback::new(),
             voices: Box::new([Voice::default(); VOICES]),
             oscillators: std::array::from_fn(|i| {
                 Oscillator::new(0x853c49e6748fea9b_u64.wrapping_add(i as u64 * 0x12345679))
@@ -1226,6 +1233,7 @@ impl Engine {
         self.live_grains = 0;
         self.grain_clock = 1.0;
         self.group_grains.reset();
+        self.grain_feedback.reset();
     }
     pub fn set_playing(&mut self, playing: bool) {
         self.playing = playing;
@@ -1311,12 +1319,7 @@ impl Engine {
             let range = self.source_range();
             let length = range.len() as f64;
             let p = &self.modulated.params;
-            // Leave enough history for a grain to advance without overtaking
-            // the capture head. Position scans backwards through the history.
-            let margin = (self.grain_seconds(p.grain_size) as f64 * self.sample_rate as f64 * 2.0
-                + p.cloud as f64 * length * 0.5
-                + 4.0)
-                .min(length * 0.9);
+            let margin = self.history_margin();
             let head = if self.preset.history().is_some() {
                 range.end as f64
             } else {
@@ -1341,6 +1344,45 @@ impl Engine {
                     + self.modulated.params.position as f64 * range.len() as f64)
                     .rem_euclid(range.len() as f64)
         }
+    }
+    /// Leave enough history for a grain to advance without overtaking the
+    /// capture head, a group's longer grains included. Position scans
+    /// backwards through the history.
+    fn history_margin(&self) -> f64 {
+        let length = self.source_range().len() as f64;
+        let p = &self.modulated.params;
+        let groups = &self.modulated.grain_groups;
+        let longest = groups
+            .groups
+            .iter()
+            .filter(|g| groups.advanced && g.share > 0.0 && g.size > 0.0)
+            .map(|g| g.size)
+            .fold(0.0, f32::max);
+        let seconds = if longest > 0.0 {
+            (self.grain_seconds(p.grain_size) * longest.exp2()).min(self.grain_seconds(1.0))
+        } else {
+            self.grain_seconds(p.grain_size)
+        };
+        (seconds as f64 * self.sample_rate as f64 * 2.0 + p.cloud as f64 * length * 0.5 + 4.0)
+            .min(length * 0.9)
+    }
+    /// A group's grain center: its POSITION moves the engine's, around a
+    /// file and, within a history, no nearer the head than the engine goes.
+    fn layer_center(&self, voice: usize, offset: f32) -> f64 {
+        let center = self.voice_center(voice);
+        if offset == 0.0 {
+            return center;
+        }
+        let range = self.source_range();
+        let length = range.len() as f64;
+        let shift = if self.live_input.is_some() {
+            let position = self.modulated.params.position;
+            let target = (position + offset).clamp(0.0, 1.0);
+            -((target - position) as f64) * (length - self.history_margin())
+        } else {
+            offset as f64 * length
+        };
+        range.start as f64 + (center - range.start as f64 + shift).rem_euclid(length)
     }
     pub fn active_grains(&self) -> usize {
         self.live_grains.count_ones() as usize
@@ -1984,6 +2026,7 @@ impl Engine {
             Default::default()
         };
         self.taps.configure(&m.taps, group_taps);
+        self.grain_feedback.tidy(m.params.grain_feedback);
         let shaper_note = self.source_note as f32
             + self.bend[self.source_channel as usize] * m.params.midi_pitchbend_range
             + (m.params.pitch * 2.0 - 1.0) * m.params.pitch_range
@@ -2185,31 +2228,71 @@ impl Engine {
         } else {
             (p.sample_tune_semis, p.sample_tune_cents)
         };
-        let semis = (p.pitch * 2.0 - 1.0) * p.pitch_range
-            + if voice == 0 {
-                0.0
-            } else {
-                note.note as f32 - p.sample_root_note
+        let note_semis = if voice == 0 {
+            0.0
+        } else {
+            note.note as f32 - p.sample_root_note
+        };
+        let semis = match group {
+            None => {
+                (p.pitch * 2.0 - 1.0) * p.pitch_range
+                    + note_semis
+                    + tune_semis
+                    + tune_cents * 0.01
+                    + bend
+                    + self.random.unit() * tables::detune_range(p.detune)
             }
-            + tune_semis
-            + tune_cents * 0.01
-            + bend
-            + group.map_or(0.0, |(_, g)| g.pitch)
-            + self.random.unit() * tables::detune_range(p.detune);
+            Some((_, g)) => {
+                // A group's offset from its note, random pitch and DETUNE
+                // included, snaps to its scale before the note's transposition.
+                let mut offset = (p.pitch * 2.0 - 1.0) * p.pitch_range
+                    + g.pitch
+                    + self.random.unit() * tables::detune_range(p.detune);
+                if g.random_pitch > 0.0 {
+                    offset += self.group_grains.random.bipolar() * g.random_pitch;
+                }
+                let intervals = match g.scale {
+                    grain_groups_settings::Scale::Chord => Some(self.held_intervals(voice)),
+                    scale => scale.intervals(),
+                };
+                if let Some(intervals) = intervals {
+                    offset = grain_groups_settings::quantize(offset, intervals);
+                }
+                offset + note_semis + tune_semis + tune_cents * 0.01 + bend
+            }
+        };
         let range = self.source_range();
         let length = range.len() as f64;
+        let forward = p.grain_size >= 0.5;
+        // A group plays some of its grains the other way.
+        let forward = match group {
+            Some((_, g)) if g.reverse > 0.0 && self.group_grains.random.unit() < g.reverse => {
+                !forward
+            }
+            _ => forward,
+        };
         let rate = tables::pitch_ratio(semis) * self.source_sample().sample_rate as f64
             / self.sample_rate as f64
-            * if p.grain_size < 0.5 { -1.0 } else { 1.0 };
-        let duration = (self.grain_seconds(p.grain_size) * self.sample_rate as f32)
-            .round()
-            .max(4.0) as u32;
+            * if forward { 1.0 } else { -1.0 };
+        let seconds = match group {
+            Some((_, g)) if g.size != 0.0 => {
+                (self.grain_seconds(p.grain_size) * g.size.exp2()).min(self.grain_seconds(1.0))
+            }
+            _ => self.grain_seconds(p.grain_size),
+        };
+        let duration = (seconds * self.sample_rate as f32).round().max(4.0) as u32;
+        let center = match group {
+            Some((_, g)) => self.layer_center(voice, g.position),
+            None => self.voice_center(voice),
+        };
         let position = range.start as f64
-            + (self.voice_center(voice) - range.start as f64
+            + (center - range.start as f64
                 + self.random.bipolar() as f64 * p.cloud as f64 * length * 0.5)
                 .rem_euclid(length);
-        let pan =
-            (self.modulated.pan + self.random.bipolar() * p.stereo_spread * 0.5).clamp(0.0, 1.0);
+        let spread = group.map_or(p.stereo_spread, |(_, g)| {
+            (p.stereo_spread + g.spread).clamp(0.0, 1.0)
+        });
+        let pan = (self.modulated.pan + self.random.bipolar() * spread * 0.5).clamp(0.0, 1.0);
         let shape = group.map_or(p.grain_shape, |(_, g)| g.shape);
         match group {
             Some((index, g)) => self.group_grains.start(slot, index, &g, duration),
@@ -2226,6 +2309,24 @@ impl Engine {
             pan: tables::pan(pan),
             voice,
         };
+    }
+
+    /// The held notes as intervals above `voice`'s note (above the lowest
+    /// held note for the free voice), bit n for n semitones; the note itself
+    /// alone when nothing is held.
+    fn held_intervals(&self, voice: usize) -> u16 {
+        let held = self.voices[1..].iter().filter(|v| v.held || v.sustained);
+        let base = if voice == 0 {
+            held.clone().map(|v| v.note).min()
+        } else {
+            Some(self.voices[voice].note)
+        };
+        let Some(base) = base else {
+            return 1;
+        };
+        held.fold(1, |mask, v| {
+            mask | 1 << (v.note as i32 - base as i32).rem_euclid(12)
+        })
     }
 
     /// Sequencer steps and arpeggiator notes for this frame.
@@ -2594,7 +2695,14 @@ impl Engine {
         if let Some(live) = &mut self.live_input {
             let windowed = self.preset.history().is_some();
             let epoch = if windowed { live.range_epoch() } else { 0 };
-            live.push_with_meter(source_input, input, self.frozen);
+            // Grain feedback enters the history the grains read, as Clouds does.
+            let fed = self.grain_feedback.output;
+            let recorded = if fed == [0.0; 2] {
+                source_input
+            } else {
+                std::array::from_fn(|c| source_input[c] + fed[c])
+            };
+            live.push_with_meter(recorded, input, self.frozen);
             if windowed {
                 let shift = (live.range_epoch() - epoch) as f64;
                 if shift != 0.0 {
@@ -2738,6 +2846,8 @@ impl Engine {
         let group_sends = self.taps.group_sends();
         let mut group_sent = [[0.0; 2]; crate::grain_groups::GROUPS];
         let synth_grains = self.synth.is_some();
+        // A file's grains also read what feedback overdubbed.
+        let overdub = file_source && self.grain_feedback.readable();
         let mut pending = self.live_grains;
         while pending != 0 {
             let slot = pending.trailing_zeros() as usize;
@@ -2768,6 +2878,10 @@ impl Engine {
             if fading {
                 let gain = self.fades.gain(grain.position, sample.sample_rate, &range);
                 frame = frame.map(|v| v * gain);
+            }
+            if overdub {
+                let fed = self.grain_feedback.read(grain.position);
+                frame = std::array::from_fn(|c| frame[c] + fed[c]);
             }
             // A group's grains take its amp envelope in place of the window.
             if groups.advanced
@@ -2814,6 +2928,26 @@ impl Engine {
             1.0
         };
         let input_gain = self.input_gain;
+        let feedback = self.modulated.params.grain_feedback;
+        if feedback > 0.0 || self.grain_feedback.output != [0.0; 2] {
+            // The grains as the notes' VCA weighs them, at the overlap level.
+            let mut grains = [0.0; 2];
+            if synth_grains {
+                grains = voice_frames[0];
+            } else {
+                for i in bits(self.sounding | u64::from(bus.is_some())) {
+                    let weight = self.voices[i].value.max(0.0);
+                    for c in 0..2 {
+                        grains[c] += voice_frames[i][c] * weight;
+                    }
+                }
+            }
+            self.grain_feedback.feed(grains.map(|x| x * norm), feedback);
+            if file_source && feedback > 0.0 && !self.frozen {
+                let center = self.center();
+                self.grain_feedback.write(center);
+            }
+        }
         // A group's send carries its grains before Dry/Wet and the added
         // filters, at the engine's overlap level.
         for (group, sent) in group_sent.iter().enumerate() {

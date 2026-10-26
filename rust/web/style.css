@@ -790,7 +790,16 @@ h2 {
 .grain-group-page .dial .arc {
   stroke: var(--group-color);
 }
-/* A group's Output row spans the page under its four cards. */
+/* The engine's knobs and FEEDBACK in one row on wide screens. */
+#grain-controls {
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+}
+@media (max-width: 760px) {
+  #grain-controls {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+/* A group's Output row spans the page under its cards. */
 .grain-group-page .grain-group-output {
   grid-column: 1 / -1;
   margin-top: 0;

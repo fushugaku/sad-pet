@@ -1054,8 +1054,10 @@ window.SadNeuropolis = class {
   // oscillators and drum voices each get a submenu inside their family.
   parameterGroups(prefix = "") {
     const preset = this.hooks.read(), families = new Map(), drums = new Map(),
-      order = ["Main", "Filters", "LFO", "Envelopes", "Arpeggiator", "Pre-filter FX", "Post-filter FX", "Resynth", "Synth engine", "Drums"],
-      voices = window.SadDrums?.controlSections;
+      order = ["Main", "Grains", "Filters", "LFO", "Envelopes", "Arpeggiator", "Pre-filter FX", "Post-filter FX", "Resynth", "Synth engine", "Drums"],
+      voices = window.SadDrums?.controlSections,
+      grainControls = new Set(["position", "grains", "min_grains", "grain_size", "pitch", "grain_shape",
+        "cloud", "detune", "stereo_spread", "grain_feedback", "grain_advanced"]);
     for (const spec of this.catalog.parameters) {
       const id = spec.id, fx = /^(pre_)?fx(\d+)_/.exec(id);
       let slot = null;
@@ -1071,7 +1073,9 @@ window.SadNeuropolis = class {
         continue;
       }
       const n = /\d+/.exec(id)?.[0], filter = /^(?:filter|vcf)(\d*)(?:_|$)/.exec(id),
-        slotName = fx && `${fx[1] ? "Pre FX" : "FX"} ${fx[2]}`, kind = slot && this.hooks.fxName?.(slot);
+        slotName = fx && `${fx[1] ? "Pre FX" : "FX"} ${fx[2]}`, kind = slot && this.hooks.fxName?.(slot),
+        // The grain engine's controls, then each advanced mode group's.
+        group = /^grain_group(\d)_/.exec(id)?.[1];
       const [family, sub, strip = sub] = fx
         ? [`${fx[1] ? "Pre-filter" : "Post-filter"} FX`, kind ? `${slotName} · ${kind}` : slotName, slotName]
         : id.startsWith("resynth_osc") ? ["Resynth", `OSC ${n}`, `Resynth OSC ${n}`]
@@ -1082,6 +1086,8 @@ window.SadNeuropolis = class {
         : id.startsWith("arp_") ? ["Arpeggiator"]
         : id.startsWith("synth_osc") ? ["Synth engine", `Synth OSC ${n}`]
         : id.startsWith("synth_") ? ["Synth engine"]
+        : group ? ["Grains", `Group ${"ABCD"[group - 1]}`]
+        : grainControls.has(id) || id.startsWith("tap_grains_") ? ["Grains"]
         : filter ? ["Filters", `Filter ${filter[1] || 1}`] : ["Main"];
       if (!families.has(family)) families.set(family, { targets: [], subs: new Map() });
       const { targets, subs } = families.get(family), choice = [`${prefix}${id}`, spec.name];
