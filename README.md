@@ -178,7 +178,9 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   bus goes nowhere. **+ New bus** in the bus menu adds a Bus timbre without
   leaving the section. The section heading shows **Skipped** or **→ Bus** while
   either is set. Buses, Master and Pad FX have CHAIN only. A Synth's grain
-  engine follows its filters, and so does its Grain engine output. The knobs
+  engine follows its filters, and so does its Grain engine output. Sample tune
+  transposes a Synth's or drum kit's voices themselves, so their tuning holds
+  at Grain engine CHAIN 0% as with Granular off. The knobs
   are host parameters (`tap_grains_chain`, `tap_grains_send`, `tap_grains_bus`…;
   Resynth keeps `resynth_send` and `resynth_bus`).
 - **Vocal timbres** sing a score, in the manner of VOCALOID5 (browser, DAW
