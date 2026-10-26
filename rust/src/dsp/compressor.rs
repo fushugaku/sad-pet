@@ -1,6 +1,10 @@
-//! Feed-forward peak compressor with a stereo-linked detector and soft knee.
+//! Feed-forward peak compressor with a stereo-linked, peak-holding detector
+//! and soft knee.
 use super::fast;
 use crate::{Stereo, color::ColorSettings};
+
+/// The detector reads the largest peak of the last 2.5-5 ms.
+const HOLD_SECONDS: f32 = 0.005;
 
 pub struct Compressor {
     sample_rate: f32,
@@ -11,6 +15,10 @@ pub struct Compressor {
     release_alpha: f32,
     makeup_gain: f32,
     reduction_db: f32,
+    /// Peaks of the current and the previous half of the hold window.
+    held: [f32; 2],
+    hold_frames: u32,
+    hold_count: u32,
 }
 
 impl Compressor {
@@ -24,6 +32,9 @@ impl Compressor {
             release_alpha: 1.0,
             makeup_gain: 1.0,
             reduction_db: 0.0,
+            held: [0.0; 2],
+            hold_frames: ((sample_rate as f32 * HOLD_SECONDS * 0.5) as u32).max(1),
+            hold_count: 0,
         };
         compressor.configure(&ColorSettings::default());
         compressor
@@ -31,6 +42,8 @@ impl Compressor {
 
     pub fn clear(&mut self) {
         self.reduction_db = 0.0;
+        self.held = [0.0; 2];
+        self.hold_count = 0;
     }
 
     /// Applied attenuation before makeup gain, in dB. Reading never changes DSP.
@@ -52,7 +65,18 @@ impl Compressor {
     pub fn process(&mut self, frame: Stereo) -> Stereo {
         // Both channels receive the same gain, preserving their balance even
         // when a transient arrives on just one side. No lookahead or latency.
-        let peak = frame[0].abs().max(frame[1].abs()).max(1e-12);
+        // A rising peak takes effect at once; a held one keeps the level
+        // between the half-waves. An instantaneous peak falls to zero at
+        // every zero crossing, so fast release recovered between peaks and
+        // fast attack grabbed the next: noise-like input, such as a reverb
+        // tail, crackled with random gain dips.
+        self.held[0] = self.held[0].max(frame[0].abs().max(frame[1].abs()));
+        let peak = self.held[0].max(self.held[1]).max(1e-12);
+        self.hold_count += 1;
+        if self.hold_count == self.hold_frames {
+            self.hold_count = 0;
+            self.held = [0.0, self.held[0]];
+        }
         let over = fast::db(peak) - self.threshold_db;
         let half_knee = self.knee_db * 0.5;
         let target = if over <= -half_knee {
