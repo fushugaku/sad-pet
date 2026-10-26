@@ -1008,8 +1008,8 @@ h2 {
   transition: transform 0.05s linear;
 }
 .resynth-controls {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  max-width: 760px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  max-width: 912px;
   margin: 0 auto 18px;
 }
 /* A section's output: CHAIN goes on down the page, SEND branches to a bus. */
