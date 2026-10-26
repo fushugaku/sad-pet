@@ -361,7 +361,10 @@ preset.sequencer.tracks = [{ ...structuredClone(track), target: { kind: "oscilla
 ui.catalog = {
   ...catalog,
   parameters: [
+    ["mix", "Dry / wet"],
     ["position", "Position"],
+    ["grain_feedback", "Grain feedback"],
+    ["grain_group2_cutoff", "Grain group B cutoff"],
     ["filter", "Filter 1 cutoff"],
     ["filter_resonance", "Filter 1 resonance"],
     ["filter10_cutoff", "Filter 10 cutoff"],
@@ -390,7 +393,7 @@ assert.equal(picker.textContent, "OSC 3 pitch offset");
 assert.equal(picker.children.length, 0, "A closed picker builds no menu");
 picker.onclick();
 assert.equal(picker.getAttribute("aria-expanded"), "true");
-assert.deepEqual(menuRows(0), ["Pitch & notes", "Main", "Filters", "LFO", "Resynth"]);
+assert.deepEqual(menuRows(0), ["Pitch & notes", "Main", "Grains", "Filters", "LFO", "Resynth"]);
 assert.equal(menuFocus(), "Pitch & notes", "The menu opens on the value's section");
 menuKey("ArrowRight");
 assert.equal(menuFocus(), "OSC 3 pitch offset");
@@ -440,7 +443,7 @@ assert.equal(document.activeElement, picker);
 assert.equal(picker.value, "osc:1", "Escape keeps the value");
 picker.onclick();
 for (const clientY of [5, 5, 6]) {
-  menuLayer().onpointermove({ target: menuLayer().children[0].children[2].children[0], pointerType: "mouse", clientX: 5, clientY });
+  menuLayer().onpointermove({ target: menuLayer().children[0].children[3].children[0], pointerType: "mouse", clientX: 5, clientY });
   assert.equal(menuFocus(), clientY < 6 ? "Pitch & notes" : "Filters", "A resting pointer does not steal the keyboard's row");
 }
 timers.splice(0).forEach((callback) => callback());
@@ -457,11 +460,12 @@ assert.equal(menuFocus(), "Filters");
 menuKey("ArrowUp");
 menuKey("Enter");
 assert.equal(menuLayer().children.length, 1, "Phones drill into a section in place");
-assert.deepEqual(menuRows(0), ["Main", "Position"]);
+// Grains holds the grain engine's controls, then each group's.
+assert.deepEqual(menuRows(0), ["Grains", "Position", "Grain feedback", "Group B"]);
 assert.equal(menuFocus(), "Position");
 menuKey("ArrowLeft");
-assert.deepEqual(menuRows(0).slice(0, 2), ["Pitch & notes", "Main"]);
-assert.equal(menuFocus(), "Main");
+assert.deepEqual(menuRows(0).slice(0, 3), ["Pitch & notes", "Main", "Grains"]);
+assert.equal(menuFocus(), "Grains");
 globalListeners.pointerdown({ target: editor });
 assert.equal(menuLayer(), undefined, "A click elsewhere closes the menu");
 assert.equal(globalListeners.scroll, undefined);

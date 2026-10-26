@@ -4,7 +4,8 @@ use super::{MAX_GRAINS, fast, filter};
 use crate::{
     Stereo,
     grain_groups::{Envelope, FilterType, GROUPS, Group, Settings},
-    preset, tables,
+    preset,
+    tables::{self, Random},
 };
 
 /// A filtering grain's coefficients follow its envelope this often, in samples.
@@ -85,6 +86,9 @@ struct Grain {
     grouped: bool,
     group: u8,
     shape: f32,
+    /// This grain's own random cutoff offset and level.
+    cutoff_offset: f32,
+    level: f32,
     /// False when the group's filter stayed open across the whole grain's
     /// envelope as it started, so the grain skips filtering.
     filtering: bool,
@@ -103,6 +107,9 @@ pub(crate) struct Runtime {
     /// Smooth weighted round robin: each deal adds every share, the richest
     /// group takes the grain and pays the total back.
     credit: [f32; GROUPS],
+    /// The groups' own randomness, apart from the engine's, so that grains
+    /// outside them keep the engine's random sequence.
+    pub(crate) random: Random,
 }
 impl Runtime {
     pub(crate) fn new(sample_rate: u32) -> Self {
@@ -115,6 +122,7 @@ impl Runtime {
             }),
             grains: [Grain::default(); MAX_GRAINS],
             credit: [0.0; GROUPS],
+            random: Random(0x6772_6169_6e5f_6772),
         }
     }
     pub(crate) fn reset(&mut self) {
@@ -144,12 +152,24 @@ impl Runtime {
         Some(chosen)
     }
     pub(crate) fn start(&mut self, slot: usize, index: usize, group: &Group, duration: u32) {
+        let cutoff_offset = if group.random_cutoff > 0.0 {
+            self.random.bipolar() * group.random_cutoff
+        } else {
+            0.0
+        };
+        let level = if group.random_level > 0.0 {
+            1.0 - self.random.unit() * group.random_level
+        } else {
+            1.0
+        };
         self.grains[slot] = Grain {
             grouped: true,
             group: index as u8,
             shape: group.shape.clamp(0.0, 1.0),
+            cutoff_offset,
+            level,
             filtering: !(group.filter_type == FilterType::LowPass
-                && group.cutoff >= 0.999
+                && group.cutoff + cutoff_offset >= 0.999
                 && group.env_depth >= 0.0),
             amp: Segments::new(&group.amp, duration),
             filter_env: Segments::new(&group.filter_env, duration),
@@ -183,11 +203,12 @@ impl Runtime {
         let index = grain.group as usize;
         let group = &settings.groups[index];
         let age_f = age as f32;
-        let gain = grain.amp.shaped(age_f, grain.shape) * group.level;
+        let gain = grain.amp.shaped(age_f, grain.shape) * group.level * grain.level;
         if !grain.filtering {
             return Some((index, frame.map(|x| x * gain)));
         }
-        let cutoff = group.cutoff + group.env_depth * grain.filter_env.swept(age_f);
+        let cutoff =
+            group.cutoff + grain.cutoff_offset + group.env_depth * grain.filter_env.swept(age_f);
         let open = group.filter_type == FilterType::LowPass && cutoff >= 0.999;
         if age.is_multiple_of(REFRESH) {
             let step = cutoff.clamp(0.0, 1.0) * CUTOFF_STEPS as f32;
@@ -285,6 +306,34 @@ mod tests {
         );
         assert!((long.swept(500.0) - 1.0).abs() < 1e-3);
         assert!(long.swept(250.0) > 0.49 && long.swept(250.0) < 0.51);
+    }
+
+    #[test]
+    fn each_grain_draws_its_own_cutoff_and_level() {
+        let mut runtime = Runtime::new(48_000);
+        let group = Group {
+            random_cutoff: 0.3,
+            random_level: 0.5,
+            ..Group::default()
+        };
+        let (mut offsets, mut levels) = (Vec::new(), Vec::new());
+        for slot in 0..MAX_GRAINS {
+            runtime.start(slot, 0, &group, 1_000);
+            offsets.push(runtime.grains[slot].cutoff_offset);
+            levels.push(runtime.grains[slot].level);
+        }
+        assert!(offsets.iter().all(|o| o.abs() <= 0.3));
+        assert!(offsets.iter().any(|&o| o < -0.15) && offsets.iter().any(|&o| o > 0.15));
+        assert!(levels.iter().all(|&l| (0.5..=1.0).contains(&l)));
+        assert!(levels.iter().any(|&l| l < 0.6) && levels.iter().any(|&l| l > 0.9));
+        // A random cutoff below the top keeps a filter open at 100% working.
+        assert!(runtime.grains.iter().any(|g| g.filtering));
+        runtime.start(0, 0, &Group::default(), 1_000);
+        assert_eq!(
+            (runtime.grains[0].cutoff_offset, runtime.grains[0].level),
+            (0.0, 1.0)
+        );
+        assert!(!runtime.grains[0].filtering);
     }
 
     #[test]

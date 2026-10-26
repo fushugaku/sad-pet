@@ -294,7 +294,11 @@ fn synth_controls_append_after_every_other_host_parameter() {
     assert_eq!(later[groups], "grain_advanced");
     // Then each group's output: chain, send and bus.
     assert_eq!(later[groups + 1 + 4 * 16], "grain_group1_chain");
-    assert_eq!(later.len(), groups + 1 + 4 * 16 + 4 * 3);
+    // Then grain feedback and each group's placement, randomness and scale.
+    let play = groups + 1 + 4 * 16 + 4 * 3;
+    assert_eq!(later[play], "grain_feedback");
+    assert_eq!(later[play + 1], "grain_group1_size");
+    assert_eq!(later.len(), play + 1 + 4 * 8);
 }
 
 #[test]

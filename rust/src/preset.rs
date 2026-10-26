@@ -634,6 +634,8 @@ pub struct Params {
     pub sample_tune_cents: f32,
     pub midi_pitchbend_range: f32,
     pub min_grains: f32,
+    /// How much of the grains' own output they read again.
+    pub grain_feedback: f32,
     pub bpm: f32,
     pub loop_one_bar: bool,
     pub sample_root_note: f32,
@@ -692,6 +694,7 @@ impl Default for Params {
             sample_tune_cents: 0.0,
             midi_pitchbend_range: 2.0,
             min_grains: 0.0,
+            grain_feedback: 0.0,
             bpm: 120.0,
             loop_one_bar: false,
             sample_root_note: 60.0,
@@ -746,7 +749,8 @@ impl Params {
             adsr_decay,
             adsr_sustain,
             adsr_release,
-            master_volume
+            master_volume,
+            grain_feedback
         );
         finite_clamp(&mut self.filter_env_depth, -1.0, 1.0, 0.0);
         finite_clamp(&mut self.filter2_env_depth, -1.0, 1.0, 0.0);

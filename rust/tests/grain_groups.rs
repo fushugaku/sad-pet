@@ -255,7 +255,16 @@ fn grain_group_controls_append_after_the_macros() {
             "grain_group1_bus"
         ]
     );
-    assert_eq!(ids.len(), 4 * 3);
+    assert_eq!(
+        ids[4 * 3..4 * 3 + 3],
+        [
+            "grain_feedback",
+            "grain_group1_size",
+            "grain_group1_position"
+        ]
+    );
+    assert_eq!(ids[4 * 3 + 8], "grain_group1_scale");
+    assert_eq!(ids.len(), 4 * 3 + 1 + 4 * 8);
     let mut preset = Preset::default();
     let changes = parameters::parse(&serde_json::json!({
         "grain_advanced": 1.0,
@@ -355,4 +364,92 @@ fn an_lfo_reaches_a_groups_filter() {
     let still = rms(&render(&mut closed(0.0), 48_000)[12_000..]);
     let swept = rms(&render(&mut closed(0.8), 48_000)[12_000..]);
     assert!(swept > still * 2.0, "{still} → {swept}");
+}
+
+#[test]
+fn a_groups_spread_and_random_level_vary_its_grains() {
+    let pans = |engine_spread: f32, spread: f32| {
+        let mut e = engine(|p| {
+            advanced(p);
+            p.params.stereo_spread = engine_spread;
+            p.grain_groups
+                .groups
+                .iter_mut()
+                .for_each(|g| g.spread = spread);
+        });
+        let mut pans = Vec::new();
+        for _ in 0..24 {
+            render(&mut e, 1_000);
+            pans.extend(e.grain_views().iter().map(|g| g.pan));
+        }
+        let low = pans.iter().copied().fold(1.0, f32::min);
+        let high = pans.iter().copied().fold(0.0, f32::max);
+        high - low
+    };
+    assert_eq!(
+        pans(0.0, 0.0),
+        0.0,
+        "the engine's SPREAD at 0 keeps grains centered"
+    );
+    assert!(pans(0.0, 1.0) > 0.5, "a group widens its own grains");
+    assert_eq!(pans(0.7, -1.0), 0.0, "and narrows them");
+
+    // Over a long stretch, random levels between 0 and 1 leave the grains'
+    // power at a third: √⅓ of the level.
+    let long = |e: &mut Engine| rms(&render(e, 480_000)[120_000..]);
+    let open = long(&mut engine(advanced));
+    let varied = long(&mut engine(|p| {
+        advanced(p);
+        p.grain_groups
+            .groups
+            .iter_mut()
+            .for_each(|g| g.random_level = 1.0);
+    }));
+    assert!((varied / open - 0.577).abs() < 0.08, "{varied} vs {open}");
+}
+
+#[test]
+fn feedback_brings_the_grains_back_and_stays_bounded() {
+    let feeding = |amount: f32| engine(move |p| p.params.grain_feedback = amount);
+    let mut dry = feeding(0.0);
+    let mut fed = feeding(1.0);
+    let (a, b) = (render(&mut dry, 48_000), render(&mut fed, 48_000));
+    assert!(error(&a, &b) > 0.01, "the grains hear their own output");
+    let mut long = render(&mut fed, 48_000 * 10);
+    long.extend(b);
+    assert!(
+        long.iter()
+            .flatten()
+            .all(|x| x.is_finite() && x.abs() < 2.0)
+    );
+    assert!(rms(&long[long.len() - 48_000..]) > 0.01);
+    // Switched off, the overdubs go unheard at once and the engine plays as
+    // one that never fed back.
+    render(&mut dry, 48_000 * 10);
+    fed.preset.params.grain_feedback = 0.0;
+    render(&mut dry, 64);
+    render(&mut fed, 64);
+    let (a, b) = (render(&mut dry, 24_000), render(&mut fed, 24_000));
+    assert!(error(&a, &b) < 1e-6, "{}", error(&a, &b));
+}
+
+#[test]
+fn a_synth_feeds_its_grains_back_into_its_history() {
+    let synth = |amount: f32| {
+        let mut preset = Kind::Synth.preset().unwrap();
+        preset.synth.as_mut().unwrap().granular = true;
+        preset.params.grains = 0.8;
+        preset.params.grain_feedback = amount;
+        let mut e = Engine::new(48_000, Arc::new(SampleBuffer::demo(48_000)), preset);
+        e.set_playing(true);
+        e.midi(sad_pet::midi::Message::NoteOn {
+            channel: 0,
+            note: 60,
+            velocity: 100,
+        });
+        render(&mut e, 48_000 * 2)
+    };
+    let (dry, fed) = (synth(0.0), synth(0.9));
+    assert!(error(&dry, &fed) > 0.01);
+    assert!(fed.iter().flatten().all(|x| x.is_finite() && x.abs() < 2.0));
 }

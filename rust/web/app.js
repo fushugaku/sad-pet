@@ -518,6 +518,7 @@ const grainSchema = [
     },
   ],
   ["stereo_spread", "SPREAD", percent],
+  ["grain_feedback", "FEEDBACK", percent],
 ];
 // Advanced grain mode (rust/src/grain_groups.rs): grains are dealt to four
 // groups, each with its own pitch, level, filter and two envelopes that run
@@ -535,6 +536,24 @@ const GRAIN_FILTER_TYPES = [
   ["band_pass", "Band pass"],
   ["high_pass", "High pass"],
 ];
+// What a group's pitch offsets snap to, in host order.
+const GRAIN_SCALES = [
+  ["off", "Free"],
+  ["chromatic", "Chromatic"],
+  ["major", "Major"],
+  ["minor", "Minor"],
+  ["dorian", "Dorian"],
+  ["mixolydian", "Mixolydian"],
+  ["harmonic_minor", "Harmonic minor"],
+  ["pentatonic_major", "Pentatonic major"],
+  ["pentatonic_minor", "Pentatonic minor"],
+  ["whole_tone", "Whole tone"],
+  ["fifths", "Fifths"],
+  ["octaves", "Octaves"],
+  ["chord", "Held chord"],
+];
+// The group menus and their choices, by field.
+const GRAIN_GROUP_CHOICES = { filter_type: GRAIN_FILTER_TYPES, scale: GRAIN_SCALES };
 const grainGroupDefault = () => ({
   share: 1,
   level: 1,
@@ -549,6 +568,15 @@ const grainGroupDefault = () => ({
   filter_env: { attack: 0, decay: 0.5, sustain: 0, release: 0 },
   // Kept in the timbre, sent nowhere.
   output: { chain: 1, send: 0, bus: 0 },
+  // Placement and randomness move from the engine's; no scale.
+  size: 0,
+  position: 0,
+  reverse: 0,
+  spread: 0,
+  random_pitch: 0,
+  random_cutoff: 0,
+  random_level: 0,
+  scale: "off",
 });
 // Reading leaves the preset alone: the host omits untouched groups.
 const grainGroupSettings = () =>
@@ -578,10 +606,8 @@ function editGrainGroup(index, field, value) {
   else group[a] = value;
   const key = `grain_group${index + 1}_${field}`;
   controls.get(key)?.();
-  scheduleParameter(
-    key,
-    field === "filter_type" ? GRAIN_FILTER_TYPES.findIndex(([id]) => id === value) : value,
-  );
+  const choices = GRAIN_GROUP_CHOICES[field];
+  scheduleParameter(key, choices ? choices.findIndex(([id]) => id === value) : value);
   syncGrainGroupOutputs();
   drawGrainGroupCurve();
 }
@@ -597,25 +623,39 @@ function buildGrainGroups() {
       return `${Math.round(v * 100)}% ${ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`}`;
     },
     pitch = (v) => `${v > 0 ? "+" : ""}${Number.isInteger(v) ? v : v.toFixed(1)} st`;
+  const spread = (v) => `±${percent(v)}`,
+    factor = (v) => `×${Number((2 ** v).toFixed(2))}`;
+  // [title, menu field, knobs: [field, label, format, min, max, name]]
   const cards = [
-    ["Grain", [
+    ["Grain", null, [
       ["share", "SHARE", (v) => (v > 0 ? percent(v) : "Off")],
       ["level", "LEVEL", percent],
-      ["pitch", "PITCH", pitch, -24, 24],
+      ["random_level", "RND LEVEL", (v) => (v > 0 ? `−${percent(v)}` : "0%"), 0, 1, "random level"],
       ["shape", "SHAPE", percent],
     ]],
-    ["Filter", [
-      ["cutoff", "CUTOFF", cutoff],
-      ["resonance", "RESO", percent],
-      ["env_depth", "ENV DEPTH", signedPercent, -1, 1],
+    ["Pitch", "scale", [
+      ["pitch", "PITCH", pitch, -24, 24],
+      ["random_pitch", "RND PITCH", (v) => `±${v.toFixed(1)} st`, 0, 24, "random pitch"],
     ]],
-    ["Amp envelope", [
+    ["Playback", null, [
+      ["size", "SIZE", factor, -3, 2],
+      ["position", "POSITION", signedPercent, -1, 1],
+      ["reverse", "REVERSE", percent],
+      ["spread", "SPREAD", signedPercent, -1, 1],
+    ]],
+    ["Filter", "filter_type", [
+      ["cutoff", "CUTOFF", cutoff, 0, 1, "filter cutoff"],
+      ["resonance", "RESO", percent, 0, 1, "filter reso"],
+      ["env_depth", "ENV DEPTH", signedPercent, -1, 1, "filter env depth"],
+      ["random_cutoff", "RND CUTOFF", spread, 0, 1, "random cutoff"],
+    ]],
+    ["Amp envelope", null, [
       ["amp_attack", "ATTACK", time],
       ["amp_decay", "DECAY", time],
       ["amp_sustain", "SUSTAIN", percent],
       ["amp_release", "RELEASE", time],
     ]],
-    ["Filter envelope", [
+    ["Filter envelope", null, [
       ["filter_attack", "ATTACK", time],
       ["filter_decay", "DECAY", time],
       ["filter_sustain", "SUSTAIN", percent],
@@ -648,23 +688,25 @@ function buildGrainGroups() {
     page.setAttribute("role", "tabpanel");
     page.setAttribute("aria-labelledby", tab.id);
     page.style.setProperty("--group-color", `rgb(${GRAIN_GROUP_COLORS[index]})`);
-    for (const [title, knobs] of cards) {
+    for (const [title, menu, knobs] of cards) {
       const card = document.createElement("div");
       card.className = "grain-group-card";
       card.innerHTML = `<div class="grain-group-card-title"><h3>${title}</h3></div><div class="grain-group-knobs"></div>`;
-      if (title === "Filter") {
+      if (menu) {
         const select = document.createElement("select");
-        select.className = "grain-filter-type";
-        select.setAttribute("aria-label", `Group ${name} filter type`);
-        for (const [id, label] of GRAIN_FILTER_TYPES) select.append(option(id, label));
-        select.onchange = () => editGrainGroup(index, "filter_type", select.value);
+        select.className = "grain-group-menu";
+        select.dataset.field = menu;
+        select.setAttribute("aria-label", `Group ${name} ${menu === "scale" ? "scale" : "filter type"}`);
+        for (const [id, label] of GRAIN_GROUP_CHOICES[menu]) select.append(option(id, label));
+        select.onchange = () => editGrainGroup(index, menu, select.value);
         card.firstElementChild.append(select);
       }
-      for (const [field, label, format, min = 0, max = 1] of knobs) {
+      const envelope = /envelope/.test(title) ? `${title.toLowerCase()} ` : "";
+      for (const [field, label, format, min = 0, max = 1, aria] of knobs) {
         const reset = grainGroupField(grainGroupDefault(), field);
         createKnob(
           [`grain_group${index + 1}_${field}`, label, format, min, max,
-            `Group ${name} ${title === "Grain" ? "" : `${title.toLowerCase()} `}${label.toLowerCase()}`],
+            `Group ${name} ${aria ?? `${envelope}${label.toLowerCase()}`}`],
           card.lastElementChild,
           {
             get: () => grainGroupField(grainGroupSettings().groups[index], field),
@@ -790,7 +832,8 @@ function syncGrainGroups() {
   }
   [...$("grain-group-pages").children].forEach((page, index) => {
     page.hidden = index !== grainGroupPage;
-    page.querySelector(".grain-filter-type").value = settings.groups[index].filter_type;
+    for (const select of page.querySelectorAll(".grain-group-menu"))
+      select.value = grainGroupField(settings.groups[index], select.dataset.field);
   });
   syncGrainGroupOutputs();
   drawGrainGroupCurve();
@@ -3367,9 +3410,11 @@ function destinationGroups() {
     ));
   const groups = [
     { choices: [DESTINATIONS[0]] },
-    { label: "Main", choices: DESTINATIONS.slice(1).filter(([id]) => !id.startsWith("filter")) },
-    { label: "Grain groups", choices: [
-      ...take("Grain groups"),
+    { label: "Main", choices: DESTINATIONS.slice(1).filter(([id]) => !id.startsWith("filter") && !GRAIN_DESTINATIONS.has(id)) },
+    // The grain engine's controls, then each advanced mode group's.
+    { label: "Grains", choices: [
+      ...DESTINATIONS.filter(([id]) => GRAIN_DESTINATIONS.has(id)),
+      ...take("Grains"),
       ...pull(/^Grain group [A-D]$/).map(([label, choices]) => section(label, choices)),
     ] },
     { label: "Filters", choices: filters },
@@ -3629,16 +3674,16 @@ function modulationGroups() {
     const drum = /^drum(\d+)_/.exec(spec.id);
     const synthOsc = /^synth_osc(\d+)_/.exec(spec.id);
     const grainGroup = /^grain_group(\d)_/.exec(spec.id);
-    if (grainGroup || spec.id === "grain_advanced") {
+    if (grainGroup || ["grain_advanced", "grain_feedback"].includes(spec.id)) {
       const label = grainGroup
         ? `Grain group ${GRAIN_GROUP_NAMES[grainGroup[1] - 1]}`
-        : "Grain groups";
+        : "Grains";
       if (!extra.has(label)) extra.set(label, []);
       extra.get(label).push([
         { control: { index: spec.index } },
         grainGroup
           ? spec.name.replace(/^Grain group ([A-D]) (.)/, (_, g, c) => `Group ${g} · ${c.toUpperCase()}`)
-          : "Advanced mode",
+          : spec.id === "grain_advanced" ? "Advanced mode" : "Feedback",
       ]);
       continue;
     }
@@ -3767,6 +3812,17 @@ const WAVEFORMS = [
   ["smooth_random", "Smooth random"],
   ["envelope", "Env. follower"],
 ];
+// Route destinations the grain engine owns, listed under Grains.
+const GRAIN_DESTINATIONS = new Set([
+  "position",
+  "pitch",
+  "grain_size",
+  "grains",
+  "grain_shape",
+  "detune",
+  "cloud",
+  "stereo_spread",
+]);
 const DESTINATIONS = [
   ["none", "Unassigned"],
   ["position", "Position"],

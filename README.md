@@ -202,11 +202,29 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   to the bus chosen beside it (**+ New bus** adds one), and **CHAIN** is the
   share that stays in the timbre, so at 0% the group plays only through its
   bus. A group sends its grains before Dry/Wet and the added filters,
-  following the notes' VCA; its tab shows where it goes. Every control is a
-  host parameter (`grain_advanced`, `grain_group1_share` …
+  following the notes' VCA; its tab shows where it goes. **Playback** moves a
+  group from the engine: **SIZE** makes its grains up to eight times shorter
+  or four times longer (never longer than the engine's longest), **POSITION**
+  shifts where they start, **REVERSE** is the chance a grain plays the other
+  way and **SPREAD** widens or narrows them around the engine's. Each grain
+  also draws its own **RND LEVEL** (up to that much quieter), **RND CUTOFF**
+  (either way) and **RND PITCH** (up to ±24 semitones). **Pitch** snaps a
+  group's offset from its note — PITCH, DETUNE and RND PITCH together — to a
+  scale built on that note (Chromatic, Major, Minor, Dorian, Mixolydian,
+  Harmonic minor, both Pentatonics, Whole tone, Fifths, Octaves) or to the
+  **Held chord**, so random grains stay in key. Every control is a host
+  parameter (`grain_advanced`, `grain_group1_share` …
   `grain_group4_filter_release`, then `grain_group1_chain`, `_send`, `_bus` for
-  each group) that LFOs, envelopes, the matrix, macros and sequencer lanes can
-  reach; a bus is chosen, not modulated.
+  each group, then `grain_feedback` and each group's `_size` … `_scale`) that
+  LFOs, envelopes, the matrix, macros and sequencer lanes can reach; a bus is
+  chosen, not modulated.
+- **Grain feedback.** **FEEDBACK** in the Grain engine of any timbre lets the
+  grains read their own output again, softly limited and without DC, for
+  textures that keep evolving, as Clouds and Beads do. Drum, Synth and Bus
+  timbres write it into the history the grains read; a file's grains read it
+  from an overdub ring written where they are centered (about five seconds,
+  longer files share it). Freeze stops the overdubs and keeps what is there;
+  at 0% the overdubs go unheard at once and the ring clears.
 - **Vocal timbres** sing a score, in the manner of VOCALOID5 (browser, DAW
   plug-ins and app). Draw notes in the piano roll, double-click one to type its
   lyric (Tab moves on) or use **Lyrics…** for a whole line, in **Japanese**

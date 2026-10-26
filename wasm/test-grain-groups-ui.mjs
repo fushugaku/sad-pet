@@ -46,11 +46,12 @@ class Element {
     this.children.push(...nodes);
   }
   querySelector(selector) {
-    if (this.parts?.has(selector)) return this.parts.get(selector);
-    const all = (node) => [node, ...node.children.flatMap(all)];
-    return all(this).slice(1).find((n) => selector === ".grain-filter-type" && n.tagName === "SELECT");
+    return this.parts?.get(selector);
   }
   querySelectorAll(selector) {
+    const all = (node) => [node, ...node.children.flatMap(all)];
+    if (selector === ".grain-group-menu")
+      return all(this).filter((n) => n.className === "grain-group-menu");
     return selector === ".dial" ? this.children.map((knob) => knob.dial) : [];
   }
   closest(selector) {
@@ -117,8 +118,12 @@ const context = vm.createContext({
 const run = (code) => vm.runInContext(code, context);
 run(`${source}\nbuildGrainGroups(); syncGrainGroups();`);
 
-// Four groups of fifteen knobs each, and CHAIN and SEND, under the host IDs.
-assert.equal(knobs.size, 4 * 17);
+// Four groups of twenty-two knobs each, and CHAIN and SEND, under the host IDs.
+assert.equal(knobs.size, 4 * 24);
+assert.equal(knobs.get("grain_group3_random_pitch").aria, "Group C random pitch");
+assert.equal(knobs.get("grain_group1_size").format(-2), "×0.25");
+assert.equal(knobs.get("grain_group1_size").format(1), "×2");
+assert.equal(knobs.get("grain_group1_random_cutoff").format(0.3), "±30%");
 assert.equal(knobs.get("grain_group2_send").aria, "Group B bus send");
 assert.ok(knobs.has("grain_group1_share") && knobs.has("grain_group4_filter_release"));
 assert.equal(knobs.get("grain_group2_pitch").aria, "Group B pitch");
@@ -160,11 +165,29 @@ assert.equal(knobs.get("grain_group1_amp_decay").format(0.6), "60% 1.2s");
 
 // The filter type goes by its host index.
 const pages = $("grain-group-pages").children;
-const select = pages[0].querySelector(".grain-filter-type");
+const menu = (page, field) =>
+  pages[page].querySelectorAll(".grain-group-menu").find((s) => s.dataset.field === field);
+const select = menu(0, "filter_type");
 select.value = "high_pass";
 select.onchange();
 assert.deepEqual(calls.splice(0), [["parameter", "grain_group1_filter_type", 2]]);
 assert.equal(groups().groups[0].filter_type, "high_pass");
+// The scale goes by its host index too, and placement knobs write the group.
+const scale = menu(0, "scale");
+assert.equal(scale.value, "off");
+scale.value = "chord";
+scale.onchange();
+knobs.get("grain_group1_size").binding.set(-1);
+knobs.get("grain_group1_spread").binding.set(0.5);
+assert.deepEqual(calls.splice(0), [
+  ["parameter", "grain_group1_scale", 12],
+  ["parameter", "grain_group1_size", -1],
+  ["parameter", "grain_group1_spread", 0.5],
+]);
+assert.deepEqual(
+  [groups().groups[0].scale, groups().groups[0].size, groups().groups[0].spread],
+  ["chord", -1, 0.5],
+);
 
 // Tabs show each group's share, Off at zero, and pick the page.
 knobs.get("grain_group3_share").binding.set(0);
