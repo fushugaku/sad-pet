@@ -162,28 +162,31 @@ impl Tracker {
         self.turn[1][band] -= shift;
         self.angle[band] = angle;
     }
+    /// Stage by stage, a band per vector lane.
     #[inline]
     fn next(&mut self, input: Stereo) {
         let x = input[0] + input[1];
+        let [pr, pi] = &self.pole;
+        let (mut re, mut im) = ([x; BANDS], [0.0; BANDS]);
+        let (mut a, mut b) = ([0.0; BANDS], [0.0; BANDS]);
+        for [z_re, z_im] in &mut self.z {
+            for i in 0..BANDS {
+                (a[i], b[i]) = (z_re[i], z_im[i]);
+                re[i] = pr[i] * a[i] - pi[i] * b[i] + re[i] * self.gain[i];
+                im[i] = pi[i] * a[i] + pr[i] * b[i] + im[i] * self.gain[i];
+                z_re[i] = super::fast::flush(re[i]);
+                z_im[i] = super::fast::flush(im[i]);
+            }
+        }
         let [t0, t1] = &mut self.turn;
         let [p0, p1] = &mut self.power;
         for i in 0..BANDS {
-            let (pr, pi) = (self.pole[0][i], self.pole[1][i]);
-            let (mut re, mut im) = (x, 0.0);
-            let (mut a, mut b) = (0.0, 0.0);
-            for [z_re, z_im] in &mut self.z {
-                (a, b) = (z_re[i], z_im[i]);
-                re = pr * a - pi * b + re * self.gain[i];
-                im = pi * a + pr * b + im * self.gain[i];
-                z_re[i] = super::fast::flush(re);
-                z_im[i] = super::fast::flush(im);
-            }
             // The angle from the last stage's previous output, turned on by
             // the pole, to this one.
-            let (a, b) = (pr * a - pi * b, pi * a + pr * b);
-            let turn = atan2(im * a - re * b, re * a + im * b);
+            let (a, b) = (pr[i] * a[i] - pi[i] * b[i], pi[i] * a[i] + pr[i] * b[i]);
+            let turn = atan2(im[i] * a - re[i] * b, re[i] * a + im[i] * b);
             let k = self.smoothing[i];
-            p0[i] = super::fast::flush(p0[i] + (re * re + im * im - p0[i]) * k);
+            p0[i] = super::fast::flush(p0[i] + (re[i] * re[i] + im[i] * im[i] - p0[i]) * k);
             p1[i] = super::fast::flush(p1[i] + (p0[i] - p1[i]) * k);
             let k = if p1[i] > Self::SILENT { k } else { 0.0 };
             t0[i] += (turn - t0[i]) * k;
@@ -711,11 +714,19 @@ impl Resynth {
     /// Move carriers toward the frequencies their bands hear now.
     fn retune(&mut self, sample: &SampleBuffer) {
         let follow = self.settings.tracking == Tracking::Follow;
-        let tracked = self.tracker.frequencies(self.sample_rate, follow);
-        if tracked == self.tracked {
+        let found = self.tracker.frequencies(self.sample_rate, follow);
+        // A band's carriers move once it has moved half a cent: smaller
+        // steps would only make Radias carriers recompile their controls.
+        let moved: [bool; BANDS] =
+            std::array::from_fn(|band| (found[band] / self.tracked[band] - 1.0).abs() > 3e-4);
+        if !moved.contains(&true) {
             return;
         }
-        self.tracked = tracked;
+        for band in 0..BANDS {
+            if moved[band] {
+                self.tracked[band] = found[band];
+            }
+        }
         let shifts = shifts(&self.frequencies, &self.tracked, self.settings.track);
         self.lead(&shifts);
         let rate = (self.sample_rate * self.oversample as f32) as f64;
@@ -724,6 +735,9 @@ impl Resynth {
                 continue;
             }
             for (band, carrier) in layer.carriers.iter_mut().enumerate() {
+                if !moved[band] {
+                    continue;
+                }
                 carrier.tune(
                     self.frequencies[band] as f64 * shifts[band] * layer.ratio,
                     rate,
