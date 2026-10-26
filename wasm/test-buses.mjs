@@ -201,6 +201,65 @@ const reloaded = new Core(module, 8000);
 reloaded.call("sad_load", utility.call("sad_pack"));
 reloaded.call("sad_scene_load", mixed.call("sad_scene_pack"));
 assert.deepEqual(reloaded.request("/api/timbres").timbres[0].entries[0], [0, 0, 0, 1], "Scenes keep the entries");
+// A bus feeds other buses, wherever they are listed: a bus renders after
+// every bus that feeds it. A send that would close a loop is refused. Each
+// case is a fresh scene with Bus 1–3, rendered from the start.
+const chainScene = (route) => {
+  const scene = new Core(module, 8000);
+  scene.call("sad_load", utility.call("sad_pack"));
+  const ids = [1, 2, 3].map(
+    () => scene.request("/api/timbres/add", { kind: "bus" }).timbres.filter((t) => t.kind === "bus").at(-1).id,
+  );
+  scene.request("/api/timbres/select", { id: 0 });
+  route(scene, ids);
+  scene.request("/api/timbres/select", { id: 0 });
+  scene.request("/api/transport", { playing: true, midi_gate: false });
+  let peak = 0;
+  for (let i = 0; i < 60; i++)
+    for (const x of scene.process(128)) {
+      assert.ok(Number.isFinite(x));
+      if (i >= 40) peak = Math.max(peak, Math.abs(x));
+    }
+  return { scene, ids, peak };
+};
+const to = (bus) => Array.from({ length: 8 }, (_, i) => Number(i === bus - 1));
+const busOf = (scene, id) => scene.request("/api/timbres").timbres.find((t) => t.id === id);
+const straight = chainScene(() => {}).peak;
+assert.ok(straight > 0.01, `The timbre plays (${straight})`);
+// Bus 2 → Bus 1 → Master, though Bus 1 is listed first.
+const intoBus2 = (scene, ids) => {
+  scene.request("/api/timbres/update", { id: 0, gain: 0, sends: to(2) });
+  scene.request("/api/timbres/update", { id: ids[1], gain: 0, sends: to(1) });
+};
+const chain = chainScene(intoBus2);
+assert.ok(near(chain.peak, straight), `Bus 2 passes the timbre on to Bus 1 (${chain.peak} vs ${straight})`);
+assert.equal(busOf(chain.scene, chain.ids[1]).feeds, 0b1, "Bus 2 is noted as feeding Bus 1");
+// Bus 1 cannot send back to Bus 2, nor through Bus 3 once Bus 3 feeds Bus 2.
+let refused = chain.scene.request("/api/timbres/update", { id: chain.ids[0], sends: to(2) });
+assert.equal(refused.timbres.find((t) => t.id === chain.ids[0]).sends[1], 0, "A loop was accepted");
+chain.scene.request("/api/timbres/update", { id: chain.ids[2], sends: to(2) });
+refused = chain.scene.request("/api/timbres/update", { id: chain.ids[0], sends: to(3) });
+assert.equal(refused.timbres.find((t) => t.id === chain.ids[0]).sends[2], 0, "A loop through Bus 3 was accepted");
+const keptChain = new Core(module, 8000);
+keptChain.call("sad_load", utility.call("sad_pack"));
+keptChain.call("sad_scene_load", chain.scene.call("sad_scene_pack"));
+assert.deepEqual(busOf(keptChain, chain.ids[1]).sends, to(1), "Scenes keep the sends between buses");
+// A bus's section sends to another bus too.
+const sectionChain = chainScene((scene, ids) => {
+  scene.request("/api/timbres/update", { id: 0, gain: 0, sends: to(2) });
+  scene.request("/api/timbres/update", { id: ids[1], gain: 0 });
+  scene.request("/api/timbres/select", { id: ids[1] });
+  scene.request("/api/parameters", { tap_post_fx_bus: 1, tap_post_fx_send: 1 });
+});
+assert.ok(near(sectionChain.peak, straight), `Bus 2's Post-filter FX feeds Bus 1 (${sectionChain.peak} vs ${straight})`);
+// A loop made anyway (Bus 1's section back into Bus 2) never feeds back.
+const looped = chainScene((scene, ids) => {
+  intoBus2(scene, ids);
+  scene.request("/api/timbres/update", { id: ids[0], gain: 1 });
+  scene.request("/api/timbres/select", { id: ids[0] });
+  scene.request("/api/parameters", { tap_post_fx_bus: 2, tap_post_fx_send: 1 });
+});
+assert.ok(looped.peak < straight * 2.5, `The loop fed back (${looped.peak} vs ${straight})`);
 console.log(
-  "Buses: Master always present, sends reach Master through Bus 1, roles survive preset loads, scenes keep routing, sections send to a bus, timbres enter Master after its filters.",
+  "Buses: Master always present, sends reach Master through Bus 1, roles survive preset loads, scenes keep routing, sections send to a bus, timbres enter Master after its filters, buses feed buses without loops.",
 );

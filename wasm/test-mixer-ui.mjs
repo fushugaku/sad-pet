@@ -120,10 +120,11 @@ const names = () => strips().map((s) => s.children[0].textContent);
 let context0 = scene(9);
 mixer.sync(context0);
 assert.equal(root.hidden, false);
-assert.deepEqual(names(), ["granular 0", "synth 1", "Reverb", "sampler 4"], "Master shows timbres and buses, not Pad FX");
+assert.deepEqual(names(), ["granular 0", "synth 1", "sampler 4", "Reverb"], "Master shows timbres, then buses, not Pad FX");
 const level = (strip) => strip.querySelector(".mixer-level").textContent;
 assert.equal(level(strips()[1]), "-6.0 dB", "Master strips show the level into Master");
-assert.equal(strips()[2].querySelector(".mixer-buttons").children.length, 1, "a bus strip has Mute only");
+assert.equal(strips()[3].querySelector(".mixer-buttons").children.length, 1, "a bus strip has Mute only");
+assert.ok(strips()[3].classes.has("bus") && !strips()[2].classes.has("bus"));
 assert.equal(knobs.get("mixer_0_1_0").shown, "100%", "timbres enter at the input by default");
 assert.equal(knobs.get("mixer_0_1_3").shown, "0%");
 
@@ -160,7 +161,7 @@ assert.equal(repaints, 4, "an unchanged poll repaints nothing");
 // Bus 2: timbres only; the fader is the send and a silent send is dimmed.
 const context2 = scene(2);
 mixer.sync(context2);
-assert.deepEqual(names(), ["granular 0", "synth 1", "sampler 4"], "a bus shows the timbres, not buses");
+assert.deepEqual(names(), ["granular 0", "synth 1", "sampler 4"], "a bus shows the timbres, not itself");
 assert.equal(level(strips()[0]), "-6.0 dB", "the send to Bus 2");
 assert.equal(level(strips()[1]), "−∞ dB");
 assert.ok(strips()[1].classes.has("idle"), "a timbre that does not send is dimmed");
@@ -173,6 +174,36 @@ knobs.get("mixer_2_0_2").binding.set(1);
 const entries = changes.at(-1).data.entries;
 assert.deepEqual(entries[2], [1, 0, 1, 0], "Bus 2 entries change at index 2");
 assert.deepEqual(entries[0], [1, 0, 0, 0]);
+
+// A bus also takes the other buses' sends, but not from one it feeds:
+// Reverb (Bus 2) sends to Echo (Bus 3), which feeds Room (Bus 1).
+const chained = (active) => ({
+  active,
+  timbres: [
+    timbre(0, "granular"),
+    timbre(2, "bus", { bus: 2, name: "Reverb", sends: [0, 0, 0.5, 0, 0, 0, 0, 0] }),
+    timbre(5, "bus", { bus: 3, name: "Echo", feeds: 0b1 }),
+    timbre(6, "bus", { bus: 1, name: "Room" }),
+    timbre(9, "master"),
+  ],
+});
+mixer.sync(chained(5));
+assert.deepEqual(names(), ["granular 0", "Reverb", "Room"], "Echo shows the timbres and the other buses");
+assert.equal(level(strips()[1]), "-6.0 dB", "Reverb's send to Echo");
+assert.ok(strips()[2].classes.has("loop"), "Room is fed by Echo and cannot send back");
+assert.equal(fader(strips()[2]).disabled, true);
+assert.ok(!strips()[1].classes.has("loop"));
+fader(strips()[1]).value = "1";
+fader(strips()[1]).oninput();
+assert.deepEqual(changes.at(-1).data, { id: 2, sends: [0, 0, 1, 0, 0, 0, 0, 0] });
+mixer.sync(chained(6));
+assert.deepEqual(strips().map((s) => s.classes.has("loop")), [false, false, false], "Room feeds no bus, so any may feed it");
+mixer.sync(chained(2));
+assert.deepEqual(
+  strips().map((s) => s.classes.has("loop")),
+  [false, true, true],
+  "Reverb feeds Echo, and Room through Echo: neither can send back",
+);
 
 // Other timbres show no mixer; the name opens the timbre.
 strips()[0].children[0].onclick();

@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 
 const app = await readFile(new URL("../rust/web/app.js", import.meta.url), "utf8");
+const panels = await readFile(new URL("../rust/web/panels.js", import.meta.url), "utf8");
 const source = app.slice(app.indexOf("const TAP_STAGES = ["), app.indexOf("function bindGranularToggle("));
 
 class Element {
@@ -52,6 +53,7 @@ class Element {
 const sections = new Map();
 const calls = [];
 const context = vm.createContext({
+  window: {},
   preset: { params: {} },
   state: null,
   document: {
@@ -74,6 +76,7 @@ const context = vm.createContext({
   scheduleParameter: (id, value) => calls.push(["parameter", id, value]),
   changeTimbre: (path, data) => calls.push(["timbre", path, data]),
 });
+vm.runInContext(panels, context);
 vm.runInContext(`${source}\nbuildTaps();`, context);
 const view = (stage) => vm.runInContext(`tapViews.get(${JSON.stringify(stage)})`, context);
 const sync = () => vm.runInContext("syncTaps()", context);
@@ -139,8 +142,47 @@ assert.deepEqual(plain(calls.splice(0)), [
   ["timbre", "/api/timbres/select", { id: 0 }],
 ]);
 
-// Buses take no sends: only CHAIN shows there.
+// A Bus sends to the other buses, but not to one that feeds it, directly
+// (Echo, by its sections) or through another bus (Room, by its send to Echo).
+const sends = (to) => Array.from({ length: 8 }, (_, i) => Number(i === to - 1));
+context.state.timbres.timbres = [
+  { id: 0, kind: "granular", name: "Granular 1" },
+  { id: 3, kind: "bus", bus: 1, name: "Bus 1", sends: sends(0) },
+  { id: 5, kind: "bus", bus: 2, name: "Echo", feeds: 0b1 },
+  { id: 6, kind: "bus", bus: 3, name: "Room", sends: sends(2) },
+  { id: 7, kind: "bus", bus: 4, name: "Free" },
+  { id: 9, kind: "master", name: "Master" },
+];
 context.state.timbres.active = 3;
+context.preset.taps.grains = { chain: 0, send: 0.5, bus: 0 };
+sync();
+assert.ok(!grains.row.classes.has("no-sends"), "a bus sends");
+assert.deepEqual(
+  grains.select.children.map((o) => [o.textContent, !!o.disabled]),
+  [["No bus", false], ["Echo (feeds this bus)", true], ["Room (feeds this bus)", true], ["Free", false], ["+ New bus", false]],
+);
+run('editTap("grains", "bus", 4)');
+assert.deepEqual(plain(calls.splice(0)), [["parameter", "tap_grains_bus", 4]]);
+assert.ok(grains.row.classes.has("sending"));
+// A loop made anyway stays chosen and is named, and sends nothing.
+context.preset.taps.grains.bus = 2;
+sync();
+assert.ok(!grains.row.classes.has("sending"));
+assert.equal(grains.select.children[1].disabled, false, "the chosen bus stays selectable");
+assert.equal(grains.row.querySelector(".tap-status").textContent, "Echo feeds this bus: nothing is sent");
+context.preset.taps.grains.bus = 1;
+sync();
+assert.equal(grains.select.children[1].textContent, "Bus 1 (this bus)");
+assert.equal(grains.row.querySelector(".tap-status").textContent, "A bus cannot send to itself");
+// Another bus rebuilds the menu from its own place in the graph.
+context.state.timbres.active = 5;
+sync();
+assert.deepEqual(
+  grains.select.children.map((o) => [o.textContent, !!o.disabled]),
+  [["No bus", false], ["Bus 1", false], ["Room (feeds this bus)", true], ["Free", false], ["+ New bus", false]],
+);
+// Master sends nowhere: only CHAIN shows there.
+context.state.timbres.active = 9;
 sync();
 assert.ok(grains.row.classes.has("no-sends"));
 assert.equal(grains.row.querySelector(".tap-status").textContent, "Skipped: its input goes on");

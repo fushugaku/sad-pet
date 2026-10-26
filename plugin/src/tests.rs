@@ -1395,6 +1395,111 @@ fn timbres_reach_master_directly_or_through_a_bus_without_audio_allocation() {
 }
 
 #[test]
+fn a_bus_feeds_a_bus_listed_before_it_and_refuses_a_loop() {
+    let mut control = Controller::new_plugin(false);
+    let ids: Vec<Value> = (0..3)
+        .map(|_| {
+            let context = call(&mut control, "/api/timbres/add", json!({"kind":"bus"}));
+            context["timbres"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .rfind(|t| t["kind"] == "bus")
+                .unwrap()["id"]
+                .clone()
+        })
+        .collect();
+    call(&mut control, "/api/timbres/select", json!({"id":0}));
+    call(
+        &mut control,
+        "/api/transport",
+        json!({"playing":true,"midi_gate":false}),
+    );
+    let send = |to: usize| {
+        let mut sends = [0.0; 8];
+        sends[to - 1] = 1.0;
+        sends
+    };
+    // A fresh engine per case renders the same timbre from its start.
+    let level = |control: &mut Controller| {
+        let mut audio = control.prepare(8000);
+        let values = control.values();
+        let mut peak = 0.0_f32;
+        no_heap(|| {
+            for block in 0..8 {
+                audio.begin(&values, 120., None, true, 1024);
+                let block_peak = render(&mut audio, 1024, [0.; 2]);
+                if block >= 4 {
+                    peak = peak.max(block_peak);
+                }
+            }
+        });
+        peak
+    };
+    let direct = level(&mut control);
+    assert!(direct > 0.01, "the timbre plays ({direct})");
+    // The timbre reaches Master only through Bus 2, then Bus 1, which is
+    // listed first: Bus 1 must render after Bus 2.
+    call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":0,"gain":0,"sends":send(2)}),
+    );
+    call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":ids[1],"gain":0,"sends":send(1)}),
+    );
+    let context = call(&mut control, "/api/timbres", Value::Null);
+    assert_eq!(context["timbres"][2]["feeds"], 0b1, "Bus 2 feeds Bus 1");
+    let through = level(&mut control);
+    assert!(
+        (through - direct).abs() < direct * 0.01,
+        "Bus 2 passes the timbre to Bus 1 ({through} vs {direct})"
+    );
+    // Bus 1 cannot send back to Bus 2, nor through Bus 3.
+    let context = call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":ids[0],"sends":send(2)}),
+    );
+    assert_eq!(
+        context["timbres"][1]["sends"][1], 0.0,
+        "a loop was accepted"
+    );
+    call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":ids[2],"sends":send(2)}),
+    );
+    let context = call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":ids[0],"sends":send(3)}),
+    );
+    assert_eq!(
+        context["timbres"][1]["sends"][2], 0.0,
+        "a loop through Bus 3 was accepted"
+    );
+    // A loop made anyway by a section of Bus 1 never feeds back.
+    call(&mut control, "/api/timbres/select", json!({"id":ids[0]}));
+    let mut preset = call(&mut control, "/api/preset", Value::Null);
+    preset["taps"]["post_fx"] = json!({"chain":1.0,"send":1.0,"bus":2});
+    call(&mut control, "/api/preset", preset);
+    let looped = level(&mut control);
+    assert!(
+        looped.is_finite() && looped < direct * 2.5,
+        "the loop fed back ({looped} vs {direct})"
+    );
+    // Scenes keep sends between buses.
+    let saved = control.save().unwrap();
+    let mut restored = Controller::new_plugin(false);
+    restored.restore(&saved).unwrap();
+    let context = call(&mut restored, "/api/timbres", Value::Null);
+    assert_eq!(context["timbres"][2]["sends"][0], 1.0);
+}
+
+#[test]
 fn a_timbre_entering_a_bus_after_its_filters_skips_them() {
     let mut control = Controller::new_plugin(false);
     let context = call(&mut control, "/api/timbres/add", json!({"kind":"bus"}));

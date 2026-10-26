@@ -228,6 +228,9 @@ pub struct Audio {
     sends: sad_pet::timbres::SendGains,
     /// Set on the root part while any Bus exists, so sends are summed.
     buses: bool,
+    /// On the root part: the order buses render in, so that a bus renders
+    /// after every bus that feeds it.
+    bus_order: sad_pet::timbres::BusOrder,
     engine: Box<Engine>,
     commands: Consumer<Update>,
     retired: Producer<Update>,
@@ -593,6 +596,7 @@ impl Controller {
             },
             sends: Default::default(),
             buses: false,
+            bus_order: Default::default(),
             engine,
             commands: receiver,
             retired: retire,
@@ -1430,15 +1434,30 @@ impl Audio {
         }
         self.buses = open != 0;
         self.audible = !self.meta.mix.muted && (!solo || self.meta.mix.solo);
-        // Buses take no sends: a bus's sections only pass on down its chain.
-        let routes = |kind: sad_pet::timbres::Kind| if kind.routing() { 0 } else { open };
-        self.engine.set_open_buses(routes(self.meta.kind));
+        // A bus feeds only the buses that render after it: no loop can form.
+        let parts = || std::iter::successors(self.parts.as_deref(), |p| p.next.as_deref());
+        let feeds =
+            sad_pet::timbres::bus_feeds(parts().map(|p| (&p.audio.meta, &p.audio.engine.preset)));
+        self.bus_order = sad_pet::timbres::BusOrder::new(
+            parts()
+                .filter(|p| p.audio.meta.kind == sad_pet::timbres::Kind::Bus)
+                .map(|p| p.audio.meta.bus),
+            &feeds,
+        );
+        let routes = |meta: &sad_pet::timbres::Meta| match meta.kind {
+            sad_pet::timbres::Kind::Bus if meta.bus > 0 => {
+                u16::from(feeds[meta.bus as usize - 1]) << 1
+            }
+            kind if kind.routing() => 0,
+            _ => open,
+        };
+        self.engine.set_open_buses(routes(&self.meta));
         let mut part = self.parts.as_mut();
         while let Some(p) = part {
             let mix = p.audio.meta.mix;
             // Solo selects timbres; buses and Master keep processing them.
             p.audio.audible = !mix.muted && (p.audio.meta.kind.routing() || !solo || mix.solo);
-            p.audio.engine.set_open_buses(routes(p.audio.meta.kind));
+            p.audio.engine.set_open_buses(routes(&p.audio.meta));
             part = p.next.as_mut();
         }
     }

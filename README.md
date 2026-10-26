@@ -163,16 +163,23 @@ files move instruments between the web version and the native app and plug-ins.
   Synth engine**. Presets of the other timbres serialize unchanged.
 - **Bus and Master** (browser and DAW plug-ins). Every scene has one **Master**
   tab that sums all timbres and buses into the output; add up to eight **Bus**
-  timbres with **+ Timbre**. Each timbre's mixer row sets its level into Master
-  and a send level to every bus. A bus or Master runs the granular engine on its
+  timbres with **+ Timbre**. The tabs list the instruments on one row and the
+  buses and Master on the row under it. Each timbre's mixer row sets its level
+  into Master and a send level to every bus. A bus sends to the other buses as
+  well, by its mixer row and its section outputs, but never in a loop: a send
+  that would let a bus feed itself, directly or through other buses, is refused
+  and shows disabled. A bus renders after every bus that feeds it, so a chain of
+  buses adds no delay. A bus or Master runs the granular engine on its
   input, with switchable **Granular** (125 ms–8 s history) and **Filters**, plus
   Resynth, all effect racks, added filters, LFOs and the matrix. Everything starts
   switched off, and then the input passes through bit for bit at almost no CPU:
   no grains, no history writes and no filters run. Solo selects timbres while
   buses and Master keep processing them; MIDI never reaches a bus. Scenes saved
   before buses existed open with a default Master and render unchanged.
-- **Bus and Master mixer.** A bus page opens with a strip for every timbre, and
-  Master's for every timbre and bus. The fader is the send to that bus (on
+- **Bus and Master mixer.** A bus page opens with a strip for every timbre and
+  every other bus, and Master's for every timbre and bus; bus strips follow the
+  timbres. A bus that the page's bus already feeds shows disabled, since its send
+  back would loop. The fader is the send to that bus (on
   Master, the level into it), and four knobs set where the signal enters the
   chain and how much: **IN** runs the whole chain, **PRE**, **FILT** and
   **POST** enter at Pre-filter FX, Filters or Post-filter FX and skip the
@@ -191,7 +198,9 @@ files move instruments between the web version and the native app and plug-ins.
   level, Mute and Solo, and crossfade when the bus changes; a send to a removed
   bus goes nowhere. **+ New bus** in the bus menu adds a Bus timbre without
   leaving the section. The section heading shows **Skipped** or **→ Bus** while
-  either is set. Buses, Master and Pad FX have CHAIN only. A Synth's grain
+  either is set. A bus's sections send to the other buses, and its bus menu
+  shows the buses that already feed it disabled; Master and Pad FX have CHAIN
+  only. A Synth's grain
   engine follows its filters, and so does its Grain engine output. Sample tune
   transposes a Synth's or drum kit's voices themselves, so their tuning holds
   at Grain engine CHAIN 0% as with Granular off. The knobs

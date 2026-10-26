@@ -135,15 +135,23 @@ pub(super) struct Render<'a> {
 impl Render<'_> {
     fn source(self, input: &[Stereo], buses: bool) {
         let n = input.len();
-        let chunk = &mut *self.chunk;
         match self.vocal {
             Some(vocal) => {
-                for frame in &mut chunk.input[..n] {
+                for frame in &mut self.chunk.input[..n] {
                     *frame = [vocal.next(); 2];
                 }
             }
-            None => chunk.input[..n].copy_from_slice(input),
+            None => self.chunk.input[..n].copy_from_slice(input),
         }
+        self.render(n, buses);
+    }
+    /// A Bus or Master renders the input already in its chunk, and a Bus
+    /// sends on to the buses after it (`sends`).
+    fn routing(self, n: usize, sends: bool) {
+        self.render(n, sends);
+    }
+    fn render(self, n: usize, buses: bool) {
+        let chunk = &mut *self.chunk;
         // A bus slot is written while its send gain is non-zero or ramping;
         // a send that is zero and stays zero is skipped, as before. So is a
         // bus that no section of this part is routed to.
@@ -163,20 +171,27 @@ impl Render<'_> {
                 }
             }
         }
-        if taps == 0 {
+        if taps == 0 && !chunk.entering {
             self.engine
                 .process_input_block(&chunk.input[..n], &mut chunk.out[..n]);
         } else {
-            // Section sends change from frame to frame: take each frame's
-            // as it renders, the way the block renders anyway.
-            for ((input, out), sends) in chunk.input[..n]
+            // Section sends and later entries change from frame to frame:
+            // take each frame's as it renders, the way the block renders
+            // anyway.
+            for (((input, out), sends), entered) in chunk.input[..n]
                 .iter()
                 .zip(&mut chunk.out[..n])
                 .zip(&mut chunk.sends[..n])
+                .zip(&chunk.entered[..n])
             {
+                if chunk.entering {
+                    self.engine.enter(*entered);
+                }
                 *out = self.engine.process_input_frame(*input);
-                self.sends
-                    .send_taps(self.audible, self.engine.bus_sends(), sends);
+                if taps != 0 {
+                    self.sends
+                        .send_taps(self.audible, self.engine.bus_sends(), sends);
+                }
             }
         }
         let target = if self.audible { self.mix.gain } else { 0. };
@@ -185,28 +200,6 @@ impl Render<'_> {
             if chunk.mask != 0 {
                 self.sends.send(&self.mix.sends, self.audible, *out, sends);
             }
-            *out = out.map(|v| v * *self.gain);
-        }
-    }
-    fn routing(self, n: usize) {
-        let chunk = &mut *self.chunk;
-        if chunk.entering {
-            for ((input, out), entered) in chunk.input[..n]
-                .iter()
-                .zip(&mut chunk.out[..n])
-                .zip(&chunk.entered[..n])
-            {
-                self.engine.enter(*entered);
-                *out = self.engine.process_input_frame(*input);
-            }
-        } else {
-            self.engine
-                .process_input_block(&chunk.input[..n], &mut chunk.out[..n]);
-        }
-        chunk.mask = 0;
-        let target = if self.audible { self.mix.gain } else { 0. };
-        for out in &mut chunk.out[..n] {
-            *self.gain += (target - *self.gain) * 0.004;
             *out = out.map(|v| v * *self.gain);
         }
     }
@@ -338,14 +331,24 @@ impl Controller {
         }
     }
     pub(super) fn context(&self) -> Context {
-        Context {
+        let mut context = Context {
             name: self.preset.name.clone(),
             active: self.active,
             revision: self.scene_revision,
             timbres: std::iter::once(self.meta.clone())
                 .chain(self.parts.iter().map(|p| p.meta.clone()))
                 .collect(),
-        }
+        };
+        context.note_feeds(&self.bus_feeds());
+        context
+    }
+    /// Which buses each Bus feeds, loops left out.
+    fn bus_feeds(&self) -> sad_pet::timbres::Feeds {
+        sad_pet::timbres::bus_feeds(
+            std::iter::once(self)
+                .chain(&self.parts)
+                .map(|p| (&p.meta, &p.preset)),
+        )
     }
     pub(super) fn prepare_parts(&mut self, rate: u32) -> Option<Box<PartAudio>> {
         let mut head = None;
@@ -493,6 +496,10 @@ impl Controller {
                     }
                     meta = serde_json::from_value(value).map_err(|e| e.to_string())?;
                     meta.sanitize();
+                    // A bus refuses a send that would feed back into itself.
+                    if meta.kind == Kind::Bus {
+                        sad_pet::timbres::refuse_loops(&mut meta.mix, &self.bus_feeds(), meta.bus);
+                    }
                     self.enqueue(Command::PartMix(id, meta.mix))?;
                     if id == 0 {
                         self.meta = meta;
@@ -627,7 +634,8 @@ impl Audio {
     }
     /// A Bus or Master renders the input already in its chunk buffer.
     pub(super) fn source_routing_chunk(&mut self, n: usize) {
-        self.render().routing(n);
+        let sends = self.meta.kind == Kind::Bus;
+        self.render().routing(n, sends);
     }
     fn render(&mut self) -> Render<'_> {
         Render {
@@ -640,9 +648,10 @@ impl Audio {
             mix: &self.meta.mix,
         }
     }
-    /// Timbres sum into Master and send to buses; buses then feed Master,
-    /// whose engine renders the output. With no buses and Master at its
-    /// defaults, the output is the plain sum of the timbres as before.
+    /// Timbres sum into Master and send to buses; buses then feed the buses
+    /// after them and Master, whose engine renders the output. With no buses
+    /// and Master at its defaults, the output is the plain sum of the
+    /// timbres as before.
     pub(super) fn process_frame(&mut self, input: Stereo) -> Stereo {
         let mut output = [[0.; 2]];
         self.process_block(&[input], &mut output);
@@ -740,58 +749,66 @@ impl Audio {
             part = p.next.as_mut();
         }
         if buses {
-            // Every bus reads only the sends, so the buses render together;
-            // they then sum in list order.
-            let Audio { parts, pool, .. } = self;
-            let pool = pool.as_deref_mut().filter(|_| parallel);
-            let mut jobs = Jobs::default();
-            let mut part = parts.as_mut();
-            while let Some(p) = part {
-                if p.audio.meta.kind == Kind::Bus && p.audio.meta.bus > 0 {
-                    let bus = p.audio.meta.bus as usize - 1;
-                    let chunk = &mut *p.audio.chunk;
-                    for (input, sends) in chunk.input[..n].iter_mut().zip(&sends[..n]) {
-                        *input = sends[bus];
+            // The buses of one wave read only sends that are complete, so they
+            // render together; they then sum in order, and send to the buses
+            // of later waves.
+            let order = self.bus_order;
+            for wave in order.waves() {
+                let in_wave = |bus: u8| wave.contains(&bus);
+                let Audio { parts, pool, .. } = self;
+                let pool = pool.as_deref_mut().filter(|_| parallel);
+                let mut jobs = Jobs::default();
+                let mut part = parts.as_mut();
+                while let Some(p) = part {
+                    if p.audio.meta.kind == Kind::Bus && in_wave(p.audio.meta.bus) {
+                        let bus = p.audio.meta.bus as usize - 1;
+                        let chunk = &mut *p.audio.chunk;
+                        for (input, sends) in chunk.input[..n].iter_mut().zip(&sends[..n]) {
+                            *input = sends[bus];
+                        }
+                        chunk.entering = split & 1 << (bus + 1) != 0;
+                        if chunk.entering {
+                            chunk.entered[..n].copy_from_slice(&entered[bus + 1][..n]);
+                        }
+                        let job = workers::Job::Routing {
+                            audio: &mut p.audio,
+                            n,
+                        };
+                        if pool.is_none() || !jobs.push(job) {
+                            p.audio.source_routing_chunk(n);
+                        }
                     }
-                    chunk.entering = split & 1 << (bus + 1) != 0;
-                    if chunk.entering {
-                        chunk.entered[..n].copy_from_slice(&entered[bus + 1][..n]);
-                    }
-                    let job = workers::Job::Routing {
-                        audio: &mut p.audio,
-                        n,
-                    };
-                    if pool.is_none() || !jobs.push(job) {
-                        p.audio.source_routing_chunk(n);
+                    part = p.next.as_mut();
+                }
+                match pool {
+                    Some(pool) if jobs.len() > 1 => pool.run(jobs.as_slice(), || {}),
+                    // SAFETY: nothing else borrows the parts behind these jobs.
+                    _ => jobs
+                        .as_slice()
+                        .iter()
+                        .flatten()
+                        .for_each(|job| unsafe { job.run() }),
+                }
+                for &bus in wave {
+                    let mut part = self.parts.as_mut();
+                    while let Some(p) = part {
+                        if p.audio.meta.kind == Kind::Bus && p.audio.meta.bus == bus {
+                            let audio = &mut p.audio;
+                            split |= add_part(
+                                &audio.chunk,
+                                &mut audio.sends,
+                                &audio.meta.mix,
+                                true,
+                                false,
+                                output,
+                                &mut sends[..n],
+                                &mut entered,
+                            );
+                            break;
+                        }
+                        part = p.next.as_mut();
                     }
                 }
-                part = p.next.as_mut();
-            }
-            match pool {
-                Some(pool) if jobs.len() > 1 => pool.run(jobs.as_slice(), || {}),
-                // SAFETY: nothing else borrows the parts behind these jobs.
-                _ => jobs
-                    .as_slice()
-                    .iter()
-                    .flatten()
-                    .for_each(|job| unsafe { job.run() }),
-            }
-            let mut part = self.parts.as_mut();
-            while let Some(p) = part {
-                if p.audio.meta.kind == Kind::Bus && p.audio.meta.bus > 0 {
-                    let audio = &mut p.audio;
-                    split |= add_part(
-                        &audio.chunk,
-                        &mut audio.sends,
-                        &audio.meta.mix,
-                        false,
-                        false,
-                        output,
-                        &mut [],
-                        &mut entered,
-                    );
-                }
-                part = p.next.as_mut();
             }
         }
         let mut part = self.parts.as_mut();

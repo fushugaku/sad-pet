@@ -803,7 +803,7 @@ function syncGrainGroupTabs() {
   [...$("grain-group-tabs").children].forEach((tab, index) => {
     const share = groups[index].share,
       { send, bus } = groups[index].output ?? grainGroupDefault().output,
-      target = send > 0 && buses.find((b) => b.bus === bus);
+      target = send > 0 && buses.find((b) => b.bus === bus && !b.loop);
     setAttr(tab, "aria-selected", String(index === grainGroupPage));
     tab.tabIndex = index === grainGroupPage ? 0 : -1;
     tab.classList.toggle("is-off", share <= 0);
@@ -821,13 +821,13 @@ function syncGrainGroupOutputs() {
     const { row, select, send } = view,
       out = { ...grainGroupDefault().output, ...groups[index].output },
       target = buses.find((b) => b.bus === out.bus),
-      sending = !!target && out.send > 0,
+      sending = !!target && !target.loop && out.send > 0,
       muted = out.chain === 0;
     row.classList.toggle("no-sends", !sends);
     row.classList.toggle("sending", sending);
     row.classList.toggle("skipped", muted);
     row.style.setProperty("--chain", String(out.chain));
-    const signature = JSON.stringify([out.bus, buses.map((b) => [b.bus, b.name])]);
+    const signature = JSON.stringify([out.bus, buses.map((b) => [b.bus, b.name, b.self, b.loop])]);
     if (signature !== view.signature) {
       view.signature = signature;
       fillBusMenu(select, out.bus, buses);
@@ -842,6 +842,8 @@ function syncGrainGroupOutputs() {
         ? muted ? "Muted: the group plays nowhere" : ""
         : out.bus && !target
           ? `${name} is gone: nothing is sent`
+          : target?.loop
+            ? target.self ? "A bus cannot send to itself" : `${name} feeds this bus: nothing is sent`
           : muted
             ? sending ? `${name} only: the timbre leaves this group out` : "Muted: the group plays nowhere"
             : target && !sending ? `Turn SEND up to feed ${name}` : "",
@@ -2030,24 +2032,37 @@ function addTapBus(stage, choose = (bus) => editTap(stage, "bus", bus)) {
   changeTimbre("/api/timbres/add", { kind: "bus" });
   changeTimbre("/api/timbres/select", { id: home });
 }
-/** Whether this timbre may send, and the buses it can send to. */
+/** Whether this timbre may send, and the buses it can send to. A Bus sends
+ * to the other buses: it is `self` among them, and one that already feeds it
+ * is marked `loop`. */
 function sendTargets() {
   const context = state?.timbres,
     part = context?.timbres?.find((t) => t.id === context.active),
-    // Buses, Master and Pad FX take no sends, so they do not send either.
-    sends = !!part && !["bus", "master", "pad_fx"].includes(part.kind),
+    // Master and Pad FX send nowhere.
+    sends = !!part && !["master", "pad_fx"].includes(part.kind),
     buses = sends
       ? context.timbres
           .filter((t) => t.kind === "bus" && t.bus > 0)
           .sort((a, b) => a.bus - b.bus)
+          .map((b) => ({
+            ...b,
+            self: b.id === part.id,
+            loop: part.kind === "bus" && window.SadBuses.closesLoop(context.timbres, part.bus, b.bus),
+          }))
       : [];
   return { sends, buses };
 }
-/** A bus menu: none, each bus, a removed one still chosen, then + New bus. */
+/** A bus menu: none, each bus, a removed one still chosen, then + New bus.
+ * A bus that would close a loop shows but cannot be chosen. */
 function fillBusMenu(select, chosen, buses) {
+  const others = buses.filter((b) => !b.self || b.bus === chosen);
   select.replaceChildren(
-    option(0, buses.length ? "No bus" : "No bus yet"),
-    ...buses.map((b) => option(b.bus, b.name)),
+    option(0, others.length ? "No bus" : "No bus yet"),
+    ...others.map((b) => {
+      const item = option(b.bus, b.self ? `${b.name} (this bus)` : b.loop ? `${b.name} (feeds this bus)` : b.name);
+      item.disabled = b.loop && b.bus !== chosen;
+      return item;
+    }),
   );
   // A removed bus stays chosen until another is, and receives nothing.
   if (chosen && !buses.some((b) => b.bus === chosen))
@@ -2062,7 +2077,7 @@ function syncTaps() {
     const { section, row, select, send, chips, label } = view;
     const tap = tapSettings(stage),
       target = buses.find((b) => b.bus === tap.bus),
-      sending = !!target && tap.send > 0,
+      sending = !!target && !target.loop && tap.send > 0,
       skipped = tap.chain === 0;
     // A Synth's grains read its filtered voices.
     setText(
@@ -2074,7 +2089,7 @@ function syncTaps() {
     row.classList.toggle("skipped", skipped);
     row.style.setProperty("--chain", String(tap.chain));
     section.classList.toggle("tap-skipped", skipped);
-    const signature = JSON.stringify([tap.bus, buses.map((b) => [b.bus, b.name])]);
+    const signature = JSON.stringify([tap.bus, buses.map((b) => [b.bus, b.name, b.self, b.loop])]);
     if (signature !== view.signature) {
       view.signature = signature;
       fillBusMenu(select, tap.bus, buses);
@@ -2089,6 +2104,8 @@ function syncTaps() {
         ? skipped ? "Skipped: its input goes on" : ""
         : tap.bus && !target
           ? `${name} is gone: nothing is sent`
+          : target?.loop
+            ? target.self ? "A bus cannot send to itself" : `${name} feeds this bus: nothing is sent`
           : skipped
             ? sending ? `${name} only: the chain skips this section` : "Skipped: its input goes on"
             : target && !sending ? `Turn SEND up to feed ${name}` : "",
@@ -2194,7 +2211,7 @@ function syncBus() {
     : vocal ? "the sung voice, then Master"
     : kit ? "every pad, then Master"
     : padFx ? `one pad's voices, back into ${owner?.name || "its Sampler"}`
-    : "sends from timbres, then Master";
+    : "sends from timbres and buses, then other buses and Master";
   $("bus-engine").setAttribute("aria-label", bus.master ? "Master" : vocal ? "Voice chain"
     : kit ? "Kit chain" : padFx ? "Pad FX chain" : "Bus");
   $("bus-back").hidden = !owner;

@@ -757,7 +757,7 @@ dependencies = [
 [[package]]
 name = "radias-synth-application"
 version = "0.1.0"
-source = "git+https://github.com/fushugaku/Rustias.git?rev=91cae3f57a868a80d32a2e6ebb113938efd65025#91cae3f57a868a80d32a2e6ebb113938efd65025"
+source = "git+https://github.com/fushugaku/Rustias.git?rev=6fc15cebd79264a99c467b2ea55615da3afae7ae#6fc15cebd79264a99c467b2ea55615da3afae7ae"
 dependencies = [
  "radias-synth-domain",
 ]
@@ -765,7 +765,7 @@ dependencies = [
 [[package]]
 name = "radias-synth-domain"
 version = "0.1.0"
-source = "git+https://github.com/fushugaku/Rustias.git?rev=91cae3f57a868a80d32a2e6ebb113938efd65025#91cae3f57a868a80d32a2e6ebb113938efd65025"
+source = "git+https://github.com/fushugaku/Rustias.git?rev=6fc15cebd79264a99c467b2ea55615da3afae7ae#6fc15cebd79264a99c467b2ea55615da3afae7ae"
 dependencies = [
  "libm",
 ]

@@ -4564,12 +4564,37 @@ input[type="range"] {
   border-bottom: 1px solid var(--line);
   padding-bottom: 8px;
 }
+/* Instruments on one row, Buses and Master on the row under it. */
+.timbre-lists {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.timbre-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.timbre-list-name {
+  flex: 0 0 76px;
+  font-size: 9px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
 .timbre-tabs {
   display: flex;
   gap: 4px;
   overflow-x: auto;
   flex: 1;
   min-width: 0;
+}
+.timbre-tabs.bus-tabs button {
+  min-height: 32px;
+  font-size: 12px;
 }
 .timbre-tabs button {
   white-space: nowrap;
@@ -4633,6 +4658,10 @@ input[type="range"] {
 }
 .timbre-send input[type="range"] {
   width: 100px;
+}
+/* A bus that already feeds this one: a send back would loop. */
+.timbre-send.loop {
+  opacity: 0.45;
 }
 /* Instrument presets: a browser under the timbre's row, by category. */
 .timbre-mix {
@@ -4962,6 +4991,17 @@ input[type="range"] {
 .mixer-strip.idle .mixer-name,
 .mixer-strip.idle .mixer-kind,
 .mixer-strip.idle .mixer-entries {
+  opacity: 0.45;
+}
+/* The buses follow the instruments, set apart. */
+.mixer-strip:not(.bus) + .mixer-strip.bus {
+  margin-left: 10px;
+}
+.mixer-strip.bus {
+  border-style: dashed;
+}
+/* A bus that this one feeds cannot send back. */
+.mixer-strip.loop {
   opacity: 0.45;
 }
 .filter-grid.bypassed {
@@ -5398,8 +5438,11 @@ input[type="range"] {
   .timbre-top {
     flex-wrap: wrap;
   }
-  .timbre-tabs {
+  .timbre-lists {
     flex-basis: 100%;
+  }
+  .timbre-list-name {
+    flex-basis: 56px;
   }
   .timbre-add {
     width: 100%;
