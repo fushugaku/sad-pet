@@ -70,16 +70,66 @@ fn attack_preserves_transients_and_release_recovers_gradually_in_real_time() {
             fx.process([1.0; 2]);
         }
         let compressed = fx.process([0.01; 2])[0];
-        for _ in 1..rate / 100 {
+        // The detector holds the last peak for 2.5-5 ms before releasing.
+        for _ in 1..rate / 400 {
+            fx.process([0.01; 2]);
+        }
+        let held = fx.process([0.01; 2])[0];
+        for _ in 1..rate * 3 / 200 - rate / 400 {
             fx.process([0.01; 2]);
         }
         let recovered = fx.process([0.01; 2])[0];
         assert!(compressed < 0.002);
-        assert!((0.0045..0.0049).contains(&recovered));
+        assert!(held < 0.002);
+        // 18 dB × e^(-1..-1.25) after the hold and 10-12.5 ms of release.
+        assert!((0.0046..0.0056).contains(&recovered), "{recovered}");
         for _ in 0..rate / 5 {
             fx.process([0.01; 2]);
         }
         assert!((fx.process([0.01; 2])[0] - 0.01).abs() < 1e-6);
+    }
+}
+
+#[test]
+fn fast_settings_follow_the_envelope_rather_than_each_half_wave() {
+    for rate in [44100, 48000, 96000] {
+        // Fastest attack and release, 8:1 from -30 dBFS.
+        let mut s = slot(1);
+        s.settings.compressor_threshold = 0.5;
+        s.settings.compressor_ratio = 8.0_f32.ln() / 20.0_f32.ln();
+        let mut fx = ColorProcessor::new(rate);
+        fx.configure(s);
+        let tone = |i: usize| 0.5 * (std::f32::consts::TAU * 220.0 * i as f32 / rate as f32).sin();
+        let mut reduction = Vec::new();
+        for i in 0..rate as usize / 5 {
+            fx.process([tone(i); 2]);
+            reduction.push(fx.gain_reduction_db());
+        }
+        let steady = &reduction[reduction.len() - rate as usize / 50..];
+        let (low, high) = steady
+            .iter()
+            .fold((f32::MAX, 0.0_f32), |(l, h), &r| (l.min(r), h.max(r)));
+        // -6 dBFS peaks are 24 dB over: 21 dB at 8:1, without the ripple of
+        // a release between peaks.
+        assert!(high - low < 0.01, "{rate} Hz: {low}..{high} dB");
+        assert!((high - 21.0).abs() < 0.05, "{rate} Hz: {high} dB");
+
+        // Steady noise, like a dense reverb tail: no sudden gain dips.
+        fx.clear();
+        let mut random = 0x2545_f491_u32;
+        let mut previous = Vec::new();
+        let window = rate as usize / 1000;
+        let mut dips = 0;
+        for i in 0..rate as usize {
+            random = random.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let x = (random >> 8) as f32 / (1 << 23) as f32 - 1.0;
+            fx.process([x * 0.3, -x * 0.3]);
+            previous.push(fx.gain_reduction_db());
+            if i > rate as usize / 20 && previous[i] - previous[i - window] > 1.0 {
+                dips += 1;
+            }
+        }
+        assert_eq!(dips, 0, "{rate} Hz");
     }
 }
 
