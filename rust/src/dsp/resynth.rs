@@ -8,7 +8,9 @@ use super::{
 };
 use crate::{
     Stereo,
-    resynth::{BANDS, CrossInput, Input, MAX_OSCILLATORS, Mode, Model, Settings, Waveform},
+    resynth::{
+        BANDS, CrossInput, Input, MAX_OSCILLATORS, Mode, Model, Settings, Tracking, Waveform,
+    },
 };
 use radias_synth_application::primary::PrimaryProgram;
 use radias_synth_domain::{
@@ -77,6 +79,153 @@ impl Bands {
         }
         out
     }
+}
+
+/// Frequency heard in each analysis band. Three complex one-pole resonators
+/// per band, each as wide as the band but 60 to 150 Hz either side, keep only
+/// positive frequencies, so their output turns once per cycle of what the
+/// band hears; in series they fall 18 dB per octave, so a strong fundamental
+/// below does not win over the band's own partials. The mean turn per sample
+/// is the frequency of the strongest partial there; over whole periods of a
+/// pitched input it is a harmonic of that pitch, also where several partials
+/// share the band. Turns are taken from the resonators' own turn, so the fast
+/// turns where the output passes near zero wrap both ways alike instead of
+/// only downward. Two one-pole stages average the turn and the power over a
+/// few periods of the band, between 3 and 6 ms.
+///
+/// Fixed resonators stay on the band centres, and ring there once the band
+/// falls silent, so a dying band drifts toward its centre. Following ones
+/// move onto the partial they found within about 20 ms and ring on at its
+/// pitch, so the band keeps it.
+#[derive(Clone, Copy)]
+struct Tracker {
+    /// Band centre turn per sample, radians.
+    home: [f32; BANDS],
+    /// The resonators' turn per sample now, radians.
+    angle: [f32; BANDS],
+    radius: [f32; BANDS],
+    /// The resonators' pole, radius * e^(i angle).
+    pole: [[f32; BANDS]; 2],
+    /// 1 - radius, so a partial at the pole reads its own amplitude.
+    gain: [f32; BANDS],
+    smoothing: [f32; BANDS],
+    /// How far following resonators move toward the found partial per update.
+    step: f32,
+    /// [stage][re, im][band]
+    z: [[[f32; BANDS]; 2]; 3],
+    /// [stage][band], radians per host sample from `angle`.
+    turn: [[f32; BANDS]; 2],
+    /// [stage][band]
+    power: [[f32; BANDS]; 2],
+}
+
+impl Tracker {
+    /// Host frames between frequency updates.
+    const UPDATE: u64 = 32;
+    /// A band below this summed power is silent and keeps its frequency.
+    const SILENT: f32 = 1e-12;
+    fn new(frequencies: &[f32; BANDS], sr: f32) -> Self {
+        let home = frequencies.map(|hz| 2.0 * PI * hz / sr);
+        let hz = 2.0 * PI / sr;
+        let radius = home.map(|w| (-(w / 5.6).clamp(60.0 * hz, 150.0 * hz)).exp());
+        let mut tracker = Self {
+            home,
+            angle: home,
+            radius,
+            pole: [[0.0; BANDS]; 2],
+            gain: radius.map(|r| 1.0 - r),
+            smoothing: frequencies.map(|f| 1.0 - (-(f / 4.0).clamp(25.0, 50.0) * hz).exp()),
+            step: 1.0 - (-(Self::UPDATE as f32) / (0.02 * sr)).exp(),
+            z: [[[0.0; BANDS]; 2]; 3],
+            turn: [[0.0; BANDS]; 2],
+            power: [[0.0; BANDS]; 2],
+        };
+        tracker.clear();
+        tracker
+    }
+    /// Silence every band and put its resonators back on its centre.
+    fn clear(&mut self) {
+        for i in 0..BANDS {
+            self.turn_to(i, self.home[i]);
+        }
+        self.z = [[[0.0; BANDS]; 2]; 3];
+        self.turn = [[0.0; BANDS]; 2];
+        self.power = [[0.0; BANDS]; 2];
+    }
+    fn turn_to(&mut self, band: usize, angle: f32) {
+        let (sin, cos) = angle.sin_cos();
+        self.pole[0][band] = self.radius[band] * cos;
+        self.pole[1][band] = self.radius[band] * sin;
+        // The averages stay relative to the resonators' turn.
+        let shift = angle - self.angle[band];
+        self.turn[0][band] -= shift;
+        self.turn[1][band] -= shift;
+        self.angle[band] = angle;
+    }
+    #[inline]
+    fn next(&mut self, input: Stereo) {
+        let x = input[0] + input[1];
+        let [t0, t1] = &mut self.turn;
+        let [p0, p1] = &mut self.power;
+        for i in 0..BANDS {
+            let (pr, pi) = (self.pole[0][i], self.pole[1][i]);
+            let (mut re, mut im) = (x, 0.0);
+            let (mut a, mut b) = (0.0, 0.0);
+            for [z_re, z_im] in &mut self.z {
+                (a, b) = (z_re[i], z_im[i]);
+                re = pr * a - pi * b + re * self.gain[i];
+                im = pi * a + pr * b + im * self.gain[i];
+                z_re[i] = super::fast::flush(re);
+                z_im[i] = super::fast::flush(im);
+            }
+            // The angle from the last stage's previous output, turned on by
+            // the pole, to this one.
+            let (a, b) = (pr * a - pi * b, pi * a + pr * b);
+            let turn = atan2(im * a - re * b, re * a + im * b);
+            let k = self.smoothing[i];
+            p0[i] = super::fast::flush(p0[i] + (re * re + im * im - p0[i]) * k);
+            p1[i] = super::fast::flush(p1[i] + (p0[i] - p1[i]) * k);
+            let k = if p1[i] > Self::SILENT { k } else { 0.0 };
+            t0[i] += (turn - t0[i]) * k;
+            t1[i] += (t0[i] - t1[i]) * k;
+        }
+    }
+    /// Each band's frequency in Hz, within two octaves of its centre; a
+    /// silent band keeps the last one. Following resonators move toward it.
+    fn frequencies(&mut self, sr: f32, follow: bool) -> [f32; BANDS] {
+        let top = 2.0 * PI * 0.45;
+        std::array::from_fn(|i| {
+            let found = (self.angle[i] + self.turn[1][i])
+                .clamp(self.home[i] / 4.0, (self.home[i] * 4.0).min(top));
+            if follow && self.power[1][i] > Self::SILENT {
+                let angle = self.angle[i] + (found - self.angle[i]) * self.step;
+                // Moving the pole moves the phase the three stages give the
+                // partial; that change would read as turn while they settle.
+                let r = self.radius[i];
+                let phase = |d: f32| 3.0 * atan2(r * d.sin(), 1.0 - r * d.cos());
+                let moved = phase(angle - found) - phase(self.angle[i] - found);
+                self.turn_to(i, angle);
+                self.turn[0][i] -= moved * self.smoothing[i];
+            }
+            found * sr / (2.0 * PI)
+        })
+    }
+}
+
+/// `y.atan2(x)` within 1e-5 radians, without branches, so a band per lane.
+#[inline(always)]
+fn atan2(y: f32, x: f32) -> f32 {
+    let (ax, ay) = (x.abs(), y.abs());
+    let a = ax.min(ay) / ax.max(ay).max(1e-30);
+    let s = a * a;
+    let r = ((-0.046_496_475 * s + 0.159_314_22) * s - 0.327_622_76) * s * a + a;
+    let r = if ay > ax {
+        std::f32::consts::FRAC_PI_2 - r
+    } else {
+        r
+    };
+    let r = if x < 0.0 { PI - r } else { r };
+    if y < 0.0 { -r } else { r }
 }
 
 /// The 2x decimator: an eighth-order minimum-phase anti-alias filter at
@@ -214,6 +363,21 @@ impl PcmLoop {
         x
     }
 }
+impl Carrier {
+    /// Play `hz`: carrier `rate` and `host` rate in Hz, PCM from its root.
+    fn tune(&mut self, hz: f64, rate: f64, host: f64, root_hz: f64, sample: &SampleBuffer) {
+        self.audible = hz < host * 0.45;
+        self.increment = PhaseIncrement((hz.min(rate * 0.45) / rate * 4294967296.0).round() as u32);
+        self.code = PitchCode::new(
+            ((69.0 + 12.0 * (hz / 440.0).log2()).clamp(0.0, 127.996) * 256.0)
+                .round()
+                .min(32767.0) as u16,
+        )
+        .unwrap();
+        self.pcm_rate = hz / root_hz * sample.sample_rate as f64 / rate;
+        self.pcm_level = sample.level_for_rate(self.pcm_rate, true);
+    }
+}
 impl Default for Carrier {
     fn default() -> Self {
         Self {
@@ -238,6 +402,8 @@ struct Layer {
     gain: f32,
     target_gain: f32,
     fold_controls: [f64; 2],
+    /// Transpose and fine tune as a frequency ratio.
+    ratio: f64,
 }
 impl Default for Layer {
     fn default() -> Self {
@@ -249,6 +415,7 @@ impl Default for Layer {
             gain: 0.0,
             target_gain: 0.0,
             fold_controls: [0.0; 2],
+            ratio: 1.0,
         }
     }
 }
@@ -260,6 +427,10 @@ pub struct Resynth {
     bands: Bands,
     source_bands: Bands,
     grain_bands: Bands,
+    tracker: Tracker,
+    /// Last frequency each band was heard at, in Hz; held while it is silent.
+    tracked: [f32; BANDS],
+    root_hz: f64,
     source_signs: [i8; BANDS],
     grain_signs: [i8; BANDS],
     analysis_signs: [i8; BANDS],
@@ -305,6 +476,9 @@ impl Resynth {
             bands: Bands::new(&frequencies, sr as f32),
             source_bands: Bands::new(&frequencies, sr as f32),
             grain_bands: Bands::new(&frequencies, sr as f32),
+            tracker: Tracker::new(&frequencies, sr as f32),
+            tracked: frequencies,
+            root_hz: 0.0,
             source_signs: [0; BANDS],
             grain_signs: [0; BANDS],
             analysis_signs: [0; BANDS],
@@ -340,6 +514,8 @@ impl Resynth {
         self.bands.clear();
         self.source_bands.clear();
         self.grain_bands.clear();
+        self.tracker.clear();
+        self.tracked = self.frequencies;
         self.envelopes.levels.fill(0);
         self.levels.fill(0.0);
         self.gains.fill(0.0);
@@ -369,6 +545,14 @@ impl Resynth {
             return;
         }
         let source_changed = self.pcm_source != pcm_source;
+        let track_changed = !self.configured || settings.track != self.settings.track;
+        if (track_changed && self.settings.track == 0.0)
+            || settings.tracking != self.settings.tracking
+        {
+            // Tracking starts again from the band centres.
+            self.tracker.clear();
+            self.tracked = self.frequencies;
+        }
         let rate = self.sample_rate * self.oversample as f32;
         let gain = |seconds: f32| {
             ((-1.0_f64 / (seconds as f64 * self.sample_rate as f64)).exp() * i32::MAX as f64)
@@ -447,7 +631,7 @@ impl Resynth {
             } else {
                 0.0
             };
-            if !self.configured || layer.settings != o || source_changed {
+            if !self.configured || layer.settings != o || source_changed || track_changed {
                 if layer.settings.model != o.model
                     || layer.settings.waveform != o.waveform
                     || layer.settings.mode != o.mode
@@ -480,25 +664,20 @@ impl Resynth {
                 let pitch_changed = !self.configured
                     || layer.settings.transpose != o.transpose
                     || layer.settings.fine != o.fine
-                    || source_changed;
+                    || source_changed
+                    || track_changed;
                 if pitch_changed {
-                    let ratio = 2.0_f64.powf((o.transpose as f64 + o.fine as f64 * 0.01) / 12.0);
-                    let root_hz = 440.0 * 2.0_f64.powf((root as f64 - 69.0) / 12.0);
+                    layer.ratio = 2.0_f64.powf((o.transpose as f64 + o.fine as f64 * 0.01) / 12.0);
+                    self.root_hz = 440.0 * 2.0_f64.powf((root as f64 - 69.0) / 12.0);
+                    let shifts = shifts(&self.frequencies, &self.tracked, settings.track);
                     for (band, carrier) in layer.carriers.iter_mut().enumerate() {
-                        let hz = self.frequencies[band] as f64 * ratio;
-                        carrier.audible = hz < self.sample_rate as f64 * 0.45;
-                        carrier.increment = PhaseIncrement(
-                            (hz.min(rate as f64 * 0.45) / rate as f64 * 4294967296.0).round()
-                                as u32,
+                        carrier.tune(
+                            self.frequencies[band] as f64 * shifts[band] * layer.ratio,
+                            rate as f64,
+                            self.sample_rate as f64,
+                            self.root_hz,
+                            sample,
                         );
-                        carrier.code = PitchCode::new(
-                            ((69.0 + 12.0 * (hz / 440.0).log2()).clamp(0.0, 127.996) * 256.0)
-                                .round()
-                                .min(32767.0) as u16,
-                        )
-                        .unwrap();
-                        carrier.pcm_rate = hz / root_hz * sample.sample_rate as f64 / rate as f64;
-                        carrier.pcm_level = sample.level_for_rate(carrier.pcm_rate, true);
                     }
                 }
                 layer.settings = o;
@@ -507,6 +686,33 @@ impl Resynth {
         self.settings = settings;
         self.pcm_source = pcm_source;
         self.configured = true;
+        self.control_epoch += 1;
+    }
+    /// Move carriers toward the frequencies their bands hear now.
+    fn retune(&mut self, sample: &SampleBuffer) {
+        let follow = self.settings.tracking == Tracking::Follow;
+        let tracked = self.tracker.frequencies(self.sample_rate, follow);
+        if tracked == self.tracked {
+            return;
+        }
+        self.tracked = tracked;
+        let shifts = shifts(&self.frequencies, &self.tracked, self.settings.track);
+        let rate = (self.sample_rate * self.oversample as f32) as f64;
+        for (i, layer) in self.layers.iter_mut().enumerate() {
+            if !self.needed[i] && layer.target_gain == 0.0 && layer.gain == 0.0 {
+                continue;
+            }
+            for (band, carrier) in layer.carriers.iter_mut().enumerate() {
+                carrier.tune(
+                    self.frequencies[band] as f64 * shifts[band] * layer.ratio,
+                    rate,
+                    self.sample_rate as f64,
+                    self.root_hz,
+                    sample,
+                );
+            }
+        }
+        // Radias carriers recompile their controls on a new epoch.
         self.control_epoch += 1;
     }
     pub fn active(&self) -> bool {
@@ -611,6 +817,12 @@ impl Resynth {
         let source_wraps = zero_crossings(&source_bands, &mut self.source_signs);
         let grain_wraps = zero_crossings(&grain_bands, &mut self.grain_signs);
         let analysis_wraps = zero_crossings(&analyzed, &mut self.analysis_signs);
+        if self.settings.track > 0.0 {
+            self.tracker.next(input);
+            if self.frame.is_multiple_of(Tracker::UPDATE) {
+                self.retune(sample);
+            }
+        }
         let excitation = analyzed.map(|x| {
             (x[0].abs().max(x[1].abs()) as f64 * self.sensitivity as f64 * i32::MAX as f64)
                 .clamp(0.0, i32::MAX as f64) as i32
@@ -859,6 +1071,17 @@ pub(crate) fn oversample(sample_rate: u32) -> u32 {
 
 fn mono(x: Stereo) -> f32 {
     (x[0] + x[1]) * 0.5
+}
+/// Each band's frequency ratio from its centre toward what it hears; exactly
+/// 1 without tracking, so fixed carriers keep their centres sample for sample.
+fn shifts(centres: &[f32; BANDS], tracked: &[f32; BANDS], track: f32) -> [f64; BANDS] {
+    std::array::from_fn(|band| {
+        if track > 0.0 {
+            (tracked[band] as f64 / centres[band] as f64).powf(track as f64)
+        } else {
+            1.0
+        }
+    })
 }
 /// Band signs cross zero at the band frequency, so this stays branch-free:
 /// above +1e-5 the sign becomes 1, below -1e-5 it becomes -1, otherwise
@@ -1417,5 +1640,91 @@ mod tests {
             carrier.pcm_phase, 0.0,
             "Sub-sample overlap changed the loop period"
         );
+    }
+
+    fn saw(phase: f32, harmonics: usize) -> f32 {
+        (1..=harmonics)
+            .map(|h| (2.0 * PI * phase * h as f32).sin() / h as f32)
+            .sum::<f32>()
+            * 0.25
+    }
+    fn carrier_hz(r: &Resynth, band: usize) -> f64 {
+        r.layers[0].carriers[band].increment.0 as f64 / 4294967296.0
+            * (r.sample_rate as f64 * r.oversample as f64)
+    }
+    /// Plays saws of (Hz, frames) in turn, from and to `phase`; 0 Hz is silence.
+    fn play(r: &mut Resynth, sample: &SampleBuffer, phase: &mut f32, f0: &[(f32, usize)]) {
+        for &(hz, frames) in f0 {
+            for _ in 0..frames {
+                *phase = (*phase + hz / r.sample_rate).fract();
+                let x = if hz > 0.0 { saw(*phase, 30) } else { 0.0 };
+                r.process([0.0; 2], [x; 2], 0.0, 1.0, sample, &(0..sample.len()));
+            }
+        }
+    }
+    #[test]
+    fn tracking_carriers_play_the_harmonics_their_bands_hear() {
+        use crate::resynth::Tracking;
+        for sr in [44100, 48000, 96000] {
+            for tracking in Tracking::ALL {
+                let (mut r, sample, mut settings) = setup(sr);
+                settings.tracking = tracking;
+                r.configure(settings, &sample, 60.0);
+                let phase = &mut 0.0;
+                play(&mut r, &sample, phase, &[(220.0, sr as usize / 2)]);
+                // Where two partials share a band the found frequency ripples
+                // once per period; its mean over 100 ms is the harmonic.
+                let mut mean = [0.0; BANDS];
+                for _ in 0..100 {
+                    play(&mut r, &sample, phase, &[(220.0, sr as usize / 1000)]);
+                    for (band, mean) in mean.iter_mut().enumerate() {
+                        *mean += carrier_hz(&r, band) / 100.0;
+                    }
+                }
+                let mut audible = 0;
+                for (band, &hz) in mean.iter().enumerate() {
+                    if r.gains[band] < 0.02 {
+                        continue;
+                    }
+                    audible += 1;
+                    let harmonic = (hz / 220.0).round() * 220.0;
+                    assert!(
+                        (hz - harmonic).abs() < 4.0,
+                        "{sr} {tracking:?} band {band} at {hz:.1} Hz"
+                    );
+                }
+                assert!(audible >= 10, "{sr} {tracking:?}: {audible} bands");
+                // At zero track the carriers return to the band centres.
+                settings.track = 0.0;
+                r.configure(settings, &sample, 60.0);
+                for band in 0..BANDS {
+                    let centre = r.frequencies[band] as f64;
+                    if centre < sr as f64 * 0.45 {
+                        assert!((carrier_hz(&r, band) / centre - 1.0).abs() < 1e-6);
+                    }
+                }
+            }
+        }
+    }
+    #[test]
+    fn following_bands_keep_their_pitch_once_the_input_stops() {
+        use crate::resynth::Tracking;
+        let drift = |tracking| {
+            let (mut r, sample, mut settings) = setup(48000);
+            settings.tracking = tracking;
+            r.configure(settings, &sample, 60.0);
+            let phase = &mut 0.0;
+            play(&mut r, &sample, phase, &[(220.0, 12_000), (330.0, 12_000)]);
+            let before: Vec<_> = (0..BANDS).map(|b| carrier_hz(&r, b)).collect();
+            let audible: Vec<_> = (0..BANDS).filter(|&b| r.gains[b] > 0.05).collect();
+            play(&mut r, &sample, phase, &[(0.0, 4800)]);
+            audible
+                .iter()
+                .map(|&b| (carrier_hz(&r, b) / before[b]).log2().abs() * 1200.0)
+                .fold(0.0, f64::max)
+        };
+        let (fixed, follow) = (drift(Tracking::Fixed), drift(Tracking::Follow));
+        assert!(follow < 15.0, "following bands moved {follow:.0} cents");
+        assert!(fixed > 100.0, "fixed bands held at {fixed:.0} cents");
     }
 }

@@ -964,6 +964,21 @@ h2 {
 .resynth-actions .check {
   margin-left: 4px;
 }
+.resynth-tracking {
+  display: flex;
+}
+.resynth-tracking button {
+  padding: 0 10px;
+}
+.resynth-tracking button:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.resynth-tracking button:last-child {
+  margin-left: -1px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
 .resynth-spectrum {
   display: grid;
   grid-template-columns: repeat(16, minmax(0, 1fr));

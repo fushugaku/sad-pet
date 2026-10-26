@@ -1751,9 +1751,14 @@ function resynthSettings() {
     attack: 0.15,
     release: 0.3,
     threshold: 0.2,
+    track: 1,
+    tracking: "fixed",
     count: 1,
     oscillators: Array.from({ length: 4 }, resynthOscDefault),
   });
+  // Settings saved before tracking keep their carriers on the band centres.
+  r.track ??= 0;
+  r.tracking ??= "fixed";
   for (let i = 0; i < 4; i++)
     if (r.oscillators[i].model === undefined)
       r.oscillators[i] = { ...resynthOscDefault(), ...r.oscillators[i] };
@@ -1822,6 +1827,7 @@ function editOscillator(bank, field, value, index = null) {
     numeric = OSC_CHOICES[field].findIndex(([key]) => key === value);
   if (field === "cross_input") numeric = RESYNTH_CROSS_INPUTS.indexOf(value);
   if (field === "input") numeric = value === "grains" ? 1 : 0;
+  if (field === "tracking") numeric = value === "follow" ? 1 : 0;
   if (typeof value === "boolean") numeric = Number(value);
   const key =
     index === null ? `${bank}_${field}` : `${bank}_osc${index + 1}_${field}`;
@@ -1855,6 +1861,7 @@ function oscillatorKnob(
           attack: 0.15,
           release: 0.3,
           threshold: 0.2,
+          track: 1,
         }
       : defaults(index);
   createKnob(
@@ -1910,6 +1917,7 @@ function buildResynth() {
     "THRESHOLD",
     (v) => `${Math.round(-84 + v * 60)} dB`,
   );
+  resynthKnob(null, "track", "TRACK");
   resynthKnob(null, "mix", "MIX");
   for (let i = 0; i < 16; i++) {
     const bar = document.createElement("div");
@@ -1923,6 +1931,11 @@ function buildResynth() {
   };
   $("resynth-input").onchange = () =>
     editResynth("input", $("resynth-input").value);
+  for (const button of $("resynth-tracking").querySelectorAll("button"))
+    button.onclick = () => {
+      editResynth("tracking", button.dataset.tracking);
+      syncResynth();
+    };
   $("resynth-add").onclick = () => {
     const r = resynthSettings();
     if (r.count >= 4) return;
@@ -1934,6 +1947,8 @@ function syncResynth() {
   const r = resynthSettings();
   setAttr($("resynth-enabled"), "aria-pressed", r.enabled);
   $("resynth-input").value = r.input;
+  for (const button of $("resynth-tracking").querySelectorAll("button"))
+    setAttr(button, "aria-pressed", button.dataset.tracking === r.tracking);
   $("resynth-add").disabled = r.count >= 4;
   $("resynth-spectrum").classList.toggle("inactive", !r.enabled);
   syncOscillators("resynth");

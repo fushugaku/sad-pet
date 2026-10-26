@@ -116,6 +116,8 @@ for (const rate of [44100, 48000, 96000]) {
     resynth_osc2_interaction: 3,
     resynth_osc2_interaction_source: 1,
     resynth_osc1_cross_input: 2,
+    resynth_track: 0.6,
+    resynth_tracking: 1,
   });
   const state = core.request("/api/state");
   assert.equal(state.preset.resynth.oscillators[3].transpose, 12);
@@ -123,6 +125,8 @@ for (const rate of [44100, 48000, 96000]) {
   assert.equal(state.preset.resynth.oscillators[1].interaction, "ring_sync");
   assert.equal(state.preset.resynth.oscillators[1].interaction_source, 1);
   assert.equal(state.preset.resynth.oscillators[0].cross_input, "grains");
+  assert.ok(Math.abs(state.preset.resynth.track - 0.6) < 1e-6);
+  assert.equal(state.preset.resynth.tracking, "follow");
   assert.equal(state.resynth.bands.length, 16);
   assert.ok(state.resynth.bands.some((x) => x > 0));
   times.sort((a, b) => a - b);
@@ -131,5 +135,5 @@ for (const rate of [44100, 48000, 96000]) {
   );
 }
 console.log(
-  "Resynth checks passed: all 8 types, all analog modes, all 5 OSC4 Wavefolders in every slot, Ring/Sync, separate Source/Grains/oscillator taps, 16 envelopes, host parameters and deterministic quanta.",
+  "Resynth checks passed: all 8 types, all analog modes, all 5 OSC4 Wavefolders in every slot, Ring/Sync, separate Source/Grains/oscillator taps, 16 envelopes, tracking, host parameters and deterministic quanta.",
 );

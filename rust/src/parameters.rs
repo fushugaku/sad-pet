@@ -1387,6 +1387,26 @@ pub fn specs() -> &'static [Spec] {
                 });
             }
         }
+        // Then how far Resynth carriers follow what their bands hear, and
+        // whether the band resonators stay fixed or follow it.
+        resynth!(track, "track", 0.0, 1.0);
+        result.push(Spec {
+            id: "resynth_tracking".into(),
+            name: "Resynth tracking".into(),
+            min: 0.0,
+            max: 1.0,
+            default: 0.0,
+            target: Target::Core {
+                get: |p| p.resynth.tracking as usize as f32,
+                set: |p, v| {
+                    p.resynth.tracking = crate::resynth::Tracking::ALL[usize::from(v >= 0.5)]
+                },
+                frame_get: |m| m.resynth.tracking as usize as f32,
+                frame_set: |m, v| {
+                    m.resynth.tracking = crate::resynth::Tracking::ALL[usize::from(v >= 0.5)]
+                },
+            },
+        });
         result
     })
 }
@@ -1483,6 +1503,31 @@ mod tests {
         assert_eq!(preset.resynth.count, 4);
         assert_eq!(preset.resynth.oscillators[3].cross_source, 4);
         assert_eq!(preset.resynth.oscillators[3].transpose, -48.0);
+    }
+    #[test]
+    fn resynth_tracking_appends_and_older_settings_keep_fixed_centres() {
+        let mut old = serde_json::to_value(Preset::default()).unwrap();
+        let resynth = old["resynth"].as_object_mut().unwrap();
+        resynth.remove("track");
+        resynth.remove("tracking");
+        let mut preset: Preset = serde_json::from_value(old).unwrap();
+        assert_eq!(preset.resynth.track, 0.0);
+        assert_eq!(preset.resynth.tracking, crate::resynth::Tracking::Fixed);
+        assert_eq!(Preset::default().resynth.track, 1.0);
+        let last: Vec<_> = specs()
+            .iter()
+            .rev()
+            .take(2)
+            .map(|s| s.id.as_str())
+            .collect();
+        assert_eq!(last, ["resynth_tracking", "resynth_track"]);
+        let changes = parse(&json!({"resynth_track": 0.4, "resynth_tracking": 1})).unwrap();
+        apply(&mut preset, &changes);
+        assert_eq!(preset.resynth.track, 0.4);
+        assert_eq!(preset.resynth.tracking, crate::resynth::Tracking::Follow);
+        let restored: Preset =
+            serde_json::from_slice(&serde_json::to_vec(&preset).unwrap()).unwrap();
+        assert_eq!(restored.resynth, preset.resynth);
     }
     #[test]
     fn osc4_interactions_append_after_all_released_resynth_ids() {

@@ -615,6 +615,22 @@
               <option value="source">Source</option>
               <option value="grains">Grains</option>
             </select>
+            <div id="resynth-tracking" class="resynth-tracking" role="group" aria-label="Resynth tracking">
+              <button
+                data-tracking="fixed"
+                aria-pressed="true"
+                title="Find each band's frequency around fixed band centres: steady for chords and loops"
+              >
+                Fixed
+              </button>
+              <button
+                data-tracking="follow"
+                aria-pressed="false"
+                title="Follow the partial each band finds and keep its pitch as notes die away: for single lines"
+              >
+                Follow
+              </button>
+            </div>
             <button id="resynth-add">+ Oscillator</button>
           </div>
         </div>

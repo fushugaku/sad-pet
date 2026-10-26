@@ -303,7 +303,11 @@ fn synth_controls_append_after_every_other_host_parameter() {
     // Then each LFO's shape, phase, smoothing, delay and fade.
     let shaping = play + 1 + 4 * 8 + 4 * 5;
     assert_eq!(later[shaping], "lfo1_shape");
-    assert_eq!(later.len(), shaping + 8 * 5);
+    // Then Resynth's track and tracking mode.
+    assert_eq!(
+        later[shaping + 8 * 5..],
+        ["resynth_track", "resynth_tracking"]
+    );
 }
 
 #[test]

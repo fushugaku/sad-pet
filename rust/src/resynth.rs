@@ -121,6 +121,21 @@ pub enum Input {
     Grains,
 }
 
+/// What the resonators that find each band's frequency do.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Tracking {
+    /// They stay on the band centres: steady where chords share a band.
+    #[default]
+    Fixed,
+    /// They move onto the partial they found and ring on at its pitch, so a
+    /// single line keeps its notes while they die away.
+    Follow,
+}
+impl Tracking {
+    pub const ALL: [Self; 2] = [Self::Fixed, Self::Follow];
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Oscillator {
@@ -177,6 +192,12 @@ pub struct Settings {
     pub attack: f32,
     pub release: f32,
     pub threshold: f32,
+    /// How far carriers leave their band centres for the frequency heard in
+    /// their band: 0 keeps the fixed centres, 1 plays what the band hears.
+    /// Settings saved before it existed keep the fixed centres.
+    #[serde(default)]
+    pub track: f32,
+    pub tracking: Tracking,
     pub count: u8,
     pub oscillators: [Oscillator; MAX_OSCILLATORS],
 }
@@ -190,6 +211,8 @@ impl Default for Settings {
             attack: 0.15,
             release: 0.3,
             threshold: 0.2,
+            track: 1.0,
+            tracking: Tracking::Fixed,
             count: 1,
             oscillators: [Oscillator::default(); MAX_OSCILLATORS],
         }
@@ -234,6 +257,7 @@ impl Settings {
         finite(&mut self.attack, 0.0, 1.0, d.attack);
         finite(&mut self.release, 0.0, 1.0, d.release);
         finite(&mut self.threshold, 0.0, 1.0, d.threshold);
+        finite(&mut self.track, 0.0, 1.0, d.track);
         self.count = self.count.clamp(1, MAX_OSCILLATORS as u8);
         for o in &mut self.oscillators {
             o.sanitize();

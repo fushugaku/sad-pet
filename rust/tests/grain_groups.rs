@@ -270,7 +270,8 @@ fn grain_group_controls_append_after_the_macros() {
         ["grain_group1_filter_routing", "grain_group1_filter2_type"]
     );
     // Then the five LFO shaping controls of each LFO.
-    assert_eq!(ids.len(), filter2 + 4 * 5 + 8 * 5);
+    // Then Resynth's track and tracking mode.
+    assert_eq!(ids.len(), filter2 + 4 * 5 + 8 * 5 + 2);
     assert_eq!(ids[filter2 + 4 * 5], "lfo1_shape");
     let mut preset = Preset::default();
     let changes = parameters::parse(&serde_json::json!({
