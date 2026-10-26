@@ -555,8 +555,25 @@ const GRAIN_SCALES = [
   ["octaves", "Octaves"],
   ["chord", "Held chord"],
 ];
-// The group menus and their choices, by field.
-const GRAIN_GROUP_CHOICES = { filter_type: GRAIN_FILTER_TYPES, scale: GRAIN_SCALES };
+// Filter 2 alone off, after Filter 1 or beside it, as the engine's filters.
+const GRAIN_ROUTINGS = [
+  ["single", "Off"],
+  ["serial", "Serial"],
+  ["parallel", "Parallel"],
+];
+// The group menus, their choices and names, by field.
+const GRAIN_GROUP_CHOICES = {
+  filter_type: GRAIN_FILTER_TYPES,
+  scale: GRAIN_SCALES,
+  filter_routing: GRAIN_ROUTINGS,
+  filter2_type: GRAIN_FILTER_TYPES,
+};
+const GRAIN_GROUP_MENUS = {
+  filter_type: "filter type",
+  scale: "scale",
+  filter_routing: "filter 2 routing",
+  filter2_type: "filter 2 type",
+};
 const grainGroupDefault = () => ({
   share: 1,
   level: 1,
@@ -580,6 +597,12 @@ const grainGroupDefault = () => ({
   random_cutoff: 0,
   random_level: 0,
   scale: "off",
+  // Filter 2 waits, open, until routed.
+  filter_routing: "single",
+  filter2_type: "low_pass",
+  filter2_cutoff: 1,
+  filter2_resonance: 0.1,
+  filter2_env_depth: 0,
 });
 // Reading leaves the preset alone: the host omits untouched groups.
 const grainGroupSettings = () =>
@@ -611,7 +634,8 @@ function editGrainGroup(index, field, value) {
   controls.get(key)?.();
   const choices = GRAIN_GROUP_CHOICES[field];
   scheduleParameter(key, choices ? choices.findIndex(([id]) => id === value) : value);
-  syncGrainGroupOutputs();
+  if (field === "filter_routing") syncGrainGroups();
+  else syncGrainGroupOutputs();
   drawGrainGroupCurve();
 }
 /** One grain's length in milliseconds at the engine's SIZE. */
@@ -628,37 +652,42 @@ function buildGrainGroups() {
     pitch = (v) => `${v > 0 ? "+" : ""}${Number.isInteger(v) ? v : v.toFixed(1)} st`;
   const spread = (v) => `±${percent(v)}`,
     factor = (v) => `×${Number((2 ** v).toFixed(2))}`;
-  // [title, menu field, knobs: [field, label, format, min, max, name]]
+  // [title, menu fields, knobs: [field, label, format, min, max, name]]
   const cards = [
-    ["Grain", null, [
+    ["Grain", [], [
       ["share", "SHARE", (v) => (v > 0 ? percent(v) : "Off")],
       ["level", "LEVEL", percent],
       ["random_level", "RND LEVEL", (v) => (v > 0 ? `−${percent(v)}` : "0%"), 0, 1, "random level"],
       ["shape", "SHAPE", percent],
     ]],
-    ["Pitch", "scale", [
+    ["Pitch", ["scale"], [
       ["pitch", "PITCH", pitch, -24, 24],
       ["random_pitch", "RND PITCH", (v) => `±${v.toFixed(1)} st`, 0, 24, "random pitch"],
     ]],
-    ["Playback", null, [
+    ["Playback", [], [
       ["size", "SIZE", factor, -3, 2],
       ["position", "POSITION", signedPercent, -1, 1],
       ["reverse", "REVERSE", percent],
       ["spread", "SPREAD", signedPercent, -1, 1],
     ]],
-    ["Filter", "filter_type", [
-      ["cutoff", "CUTOFF", cutoff, 0, 1, "filter cutoff"],
-      ["resonance", "RESO", percent, 0, 1, "filter reso"],
-      ["env_depth", "ENV DEPTH", signedPercent, -1, 1, "filter env depth"],
-      ["random_cutoff", "RND CUTOFF", spread, 0, 1, "random cutoff"],
-    ]],
-    ["Amp envelope", null, [
+    ["Amp envelope", [], [
       ["amp_attack", "ATTACK", time],
       ["amp_decay", "DECAY", time],
       ["amp_sustain", "SUSTAIN", percent],
       ["amp_release", "RELEASE", time],
     ]],
-    ["Filter envelope", null, [
+    ["Filter 1", ["filter_type"], [
+      ["cutoff", "CUTOFF", cutoff, 0, 1, "filter cutoff"],
+      ["resonance", "RESO", percent, 0, 1, "filter reso"],
+      ["env_depth", "ENV DEPTH", signedPercent, -1, 1, "filter env depth"],
+      ["random_cutoff", "RND CUTOFF", spread, 0, 1, "random cutoff"],
+    ]],
+    ["Filter 2", ["filter_routing", "filter2_type"], [
+      ["filter2_cutoff", "CUTOFF", cutoff, 0, 1, "filter 2 cutoff"],
+      ["filter2_resonance", "RESO", percent, 0, 1, "filter 2 reso"],
+      ["filter2_env_depth", "ENV DEPTH", signedPercent, -1, 1, "filter 2 env depth"],
+    ]],
+    ["Filter envelope", [], [
       ["filter_attack", "ATTACK", time],
       ["filter_decay", "DECAY", time],
       ["filter_sustain", "SUSTAIN", percent],
@@ -691,15 +720,16 @@ function buildGrainGroups() {
     page.setAttribute("role", "tabpanel");
     page.setAttribute("aria-labelledby", tab.id);
     page.style.setProperty("--group-color", `rgb(${GRAIN_GROUP_COLORS[index]})`);
-    for (const [title, menu, knobs] of cards) {
+    for (const [title, menus, knobs] of cards) {
       const card = document.createElement("div");
       card.className = "grain-group-card";
+      card.dataset.card = title;
       card.innerHTML = `<div class="grain-group-card-title"><h3>${title}</h3></div><div class="grain-group-knobs"></div>`;
-      if (menu) {
+      for (const menu of menus) {
         const select = document.createElement("select");
         select.className = "grain-group-menu";
         select.dataset.field = menu;
-        select.setAttribute("aria-label", `Group ${name} ${menu === "scale" ? "scale" : "filter type"}`);
+        select.setAttribute("aria-label", `Group ${name} ${GRAIN_GROUP_MENUS[menu]}`);
         for (const [id, label] of GRAIN_GROUP_CHOICES[menu]) select.append(option(id, label));
         select.onchange = () => editGrainGroup(index, menu, select.value);
         card.firstElementChild.append(select);
@@ -837,6 +867,11 @@ function syncGrainGroups() {
     page.hidden = index !== grainGroupPage;
     for (const select of page.querySelectorAll(".grain-group-menu"))
       select.value = grainGroupField(settings.groups[index], select.dataset.field);
+    // Filter 2 dims while routed off; its knobs stay ready to set.
+    page.querySelector('[data-card="Filter 2"]')?.classList.toggle(
+      "is-idle",
+      grainGroupField(settings.groups[index], "filter_routing") === "single",
+    );
   });
   syncGrainGroupOutputs();
   drawGrainGroupCurve();
@@ -881,17 +916,23 @@ function drawGrainGroupCurve() {
   c.lineTo(w, bottom);
   c.fill();
   c.stroke();
-  c.strokeStyle = "#8cdcd1";
+  // Each routed filter's cutoff as its envelope depth moves it.
+  const lines = [["#8cdcd1", group.cutoff, group.env_depth]];
+  if ((group.filter_routing ?? "single") !== "single")
+    lines.push(["#c8b6f0", group.filter2_cutoff ?? 1, group.filter2_env_depth ?? 0]);
   c.setLineDash([3, 3]);
-  c.beginPath();
-  for (let i = 0; i <= points; i++) {
-    const t = i / points,
-      cutoff = Math.min(1, Math.max(0, group.cutoff + group.env_depth * sweep(t))),
-      y = bottom - cutoff * (bottom - top);
-    if (i === 0) c.moveTo(0, y);
-    else c.lineTo(t * w, y);
+  for (const [color, base, depth] of lines) {
+    c.strokeStyle = color;
+    c.beginPath();
+    for (let i = 0; i <= points; i++) {
+      const t = i / points,
+        cutoff = Math.min(1, Math.max(0, base + depth * sweep(t))),
+        y = bottom - cutoff * (bottom - top);
+      if (i === 0) c.moveTo(0, y);
+      else c.lineTo(t * w, y);
+    }
+    c.stroke();
   }
-  c.stroke();
   c.setLineDash([]);
 }
 function createKnob(

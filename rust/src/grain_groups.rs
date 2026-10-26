@@ -186,6 +186,14 @@ pub struct Group {
     pub random_level: f32,
     /// What the grains' pitch offset from their note snaps to.
     pub scale: Scale,
+    /// Filter 1 alone, or Filter 2 after it (Serial) or beside it
+    /// (Parallel), as the engine's filters route.
+    pub filter_routing: crate::preset::FilterRouting,
+    pub filter2_type: FilterType,
+    pub filter2_cutoff: f32,
+    pub filter2_resonance: f32,
+    /// How far the filter envelope moves Filter 2's cutoff, either way.
+    pub filter2_env_depth: f32,
 }
 impl Default for Group {
     fn default() -> Self {
@@ -209,6 +217,11 @@ impl Default for Group {
             random_cutoff: 0.0,
             random_level: 0.0,
             scale: Scale::Off,
+            filter_routing: crate::preset::FilterRouting::Single,
+            filter2_type: FilterType::LowPass,
+            filter2_cutoff: 1.0,
+            filter2_resonance: 0.1,
+            filter2_env_depth: 0.0,
         }
     }
 }
@@ -233,6 +246,14 @@ impl Group {
         crate::preset::finite_clamp(&mut self.random_pitch, 0.0, PITCH_RANGE, 0.0);
         crate::preset::finite_clamp(&mut self.random_cutoff, 0.0, 1.0, 0.0);
         crate::preset::finite_clamp(&mut self.random_level, 0.0, 1.0, 0.0);
+        crate::preset::finite_clamp(&mut self.filter2_cutoff, 0.0, 1.0, fallback.filter2_cutoff);
+        crate::preset::finite_clamp(
+            &mut self.filter2_resonance,
+            0.0,
+            1.0,
+            fallback.filter2_resonance,
+        );
+        crate::preset::finite_clamp(&mut self.filter2_env_depth, -1.0, 1.0, 0.0);
     }
 }
 
@@ -293,6 +314,21 @@ pub const PLAY_FIELDS: [(&str, &str, f32, f32); 8] = [
 ];
 /// The first get/set field of PLAY_FIELDS.
 pub const PLAY_FIELD: usize = FIELDS.len() + OUTPUT_FIELDS.len();
+/// Each group's Filter 2 and filter routing, appended after every group's
+/// PLAY_FIELDS; get and set number them on from FILTER2_FIELD.
+pub const FILTER2_FIELDS: [(&str, &str, f32, f32); 5] = [
+    ("filter_routing", "filter routing", 0.0, 2.0),
+    ("filter2_type", "filter 2 type", 0.0, 2.0),
+    ("filter2_cutoff", "filter 2 cutoff", 0.0, 1.0),
+    ("filter2_resonance", "filter 2 resonance", 0.0, 1.0),
+    ("filter2_env_depth", "filter 2 envelope", -1.0, 1.0),
+];
+pub const FILTER2_FIELD: usize = PLAY_FIELD + PLAY_FIELDS.len();
+const ROUTINGS: [crate::preset::FilterRouting; 3] = [
+    crate::preset::FilterRouting::Single,
+    crate::preset::FilterRouting::Serial,
+    crate::preset::FilterRouting::Parallel,
+];
 pub fn get(group: &Group, field: usize) -> f32 {
     match field {
         0 => group.share,
@@ -321,7 +357,12 @@ pub fn get(group: &Group, field: usize) -> f32 {
         23 => group.random_pitch,
         24 => group.random_cutoff,
         25 => group.random_level,
-        _ => group.scale as u8 as f32,
+        26 => group.scale as u8 as f32,
+        27 => group.filter_routing as u8 as f32,
+        28 => group.filter2_type as u8 as f32,
+        29 => group.filter2_cutoff,
+        30 => group.filter2_resonance,
+        _ => group.filter2_env_depth,
     }
 }
 pub fn set(group: &mut Group, field: usize, value: f32) {
@@ -352,7 +393,12 @@ pub fn set(group: &mut Group, field: usize, value: f32) {
         23 => group.random_pitch = value,
         24 => group.random_cutoff = value,
         25 => group.random_level = value,
-        _ => group.scale = Scale::ALL[(value.round().max(0.0) as usize).min(Scale::ALL.len() - 1)],
+        26 => group.scale = Scale::ALL[(value.round().max(0.0) as usize).min(Scale::ALL.len() - 1)],
+        27 => group.filter_routing = ROUTINGS[(value.round().max(0.0) as usize).min(2)],
+        28 => group.filter2_type = FilterType::ALL[(value.round().max(0.0) as usize).min(2)],
+        29 => group.filter2_cutoff = value,
+        30 => group.filter2_resonance = value,
+        _ => group.filter2_env_depth = value,
     }
 }
 

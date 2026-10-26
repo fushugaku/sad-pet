@@ -199,7 +199,10 @@ files move instruments between the web version and the native app and plug-ins.
   first half and falls over the second, as the engine's window does, and a
   short attack and decay make plucked grains. **SHAPE** bends its segments
   from straight lines to the window's half-cosine, in place of the engine's
-  SHAPE. **ENV DEPTH** moves the cutoff by the FILTER envelope either way. The
+  SHAPE. **ENV DEPTH** moves the cutoff by the FILTER envelope either way.
+  **Filter 2** waits until routed: **Serial** puts it after Filter 1,
+  **Parallel** beside it (their average, as the engine's filters mix), with
+  its own type, CUTOFF, RESO and ENV DEPTH on the same FILTER envelope. The
   curve beside the tabs draws the selected group over one grain, and the
   waveform colors grains by group. The first switch-on starts every group from
   the engine's SHAPE, so the sound stays the same until a group changes. Each
@@ -220,7 +223,8 @@ files move instruments between the web version and the native app and plug-ins.
   **Held chord**, so random grains stay in key. Every control is a host
   parameter (`grain_advanced`, `grain_group1_share` …
   `grain_group4_filter_release`, then `grain_group1_chain`, `_send`, `_bus` for
-  each group, then `grain_feedback` and each group's `_size` … `_scale`) that
+  each group, then `grain_feedback` and each group's `_size` … `_scale`, then
+  each group's `_filter_routing` … `_filter2_env_depth`) that
   LFOs, envelopes, the matrix, macros and sequencer lanes can reach; a bus is
   chosen, not modulated.
 - **Grain feedback.** **FEEDBACK** in the Grain engine of any timbre lets the

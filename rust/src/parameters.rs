@@ -1344,6 +1344,23 @@ pub fn specs() -> &'static [Spec] {
                 result.push(spec);
             }
         }
+        // Then each group's Filter 2 and filter routing.
+        for (i, name) in grain_groups::NAMES.iter().enumerate() {
+            for (offset, (key, label, min, max)) in
+                grain_groups::FILTER2_FIELDS.into_iter().enumerate()
+            {
+                let mut spec = Spec {
+                    id: format!("grain_group{}_{key}", i + 1),
+                    name: format!("Grain group {name} {label}"),
+                    min,
+                    max,
+                    default: 0.0,
+                    target: Target::GrainGroup(i, grain_groups::FILTER2_FIELD + offset),
+                };
+                spec.default = spec.get(&preset);
+                result.push(spec);
+            }
+        }
         result
     })
 }

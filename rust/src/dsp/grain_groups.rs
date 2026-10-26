@@ -4,7 +4,7 @@ use super::{MAX_GRAINS, fast, filter};
 use crate::{
     Stereo,
     grain_groups::{Envelope, FilterType, GROUPS, Group, Settings},
-    preset,
+    preset::{self, FilterRouting},
     tables::{self, Random},
 };
 
@@ -89,15 +89,54 @@ struct Grain {
     /// This grain's own random cutoff offset and level.
     cutoff_offset: f32,
     level: f32,
-    /// False when the group's filter stayed open across the whole grain's
-    /// envelope as it started, so the grain skips filtering.
-    filtering: bool,
+    /// False for a filter that stayed open across the whole grain's
+    /// envelope as it started, or for Filter 2 routed off, so the grain
+    /// skips it.
+    filtering: [bool; 2],
     amp: Segments,
     filter_env: Segments,
+    filters: [Svf; 2],
+}
+
+/// A grain's stereo state-variable filter, as the engine's legacy one.
+#[derive(Clone, Copy, Debug, Default)]
+struct Svf {
     state: [[f32; 2]; 2],
     coefficients: [f32; 3],
     k: f32,
     band_gain: f32,
+}
+impl Svf {
+    fn tune(&mut self, g: f32, resonance: f32) {
+        let k = 2.0 - 1.94 * resonance;
+        let a1 = 1.0 / (1.0 + g * (g + k));
+        let a2 = g * a1;
+        self.coefficients = [a1, a2, g * a2];
+        self.k = k;
+        self.band_gain = k.sqrt();
+    }
+    /// An open low pass passes the frame and keeps its state running.
+    #[inline(always)]
+    fn process(&mut self, frame: Stereo, kind: FilterType, open: bool) -> Stereo {
+        let (k, band_gain) = (self.k, self.band_gain);
+        let [a1, a2, a3] = self.coefficients;
+        std::array::from_fn(|c| {
+            let [ic1, ic2] = self.state[c];
+            let v3 = frame[c] - ic2;
+            let band = a1 * ic1 + a2 * v3;
+            let low = ic2 + a2 * ic1 + a3 * v3;
+            self.state[c] = [fast::flush(2.0 * band - ic1), fast::flush(2.0 * low - ic2)];
+            if open {
+                frame[c]
+            } else {
+                match kind {
+                    FilterType::LowPass => low,
+                    FilterType::BandPass => band * band_gain,
+                    FilterType::HighPass => frame[c] - k * band - low,
+                }
+            }
+        })
+    }
 }
 
 pub(crate) struct Runtime {
@@ -168,9 +207,15 @@ impl Runtime {
             shape: group.shape.clamp(0.0, 1.0),
             cutoff_offset,
             level,
-            filtering: !(group.filter_type == FilterType::LowPass
-                && group.cutoff + cutoff_offset >= 0.999
-                && group.env_depth >= 0.0),
+            filtering: [
+                !(group.filter_type == FilterType::LowPass
+                    && group.cutoff + cutoff_offset >= 0.999
+                    && group.env_depth >= 0.0),
+                group.filter_routing != FilterRouting::Single
+                    && !(group.filter2_type == FilterType::LowPass
+                        && group.filter2_cutoff + cutoff_offset >= 0.999
+                        && group.filter2_env_depth >= 0.0),
+            ],
             amp: Segments::new(&group.amp, duration),
             filter_env: Segments::new(&group.filter_env, duration),
             ..Grain::default()
@@ -204,45 +249,52 @@ impl Runtime {
         let group = &settings.groups[index];
         let age_f = age as f32;
         let gain = grain.amp.shaped(age_f, grain.shape) * group.level * grain.level;
-        if !grain.filtering {
+        let [first, second] = grain.filtering;
+        let routing = group.filter_routing;
+        let second = second && routing != FilterRouting::Single;
+        if !first && !second {
             return Some((index, frame.map(|x| x * gain)));
         }
-        let cutoff =
-            group.cutoff + grain.cutoff_offset + group.env_depth * grain.filter_env.swept(age_f);
-        let open = group.filter_type == FilterType::LowPass && cutoff >= 0.999;
+        // Both cutoffs follow the one filter envelope, each at its depth.
+        let sweep = grain.filter_env.swept(age_f);
+        let cutoffs = [
+            group.cutoff + grain.cutoff_offset + group.env_depth * sweep,
+            group.filter2_cutoff + grain.cutoff_offset + group.filter2_env_depth * sweep,
+        ];
         if age.is_multiple_of(REFRESH) {
-            let step = cutoff.clamp(0.0, 1.0) * CUTOFF_STEPS as f32;
-            let i = (step as usize).min(CUTOFF_STEPS - 1);
-            let g = self.gains[i] + (self.gains[i + 1] - self.gains[i]) * (step - i as f32);
-            let k = 2.0 - 1.94 * group.resonance;
-            let a1 = 1.0 / (1.0 + g * (g + k));
-            let a2 = g * a1;
-            grain.coefficients = [a1, a2, g * a2];
-            grain.k = k;
-            grain.band_gain = k.sqrt();
+            for (n, filter) in grain.filters.iter_mut().enumerate() {
+                if [first, second][n] {
+                    let step = cutoffs[n].clamp(0.0, 1.0) * CUTOFF_STEPS as f32;
+                    let i = (step as usize).min(CUTOFF_STEPS - 1);
+                    let g = self.gains[i] + (self.gains[i + 1] - self.gains[i]) * (step - i as f32);
+                    filter.tune(g, [group.resonance, group.filter2_resonance][n]);
+                }
+            }
         }
-        let (k, band_gain) = (grain.k, grain.band_gain);
-        let [a1, a2, a3] = grain.coefficients;
-        Some((
-            index,
-            std::array::from_fn(|c| {
-                let [ic1, ic2] = grain.state[c];
-                let v3 = frame[c] - ic2;
-                let band = a1 * ic1 + a2 * v3;
-                let low = ic2 + a2 * ic1 + a3 * v3;
-                grain.state[c] = [fast::flush(2.0 * band - ic1), fast::flush(2.0 * low - ic2)];
-                let out = if open {
-                    frame[c]
+        let kinds = [group.filter_type, group.filter2_type];
+        let open = |n: usize| kinds[n] == FilterType::LowPass && cutoffs[n] >= 0.999;
+        let [one, two] = &mut grain.filters;
+        let filtered = if first {
+            one.process(frame, kinds[0], open(0))
+        } else {
+            frame
+        };
+        // A Filter 2 left open passes its input: after Filter 1 that is
+        // Filter 1's output, beside it the grain itself.
+        let out = match routing {
+            FilterRouting::Single => filtered,
+            FilterRouting::Serial if second => two.process(filtered, kinds[1], open(1)),
+            FilterRouting::Serial => filtered,
+            FilterRouting::Parallel => {
+                let beside = if second {
+                    two.process(frame, kinds[1], open(1))
                 } else {
-                    match group.filter_type {
-                        FilterType::LowPass => low,
-                        FilterType::BandPass => band * band_gain,
-                        FilterType::HighPass => frame[c] - k * band - low,
-                    }
+                    frame
                 };
-                out * gain
-            }),
-        ))
+                std::array::from_fn(|c| (filtered[c] + beside[c]) * 0.5)
+            }
+        };
+        Some((index, out.map(|x| x * gain)))
     }
 }
 
@@ -327,13 +379,13 @@ mod tests {
         assert!(levels.iter().all(|&l| (0.5..=1.0).contains(&l)));
         assert!(levels.iter().any(|&l| l < 0.6) && levels.iter().any(|&l| l > 0.9));
         // A random cutoff below the top keeps a filter open at 100% working.
-        assert!(runtime.grains.iter().any(|g| g.filtering));
+        assert!(runtime.grains.iter().any(|g| g.filtering[0]));
         runtime.start(0, 0, &Group::default(), 1_000);
         assert_eq!(
             (runtime.grains[0].cutoff_offset, runtime.grains[0].level),
             (0.0, 1.0)
         );
-        assert!(!runtime.grains[0].filtering);
+        assert_eq!(runtime.grains[0].filtering, [false; 2]);
     }
 
     #[test]

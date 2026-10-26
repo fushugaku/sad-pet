@@ -118,8 +118,9 @@ const context = vm.createContext({
 const run = (code) => vm.runInContext(code, context);
 run(`${source}\nbuildGrainGroups(); syncGrainGroups();`);
 
-// Four groups of twenty-two knobs each, and CHAIN and SEND, under the host IDs.
-assert.equal(knobs.size, 4 * 24);
+// Four groups of twenty-five knobs each, and CHAIN and SEND, under the host IDs.
+assert.equal(knobs.size, 4 * 27);
+assert.equal(knobs.get("grain_group2_filter2_cutoff").aria, "Group B filter 2 cutoff");
 assert.equal(knobs.get("grain_group3_random_pitch").aria, "Group C random pitch");
 assert.equal(knobs.get("grain_group1_size").format(-2), "×0.25");
 assert.equal(knobs.get("grain_group1_size").format(1), "×2");
@@ -187,6 +188,23 @@ assert.deepEqual(calls.splice(0), [
 assert.deepEqual(
   [groups().groups[0].scale, groups().groups[0].size, groups().groups[0].spread],
   ["chord", -1, 0.5],
+);
+// Filter 2 is routed off until its menu says Serial or Parallel.
+const routing = menu(0, "filter_routing");
+assert.equal(routing.value, "single");
+assert.equal(routing.getAttribute("aria-label"), "Group A filter 2 routing");
+routing.value = "parallel";
+routing.onchange();
+const type2 = menu(0, "filter2_type");
+type2.value = "band_pass";
+type2.onchange();
+assert.deepEqual(calls.splice(0), [
+  ["parameter", "grain_group1_filter_routing", 2],
+  ["parameter", "grain_group1_filter2_type", 1],
+]);
+assert.deepEqual(
+  [groups().groups[0].filter_routing, groups().groups[0].filter2_type],
+  ["parallel", "band_pass"],
 );
 
 // Tabs show each group's share, Off at zero, and pick the page.
