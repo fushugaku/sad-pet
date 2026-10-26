@@ -1907,16 +1907,16 @@ impl Engine {
         self.applied_shaper_pitch = shaper_note.to_bits();
         self.performance.modulate(m.performance);
         // Pitch is a Grain engine control: it leaves the drum and synth voices
-        // alone, so switching Granular off restores their own pitch.
-        let direct_tune = m.params.sample_tune_semis + m.params.sample_tune_cents * 0.01;
+        // alone, so switching Granular off restores their own pitch. Sample
+        // tune is the voices' own: the history the grains read carries it, so
+        // neither Granular nor its Chain moves the tuning.
+        let tune = m.params.sample_tune_semis + m.params.sample_tune_cents * 0.01;
         if let (Some(drums), Some(settings)) = (&mut self.drums, &self.preset.drums) {
-            let transpose = if settings.granular { 0. } else { direct_tune };
-            drums.configure(settings, m.drums, m.params.bpm, transpose);
+            drums.configure(settings, m.drums, m.params.bpm, tune);
             drums.shift(settings, m.drum_shifts);
         }
         if let Some(synth) = &mut self.synth {
-            let transpose = if m.synth.granular { 0. } else { direct_tune };
-            synth.configure(&m.synth, transpose, &self.sample, m.params.sample_root_note);
+            synth.configure(&m.synth, tune, &self.sample, m.params.sample_root_note);
         }
         for (i, env) in m.envs.iter().enumerate() {
             if i >= m.env_count {
@@ -2083,14 +2083,20 @@ impl Engine {
         } else {
             self.bend[note.channel as usize] * p.midi_pitchbend_range
         };
+        // A Synth's or drum kit's history is already tuned.
+        let (tune_semis, tune_cents) = if synth || self.drums.is_some() {
+            (0.0, 0.0)
+        } else {
+            (p.sample_tune_semis, p.sample_tune_cents)
+        };
         let semis = (p.pitch * 2.0 - 1.0) * p.pitch_range
             + if voice == 0 {
                 0.0
             } else {
                 note.note as f32 - p.sample_root_note
             }
-            + p.sample_tune_semis
-            + p.sample_tune_cents * 0.01
+            + tune_semis
+            + tune_cents * 0.01
             + bend
             + self.random.unit() * tables::detune_range(p.detune);
         let range = self.source_range();

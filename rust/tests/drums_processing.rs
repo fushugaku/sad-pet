@@ -9,6 +9,9 @@ fn drum_engine(granular: bool) -> Engine {
     pattern_engine(granular, &[(0, 1.0), (4, 0.85)])
 }
 fn pattern_engine(granular: bool, steps: &[(usize, f32)]) -> Engine {
+    start(pattern_preset(granular, steps))
+}
+fn pattern_preset(granular: bool, steps: &[(usize, f32)]) -> Preset {
     let mut p = Preset {
         drums: Some(Box::default()),
         color_chain: vec![],
@@ -24,6 +27,9 @@ fn pattern_engine(granular: bool, steps: &[(usize, f32)]) -> Engine {
     p.params.grain_size = 0.72;
     p.params.pitch = 0.75;
     p.params.mix = 1.0;
+    p
+}
+fn start(p: Preset) -> Engine {
     let mut engine = Engine::new(8000, Arc::new(SampleBuffer::demo(8000)), p);
     engine.set_midi_gate(false);
     engine.set_playing(true);
@@ -58,6 +64,25 @@ fn drum_granular_routing_changes_audio_and_can_be_toggled_without_rebuilding_the
         dry.process_frame();
     }
     assert!(dry.active_grains() > 0);
+}
+
+#[test]
+fn sample_tune_stays_on_the_drums_with_the_grain_engine_out_of_the_chain() {
+    let play = |granular: bool, chain: f32| {
+        let mut p = pattern_preset(granular, &[(0, 1.0), (4, 0.85)]);
+        p.params.sample_tune_semis = 5.0;
+        p.taps.grains.chain = chain;
+        let mut engine = start(p);
+        (0..16000)
+            .map(|_| engine.process_frame())
+            .collect::<Vec<_>>()
+    };
+    let direct = play(false, 1.0);
+    assert!(direct.iter().any(|f| f[0].abs() > 0.01));
+    assert!(
+        play(true, 0.0) == direct,
+        "the grain engine moved the tuning"
+    );
 }
 
 #[test]

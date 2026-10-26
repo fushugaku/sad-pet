@@ -72,7 +72,8 @@ the drag without waiting for the next engine-state poll.
 Source FX processes the drum audio before capture; pre-filter FX, filters, Resynth
 and post-filter FX remain available on the selected timbre. Main pitch transposes
 only the grains: switching Granular off returns the drum voices to their own
-tuning. The drum page's Neuropolis editor is independent of every other timbre's
+tuning. Sample tune transposes the drum voices themselves, before the grains
+hear them. The drum page's Neuropolis editor is independent of every other timbre's
 program.
 
 The Synth engine timbre reverses the granular order: up to four Rustias OSC1 /

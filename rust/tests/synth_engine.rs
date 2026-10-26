@@ -180,6 +180,51 @@ fn the_granular_stage_follows_the_vca_and_keeps_tails() {
 }
 
 #[test]
+fn sample_tune_stays_on_the_voices_whatever_the_grain_engine_does() {
+    let play = |granular: bool, chain: f32| {
+        let mut engine = engine(48_000, |p| {
+            let synth = p.synth.as_mut().unwrap();
+            synth.granular = granular;
+            synth.oscillators[0].waveform = Waveform::Sine;
+            p.params.filter = 1.0;
+            p.params.mix = 1.0;
+            p.params.detune = 0.5;
+            p.params.cloud = 0.0;
+            p.params.sample_tune_semis = 12.0;
+            p.taps.grains.chain = chain;
+            p.color_chain.clear();
+        });
+        note(&mut engine, 69, true);
+        render(&mut engine, 24_000)
+    };
+    let direct = play(false, 1.0);
+    let hz = frequency(&direct[12_000..], 48_000);
+    assert!((hz - 880.0).abs() < 12.0, "A4 tuned an octave up, got {hz}");
+    // Out of the chain, the grain engine leaves the tuned voices as they are.
+    assert!(
+        play(true, 0.0) == direct,
+        "the grain engine moved the tuning"
+    );
+    // The grains read the tuned history without tuning it again.
+    let grains = &play(true, 1.0)[12_000..];
+    assert!(peak(grains) > 0.01);
+    let [below, tuned, twice] = [440.0, 880.0, 1760.0].map(|hz| energy(grains, hz, 48_000));
+    assert!(
+        tuned > 10.0 * below.max(twice),
+        "grains replay the tuned voice: {below} at 440 Hz, {tuned} at 880, {twice} at 1760"
+    );
+}
+/// The left channel's energy at one frequency (Goertzel).
+fn energy(frames: &[[f32; 2]], hz: f32, rate: u32) -> f32 {
+    let k = 2.0 * (std::f32::consts::TAU * hz / rate as f32).cos();
+    let (mut a, mut b) = (0.0_f32, 0.0_f32);
+    for frame in frames {
+        (a, b) = (frame[0] + k * a - b, a);
+    }
+    a * a + b * b - k * a * b
+}
+
+#[test]
 fn parameters_edit_the_synth_and_presets_round_trip() {
     let mut engine = engine(48_000, |_| {});
     let changes = parameters::parse(&serde_json::json!({
