@@ -726,7 +726,7 @@ fn main_pitch_steps_can_gate_envelopes_like_notes() {
     assert!(!p.sequencer.tracks[0].env_gate);
     let json = serde_json::json!([{"track":1,"field":53,"value":1}]);
     assert_eq!(sad_pet::sequence::parse_edits(&json).unwrap()[0].field, 53);
-    let json = serde_json::json!([{"track":1,"field":55,"value":1}]);
+    let json = serde_json::json!([{"track":1,"field":56,"value":1}]);
     assert!(sad_pet::sequence::parse_edits(&json).is_err());
 }
 
@@ -983,6 +983,137 @@ fn pages_save_only_what_was_edited_and_new_pages_copy_the_last() {
     assert!(edits(STEPS as u32 - 1, 0).is_ok());
     assert!(edits(STEPS as u32, 0).is_err());
     let field = |field| parse_edits(&serde_json::json!([{"track": 1, "field": field, "value": 2}]));
-    assert!(field(54).is_ok());
-    assert!(field(55).is_err());
+    assert!(field(55).is_ok());
+    assert!(field(56).is_err());
+}
+
+#[test]
+fn picked_notes_and_octave_range_play_like_upstream_user_scales() {
+    use sad_pet::sequence::parse_edits;
+    // D, F, A and C (from D: 0, 3, 7, 10) on two tracks, a C major triad on an
+    // oscillator lane; all of them between G3 and A♯4.
+    let mut tracks = vec![
+        track(1, 1, Target::MainPitch),
+        track(2, 2, Target::Notes),
+        track(3, 1, Target::Oscillator { index: 1 }),
+    ];
+    for (t, (notes, root)) in tracks.iter_mut().zip([(0x489, 2), (0x489, 2), (0x091, 0)]) {
+        t.notes = notes;
+        t.config[field::ROOT] = root;
+        t.config[field::MIN_NOTE] = 55;
+        t.config[field::MAX_NOTE] = 70;
+        // Positive accumulation moves by the picked notes too.
+        for (i, s) in t.steps.iter_mut().enumerate() {
+            s.accumulate = i8::from(i % 3 == 0).into();
+        }
+    }
+    let mut reference = Sequencer::default();
+    reference.resize_tracks(3);
+    for m in &mut reference.mods {
+        m.config[9] = 1;
+    }
+    assert!(reference.set_scale(49, 0x489, 2));
+    assert!(reference.set_scale(50, 0x091, 0));
+    for (i, t) in tracks.iter().enumerate() {
+        for (f, v) in t.config.iter().enumerate() {
+            reference.set_track(i, f as u32, *v);
+        }
+        reference.set_track(i, field::SCALE as u32, [49, 49, 50][i]);
+        for (s, step) in t.steps.iter().enumerate().take(16) {
+            for f in 0..15 {
+                reference.set_step(i, s, f as u32, step.get(f) as i32);
+            }
+        }
+    }
+    reference.restart();
+    let mut p = Preset::default();
+    p.sequencer.enabled = true;
+    p.sequencer.tracks = tracks;
+    let mut e = engine(p);
+    e.set_playing(true);
+    let on = |pitch: f32, root: i32, notes: u16| {
+        let n = pitch as i32;
+        pitch.fract() == 0.0
+            && (55..=70).contains(&n)
+            && notes >> (n - root).rem_euclid(12) & 1 != 0
+    };
+    let mut ticks = 0;
+    for sample in 0..16000 {
+        let due = (sample as f64 * 120.0 * 96.0 / (60.0 * 8000.0) + 1e-9).floor() as u64 + 1;
+        while ticks < due {
+            reference.tick();
+            ticks += 1;
+        }
+        e.process_frame();
+        if sample % 211 == 0 {
+            let v = e.sequence_view();
+            for i in 0..3 {
+                assert_eq!(
+                    v.tracks[i].step,
+                    reference.stage(i).unwrap(),
+                    "sample {sample}, track {i}"
+                );
+                assert_eq!(
+                    v.tracks[i].pitch,
+                    reference.cents(i) as f32 / 100.0,
+                    "sample {sample}, track {i}"
+                );
+            }
+            assert!(on(v.tracks[0].pitch, 2, 0x489), "{}", v.tracks[0].pitch);
+            assert!(on(v.tracks[2].pitch, 0, 0x091), "{}", v.tracks[2].pitch);
+        }
+    }
+
+    // While playing: only D on the first track, the second's notes move up to
+    // A with its root, and a Scale picked by name drops the third's notes.
+    let edits = parse_edits(&serde_json::json!([
+        {"track": 1, "field": 55, "value": 1},
+        {"track": 2, "field": 5, "value": 9},
+        {"track": 3, "field": 4, "value": 27},
+    ]))
+    .unwrap();
+    no_heap(|| {
+        e.apply_sequence_edits(&edits);
+        frames(&mut e, 1000);
+    });
+    let mut chromatic = false;
+    for _ in 0..40 {
+        frames(&mut e, 211);
+        let v = e.sequence_view();
+        assert!(on(v.tracks[0].pitch, 2, 0x001), "{}", v.tracks[0].pitch);
+        assert!(on(v.tracks[1].pitch, 9, 0x489), "{}", v.tracks[1].pitch);
+        assert!(on(v.tracks[2].pitch, 0, 0xfff));
+        chromatic |= !on(v.tracks[2].pitch, 0, 0x091);
+    }
+    assert!(chromatic, "the third track still plays its picked notes");
+}
+
+#[test]
+fn picked_notes_save_and_a_scale_picked_by_name_drops_them() {
+    let edit = |field, value| Edit {
+        track: 1,
+        stage: None,
+        field,
+        value,
+    };
+    let mut t = Track::default();
+    assert_eq!(t.notes, 0, "new tracks follow their Scale");
+    t.edit(edit(55, 0x091 as f32));
+    t.edit(edit(5, 4.0));
+    let back: Track = serde_json::from_value(serde_json::to_value(&t).unwrap()).unwrap();
+    assert_eq!((back.notes, back.config[field::ROOT]), (0x091, 4));
+    // Root changes keep them; picking a Scale drops them.
+    t.edit(edit(field::SCALE as u8, 3.0));
+    assert_eq!((t.notes, t.config[field::SCALE]), (0, 3));
+    t.edit(edit(55, 70000.0));
+    assert_eq!(t.notes, 0x0fff);
+
+    // Older presets have none; stray high bits are dropped on load.
+    let mut old = serde_json::to_value(Track::default()).unwrap();
+    old.as_object_mut().unwrap().remove("notes");
+    assert_eq!(serde_json::from_value::<Track>(old).unwrap().notes, 0);
+    let mut p = Preset::default();
+    p.sequencer.tracks[0].notes = 0xf091;
+    p.sequencer.sanitize();
+    assert_eq!(p.sequencer.tracks[0].notes, 0x091);
 }

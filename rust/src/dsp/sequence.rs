@@ -18,6 +18,8 @@ use metropolix_core::{
 use std::sync::OnceLock;
 
 const _: () = assert!(crate::sequence::STAGES == STAGES);
+/// The core's user scales follow its factory scales.
+const USER_SCALE: usize = metropolix_core::scale::FACTORY_SCALES.len();
 
 /// Config fields that move a track's stages and pulses in time.
 const TIMING: [usize; 8] = [
@@ -552,7 +554,7 @@ impl Runtime {
         for lane in &mut shadow.mods {
             lane.config[9] = 1;
         }
-        Self {
+        let mut runtime = Self {
             core,
             lanes,
             indices,
@@ -569,7 +571,41 @@ impl Runtime {
             replay: None,
             anchor: 0,
             relocks: 0,
+        };
+        for (i, t) in tracks.iter().enumerate() {
+            runtime.scale(i, t);
         }
+        runtime
+    }
+    /// The core quantizes to the track's Scale, or to the notes picked for it,
+    /// held in a user scale that tracks with the same notes share.
+    fn scale(&mut self, i: usize, track: &Track) {
+        let mut index = track.config[field::SCALE];
+        if track.notes != 0 {
+            let (core, root) = (&self.core, track.config[field::ROOT]);
+            let users = 0..core.user_roots.len();
+            let slot = users
+                .clone()
+                .find(|&k| {
+                    core.scales[USER_SCALE + k].bits() == track.notes
+                        && i32::from(core.user_roots[k]) == root
+                })
+                .or_else(|| {
+                    users.clone().find(|&k| {
+                        core.tracks.iter().enumerate().all(|(j, t)| {
+                            j == i || t.config[field::SCALE] != (USER_SCALE + k) as i32
+                        })
+                    })
+                });
+            // With every user scale holding other tracks' notes, it keeps its Scale.
+            if let Some(k) = slot {
+                let mask = i32::from(track.notes);
+                self.core.set_scale(USER_SCALE + k, mask, root);
+                self.shadow.set_scale(USER_SCALE + k, mask, root);
+                index = (USER_SCALE + k) as i32;
+            }
+        }
+        self.core.set_track(i, field::SCALE as u32, index);
     }
     pub fn index(&self, id: u32) -> Option<usize> {
         self.indices
@@ -674,6 +710,11 @@ impl Runtime {
         } else if (edit.field as usize) < field::COUNT {
             self.core
                 .set_track(index, edit.field as u32, track.config[edit.field as usize]);
+            if matches!(edit.field as usize, field::SCALE | field::ROOT) {
+                self.scale(index, track);
+            }
+        } else if edit.field == 55 {
+            self.scale(index, track);
         } else {
             let l = &mut self.lanes[index];
             l.amount = track.amount;
@@ -1101,6 +1142,65 @@ mod tests {
         let mut m = Modulated::from_preset(preset);
         runtime.apply(&mut m);
         m
+    }
+
+    #[test]
+    fn picked_notes_share_user_scales_and_free_them_for_other_sets() {
+        let with = |id, notes, root| {
+            let mut t = lane(id, Target::Notes, 61);
+            t.notes = notes;
+            t.config[field::ROOT] = root;
+            t
+        };
+        let mut tracks = [
+            with(1, 0x091, 0),
+            with(2, 0x091, 0),
+            with(3, 0x091, 4),
+            with(4, 0, 0),
+        ];
+        let mut r = Runtime::new(&tracks);
+        let scales = |r: &Runtime| [0, 1, 2, 3].map(|i| r.core.tracks[i].config[field::SCALE]);
+        // Same notes and root share one; the shadow has them all too.
+        assert_eq!(scales(&r), [49, 49, 50, 0]);
+        assert_eq!((r.core.scales[50].bits(), r.core.user_roots[1]), (0x091, 4));
+        assert_eq!(
+            (r.shadow.scales, r.shadow.user_roots),
+            (r.core.scales, r.core.user_roots)
+        );
+        let mut edit = |r: &mut Runtime, i: usize, field: u8, value: f32| {
+            let e = Edit {
+                track: i as u32 + 1,
+                stage: None,
+                field,
+                value,
+            };
+            tracks[i].edit(e);
+            r.edit(i, &tracks[i], e);
+        };
+        // A set only one track used makes room for that track's next one.
+        edit(&mut r, 2, 55, 0x0a5 as f32);
+        assert_eq!(scales(&r), [49, 49, 50, 0]);
+        assert_eq!(r.core.scales[50].bits(), 0x0a5);
+        // One still in use stays; a root change is a set of its own.
+        edit(&mut r, 0, 5, 7.0);
+        assert_eq!(scales(&r), [51, 49, 50, 0]);
+        assert_eq!((r.core.scales[49].bits(), r.core.user_roots[0]), (0x091, 0));
+        assert_eq!(r.core.user_roots[2], 7);
+        edit(&mut r, 3, 55, 0x091 as f32);
+        assert_eq!(scales(&r)[3], 49);
+        // A Scale picked by name leaves the user scales.
+        edit(&mut r, 1, field::SCALE as u8, 5.0);
+        assert_eq!(scales(&r), [51, 5, 50, 49]);
+        assert_eq!(
+            (r.shadow.scales, r.shadow.user_roots),
+            (r.core.scales, r.core.user_roots)
+        );
+
+        // Past a hundred different sets, the rest keep their Scale.
+        let many: Vec<_> = (1..=101).map(|i| with(i, i as u16, 0)).collect();
+        let r = Runtime::new(&many);
+        assert_eq!(r.core.tracks[99].config[field::SCALE], 148);
+        assert_eq!(r.core.tracks[100].config[field::SCALE], 0);
     }
 
     #[test]

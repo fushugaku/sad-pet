@@ -520,12 +520,16 @@ window.SadNeuropolis = class {
       track.steps[stage][this.stepFields[field]] = this.boolFields.has(field)
         ? !!value
         : value;
-    else if (field < 43) track.config[field] = Math.round(value);
-    else if (field >= 49 && field <= 52) {
+    else if (field < 43) {
+      track.config[field] = Math.round(value);
+      // Picking a Scale drops the notes picked by hand.
+      if (field === 4) track.notes = 0;
+    } else if (field >= 49 && field <= 52) {
       track.pitch_oscillators ??= [false, false, false, false];
       track.pitch_oscillators[field - 49] = !!value;
     } else if (field === 53) track.env_gate = !!value;
     else if (field === 54) this.setPages(track, value);
+    else if (field === 55) track.notes = value;
     else if (field < 47)
       track[
         { 43: "amount", 44: "absolute", 45: "gate_output", 46: "root_note" }[
@@ -583,9 +587,78 @@ window.SadNeuropolis = class {
       ? `${value >= 60 ? "+" : ""}${Math.round(value - 60)} st`
       : this.note(value);
   }
+  // Pitch classes a track plays, bit 0 = C (offset 0 on oscillator lanes):
+  // its own notes or its Scale's, from the Scale root.
+  scaleMask(track) {
+    const root = track.config[5] % 12,
+      notes =
+        track.notes || (this.catalog.scale_masks?.[track.config[4]] ?? 0xfff);
+    return ((notes << root) | (notes >> (12 - root))) & 0xfff;
+  }
+  // The core's lowest and highest note, whichever way round they are set.
+  noteRange(track) {
+    return [
+      Math.min(track.config[40], track.config[41]),
+      Math.max(track.config[40], track.config[41]),
+    ];
+  }
+  // The notes a pitch slider steps through: the scale's, from the lowest to
+  // the highest note. The core plays every step on one of them.
+  sliderNotes(track) {
+    const mask = this.scaleMask(track),
+      relative = this.relative(track),
+      [low, high] = this.noteRange(track),
+      from = Math.max(low, relative ? 36 : 0),
+      notes = [];
+    for (let n = from; n <= Math.min(high, relative ? 84 : 127); n++)
+      if ((mask >> n % 12) & 1) notes.push(n);
+    return notes.length ? notes : [from];
+  }
+  // A step's slider position: the note nearest its pitch, the higher one on
+  // a tie, as the core quantizes it.
+  slot(notes, pitch) {
+    let best = 0;
+    notes.forEach((n, i) => {
+      if (Math.abs(n - pitch) <= Math.abs(notes[best] - pitch)) best = i;
+    });
+    return best;
+  }
+  // A note on or off; a set that is one of the Scales becomes that Scale.
+  toggleNote(id, note) {
+    const track = this.track(id),
+      mask = this.scaleMask(track) ^ (1 << note),
+      root = track.config[5] % 12;
+    if (!mask) return;
+    const notes = ((mask >> root) | (mask << (12 - root))) & 0xfff,
+      masks = this.catalog.scale_masks ?? [],
+      scale =
+        masks[track.config[4]] === notes
+          ? track.config[4]
+          : masks.indexOf(notes);
+    if (scale >= 0) this.edit(id, null, 4, scale);
+    else this.edit(id, null, 55, notes);
+  }
+  // The lowest or highest octave; the other end follows when they would cross.
+  setOctave(id, field, octave) {
+    const track = this.track(id),
+      relative = this.relative(track),
+      low = (relative ? 60 : 12) + 12 * octave,
+      high = Math.min(relative ? 84 : 127, low + 11),
+      [from, to] = this.noteRange(track);
+    if (field === 40) {
+      this.edit(id, null, 40, low, false);
+      this.edit(id, null, 41, Math.max(to, high), false);
+    } else {
+      this.edit(id, null, 41, high, false);
+      this.edit(id, null, 40, Math.min(from, low), false);
+    }
+    this.sync();
+  }
   configValue(track, field) {
     return field < 43
-      ? track.config[field]
+      ? field === 4 && track.notes
+        ? -1
+        : track.config[field]
       : field === 54
         ? this.pages(track)
       : field === 53
@@ -680,7 +753,29 @@ window.SadNeuropolis = class {
         else input.value = Number(value);
       }
     }
+    const relative = this.relative(track),
+      [low, high] = this.noteRange(track),
+      mask = this.scaleMask(track);
+    for (const input of this.root.querySelectorAll("[data-octave]"))
+      if (document.activeElement !== input)
+        input.value = Math.max(
+          relative ? -2 : -1,
+          Math.min(
+            relative ? 2 : 9,
+            Math.floor(
+              ((Number(input.dataset.octave) === 40 ? low : high) -
+                (relative ? 60 : 12)) /
+                12,
+            ),
+          ),
+        );
+    for (const key of this.root.querySelectorAll(".neuro-note"))
+      key.setAttribute(
+        "aria-pressed",
+        String(!!((mask >> Number(key.dataset.note)) & 1)),
+      );
     for (const input of this.root.querySelectorAll("[data-stage]")) {
+      if (input.dataset.notes) continue;
       const stage = track.steps[Number(input.dataset.stage)],
         field = Number(input.dataset.field),
         raw = stage[this.stepFields[field]],
@@ -700,10 +795,19 @@ window.SadNeuropolis = class {
     if (units) units.textContent = this.depthText(track.target.parameter, track.amount);
     for (const update of this.knobs) update();
     const valueLayer = track.target.kind === "parameter" ? "cv" : "pitch",
-      offset = this.offset(track);
+      offset = this.offset(track),
+      notes = valueLayer === "pitch" && this.sliderNotes(track);
     this.root.querySelectorAll(".neuro-stage").forEach((card, i) => {
       const step = track.steps[offset + i],
-        value = step[valueLayer];
+        fader = card.querySelector(".neuro-fader");
+      let value = step[valueLayer];
+      if (notes) {
+        // Sliders step through the track's notes; each shows the one it plays.
+        const slot = this.slot(notes, value);
+        fader.max = notes.length - 1;
+        if (document.activeElement !== fader) fader.value = slot;
+        value = notes[slot];
+      }
       card.classList.toggle("outside", i >= track.config[1]);
       card.classList.toggle("rest", step.gate === 0 || step.skip);
       card.querySelector(".neuro-value").textContent =
@@ -718,12 +822,10 @@ window.SadNeuropolis = class {
                 ? "On"
                 : "Off"
               : value;
-      card
-        .querySelector(".neuro-fader")
-        .setAttribute(
-          "aria-valuetext",
-          card.querySelector(".neuro-value").textContent,
-        );
+      fader.setAttribute(
+        "aria-valuetext",
+        card.querySelector(".neuro-value").textContent,
+      );
       card
         .querySelector(".neuro-stage-number")
         .setAttribute("aria-pressed", String(!step.skip));
@@ -1131,10 +1233,7 @@ window.SadNeuropolis = class {
     const offset = this.offset(track),
       pages = this.pages(track),
       parameter = track.target.kind === "parameter",
-      relative = this.relative(track),
-      field = parameter ? 12 : 0,
-      min = parameter ? -5000 : relative ? -24 : 0,
-      max = parameter ? 5000 : relative ? 24 : 127;
+      relative = this.relative(track);
     const toolbar = document.createElement("div");
     toolbar.className = "neuro-stage-tools";
     const title = document.createElement("strong");
@@ -1247,23 +1346,25 @@ window.SadNeuropolis = class {
       const fader = document.createElement("input");
       fader.type = "range";
       fader.className = "neuro-fader";
-      fader.min = min;
-      fader.max = max;
+      fader.min = parameter ? -5000 : 0;
+      fader.max = parameter ? 5000 : this.sliderNotes(track).length - 1;
       fader.step = 1;
       fader.dataset.stage = i;
-      fader.dataset.field = field;
-      fader.dataset.relative = String(relative);
+      fader.dataset.field = parameter ? 12 : 0;
       fader.setAttribute(
         "aria-label",
         `Stage ${i + 1} ${parameter ? "parameter value" : relative ? "pitch offset" : "pitch"}`,
       );
-      fader.oninput = () =>
-        this.edit(
-          track.id,
-          i,
-          field,
-          Number(fader.value) + (relative ? 60 : 0),
-        );
+      if (parameter)
+        fader.oninput = () => this.edit(track.id, i, 12, Number(fader.value));
+      else {
+        // Positions are the track's notes, whatever their spacing.
+        fader.dataset.notes = "true";
+        fader.oninput = () => {
+          const notes = this.sliderNotes(this.track(track.id));
+          this.edit(track.id, i, 0, notes[Math.min(Number(fader.value), notes.length - 1)]);
+        };
+      }
       card.append(pick, number, value, fader);
       const gate = document.createElement("div");
       gate.className = "neuro-gate";
@@ -1429,6 +1530,74 @@ window.SadNeuropolis = class {
     advancedScroll.append(advanced);
     details.append(advancedScroll);
     editor.append(details);
+  }
+  // The Scale, the notes picked from it and the octaves the pitch sliders
+  // step through.
+  buildNotes(editor, track) {
+    const relative = this.relative(track),
+      names = relative
+        ? Array.from({ length: 12 }, (_, n) => String(n))
+        : ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"],
+      row = document.createElement("div");
+    row.className = "neuro-notes";
+    const scale = this.configControl(
+        row,
+        "Scale",
+        4,
+        this.catalog.scales.map((s, i) => [i, s]),
+      ),
+      custom = this.option(-1, "Custom");
+    custom.disabled = true;
+    scale.append(custom);
+    this.configControl(
+      row,
+      "Scale root",
+      5,
+      names.map((n, i) => [i, n]),
+    );
+    const notes = document.createElement("div");
+    notes.className = "neuro-control neuro-note-control";
+    const title = document.createElement("span");
+    title.textContent = relative ? "Notes · semitones" : "Notes";
+    const keys = document.createElement("div");
+    keys.className = "neuro-note-keys";
+    keys.setAttribute("role", "group");
+    keys.setAttribute("aria-label", "Track notes");
+    names.forEach((name, n) => {
+      const key = document.createElement("button");
+      key.type = "button";
+      key.className = "neuro-note";
+      key.dataset.note = n;
+      key.classList.toggle("is-sharp", !relative && name.length > 1);
+      key.textContent = name;
+      key.setAttribute("aria-label", relative ? `Offset ${n} semitones` : `Note ${name}`);
+      key.setAttribute("aria-pressed", "false");
+      key.onclick = () => this.toggleNote(track.id, n);
+      keys.append(key);
+    });
+    notes.append(title, keys);
+    row.append(notes);
+    const base = relative ? 60 : 12;
+    for (const [text, field] of [
+      ["Low octave", 40],
+      ["High octave", 41],
+    ]) {
+      const label = document.createElement("label");
+      label.className = "neuro-control";
+      const title = document.createElement("span");
+      title.textContent = text;
+      const select = document.createElement("select");
+      select.dataset.octave = field;
+      select.setAttribute("aria-label", `Track ${text.toLowerCase()}`);
+      for (let octave = relative ? -2 : -1; octave <= (relative ? 2 : 9); octave++) {
+        const note = Math.min(relative ? 84 : 127, base + 12 * octave + (field === 41 ? 11 : 0));
+        select.append(this.option(octave, this.pitchText(track, note)));
+      }
+      select.onchange = () => this.setOctave(track.id, field, Number(select.value));
+      label.append(title, select);
+      row.append(label);
+    }
+    editor.append(row);
   }
   buildEditor() {
     const editor = this.root.querySelector(".neuro-editor"),
@@ -1618,26 +1787,13 @@ window.SadNeuropolis = class {
       destinations.append(label);
     }
     editor.append(destinations);
+    if (track.target.kind !== "parameter") this.buildNotes(editor, track);
     this.buildStages(editor, track);
     const advanced = document.createElement("details");
     advanced.className = "neuro-advanced";
-    advanced.innerHTML = "<summary>Scale, slide & accumulation</summary>";
+    advanced.innerHTML = "<summary>Slide, pulses & accumulation</summary>";
     const extra = document.createElement("div");
     extra.className = "neuro-controls";
-    this.configControl(
-      extra,
-      "Scale",
-      4,
-      this.catalog.scales.map((s, i) => [i, s]),
-    );
-    this.configControl(
-      extra,
-      "Scale root",
-      5,
-      ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"].map(
-        (n, i) => [i, n],
-      ),
-    );
     this.configControl(extra, "Reverse", 2, [
       [0, "Off"],
       [1, "On"],

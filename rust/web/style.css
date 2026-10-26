@@ -3922,6 +3922,42 @@ input[type="range"] {
     grid-template-columns: 1fr;
   }
 }
+/* Scale, picked notes and octave range of the pitch sliders. */
+.neuro-notes {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.7fr) minmax(0, 4fr) minmax(0, 0.8fr) minmax(0, 0.8fr);
+  gap: 12px;
+  margin-top: 16px;
+}
+.neuro-note-keys {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 3px;
+}
+.neuro-note {
+  height: 32px;
+  min-width: 0;
+  padding: 0;
+  font:
+    10px ui-monospace,
+    monospace;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+.neuro-note.is-sharp {
+  background: #111411;
+}
+.neuro-note.is-sharp[aria-pressed="true"] {
+  background: #2a3b23;
+}
+@media (max-width: 900px) {
+  .neuro-notes {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .neuro-note-control {
+    grid-column: 1 / -1;
+  }
+}
 .neuro-control {
   display: flex;
   flex-direction: column;

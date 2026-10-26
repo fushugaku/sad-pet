@@ -228,6 +228,9 @@ pub struct Track {
     /// the step's gate ends. Off keeps older patterns droning as before.
     pub env_gate: bool,
     pub destinations: [Option<String>; 3],
+    /// The track's own notes, one bit per semitone above the Scale root, in
+    /// place of the Scale's; zero follows the Scale.
+    pub notes: u16,
     #[serde(with = "config_words")]
     pub config: [i32; field::COUNT],
     /// Pages of sixteen steps played in turn, each for one pass of the order.
@@ -249,6 +252,7 @@ impl Default for Track {
             pitch_oscillators: [false; 4],
             env_gate: false,
             destinations: Default::default(),
+            notes: 0,
             config: default_config(),
             pages: 1,
             steps: [Stage::default(); STEPS],
@@ -282,6 +286,10 @@ impl Track {
             }
         } else if let Some((lo, hi)) = TRACK_RANGES.get(edit.field as usize) {
             self.config[edit.field as usize] = (edit.value.round() as i32).clamp(*lo, *hi);
+            // Picking a Scale drops the notes picked by hand.
+            if edit.field as usize == field::SCALE {
+                self.notes = 0;
+            }
         } else {
             match edit.field {
                 43 => self.amount = edit.value.clamp(-1.0, 1.0),
@@ -293,6 +301,7 @@ impl Track {
                 49..=52 => self.pitch_oscillators[(edit.field - 49) as usize] = edit.value >= 0.5,
                 53 => self.env_gate = edit.value >= 0.5,
                 54 => self.set_pages(edit.value.round().clamp(1.0, PAGES as f32) as u8),
+                55 => self.notes = edit.value.round().clamp(0.0, 4095.0) as u16,
                 _ => {}
             }
         }
@@ -423,6 +432,7 @@ impl Program {
             track.amount = track.amount.clamp(-1.0, 1.0);
             track.root_note = track.root_note.min(127);
             track.pages = track.pages.clamp(1, PAGES as u8);
+            track.notes &= 0x0fff;
             if let Target::Oscillator { index } | Target::SynthOscillator { index } =
                 &mut track.target
             {
@@ -462,6 +472,7 @@ pub fn catalog() -> serde_json::Value {
         "track":Track::default(),
         "orders":["Linear","Ping Pong","Pendulum","Odd / Even","Jump by 2","Jump by 3","Jump by 4","Jump by 5","Hopscotch","Arp 3 − 1","Arp 4 − 2","Arp 4 − 1","Converge","Diverge","Growing","Shrinking","Pedal Point","Brownian","Shuffle","Quasi Random","Random"],
         "scales":metropolix_core::scale::FACTORY_SCALES.iter().map(|s|s.name).collect::<Vec<_>>(),
+        "scale_masks":metropolix_core::scale::FACTORY_SCALES.iter().map(|s|s.mask.bits()).collect::<Vec<_>>(),
         "ranges":TRACK_RANGES.as_slice(),
         "parameters":crate::parameters::specs().iter().filter(|s|s.can_sequence()).collect::<Vec<_>>(),
         "modulation":crate::parameters::specs().iter().enumerate().filter(|(_,s)|s.can_sequence()).map(|(index,s)|serde_json::json!({"index":index,"id":s.id,"name":s.name})).collect::<Vec<_>>(),
@@ -471,7 +482,7 @@ pub fn catalog() -> serde_json::Value {
 /// Track zero edits transport: field 0 = enabled, field 1 = restart. All other
 /// IDs address an existing track; stage fields follow Neuropolis's stable ABI,
 /// with stages counted across pages (page × 16 + stage). Track field 54 sets
-/// the page count.
+/// the page count, 55 the track's own notes (a scale mask, zero for none).
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Edit {
     pub track: u32,
@@ -489,7 +500,7 @@ pub fn parse_edits(value: &serde_json::Value) -> Result<Vec<Edit>, String> {
                 > if e.stage.is_some() {
                     STAGE_FIELDS - 1
                 } else {
-                    54
+                    55
                 }
             || (e.track == 0 && (e.stage.is_some() || e.field > 1))
     }) {
