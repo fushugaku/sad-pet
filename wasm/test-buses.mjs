@@ -99,7 +99,9 @@ const wet = split.request("/api/preset");
 wet.sequencer.enabled = false;
 wet.color_chain = [];
 wet.pre_color_chain = [];
-Object.assign(wet.resynth, { enabled: true, mix: 1 });
+// Carriers on fixed band centres: a steady level. Tracking ones follow
+// the source's own swells, which these level checks would read as routing.
+Object.assign(wet.resynth, { enabled: true, mix: 1, track: 0 });
 wet.taps = { resynth: { chain: 1, send: 0, bus: 1 }, filters: { chain: 0 } };
 split.request("/api/preset", wet);
 assert.deepEqual(split.request("/api/preset").taps.resynth, { chain: 1, send: 0, bus: 1 });

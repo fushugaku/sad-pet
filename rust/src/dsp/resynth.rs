@@ -438,6 +438,15 @@ pub struct Resynth {
     levels: [f32; BANDS],
     gates: [bool; BANDS],
     gains: [f32; BANDS],
+    /// The band each band's carriers hand their power to: the band whose
+    /// centre is nearest the partial they play, when that band plays it too;
+    /// otherwise the band itself.
+    leaders: [usize; BANDS],
+    /// Each band's own share of its power, moving to 1 or 0 within 5 ms.
+    shares: [f32; BANDS],
+    share_step: f32,
+    /// Band gains after sharing, as the carriers play them.
+    played: [f32; BANDS],
     feedback: [[f32; BANDS]; MAX_OSCILLATORS],
     taps: [[f32; BANDS]; MAX_OSCILLATORS],
     wraps: [[bool; BANDS]; MAX_OSCILLATORS],
@@ -486,6 +495,10 @@ impl Resynth {
             levels: [0.0; BANDS],
             gates: [false; BANDS],
             gains: [0.0; BANDS],
+            leaders: std::array::from_fn(|band| band),
+            shares: [1.0; BANDS],
+            share_step: 1.0 / (0.005 * sr as f32),
+            played: [0.0; BANDS],
             feedback: [[0.0; BANDS]; MAX_OSCILLATORS],
             taps: [[0.0; BANDS]; MAX_OSCILLATORS],
             wraps: [[false; BANDS]; MAX_OSCILLATORS],
@@ -519,6 +532,9 @@ impl Resynth {
         self.envelopes.levels.fill(0);
         self.levels.fill(0.0);
         self.gains.fill(0.0);
+        self.leaders = std::array::from_fn(|band| band);
+        self.shares.fill(1.0);
+        self.played.fill(0.0);
         self.gates.fill(false);
         self.feedback.fill([0.0; BANDS]);
         self.taps.fill([0.0; BANDS]);
@@ -552,6 +568,10 @@ impl Resynth {
             // Tracking starts again from the band centres.
             self.tracker.clear();
             self.tracked = self.frequencies;
+        }
+        if settings.track == 0.0 {
+            // Every band takes its power back.
+            self.leaders = std::array::from_fn(|band| band);
         }
         let rate = self.sample_rate * self.oversample as f32;
         let gain = |seconds: f32| {
@@ -697,6 +717,7 @@ impl Resynth {
         }
         self.tracked = tracked;
         let shifts = shifts(&self.frequencies, &self.tracked, self.settings.track);
+        self.lead(&shifts);
         let rate = (self.sample_rate * self.oversample as f32) as f64;
         for (i, layer) in self.layers.iter_mut().enumerate() {
             if !self.needed[i] && layer.target_gain == 0.0 && layer.gain == 0.0 {
@@ -714,6 +735,35 @@ impl Resynth {
         }
         // Radias carriers recompile their controls on a new epoch.
         self.control_epoch += 1;
+    }
+    /// Bands whose carriers play the partial of the band it belongs to
+    /// follow that band: two carriers on one partial would beat or cancel.
+    /// They join within 1.5% and part beyond 3%.
+    fn lead(&mut self, shifts: &[f64; BANDS]) {
+        let first = self.frequencies[0] as f64;
+        let spacing = (self.frequencies[BANDS - 1] as f64 / first).ln() / (BANDS - 1) as f64;
+        let hz: [f64; BANDS] = std::array::from_fn(|b| self.frequencies[b] as f64 * shifts[b]);
+        let home = |hz: f64| {
+            ((hz / first).ln() / spacing)
+                .round()
+                .clamp(0.0, (BANDS - 1) as f64) as usize
+        };
+        self.leaders = std::array::from_fn(|band| {
+            let leader = home(hz[band]);
+            let tolerance = if self.leaders[band] == leader {
+                0.03
+            } else {
+                0.015
+            };
+            if leader != band
+                && home(hz[leader]) == leader
+                && (hz[leader] / hz[band] - 1.0).abs() < tolerance
+            {
+                leader
+            } else {
+                band
+            }
+        });
     }
     pub fn active(&self) -> bool {
         self.wet > 0.0 || self.wet_target > 0.0
@@ -843,6 +893,22 @@ impl Resynth {
             };
             self.gains[band] =
                 super::fast::flush(self.gains[band] + (gain - self.gains[band]) * 0.0625);
+        }
+        // A band that follows another hands it its power, so their partial
+        // sounds once, as loud as both bands together.
+        if self.settings.track > 0.0 || self.shares.iter().any(|&share| share < 1.0) {
+            let mut power = [0.0; BANDS];
+            for band in 0..BANDS {
+                let target = f32::from(self.leaders[band] == band);
+                let share = &mut self.shares[band];
+                *share += (target - *share).clamp(-self.share_step, self.share_step);
+                let own = self.gains[band] * self.gains[band];
+                power[band] += own * *share;
+                power[self.leaders[band]] += own * (1.0 - *share);
+            }
+            self.played = power.map(f32::sqrt);
+        } else {
+            self.played = self.gains;
         }
         for layer in &mut self.layers {
             layer.gain += (layer.target_gain - layer.gain).clamp(-1.0 / 128.0, 1.0 / 128.0);
@@ -1026,7 +1092,7 @@ impl Resynth {
                     // Interaction taps precede envelope, oscillator level and
                     // pan. Ordered current/previous taps permit feedback links.
                     self.taps[layer_id][band] = mono(raw);
-                    let stereo = raw.map(|x| x * self.gains[band]);
+                    let stereo = raw.map(|x| x * self.played[band]);
                     self.feedback[layer_id][band] = (stereo[0] + stereo[1]) * 0.5;
                     let sum = if filters == 0 {
                         &mut wet
@@ -1726,5 +1792,41 @@ mod tests {
         let (fixed, follow) = (drift(Tracking::Fixed), drift(Tracking::Follow));
         assert!(follow < 15.0, "following bands moved {follow:.0} cents");
         assert!(fixed > 100.0, "fixed bands held at {fixed:.0} cents");
+    }
+    #[test]
+    fn a_partial_heard_by_several_bands_plays_as_loud_every_time() {
+        use crate::resynth::Tracking;
+        for tracking in Tracking::ALL {
+            let (mut r, sample, mut settings) = setup(48000);
+            settings.tracking = tracking;
+            // Plain sines: shaped carriers have harmonics of their own, which
+            // meet the carriers above them.
+            settings.oscillators[0].control1 = 0.0;
+            settings.oscillators[0].control2 = 0.0;
+            r.configure(settings, &sample, 60.0);
+            let mut phase = 0.0_f32;
+            let mut levels = Vec::new();
+            for (i, hz) in [220.0, 330.0, 220.0, 293.66, 220.0, 247.0, 220.0]
+                .into_iter()
+                .enumerate()
+            {
+                let mut energy = 0.0;
+                for n in 0..14_400 {
+                    phase = (phase + hz / 48000.0).fract();
+                    let x = saw(phase, 30);
+                    let out = r.process([0.0; 2], [x; 2], 0.0, 1.0, &sample, &(0..sample.len()));
+                    if n >= 9600 {
+                        energy += out[0] * out[0] + out[1] * out[1];
+                    }
+                }
+                if i % 2 == 0 {
+                    levels.push(energy.sqrt());
+                }
+            }
+            let (low, high) = levels
+                .iter()
+                .fold((f32::MAX, 0.0_f32), |(l, h), &x| (l.min(x), h.max(x)));
+            assert!(high / low < 1.1, "{tracking:?}: {levels:?}");
+        }
     }
 }

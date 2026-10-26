@@ -384,7 +384,9 @@ fn sequencer_gates_reset_lfos_through_a_reset_lane_or_steps_set_to_one() {
 #[test]
 fn new_controls_append_after_every_released_host_id_and_take_modulation() {
     let specs = parameters::specs();
-    let ids: Vec<_> = specs[specs.len() - 40..]
+    // Later controls (Resynth tracking) append after these forty.
+    let start = specs.iter().position(|s| s.id == "lfo1_shape").unwrap();
+    let ids: Vec<_> = specs[start..start + 40]
         .iter()
         .map(|s| s.id.as_str())
         .collect();
@@ -399,7 +401,7 @@ fn new_controls_append_after_every_released_host_id_and_take_modulation() {
         ]
     );
     assert_eq!(ids[39], "lfo8_fade");
-    assert!(specs[specs.len() - 41].id.starts_with("grain_group4_"));
+    assert!(specs[start - 1].id.starts_with("grain_group4_"));
 
     let mut p = preset(lfo(Waveform::Saw));
     specs
