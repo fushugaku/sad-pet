@@ -322,6 +322,8 @@ enum Binding {
     SynthOscillator(usize),
     Parameter(usize),
     Notes,
+    /// Each gate starts this LFO over.
+    LfoReset(usize),
     Unbound,
 }
 #[derive(Clone, Copy)]
@@ -351,6 +353,8 @@ struct Lane {
     id: u32,
     binding: Binding,
     route: Option<usize>,
+    /// The LFO each step destination resets, on gates of steps set to 1.
+    resets: [Option<usize>; 3],
     amount: f32,
     absolute: bool,
     gate_output: bool,
@@ -438,10 +442,16 @@ impl Runtime {
                     Target::Oscillator { index } => Binding::Oscillator(*index as usize),
                     Target::SynthOscillator { index } => Binding::SynthOscillator(*index as usize),
                     Target::Notes | Target::Pad { .. } => Binding::Notes,
-                    Target::Parameter { parameter } => parameters::specs()
-                        .iter()
-                        .position(|s| s.id == *parameter && s.can_sequence())
-                        .map_or(Binding::Unbound, Binding::Parameter),
+                    Target::Parameter { parameter } => crate::sequence::lfo_reset(parameter)
+                        .map_or_else(
+                            || {
+                                parameters::specs()
+                                    .iter()
+                                    .position(|s| s.id == *parameter && s.can_sequence())
+                                    .map_or(Binding::Unbound, Binding::Parameter)
+                            },
+                            Binding::LfoReset,
+                        ),
                 };
                 let route = match binding {
                     Binding::MainPitch => parameters::specs()
@@ -462,6 +472,11 @@ impl Runtime {
                     id: t.id,
                     binding,
                     route,
+                    resets: std::array::from_fn(|d| {
+                        t.destinations[d]
+                            .as_deref()
+                            .and_then(crate::sequence::lfo_reset)
+                    }),
                     amount: t.amount,
                     absolute: t.absolute,
                     gate_output: t.gate_output,
@@ -931,6 +946,29 @@ impl Runtime {
             }
         }
         gate
+    }
+    /// LFOs a step started over, read right after a clock tick: one bit each.
+    /// A reset lane's every gate resets; a step destination's, where the
+    /// step is set to 1.
+    pub fn lfo_resets(&self) -> u8 {
+        let mut mask = 0;
+        for (i, lane) in self.lanes.iter().enumerate() {
+            if !self.sounding(i) || self.core.track_events(i) & 1 == 0 {
+                continue;
+            }
+            if let Binding::LfoReset(lfo) = lane.binding {
+                mask |= 1 << lfo;
+            }
+            let stage = lane.stage(self.core.stage(i).unwrap_or(0));
+            for (d, lfo) in lane.resets.iter().enumerate() {
+                if let Some(lfo) = lfo
+                    && stage.get(16 + d as u8) >= 0.5
+                {
+                    mask |= 1 << lfo;
+                }
+            }
+        }
+        mask
     }
     pub fn apply(&self, m: &mut Modulated) {
         if !self.enabled || !self.started {

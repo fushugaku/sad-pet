@@ -599,9 +599,22 @@ fn lfo_field(l: &mut crate::preset::Lfo, field: usize) -> &mut f32 {
         1 => &mut l.depth,
         2 => &mut l.division,
         3 => &mut l.depth2,
-        _ => &mut l.depth3,
+        4 => &mut l.depth3,
+        5 => &mut l.shape,
+        6 => &mut l.phase,
+        7 => &mut l.smooth,
+        8 => &mut l.delay,
+        _ => &mut l.fade,
     }
 }
+/// LFO controls appended after the grain groups, by `lfo_field` index.
+const LFO_SHAPE_FIELDS: [(&str, f32, f32); 5] = [
+    ("shape", -1.0, 1.0),
+    ("phase", 0.0, 1.0),
+    ("smooth", 0.0, 1.0),
+    ("delay", 0.0, 1.0),
+    ("fade", 0.0, 1.0),
+];
 fn env_get(e: &crate::preset::Env, field: usize) -> f32 {
     match field {
         0 => e.attack,
@@ -1342,6 +1355,19 @@ pub fn specs() -> &'static [Spec] {
                 };
                 spec.default = spec.get(&preset);
                 result.push(spec);
+            }
+        }
+        // Then each LFO's shape, phase, smoothing, delay and fade.
+        for i in 0..crate::preset::MODULATORS {
+            for (offset, (key, min, max)) in LFO_SHAPE_FIELDS.into_iter().enumerate() {
+                result.push(Spec {
+                    id: format!("lfo{}_{key}", i + 1),
+                    name: format!("LFO {} {key}", i + 1),
+                    min,
+                    max,
+                    default: 0.0,
+                    target: Target::Lfo(i, 5 + offset),
+                });
             }
         }
         result

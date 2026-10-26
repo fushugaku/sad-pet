@@ -151,8 +151,9 @@ impl KnobState {
     }
 }
 
-fn source_range(source: Source) -> [f32; 2] {
+fn source_range(preset: &crate::preset::Preset, source: Source) -> [f32; 2] {
     match source {
+        _ if source.lfo().is_some_and(|i| preset.lfos[i].unipolar) => [0.0, 1.0],
         Source::Lfo1
         | Source::Lfo2
         | Source::Lfo3
@@ -332,7 +333,12 @@ impl ControlFeedback<'_> {
         });
         for (destination, delta) in terms
             .into_iter()
-            .map(|(d, source, depth)| (d, product_range(source_range(source), [depth; 2])))
+            .map(|(d, source, depth)| {
+                (
+                    d,
+                    product_range(source_range(self.preset, source), [depth; 2]),
+                )
+            })
             .chain(macros)
         {
             if let Some((_, range)) = ranges.iter_mut().find(|(d, _)| *d == destination) {
@@ -349,6 +355,7 @@ impl ControlFeedback<'_> {
         // over the depth range the routes before it left.
         for modulator in low.modulator_order() {
             let source = match modulator {
+                Modulator::Lfo(i) if low.lfos[i].unipolar => [0.0, 1.0],
                 Modulator::Lfo(_) => [-0.5, 0.5],
                 Modulator::Env(_) => [0.0, 1.0],
             };

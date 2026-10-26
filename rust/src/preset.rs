@@ -407,6 +407,23 @@ pub struct Lfo {
     pub depth2: f32,
     pub destination3: Destination,
     pub depth3: f32,
+    /// -1..=1, zero is the plain wave: Sine and Triangle symmetry, Square
+    /// pulse width, and the curve of the others.
+    pub shape: f32,
+    /// Start of the cycle, 0..1 of a turn. Random waves and the follower
+    /// have no phase.
+    pub phase: f32,
+    /// 0..=1: rounds the wave off over up to a quarter cycle.
+    pub smooth: f32,
+    /// Swing 0..1 instead of -1..1.
+    pub unipolar: bool,
+    pub reset: LfoReset,
+    /// Play one cycle from each reset, then hold its last value.
+    pub one_shot: bool,
+    /// 0..=1 controls: silence after a reset, then the fade-in to full
+    /// depth. `lfo_seconds` maps them.
+    pub delay: f32,
+    pub fade: f32,
 }
 impl Default for Lfo {
     fn default() -> Self {
@@ -421,8 +438,35 @@ impl Default for Lfo {
             depth2: 0.0,
             destination3: Destination::None,
             depth3: 0.0,
+            shape: 0.0,
+            phase: 0.0,
+            smooth: 0.0,
+            unipolar: false,
+            reset: LfoReset::Free,
+            one_shot: false,
+            delay: 0.0,
+            fade: 0.0,
         }
     }
+}
+/// What starts an LFO's cycle over. Free and Tempo LFOs restart their delay
+/// and fade (and a one-shot cycle) on a note played after every key was let go.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LfoReset {
+    /// Runs on its own; a synced one starts in place when the transport does.
+    #[default]
+    Free,
+    /// Every note.
+    Note,
+    /// The song position: the same point of the cycle at the same beat.
+    Tempo,
+    /// Neuropolis steps routed to the LFO's reset.
+    Sequencer,
+}
+/// Seconds of an LFO delay or fade control.
+pub fn lfo_seconds(control: f32) -> f32 {
+    control * control * control * 10.0
 }
 /// Each LFO and envelope routes to this many destinations of its own,
 /// besides any matrix routes that use it as a source.
@@ -1271,6 +1315,11 @@ impl Preset {
             finite_clamp(&mut lfo.depth2, -1.0, 1.0, 0.0);
             finite_clamp(&mut lfo.depth3, -1.0, 1.0, 0.0);
             finite_clamp(&mut lfo.division, 0.0625, 32.0, 1.0);
+            finite_clamp(&mut lfo.shape, -1.0, 1.0, 0.0);
+            finite_clamp(&mut lfo.phase, 0.0, 1.0, 0.0);
+            finite_clamp(&mut lfo.smooth, 0.0, 1.0, 0.0);
+            finite_clamp(&mut lfo.delay, 0.0, 1.0, 0.0);
+            finite_clamp(&mut lfo.fade, 0.0, 1.0, 0.0);
         }
     }
 

@@ -420,6 +420,13 @@ menuKey("r");
 assert.equal(menuFocus(), "Resynth");
 menuKey("ArrowRight");
 assert.deepEqual(menuRows(1), ["Mix", "OSC 2"]);
+// Each LFO lists its reset beside its controls, though no host ID has one.
+menuKey("ArrowLeft");
+menuKey("l");
+assert.equal(menuFocus(), "LFO");
+menuKey("ArrowRight");
+menuKey("ArrowRight");
+assert.deepEqual(menuRows(2), ["Rate", "Reset"]);
 menuKey("Escape");
 assert.equal(menuLayer(), undefined);
 assert.equal(picker.getAttribute("aria-expanded"), "false");
@@ -472,6 +479,24 @@ assert.equal(globalListeners.scroll, undefined);
 document.documentElement.clientWidth = 1280;
 ui.catalog = catalog;
 document.activeElement = null;
+
+// A step destination on an LFO's reset is a toggle: steps set to 1 reset it.
+const tracksBefore = preset.sequencer.tracks;
+preset.sequencer.tracks = [{ ...structuredClone(track), destinations: ["lfo2_reset", null, null] }];
+knobs.length = 0;
+ui.buildEditor();
+assert.equal(knobs.filter((k) => /destination 1 amount/.test(k.schema[5])).length, 0);
+assert.equal(knobs.filter((k) => /destination 2 amount/.test(k.schema[5])).length, 16);
+const reset = control("Stage 3 destination 1 reset");
+assert.equal(reset.tagName, "BUTTON");
+reset.onclick();
+assert.equal(ui.track().steps[2].destination1, 1);
+assert.deepEqual({ ...edits.at(-1) }, { track: ui.track().id, stage: 2, field: 16, value: 1 });
+preset = structuredClone(preset);
+reset.onclick();
+assert.equal(ui.track().steps[2].destination1, 0);
+preset.sequencer.tracks = tracksBefore;
+assert.equal(ui.targetName({ target: { kind: "parameter", parameter: "lfo3_reset" } }), "LFO 3 reset");
 console.log(
   "Destination menus: one closed button, section → target cascade, keyboard, type-ahead, hover, phone drill-in and outside click passed.",
 );

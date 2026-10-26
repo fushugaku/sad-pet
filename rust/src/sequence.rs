@@ -34,6 +34,16 @@ pub enum Target {
         pad: u32,
     },
 }
+/// The LFO a `lfoN_reset` lane or step destination starts over: not a host
+/// parameter, a step's gate does it.
+pub fn lfo_reset(id: &str) -> Option<usize> {
+    let n: usize = id
+        .strip_prefix("lfo")?
+        .strip_suffix("_reset")?
+        .parse()
+        .ok()?;
+    (1..=crate::preset::MODULATORS).contains(&n).then(|| n - 1)
+}
 impl Target {
     /// Oscillator lanes edit a signed offset instead of notes from a root.
     pub fn oscillator(&self) -> bool {

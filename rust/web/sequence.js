@@ -620,7 +620,8 @@ window.SadNeuropolis = class {
           : t.target.kind === "synth_oscillator"
             ? `Synth OSC ${t.target.index + 1} offset`
           : this.catalog.parameters.find((p) => p.id === t.target.parameter)
-              ?.name || t.target.parameter;
+              ?.name ||
+            t.target.parameter.replace(/^lfo(\d+)_reset$/, "LFO $1 reset");
   }
   speed(n) {
     return n === 65
@@ -1097,6 +1098,10 @@ window.SadNeuropolis = class {
         subs.get(sub).choices.push(choice);
       }
     }
+    // A step's gate starts an LFO over: not a host parameter, so not in the
+    // catalog. Each LFO's submenu lists it with its controls.
+    for (const [label, sub] of families.get("LFO")?.subs || [])
+      sub.choices.push([`${prefix}lfo${label.slice(4)}_reset`, `${label} reset`]);
     const section = window.SadLazySelect.section;
     return [...families]
       .sort(([a], [b]) => order.indexOf(a) - order.indexOf(b))
@@ -1331,6 +1336,15 @@ window.SadNeuropolis = class {
         const key = `destination${destination + 1}`;
         const slot = document.createElement("div");
         slot.className = "neuro-step-knob neuro-destination-knob";
+        // An LFO reset is on or off: a step set to 1 resets on its gate.
+        if (/^lfo\d+_reset$/.test(track.destinations?.[destination] || "")) {
+          this.stepToggle(slot, track, i, 16 + destination, "Reset").setAttribute(
+            "aria-label",
+            `Stage ${i + 1} destination ${destination + 1} reset`,
+          );
+          card.append(slot);
+          continue;
+        }
         this.knobs.push(this.hooks.knob(
           [
             `sequence_${track.id}_${i}_${key}`, "",

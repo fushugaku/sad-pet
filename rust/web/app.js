@@ -3553,6 +3553,11 @@ function modulationGroups() {
           ["depth2", "Route 2 depth"],
           ["depth3", "Route 3 depth"],
           ["division", "Sync division"],
+          ["shape", "Shape"],
+          ["phase", "Phase"],
+          ["smooth", "Smooth"],
+          ["delay", "Delay"],
+          ["fade", "Fade"],
         ].map(([key, label]) => [
           { lfo: { index, parameter: key } },
           `LFO ${index + 1} · ${label}`,
@@ -3812,6 +3817,88 @@ const WAVEFORMS = [
   ["smooth_random", "Smooth random"],
   ["envelope", "Env. follower"],
 ];
+// Synced cycle lengths in beats: straight, triplet (T) and dotted (.) values.
+const LFO_DIVISIONS = [
+  [0.0625, "1/64"],
+  [1 / 12, "1/32T"],
+  [0.125, "1/32"],
+  [1 / 6, "1/16T"],
+  [0.1875, "1/32."],
+  [0.25, "1/16"],
+  [1 / 3, "1/8T"],
+  [0.375, "1/16."],
+  [0.5, "1/8"],
+  [2 / 3, "1/4T"],
+  [0.75, "1/8."],
+  [1, "1/4"],
+  [4 / 3, "1/2T"],
+  [1.5, "1/4."],
+  [2, "1/2"],
+  [8 / 3, "1 bar T"],
+  [3, "1/2."],
+  [4, "1 bar"],
+  [6, "1.5 bars"],
+  [8, "2 bars"],
+  [12, "3 bars"],
+  [16, "4 bars"],
+  [24, "6 bars"],
+  [32, "8 bars"],
+];
+// The listed division nearest a stored one: f32 presets and host automation
+// never match a triplet's option exactly.
+const lfoDivision = (beats) =>
+  LFO_DIVISIONS.reduce((best, d) =>
+    Math.abs(Math.log(d[0] / beats)) < Math.abs(Math.log(best[0] / beats)) ? d : best,
+  );
+const LFO_RESETS = [
+  ["free", "Free"],
+  ["note", "Note"],
+  ["tempo", "Tempo"],
+  ["sequencer", "Sequencer"],
+];
+// Sliders under each LFO, in host order after the grain groups.
+const LFO_CONTROLS = ["shape", "phase", "smooth", "delay", "fade"];
+const lfoShapeName = (waveform) =>
+  ({ sine: "SYMMETRY", triangle: "SYMMETRY", square: "WIDTH" })[waveform] ?? "CURVE";
+// Random waves and the follower have no cycle to start elsewhere.
+const lfoHasPhase = (waveform) => ["sine", "triangle", "saw", "square"].includes(waveform);
+const lfoSeconds = (control) => control ** 3 * 10;
+function lfoControlText(l, field) {
+  const value = l[field] ?? 0;
+  if (field === "shape")
+    return l.waveform === "square" ? `${Math.round(50 + 49 * value)}%` : signedPercent(value);
+  if (field === "phase") return `${Math.round(value * 360)}°`;
+  if (field === "smooth") return percent(value);
+  return envTime(lfoSeconds(value));
+}
+// One cycle of an LFO as the engine shapes it, or null for waves without one.
+function lfoWave(l, at) {
+  const shape = l.shape || 0,
+    peak = 0.5 + 0.5 * shape,
+    rise = (x) => (x < peak ? x / peak : peak < 1 ? (1 - x) / (1 - peak) : 1);
+  if (l.waveform === "sine")
+    return shape ? -Math.cos(Math.PI * rise((at + 0.25) % 1)) : Math.sin(2 * Math.PI * at);
+  if (l.waveform === "triangle") return rise(at) * 2 - 1;
+  if (l.waveform === "saw")
+    return (shape ? at / (at + 2 ** (-4 * shape) * (1 - at)) : at) * 2 - 1;
+  if (l.waveform === "square") return at < 0.5 + 0.49 * shape ? 1 : -1;
+  return null;
+}
+// The scope's still picture of one cycle: phase, smoothing and polarity
+// included. Smoothing settles over a few cycles before the one shown.
+function lfoPreview(l, points = 80) {
+  if (lfoWave(l, 0) === null) return null;
+  const tau = (l.smooth || 0) ** 2 * 0.25,
+    k = tau > 0 ? 1 - Math.exp(-1 / (tau * points)) : 1,
+    values = [];
+  let smoothed = lfoWave(l, l.phase || 0);
+  for (let i = 0; i <= points * 4; i++) {
+    const at = ((i % points) / points + (l.phase || 0)) % 1;
+    smoothed += (lfoWave(l, at) - smoothed) * k;
+    if (i >= points * 3) values.push(l.unipolar ? smoothed * 0.5 + 0.5 : smoothed);
+  }
+  return values;
+}
 // Route destinations the grain engine owns, listed under Grains.
 const GRAIN_DESTINATIONS = new Set([
   "position",
@@ -3875,14 +3962,21 @@ function buildLfos() {
   for (let i = 0; i < 8; i++) {
     const card = document.createElement("div");
     card.className = "lfo-card";
-    card.innerHTML = `<div class="lfo-title"><strong>LFO ${i + 1}</strong><canvas class="lfo-scope" width="144" height="40"></canvas></div><div class="lfo-row"><select aria-label="LFO ${i + 1} waveform" class="waveform"></select><label>RATE<input aria-label="LFO ${i + 1} rate" class="rate" type="number" min="0.01" max="40" step="0.01"></label></div><div class="lfo-row"><label class="check"><input type="checkbox" class="sync">Tempo sync</label><select class="division" aria-label="LFO ${i + 1} tempo division"><option value="0.25">1/16</option><option value="0.5">1/8</option><option value="1">1/4</option><option value="2">1/2</option><option value="4">1 bar</option><option value="8">2 bars</option><option value="16">4 bars</option><option value="32">8 bars</option></select></div>`;
+    card.innerHTML = `<div class="lfo-title"><strong>LFO ${i + 1}</strong><canvas class="lfo-scope" width="144" height="40"></canvas></div><div class="lfo-row"><select aria-label="LFO ${i + 1} waveform" class="waveform"></select><label>RATE<input aria-label="LFO ${i + 1} rate" class="rate" type="number" min="0.01" max="40" step="0.01"></label></div><div class="lfo-row"><label class="check"><input type="checkbox" class="sync">Tempo sync</label><select class="division" aria-label="LFO ${i + 1} tempo division"></select></div><div class="lfo-modes"><label><span>RESET</span><select class="reset" aria-label="LFO ${i + 1} reset"></select></label><label><span>CYCLE</span><select class="one-shot" aria-label="LFO ${i + 1} cycle"><option value="false">Loop</option><option value="true">One shot</option></select></label><label><span>POLARITY</span><select class="unipolar" aria-label="LFO ${i + 1} polarity"><option value="false">Bipolar</option><option value="true">Unipolar</option></select></label></div><div class="lfo-controls"></div>`;
     for (const [value, label] of WAVEFORMS)
       card.querySelector(".waveform").append(option(value, label));
+    for (const [value, label] of LFO_DIVISIONS)
+      card.querySelector(".division").append(option(String(value), label));
+    for (const [value, label] of LFO_RESETS)
+      card.querySelector(".reset").append(option(value, label));
     for (const [field, selector] of [
       ["waveform", ".waveform"],
       ["rate_hz", ".rate"],
       ["sync", ".sync"],
       ["division", ".division"],
+      ["reset", ".reset"],
+      ["one_shot", ".one-shot"],
+      ["unipolar", ".unipolar"],
     ]) {
       const input = card.querySelector(selector);
       input.addEventListener("input", () => {
@@ -3891,8 +3985,9 @@ function buildLfos() {
           value = Number(value);
           if (!Number.isFinite(value)) return;
         }
+        if (["one_shot", "unipolar"].includes(field)) value = value === "true";
         preset.lfos[i][field] = value;
-        if (field === "sync") syncLfos();
+        syncLfos();
         if (typeof value === "number")
           scheduleParameter(
             `lfo${i + 1}_${field === "rate_hz" ? "rate" : field}`,
@@ -3901,9 +3996,29 @@ function buildLfos() {
         else schedulePreset();
       });
     }
+    for (const field of LFO_CONTROLS) {
+      const label = document.createElement("label");
+      label.className = "lfo-parameter";
+      label.dataset.field = field;
+      label.innerHTML = `<span><span class="lfo-name">${field.toUpperCase()}</span><output></output></span><input type="range" min="${field === "shape" ? -1 : 0}" max="1" step="0.001" aria-label="LFO ${i + 1} ${field}">`;
+      const input = label.querySelector("input");
+      input.oninput = () => {
+        preset.lfos[i][field] = Number(input.value);
+        syncLfos();
+        scheduleParameter(`lfo${i + 1}_${field}`, preset.lfos[i][field]);
+      };
+      sliderMenu(input, `lfo${i + 1}_${field}`, `LFO ${i + 1} ${field}`);
+      card.querySelector(".lfo-controls").append(label);
+    }
     const routes = modulatorRoutes(card, "lfo", i, LFO_ROUTES, syncLfos);
     $("lfos").append(card);
-    scopes.push({ card, canvas: card.querySelector("canvas"), values: [], routes });
+    scopes.push({
+      card,
+      canvas: card.querySelector("canvas"),
+      values: [],
+      routes,
+      parameters: [...card.querySelectorAll(".lfo-parameter")],
+    });
   }
 }
 // Each LFO and ENV routes to three destinations of its own: a picker and a
@@ -3980,18 +4095,32 @@ function syncLfos() {
       l = preset.lfos[i];
     card.hidden = i >= count;
     if (!l) continue;
-    for (const [field, selector] of [
-      ["waveform", ".waveform"],
-      ["rate_hz", ".rate"],
-      ["division", ".division"],
+    for (const [field, selector, value] of [
+      ["waveform", ".waveform", l.waveform],
+      ["rate_hz", ".rate", l.rate_hz],
+      ["division", ".division", lfoDivision(l.division)[0]],
+      ["reset", ".reset", l.reset ?? "free"],
+      ["one_shot", ".one-shot", !!l.one_shot],
+      ["unipolar", ".unipolar", !!l.unipolar],
     ]) {
       const input = card.querySelector(selector);
-      if (document.activeElement !== input) input.value = l[field];
+      if (document.activeElement !== input) input.value = String(value);
+    }
+    for (const label of scopes[i].parameters) {
+      const field = label.dataset.field,
+        input = label.querySelector("input");
+      if (document.activeElement !== input) input.value = l[field] ?? 0;
+      label.querySelector("output").textContent = lfoControlText(l, field);
+      if (field === "shape")
+        label.querySelector(".lfo-name").textContent = lfoShapeName(l.waveform);
+      // Phase reads nothing on waves without a cycle shape.
+      if (field === "phase") label.classList.toggle("is-idle", !lfoHasPhase(l.waveform));
     }
     syncModulatorRoutes(scopes[i].routes, l);
     card.querySelector(".sync").checked = l.sync;
     card.querySelector(".rate").disabled = l.sync;
     card.querySelector(".division").disabled = !l.sync;
+    scopes[i].preview = lfoPreview(l);
   }
 }
 const envCards = [];
@@ -5100,6 +5229,17 @@ function draw() {
         ctx = s.canvas.getContext("2d"),
         a = s.values;
       ctx.clearRect(0, 0, 144, 40);
+      if (s.preview) {
+        ctx.strokeStyle = "#4b6440";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        s.preview.forEach((v, j) => {
+          const x = (j * 144) / (s.preview.length - 1),
+            y = 20 - v * 15;
+          j ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+        });
+        ctx.stroke();
+      }
       ctx.strokeStyle = "#a9cf81";
       ctx.lineWidth = 1.4;
       ctx.beginPath();

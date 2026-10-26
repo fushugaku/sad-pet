@@ -1,5 +1,5 @@
 use crate::{
-    preset::{Env, EnvMode, Lfo, Waveform},
+    preset::{Env, EnvMode, Lfo, LfoReset, Waveform},
     tables::{self, Random},
 };
 use radias_synth_domain::{
@@ -379,12 +379,24 @@ impl Envelope {
     }
 }
 
+/// Delay and fade stop counting here: past the longest of both together.
+const SETTLED_SECONDS: f64 = 20.0;
+
 #[derive(Clone, Debug)]
 pub struct Oscillator {
     pub phase: f64,
     from: f32,
     to: f32,
     random: Random,
+    /// A one-shot cycle has ended and holds its last value.
+    done: bool,
+    /// Seconds since the last reset, for the delay and fade.
+    elapsed: f64,
+    smoothed: f32,
+    /// Smooth, rate and sample rate the coefficient was made for.
+    smoothing: ([f32; 3], f32),
+    /// Shape the curve factor was made for.
+    curve: (f32, f32),
 }
 impl Oscillator {
     pub fn new(seed: u64) -> Self {
@@ -396,36 +408,169 @@ impl Oscillator {
             from,
             to,
             random,
+            done: false,
+            elapsed: SETTLED_SECONDS,
+            smoothed: 0.0,
+            smoothing: ([0.0; 3], 1.0),
+            curve: (0.0, 1.0),
         }
     }
-    pub fn next_sample(&mut self, lfo: &Lfo, sample_rate: f32, bpm: f32, envelope: f32) -> f32 {
-        let p = self.phase as f32;
-        let result = match lfo.waveform {
-            Waveform::Sine => tables::sine(self.phase),
-            Waveform::Triangle => 1.0 - 4.0 * (p - 0.5).abs(),
-            Waveform::Saw => p * 2.0 - 1.0,
-            Waveform::Square => {
-                if p < 0.5 {
-                    1.0
-                } else {
-                    -1.0
-                }
-            }
-            Waveform::Random => self.to,
-            Waveform::SmoothRandom => self.from + (self.to - self.from) * (p * p * (3.0 - 2.0 * p)),
-            Waveform::Envelope => envelope * 2.0 - 1.0,
-        };
+    /// Start the cycle over, with its delay and fade. Random waves move on
+    /// to a new value; Smooth random glides there from where it is.
+    pub fn reset(&mut self) {
+        let p = self.phase.min(1.0) as f32;
+        self.from += (self.to - self.from) * (p * p * (3.0 - 2.0 * p));
+        self.to = self.random.bipolar();
+        self.phase = 0.0;
+        self.done = false;
+        self.elapsed = 0.0;
+    }
+    /// Start the delay and fade over, leaving the cycle where it is.
+    pub fn restart_fade(&mut self) {
+        self.elapsed = 0.0;
+    }
+    /// `position` is the song position in cycles, for an LFO that follows it.
+    pub fn next_sample(
+        &mut self,
+        lfo: &Lfo,
+        sample_rate: f32,
+        bpm: f32,
+        envelope: f32,
+        position: Option<f64>,
+    ) -> f32 {
         let hz = if lfo.sync {
             bpm / 60.0 / lfo.division
         } else {
             lfo.rate_hz
         };
-        self.phase += hz as f64 / sample_rate as f64;
-        if self.phase >= 1.0 {
-            self.phase = self.phase.rem_euclid(1.0);
-            self.from = self.to;
-            self.to = self.random.bipolar();
+        // A finished one-shot switched back to Loop runs on from its start.
+        if self.done && !lfo.one_shot {
+            self.done = false;
+            self.phase = 0.0;
         }
-        result
+        if let Some(cycles) = position {
+            let cycles = cycles.max(0.0);
+            let phase = if lfo.one_shot {
+                cycles.min(1.0)
+            } else {
+                cycles.fract()
+            };
+            if phase < self.phase && !lfo.one_shot {
+                self.from = self.to;
+                self.to = self.random.bipolar();
+            }
+            self.phase = phase;
+        }
+        let delay = f64::from(crate::preset::lfo_seconds(lfo.delay));
+        let fade = f64::from(crate::preset::lfo_seconds(lfo.fade));
+        let mut value = self.wave(lfo, envelope);
+        if lfo.smooth > 0.0 {
+            let key = [lfo.smooth, hz, sample_rate];
+            if self.smoothing.0 != key {
+                // Up to a quarter cycle: the wave keeps its look at any rate.
+                let tau = lfo.smooth * lfo.smooth * 0.25 / hz.max(0.001);
+                self.smoothing = (key, 1.0 - (-1.0 / (tau * sample_rate)).exp());
+            }
+            self.smoothed =
+                super::fast::flush(self.smoothed + (value - self.smoothed) * self.smoothing.1);
+            value = self.smoothed;
+        } else {
+            self.smoothed = value;
+        }
+        if lfo.unipolar {
+            value = value * 0.5 + 0.5;
+        }
+        let gain = if self.elapsed < delay {
+            0.0
+        } else if self.elapsed < delay + fade {
+            ((self.elapsed - delay) / fade) as f32
+        } else {
+            1.0
+        };
+        // A cycle a reset started waits out the delay at its start; a free
+        // one runs on underneath.
+        let held = self.elapsed < delay
+            && (lfo.one_shot || matches!(lfo.reset, LfoReset::Note | LfoReset::Sequencer));
+        if self.elapsed < SETTLED_SECONDS {
+            self.elapsed += 1.0 / f64::from(sample_rate);
+        }
+        if position.is_none() && !self.done && !held {
+            self.phase += hz as f64 / sample_rate as f64;
+            if self.phase >= 1.0 {
+                if lfo.one_shot {
+                    self.phase = 1.0;
+                    self.done = true;
+                } else {
+                    self.phase = self.phase.rem_euclid(1.0);
+                    self.from = self.to;
+                    self.to = self.random.bipolar();
+                }
+            }
+        }
+        value * gain
+    }
+    /// The wave at the current phase, before smoothing and polarity.
+    fn wave(&mut self, lfo: &Lfo, envelope: f32) -> f32 {
+        // A one-shot cycle ends at 1.0, which reads the end of the wave.
+        let at = if lfo.phase == 0.0 {
+            self.phase
+        } else {
+            let at = self.phase + f64::from(lfo.phase);
+            if at > 1.0 { at - 1.0 } else { at }
+        };
+        let p = at as f32;
+        let shape = lfo.shape;
+        // Where Sine and Triangle peak.
+        let peak = 0.5 + 0.5 * shape;
+        match lfo.waveform {
+            Waveform::Sine if shape == 0.0 => tables::sine(at),
+            // -cos(pi u) over the skewed rise and fall u, a quarter turn on
+            // so that the plain shape is the sine itself.
+            Waveform::Sine => {
+                let u = rise((at + 0.25).fract() as f32, peak);
+                tables::sine(f64::from(u) * 0.5 - 0.25)
+            }
+            Waveform::Triangle if shape == 0.0 => 1.0 - 4.0 * (p - 0.5).abs(),
+            Waveform::Triangle => rise(p, peak) * 2.0 - 1.0,
+            Waveform::Saw if shape == 0.0 => p * 2.0 - 1.0,
+            Waveform::Saw => self.bend(p, shape) * 2.0 - 1.0,
+            Waveform::Square => {
+                if p < 0.5 + 0.49 * shape {
+                    1.0
+                } else {
+                    -1.0
+                }
+            }
+            Waveform::Random => self.bend_bipolar(self.to, shape),
+            Waveform::SmoothRandom => {
+                let p = self.phase as f32;
+                let value = self.from + (self.to - self.from) * (p * p * (3.0 - 2.0 * p));
+                self.bend_bipolar(value, shape)
+            }
+            Waveform::Envelope => self.bend(envelope, shape) * 2.0 - 1.0,
+        }
+    }
+    /// 0..1 bent up (positive shape) or down; zero shape is a straight line.
+    fn bend(&mut self, x: f32, shape: f32) -> f32 {
+        if shape == 0.0 {
+            return x;
+        }
+        if self.curve.0 != shape {
+            self.curve = (shape, (-4.0 * shape).exp2());
+        }
+        x / (x + self.curve.1 * (1.0 - x))
+    }
+    fn bend_bipolar(&mut self, x: f32, shape: f32) -> f32 {
+        self.bend(x.abs(), shape).copysign(x)
+    }
+}
+/// 0 up to 1 at `peak`, then back down to 0, over 0..=1.
+fn rise(x: f32, peak: f32) -> f32 {
+    if x < peak {
+        x / peak
+    } else if peak < 1.0 {
+        (1.0 - x) / (1.0 - peak)
+    } else {
+        1.0
     }
 }

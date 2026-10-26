@@ -109,6 +109,15 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   Older presets keep the original envelope.
   **− LFO** / **− ENV** removes the last added modulator while keeping the first
   three and the remaining assignments intact.
+- **LFO shaping**: each LFO has **Shape** (symmetry of Sine/Triangle — up to a saw
+  either way — pulse width of Square, curve of Saw, Random and the follower),
+  **Phase**, **Smooth**, **Delay** and **Fade**, all automatable as `LFO n shape` …
+  `LFO n fade`, plus **Bipolar/Unipolar** and **Loop/One shot**. **Reset** picks what
+  starts the cycle over: Free, every **Note**, the song position (**Tempo**: the
+  same point of the cycle at the same beat, also at Hz rates) or **Sequencer**
+  steps routed to `LFO n reset` (a reset lane resets on each gate; a step
+  destination on gates of steps set to 1). Sync divisions include triplets and
+  dotted values.
 - **Macros**: up to 8 knobs of your own per timbre, each turning up to 8
   destinations at once by its own depth. Name them, MIDI-learn them, or automate
   them from the DAW as `Macro 1`–`Macro 8`.

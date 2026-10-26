@@ -35,7 +35,10 @@ use crate::{
     matrix::{self, Source},
     midi::Message,
     performance::{Mode, Performance},
-    preset::{Destination, Env, FilterPosition, FilterSlot, Lfo, MAX_FILTER_SLOTS, Params, Preset},
+    preset::{
+        Destination, Env, FilterPosition, FilterSlot, Lfo, LfoReset, MAX_FILTER_SLOTS, Params,
+        Preset,
+    },
     tables::{self, Random},
     taps::Stage,
 };
@@ -337,6 +340,11 @@ impl Modulated {
                     L::Division => (&mut l.division, 0.0625, 32.0, true),
                     L::Depth2 => (&mut l.depth2, -1.0, 1.0, false),
                     L::Depth3 => (&mut l.depth3, -1.0, 1.0, false),
+                    L::Shape => (&mut l.shape, -1.0, 1.0, false),
+                    L::Phase => (&mut l.phase, 0.0, 1.0, false),
+                    L::Smooth => (&mut l.smooth, 0.0, 1.0, false),
+                    L::Delay => (&mut l.delay, 0.0, 1.0, false),
+                    L::Fade => (&mut l.fade, 0.0, 1.0, false),
                 })
             }
             Destination::Performance { parameter } => {
@@ -479,6 +487,11 @@ pub struct Engine {
     grain_feedback: feedback::Feedback,
     voices: Box<[Voice; VOICES]>,
     oscillators: [Oscillator; crate::preset::MODULATORS],
+    /// Beats since the transport started, or where the host's playhead is;
+    /// it keeps counting while stopped. Tempo LFOs read their cycle from it.
+    song_beat: f64,
+    /// The host's last playhead, adopted only when it moves.
+    host_beat: Option<f64>,
     pub lfo_values: [f32; crate::preset::MODULATORS],
     pub env_values: [f32; crate::preset::MODULATORS],
     color_rack: Box<ColorRack>,
@@ -579,6 +592,8 @@ impl Engine {
             oscillators: std::array::from_fn(|i| {
                 Oscillator::new(0x853c49e6748fea9b_u64.wrapping_add(i as u64 * 0x12345679))
             }),
+            song_beat: 0.0,
+            host_beat: None,
             lfo_values: [0.0; crate::preset::MODULATORS],
             env_values: [0.0; crate::preset::MODULATORS],
             color_rack: Box::new(ColorRack::new(sr)),
@@ -924,6 +939,14 @@ impl Engine {
         if bpm.is_finite() && (20.0..=300.0).contains(&bpm) {
             self.preset.params.bpm = bpm;
         }
+        // A playing host moves its playhead; a stopped one leaves the song
+        // position counting on from there.
+        if let Some(beat) = beat.filter(|b| b.is_finite()) {
+            if restart || self.host_beat != Some(beat) {
+                self.song_beat = beat.max(0.0);
+            }
+            self.host_beat = Some(beat);
+        }
         if restart {
             if let Some(drums) = &mut self.drums {
                 drums
@@ -941,7 +964,7 @@ impl Engine {
             if let Some(beat) = beat.filter(|b| b.is_finite()) {
                 self.performance.seek(beat);
                 for (oscillator, lfo) in self.oscillators.iter_mut().zip(self.preset.lfos) {
-                    if lfo.sync {
+                    if lfo.sync && lfo.reset == LfoReset::Free {
                         oscillator.phase = (beat / lfo.division as f64).rem_euclid(1.0);
                     }
                 }
@@ -995,6 +1018,19 @@ impl Engine {
     }
     /// Starts a voice's envelopes and lets the frame loop advance them.
     fn start_voice(&mut self, index: usize) {
+        let first = !self
+            .voices
+            .iter()
+            .enumerate()
+            .any(|(i, v)| i != index && (v.held || v.sustained));
+        for (oscillator, lfo) in self.oscillators.iter_mut().zip(&self.preset.lfos) {
+            match lfo.reset {
+                LfoReset::Note => oscillator.reset(),
+                LfoReset::Free | LfoReset::Tempo if first && lfo.one_shot => oscillator.reset(),
+                LfoReset::Free | LfoReset::Tempo if first => oscillator.restart_fade(),
+                _ => {}
+            }
+        }
         self.voices[index].on(self.preset.env_count as usize);
         self.sounding |= 1 << index;
     }
@@ -1236,6 +1272,9 @@ impl Engine {
         self.grain_feedback.reset();
     }
     pub fn set_playing(&mut self, playing: bool) {
+        if playing && !self.playing {
+            self.song_beat = 0.0;
+        }
         self.playing = playing;
         if let Some(drums) = &mut self.drums {
             if playing && self.sequence_running {
@@ -1962,6 +2001,8 @@ impl Engine {
         // that routes into that depth, so one can open another's routes.
         for modulator in m.modulator_order() {
             let source = match modulator {
+                // A unipolar LFO swings 0..1 over the same span as -0.5..0.5.
+                Modulator::Lfo(i) if m.lfos[i].unipolar => self.lfo_values[i],
                 Modulator::Lfo(i) => self.lfo_values[i] * 0.5,
                 Modulator::Env(i) => self.env_values[i],
             };
@@ -2391,6 +2432,22 @@ impl Engine {
                     }
                 }
             }
+            let resets = self
+                .preset
+                .sequencer
+                .runtime
+                .as_ref()
+                .map_or(0, |r| r.lfo_resets());
+            for (i, (oscillator, lfo)) in self
+                .oscillators
+                .iter_mut()
+                .zip(&self.preset.lfos)
+                .enumerate()
+            {
+                if resets & 1 << i != 0 && lfo.reset == LfoReset::Sequencer {
+                    oscillator.reset();
+                }
+            }
             // Main pitch steps can gate the free voice's ENV like notes.
             if let Some((trigger, open)) = self
                 .preset
@@ -2770,14 +2827,20 @@ impl Engine {
                     },
         );
         self.lfo_values.fill(0.0);
+        let bpm = self.modulated.params.bpm;
         for i in 0..self.modulated.lfo_count {
-            self.lfo_values[i] = self.oscillators[i].next_sample(
-                &self.modulated.lfos[i],
-                sr,
-                self.modulated.params.bpm,
-                self.follower.min(1.0),
-            );
+            let lfo = &self.modulated.lfos[i];
+            let position = (lfo.reset == LfoReset::Tempo).then(|| {
+                if lfo.sync {
+                    self.song_beat / f64::from(lfo.division)
+                } else {
+                    self.song_beat * 60.0 / f64::from(bpm) * f64::from(lfo.rate_hz)
+                }
+            });
+            self.lfo_values[i] =
+                self.oscillators[i].next_sample(lfo, sr, bpm, self.follower.min(1.0), position);
         }
+        self.song_beat += f64::from(bpm) / (60.0 * f64::from(sr));
         self.env_values = [0.0; crate::preset::MODULATORS];
         let mut loudest_voice = 0.0_f32;
         let mut voice_sum = 0.0_f32;

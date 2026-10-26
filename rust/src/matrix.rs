@@ -35,6 +35,22 @@ pub enum Source {
     Env7,
     Env8,
 }
+impl Source {
+    /// The LFO an LFO source reads.
+    pub fn lfo(self) -> Option<usize> {
+        Some(match self {
+            Self::Lfo1 => 0,
+            Self::Lfo2 => 1,
+            Self::Lfo3 => 2,
+            Self::Lfo4 => 3,
+            Self::Lfo5 => 4,
+            Self::Lfo6 => 5,
+            Self::Lfo7 => 6,
+            Self::Lfo8 => 7,
+            _ => return None,
+        })
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -99,6 +115,11 @@ pub enum LfoParameter {
     Division,
     Depth2,
     Depth3,
+    Shape,
+    Phase,
+    Smooth,
+    Delay,
+    Fade,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

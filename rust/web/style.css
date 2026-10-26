@@ -1876,6 +1876,64 @@ h2 {
 .lfo-card .check {
   font-size: 10px;
 }
+.lfo-modes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+  margin-top: 10px;
+}
+.lfo-modes label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  font:
+    9px ui-monospace,
+    monospace;
+  color: var(--muted);
+}
+.lfo-modes select {
+  width: 100%;
+  min-width: 0;
+  height: 29px;
+  padding: 0 22px 0 7px;
+  font-size: 11px;
+  background-color: #20271f;
+}
+.lfo-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 11px 15px;
+  margin: 12px 0 14px;
+}
+.lfo-parameter {
+  display: block;
+  min-width: 0;
+}
+.lfo-parameter > span {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 5px;
+  font:
+    9px ui-monospace,
+    monospace;
+  color: var(--muted);
+}
+.lfo-parameter output {
+  color: var(--text);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.lfo-parameter input {
+  display: block;
+  width: 100%;
+  height: 16px;
+  margin: 5px 0 0;
+  accent-color: var(--accent);
+}
+.lfo-parameter.is-idle {
+  opacity: 0.4;
+}
 .env-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

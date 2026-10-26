@@ -264,7 +264,9 @@ fn grain_group_controls_append_after_the_macros() {
         ]
     );
     assert_eq!(ids[4 * 3 + 8], "grain_group1_scale");
-    assert_eq!(ids.len(), 4 * 3 + 1 + 4 * 8);
+    // Then the five LFO shaping controls of each LFO.
+    assert_eq!(ids.len(), 4 * 3 + 1 + 4 * 8 + 8 * 5);
+    assert_eq!(ids[4 * 3 + 1 + 4 * 8], "lfo1_shape");
     let mut preset = Preset::default();
     let changes = parameters::parse(&serde_json::json!({
         "grain_advanced": 1.0,
