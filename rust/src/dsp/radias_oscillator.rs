@@ -67,6 +67,7 @@ impl Default for Controller {
 }
 impl Controller {
     #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
     pub fn next_with_sync(
         &mut self,
         oscillator: &mut PrimaryOscillator,
