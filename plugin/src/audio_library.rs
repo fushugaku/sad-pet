@@ -30,12 +30,13 @@ pub(super) fn check_editor_request(path: &str, post: bool, data: &Value) -> Resu
     let carries_audio = match path {
         "/api/wav" | "/api/sample.wav" | "/api/trim" | "/api/scene" | "/api/render"
         | "/api/input.wav" => true,
-        "/api/preset-library/import" | "/api/effect-presets/import" => {
+        "/api/preset-library/import" | "/api/effect-presets/import" | "/api/instruments/import" => {
             data.get("base64").is_some() || data["path"].as_str().is_none()
         }
-        "/api/preset-library/export" | "/api/effect-presets/export" | "/api/vocal/export" => {
-            data["path"].as_str().is_none()
-        }
+        "/api/preset-library/export"
+        | "/api/effect-presets/export"
+        | "/api/instruments/export"
+        | "/api/vocal/export" => data["path"].as_str().is_none(),
         // Voicebank recordings are read natively from the chosen file or folder.
         "/api/vocal/import" => data["path"].as_str().is_none(),
         _ => path.starts_with("/api/samples/") || path.starts_with("/api/recording."),

@@ -23,12 +23,13 @@ const { LFO_DIVISIONS, lfoDivision, lfoWave, lfoPreview, lfoControlText, lfoShap
 // Every old option survives, in order of length, with triplets and dots between.
 const beats = [...LFO_DIVISIONS].map(([b]) => b);
 assert.deepEqual([...beats].sort((a, b) => a - b), beats);
-for (const old of [0.25, 0.5, 1, 2, 4, 8, 16, 32]) assert.equal(lfoDivision(old)[0], old);
+for (const old of [0.25, 0.5, 1, 2, 4, 8, 16, 32, 64, 128]) assert.equal(lfoDivision(old)[0], old);
 // Presets hold f32 values: a stored triplet still picks its option.
 assert.equal(lfoDivision(Math.fround(1 / 3))[1], "1/8T");
 assert.equal(lfoDivision(Math.fround(0.75))[1], "1/8.");
 assert.equal(lfoDivision(Math.fround(8 / 3))[1], "1 bar T");
-assert.equal(lfoDivision(100)[1], "8 bars");
+assert.equal(lfoDivision(100)[1], "32 bars");
+assert.equal(lfoDivision(64)[1], "16 bars");
 
 // The preview follows the engine's shapes.
 const close = (a, b, label) => assert.ok(Math.abs(a - b) < 1e-9, `${label}: ${a} vs ${b}`);

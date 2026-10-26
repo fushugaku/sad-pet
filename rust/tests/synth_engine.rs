@@ -298,7 +298,12 @@ fn synth_controls_append_after_every_other_host_parameter() {
     let play = groups + 1 + 4 * 16 + 4 * 3;
     assert_eq!(later[play], "grain_feedback");
     assert_eq!(later[play + 1], "grain_group1_size");
-    assert_eq!(later.len(), play + 1 + 4 * 8);
+    // Then each group's Filter 2 and filter routing.
+    assert_eq!(later[play + 1 + 4 * 8], "grain_group1_filter_routing");
+    // Then each LFO's shape, phase, smoothing, delay and fade.
+    let shaping = play + 1 + 4 * 8 + 4 * 5;
+    assert_eq!(later[shaping], "lfo1_shape");
+    assert_eq!(later.len(), shaping + 8 * 5);
 }
 
 #[test]

@@ -1,5 +1,5 @@
 use sad_pet::{
-    dsp::{Engine, SampleBuffer, telemetry::RealtimeView},
+    dsp::{Engine, SampleBuffer, modulation::Oscillator, telemetry::RealtimeView},
     matrix::{Route, Source},
     parameters,
     preset::{Destination, Env, Lfo, Preset, Waveform},
@@ -132,4 +132,32 @@ fn old_three_generator_presets_pad_without_changing_their_routes_and_new_banks_r
             .any(|s| s.id == "env8_extra_depth")
     );
     assert!(parameters::specs().iter().any(|s| s.id == "lfo8_rate"));
+}
+
+#[test]
+fn synced_lfos_stretch_to_thirty_two_bars() {
+    let mut p = Preset::default();
+    p.params.grains = 0.0;
+    p.lfos[0].waveform = Waveform::Saw;
+    p.lfos[0].sync = true;
+    let spec = parameters::specs()
+        .iter()
+        .find(|s| s.id == "lfo1_division")
+        .unwrap();
+    spec.set(&mut p, 128.0);
+    let mut copy: Preset = serde_json::from_slice(&serde_json::to_vec(&p).unwrap()).unwrap();
+    copy.sanitize();
+    assert_eq!(copy.lfos[0].division, 128.0);
+    // 32 bars of 4/4 at 120 BPM take 64 seconds: a quarter of the cycle is 8 bars.
+    let mut lfo = Oscillator::new(1);
+    for _ in 0..16_000 {
+        lfo.next_sample(&copy.lfos[0], 1000.0, 120.0, 0.0, None);
+    }
+    assert!((lfo.phase - 0.25).abs() < 1e-9, "{}", lfo.phase);
+    // The transport places the cycle by the beat: beat 96 is three quarters in.
+    let mut e = Engine::new(8000, Arc::new(SampleBuffer::demo(8000)), copy);
+    e.set_playing(true);
+    e.host_transport(120.0, Some(96.0), true, false);
+    e.process_frame();
+    assert!((e.lfo_values[0] - 0.5).abs() < 1e-3, "{}", e.lfo_values[0]);
 }

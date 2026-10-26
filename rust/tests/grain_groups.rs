@@ -264,9 +264,14 @@ fn grain_group_controls_append_after_the_macros() {
         ]
     );
     assert_eq!(ids[4 * 3 + 8], "grain_group1_scale");
+    let filter2 = 4 * 3 + 1 + 4 * 8;
+    assert_eq!(
+        ids[filter2..filter2 + 2],
+        ["grain_group1_filter_routing", "grain_group1_filter2_type"]
+    );
     // Then the five LFO shaping controls of each LFO.
-    assert_eq!(ids.len(), 4 * 3 + 1 + 4 * 8 + 8 * 5);
-    assert_eq!(ids[4 * 3 + 1 + 4 * 8], "lfo1_shape");
+    assert_eq!(ids.len(), filter2 + 4 * 5 + 8 * 5);
+    assert_eq!(ids[filter2 + 4 * 5], "lfo1_shape");
     let mut preset = Preset::default();
     let changes = parameters::parse(&serde_json::json!({
         "grain_advanced": 1.0,
@@ -454,4 +459,52 @@ fn a_synth_feeds_its_grains_back_into_its_history() {
     let (dry, fed) = (synth(0.0), synth(0.9));
     assert!(error(&dry, &fed) > 0.01);
     assert!(fed.iter().flatten().all(|x| x.is_finite() && x.abs() < 2.0));
+}
+
+#[test]
+fn a_second_filter_follows_or_joins_the_first() {
+    use sad_pet::preset::FilterRouting;
+    let level = |edit: fn(&mut sad_pet::grain_groups::Group)| {
+        rms(&render(
+            &mut engine(move |p| {
+                advanced(p);
+                p.grain_groups.groups.iter_mut().for_each(edit);
+            }),
+            24_000,
+        )[12_000..])
+    };
+    let open = level(|_| {});
+    // Off, Filter 2 waits whatever it is set to.
+    let waiting = level(|g| {
+        g.filter2_type = FilterType::HighPass;
+        g.filter2_cutoff = 0.95;
+    });
+    assert_eq!(waiting, open);
+    // In series a high pass after the open Filter 1 silences the grains.
+    let serial = level(|g| {
+        g.filter_routing = FilterRouting::Serial;
+        g.filter2_type = FilterType::HighPass;
+        g.filter2_cutoff = 0.95;
+    });
+    assert!(serial < open * 0.2, "{serial} vs {open}");
+    // In parallel, a closed Filter 1 beside an open Filter 2 leaves half.
+    let parallel = level(|g| {
+        g.filter_routing = FilterRouting::Parallel;
+        g.cutoff = 0.05;
+    });
+    assert!((parallel / open - 0.5).abs() < 0.08, "{parallel} vs {open}");
+    // Filter 2 follows the filter envelope at its own depth.
+    let swept = level(|g| {
+        g.filter_routing = FilterRouting::Serial;
+        g.filter2_cutoff = 0.1;
+        g.filter2_env_depth = 0.9;
+    });
+    let closed = level(|g| {
+        g.filter_routing = FilterRouting::Serial;
+        g.filter2_cutoff = 0.1;
+    });
+    assert!(
+        swept > closed * 1.5 && swept < open,
+        "{closed} < {swept} < {open}"
+    );
 }

@@ -652,7 +652,7 @@ fn append_modulators(result: &mut Vec<Spec>, preset: &Preset, i: usize) {
     for (field, (id, name, min, max)) in [
         ("rate", "rate", 0.01, 40.0),
         ("depth", "depth", -1.0, 1.0),
-        ("division", "division", 0.0625, 32.0),
+        ("division", "division", 0.0625, 128.0),
     ]
     .into_iter()
     .enumerate()
@@ -1352,6 +1352,23 @@ pub fn specs() -> &'static [Spec] {
                     max,
                     default: 0.0,
                     target: Target::GrainGroup(i, grain_groups::PLAY_FIELD + offset),
+                };
+                spec.default = spec.get(&preset);
+                result.push(spec);
+            }
+        }
+        // Then each group's Filter 2 and filter routing.
+        for (i, name) in grain_groups::NAMES.iter().enumerate() {
+            for (offset, (key, label, min, max)) in
+                grain_groups::FILTER2_FIELDS.into_iter().enumerate()
+            {
+                let mut spec = Spec {
+                    id: format!("grain_group{}_{key}", i + 1),
+                    name: format!("Grain group {name} {label}"),
+                    min,
+                    max,
+                    default: 0.0,
+                    target: Target::GrainGroup(i, grain_groups::FILTER2_FIELD + offset),
                 };
                 spec.default = spec.get(&preset);
                 result.push(spec);

@@ -42,6 +42,11 @@ are shared across the three FX racks and all timbres of the same effect type.
 Portable `.sadfx` import/export moves settings between the web and native
 plug-ins, including modes, tempo sync, Smooth and Mix.
 
+**Instruments** next to a timbre's name saves that timbre's whole sound (engine,
+settings, sample or kit) as an instrument preset in a category of your own, and
+loads one into the timbre in place or as a new timbre. Portable `.sadinst`
+files move instruments between the web version and the native app and plug-ins.
+
 - 414 categorized built-in audio sources, WAV import and an IndexedDB file library, including
   Matrix POV video audio and a 42.67-second Harvest Dawn harp/chamber-string cover
   loop: 16 bars at 90 BPM, with the recognizable eight-bar introduction played
@@ -98,7 +103,7 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   and **Synth engine** timbres as tabs across the top. They run together, with per-timbre level, mute,
   solo and MIDI channel. Each owns its source, effects, Resynth, envelopes, LFOs
   and Neuropolis program. Save/recall includes the entire scene and all sources.
-- Up to **8 LFOs** with tempo sync up to 8 bars and **8 ADSR envelopes** per timbre,
+- Up to **8 LFOs** with tempo sync up to 32 bars and **8 ADSR envelopes** per timbre,
   each with **three routes** of its own (destination and depth), plus eight
   modulation-matrix routes. OSC 1–4 shape, mode, tuning, level, pan,
   Ring/Sync and other realtime numeric controls are available as destinations.
@@ -203,7 +208,10 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   first half and falls over the second, as the engine's window does, and a
   short attack and decay make plucked grains. **SHAPE** bends its segments
   from straight lines to the window's half-cosine, in place of the engine's
-  SHAPE. **ENV DEPTH** moves the cutoff by the FILTER envelope either way. The
+  SHAPE. **ENV DEPTH** moves the cutoff by the FILTER envelope either way.
+  **Filter 2** waits until routed: **Serial** puts it after Filter 1,
+  **Parallel** beside it (their average, as the engine's filters mix), with
+  its own type, CUTOFF, RESO and ENV DEPTH on the same FILTER envelope. The
   curve beside the tabs draws the selected group over one grain, and the
   waveform colors grains by group. The first switch-on starts every group from
   the engine's SHAPE, so the sound stays the same until a group changes. Each
@@ -224,7 +232,8 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   **Held chord**, so random grains stay in key. Every control is a host
   parameter (`grain_advanced`, `grain_group1_share` …
   `grain_group4_filter_release`, then `grain_group1_chain`, `_send`, `_bus` for
-  each group, then `grain_feedback` and each group's `_size` … `_scale`) that
+  each group, then `grain_feedback` and each group's `_size` … `_scale`, then
+  each group's `_filter_routing` … `_filter2_env_depth`) that
   LFOs, envelopes, the matrix, macros and sequencer lanes can reach; a bus is
   chosen, not modulated.
 - **Grain feedback.** **FEEDBACK** in the Grain engine of any timbre lets the

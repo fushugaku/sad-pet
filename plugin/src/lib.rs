@@ -2,6 +2,7 @@
 //! Controller prepares files/presets and reclaims retired allocations off-thread.
 mod audio_library;
 mod effect_presets;
+mod instruments;
 mod parameters;
 mod preset_library;
 mod preview;
