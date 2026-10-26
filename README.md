@@ -279,6 +279,14 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
 - MIDI learn on every knob and modulation slider: right-click it, choose **MIDI
   learn** and move a controller. The web version reads the MIDI input chosen next
   to Keyboard.
+- **MIDI clock** in the web version links instances on several computers, over
+  Network MIDI (Wi-Fi) or Bluetooth MIDI ports the system provides: **Follow input**
+  plays the tempo, song position, Start and Stop of the clock on the MIDI input
+  chosen next to Keyboard, the way a plug-in follows its DAW; ticks are filtered
+  and the beat is pulled on with small tempo changes, so a jittery link never makes
+  it jump. **OFFSET** plays ahead of a slow link (behind when negative). The
+  clock-out menu sends the scene's clock, with Start, Stop and song position, to a
+  MIDI output, each tick stamped with the time its beat sounds.
 - The same right-click menu routes modulation to the control: pick an **LFO**,
   **ENV**, **Sequencer** track, **Macro** or **Mod matrix** source, or a new LFO,
   ENV, track or macro, and **Remove modulation** takes a route away. An LFO or ENV

@@ -2,6 +2,7 @@
 //! utility worker. All synthesis uses the same Engine as the desktop build.
 #[cfg(test)]
 mod allocation_tests;
+mod clock;
 mod sampler;
 mod source_fx;
 mod telemetry;
@@ -484,6 +485,37 @@ pub extern "C" fn sad_command() -> u32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn sad_process(count: usize) -> *const Stereo {
     registry(|r| r.process(count))
+}
+/// A MIDI clock message (Clock, Start, Continue, Stop or Song Position)
+/// sounding at `frame` on `sad_clock_frame`'s count.
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_clock_event(frame: f64, status: u32, data1: u32, data2: u32) {
+    let message = match status {
+        0xf8 => Message::Clock,
+        0xfa => Message::Start,
+        0xfb => Message::Continue,
+        0xfc => Message::Stop,
+        0xf2 => Message::SongPosition {
+            sixteenths: ((data2 & 0x7f) << 7 | (data1 & 0x7f)) as u16,
+        },
+        _ => return,
+    };
+    registry(|r| r.clock_event(frame, message));
+}
+/// Frames rendered so far: the first frame of the next block.
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_clock_frame() -> f64 {
+    registry(|r| r.midi_clock.frame() as f64)
+}
+/// Changes when the scene starts, stops or moves.
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_clock_epoch() -> u32 {
+    registry(|r| r.midi_clock.epoch())
+}
+/// The clock's state as `clock::VIEW` numbers.
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_clock_view() -> *const f64 {
+    registry(|r| r.midi_clock.view())
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn sad_audio_input() -> *mut Stereo {

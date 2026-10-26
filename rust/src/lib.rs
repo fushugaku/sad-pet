@@ -2,6 +2,7 @@
 #[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
 pub mod audio;
 pub mod bus;
+pub mod clock;
 pub mod color;
 pub mod drums;
 pub mod dsp;

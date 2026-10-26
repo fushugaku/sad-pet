@@ -1931,6 +1931,51 @@ h2 {
 .midi-controls {
   gap: 8px !important;
 }
+.clock-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin: -4px 0 12px;
+}
+.clock-controls[hidden],
+.clock-controls [hidden] {
+  display: none;
+}
+.clock-title,
+.clock-lead {
+  font:
+    9px ui-monospace,
+    monospace;
+  letter-spacing: 0.8px;
+  color: var(--muted);
+}
+.clock-lead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.clock-lead input {
+  width: 46px;
+  height: 24px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  text-align: center;
+  font:
+    11px ui-monospace,
+    monospace;
+}
+#clock-out {
+  height: 26px;
+  font-size: 11px;
+  max-width: 200px;
+}
+#clock-status {
+  font-size: 11px;
+  color: var(--muted);
+}
 #keyboard {
   height: 74px;
   position: relative;
