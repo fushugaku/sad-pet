@@ -269,9 +269,13 @@ fn grain_group_controls_append_after_the_macros() {
         ids[filter2..filter2 + 2],
         ["grain_group1_filter_routing", "grain_group1_filter2_type"]
     );
-    // Then the five LFO shaping controls of each LFO.
-    assert_eq!(ids.len(), filter2 + 4 * 5 + 8 * 5);
+    // Then the five LFO shaping controls of each LFO, then a Rack's Mixer
+    // strips and Grain engine history.
+    let rack = filter2 + 4 * 5 + 8 * 5;
+    assert_eq!(ids.len(), rack + 3 * 4 + 1);
     assert_eq!(ids[filter2 + 4 * 5], "lfo1_shape");
+    assert_eq!(ids[rack], "rack_sample_level");
+    assert_eq!(ids[ids.len() - 1], "rack_buffer_seconds");
     let mut preset = Preset::default();
     let changes = parameters::parse(&serde_json::json!({
         "grain_advanced": 1.0,

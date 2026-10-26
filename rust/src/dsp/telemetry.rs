@@ -67,6 +67,9 @@ pub struct RealtimeView {
     pub chord_len: usize,
     pub step_entry: Option<usize>,
     pub step_edits: [Option<crate::performance::Step>; 16],
+    /// A Rack's Sample, Synth and Drums chains, loudest since the last view.
+    #[serde(default)]
+    pub rack_peaks: [f32; 3],
 }
 
 impl Default for RealtimeView {
@@ -117,6 +120,7 @@ impl Default for RealtimeView {
             chord_len: 0,
             step_entry: None,
             step_edits: [None; 16],
+            rack_peaks: [0.0; 3],
         }
     }
 }
@@ -248,7 +252,7 @@ impl Engine {
             view.grains[view.grain_count] = self.grain_view(slot);
             view.grain_count += 1;
         }
-        let waveform = &self.source_sample().waveform;
+        let waveform = &self.shown_sample().waveform;
         view.waveform_len = waveform.len().min(view.waveform.len());
         view.waveform[..view.waveform_len].copy_from_slice(&waveform[..view.waveform_len]);
         (view.step, view.arp_index, view.gate, view.beat) = self.performance.realtime_position();
@@ -257,6 +261,8 @@ impl Engine {
         view.chord[..view.chord_len].copy_from_slice(&chord[..view.chord_len]);
         view.step_entry = self.step_entry;
         view.step_edits = self.step_edits;
+        view.rack_peaks = self.rack_peaks().unwrap_or_default();
+        self.clear_rack_peaks();
         if let Some(input) = &mut self.live_input {
             input.peak = [0.0; 2];
         }

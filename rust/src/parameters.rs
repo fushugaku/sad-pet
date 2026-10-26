@@ -170,6 +170,10 @@ enum Target {
     Macro(usize),
     /// An advanced mode grain group's control: group, then FIELDS index.
     GrainGroup(usize, usize),
+    /// A Rack Mixer strip's control: STRIP_SOURCES, then STRIP_FIELDS index.
+    RackStrip(usize, usize),
+    /// How much of its chain a Rack's Grain engine keeps.
+    RackBuffer,
 }
 
 /// Host controls of each added filter, in host order.
@@ -223,7 +227,11 @@ impl Spec {
     pub(crate) fn can_sequence(&self) -> bool {
         !matches!(
             self.target,
-            Target::DrumGrain | Target::DrumBuffer | Target::SynthGrain | Target::SynthBuffer
+            Target::DrumGrain
+                | Target::DrumBuffer
+                | Target::SynthGrain
+                | Target::SynthBuffer
+                | Target::RackBuffer
         ) && self.id != "bpm"
             && !matches!(
                 self.target,
@@ -245,7 +253,9 @@ impl Spec {
             | Target::DrumBuffer
             | Target::SynthGrain
             | Target::SynthBuffer
+            | Target::RackBuffer
             | Target::Macro(_) => return None,
+            Target::RackStrip(i, field) => m.rack_strips.at(i).field(field),
             Target::ResynthOsc(i, field) => oscillator_get(m.resynth.oscillators[i], field),
             Target::SynthOsc(i, field) => oscillator_get(m.synth.oscillators[i], field),
             Target::FilterSlot(i, field) => {
@@ -309,7 +319,9 @@ impl Spec {
             | Target::DrumBuffer
             | Target::SynthGrain
             | Target::SynthBuffer
+            | Target::RackBuffer
             | Target::Macro(_) => {}
+            Target::RackStrip(i, field) => m.rack_strips.at_mut(i).set_field(field, value),
             Target::ResynthOsc(i, field) => {
                 oscillator_set(&mut m.resynth.oscillators[i], field, value)
             }
@@ -351,6 +363,11 @@ impl Spec {
         match self.target {
             Target::DrumGrain => f32::from(preset.drums.as_ref().is_some_and(|d| d.granular)),
             Target::DrumBuffer => preset.drums.as_ref().map_or(8., |d| d.buffer_seconds),
+            Target::RackStrip(i, field) => preset
+                .rack
+                .as_ref()
+                .map_or(self.default, |r| r.strips.at(i).field(field)),
+            Target::RackBuffer => preset.rack.as_ref().map_or(8., |r| r.buffer_seconds),
             Target::SynthGrain => f32::from(preset.synth.as_ref().is_some_and(|s| s.granular)),
             Target::SynthBuffer => preset.synth.as_ref().map_or(8., |s| s.buffer_seconds),
             Target::SynthOsc(i, field) => preset
@@ -436,6 +453,16 @@ impl Spec {
             Target::DrumBuffer => {
                 if let Some(d) = &mut preset.drums {
                     d.buffer_seconds = value;
+                }
+            }
+            Target::RackStrip(i, field) => {
+                if let Some(r) = &mut preset.rack {
+                    r.strips.at_mut(i).set_field(field, value);
+                }
+            }
+            Target::RackBuffer => {
+                if let Some(r) = &mut preset.rack {
+                    r.buffer_seconds = value;
                 }
             }
             Target::FilterSlot(i, field) => {
@@ -1387,6 +1414,29 @@ pub fn specs() -> &'static [Spec] {
                 });
             }
         }
+        // Then a Rack's Mixer strips and its Grain engine's history.
+        for (i, source) in crate::rack::STRIP_SOURCES.into_iter().enumerate() {
+            for (field, (key, label, min, max, default)) in
+                crate::rack::STRIP_FIELDS.into_iter().enumerate()
+            {
+                result.push(Spec {
+                    id: format!("rack_{}_{key}", source.label().to_lowercase()),
+                    name: format!("Rack {} {label}", source.label()),
+                    min,
+                    max,
+                    default,
+                    target: Target::RackStrip(i, field),
+                });
+            }
+        }
+        result.push(Spec {
+            id: "rack_buffer_seconds".into(),
+            name: "Rack grain buffer seconds".into(),
+            min: 0.125,
+            max: crate::rack::MAX_BUFFER_SECONDS,
+            default: 8.0,
+            target: Target::RackBuffer,
+        });
         result
     })
 }

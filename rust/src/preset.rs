@@ -851,6 +851,12 @@ pub struct Preset {
     /// engine processes the kit the way a bus processes its input.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sampler: Option<Box<crate::sampler::Settings>>,
+    /// Present only in Rack timbres, which may also hold Drum and Synth
+    /// settings for their modules; other presets serialize unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rack: Option<Box<crate::rack::Settings>>,
+    #[serde(skip)]
+    pub rack_runtime: crate::rack::Prepared,
     pub pre_color_chain: Vec<crate::color::ColorSlot>,
     pub source_color_chain: Vec<crate::color::ColorSlot>,
     pub color_chain: Vec<crate::color::ColorSlot>,
@@ -890,6 +896,8 @@ impl Default for Preset {
             bus_runtime: Default::default(),
             vocal: None,
             sampler: None,
+            rack: None,
+            rack_runtime: Default::default(),
             pre_color_chain: Vec::new(),
             source_color_chain: Vec::new(),
             color_chain: vec![
@@ -927,6 +935,7 @@ impl<'de> Deserialize<'de> for Preset {
             bus: Option<Box<crate::bus::Settings>>,
             vocal: Option<Box<crate::vocal::Settings>>,
             sampler: Option<Box<crate::sampler::Settings>>,
+            rack: Option<Box<crate::rack::Settings>>,
             pre_color_chain: Vec<crate::color::ColorSlot>,
             source_color_chain: Vec<crate::color::ColorSlot>,
             color_chain: Option<Vec<crate::color::ColorSlot>>,
@@ -956,6 +965,7 @@ impl<'de> Deserialize<'de> for Preset {
                     bus: None,
                     vocal: None,
                     sampler: None,
+                    rack: None,
                     pre_color_chain: Vec::new(),
                     source_color_chain: Vec::new(),
                     color_chain: None,
@@ -1100,6 +1110,8 @@ impl<'de> Deserialize<'de> for Preset {
             bus_runtime: Default::default(),
             vocal: d.vocal,
             sampler: d.sampler,
+            rack: d.rack,
+            rack_runtime: Default::default(),
             pre_color_chain: d.pre_color_chain,
             source_color_chain: d.source_color_chain,
             color_chain,
@@ -1121,14 +1133,29 @@ impl Preset {
         let mut preset = self.clone();
         preset.sanitize();
         preset.prepare_effects(rate);
-        preset.drum_runtime.prepare(preset.drums.as_deref(), rate);
-        preset.synth_runtime.prepare(preset.synth.as_deref(), rate);
+        if preset.rack.is_some() {
+            // A Rack's sources hand their sound down its modules, so only its
+            // Grain engine keeps a history.
+            preset
+                .drum_runtime
+                .prepare_engine(preset.drums.as_deref(), rate);
+            preset
+                .synth_runtime
+                .prepare_engine(preset.synth.as_deref(), rate);
+        } else {
+            preset.drum_runtime.prepare(preset.drums.as_deref(), rate);
+            preset.synth_runtime.prepare(preset.synth.as_deref(), rate);
+        }
         preset.bus_runtime.prepare(preset.bus.as_deref(), rate);
+        preset.rack_runtime.prepare(preset.rack.as_deref(), rate);
         preset
     }
     /// Drum and Synth timbres keep their own output in a windowed live history.
+    /// A Rack's Grain engine keeps one when it does not read the file.
     pub fn history(&self) -> Option<crate::synth::History> {
-        if let Some(bus) = &self.bus {
+        if let Some(rack) = &self.rack {
+            rack.history()
+        } else if let Some(bus) = &self.bus {
             Some(bus.history())
         } else if let Some(drums) = &self.drums {
             Some(crate::synth::History {
@@ -1172,14 +1199,8 @@ impl Preset {
             ],
         );
     }
-    pub fn sanitize(&mut self) {
-        self.fx_chain_version = 1;
-        self.params.sanitize();
-        self.lfo_count = self.lfo_count.clamp(1, MODULATORS as u8);
-        self.env_count = self.env_count.clamp(1, MODULATORS as u8);
-        self.resynth.sanitize();
-        self.taps.sanitize();
-        self.grain_groups.sanitize();
+    /// The engine settings of every other kind: one source at most.
+    fn sanitize_engine(&mut self) {
         if let Some(vocal) = &mut self.vocal {
             // A Vocal timbre's engine is a bus fed by its voice, never Master.
             vocal.sanitize();
@@ -1205,6 +1226,34 @@ impl Preset {
         }
         if let Some(synth) = &mut self.synth {
             synth.sanitize();
+        }
+    }
+    pub fn sanitize(&mut self) {
+        self.fx_chain_version = 1;
+        self.params.sanitize();
+        self.lfo_count = self.lfo_count.clamp(1, MODULATORS as u8);
+        self.env_count = self.env_count.clamp(1, MODULATORS as u8);
+        self.resynth.sanitize();
+        self.taps.sanitize();
+        self.grain_groups.sanitize();
+        if let Some(rack) = &mut self.rack {
+            // A Rack holds the settings of the sources it has, and only those.
+            rack.sanitize();
+            self.bus = None;
+            self.vocal = None;
+            self.sampler = None;
+            if rack.has(crate::rack::Module::Drums) {
+                self.drums.get_or_insert_with(Default::default).sanitize();
+            } else {
+                self.drums = None;
+            }
+            if rack.has(crate::rack::Module::Synth) {
+                self.synth.get_or_insert_with(Default::default).sanitize();
+            } else {
+                self.synth = None;
+            }
+        } else {
+            self.sanitize_engine();
         }
         self.sequencer.sanitize();
         self.matrix.truncate(crate::matrix::MAX_ROUTES);

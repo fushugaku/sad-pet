@@ -303,7 +303,9 @@ fn synth_controls_append_after_every_other_host_parameter() {
     // Then each LFO's shape, phase, smoothing, delay and fade.
     let shaping = play + 1 + 4 * 8 + 4 * 5;
     assert_eq!(later[shaping], "lfo1_shape");
-    assert_eq!(later.len(), shaping + 8 * 5);
+    // Then a Rack's Mixer strips and its Grain engine history.
+    assert_eq!(later[shaping + 8 * 5], "rack_sample_level");
+    assert_eq!(later.len(), shaping + 8 * 5 + 3 * 4 + 1);
 }
 
 #[test]

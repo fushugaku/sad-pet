@@ -112,14 +112,17 @@ fn cutoff(slot: &FilterSlot, note: f32, envs: [f32; MODULATORS]) -> f32 {
 /// Control-rate coefficients for the shared and oscillator-rate filters.
 /// Without a note of their own they follow each envelope's loudest voice, as
 /// an ENV routed to a destination does, and track the last note played.
+/// `every` also configures the shared filter of per-voice positions, which a
+/// Rack runs on a whole chain.
 pub(crate) fn configure_shared(
     slots: &[FilterSlot],
     banks: &mut [Box<Bank>],
     note: f32,
     envs: [f32; MODULATORS],
+    every: bool,
 ) {
     for (slot, bank) in slots.iter().zip(banks) {
-        if slot.id != bank.id || slot.position.per_voice() {
+        if slot.id != bank.id || (slot.position.per_voice() && !every) {
             continue;
         }
         let filter = if slot.position.oscillator().is_some() {

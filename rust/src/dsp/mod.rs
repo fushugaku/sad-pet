@@ -13,6 +13,7 @@ mod grain_group_tests;
 mod grain_groups;
 mod imported_rate;
 pub mod modulation;
+mod rack;
 mod radias_filter;
 mod radias_oscillator;
 mod radias_wavefolder;
@@ -171,6 +172,8 @@ pub(crate) struct Modulated {
     pub(crate) filter_slots: [FilterSlot; MAX_FILTER_SLOTS],
     pub(crate) filter_len: usize,
     pub(crate) grain_groups: crate::grain_groups::Settings,
+    /// A Rack's Mixer strips.
+    pub(crate) rack_strips: crate::rack::Strips,
 }
 /// An LFO or ENV of a frame, by index.
 #[derive(Clone, Copy)]
@@ -216,6 +219,10 @@ impl Modulated {
         self.filter_len = preset.filter_slots.len();
         self.filter_slots[..self.filter_len].copy_from_slice(&preset.filter_slots);
         self.grain_groups = preset.grain_groups;
+        self.rack_strips = preset
+            .rack
+            .as_ref()
+            .map_or_else(Default::default, |r| r.strips);
     }
     /// An LFO's or ENV's routes, each at its depth as modulated so far.
     pub(crate) fn modulator_routes(
@@ -508,6 +515,8 @@ pub struct Engine {
     synth: Option<Box<synth::Runtime>>,
     /// Present while the preset is a Sampler kit: its pads replace the input.
     sampler: Option<Box<sampler::Runtime>>,
+    /// Present while the preset is a Rack: its modules' order and Mixer.
+    rack: Option<rack::Runtime>,
     pub processed_source: Option<Arc<source_fx::ProcessedSource>>,
     previous_source: Option<Arc<source_fx::ProcessedSource>>,
     source_fade_remaining: u32,
@@ -612,6 +621,7 @@ impl Engine {
             drums: None,
             synth: None,
             sampler: None,
+            rack: None,
             processed_source: None,
             previous_source: None,
             source_fade_remaining: 0,
@@ -676,12 +686,28 @@ impl Engine {
     pub fn set_preset(&mut self, mut preset: Preset) {
         preset.sanitize();
         preset.prepare_effects_reusing(self.sample_rate, &self.preset);
-        preset
-            .drum_runtime
-            .prepare(preset.drums.as_deref(), self.sample_rate);
-        preset
-            .synth_runtime
-            .prepare(preset.synth.as_deref(), self.sample_rate);
+        if preset.rack.is_some() {
+            // A Rack's sources hand their sound down its modules, so only its
+            // Grain engine keeps a history.
+            preset
+                .drum_runtime
+                .prepare_engine(preset.drums.as_deref(), self.sample_rate);
+            preset
+                .synth_runtime
+                .prepare_engine(preset.synth.as_deref(), self.sample_rate);
+        } else {
+            preset
+                .drum_runtime
+                .prepare(preset.drums.as_deref(), self.sample_rate);
+            preset
+                .synth_runtime
+                .prepare(preset.synth.as_deref(), self.sample_rate);
+        }
+        preset.rack_runtime.prepare_reusing(
+            preset.rack.as_deref(),
+            self.sample_rate,
+            self.rack.is_some() && self.live_input.is_some(),
+        );
         preset.bus_runtime.prepare_reusing(
             preset.bus.as_deref(),
             self.sample_rate,
@@ -699,6 +725,13 @@ impl Engine {
     /// Structural FX/drum edits must use `prepared_clone_for(sample_rate)`.
     /// The caller retires the previous preset away from the audio callback.
     pub fn exchange_preset(&mut self, preset: &mut Preset) {
+        // A Rack's history waits aside while the sources change, so no Drum
+        // or Synth runtime takes it; it stays if the next Rack still reads one.
+        let mut rack_history = if self.preset.rack.is_some() {
+            self.live_input.take()
+        } else {
+            None
+        };
         // A bus history is never freed here: it retires with the outgoing
         // preset, whose bus_runtime is empty while that preset is installed.
         let was_bus = self.preset.bus.is_some();
@@ -793,6 +826,27 @@ impl Engine {
         }
         filter_slots::inherit(&mut preset.filter_banks.0, &mut self.filter_banks);
         std::mem::swap(&mut self.filter_banks, &mut preset.filter_banks.0);
+        if preset.rack.is_some() {
+            let prepared = preset.rack_runtime.0.take();
+            let (kept, retired) = if rack_history.is_some() && preset.history().is_some() {
+                // The running history stays; the prepared one retires unused.
+                (rack_history.take(), prepared)
+            } else {
+                (prepared, rack_history.take())
+            };
+            // What the previous kind recorded into retires instead.
+            let previous = std::mem::replace(&mut self.live_input, kept);
+            debug_assert!(retired.is_none() || previous.is_none());
+            preset.rack_runtime.0 = retired.or(previous);
+        } else {
+            preset.rack_runtime.0 = rack_history.take();
+        }
+        // It retires with the outgoing preset.
+        std::mem::swap(&mut self.preset.rack_runtime.0, &mut preset.rack_runtime.0);
+        self.rack = preset
+            .rack
+            .as_deref()
+            .map(|settings| rack::Runtime::new(settings, self.rack.as_ref()));
         if let Some(bus) = &preset.bus {
             // Granular staying on keeps the running history and its audio.
             if !(bus.granular && self.bus_history()) {
@@ -821,7 +875,7 @@ impl Engine {
         self.refresh_sequence_free_voice();
     }
     pub fn set_sample(&mut self, sample: Arc<SampleBuffer>) {
-        if self.preset.bus.is_none() {
+        if self.preset.bus.is_none() && self.preset.rack.is_none() {
             self.live_input = None;
         }
         self.sample = sample;
@@ -842,6 +896,9 @@ impl Engine {
         self.source_fade_remaining = if self.playing { 128 } else { 0 };
     }
     pub fn prepare_source_effects(&mut self) -> Result<(), String> {
+        if self.preset.rack.is_some() {
+            return Ok(());
+        }
         let mut prepared = source_fx::prepare(
             self.sample.clone(),
             self.region,
@@ -861,7 +918,8 @@ impl Engine {
         self.source_fade_remaining = 0;
     }
     pub fn source_effects_pending(&self) -> bool {
-        if self.live_input.is_some() || self.source_fx_error {
+        // A Rack's Insert FX runs live wherever it stands.
+        if self.live_input.is_some() || self.source_fx_error || self.preset.rack.is_some() {
             return false;
         }
         let slot = self
@@ -890,7 +948,10 @@ impl Engine {
         live_input: &mut Option<LiveInput>,
     ) {
         std::mem::swap(&mut self.sample, sample);
-        std::mem::swap(&mut self.live_input, live_input);
+        // A Rack keeps the history its Grain engine records.
+        if self.preset.rack.is_none() {
+            std::mem::swap(&mut self.live_input, live_input);
+        }
         self.reset_source();
     }
     fn reset_source(&mut self) {
@@ -1181,7 +1242,7 @@ impl Engine {
         Ok(())
     }
     pub fn set_live_input(&mut self, enabled: bool, effects_only: bool) {
-        if self.preset.history().is_some() {
+        if self.preset.history().is_some() || self.preset.rack.is_some() {
             // Drum and Synth timbres record their own output.
             return;
         }
@@ -1244,6 +1305,36 @@ impl Engine {
         self.live_input
             .as_ref()
             .map_or(&self.sample, |input| &input.sample)
+    }
+    /// A Rack with a Sample shows its file, even while its Grain engine
+    /// reads a history of some chain.
+    fn shows_file(&self) -> bool {
+        self.preset
+            .rack
+            .as_ref()
+            .is_some_and(|rack| rack.has(crate::rack::Module::Sample))
+    }
+    /// What a host shows as the source: `source_sample` but for a Rack's file.
+    pub fn shown_sample(&self) -> &SampleBuffer {
+        if self.shows_file() {
+            &self.sample
+        } else {
+            self.source_sample()
+        }
+    }
+    pub fn shown_frames(&self) -> usize {
+        if self.shows_file() {
+            self.sample.len()
+        } else {
+            self.source_frames()
+        }
+    }
+    pub fn shown_duration(&self) -> f64 {
+        if self.shows_file() {
+            self.sample.duration()
+        } else {
+            self.source_duration()
+        }
     }
     pub fn source_frames(&self) -> usize {
         self.preset.history().map_or_else(
@@ -1577,11 +1668,14 @@ impl Engine {
             if matches!(message, Message::Program { .. }) {
                 return;
             }
+            // In a Rack the notes play its Synth and Sample; the drums play
+            // their pattern.
             if let Message::NoteOn {
                 note,
                 velocity: 1..=127,
                 ..
             } = message
+                && self.preset.rack.is_none()
             {
                 if let Message::NoteOn { velocity, .. } = message {
                     let track = self
@@ -2118,16 +2212,32 @@ impl Engine {
         self.filter_masks = filter_slots::masks(slots, &self.filter_banks);
         let last_note = self.source_note as f32
             + self.bend[self.source_channel as usize] * m.params.midi_pitchbend_range;
-        filter_slots::configure_shared(slots, &mut self.filter_banks, last_note, self.env_values);
+        // Any added filter of a Rack may filter a chain as one.
+        filter_slots::configure_shared(
+            slots,
+            &mut self.filter_banks,
+            last_note,
+            self.env_values,
+            self.rack.is_some(),
+        );
         let bus = self.preset.bus.is_some();
+        let chain_filters = self.rack.is_some_and(|r| !r.filters_per_note);
+        if chain_filters {
+            // Without notes of its own, a chain's filters follow each
+            // envelope's loudest voice and the last note, as added ones do.
+            self.filters[0].configure(&m.params, last_note, self.env_values);
+        }
         for (i, voice) in self.voices.iter().enumerate() {
-            if !voice.envelopes[0].active() && !(bus && i == 0) {
+            if chain_filters || (!voice.envelopes[0].active() && !(bus && i == 0)) {
                 continue;
             }
             let note = voice.note as f32
                 + self.bend[voice.channel as usize] * m.params.midi_pitchbend_range;
             self.filters[i].configure(&m.params, note, voice.env_values);
             filter_slots::configure_voice(slots, &mut self.filter_banks, i, note, voice.env_values);
+        }
+        if let Some(rack) = &mut self.rack {
+            rack.retarget(&m.rack_strips);
         }
         let params = m.params;
         self.spare_modulated = Some(std::mem::replace(&mut self.modulated, m));
@@ -2194,6 +2304,10 @@ impl Engine {
     }
 
     fn configure_voice_filter(&mut self, index: usize) {
+        if self.rack.is_some_and(|r| !r.filters_per_note) {
+            // Filter 1 and 2 of voice 0 filter the Rack chain as one.
+            return;
+        }
         let voice = &self.voices[index];
         let note = voice.note as f32
             + self.bend[voice.channel as usize] * self.modulated.params.midi_pitchbend_range;
@@ -2237,11 +2351,15 @@ impl Engine {
         if slot == MAX_GRAINS {
             return;
         }
-        let synth = self.synth.is_some();
+        // Synth grains read the mixed history after every voice's VCA: they
+        // belong to no note and keep its tails while playing. So do a Rack's
+        // that read their chain rather than the file, transport or not.
+        let synth = match &self.rack {
+            Some(rack) => !rack.reads_file,
+            None => self.synth.is_some(),
+        };
         let voice = if synth {
-            // Synth grains read the mixed history after every voice's VCA:
-            // they belong to no note and keep its tails while playing.
-            if !self.playing {
+            if !self.playing && self.rack.is_none() {
                 return;
             }
             0
@@ -2273,7 +2391,7 @@ impl Engine {
             self.bend[note.channel as usize] * p.midi_pitchbend_range
         };
         // A Synth's or drum kit's history is already tuned.
-        let (tune_semis, tune_cents) = if synth || self.drums.is_some() {
+        let (tune_semis, tune_cents) = if synth || (self.drums.is_some() && self.rack.is_none()) {
             (0.0, 0.0)
         } else {
             (p.sample_tune_semis, p.sample_tune_cents)
@@ -2504,7 +2622,8 @@ impl Engine {
         if let Some(drums) = &mut self.drums {
             drums.engine.trigger(track, velocity.clamp(0., 1.), 0);
         }
-        if !self.playing {
+        // A Rack's drums sound without notes or transport.
+        if !self.playing && self.rack.is_none() {
             self.midi_gate = false;
             // Audition does not start the drum pattern.
             let gate = self.drums.as_ref().is_some_and(|d| d.engine.playing);
@@ -2680,6 +2799,10 @@ impl Engine {
     }
 
     pub fn process_input_frame(&mut self, input: Stereo) -> Stereo {
+        if self.rack.is_some() {
+            // A Rack's sources are its own; it takes no input.
+            return self.process_rack_frame();
+        }
         self.taps.begin_frame();
         let input = if self.sampler.is_some() {
             // A kit plays its sequencer even while its chain passes through.
@@ -2715,26 +2838,7 @@ impl Engine {
         } else {
             input
         };
-        if let (Some(history), Some(live)) = (self.preset.history(), &mut self.live_input) {
-            live.effects_only = !history.granular;
-            if live.set_window_seconds(history.buffer_seconds) {
-                let range = live.range();
-                let capacity = live.sample.len() as f64;
-                let remap = |position: f64| {
-                    let mut position = position.rem_euclid(capacity);
-                    if position < range.start as f64 {
-                        position += capacity;
-                    }
-                    range.start as f64
-                        + (position - range.start as f64).rem_euclid(range.len() as f64)
-                };
-                self.frozen_center = remap(self.frozen_center);
-                for slot in self.live_grain_slots() {
-                    let grain = &mut self.grains[slot];
-                    grain.position = remap(grain.position);
-                }
-            }
-        }
+        self.sync_history_window();
         let effects_only = if bus.is_some() {
             // Without a history (Granular off) a bus processes its input only.
             self.live_input.as_ref().is_none_or(|i| i.effects_only)
@@ -2835,49 +2939,7 @@ impl Engine {
                         0.00015
                     },
         );
-        self.lfo_values.fill(0.0);
-        let bpm = self.modulated.params.bpm;
-        for i in 0..self.modulated.lfo_count {
-            let lfo = &self.modulated.lfos[i];
-            let position = (lfo.reset == LfoReset::Tempo).then(|| {
-                if lfo.sync {
-                    self.song_beat / f64::from(lfo.division)
-                } else {
-                    self.song_beat * 60.0 / f64::from(bpm) * f64::from(lfo.rate_hz)
-                }
-            });
-            self.lfo_values[i] =
-                self.oscillators[i].next_sample(lfo, sr, bpm, self.follower.min(1.0), position);
-        }
-        self.song_beat += f64::from(bpm) / (60.0 * f64::from(sr));
-        self.env_values = [0.0; crate::preset::MODULATORS];
-        let mut loudest_voice = 0.0_f32;
-        let mut voice_sum = 0.0_f32;
-        // A voice leaves the set on the frame its envelopes end at zero, so
-        // the others keep the zero levels and gain that frame left.
-        for index in bits(self.sounding) {
-            let v = &mut self.voices[index];
-            let mut active = false;
-            for (i, env) in v
-                .envelopes
-                .iter_mut()
-                .take(self.modulated.env_count)
-                .enumerate()
-            {
-                let value = env.next_sample();
-                active |= env.active();
-                v.env_values[i] = value;
-                self.env_values[i] = self.env_values[i].max(value);
-                if i == 0 {
-                    v.value = value * v.velocity;
-                    loudest_voice = loudest_voice.max(v.value);
-                    voice_sum += v.value;
-                }
-            }
-            if !active {
-                self.sounding &= !(1 << index);
-            }
-        }
+        let (mut loudest_voice, mut voice_sum) = self.advance_modulators(sr);
         if bus.is_some() {
             // A bus has one permanent voice at unity: no notes, no ENV1 VCA.
             for (i, v) in self.voices.iter_mut().enumerate() {
@@ -2895,105 +2957,10 @@ impl Engine {
             self.grain_clock = self.grain_clock.fract();
             self.spawn();
         }
-        let mut voice_frames = [[0.0; 2]; VOICES];
-        let range = self.source_range();
-        let file_source = self.live_input.is_none();
-        let source_effects =
-            file_source && (self.processed_source.is_some() || self.source_fade_remaining != 0);
-        let sample = self
-            .live_input
-            .as_ref()
-            .map_or(&*self.sample, |i| &i.sample);
-        // Loop invariants, hoisted out of the per-grain path: default fades
-        // return a gain of exactly 1.0, and a whole-file region reads the mip
-        // level directly, as read_region_level would decide for every grain.
-        let fading = file_source && self.fades != Fades::default();
-        let antialiasing = self.preset.params.antialiasing;
-        let whole_file = !source_effects && range.start == 0 && range.end == sample.len();
-        let source_chain = self.taps.chain(Stage::Source);
-        let top_level = sample.active_levels() - 1;
-        let groups = &self.modulated.grain_groups;
-        // Each group's grains in the chain, and what it sends to its bus.
-        let group_chains = self.taps.group_chains();
-        let group_sends = self.taps.group_sends();
-        let mut group_sent = [[0.0; 2]; crate::grain_groups::GROUPS];
         let synth_grains = self.synth.is_some();
-        // A file's grains also read what feedback overdubbed.
-        let overdub = file_source && self.grain_feedback.readable();
-        let mut pending = self.live_grains;
-        while pending != 0 {
-            let slot = pending.trailing_zeros() as usize;
-            pending &= pending - 1;
-            let grain = &mut self.grains[slot];
-            let level = if antialiasing { grain.read_level } else { 0 };
-            let mut frame = if whole_file {
-                sample.read_level(grain.position, level.min(top_level))
-            } else if source_effects {
-                let processed = source_fx::read(
-                    &self.sample,
-                    &self.processed_source,
-                    &self.previous_source,
-                    self.source_fade_remaining,
-                    grain.position,
-                    level,
-                    &range,
-                );
-                if source_chain < 1.0 {
-                    let raw = sample.read_region_level(grain.position, level, &range);
-                    std::array::from_fn(|c| raw[c] + (processed[c] - raw[c]) * source_chain)
-                } else {
-                    processed
-                }
-            } else {
-                sample.read_region_level(grain.position, level, &range)
-            };
-            if fading {
-                let gain = self.fades.gain(grain.position, sample.sample_rate, &range);
-                frame = frame.map(|v| v * gain);
-            }
-            if overdub {
-                let fed = self.grain_feedback.read(grain.position);
-                frame = std::array::from_fn(|c| frame[c] + fed[c]);
-            }
-            // A group's grains take its amp envelope in place of the window.
-            if groups.advanced
-                && let Some((group, shaped)) =
-                    self.group_grains.process(slot, grain.age, frame, groups)
-            {
-                let panned: Stereo = std::array::from_fn(|c| shaped[c] * grain.pan[c]);
-                let chain = group_chains[group];
-                for c in 0..2 {
-                    voice_frames[grain.voice][c] += panned[c] * chain;
-                }
-                if group_sends & 1 << group != 0 {
-                    // Sends follow the notes' VCA as the chain does; a
-                    // Synth's grains already read its voices after theirs.
-                    let weight = if synth_grains {
-                        1.0
-                    } else {
-                        self.voices[grain.voice].value.max(0.0)
-                    };
-                    for c in 0..2 {
-                        group_sent[group][c] += panned[c] * weight;
-                    }
-                }
-            } else {
-                let phase = 2.0 * grain.age as f32 / (grain.duration - 1) as f32;
-                let amplitude = tables::grain_window(phase, grain.shape);
-                for c in 0..2 {
-                    voice_frames[grain.voice][c] += frame[c] * amplitude * grain.pan[c];
-                }
-            }
-            grain.position = range.start as f64
-                + sample::wrap_position(
-                    grain.position + grain.rate - range.start as f64,
-                    range.len() as f64,
-                );
-            grain.age += 1;
-            if grain.age >= grain.duration {
-                self.live_grains &= !(1 << slot);
-            }
-        }
+        let (voice_frames, group_sent) = self.render_grains(synth_grains);
+        let file_source = self.live_input.is_none();
+        let group_sends = self.taps.group_sends();
         let norm = if !effects_only && self.overlap > 2.0 {
             tables::inverse_sqrt(self.overlap - 1.0)
         } else {
@@ -3254,6 +3221,233 @@ impl Engine {
             self.taps.send(Stage::PostFx, processed);
         }
         let processed = self.taps.mix(Stage::PostFx, filtered, processed);
+        // While bypassed, the source plays clean: the file or input without
+        // Source FX where those are rendered ahead or chained.
+        let bypass_source = self.bypass.then(|| {
+            if self.processed_source.is_some()
+                || self.previous_source.is_some()
+                || !self.preset.source_color_chain.is_empty()
+            {
+                if self.live_input.is_some() {
+                    input.map(|x| {
+                        if x.is_finite() {
+                            x.clamp(-16.0, 16.0)
+                        } else {
+                            0.0
+                        }
+                    })
+                } else {
+                    self.sample
+                        .read_region(self.cursor, source_rate, true, &self.file_range)
+                        .map(|v| {
+                            v * self.fades.gain(
+                                self.cursor,
+                                self.sample.sample_rate,
+                                &self.file_range,
+                            )
+                        })
+                }
+            } else {
+                source
+            }
+        });
+        self.finish_frame(processed, bypass_source, input_gain, source_rate)
+    }
+
+    /// A windowed history follows its length setting; grains and the frozen
+    /// centre keep their place in the audio that stays.
+    #[inline(always)]
+    fn sync_history_window(&mut self) {
+        if let (Some(history), Some(live)) = (self.preset.history(), &mut self.live_input) {
+            live.effects_only = !history.granular;
+            if live.set_window_seconds(history.buffer_seconds) {
+                let range = live.range();
+                let capacity = live.sample.len() as f64;
+                let remap = |position: f64| {
+                    let mut position = position.rem_euclid(capacity);
+                    if position < range.start as f64 {
+                        position += capacity;
+                    }
+                    range.start as f64
+                        + (position - range.start as f64).rem_euclid(range.len() as f64)
+                };
+                self.frozen_center = remap(self.frozen_center);
+                for slot in self.live_grain_slots() {
+                    let grain = &mut self.grains[slot];
+                    grain.position = remap(grain.position);
+                }
+            }
+        }
+    }
+    /// One frame of every LFO and of each sounding voice's envelopes: the
+    /// loudest voice's ENV 1 level and the sum of all of them.
+    #[inline(always)]
+    fn advance_modulators(&mut self, sr: f32) -> (f32, f32) {
+        self.lfo_values.fill(0.0);
+        let bpm = self.modulated.params.bpm;
+        for i in 0..self.modulated.lfo_count {
+            let lfo = &self.modulated.lfos[i];
+            let position = (lfo.reset == LfoReset::Tempo).then(|| {
+                if lfo.sync {
+                    self.song_beat / f64::from(lfo.division)
+                } else {
+                    self.song_beat * 60.0 / f64::from(bpm) * f64::from(lfo.rate_hz)
+                }
+            });
+            self.lfo_values[i] =
+                self.oscillators[i].next_sample(lfo, sr, bpm, self.follower.min(1.0), position);
+        }
+        self.song_beat += f64::from(bpm) / (60.0 * f64::from(sr));
+        self.env_values = [0.0; crate::preset::MODULATORS];
+        let mut loudest_voice = 0.0_f32;
+        let mut voice_sum = 0.0_f32;
+        // A voice leaves the set on the frame its envelopes end at zero, so
+        // the others keep the zero levels and gain that frame left.
+        for index in bits(self.sounding) {
+            let v = &mut self.voices[index];
+            let mut active = false;
+            for (i, env) in v
+                .envelopes
+                .iter_mut()
+                .take(self.modulated.env_count)
+                .enumerate()
+            {
+                let value = env.next_sample();
+                active |= env.active();
+                v.env_values[i] = value;
+                self.env_values[i] = self.env_values[i].max(value);
+                if i == 0 {
+                    v.value = value * v.velocity;
+                    loudest_voice = loudest_voice.max(v.value);
+                    voice_sum += v.value;
+                }
+            }
+            if !active {
+                self.sounding &= !(1 << index);
+            }
+        }
+        (loudest_voice, voice_sum)
+    }
+    /// Every live grain's frame for this sample, summed per voice, and what
+    /// each advanced group sends to its bus. `follow_mix` grains read a mixed
+    /// history in voice slot 0, after the notes' VCA, as a Synth's do.
+    #[inline(always)]
+    fn render_grains(
+        &mut self,
+        follow_mix: bool,
+    ) -> ([Stereo; VOICES], [Stereo; crate::grain_groups::GROUPS]) {
+        let mut voice_frames = [[0.0; 2]; VOICES];
+        let range = self.source_range();
+        let file_source = self.live_input.is_none();
+        let source_effects =
+            file_source && (self.processed_source.is_some() || self.source_fade_remaining != 0);
+        let sample = self
+            .live_input
+            .as_ref()
+            .map_or(&*self.sample, |i| &i.sample);
+        // Loop invariants, hoisted out of the per-grain path: default fades
+        // return a gain of exactly 1.0, and a whole-file region reads the mip
+        // level directly, as read_region_level would decide for every grain.
+        let fading = file_source && self.fades != Fades::default();
+        let antialiasing = self.preset.params.antialiasing;
+        let whole_file = !source_effects && range.start == 0 && range.end == sample.len();
+        let source_chain = self.taps.chain(Stage::Source);
+        let top_level = sample.active_levels() - 1;
+        let groups = &self.modulated.grain_groups;
+        // Each group's grains in the chain, and what it sends to its bus.
+        let group_chains = self.taps.group_chains();
+        let group_sends = self.taps.group_sends();
+        let mut group_sent = [[0.0; 2]; crate::grain_groups::GROUPS];
+        let synth_grains = follow_mix;
+        // A file's grains also read what feedback overdubbed.
+        let overdub = file_source && self.grain_feedback.readable();
+        let mut pending = self.live_grains;
+        while pending != 0 {
+            let slot = pending.trailing_zeros() as usize;
+            pending &= pending - 1;
+            let grain = &mut self.grains[slot];
+            let level = if antialiasing { grain.read_level } else { 0 };
+            let mut frame = if whole_file {
+                sample.read_level(grain.position, level.min(top_level))
+            } else if source_effects {
+                let processed = source_fx::read(
+                    &self.sample,
+                    &self.processed_source,
+                    &self.previous_source,
+                    self.source_fade_remaining,
+                    grain.position,
+                    level,
+                    &range,
+                );
+                if source_chain < 1.0 {
+                    let raw = sample.read_region_level(grain.position, level, &range);
+                    std::array::from_fn(|c| raw[c] + (processed[c] - raw[c]) * source_chain)
+                } else {
+                    processed
+                }
+            } else {
+                sample.read_region_level(grain.position, level, &range)
+            };
+            if fading {
+                let gain = self.fades.gain(grain.position, sample.sample_rate, &range);
+                frame = frame.map(|v| v * gain);
+            }
+            if overdub {
+                let fed = self.grain_feedback.read(grain.position);
+                frame = std::array::from_fn(|c| frame[c] + fed[c]);
+            }
+            // A group's grains take its amp envelope in place of the window.
+            if groups.advanced
+                && let Some((group, shaped)) =
+                    self.group_grains.process(slot, grain.age, frame, groups)
+            {
+                let panned: Stereo = std::array::from_fn(|c| shaped[c] * grain.pan[c]);
+                let chain = group_chains[group];
+                for c in 0..2 {
+                    voice_frames[grain.voice][c] += panned[c] * chain;
+                }
+                if group_sends & 1 << group != 0 {
+                    // Sends follow the notes' VCA as the chain does; a
+                    // Synth's grains already read its voices after theirs.
+                    let weight = if synth_grains {
+                        1.0
+                    } else {
+                        self.voices[grain.voice].value.max(0.0)
+                    };
+                    for c in 0..2 {
+                        group_sent[group][c] += panned[c] * weight;
+                    }
+                }
+            } else {
+                let phase = 2.0 * grain.age as f32 / (grain.duration - 1) as f32;
+                let amplitude = tables::grain_window(phase, grain.shape);
+                for c in 0..2 {
+                    voice_frames[grain.voice][c] += frame[c] * amplitude * grain.pan[c];
+                }
+            }
+            grain.position = range.start as f64
+                + sample::wrap_position(
+                    grain.position + grain.rate - range.start as f64,
+                    range.len() as f64,
+                );
+            grain.age += 1;
+            if grain.age >= grain.duration {
+                self.live_grains &= !(1 << slot);
+            }
+        }
+        (voice_frames, group_sent)
+    }
+    /// Output level, the sends' share of it, soft clipping and the meter,
+    /// then the file cursor and bar loops move on. `bypass_source` replaces
+    /// the processed frame while bypassed.
+    #[inline(always)]
+    fn finish_frame(
+        &mut self,
+        processed: Stereo,
+        bypass_source: Option<Stereo>,
+        input_gain: f32,
+        source_rate: f64,
+    ) -> Stereo {
         let volume = if self.bypass {
             self.preset.params.master_volume
         } else {
@@ -3263,7 +3457,7 @@ impl Engine {
         self.smooth_gain = fast::flush(self.smooth_gain + (gain - self.smooth_gain) * 0.002);
         self.smooth_bypass_gate = fast::flush(
             self.smooth_bypass_gate
-                + ((if self.playing || bus.is_some() {
+                + ((if self.playing || self.preset.bus.is_some() {
                     1.0
                 } else {
                     0.0
@@ -3271,36 +3465,10 @@ impl Engine {
                     * 0.002,
         );
         self.taps.finish(self.smooth_gain, self.bypass);
-        let bypass_source = if self.bypass
-            && (self.processed_source.is_some()
-                || self.previous_source.is_some()
-                || !self.preset.source_color_chain.is_empty())
-        {
-            if self.live_input.is_some() {
-                input.map(|x| {
-                    if x.is_finite() {
-                        x.clamp(-16.0, 16.0)
-                    } else {
-                        0.0
-                    }
-                })
-            } else {
-                self.sample
-                    .read_region(self.cursor, source_rate, true, &self.file_range)
-                    .map(|v| {
-                        v * self
-                            .fades
-                            .gain(self.cursor, self.sample.sample_rate, &self.file_range)
-                    })
-            }
-        } else {
-            source
-        };
         let output = std::array::from_fn(|c| {
-            let value = (if self.bypass {
-                bypass_source[c] * input_gain * self.smooth_bypass_gate
-            } else {
-                processed[c]
+            let value = (match bypass_source {
+                Some(source) => source[c] * input_gain * self.smooth_bypass_gate,
+                None => processed[c],
             }) * self.smooth_gain;
             if !value.is_finite() {
                 0.0
