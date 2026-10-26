@@ -171,6 +171,11 @@ impl Rustias {
         let tables = rustias_tables();
         self.held = true;
         self.clock = 0;
+        // A retrigger attacks from the level still sounding, as the legacy
+        // type does: Rustias restarts from zero, which dips and clicks.
+        if self.level > 0.0 {
+            return self.adopt(self.level, true);
+        }
         if self.mode == EnvMode::Radias {
             self.radias
                 .note_on(self.parameters, &tables.curves, &tables.timing, 0);
@@ -344,6 +349,13 @@ impl Envelope {
             return self.rustias.running() || self.rustias.level != 0.0;
         }
         self.stage != Stage::Idle
+    }
+    /// The level last sounded, which `on` attacks from.
+    pub fn level(&self) -> f32 {
+        if self.rustias.mode != EnvMode::Legacy {
+            return self.rustias.level;
+        }
+        self.value
     }
     /// Inlined into the per-frame voice loop: an idle or legacy stage costs a
     /// few instructions, while the Rustias types run out of line.

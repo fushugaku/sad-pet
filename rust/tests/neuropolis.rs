@@ -731,6 +731,62 @@ fn main_pitch_steps_can_gate_envelopes_like_notes() {
 }
 
 #[test]
+fn env_gate_steps_retrigger_every_envelope_type_without_a_dip() {
+    use sad_pet::{matrix::Source, preset::EnvMode};
+    // A steady 600 Hz tone through the free voice: ENV1 is its VCA and ENV2
+    // opens the closed filter. With full sustain and a long release, a gate
+    // only retriggers levels that barely moved, so no step may dip.
+    let tone = (0..8000)
+        .map(|i| [(i as f32 * std::f32::consts::TAU * 600.0 / 8000.0).sin() * 0.5; 2])
+        .collect();
+    let sample = Arc::new(SampleBuffer::new("Tone".into(), 8000, tone).unwrap());
+    for mode in EnvMode::ALL {
+        if matches!(mode, EnvMode::QLoopS1s2 | EnvMode::QLoopAll) {
+            // Their levels move on their own while the gate is open.
+            continue;
+        }
+        let mut p = Preset::default();
+        p.sequencer.enabled = true;
+        p.sequencer.tracks = vec![track(1, 1, Target::MainPitch)];
+        p.sequencer.tracks[0].env_gate = true;
+        p.params.mix = 0.0;
+        p.params.filter = 0.0;
+        p.params.filter_env_depth = 1.0;
+        for env in &mut p.envs {
+            env.mode = mode;
+            env.attack = 0.0;
+            env.decay = 0.0;
+            env.sustain = 1.0;
+            env.sustain2 = 1.0;
+            env.release = 1.0;
+        }
+        let mut e = Engine::new(8000, sample.clone(), p);
+        e.set_playing(true);
+        let mut out = vec![];
+        let mut starts = vec![];
+        let mut gate = 1.0;
+        for frame in 0..6000 {
+            out.push(e.process_frame()[0]);
+            let open = e.modulation_source(Source::Gate);
+            if open > gate && frame > 1000 {
+                starts.push(frame);
+            }
+            gate = open;
+        }
+        assert_eq!(starts.len(), 4, "{mode:?}");
+        let energy = |from: usize| out[from..from + 32].iter().map(|x| x * x).sum::<f32>();
+        for t in starts {
+            let (before, after) = (energy(t - 32), energy(t));
+            assert!(before > 1.0, "{mode:?} step at {t} is silent");
+            assert!(
+                after > before * 0.8,
+                "{mode:?} step at {t} dips: {before} -> {after}"
+            );
+        }
+    }
+}
+
+#[test]
 fn timing_edits_and_tracks_added_while_playing_stay_on_the_grid_of_the_others() {
     // Pairs of twins: 1 and 2 play Linear, 3 and 4 Pendulum, whose relock
     // replays from the transport start instead of the last Linear pass.

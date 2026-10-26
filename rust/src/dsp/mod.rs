@@ -109,7 +109,6 @@ impl Voice {
         self.generation = self.generation.wrapping_add(1);
         self.gated = false;
         self.loop_phase = 0.0;
-        self.env_values = [0.0; crate::preset::MODULATORS];
         self.value = 0.0;
         for (i, env) in self.envelopes.iter_mut().enumerate() {
             if i < count {
@@ -117,6 +116,9 @@ impl Voice {
             } else {
                 env.kill();
             }
+            // Filters configured before the next frame read the level a
+            // retrigger continues from: zero would dip a still-open cutoff.
+            self.env_values[i] = env.level();
         }
     }
     fn off(&mut self) {
