@@ -54,7 +54,13 @@ pub fn grain_window(phase: f32, shape: f32) -> f32 {
         return 0.0;
     }
     let triangle = if phase <= 1.0 { phase } else { 2.0 - phase };
-    triangle + shape * (lookup(&WINDOW, triangle * 4096.0) - triangle)
+    window_curve(triangle, shape)
+}
+
+/// One side of the grain window: a 0..=1 ramp bent towards the half-cosine
+/// curve by `shape`.
+pub fn window_curve(ramp: f32, shape: f32) -> f32 {
+    ramp + shape * (lookup(&WINDOW, ramp * 4096.0) - ramp)
 }
 
 pub fn sine(phase: f64) -> f32 {

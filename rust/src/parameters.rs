@@ -1,6 +1,7 @@
 //! Shared numeric controls. Host IDs and their order remain stable across builds.
 use crate::{
     color::{ColorParameter, ColorSlot, MAX_COLOR_SLOTS},
+    grain_groups,
     preset::Preset,
     taps::Stage,
 };
@@ -167,6 +168,8 @@ enum Target {
     Tap(Stage, TapField),
     /// A macro knob's value.
     Macro(usize),
+    /// An advanced mode grain group's control: group, then FIELDS index.
+    GrainGroup(usize, usize),
 }
 
 /// Host controls of each added filter, in host order.
@@ -249,6 +252,7 @@ impl Spec {
             }
             Target::Lfo(i, field) => lfo_get(&m.lfos[i], field),
             Target::Env(i, field) => env_get(&m.envs[i], field),
+            Target::GrainGroup(i, field) => grain_groups::get(&m.grain_groups.groups[i], field),
             Target::Fx(pre, i, field) => {
                 let slots = if pre {
                     &m.pre_color_slots[..m.pre_color_len]
@@ -315,6 +319,9 @@ impl Spec {
             }
             Target::Lfo(i, field) => *lfo_field(&mut m.lfos[i], field) = value,
             Target::Env(i, field) => env_set(&mut m.envs[i], field, value),
+            Target::GrainGroup(i, field) => {
+                grain_groups::set(&mut m.grain_groups.groups[i], field, value)
+            }
             Target::Fx(pre, i, field) => {
                 let slots = if pre {
                     &mut m.pre_color_slots[..m.pre_color_len]
@@ -391,6 +398,9 @@ impl Spec {
             Target::Tap(stage, field) => tap_get(preset.taps.get(stage), field),
             Target::Lfo(i, field) => lfo_get(&preset.lfos[i], field),
             Target::Env(i, field) => env_get(&preset.envs[i], field),
+            Target::GrainGroup(i, field) => {
+                grain_groups::get(&preset.grain_groups.groups[i], field)
+            }
             Target::Macro(i) => preset.macros.get(i).map_or(0.0, |m| m.value),
             Target::Fx(pre, i, field) => *(if pre {
                 &preset.pre_color_chain
@@ -492,6 +502,9 @@ impl Spec {
             Target::Tap(stage, field) => tap_set(preset.taps.get_mut(stage), field, value),
             Target::Lfo(i, field) => *lfo_field(&mut preset.lfos[i], field) = value,
             Target::Env(i, field) => env_set(&mut preset.envs[i], field, value),
+            Target::GrainGroup(i, field) => {
+                grain_groups::set(&mut preset.grain_groups.groups[i], field, value)
+            }
             Target::Macro(i) => {
                 if let Some(m) = preset.macros.get_mut(i) {
                     m.value = value;
@@ -1253,6 +1266,34 @@ pub fn specs() -> &'static [Spec] {
                 default: 0.0,
                 target: Target::Macro(i),
             });
+        }
+        // Advanced grain mode, then each of its groups, append after the macros.
+        result.push(Spec {
+            id: "grain_advanced".into(),
+            name: "Grain advanced mode".into(),
+            min: 0.0,
+            max: 1.0,
+            default: 0.0,
+            target: Target::Core {
+                get: |p| f32::from(p.grain_groups.advanced),
+                set: |p, v| p.grain_groups.advanced = v >= 0.5,
+                frame_get: |m| f32::from(m.grain_groups.advanced),
+                frame_set: |m, v| m.grain_groups.advanced = v >= 0.5,
+            },
+        });
+        for (i, name) in grain_groups::NAMES.iter().enumerate() {
+            for (field, (key, label, min, max)) in grain_groups::FIELDS.into_iter().enumerate() {
+                let mut spec = Spec {
+                    id: format!("grain_group{}_{key}", i + 1),
+                    name: format!("Grain group {name} {label}"),
+                    min,
+                    max,
+                    default: 0.0,
+                    target: Target::GrainGroup(i, field),
+                };
+                spec.default = spec.get(&preset);
+                result.push(spec);
+            }
         }
         result
     })

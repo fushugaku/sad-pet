@@ -565,9 +565,34 @@
             <label class="check"
               ><input id="antialias" type="checkbox" checked />Anti-alias</label
             >
+            <button
+              id="grain-advanced"
+              class="mode-toggle"
+              aria-pressed="false"
+              title="Advanced mode: deal grains to four groups, each with its own pitch, shape, filter and envelopes"
+            >
+              Advanced
+            </button>
           </div>
         </div>
         <div id="grain-controls" class="knob-grid"></div>
+        <div id="grain-groups" class="grain-groups" hidden>
+          <div class="grain-group-bar">
+            <div
+              id="grain-group-tabs"
+              class="grain-group-tabs"
+              role="tablist"
+              aria-label="Grain groups"
+            ></div>
+            <canvas
+              id="grain-group-curve"
+              class="grain-group-curve"
+              role="img"
+              aria-label="Envelopes of the selected group over one grain"
+            ></canvas>
+          </div>
+          <div id="grain-group-pages"></div>
+        </div>
       </section>
       <section class="bank resynth-bank" aria-label="Resynth" data-tap="resynth">
         <div class="section-heading">

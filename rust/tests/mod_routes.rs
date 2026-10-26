@@ -249,7 +249,8 @@ fn new_host_parameters_append_after_every_released_id() {
     for i in 0..8 {
         assert_eq!(specs[last_tap + 25 + i].id, format!("macro{}", i + 1));
     }
-    assert_eq!(specs.len(), last_tap + 33);
+    // Advanced grain mode and its groups follow the macros.
+    assert_eq!(specs[last_tap + 33].id, "grain_advanced");
     // Macro knobs are sources: no route can target them.
     let catalog = sad_pet::sequence::catalog();
     let modulation = catalog["modulation"].as_array().unwrap();

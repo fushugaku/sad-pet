@@ -289,7 +289,10 @@ fn synth_controls_append_after_every_other_host_parameter() {
         ["lfo1_depth2", "lfo1_depth3", "env1_depth3"]
     );
     assert_eq!(later[taps + 8 * 3], "macro1");
-    assert_eq!(later.len(), taps + 8 * 3 + 8);
+    // Then advanced grain mode and its four groups' controls.
+    let groups = taps + 8 * 3 + 8;
+    assert_eq!(later[groups], "grain_advanced");
+    assert_eq!(later.len(), groups + 1 + 4 * 16);
 }
 
 #[test]
