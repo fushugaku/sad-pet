@@ -328,7 +328,7 @@ fn decode_snapshot(
     if v.grain_count > sad_pet::dsp::MAX_GRAINS
         || v.color_len > sad_pet::color::MAX_COLOR_SLOTS
         || v.pre_color_len > sad_pet::color::MAX_COLOR_SLOTS
-        || v.note_count > 8
+        || v.note_count > v.notes.len()
         || v.chord_len > 32
         || v.waveform_len > 640
     {

@@ -33,7 +33,8 @@ pub struct RealtimeView {
     #[serde(default)]
     pub modulated_envs: [crate::preset::Env; crate::preset::MODULATORS],
     pub matrix: [f32; crate::matrix::MAX_ROUTES],
-    pub notes: [u8; 8],
+    /// Held notes, one per note voice.
+    pub notes: [u8; super::VOICES - 1],
     pub note_count: usize,
     #[serde(skip, default = "empty_grains")]
     pub grains: [super::GrainView; super::MAX_GRAINS],
@@ -87,7 +88,7 @@ impl Default for RealtimeView {
             modulated_lfos: [crate::preset::Lfo::default(); crate::preset::MODULATORS],
             modulated_envs: [crate::preset::Env::default(); crate::preset::MODULATORS],
             matrix: [0.0; crate::matrix::MAX_ROUTES],
-            notes: [0; 8],
+            notes: [0; super::VOICES - 1],
             note_count: 0,
             grains: [super::GrainView::default(); super::MAX_GRAINS],
             grain_count: 0,

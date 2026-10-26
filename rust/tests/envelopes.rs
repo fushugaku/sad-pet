@@ -1,5 +1,5 @@
 use sad_pet::{
-    dsp::{Engine, SampleBuffer, modulation::Envelope},
+    dsp::{Engine, SampleBuffer, modulation::Envelope, telemetry::RealtimeView},
     midi::Message,
     performance::Mode,
     preset::{Destination, Env, Preset},
@@ -109,6 +109,21 @@ fn three_envelopes_have_independent_times_and_share_note_gates() {
     engine.midi(off(0, 60));
     run(&mut engine, 100);
     assert_eq!(engine.env_values, [0.0; sad_pet::preset::MODULATORS]);
+}
+
+#[test]
+fn every_note_voice_can_be_held_and_shown() {
+    let mut engine = Engine::new(8000, sample(), preset());
+    for note in 40..72 {
+        engine.midi(on(0, note));
+    }
+    run(&mut engine, 100);
+    let mut view = RealtimeView::default();
+    engine.realtime_view(&mut view);
+    assert_eq!(
+        &view.notes[..view.note_count],
+        &(40..72).collect::<Vec<u8>>()[..]
+    );
 }
 
 #[test]
