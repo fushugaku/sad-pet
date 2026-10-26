@@ -3025,7 +3025,8 @@ input[type="range"] {
 #input-status.recording {
   color: #eea49e;
 }
-#grain-controls.inactive {
+#grain-controls.inactive,
+#grain-groups.inactive {
   opacity: 0.35;
 }
 #live-source-name {

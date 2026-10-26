@@ -43,12 +43,15 @@ const context = vm.createContext({
 });
 vm.runInContext(`const $ = (id) => document.getElementById(id);\n${source}`, context);
 
-const grains = elements.get("grain-controls") ?? context.document.getElementById("grain-controls");
+const panels = ["grain-controls", "grain-groups"].map((id) => context.document.getElementById(id));
 const check = (preset, input, editable, label) => {
   context.preset = preset;
   vm.runInContext(`syncInput(${JSON.stringify(input)})`, context);
-  assert.equal(grains.inert, !editable, `${label}: grain controls ${editable ? "locked" : "editable"}`);
-  assert.equal(grains.classes.has("inactive"), !editable, `${label}: dimming`);
+  for (const [i, panel] of panels.entries()) {
+    const name = i ? "grain groups" : "grain controls";
+    assert.equal(panel.inert, !editable, `${label}: ${name} ${editable ? "locked" : "editable"}`);
+    assert.equal(panel.classes.has("inactive"), !editable, `${label}: ${name} dimming`);
+  }
 };
 // A Granular Bus or Master reports its history as an active live input.
 const live = { active: true, mode: "effects", peak: [0, 0] };
@@ -60,4 +63,4 @@ check({ synth: { granular: false } }, live, false, "Synth without Granular");
 check({}, live, false, "Microphone in effects mode");
 check({}, { ...live, mode: "grains" }, true, "Microphone in grains mode");
 check({}, { active: false, peak: [0, 0] }, true, "File source");
-console.log("Grain controls: Bus, Master, drums, Synth and microphone modes lock exactly when grains are off.");
+console.log("Grain controls and groups: Bus, Master, drums, Synth and microphone modes lock exactly when grains are off.");

@@ -5018,8 +5018,11 @@ function syncInput(input) {
   const history = historySettings();
   const effectsOnly = history
     ? !history.granular : active && input.mode === "effects";
-  $("grain-controls").inert = effectsOnly;
-  $("grain-controls").classList.toggle("inactive", effectsOnly);
+  // Grain engine stays visible with Granular off, Advanced groups included.
+  for (const id of ["grain-controls", "grain-groups"]) {
+    $(id).inert = effectsOnly;
+    $(id).classList.toggle("inactive", effectsOnly);
+  }
   $("antialias").disabled = effectsOnly;
   $("reverse").disabled = effectsOnly;
   const devicesKey = JSON.stringify(input.devices || []);
