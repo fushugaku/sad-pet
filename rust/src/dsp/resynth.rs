@@ -1459,6 +1459,7 @@ mod tests {
             &mut banks.0,
             60.0,
             [0.0; crate::preset::MODULATORS],
+            false,
         );
         let range = 0..sample.len();
         let mut changed = false;

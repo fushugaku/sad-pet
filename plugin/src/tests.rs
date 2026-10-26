@@ -1319,6 +1319,85 @@ fn synth_timbres_play_notes_switch_grains_and_save_without_audio_allocations() {
 }
 
 #[test]
+fn rack_timbres_mix_drums_and_a_synth_and_rebuild_without_audio_allocations() {
+    let mut control = Controller::new(false);
+    let context = call(&mut control, "/api/timbres/add", json!({"kind":"rack"}));
+    assert_eq!(context["timbres"][1]["kind"], "rack");
+    assert_eq!(context["timbres"][1]["name"], "Rack 1");
+    call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":0,"muted":true}),
+    );
+    // Without FX B, no reverb tail outlasts a muted strip.
+    let mut preset = call(&mut control, "/api/preset", Value::Null);
+    assert_eq!(preset["rack"]["modules"][4]["module"], "post_fx");
+    preset["rack"]["modules"]
+        .as_array_mut()
+        .unwrap()
+        .truncate(4);
+    call(&mut control, "/api/preset", preset);
+    call(
+        &mut control,
+        "/api/drums/edit",
+        json!([0, 4, 8, 12].map(|step| json!({"track":0,"step":step,"field":0,"value":1}))),
+    );
+    let mut audio = control.prepare(48000);
+    let values = control.values();
+    // The drums play their pattern with the transport; no note is needed.
+    no_heap(|| {
+        audio.begin(&values, 120., Some(0.), true, 24000);
+        assert!(render(&mut audio, 24000, [0.; 2]) > 0.01);
+    });
+    // Muting their strip leaves the keys to the synth.
+    call(
+        &mut control,
+        "/api/parameters",
+        json!({"rack_drums_mute":1}),
+    );
+    no_heap(|| {
+        // The strip fades out rather than click, and the kick's tail with it.
+        audio.begin(&values, 120., Some(1.), true, 12000);
+        render(&mut audio, 12000, [0.; 2]);
+        audio.begin(&values, 120., Some(1.5), true, 12000);
+        assert!(render(&mut audio, 12000, [0.; 2]) < 1e-4);
+        audio.midi(Message::NoteOn {
+            channel: 0,
+            note: 60,
+            velocity: 100,
+        });
+        audio.begin(&values, 120., Some(2.), true, 12000);
+        assert!(render(&mut audio, 12000, [0.; 2]) > 0.01);
+    });
+    // A Grain engine under the Mixer comes prepared with its history.
+    let mut preset = call(&mut control, "/api/preset", Value::Null);
+    preset["rack"]["modules"] = json!(
+        ["drums", "synth", "filters", "mixer", "grains", "post_fx"]
+            .map(|module| json!({"module":module,"enabled":true}))
+    );
+    call(&mut control, "/api/preset", preset);
+    no_heap(|| {
+        audio.begin(&values, 120., Some(2.5), true, 24000);
+        assert!(render(&mut audio, 24000, [0.; 2]) > 0.01);
+    });
+    let state = call(&mut control, "/api/state", Value::Null);
+    assert_eq!(state["sample_name"], "Rack");
+    assert_eq!(state["preset"]["rack"]["modules"][4]["module"], "grains");
+    assert_eq!(state["preset"]["rack"]["strips"]["drums"]["muted"], true);
+    assert_eq!(state["rack_peaks"].as_array().unwrap().len(), 3);
+    let saved = control.save().unwrap();
+    let mut restored = Controller::new(false);
+    restored.restore(&saved).unwrap();
+    let state = call(&mut restored, "/api/state", Value::Null);
+    assert_eq!(state["timbres"]["timbres"][1]["kind"], "rack");
+    assert_eq!(
+        state["preset"]["rack"]["modules"].as_array().unwrap().len(),
+        6
+    );
+    assert!(state["preset"]["synth"].is_object() && state["preset"]["drums"].is_object());
+}
+
+#[test]
 fn timbres_reach_master_directly_or_through_a_bus_without_audio_allocation() {
     let mut control = Controller::new_plugin(false);
     let timbres = call(&mut control, "/api/timbres", Value::Null)["timbres"].clone();

@@ -526,22 +526,25 @@ impl Controller {
                 None
             },
             sample,
-            live: (preset.bus.is_none() && (source != Source::File || preset.history().is_some()))
-                .then(|| {
-                    let mut input = preset.history().map_or_else(
-                        || LiveInput::new(self.rate, source == Source::Effects),
-                        |h| LiveInput::for_drums(self.rate, !h.granular, h.buffer_seconds),
-                    );
-                    input.sample.name = if preset.drums.is_some() {
-                        "Drum machine"
-                    } else if preset.synth.is_some() {
-                        sad_pet::dsp::synth::NAME
-                    } else {
-                        self.input_name()
-                    }
-                    .into();
-                    input
-                }),
+            // A Rack's history comes with its preset; it takes no input.
+            live: (preset.bus.is_none()
+                && preset.rack.is_none()
+                && (source != Source::File || preset.history().is_some()))
+            .then(|| {
+                let mut input = preset.history().map_or_else(
+                    || LiveInput::new(self.rate, source == Source::Effects),
+                    |h| LiveInput::for_drums(self.rate, !h.granular, h.buffer_seconds),
+                );
+                input.sample.name = if preset.drums.is_some() {
+                    "Drum machine"
+                } else if preset.synth.is_some() {
+                    sad_pet::dsp::synth::NAME
+                } else {
+                    self.input_name()
+                }
+                .into();
+                input
+            }),
             region,
             fades,
         }
@@ -708,9 +711,16 @@ impl Controller {
         }
         let view = &self.view;
         let live = self.source != Source::File;
-        let drums = self.preset.drums.is_some();
-        let synth = self.preset.synth.is_some();
-        let buffered = live || drums || synth;
+        let rack = self.preset.rack.is_some();
+        let drums = self.preset.drums.is_some() && !rack;
+        let synth = self.preset.synth.is_some() && !rack;
+        // A Rack shows its file, or else the history its Grain engine reads.
+        let buffered =
+            live || drums
+                || synth
+                || self.preset.rack.as_ref().is_some_and(|r| {
+                    !r.has(sad_pet::rack::Module::Sample) && r.history().is_some()
+                });
         let buffer_frames = self
             .preset
             .history()
@@ -733,7 +743,7 @@ impl Controller {
             "plugin": {"effect":self.effect,"standalone":self.standalone,"sync":self.sync,"host_bpm":self.host_bpm,"host_playing":self.host_playing,"bar_beats":view.bar_beats},
             "sample_rate":self.rate,"audio_device":if self.standalone { "Audio device" } else { "DAW" },"audio_enabled":true,"audio_error":null,
             "playing":self.playing,"midi_gate":self.midi_gate,"frozen":self.frozen,"bypass":self.bypass,
-            "preset":displayed_preset,"sample_name":if drums { "Drum machine" } else if synth { sad_pet::dsp::synth::NAME } else if live { self.input_name() } else { &self.sample.name },
+            "preset":displayed_preset,"sample_name":if drums { "Drum machine" } else if synth { sad_pet::dsp::synth::NAME } else if rack && buffered { "Rack" } else if live { self.input_name() } else { &self.sample.name },
             "preset_selection":self.selection,
             "sample_id":if buffered { None } else { self.sample.library_id.as_ref() },
             "sample_seconds":if buffered { buffer_frames as f64 / self.rate as f64 } else { self.sample.duration() },
@@ -755,7 +765,8 @@ impl Controller {
             json!({"bands":view.resynth_bands,"frequencies":view.resynth_frequencies});
         state["sequencer"] = json!(view.sequencer);
         state["drums"] = json!(view.drums);
-        if self.preset.drums.is_some() {
+        state["rack_peaks"] = json!(view.rack_peaks);
+        if drums {
             state["playing"] = json!(view.drums.playing);
         }
         state

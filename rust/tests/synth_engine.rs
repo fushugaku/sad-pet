@@ -303,11 +303,11 @@ fn synth_controls_append_after_every_other_host_parameter() {
     // Then each LFO's shape, phase, smoothing, delay and fade.
     let shaping = play + 1 + 4 * 8 + 4 * 5;
     assert_eq!(later[shaping], "lfo1_shape");
+    // Then a Rack's Mixer strips and its Grain engine history.
+    assert_eq!(later[shaping + 8 * 5], "rack_sample_level");
+    let rack = shaping + 8 * 5 + 3 * 4 + 1;
     // Then Resynth's track and tracking mode.
-    assert_eq!(
-        later[shaping + 8 * 5..],
-        ["resynth_track", "resynth_tracking"]
-    );
+    assert_eq!(later[rack..], ["resynth_track", "resynth_tracking"]);
 }
 
 #[test]

@@ -91,15 +91,15 @@ impl Host {
     }
     fn state(&self) -> Value {
         let e = &self.engine;
-        let sample = e.source_sample();
+        let sample = e.shown_sample();
         let mut state = json!({
             "version": env!("CARGO_PKG_VERSION"), "instance_id": "browser",
             "sample_rate": self.rate, "audio_device": "Web Audio", "audio_error": null,
             "audio_enabled": false, "playing": e.playing, "frozen": e.frozen,
             "bypass": e.bypass, "midi_gate": e.midi_gate, "preset": e.preset,
-            "sample_name": if e.preset.drums.is_some() { "Drum machine" } else if e.preset.synth.is_some() { sad_pet::dsp::synth::NAME } else { &sample.name }, "sample_id": sample.library_id,
-            "sample_seconds": e.source_duration(), "waveform": sample.waveform,
-            "sample_frames": e.source_frames(),
+            "sample_name": if e.preset.rack.is_some() { &sample.name } else if e.preset.drums.is_some() { "Drum machine" } else if e.preset.synth.is_some() { sad_pet::dsp::synth::NAME } else { &sample.name }, "sample_id": sample.library_id,
+            "sample_seconds": e.shown_duration(), "waveform": sample.waveform,
+            "sample_frames": e.shown_frames(),
             "region": e.region,
             "fades": e.fades,
             "center": e.source_position(e.center()), "grains": e.grain_views(),
@@ -119,7 +119,8 @@ impl Host {
         });
         state["startup_preset_index"] = json!(sad_pet::startup::INDEX);
         state["source_generation"] = json!(self.file_generation);
-        if self.engine.preset.drums.is_some() {
+        state["rack_peaks"] = json!(e.rack_peaks().unwrap_or_default());
+        if self.engine.preset.drums.is_some() && self.engine.preset.rack.is_none() {
             state["playing"] = json!(self.engine.drum_view().playing);
         }
         state
@@ -150,6 +151,7 @@ impl Host {
             "/api/state" => {
                 let state = self.state();
                 self.engine.peak = [0.0; 2];
+                self.engine.clear_rack_peaks();
                 if let Some(input) = &mut self.engine.live_input {
                     input.peak = [0.0; 2];
                 }

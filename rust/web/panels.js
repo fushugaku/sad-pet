@@ -35,7 +35,7 @@
     constructor(root, hooks) {
       this.root = root;
       this.hooks = hooks;
-      root.innerHTML = `<div class="timbre-top"><div class="timbre-lists"><div class="timbre-row"><span class="timbre-list-name">Instruments</span><div class="timbre-tabs" role="tablist" aria-label="Instruments"></div></div><div class="timbre-row"><span class="timbre-list-name">Buses</span><div class="timbre-tabs bus-tabs" role="tablist" aria-label="Buses"></div></div></div><div class="timbre-add"><select aria-label="New timbre type"><option value="granular">Granular</option><option value="drums">Drum machine</option><option value="synth">Synth engine</option><option value="vocal">Vocal</option><option value="sampler" hidden>Sampler</option><option value="bus">Bus</option></select><button>+ Timbre</button></div></div><div class="timbre-mix"><input aria-label="Timbre name" maxlength="80"><div class="instrument-picker"><button aria-label="Instrument presets" aria-haspopup="dialog" aria-expanded="false">Instruments<span aria-hidden="true">⌄</span></button></div><button aria-pressed="false">Mute</button><button aria-pressed="false">Solo</button><label class="timbre-midi">MIDI<select aria-label="Timbre MIDI channel"><option value="0">All</option>${Array.from({ length: 16 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("")}</select></label><label><span class="timbre-level-name">MASTER</span><input aria-label="Timbre level" type="range" min="0" max="2" step=".01"></label><button aria-label="Remove timbre">×</button></div><div class="timbre-sends" aria-label="Bus sends"></div>`;
+      root.innerHTML = `<div class="timbre-top"><div class="timbre-lists"><div class="timbre-row"><span class="timbre-list-name">Instruments</span><div class="timbre-tabs" role="tablist" aria-label="Instruments"></div></div><div class="timbre-row"><span class="timbre-list-name">Buses</span><div class="timbre-tabs bus-tabs" role="tablist" aria-label="Buses"></div></div></div><div class="timbre-add"><select aria-label="New timbre type"><option value="granular">Granular</option><option value="drums">Drum machine</option><option value="synth">Synth engine</option><option value="rack">Rack</option><option value="vocal">Vocal</option><option value="sampler" hidden>Sampler</option><option value="bus">Bus</option></select><button>+ Timbre</button></div></div><div class="timbre-mix"><input aria-label="Timbre name" maxlength="80"><div class="instrument-picker"><button aria-label="Instrument presets" aria-haspopup="dialog" aria-expanded="false">Instruments<span aria-hidden="true">⌄</span></button></div><button aria-pressed="false">Mute</button><button aria-pressed="false">Solo</button><label class="timbre-midi">MIDI<select aria-label="Timbre MIDI channel"><option value="0">All</option>${Array.from({ length: 16 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("")}</select></label><label><span class="timbre-level-name">MASTER</span><input aria-label="Timbre level" type="range" min="0" max="2" step=".01"></label><button aria-label="Remove timbre">×</button></div><div class="timbre-sends" aria-label="Bus sends"></div>`;
       // Instruments on one row, Buses and Master under them.
       [this.tabs, this.busTabs] = root.querySelectorAll(".timbre-tabs");
       this.addType = root.querySelector(".timbre-add select");
@@ -191,7 +191,7 @@
     ["POST", "Post-filter FX"],
   ];
   const INPUT = [1, 0, 0, 0];
-  const KINDS = { granular: "Granular", drums: "Drums", synth: "Synth", vocal: "Vocal", sampler: "Sampler" };
+  const KINDS = { granular: "Granular", drums: "Drums", synth: "Synth", vocal: "Vocal", sampler: "Sampler", rack: "Rack" };
   const decibels = (v) => (v < 1e-4 ? "−∞ dB" : `${(20 * Math.log10(v)).toFixed(1)} dB`);
   const percent = (v) => `${Math.round(v * 100)}%`;
   /**
@@ -711,6 +711,10 @@
       defs.forEach((d, i) => Object.assign(d, catalog.controls[i]));
       root.innerHTML = `<div class="section-heading"><h2>Drum machine <span>DXM-088</span></h2></div><div class="drum-pages" role="tablist" aria-label="Drum pattern pages"></div><div class="drum-pattern-scroll"><div class="drum-pattern" role="group" aria-label="Drum steps"></div></div><div class="drum-track-settings"></div><div class="drum-step-panel" role="dialog" aria-label="Step settings" hidden><div class="drum-step-head"><div class="drum-step-title"></div><button class="drum-step-close" aria-label="Close step settings">×</button></div><div class="drum-step-knobs knob-grid"></div><div class="drum-step-extras"></div></div><div class="drum-voice"><div class="drum-voice-head"><button class="drum-voice-name"></button><button class="drum-voice-previous" aria-label="Previous voice">‹</button><button class="drum-voice-next" aria-label="Next voice">›</button><span class="drum-voice-note"></span><span class="drum-voice-tools"><button class="drum-voice-copy">Copy</button><button class="drum-voice-paste" disabled>Paste</button></span><span class="drum-voice-layout" role="group" aria-label="Voice layout"><button class="drum-voice-chain" title="The signal chain beside one module">Chain</button><button class="drum-voice-all" title="Every module at once">All</button></span></div><div class="drum-voice-body"><div class="drum-chain" role="tablist" aria-label="Voice modules" aria-orientation="vertical"></div><div class="drum-modules"></div></div></div>`;
       this.voicePanel = root.querySelector(".drum-voice");
+      // The pattern, its pages, track settings and step panel move together
+      // (a Rack shows them with its sequencers, under its modules).
+      this.patternParts = [".drum-pages", ".drum-pattern-scroll", ".drum-track-settings", ".drum-step-panel"]
+        .map((selector) => root.querySelector(selector));
       this.module = 0;
       this.layout = "chain";
       try {
@@ -781,6 +785,21 @@
         page.dataset.page = p;
         this.pages.append(page);
       }
+    }
+    /** Shows the pattern in `home`, or back above the voice editor (null). */
+    dock(home) {
+      if ((home ?? null) === (this.patternHome ?? null)) return;
+      this.closeStep();
+      this.patternHome = home ?? null;
+      if (home) home.append(...this.patternParts);
+      else this.voicePanel.before(...this.patternParts);
+    }
+    /** Where the pattern's parts are now. */
+    find(selector) {
+      return (this.patternHome ?? this.root).querySelector(selector);
+    }
+    findAll(selector) {
+      return (this.patternHome ?? this.root).querySelectorAll(selector);
     }
     settings() {
       return this.hooks.read().drums;
@@ -878,7 +897,7 @@
     }
     buildPattern() {
       this.closeStep();
-      const grid = this.root.querySelector(".drum-pattern");
+      const grid = this.find(".drum-pattern");
       grid.replaceChildren();
       const view = this.view();
       grid.append(el("span", "drum-corner", ""));
@@ -959,7 +978,7 @@
       const panel = this.stepPanel;
       this.stepHit = hit;
       panel.hidden = false;
-      const box = this.root.getBoundingClientRect(),
+      const box = (this.patternHome ?? this.root).getBoundingClientRect(),
         cell = hit.getBoundingClientRect(),
         { offsetWidth: width, offsetHeight: height } = panel,
         below =
@@ -985,7 +1004,7 @@
       const view = this.view(),
         track = view.track,
         step = view.step;
-      const settings = this.root.querySelector(".drum-track-settings");
+      const settings = this.find(".drum-track-settings");
       settings.replaceChildren();
       this.fields = [];
       this.knobs = [];
@@ -1042,6 +1061,8 @@
         () => this.settings().tracks[track].midi_note,
         (v) => this.edit(track, null, 9, Math.round(v)),
       );
+      // A Rack's notes play its Synth and Sample, never its drums.
+      settings.lastElementChild.classList.add("drum-midi-note");
       this.field(
         settings,
         `${names[track]} level`,
@@ -1096,9 +1117,9 @@
           ),
         );
       }
-      this.root.querySelector(".drum-step-title").textContent =
+      this.find(".drum-step-title").textContent =
         `${names[track]} · Step ${step + 1}`;
-      const knobs = this.root.querySelector(".drum-step-knobs");
+      const knobs = this.find(".drum-step-knobs");
       knobs.replaceChildren();
       for (const [key, label, field, min, max, integer, format] of [
         [
@@ -1161,7 +1182,7 @@
             },
           ),
         );
-      const extra = this.root.querySelector(".drum-step-extras");
+      const extra = this.find(".drum-step-extras");
       extra.replaceChildren();
       this.select(
         extra,
@@ -1382,7 +1403,7 @@
         hit.style.setProperty("--velocity", step.velocity);
       }
       this.paintShift();
-      for (const [track, row] of [...this.root.querySelectorAll(".drum-track-label")].entries())
+      for (const [track, row] of [...this.findAll(".drum-track-label")].entries())
         row.querySelector("button").setAttribute(
           "aria-pressed", String(track === v.track),
         );

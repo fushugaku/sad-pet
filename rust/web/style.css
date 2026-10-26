@@ -5532,3 +5532,592 @@ input[type="range"] {
   font-size: 11px;
   opacity: 0.85;
 }
+
+/* Rack timbres: modules in the order sound runs through them. Each chain has
+   a color, carried by a rail down the left of its modules and the links
+   between them; chains meet in the Mixer. */
+[data-chain="sample"] {
+  --chain: #7fb2ee;
+}
+[data-chain="synth"] {
+  --chain: #d19af2;
+}
+[data-chain="drums"] {
+  --chain: #efb661;
+}
+[data-chain="mix"] {
+  --chain: #c4f486;
+}
+[data-chain="none"] {
+  --chain: #4a564a;
+}
+.rack-area[hidden],
+.rack-pattern[hidden],
+.rack-absent,
+.rack-menu[hidden] {
+  display: none !important;
+}
+.rack-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  border-top: 1px solid var(--line);
+  padding: 13px 0 16px;
+}
+.rack-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.rack-count {
+  font-size: 11px;
+  color: var(--muted);
+}
+.rack-lede {
+  flex: 1 1 260px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.rack-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rack-undo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 4px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--overlay);
+  font-size: 12px;
+}
+.rack-undo[hidden] {
+  display: none;
+}
+.rack-undo button {
+  height: 28px;
+  color: var(--accent);
+}
+.rack-empty {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 34px 16px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+}
+.rack-empty[hidden] {
+  display: none;
+}
+.rack-empty p {
+  margin: 0;
+}
+.rack-empty-sources {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* A module: the section it is elsewhere, as a card on its chain's rail. */
+.rack-stack > .rack-module {
+  position: relative;
+  margin: 0;
+  padding: 12px 16px 16px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--chain);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #1b201c, #171b18 120px);
+}
+.rack-stack > .rack-module > .section-heading {
+  justify-content: flex-start;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.rack-stack > .rack-module.rack-folded,
+.rack-stack.rack-arranging > .rack-module {
+  padding-block: 8px;
+}
+.rack-stack > .rack-module.rack-folded > :not(.section-heading),
+.rack-stack.rack-arranging > .rack-module > :not(.section-heading) {
+  display: none !important;
+}
+.rack-stack > .rack-module.rack-folded > .section-heading,
+.rack-stack.rack-arranging > .rack-module > .section-heading {
+  margin-bottom: 0;
+}
+/* Folded, a heading keeps the module's name, chain and summary: its own
+   buttons wait until it opens. */
+.rack-stack > .rack-folded > .section-heading > .rack-spacer ~ :not(.rack-tools),
+.rack-stack.rack-arranging > .rack-module > .section-heading > .rack-spacer ~ :not(.rack-tools) {
+  display: none !important;
+}
+/* A module no sound reaches yet, and one switched off. */
+.rack-stack > .rack-idle > :not(.section-heading),
+.rack-stack > .rack-off > :not(.section-heading) {
+  opacity: 0.42;
+}
+.rack-stack > .rack-off > .section-heading h2 {
+  color: var(--muted);
+}
+.rack-stack > .rack-module.rack-new {
+  animation: rack-new 1.4s ease-out;
+}
+@keyframes rack-new {
+  from {
+    box-shadow:
+      0 0 0 2px var(--chain),
+      0 0 28px -6px var(--chain);
+  }
+  to {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+.rack-stack > .rack-module.rack-dragging {
+  z-index: 2;
+  border-color: var(--chain);
+  box-shadow: 0 16px 40px rgb(0 0 0 / 55%);
+}
+.rack-stack.rack-arranging {
+  cursor: grabbing;
+  user-select: none;
+}
+.rack-stack.rack-arranging > .rack-link {
+  display: none;
+}
+.rack-stack.rack-arranging > .rack-module + .rack-module {
+  margin-top: 8px;
+}
+
+/* The rack's controls in a module heading; elsewhere they stay hidden. */
+.rack-lead,
+.rack-chip,
+.rack-summary,
+.rack-spacer,
+.rack-tools {
+  display: none;
+}
+.rack-module > .section-heading > .rack-lead,
+.rack-module > .section-heading .rack-chip,
+.rack-module > .section-heading .rack-summary,
+.rack-module > .section-heading > .rack-tools {
+  display: flex;
+  align-items: center;
+}
+.rack-module > .section-heading > .rack-spacer {
+  display: block;
+  flex: 1;
+}
+.rack-module > .section-heading > .section-title {
+  min-width: 0;
+}
+.rack-lead {
+  gap: 8px;
+  margin-left: -6px;
+}
+.rack-grip {
+  width: 22px;
+  height: 31px;
+  padding: 0;
+  border-color: transparent;
+  background: none;
+  cursor: grab;
+  touch-action: none;
+}
+.rack-grip span {
+  display: block;
+  width: 8px;
+  height: 14px;
+  margin: auto;
+  background: radial-gradient(circle, var(--muted) 1.2px, transparent 1.6px) 0 0 / 4px 4.7px;
+}
+.rack-grip:hover {
+  background: var(--overlay);
+}
+.rack-grip:hover span {
+  background-image: radial-gradient(circle, var(--text) 1.2px, transparent 1.6px);
+}
+.rack-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--chain);
+  box-shadow: 0 0 10px -2px var(--chain);
+}
+.rack-chip {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--chain) 13%, transparent);
+  color: var(--chain);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.rack-chip:empty,
+.rack-summary:empty {
+  display: none !important;
+}
+.rack-idle .rack-chip {
+  background: #efb4a91a;
+  color: var(--error);
+}
+.rack-summary {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rack-tools {
+  flex: none;
+  gap: 4px;
+  margin-left: 6px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+}
+.rack-tools button:not(.power) {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-color: transparent;
+  background: none;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+}
+.rack-tools button:not(.power):hover {
+  border-color: var(--line);
+  background: var(--overlay);
+  color: var(--text);
+}
+.rack-tools button:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+.rack-tools .rack-remove:hover {
+  color: var(--error);
+}
+.rack-tools .power {
+  width: 28px;
+  height: 28px;
+  margin-right: 2px;
+}
+.rack-tools .power svg {
+  width: 15px;
+  height: 15px;
+}
+.rack-fold span {
+  display: block;
+  width: 7px;
+  height: 7px;
+  margin: 2px auto 0;
+  border-right: 1.6px solid currentColor;
+  border-bottom: 1.6px solid currentColor;
+  transform: rotate(-135deg);
+  transition: transform 0.15s;
+}
+.rack-fold[aria-expanded="false"] span {
+  margin-top: -3px;
+  transform: rotate(45deg);
+}
+
+/* Between modules: the rail goes on, a new chain starts, or chains meet. */
+.rack-link {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+}
+.rack-wire {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  background: var(--chain);
+}
+.rack-link-start .rack-wire,
+.rack-link-none .rack-wire {
+  background: repeating-linear-gradient(180deg, var(--line) 0 4px, transparent 4px 8px);
+}
+.rack-link-merge {
+  height: 40px;
+}
+.rack-link-label {
+  position: absolute;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.rack-tag {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--chain) 14%, transparent);
+  color: var(--chain);
+  font-size: 10px;
+  font-style: normal;
+  letter-spacing: 0.4px;
+}
+.rack-insert {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  opacity: 0;
+  transition:
+    opacity 0.15s,
+    background 0.15s;
+}
+.rack-link:hover .rack-insert,
+.rack-insert:focus-visible,
+.rack-insert[aria-expanded="true"] {
+  opacity: 1;
+}
+.rack-insert:hover,
+.rack-insert[aria-expanded="true"] {
+  border-color: var(--chain);
+  color: var(--text);
+}
+@media (hover: none) {
+  .rack-insert {
+    opacity: 1;
+  }
+}
+.rack-out {
+  margin-bottom: 18px;
+}
+.rack-out-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  width: max-content;
+  max-width: 100%;
+  font-size: 12px;
+}
+.rack-out-label strong {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+}
+
+/* The Sample module holds the waveform panel. */
+.rack-sample .sample-panel {
+  margin-bottom: 0;
+}
+/* Dry/Wet sits with the Grain engine in a Rack. */
+.rack-mix {
+  display: grid;
+  grid-template-columns: 90px 32px;
+  gap: 6px 8px;
+  margin-right: 6px;
+  color: var(--muted);
+  font:
+    9px ui-monospace,
+    monospace;
+  letter-spacing: 1.1px;
+}
+.rack-mix input {
+  grid-column: 1;
+  grid-row: 2;
+  width: 90px;
+  height: 4px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.rack-mix output {
+  grid-row: 2;
+  grid-column: 2;
+  color: var(--text);
+  font-size: 10px;
+  letter-spacing: 0;
+  line-height: 6px;
+  text-align: right;
+}
+.rack-mode #browser-input {
+  display: none !important;
+}
+
+/* The Mixer: a strip per chain that reaches it. */
+.rack-strips {
+  padding-top: 2px;
+}
+.rack-strip {
+  width: 132px;
+  border-top: 3px solid var(--chain);
+}
+.rack-strip .mixer-name::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: var(--chain);
+  vertical-align: 1px;
+}
+.rack-strip .mixer-kind {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rack-strip .mixer-body {
+  align-items: stretch;
+  gap: 6px;
+}
+.rack-pan {
+  display: flex;
+  align-items: flex-start;
+}
+.rack-pan .knob {
+  width: 46px;
+}
+.rack-pan .dial,
+.rack-pan .dial svg {
+  width: 40px;
+  height: 40px;
+}
+.rack-pan .knob-label {
+  margin-top: 2px;
+  font-size: 8px;
+}
+.rack-pan .knob-value {
+  font-size: 10px;
+}
+.rack-pan .knob-mod-range {
+  display: none;
+}
+.rack-meter {
+  position: relative;
+  width: 6px;
+  height: 104px;
+  margin-top: 4px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: #0f130f;
+}
+.rack-meter i {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 0;
+  background: linear-gradient(0deg, var(--chain), color-mix(in srgb, var(--chain) 55%, #fff));
+  transition: height 0.08s linear;
+}
+.rack-strip .mixer-fader {
+  flex: none;
+}
+.rack-strip.idle .mixer-name,
+.rack-strip.idle .mixer-kind,
+.rack-strip.idle .mixer-body {
+  opacity: 0.45;
+}
+
+/* The module menu. */
+.rack-menu {
+  position: fixed;
+  z-index: 60;
+  width: 320px;
+  max-height: min(560px, calc(100vh - 16px));
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid #3c4939;
+  border-radius: 10px;
+  background: #1d231d;
+  box-shadow: 0 18px 44px rgb(0 0 0 / 55%);
+}
+.rack-menu-group {
+  padding: 10px 10px 4px;
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+}
+.rack-menu-item {
+  display: grid;
+  grid-template-columns: 10px 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  align-items: center;
+  width: 100%;
+  height: auto;
+  padding: 7px 10px;
+  border-color: transparent;
+  background: none;
+  text-align: left;
+  white-space: normal;
+}
+.rack-menu-item:hover,
+.rack-menu-item:focus-visible {
+  border-color: var(--line);
+  background: #283028;
+  outline: none;
+}
+.rack-menu-dot {
+  grid-row: 1 / 3;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--chain, #66745f);
+}
+.rack-menu-item strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.rack-menu-item span {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 11px;
+}
+.rack-menu-item.present strong,
+.rack-menu-item.present .rack-menu-dot {
+  opacity: 0.5;
+}
+
+/* The drum pattern of a Rack, with the sequencers under it. */
+.rack-pattern-body {
+  position: relative;
+}
+.rack-pattern-note {
+  font-size: 11px;
+}
+.rack-pattern .drum-midi-note {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .rack-stack > .rack-module {
+    padding-inline: 10px;
+  }
+  .rack-stack > .rack-module > .section-heading {
+    flex-wrap: wrap;
+  }
+  .rack-module > .section-heading > .rack-tools {
+    margin-left: auto;
+  }
+  .rack-chip {
+    white-space: normal;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rack-stack > .rack-module.rack-new {
+    animation: none;
+  }
+}

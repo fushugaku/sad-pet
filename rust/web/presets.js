@@ -1017,7 +1017,7 @@
   const INSTRUMENT_MAGIC = Uint8Array.of(83, 65, 68, 73, 78, 83, 1, 0);
   const INSTRUMENT_MIME = "application/x-sad-pet-instrument";
   const INSTRUMENT_KEY = "instrument:";
-  const INSTRUMENT_KINDS = { granular: "Granular", drums: "Drums", synth: "Synth", vocal: "Vocal", sampler: "Sampler" };
+  const INSTRUMENT_KINDS = { granular: "Granular", drums: "Drums", synth: "Synth", vocal: "Vocal", sampler: "Sampler", rack: "Rack" };
   const sameName = (a, b) => a.toLocaleLowerCase() === b.toLocaleLowerCase();
   const categoryName = (value) => {
     const result = String(value || "").trim();
