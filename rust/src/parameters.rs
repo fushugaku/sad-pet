@@ -260,7 +260,8 @@ impl Spec {
                 } else {
                     &m.color_slots[..m.color_len]
                 };
-                *slots.get(i)?.to_owned().parameter_mut(field)
+                let slot = slots.get(i)?;
+                *slot.to_owned().parameter_mut(slot.playing_time(field))
             }
             Target::Performance(field) => match field {
                 0 => m.performance.arp_rate,
@@ -330,7 +331,7 @@ impl Spec {
                     &mut m.color_slots[..m.color_len]
                 };
                 if let Some(slot) = slots.get_mut(i) {
-                    *slot.parameter_mut(field) = value;
+                    *slot.parameter_mut(slot.playing_time(field)) = value;
                     m.color_dirty = true;
                 }
             }

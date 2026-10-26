@@ -210,6 +210,111 @@ fn real_neuropolis_orders_pulses_probability_and_independent_clocks_match_upstre
 }
 
 #[test]
+fn delay_time_destinations_move_the_time_the_delay_plays_in_either_clock_mode() {
+    use sad_pet::{
+        color::{ColorParameter as P, ColorSlot},
+        preset::{Destination, SaturatorType},
+    };
+    let render = |sync: bool, destinations: [Option<String>; 3]| {
+        let mut p = Preset::default();
+        p.color_chain = vec![ColorSlot {
+            id: 5,
+            kind: SaturatorType::LcrDelay,
+            mix: 1.0,
+            ..ColorSlot::default()
+        }];
+        p.color_chain[0].settings.lcr_sync = sync;
+        p.sequencer.enabled = true;
+        let t = &mut p.sequencer.tracks[0];
+        t.target = Target::Notes;
+        t.destinations = destinations;
+        for s in &mut t.steps {
+            s.destination1 = 0.2;
+            s.destination2 = -0.2;
+        }
+        let mut e = engine(p);
+        e.set_playing(true);
+        let out: Vec<_> = (0..8000).map(|_| e.process_frame()).collect();
+        (out, e.modulated_color_slots()[0].settings)
+    };
+    let base = sad_pet::color::ColorSettings::default();
+    // Sync is on by default: the panel's L/R DELAY knobs are the notes.
+    let (dry, _) = render(true, [None, None, None]);
+    let (wet, s) = render(
+        true,
+        [
+            Some("fx1_lcr_left_delay".into()),
+            Some("fx1_lcr_right_delay".into()),
+            None,
+        ],
+    );
+    assert!((s.lcr_left_note - (base.lcr_left_note + 0.2)).abs() < 1e-5);
+    assert!((s.lcr_right_note - (base.lcr_right_note - 0.2)).abs() < 1e-5);
+    assert_eq!(
+        (s.lcr_left_delay, s.lcr_right_delay),
+        (base.lcr_left_delay, base.lcr_right_delay)
+    );
+    assert_ne!(
+        dry, wet,
+        "synced L/R delay destinations left the audio unchanged"
+    );
+    // A note route keeps working after Sync is switched off.
+    let (dry, _) = render(false, [None, None, None]);
+    let (wet, s) = render(false, [Some("fx1_lcr_left_note".into()), None, None]);
+    assert!((s.lcr_left_delay - (base.lcr_left_delay + 0.2)).abs() < 1e-5);
+    assert_eq!(s.lcr_left_note, base.lcr_left_note);
+    assert_ne!(
+        dry, wet,
+        "free L delay destination left the audio unchanged"
+    );
+
+    // LFO routes to a slot parameter follow the same knob.
+    let mut p = Preset::default();
+    p.color_chain = vec![ColorSlot {
+        id: 5,
+        kind: SaturatorType::ModDelay,
+        ..ColorSlot::default()
+    }];
+    p.lfos[0].destination = Destination::Color {
+        slot: 5,
+        parameter: P::ModDelayRightDelay,
+    };
+    p.lfos[0].rate_hz = 4.0;
+    p.lfos[0].depth = 0.5;
+    let mut e = engine(p);
+    e.set_playing(true);
+    let mut moved = false;
+    for _ in 0..200 {
+        frames(&mut e, 32);
+        let s = e.modulated_color_slots()[0].settings;
+        assert_eq!(s.mod_delay_right_delay, base.mod_delay_right_delay);
+        moved |= (s.mod_delay_right_note - base.mod_delay_right_note).abs() > 1e-3;
+    }
+    assert!(moved, "LFO on a synced Mod Delay time did nothing");
+
+    // Synced Super Echo plays its note in place of TIME.
+    let mut p = Preset::default();
+    let mut echo = ColorSlot {
+        id: 5,
+        kind: SaturatorType::SuperEcho,
+        ..ColorSlot::default()
+    };
+    echo.settings.super_echo_sync = 1.0;
+    p.color_chain = vec![echo];
+    p.sequencer.enabled = true;
+    let t = &mut p.sequencer.tracks[0];
+    t.target = Target::Notes;
+    t.destinations = [Some("fx1_super_echo_time".into()), None, None];
+    t.steps.iter_mut().for_each(|s| s.destination1 = -0.25);
+    let mut e = engine(p);
+    e.set_playing(true);
+    frames(&mut e, 64);
+    let s = e.modulated_color_slots()[0].settings;
+    assert!((s.super_echo_note - (base.super_echo_note - 0.25)).abs() < 1e-5);
+    assert_eq!(s.super_echo_time, base.super_echo_time);
+}
+
+#[test]
 fn destinations_change_working_sound_parameters_without_overwriting_the_patch() {
     let mut p = Preset::default();
     p.sequencer.enabled = true;

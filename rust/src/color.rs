@@ -428,6 +428,31 @@ impl Default for ColorSlot {
     }
 }
 impl ColorSlot {
+    /// A delay's time knob plays a free time or, with Sync on, a note.
+    /// Modulation follows the knob, so a route to either field moves the time
+    /// the delay is playing instead of the one Sync leaves unused.
+    pub fn playing_time(&self, parameter: ColorParameter) -> ColorParameter {
+        use ColorParameter as P;
+        let (lcr, mod_delay) = (self.settings.lcr_sync, self.settings.mod_delay_sync);
+        let pick = |sync: bool, delay: P, note: P| if sync { note } else { delay };
+        match parameter {
+            P::SuperEchoTime | P::SuperEchoNote => pick(
+                self.settings.super_echo_sync >= 0.5,
+                P::SuperEchoTime,
+                P::SuperEchoNote,
+            ),
+            P::LcrLeftDelay | P::LcrLeftNote => pick(lcr, P::LcrLeftDelay, P::LcrLeftNote),
+            P::LcrCenterDelay | P::LcrCenterNote => pick(lcr, P::LcrCenterDelay, P::LcrCenterNote),
+            P::LcrRightDelay | P::LcrRightNote => pick(lcr, P::LcrRightDelay, P::LcrRightNote),
+            P::ModDelayLeftDelay | P::ModDelayLeftNote => {
+                pick(mod_delay, P::ModDelayLeftDelay, P::ModDelayLeftNote)
+            }
+            P::ModDelayRightDelay | P::ModDelayRightNote => {
+                pick(mod_delay, P::ModDelayRightDelay, P::ModDelayRightNote)
+            }
+            _ => parameter,
+        }
+    }
     pub fn control_parameters(&self) -> &'static [ColorParameter] {
         use ColorParameter as P;
         const MOOZ_CONTROLS: [&[ColorParameter]; sad_pet_mooz::MAX_PARAMS + 1] = [

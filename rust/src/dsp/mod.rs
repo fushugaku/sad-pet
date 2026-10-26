@@ -427,7 +427,7 @@ impl Modulated {
                     );
                     return;
                 }
-                effect.parameter_mut(parameter)
+                effect.parameter_mut(effect.playing_time(parameter))
             }
             Destination::ReverbDecay => &mut p.reverb_decay,
             Destination::ReverbTone => &mut p.reverb_tone,
