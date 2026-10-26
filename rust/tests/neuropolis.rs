@@ -457,7 +457,7 @@ fn long_releases_keep_ringing_under_sixteen_fast_note_steps() {
         target: Target::Notes,
         ..Track::default()
     };
-    for (i, s) in t.steps.iter_mut().enumerate() {
+    for (i, s) in t.steps[..16].iter_mut().enumerate() {
         s.pitch = 48 + 2 * i as u8;
     }
     p.sequencer.tracks = vec![t];
@@ -621,7 +621,7 @@ fn main_pitch_steps_can_gate_envelopes_like_notes() {
     assert!(!p.sequencer.tracks[0].env_gate);
     let json = serde_json::json!([{"track":1,"field":53,"value":1}]);
     assert_eq!(sad_pet::sequence::parse_edits(&json).unwrap()[0].field, 53);
-    let json = serde_json::json!([{"track":1,"field":54,"value":1}]);
+    let json = serde_json::json!([{"track":1,"field":55,"value":1}]);
     assert!(sad_pet::sequence::parse_edits(&json).is_err());
 }
 
@@ -708,4 +708,120 @@ fn timing_edits_and_tracks_added_while_playing_stay_on_the_grid_of_the_others() 
         frames(&mut e, 2000);
     });
     in_step(&mut e, &[(1, 2), (1, 5), (3, 4), (3, 6)]);
+}
+
+#[test]
+fn pages_turn_relock_with_their_twins_and_never_allocate() {
+    // Twins: 1 and 2 play three Linear pages, 3 and 4 two Pendulum pages;
+    // 5 gains a second page while playing, 6 had it from the start.
+    let mut p = Preset::default();
+    p.sequencer.enabled = true;
+    p.sequencer.tracks = (1..=6).map(|id| track(id, 1, Target::Notes)).collect();
+    for (t, pages) in p.sequencer.tracks.iter_mut().zip([3, 3, 2, 2, 1, 2]) {
+        t.pages = pages;
+    }
+    for t in &mut p.sequencer.tracks[2..4] {
+        t.config[field::ORDER] = 2;
+    }
+    let mut e = engine(p);
+    e.set_playing(true);
+    let step = |e: &Engine, id: u32| {
+        let v = e.sequence_view();
+        v.tracks[..v.count]
+            .iter()
+            .find(|t| t.id == id)
+            .unwrap()
+            .step
+    };
+    let edit = |track, stage, field, value| Edit {
+        track,
+        stage,
+        field,
+        value,
+    };
+    let mut highest = [0; 7];
+    let mut in_step = |e: &mut Engine, pairs: &[(u32, u32)]| {
+        // Three bars, sampled every 1/64 note.
+        for _ in 0..192 {
+            frames(e, 250);
+            for &(a, b) in pairs {
+                assert_eq!(step(e, a), step(e, b), "track {b} left the grid of {a}");
+                highest[a as usize] = highest[a as usize].max(step(e, a));
+            }
+        }
+    };
+    frames(&mut e, 3100);
+    e.apply_sequence_edits(&[edit(2, None, 3, 2.0), edit(4, Some(20), 6, 1.0)]);
+    frames(&mut e, 5130);
+    assert_ne!(step(&e, 1), step(&e, 2), "the edit did not move track 2");
+    no_heap(|| {
+        e.apply_sequence_edits(&[
+            edit(2, None, 3, 1.0),
+            edit(4, Some(20), 6, 0.0),
+            edit(5, None, 54, 2.0),
+        ]);
+        frames(&mut e, 2000);
+    });
+    in_step(&mut e, &[(1, 2), (3, 4), (6, 5)]);
+    assert_eq!(highest[1], 47, "track 1 did not reach its third page");
+    assert_eq!(highest[3], 31, "track 3 did not reach its second page");
+    assert_eq!(highest[6], 31, "track 6 did not reach its second page");
+}
+
+#[test]
+fn pages_save_only_what_was_edited_and_new_pages_copy_the_last() {
+    use sad_pet::sequence::{STEPS, parse_edits};
+    let saved = |t: &Track| {
+        serde_json::to_value(t).unwrap()["steps"]
+            .as_array()
+            .unwrap()
+            .len()
+    };
+    let mut t = Track::default();
+    assert_eq!((t.pages, saved(&t)), (1, 16));
+    t.steps[3].pitch = 67;
+    let edit = |stage, field, value| Edit {
+        track: 1,
+        stage,
+        field,
+        value,
+    };
+    t.edit(edit(None, 54, 3.0));
+    assert_eq!(t.pages, 3);
+    assert_eq!(t.steps[16..32], t.steps[..16]);
+    assert_eq!(t.steps[32..48], t.steps[..16]);
+    assert_eq!(saved(&t), 48);
+    // Lowering the count keeps the pages; raising it again finds them.
+    t.edit(edit(Some(40), 0, 72.0));
+    t.edit(edit(None, 54, 1.0));
+    t.edit(edit(Some(3), 0, 50.0));
+    assert_eq!(saved(&t), 48);
+    t.edit(edit(None, 54, 4.0));
+    assert_eq!(t.steps[40].pitch, 72, "a kept page was overwritten");
+    // The fresh fourth page copies the first, the last page that played.
+    assert_eq!(t.steps[48..64], t.steps[..16]);
+    assert_eq!(t.steps[48 + 3].pitch, 50);
+    t.edit(edit(None, 54, 9.0));
+    assert_eq!(t.pages, 8);
+
+    // Old sixteen-step tracks load into the first page.
+    let mut old = serde_json::to_value(Track::default()).unwrap();
+    old.as_object_mut().unwrap().remove("pages");
+    old["steps"][5]["pitch"] = 70.into();
+    let old: Track = serde_json::from_value(old).unwrap();
+    assert_eq!(
+        (old.pages, old.steps[5].pitch, old.steps[21].pitch),
+        (1, 70, 60)
+    );
+    let back: Track = serde_json::from_value(serde_json::to_value(&t).unwrap()).unwrap();
+    assert_eq!(back.steps, t.steps);
+
+    let edits = |stage: u32, field: u32| {
+        parse_edits(&serde_json::json!([{"track": 1, "stage": stage, "field": field, "value": 1}]))
+    };
+    assert!(edits(STEPS as u32 - 1, 0).is_ok());
+    assert!(edits(STEPS as u32, 0).is_err());
+    let field = |field| parse_edits(&serde_json::json!([{"track": 1, "field": field, "value": 2}]));
+    assert!(field(54).is_ok());
+    assert!(field(55).is_err());
 }

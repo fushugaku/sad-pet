@@ -4,14 +4,20 @@ use super::Modulated;
 use crate::{
     midi::Message,
     parameters,
-    sequence::{Edit, Target, Track, TrackView, View},
+    sequence::{Edit, PAGES, STEPS, Stage, Target, Track, TrackView, View},
 };
 use metropolix_core::{
     STAGES,
+    order::{Direction, OrderMode, PlayOrder},
+    random::FirmwareRandom,
     sequencer::{
-        CLOCK_DIVISION_HALF, CLOCK_DIVISION_QUARTER, PPQN, Sequencer, Track as Playhead, field,
+        CLOCK_DIVISION_HALF, CLOCK_DIVISION_QUARTER, GateMode, PPQN, Sequencer, Step,
+        Track as Playhead, field,
     },
 };
+use std::sync::OnceLock;
+
+const _: () = assert!(crate::sequence::STAGES == STAGES);
 
 /// Config fields that move a track's stages and pulses in time.
 const TIMING: [usize; 8] = [
@@ -29,34 +35,56 @@ const TIMING: [usize; 8] = [
 /// within a sixth of a second.
 const REPLAY_TICKS: u32 = 16;
 
+type Timing = ([i32; TIMING.len()], u8, [(u8, bool); STEPS]);
 /// What places a track's stages and pulses in time.
-fn timing(track: &Playhead) -> ([i32; TIMING.len()], [(u8, bool); STAGES]) {
+fn timing(config: &[i32; field::COUNT], lane: &Lane) -> Timing {
     (
-        TIMING.map(|f| track.config[f]),
-        track.steps.map(|s| (s.pulses, s.skip)),
+        TIMING.map(|f| config[f]),
+        lane.pages,
+        lane.stages.map(|s| (s.pulses, s.skip)),
     )
+}
+/// metropolix-core's clock_division_ticks.
+fn division_ticks(c: &[i32; field::COUNT]) -> u32 {
+    match c[field::DIVISION] {
+        CLOCK_DIVISION_HALF => 12,
+        CLOCK_DIVISION_QUARTER => 6,
+        division => 24 * division as u32,
+    }
+}
+/// metropolix-core's pulse_duration: swing lengthens even pulses.
+fn pulse_ticks(c: &[i32; field::COUNT], serial: u32) -> u32 {
+    let base = division_ticks(c);
+    let long = 2 * base * c[field::SWING] as u32 / 100;
+    if serial.is_multiple_of(2) {
+        long
+    } else {
+        2 * base - long
+    }
 }
 /// Ticks after which a playhead repeats from its origin, where its settings
 /// make that plain: Pulses length restarts the timeline and a Linear order
-/// repeats every pass. Other orders replay from the origin.
-fn period(track: &Playhead) -> Option<u64> {
-    let c = &track.config;
-    // metropolix-core's clock_division_ticks and pulse_duration.
-    let base = match c[field::DIVISION] {
-        CLOCK_DIVISION_HALF => 12,
-        CLOCK_DIVISION_QUARTER => 6,
-        division => 24 * division as u64,
-    };
+/// repeats every pass of its pages. Other orders replay from the origin.
+fn period(c: &[i32; field::COUNT], lane: &Lane) -> Option<u64> {
+    // metropolix-core's pulse_duration.
+    let base = u64::from(division_ticks(c));
     let long = 2 * base * c[field::SWING] as u64 / 100;
     let ticks = |pulses: u64| pulses / 2 * 2 * base + pulses % 2 * long;
     if c[field::PULSES_LENGTH] > 0 {
-        return Some(ticks(c[field::PULSES_LENGTH] as u64));
+        // Every restart of the timeline turns the page.
+        return Some(u64::from(lane.pages) * ticks(c[field::PULSES_LENGTH] as u64));
     }
     if c[field::ORDER] != 0 {
         return None;
     }
-    let pulses: u64 = (0..c[field::LENGTH])
-        .map(|position| track.steps[((position + c[field::OFFSET]) as usize) % STAGES])
+    let pulses: u64 = lane
+        .stages
+        .chunks(STAGES)
+        .take(lane.pages.into())
+        .flat_map(|page| {
+            (0..c[field::LENGTH])
+                .map(|position| page[((position + c[field::OFFSET]) as usize) % STAGES])
+        })
         .filter(|step| !step.skip)
         .map(|step| match c[field::PULSE_OVERRIDE] {
             0 => step.pulses as u64,
@@ -70,6 +98,221 @@ fn period(track: &Playhead) -> Option<u64> {
         pulses
     };
     (pulses > 0).then(|| ticks(pulses))
+}
+
+/// A SAD PET stage as the core plays it. `Stage::set` keeps every field in
+/// the ranges `Sequencer::set_step` accepts.
+fn core_step(s: &Stage) -> Step {
+    Step {
+        pitch: s.pitch.into(),
+        pulses: s.pulses,
+        gate: [
+            GateMode::Rest,
+            GateMode::Single,
+            GateMode::Multiple,
+            GateMode::Hold,
+        ][usize::from(s.gate.min(3))],
+        ratchet: s.ratchet,
+        probability: s.probability,
+        slide: s.slide,
+        skip: s.skip,
+        accumulate: s.accumulate,
+        pitch_override: s.pitch_override,
+        gate_override: s.gate_override,
+        probability_target: s.probability_target,
+        accumulate_trigger: s.accumulate_trigger,
+        cv: s.cv,
+        cv_ramp: s.cv_ramp,
+        cv_gate: s.cv_gate,
+    }
+}
+fn page(stages: &[Stage; STEPS], page: u8) -> &[Stage] {
+    &stages[usize::from(page) * STAGES..][..STAGES]
+}
+/// Put one page in the core, the `masked` stages skipped.
+fn load(playhead: &mut Playhead, stages: &[Stage; STEPS], index: u8, masked: u16) {
+    for (slot, (step, stage)) in playhead
+        .steps
+        .iter_mut()
+        .zip(page(stages, index))
+        .enumerate()
+    {
+        *step = core_step(stage);
+        step.skip |= masked >> slot & 1 != 0;
+    }
+}
+fn play_order(mode: usize, length: u8, reverse: bool, random: &mut FirmwareRandom) -> PlayOrder {
+    let direction = if reverse {
+        Direction::Reverse
+    } else {
+        Direction::Forward
+    };
+    PlayOrder::new(OrderMode::ALL[mode], length, direction, random).expect("1..=16 stages")
+}
+/// Visits after which each play order repeats from its reset, by order,
+/// length and direction. Zero for the orders that draw random numbers,
+/// Shuffle too: its permutation comes from the core's random stream.
+fn cycles() -> &'static [[[u8; 2]; STAGES]; 21] {
+    static CYCLES: OnceLock<[[[u8; 2]; STAGES]; 21]> = OnceLock::new();
+    CYCLES.get_or_init(|| {
+        // Growing and Shrinking over sixteen stages repeat after 136 visits.
+        const LONGEST: usize = 136;
+        let mut table = [[[0; 2]; STAGES]; 21];
+        for (mode, lengths) in table
+            .iter_mut()
+            .enumerate()
+            .take(OrderMode::Brownian as usize)
+        {
+            for (length, directions) in lengths.iter_mut().enumerate() {
+                for (reverse, cycle) in directions.iter_mut().enumerate() {
+                    let mut random = FirmwareRandom::new(0, 0);
+                    let mut order = play_order(mode, length as u8 + 1, reverse == 1, &mut random);
+                    let mut visits = vec![order.current()];
+                    visits.extend((0..2 * LONGEST).map(|_| order.advance(&mut random)));
+                    *cycle = (1..=LONGEST)
+                        .find(|&p| (0..=LONGEST).all(|i| visits[i] == visits[i + p]))
+                        .expect("deterministic orders repeat") as u8;
+                }
+            }
+        }
+        table
+    })
+}
+/// One pass of a page: its stage starts in one cycle of the play order, and
+/// the stages that cycle still visits, all skipped, after its last start.
+/// Random orders play as many stages as Length leaves unskipped.
+fn pass(c: &[i32; field::COUNT], page: &[Stage]) -> (u16, u16) {
+    let length = c[field::LENGTH].clamp(1, STAGES as i32) as u8;
+    let slot =
+        |position: u8| (i32::from(position) + c[field::OFFSET]).rem_euclid(STAGES as i32) as usize;
+    let mode = c[field::ORDER].clamp(0, 20) as usize;
+    let reverse = c[field::REVERSE] != 0;
+    let cycle = cycles()[mode][usize::from(length) - 1][usize::from(reverse)];
+    if cycle == 0 {
+        let starts = (0..length).filter(|&p| !page[slot(p)].skip).count();
+        return ((starts as u16).max(1), 0);
+    }
+    // Deterministic orders draw nothing.
+    let mut random = FirmwareRandom::new(0, 0);
+    let mut order = play_order(mode, length, reverse, &mut random);
+    let (mut starts, mut trailing) = (0, 0_u16);
+    for visit in 0..cycle {
+        if visit > 0 {
+            order.advance(&mut random);
+        }
+        let slot = slot(order.current());
+        if page[slot].skip {
+            trailing |= 1 << slot;
+        } else {
+            starts += 1;
+            trailing = 0;
+        }
+    }
+    if starts == 0 {
+        (1, 0)
+    } else {
+        (starts, trailing)
+    }
+}
+
+/// A track's place among its pages. It mirrors the core's pulse timeline to
+/// see each stage end a tick ahead: the next page is in the core before the
+/// stage that starts it. The play order keeps walking across pages.
+#[derive(Clone, Copy, Debug, Default)]
+struct Pager {
+    page: u8,
+    /// Stage starts on this page, and how many make its pass.
+    played: u16,
+    pass: u16,
+    /// Stages this page's pass still visits, skipped, after its last start.
+    trailing: u16,
+    /// The last page's trailing stages, held skipped in the core until the
+    /// order has walked past them into this page.
+    masked: u16,
+    /// The core timeline as of the last tick: ticks into the pulse, pulse
+    /// in the stage, pulse serial (for swing) and pulses since a restart.
+    elapsed: u32,
+    pulse: u32,
+    serial: u32,
+    cycle: u32,
+}
+impl Pager {
+    fn new(config: &[i32; field::COUNT], stages: &[Stage; STEPS]) -> Self {
+        let (pass, trailing) = pass(config, page(stages, 0));
+        Self {
+            pass,
+            trailing,
+            ..Self::default()
+        }
+    }
+    /// Follow a core tick, counting as Timeline::prepare and finish do.
+    fn follow(&mut self, playhead: &Playhead) {
+        if playhead.reset_pulse {
+            (self.elapsed, self.pulse, self.serial, self.cycle) = (0, 0, 0, 0);
+        } else if playhead.pulse {
+            self.elapsed = 0;
+            self.pulse = if playhead.changed { 0 } else { self.pulse + 1 };
+            self.serial = self.serial.wrapping_add(1);
+            self.cycle = self.cycle.saturating_add(1);
+        } else {
+            self.elapsed = self.elapsed.saturating_add(1);
+        }
+        if playhead.changed {
+            self.played = self.played.saturating_add(1);
+        }
+    }
+    /// After `follow`: whether the pulse the last tick played ends with it,
+    /// whether its stage does, and whether Pulses length restarts the
+    /// timeline at the next tick.
+    fn ends(&self, playhead: &Playhead, stage: u8) -> (bool, bool, bool) {
+        let c = &playhead.config;
+        if self.elapsed + 1 < pulse_ticks(c, self.serial) {
+            return (false, false, false);
+        }
+        let limit = c[field::PULSES_LENGTH];
+        let restart = limit > 0 && self.cycle + 1 >= limit as u32;
+        let pulses = match c[field::PULSE_OVERRIDE] {
+            pulses if pulses > 0 => pulses as u32,
+            _ => u32::from(playhead.steps[usize::from(stage)].pulses),
+        };
+        (true, restart || self.pulse + 1 >= pulses, restart)
+    }
+    /// The page's pass ends with the last tick: the stage that one played
+    /// is its last, or Pulses length restarts the timeline.
+    fn turns(&self, playhead: &Playhead, stage: u8) -> bool {
+        let (_, stage_ends, restart) = self.ends(playhead, stage);
+        if playhead.config[field::PULSES_LENGTH] > 0 {
+            restart
+        } else {
+            stage_ends && self.played >= self.pass
+        }
+    }
+    /// After each core tick: let the last page's trailing stages play again
+    /// once the order is past them, and turn the page when its pass ends.
+    fn tick(&mut self, pages: u8, stages: &[Stage; STEPS], playhead: &mut Playhead, stage: u8) {
+        if playhead.changed && self.masked != 0 {
+            self.masked = 0;
+            load(playhead, stages, self.page, 0);
+        }
+        self.follow(playhead);
+        // A page past a lowered count still turns, back to the first.
+        if (pages > 1 || self.page > 0) && self.turns(playhead, stage) {
+            self.page = if self.page + 1 >= pages {
+                0
+            } else {
+                self.page + 1
+            };
+            // A restarted timeline begins the order afresh.
+            self.masked = if playhead.config[field::PULSES_LENGTH] > 0 {
+                0
+            } else {
+                self.trailing
+            };
+            (self.pass, self.trailing) = pass(&playhead.config, page(stages, self.page));
+            self.played = 0;
+            load(playhead, stages, self.page, self.masked);
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -114,8 +357,10 @@ struct Lane {
     env_gate: bool,
     root: u8,
     pitch_oscillators: [bool; 4],
-    velocity: [u8; 16],
-    destinations: [[f32; 3]; 16],
+    /// Every page's stages; the core holds the page playing.
+    stages: Box<[Stage; STEPS]>,
+    pages: u8,
+    pager: Pager,
     held: Option<(u8, u8)>,
     pitch: Glide,
     /// Core tick where this playhead started: the transport start, or its
@@ -126,6 +371,12 @@ struct Lane {
     relock: bool,
     /// Added while playing: silent until its replay has found its place.
     waiting: bool,
+}
+impl Lane {
+    /// A stage of the page playing.
+    fn stage(&self, slot: u8) -> &Stage {
+        &page(&self.stages, self.pager.page)[usize::from(slot)]
+    }
 }
 #[derive(Clone, Copy)]
 struct Route {
@@ -150,6 +401,7 @@ pub(crate) struct Runtime {
     /// caught up with the live tick, its playhead replaces the one a timing
     /// edit moved, so every lane stays on the grid of the transport start.
     shadow: Sequencer,
+    shadow_pager: Pager,
     replay: Option<usize>,
     /// The live tick where the shadow's replay starts.
     anchor: u64,
@@ -178,11 +430,9 @@ impl Runtime {
                 for (field, value) in t.config.iter().enumerate() {
                     core.set_track(i, field as u32, *value);
                 }
-                for (stage, s) in t.steps.iter().enumerate() {
-                    for field in 0..15 {
-                        core.set_step(i, stage, field as u32, s.get(field) as i32);
-                    }
-                }
+                let stages = Box::new(t.steps);
+                load(&mut core.tracks[i], &stages, 0, 0);
+                let pager = Pager::new(&core.tracks[i].config, &stages);
                 let binding = match &t.target {
                     Target::MainPitch => Binding::MainPitch,
                     Target::Oscillator { index } => Binding::Oscillator(*index as usize),
@@ -218,10 +468,9 @@ impl Runtime {
                     env_gate: t.env_gate,
                     root: t.root_note,
                     pitch_oscillators: t.pitch_oscillators,
-                    velocity: t.steps.map(|s| s.velocity),
-                    destinations: t
-                        .steps
-                        .map(|s| [s.destination1, s.destination2, s.destination3]),
+                    stages,
+                    pages: t.pages.clamp(1, PAGES as u8),
+                    pager,
                     held: None,
                     pitch: Glide::default(),
                     origin: 0,
@@ -301,6 +550,7 @@ impl Runtime {
             enabled: false,
             view_offset: 0,
             shadow,
+            shadow_pager: Pager::default(),
             replay: None,
             anchor: 0,
             relocks: 0,
@@ -322,12 +572,21 @@ impl Runtime {
             if let Ok(pos) = old.indices.binary_search_by_key(&lane.id, |p| p.0) {
                 let j = old.indices[pos].1;
                 let old_lane = &old.lanes[j];
-                let moved = timing(&next_tracks[i]) != timing(&old_tracks[j]);
+                let moved =
+                    timing(&next_tracks[i].config, lane) != timing(&old_tracks[j].config, old_lane);
                 let config = next_tracks[i].config;
-                let steps = next_tracks[i].steps;
                 std::mem::swap(&mut next_tracks[i], &mut old_tracks[j]);
                 next_tracks[i].config = config;
-                next_tracks[i].steps = steps;
+                // The page playing stays in place, with the new stages.
+                lane.pager = old_lane.pager;
+                (lane.pager.pass, lane.pager.trailing) =
+                    pass(&config, page(&lane.stages, lane.pager.page));
+                load(
+                    &mut next_tracks[i],
+                    &lane.stages,
+                    lane.pager.page,
+                    lane.pager.masked,
+                );
                 lane.origin = old_lane.origin;
                 lane.waiting = old_lane.waiting;
                 lane.relock = old_lane.relock || old.replay == Some(j) || moved;
@@ -365,31 +624,38 @@ impl Runtime {
                 self.lanes[index].held = None;
                 // Restart track starts a grid of its own for this track.
                 self.lanes[index].origin = self.core.ticks;
+                self.first_page(index);
                 self.settle(index);
             }
             return;
         }
-        let before = timing(&self.core.tracks[index]);
+        let before = timing(&self.core.tracks[index].config, &self.lanes[index]);
         self.set(index, track, edit);
-        if timing(&self.core.tracks[index]) != before {
+        if timing(&self.core.tracks[index].config, &self.lanes[index]) != before {
             self.relock(index);
         }
     }
+    /// Back to the first page, where a reset core playhead starts.
+    fn first_page(&mut self, i: usize) {
+        let (lane, playhead) = (&mut self.lanes[i], &mut self.core.tracks[i]);
+        lane.pager = Pager::new(&playhead.config, &lane.stages);
+        load(playhead, &lane.stages, 0, 0);
+    }
     fn set(&mut self, index: usize, track: &Track, edit: Edit) {
-        if let Some(stage) = edit.stage {
-            if edit.field < 15 {
-                self.core.set_step(
-                    index,
-                    stage as usize,
-                    edit.field as u32,
-                    track.steps[stage as usize].get(edit.field) as i32,
-                );
-            } else if edit.field == 15 {
-                self.lanes[index].velocity[stage as usize] = track.steps[stage as usize].velocity;
-            } else if (16..=18).contains(&edit.field) {
-                self.lanes[index].destinations[stage as usize][(edit.field - 16) as usize] =
-                    track.steps[stage as usize].get(edit.field);
+        if let Some(stage) = edit.stage.map(usize::from) {
+            let lane = &mut self.lanes[index];
+            lane.stages[stage] = track.steps[stage];
+            if stage / STAGES == usize::from(lane.pager.page) {
+                let slot = stage % STAGES;
+                let step = &mut self.core.tracks[index].steps[slot];
+                *step = core_step(&track.steps[stage]);
+                step.skip |= lane.pager.masked >> slot & 1 != 0;
             }
+        } else if edit.field == 54 {
+            // New pages may have been filled from the last one.
+            let lane = &mut self.lanes[index];
+            *lane.stages = track.steps;
+            lane.pages = track.pages.clamp(1, PAGES as u8);
         } else if (edit.field as usize) < field::COUNT {
             self.core
                 .set_track(index, edit.field as u32, track.config[edit.field as usize]);
@@ -438,13 +704,14 @@ impl Runtime {
                 let i = self.lanes.iter().position(|l| l.relock).unwrap();
                 self.lanes[i].relock = false;
                 self.relocks -= 1;
-                let live = &self.core.tracks[i];
-                let origin = self.lanes[i].origin;
+                let (live, lane) = (&self.core.tracks[i], &self.lanes[i]);
+                let origin = lane.origin;
                 let elapsed = self.core.ticks - origin;
-                self.anchor = origin + period(live).map_or(0, |p| elapsed / p * p);
+                self.anchor = origin + period(&live.config, lane).map_or(0, |p| elapsed / p * p);
                 let shadow = &mut self.shadow.tracks[0];
                 shadow.config = live.config;
-                shadow.steps = live.steps;
+                load(shadow, &lane.stages, 0, 0);
+                self.shadow_pager = Pager::new(&live.config, &lane.stages);
                 self.shadow.restart();
                 // Drop the accumulators of the playhead it held last, even
                 // ones set never to reset.
@@ -459,14 +726,19 @@ impl Runtime {
                 break;
             }
             self.shadow.tick();
+            let (lane, stage) = (&self.lanes[i], self.shadow.stage(0).unwrap_or(0));
+            self.shadow_pager
+                .tick(lane.pages, &lane.stages, &mut self.shadow.tracks[0], stage);
         }
         if live_tick && self.shadow.ticks == target {
             let live = &mut self.core.tracks[i];
-            let (config, steps) = (live.config, live.steps);
+            let config = live.config;
             std::mem::swap(live, &mut self.shadow.tracks[0]);
             live.config = config;
-            live.steps = steps;
             let lane = &mut self.lanes[i];
+            // Edits during the replay reached the lane's stages.
+            lane.pager = self.shadow_pager;
+            load(live, &lane.stages, lane.pager.page, lane.pager.masked);
             if lane.waiting {
                 // A new lane starts at its pitch instead of gliding from 0.
                 let pitch = self.core.cents(i) as f32 * 0.01;
@@ -491,6 +763,9 @@ impl Runtime {
             l.origin = 0;
             l.relock = false;
             l.waiting = false;
+        }
+        for i in 0..self.lanes.len() {
+            self.first_page(i);
         }
         self.replay = None;
         self.relocks = 0;
@@ -537,6 +812,11 @@ impl Runtime {
             self.started = true;
             self.core.set_global(0, (bpm * 1000.0).round() as i32);
             self.core.tick();
+            for i in 0..self.lanes.len() {
+                let (stage, lane) = (self.core.stage(i).unwrap_or(0), &mut self.lanes[i]);
+                lane.pager
+                    .tick(lane.pages, &lane.stages, &mut self.core.tracks[i], stage);
+            }
             self.replay(true);
             let now = self.core.ticks.saturating_sub(1) as f64;
             for (i, l) in self.lanes.iter_mut().enumerate() {
@@ -599,9 +879,9 @@ impl Runtime {
         let note = (lane.root as f32 + (raw - lane.root as f32) * lane.amount)
             .round()
             .clamp(0.0, 127.0) as u8;
-        let stage = self.core.stage(i).unwrap_or(0) as usize;
+        let stage = lane.stage(self.core.stage(i).unwrap_or(0));
         let velocity =
-            (self.core.velocity(i) * lane.velocity[stage] as i32 / 127).clamp(1, 127) as u8;
+            (self.core.velocity(i) * i32::from(stage.velocity) / 127).clamp(1, 127) as u8;
         if on && flags & 1 == 0 && lane.held.is_some_and(|key| key != (channel, note)) {
             lane.held = Some((channel, note));
             return (
@@ -691,7 +971,7 @@ impl Runtime {
                 }
                 delta += if let Some(destination) = route.destination {
                     self.core.stage(i).map_or(0.0, |stage| {
-                        l.destinations[stage as usize][destination] * (spec.max - spec.min)
+                        l.stage(stage).get(16 + destination as u8) * (spec.max - spec.min)
                     })
                 } else if matches!(
                     l.binding,
@@ -743,7 +1023,8 @@ impl Runtime {
         {
             v.tracks[v.count] = TrackView {
                 id: l.id,
-                step: self.core.stage(i).unwrap_or(0),
+                // Counted across pages.
+                step: l.pager.page * STAGES as u8 + self.core.stage(i).unwrap_or(0),
                 gate: self.enabled && !l.waiting && self.core.gate(i),
                 pulse: self.core.track_events(i) & 1 != 0,
                 pitch: self.core.cents(i) as f32 * 0.01,
@@ -774,7 +1055,7 @@ mod tests {
             steps: [Stage {
                 pitch,
                 ..Stage::default()
-            }; 16],
+            }; STEPS],
             ..Track::default()
         }
     }
@@ -965,5 +1246,182 @@ mod tests {
         assert!(waited > 0);
         assert_eq!(next.core.stage(2), next.core.stage(0));
         assert_eq!(next.core.stage(1), stage(&next, origin));
+    }
+
+    /// `pages` of steps whose CV is ten times their place across pages.
+    fn paged(pages: u8) -> Track {
+        let mut t = lane(1, Target::Notes, 60);
+        t.pages = pages;
+        for (i, s) in t.steps.iter_mut().enumerate() {
+            s.cv = 10 * i as i32;
+        }
+        t
+    }
+    /// The first `count` stage starts, as (step across pages, CV).
+    fn starts(r: &mut Runtime, count: usize) -> Vec<(u8, i32)> {
+        let mut out = Vec::new();
+        while out.len() < count {
+            if r.tick(8000, 120.0, true) && r.core.tracks[0].changed {
+                out.push((r.view().tracks[0].step, r.core.cv(0)));
+            }
+        }
+        out
+    }
+    fn steps(starts: &[(u8, i32)]) -> Vec<u8> {
+        for &(step, cv) in starts {
+            assert_eq!(cv, 10 * i32::from(step), "step {step} played another page");
+        }
+        starts.iter().map(|s| s.0).collect()
+    }
+    fn cycle(pattern: impl IntoIterator<Item = u8>, count: usize) -> Vec<u8> {
+        pattern
+            .into_iter()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .cycle()
+            .take(count)
+            .collect()
+    }
+
+    #[test]
+    fn pages_play_in_turn_for_one_pass_of_the_order_each() {
+        let mut r = Runtime::new(&[paged(3)]);
+        assert_eq!(steps(&starts(&mut r, 100)), cycle(0..48, 100));
+
+        // The middle page ends early and the last starts late: the order
+        // walks over the skipped stages of both into the next page.
+        let mut t = paged(3);
+        for stage in (28..32).chain(32..35) {
+            t.steps[stage].skip = true;
+        }
+        let mut r = Runtime::new(&[t]);
+        assert_eq!(steps(&starts(&mut r, 90)), cycle((0..28).chain(35..48), 90));
+
+        // Ping Pong plays its whole figure on each page.
+        let mut t = paged(2);
+        t.config[field::ORDER] = 1;
+        t.config[field::LENGTH] = 4;
+        let mut r = Runtime::new(&[t]);
+        assert_eq!(
+            steps(&starts(&mut r, 40)),
+            cycle([0, 1, 2, 3, 3, 2, 1, 0, 16, 17, 18, 19, 19, 18, 17, 16], 40)
+        );
+
+        // Pulses length restarts the timeline, and each restart turns the page.
+        let mut t = paged(2);
+        t.config[field::PULSES_LENGTH] = 6;
+        let mut r = Runtime::new(&[t]);
+        assert_eq!(steps(&starts(&mut r, 30)), cycle((0..6).chain(16..22), 30));
+
+        // A random order plays as many stages as each page leaves unskipped.
+        let mut t = paged(2);
+        t.config[field::ORDER] = 20;
+        for stage in [17, 20, 25, 31] {
+            t.steps[stage].skip = true;
+        }
+        let mut r = Runtime::new(&[t]);
+        let pages: Vec<u8> = steps(&starts(&mut r, 56)).iter().map(|s| s / 16).collect();
+        assert_eq!(pages, cycle([[0; 16].as_slice(), &[1; 12]].concat(), 56));
+    }
+
+    #[test]
+    fn the_pager_sees_every_pulse_and_stage_end_one_tick_ahead() {
+        let mut seed = 0x9e37_79b9_u32;
+        let mut next = |n: u32| {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed % n
+        };
+        for _ in 0..300 {
+            let mut core = Sequencer::default();
+            core.resize_tracks(1);
+            for lane in &mut core.mods {
+                lane.config[9] = 1;
+            }
+            let config = [
+                (field::ORDER, next(21) as i32),
+                (field::LENGTH, 1 + next(16) as i32),
+                (field::OFFSET, next(16) as i32),
+                (field::REVERSE, next(2) as i32),
+                (field::DIVISION, [1, 2, 3, 65, 66][next(5) as usize]),
+                (field::SWING, 50 + next(29) as i32),
+                (
+                    field::PULSE_OVERRIDE,
+                    [0, 0, 1 + next(8) as i32][next(3) as usize],
+                ),
+                (
+                    field::PULSES_LENGTH,
+                    [0, 0, 1 + next(64) as i32][next(3) as usize],
+                ),
+            ];
+            for (field, value) in config {
+                assert!(core.set_track(0, field as u32, value));
+            }
+            for stage in 0..STAGES {
+                core.set_step(0, stage, 1, 1 + next(8) as i32);
+                core.set_step(0, stage, 6, i32::from(next(5) == 0));
+            }
+            core.restart();
+            let (mut pager, mut expected) = (Pager::default(), None);
+            for _ in 0..4000 {
+                core.tick();
+                let playhead = &core.tracks[0];
+                if let Some(ends) = expected {
+                    assert_eq!((playhead.pulse, playhead.changed), ends, "{config:?}");
+                }
+                pager.follow(playhead);
+                let (pulse, stage, _) = pager.ends(playhead, core.stage(0).unwrap());
+                expected = Some((pulse, stage));
+            }
+        }
+    }
+
+    #[test]
+    fn pages_reach_the_core_as_set_step_writes_them() {
+        let mut seed = 0x2545_f491_u32;
+        let mut core = Sequencer::default();
+        for _ in 0..200 {
+            let mut stage = Stage::default();
+            for field in 0..15 {
+                seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                stage.set(field, (seed >> 8) as f32 % 10_001.0 - 5000.0);
+                core.set_step(0, 0, field as u32, stage.get(field) as i32);
+            }
+            assert_eq!(
+                format!("{:?}", core_step(&stage)),
+                format!("{:?}", core.tracks[0].steps[0])
+            );
+        }
+    }
+
+    #[test]
+    fn adopted_lanes_keep_their_page_and_page_counts_relock_to_the_grid() {
+        let tracks = [paged(3)];
+        let mut r = Runtime::new(&tracks);
+        let played = starts(&mut r, 20);
+        assert_eq!(played.last().unwrap().0, 19);
+        let mut next = Runtime::new(&tracks);
+        next.inherit(&mut r);
+        assert_eq!(
+            steps(&starts(&mut next, 30)),
+            (20..48).chain(0..2).collect::<Vec<_>>()
+        );
+
+        // Down to one page while the third plays: the replay puts it where
+        // one page, played from the transport start, is now.
+        let mut track = tracks[0].clone();
+        let edit = Edit {
+            track: 1,
+            stage: None,
+            field: 54,
+            value: 1.0,
+        };
+        track.edit(edit);
+        next.edit(0, &track, edit);
+        let played = steps(&starts(&mut next, 40));
+        assert!(played[20..].iter().all(|&step| step < 16), "{played:?}");
+        let sixteenth = |r: &Runtime| ((r.core.ticks - 1) / 24 % 16) as u8;
+        assert_eq!(next.view().tracks[0].step, sixteenth(&next));
     }
 }

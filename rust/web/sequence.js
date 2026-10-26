@@ -424,6 +424,9 @@ window.SadNeuropolis = class {
     this.selection = new Set();
     this.anchor = null;
     this.clipboard = null;
+    // The page of sixteen steps shown; like the selection, it stays put
+    // across track switches.
+    this.visiblePage = 0;
     document.addEventListener("keydown", (e) => this.shortcut(e));
     root.innerHTML = `<div class="section-heading"><div class="section-title"><button class="power neuro-enabled" aria-label="Sequencer" aria-pressed="false" title="Switch the sequencer on or off"><svg aria-hidden="true"><use href="#power-glyph"/></svg></button><h2>Neuropolis <span class="neuro-count"></span></h2></div><div class="neuro-actions"><button class="neuro-restart" title="Restart all sequencer tracks">Restart</button><button class="neuro-add">+ Add track</button></div></div><div class="neuro-layout"><aside><div class="neuro-tracks" role="tablist" aria-label="Sequencer tracks"></div><div class="neuro-pages"><button class="neuro-prev" aria-label="Previous tracks">←</button><output></output><button class="neuro-next" aria-label="Next tracks">→</button></div></aside><div class="neuro-editor"></div></div>`;
     root.querySelector(".neuro-enabled").onclick = () =>
@@ -441,6 +444,39 @@ window.SadNeuropolis = class {
   }
   track(id = this.selected) {
     return this.program().tracks.find((t) => t.id === id);
+  }
+  // Pages of sixteen steps a track plays in turn, each for one pass.
+  pages(track) {
+    return Math.max(1, Math.min(8, Math.round(track?.pages) || 1));
+  }
+  // The first step of the page shown.
+  offset(track) {
+    return Math.min(this.visiblePage || 0, this.pages(track) - 1) * 16;
+  }
+  showPage(page) {
+    this.visiblePage = page;
+    this.signature = "";
+    this.sync();
+  }
+  // Presets leave out trailing pages nobody has edited.
+  fillPages(track) {
+    const fresh = this.catalog.track?.steps[0];
+    while (fresh && track.steps.length < this.pages(track) * 16)
+      track.steps.push({ ...fresh });
+  }
+  // As the engine does: pages added that were never edited copy the last one.
+  setPages(track, value) {
+    const pages = Math.max(1, Math.min(8, Math.round(value))),
+      last = this.pages(track) - 1,
+      fresh = this.catalog.track?.steps[0] ?? {};
+    track.pages = pages;
+    this.fillPages(track);
+    for (let page = last + 1; page < pages; page++) {
+      const steps = track.steps.slice(page * 16, page * 16 + 16);
+      if (steps.every((s) => this.stepFields.every((k) => s[k] === fresh[k])))
+        for (let i = 0; i < 16; i++)
+          track.steps[page * 16 + i] = { ...track.steps[last * 16 + i] };
+    }
   }
   setPage(page) {
     this.page = Math.max(
@@ -489,6 +525,7 @@ window.SadNeuropolis = class {
       track.pitch_oscillators ??= [false, false, false, false];
       track.pitch_oscillators[field - 49] = !!value;
     } else if (field === 53) track.env_gate = !!value;
+    else if (field === 54) this.setPages(track, value);
     else if (field < 47)
       track[
         { 43: "amount", 44: "absolute", 45: "gate_output", 46: "root_note" }[
@@ -549,6 +586,8 @@ window.SadNeuropolis = class {
   configValue(track, field) {
     return field < 43
       ? track.config[field]
+      : field === 54
+        ? this.pages(track)
       : field === 53
         ? !!track.env_gate
         : field >= 49
@@ -601,6 +640,7 @@ window.SadNeuropolis = class {
   sync() {
     const p = this.program();
     if (!p) return;
+    for (const t of p.tracks) this.fillPages(t);
     if (!p.tracks.some((t) => t.id === this.selected))
       this.selected = p.tracks[0]?.id ?? null;
     this.page = Math.max(
@@ -617,8 +657,9 @@ window.SadNeuropolis = class {
     const key = JSON.stringify([
       p.tracks
         .slice(this.page * 64, this.page * 64 + 64)
-        .map((t) => [t.id, t.name, t.target, t.destinations, t.config[3], t.config[8]]),
+        .map((t) => [t.id, t.name, t.target, t.destinations, t.config[3], t.config[8], t.pages]),
       this.selected,
+      this.offset(this.track()),
       this.hooks.read().color_chain.map((s) => [s.id, s.kind]),
       this.hooks.read().pre_color_chain.map((s) => [s.id, s.kind]),
       this.hooks.read().resynth.count,
@@ -657,9 +698,10 @@ window.SadNeuropolis = class {
     const units = this.root.querySelector(".neuro-depth-units");
     if (units) units.textContent = this.depthText(track.target.parameter, track.amount);
     for (const update of this.knobs) update();
-    const valueLayer = track.target.kind === "parameter" ? "cv" : "pitch";
+    const valueLayer = track.target.kind === "parameter" ? "cv" : "pitch",
+      offset = this.offset(track);
     this.root.querySelectorAll(".neuro-stage").forEach((card, i) => {
-      const step = track.steps[i],
+      const step = track.steps[offset + i],
         value = step[valueLayer];
       card.classList.toggle("outside", i >= track.config[1]);
       card.classList.toggle("rest", step.gate === 0 || step.skip);
@@ -703,18 +745,18 @@ window.SadNeuropolis = class {
     paste.disabled = !selected.size || !copied;
     const steps = `${copied} ${copied === 1 ? "step" : "steps"} copied`;
     status.textContent = selected.size
-      ? `${selected.size === 1 ? "Step" : "Steps"} ${this.stageRanges(selected)}${copied ? ` · ${steps}` : ""}`
+      ? `${selected.size === 1 ? "Step" : "Steps"} ${this.stageRanges(selected, this.offset(this.track()))}${copied ? ` · ${steps}` : ""}`
       : copied
         ? `${steps} · select where to paste`
         : "Drag over the bars above the steps to select";
   }
-  stageRanges(stages) {
-    const sorted = [...stages].sort((a, b) => a - b),
+  stageRanges(stages, offset = 0) {
+    const sorted = [...stages].sort((a, b) => a - b).map((s) => s + offset + 1),
       parts = [];
     for (let i = 0; i < sorted.length; i++) {
       const start = sorted[i];
       while (sorted[i + 1] === sorted[i] + 1) i++;
-      parts.push(start === sorted[i] ? `${start + 1}` : `${start + 1}–${sorted[i] + 1}`);
+      parts.push(start === sorted[i] ? `${start}` : `${start}–${sorted[i]}`);
     }
     return parts.join(", ");
   }
@@ -782,14 +824,19 @@ window.SadNeuropolis = class {
     }
     this.select(next);
   }
+  // The selection picks steps of the page shown, so a phrase copied on one
+  // page pastes into the same steps of another.
   copy() {
     const track = this.track(),
       stages = [...this.selection].sort((a, b) => a - b);
     if (!track || !stages.length) return;
+    const offset = this.offset(track);
     // Gaps between picked steps are kept, and pasting leaves them untouched.
     this.clipboard = {
       steps: Array.from({ length: stages.at(-1) - stages[0] + 1 }, (_, i) =>
-        this.selection.has(stages[0] + i) ? { ...track.steps[stages[0] + i] } : null,
+        this.selection.has(stages[0] + i)
+          ? { ...track.steps[offset + stages[0] + i] }
+          : null,
       ),
       oscillator: this.relative(track),
       root: this.relative(track) ? 60 : track.root_note,
@@ -809,6 +856,7 @@ window.SadNeuropolis = class {
           ? 0
           : (oscillator ? 60 : track.root_note) - clip.root,
       [lo, hi] = oscillator ? [36, 84] : [0, 127],
+      offset = this.offset(track),
       covered = new Set();
     for (let i = 0; i < stages.length; i++) {
       const start = stages[i];
@@ -816,8 +864,8 @@ window.SadNeuropolis = class {
       const length = stages[i] > start ? stages[i] - start + 1 : clip.steps.length;
       for (let k = 0; k < length && start + k < 16; k++) {
         const step = clip.steps[k % clip.steps.length],
-          stage = start + k;
-        covered.add(stage);
+          stage = offset + start + k;
+        covered.add(start + k);
         if (!step) continue;
         this.stepFields.forEach((key, f) => {
           let value = Number(step[key]);
@@ -1069,7 +1117,9 @@ window.SadNeuropolis = class {
     }));
   }
   buildStages(editor, track) {
-    const parameter = track.target.kind === "parameter",
+    const offset = this.offset(track),
+      pages = this.pages(track),
+      parameter = track.target.kind === "parameter",
       relative = this.relative(track),
       field = parameter ? 12 : 0,
       min = parameter ? -5000 : relative ? -24 : 0,
@@ -1083,13 +1133,13 @@ window.SadNeuropolis = class {
         ? "Parameter value"
         : "Pitch";
     const fill = document.createElement("button");
-    fill.textContent = "Copy step 1 → all";
+    fill.textContent = `Copy step ${offset + 1} → all`;
     fill.onclick = () => {
       const current = this.track(track.id),
-        first = { ...current.steps[0] };
+        first = { ...current.steps[offset] };
       for (let i = 1; i < 16; i++)
         this.stepFields.forEach((key, f) =>
-          this.edit(track.id, i, f, Number(first[key]), false),
+          this.edit(track.id, offset + i, f, Number(first[key]), false),
         );
       this.sync();
     };
@@ -1114,6 +1164,27 @@ window.SadNeuropolis = class {
     live.textContent = "—";
     toolbar.append(title, fill, copy, paste, status, live);
     editor.append(toolbar);
+    if (pages > 1) {
+      const tabs = document.createElement("div");
+      tabs.className = "neuro-stage-pages";
+      tabs.setAttribute("role", "tablist");
+      tabs.setAttribute("aria-label", "Stages");
+      for (let page = 0; page < pages; page++) {
+        const tab = document.createElement("button"),
+          steps = `${page * 16 + 1}–${page * 16 + 16}`;
+        tab.type = "button";
+        tab.className = "neuro-stage-page";
+        tab.dataset.page = page;
+        tab.setAttribute("role", "tab");
+        tab.setAttribute("aria-selected", String(page * 16 === offset));
+        tab.setAttribute("aria-label", `Stage ${page + 1}, steps ${steps}`);
+        tab.title = `Stage ${page + 1}`;
+        tab.textContent = steps;
+        tab.onclick = () => this.showPage(page);
+        tabs.append(tab);
+      }
+      editor.append(tabs);
+    }
     const scroll = document.createElement("div");
     scroll.className = "neuro-stage-scroll";
     const grid = document.createElement("div");
@@ -1135,22 +1206,24 @@ window.SadNeuropolis = class {
       "Dest 2",
       "Dest 3",
     ]);
-    for (let i = 0; i < 16; i++) {
+    // Column n of the page shown is step i across pages; picks are columns.
+    for (let n = 0; n < 16; n++) {
+      const i = offset + n;
       const card = document.createElement("div");
       card.className = "neuro-stage";
-      card.dataset.pick = i;
+      card.dataset.pick = n;
       const pick = document.createElement("button");
       pick.type = "button";
       pick.className = "neuro-stage-pick";
-      pick.dataset.pick = i;
+      pick.dataset.pick = n;
       pick.setAttribute("aria-label", `Select stage ${i + 1}`);
       pick.setAttribute("aria-pressed", "false");
-      pick.onpointerdown = (e) => this.pickStart(i, e);
+      pick.onpointerdown = (e) => this.pickStart(n, e);
       pick.onpointermove = (e) => this.pickTo(this.pickAt(e.clientX));
       pick.onpointerup = pick.onpointercancel = () => this.pickEnd();
       // Pointer picks happen on pointerdown; this is Enter / Space.
       pick.onclick = (e) => {
-        if (e.detail === 0) this.pickKey(i, e);
+        if (e.detail === 0) this.pickKey(n, e);
       };
       const number = document.createElement("button");
       number.className = "neuro-stage-number";
@@ -1293,10 +1366,11 @@ window.SadNeuropolis = class {
       ],
       "neuro-detail-labels",
     );
-    for (let i = 0; i < 16; i++) {
+    for (let n = 0; n < 16; n++) {
+      const i = offset + n;
       const card = document.createElement("div");
       card.className = "neuro-detail-stage";
-      card.dataset.pick = i;
+      card.dataset.pick = n;
       const number = document.createElement("span");
       number.textContent = String(i + 1).padStart(2, "0");
       card.append(number);
@@ -1457,6 +1531,13 @@ window.SadNeuropolis = class {
       ...Array.from({ length: 64 }, (_, i) => [i + 1, this.speed(i + 1)]),
     ]);
     this.configControl(controls, "Length", 1, null, 1, 16);
+    this.configControl(
+      controls,
+      "Stages",
+      54,
+      Array.from({ length: 8 }, (_, i) => [i + 1, `${i + 1} · ${(i + 1) * 16} steps`]),
+    ).parentNode.title =
+      "Stages of 16 steps, played one after another: each for one pass of the order";
     this.configControl(controls, "Swing %", 11, null, 50, 78);
     this.configControl(controls, "Gate %", 7, null, 0, 100);
     this.configControl(controls, "Transpose", 6, null, -60, 60);
@@ -1605,7 +1686,9 @@ window.SadNeuropolis = class {
     if (!view) return;
     const tracks = view.tracks.slice(0, view.count),
       active = this.program().enabled && playing;
-    const selected = tracks.find((t) => t.id === this.selected);
+    const selected = tracks.find((t) => t.id === this.selected),
+      offset = this.offset(this.track()),
+      playingPage = active && selected ? Math.floor(selected.step / 16) : -1;
     for (const row of this.root.querySelectorAll(".neuro-track")) {
       const t = tracks.find((t) => t.id === Number(row.dataset.track));
       row.classList.toggle("is-gated", active && !!t?.gate);
@@ -1613,8 +1696,10 @@ window.SadNeuropolis = class {
     this.root
       .querySelectorAll(".neuro-stage")
       .forEach((card, i) =>
-        card.classList.toggle("is-current", active && selected?.step === i),
+        card.classList.toggle("is-current", active && selected?.step === offset + i),
       );
+    for (const tab of this.root.querySelectorAll(".neuro-stage-page"))
+      tab.classList.toggle("is-playing", Number(tab.dataset.page) === playingPage);
     const out = this.root.querySelector(".neuro-live");
     if (out && selected)
       out.textContent = active

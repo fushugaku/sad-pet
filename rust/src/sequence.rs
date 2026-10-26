@@ -4,7 +4,11 @@ use metropolix_core::sequencer::{TRACK_RANGES, field};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
+/// Stages of one page: what metropolix-core plays at a time.
 pub const STAGES: usize = 16;
+/// A track chains up to eight pages, played one after another.
+pub const PAGES: usize = 8;
+pub const STEPS: usize = STAGES * PAGES;
 pub const VIEW_TRACKS: usize = 64;
 pub const STAGE_FIELDS: u8 = 19;
 
@@ -37,7 +41,7 @@ impl Target {
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Stage {
     pub pitch: u8,
@@ -173,6 +177,30 @@ mod config_words {
         Ok(config)
     }
 }
+mod track_steps {
+    use super::*;
+    /// Trailing pages nobody has edited stay out of presets and state.
+    pub fn serialize<S: serde::Serializer>(
+        steps: &[Stage; STEPS],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        let used = steps
+            .iter()
+            .rposition(|s| *s != Stage::default())
+            .map_or(STAGES, |last| (last / STAGES + 1) * STAGES);
+        steps[..used].serialize(serializer)
+    }
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<[Stage; STEPS], D::Error> {
+        let stages = Vec::<Stage>::deserialize(deserializer)?;
+        let mut steps = [Stage::default(); STEPS];
+        for (target, stage) in steps.iter_mut().zip(stages) {
+            *target = stage;
+        }
+        Ok(steps)
+    }
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Track {
@@ -192,7 +220,11 @@ pub struct Track {
     pub destinations: [Option<String>; 3],
     #[serde(with = "config_words")]
     pub config: [i32; field::COUNT],
-    pub steps: [Stage; STAGES],
+    /// Pages of sixteen steps played in turn, each for one pass of the order.
+    pub pages: u8,
+    /// Every page's steps; pages past `pages` keep what they held.
+    #[serde(with = "track_steps")]
+    pub steps: [Stage; STEPS],
 }
 impl Default for Track {
     fn default() -> Self {
@@ -208,11 +240,25 @@ impl Default for Track {
             env_gate: false,
             destinations: Default::default(),
             config: default_config(),
-            steps: [Stage::default(); STAGES],
+            pages: 1,
+            steps: [Stage::default(); STEPS],
         }
     }
 }
 impl Track {
+    /// Pages added that were never edited start as copies of the last page,
+    /// so a longer track repeats its phrase until it is changed.
+    fn set_pages(&mut self, pages: u8) {
+        let last = usize::from(self.pages.clamp(1, PAGES as u8)) - 1;
+        for page in last + 1..usize::from(pages) {
+            let range = page * STAGES..(page + 1) * STAGES;
+            if self.steps[range].iter().all(|s| *s == Stage::default()) {
+                self.steps
+                    .copy_within(last * STAGES..(last + 1) * STAGES, page * STAGES);
+            }
+        }
+        self.pages = pages;
+    }
     pub fn edit(&mut self, edit: Edit) {
         if let Some(stage) = edit.stage {
             if let Some(s) = self.steps.get_mut(stage as usize) {
@@ -236,6 +282,7 @@ impl Track {
                 }
                 49..=52 => self.pitch_oscillators[(edit.field - 49) as usize] = edit.value >= 0.5,
                 53 => self.env_gate = edit.value >= 0.5,
+                54 => self.set_pages(edit.value.round().clamp(1.0, PAGES as f32) as u8),
                 _ => {}
             }
         }
@@ -365,6 +412,7 @@ impl Program {
             }
             track.amount = track.amount.clamp(-1.0, 1.0);
             track.root_note = track.root_note.min(127);
+            track.pages = track.pages.clamp(1, PAGES as u8);
             if let Target::Oscillator { index } | Target::SynthOscillator { index } =
                 &mut track.target
             {
@@ -411,7 +459,9 @@ pub fn catalog() -> serde_json::Value {
 }
 
 /// Track zero edits transport: field 0 = enabled, field 1 = restart. All other
-/// IDs address an existing track; stage fields follow Neuropolis's stable ABI.
+/// IDs address an existing track; stage fields follow Neuropolis's stable ABI,
+/// with stages counted across pages (page × 16 + stage). Track field 54 sets
+/// the page count.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Edit {
     pub track: u32,
@@ -424,12 +474,12 @@ pub fn parse_edits(value: &serde_json::Value) -> Result<Vec<Edit>, String> {
     let edits: Vec<Edit> = serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
     if edits.iter().any(|e| {
         !e.value.is_finite()
-            || e.stage.is_some_and(|s| s >= 16)
+            || e.stage.is_some_and(|s| usize::from(s) >= STEPS)
             || e.field
                 > if e.stage.is_some() {
                     STAGE_FIELDS - 1
                 } else {
-                    53
+                    54
                 }
             || (e.track == 0 && (e.stage.is_some() || e.field > 1))
     }) {

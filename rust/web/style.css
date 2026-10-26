@@ -3916,6 +3916,35 @@ input[type="range"] {
   font-weight: 500;
   color: var(--muted);
 }
+.neuro-stage-pages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 10px;
+}
+.neuro-stage-page {
+  position: relative;
+  height: 28px;
+  padding: 3px 12px;
+  font:
+    11px ui-monospace,
+    monospace;
+}
+.neuro-stage-page[aria-selected="true"] {
+  border-color: #a4cd77;
+  background: #283623;
+}
+/* The page playing, whichever is shown. */
+.neuro-stage-page.is-playing::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 3px;
+  height: 2px;
+  border-radius: 1px;
+  background: #bde783;
+}
 .neuro-pitch-routing {
   display: flex;
   align-items: center;

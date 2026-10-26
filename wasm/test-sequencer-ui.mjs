@@ -27,6 +27,8 @@ class Element {
       add: (name) => classes.add(name),
       remove: (name) => classes.delete(name),
       contains: (name) => classes.has(name),
+      toggle: (name, on = !classes.has(name)) =>
+        on ? classes.add(name) : classes.delete(name),
     };
   }
   append(...nodes) {
@@ -641,3 +643,75 @@ assert.ok(!keyEvent("v", "KeyV", { metaKey: true }), "Paste with nothing selecte
 console.log(
   "Sequencer steps: drag / Shift / Cmd selection, gap-keeping copy, start-point and repeating paste into every region, root-aware oscillator paste and layout-independent shortcuts passed.",
 );
+
+// Stages: pages of sixteen steps. New pages copy the last one, tabs show
+// one page at a time, and step edits, picks and pastes land on that page.
+{
+  const fresh = { ...step, destination1: 0, destination2: 0, destination3: 0 };
+  ui.catalog = { ...ui.catalog, track: { ...structuredClone(track), steps: Array.from({ length: 16 }, () => ({ ...fresh })) } };
+  preset = {
+    ...preset,
+    sequencer: { enabled: true, tracks: [{ ...structuredClone(track), steps: lane(1).steps.map((s) => ({ ...fresh, ...s })) }] },
+  };
+  const paged = () => preset.sequencer.tracks[0];
+  Object.assign(ui, { selected: 1, visiblePage: 0, selection: new Set(), clipboard: null });
+  edits.length = 0;
+  ui.buildEditor();
+  assert.equal(control("Track stages").children.length, 8);
+  control("Track stages").value = "3";
+  control("Track stages").oninput();
+  assert.deepEqual({ ...edits.at(-1) }, { track: 1, stage: null, field: 54, value: 3 });
+  assert.equal(paged().pages, 3);
+  assert.equal(paged().steps.length, 48);
+  const json = (steps) => JSON.stringify(steps);
+  assert.equal(json(paged().steps.slice(32, 48)), json(paged().steps.slice(0, 16)), "a new page copies the last");
+  assert.notEqual(paged().steps[32], paged().steps[0], "pages share step objects");
+
+  ui.buildEditor();
+  const tabs = editor.all().filter((e) => e.classes.has("neuro-stage-page"));
+  assert.deepEqual(tabs.map((t) => t.textContent), ["1–16", "17–32", "33–48"]);
+  assert.equal(control("Stage 2, steps 17–32").getAttribute("aria-selected"), "false");
+  control("Stage 2, steps 17–32").onclick();
+  assert.equal(ui.visiblePage, 1);
+  ui.buildEditor();
+  assert.equal(control("Stage 2, steps 17–32").getAttribute("aria-selected"), "true");
+  const first = paged().steps[0].pitch;
+  control("Stage 17 pitch").value = "71";
+  control("Stage 17 pitch").oninput();
+  assert.deepEqual({ ...edits.at(-1) }, { track: 1, stage: 16, field: 0, value: 71 });
+  assert.equal(paged().steps[16].pitch, 71);
+  assert.equal(paged().steps[0].pitch, first, "the first page changed");
+  assert.throws(() => control("Stage 1 pitch"), /Stage 1 pitch/);
+
+  // Picks are columns of the page shown: a phrase copied on the second
+  // page pastes into the same columns of the third.
+  ui.syncSelection = () => {};
+  ui.select(new Set([0, 1]));
+  ui.copy();
+  assert.deepEqual([...ui.clipboard.steps.map((s) => s.pitch)], [71, paged().steps[17].pitch]);
+  ui.visiblePage = 2;
+  ui.paste();
+  assert.equal(paged().steps[32].pitch, 71);
+  assert.ok(edits.some((e) => e.stage === 32 && e.field === 0 && e.value === 71));
+
+  // Fewer pages show the last one left; the playing page is marked.
+  ui.edit(1, null, 54, 2);
+  assert.equal(ui.offset(paged()), 16);
+  ui.buildEditor();
+  const root = ui.root;
+  ui.root = {
+    querySelector: () => null,
+    querySelectorAll: (selector) => editor.all().filter((e) => e.classes.has(selector.slice(1))),
+  };
+  ui.update({ count: 1, tracks: [{ id: 1, step: 20 }] }, true);
+  const cards = editor.all().filter((e) => e.classes.has("neuro-stage"));
+  assert.ok(cards[4].classes.has("is-current"), "step 21 is the fifth of the second page");
+  assert.deepEqual(
+    editor.all().filter((e) => e.classes.has("neuro-stage-page")).map((t) => t.classes.has("is-playing")),
+    [false, true],
+  );
+  ui.update({ count: 1, tracks: [{ id: 1, step: 3 }] }, true);
+  assert.ok(!cards.some((c) => c.classes.has("is-current")), "a step of another page lit up");
+  ui.root = root;
+}
+console.log("Sequencer stages: page count with copied pages, tabs, edits, picks and pastes on the page shown, playing page passed.");
