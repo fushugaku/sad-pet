@@ -1534,10 +1534,9 @@ window.SadNeuropolis = class {
   // The Scale, the notes picked from it and the octaves the pitch sliders
   // step through.
   buildNotes(editor, track) {
+    // Oscillator lanes name their offsets too: offset 0 is C.
     const relative = this.relative(track),
-      names = relative
-        ? Array.from({ length: 12 }, (_, n) => String(n))
-        : ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"],
+      names = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"],
       row = document.createElement("div");
     row.className = "neuro-notes";
     const scale = this.configControl(
@@ -1558,7 +1557,7 @@ window.SadNeuropolis = class {
     const notes = document.createElement("div");
     notes.className = "neuro-control neuro-note-control";
     const title = document.createElement("span");
-    title.textContent = relative ? "Notes · semitones" : "Notes";
+    title.textContent = "Notes";
     const keys = document.createElement("div");
     keys.className = "neuro-note-keys";
     keys.setAttribute("role", "group");
@@ -1568,9 +1567,10 @@ window.SadNeuropolis = class {
       key.type = "button";
       key.className = "neuro-note";
       key.dataset.note = n;
-      key.classList.toggle("is-sharp", !relative && name.length > 1);
+      key.classList.toggle("is-sharp", name.length > 1);
       key.textContent = name;
-      key.setAttribute("aria-label", relative ? `Offset ${n} semitones` : `Note ${name}`);
+      if (relative) key.title = `+${n} st`;
+      key.setAttribute("aria-label", `Note ${name}`);
       key.setAttribute("aria-pressed", "false");
       key.onclick = () => this.toggleNote(track.id, n);
       keys.append(key);

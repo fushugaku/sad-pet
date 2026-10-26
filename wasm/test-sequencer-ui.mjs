@@ -860,7 +860,7 @@ console.log("Sequencer stages: page count with copied pages, tabs, edits, picks 
   assert.equal(lane().notes, 1);
   assert.equal(fader(1).max, 0);
 
-  // Oscillator lanes: semitone keys and ±2 octaves around the offset 0.
+  // Oscillator lanes: note keys from offset 0 and ±2 octaves around it.
   lane().target = { kind: "oscillator", index: 0 };
   ui.edit(1, null, 4, 0);
   ui.signature = "";
@@ -873,7 +873,13 @@ console.log("Sequencer stages: page count with copied pages, tabs, edits, picks 
   control("Track high octave").value = "0";
   control("Track high octave").onchange();
   assert.deepEqual([lane().config[40], lane().config[41]], [48, 71]);
-  assert.deepEqual(pressed(), ["0", "2", "4", "5", "7", "9", "11"]);
+  // Offsets are named too, offset 0 as C; black keys are marked.
+  assert.deepEqual(pressed(), ["C", "D", "E", "F", "G", "A", "B"]);
+  assert.equal(control("Note G").title, "+7 st");
+  assert.deepEqual(
+    editor.all().filter((e) => e.classes.has("is-sharp")).map((e) => e.textContent),
+    ["C♯", "D♯", "F♯", "G♯", "A♯"],
+  );
   const offset = control("Stage 1 pitch offset");
   assert.equal(offset.max, 13);
   offset.value = "0";

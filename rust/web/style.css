@@ -3944,11 +3944,14 @@ input[type="range"] {
   letter-spacing: 0;
   color: var(--muted);
 }
+/* Black keys: darker, with names in a cooler tint. */
 .neuro-note.is-sharp {
   background: #111411;
+  color: #6c8794;
 }
 .neuro-note.is-sharp[aria-pressed="true"] {
   background: #2a3b23;
+  color: #a9dcef;
 }
 @media (max-width: 900px) {
   .neuro-notes {
