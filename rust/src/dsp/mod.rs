@@ -2732,8 +2732,6 @@ impl Engine {
             let slot = pending.trailing_zeros() as usize;
             pending &= pending - 1;
             let grain = &mut self.grains[slot];
-            let phase = 2.0 * grain.age as f32 / (grain.duration - 1) as f32;
-            let amplitude = tables::grain_window(phase, grain.shape);
             let level = if antialiasing { grain.read_level } else { 0 };
             let mut frame = if whole_file {
                 sample.read_level(grain.position, level.min(top_level))
@@ -2760,9 +2758,16 @@ impl Engine {
                 let gain = self.fades.gain(grain.position, sample.sample_rate, &range);
                 frame = frame.map(|v| v * gain);
             }
-            if groups.advanced {
-                frame = self.group_grains.process(slot, grain.age, frame, groups);
-            }
+            // A group's grains take its amp envelope in place of the window.
+            let amplitude = if groups.advanced
+                && let Some(shaped) = self.group_grains.process(slot, grain.age, frame, groups)
+            {
+                frame = shaped;
+                1.0
+            } else {
+                let phase = 2.0 * grain.age as f32 / (grain.duration - 1) as f32;
+                tables::grain_window(phase, grain.shape)
+            };
             for c in 0..2 {
                 voice_frames[grain.voice][c] += frame[c] * amplitude * grain.pan[c];
             }

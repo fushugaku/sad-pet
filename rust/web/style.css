@@ -703,6 +703,137 @@ h2 {
   cursor: default;
   pointer-events: none;
 }
+/* Advanced grain mode: group tabs beside a curve of the selected group over
+   one grain, then that group's controls in four cards. */
+.grain-groups {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--line);
+}
+.grain-groups[hidden],
+.grain-group-page[hidden] {
+  display: none;
+}
+.grain-group-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+.grain-group-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.grain-group-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 31px;
+  font-size: 11px;
+}
+.grain-group-tabs i {
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--group-color);
+  border-radius: 50%;
+  background: var(--group-color);
+}
+.grain-group-tabs small {
+  color: var(--muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.grain-group-tabs [aria-selected="true"] {
+  border-color: var(--group-color);
+  background: color-mix(in srgb, var(--group-color) 14%, #232923);
+}
+.grain-group-tabs .is-off {
+  color: var(--muted);
+}
+.grain-group-tabs .is-off i {
+  background: transparent;
+}
+.grain-group-curve {
+  flex: 1;
+  min-width: 120px;
+  height: 46px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+}
+.grain-group-page {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.grain-group-card {
+  min-width: 0;
+  padding: 11px 12px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.grain-group-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 27px;
+  margin-bottom: 8px;
+}
+.grain-group-card h3 {
+  margin: 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.grain-group-card select {
+  min-width: 108px;
+  height: 27px;
+  font-size: 11px;
+}
+.grain-group-knobs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.grain-group-page .dial .arc {
+  stroke: var(--group-color);
+}
+/* A main control a group replaces while advanced mode is on. */
+.knob.is-replaced {
+  opacity: 0.4;
+}
+.knob.is-replaced .dial {
+  cursor: not-allowed;
+}
+@media (max-width: 760px) {
+  .grain-group-page {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .grain-group-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .grain-group-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .grain-group-curve {
+    flex: none;
+  }
+}
+@media (max-width: 540px) {
+  .grain-group-card {
+    padding: 9px 6px 10px;
+  }
+  .grain-group-knobs {
+    gap: 2px;
+  }
+}
 @media (max-width: 1100px) {
   .filter-card .filter-controls {
     grid-template-columns: repeat(3, minmax(0, 1fr));

@@ -519,6 +519,261 @@ const grainSchema = [
   ],
   ["stereo_spread", "SPREAD", percent],
 ];
+// Advanced grain mode (rust/src/grain_groups.rs): grains are dealt to four
+// groups, each with its own pitch, level, filter and two envelopes that run
+// over every grain's own life. The amp envelope is the grains' window, its
+// segments curved by the group's SHAPE.
+const GRAIN_GROUP_NAMES = ["A", "B", "C", "D"];
+const GRAIN_GROUP_COLORS = [
+  [203, 255, 148],
+  [140, 220, 255],
+  [255, 204, 120],
+  [255, 150, 200],
+];
+const GRAIN_FILTER_TYPES = [
+  ["low_pass", "Low pass"],
+  ["band_pass", "Band pass"],
+  ["high_pass", "High pass"],
+];
+const grainGroupDefault = () => ({
+  share: 1,
+  level: 1,
+  pitch: 0,
+  shape: 0.9,
+  filter_type: "low_pass",
+  cutoff: 1,
+  resonance: 0.1,
+  env_depth: 0,
+  // The engine's window: up over the first half of a grain, down over the second.
+  amp: { attack: 0.5, decay: 0, sustain: 1, release: 0.5 },
+  filter_env: { attack: 0, decay: 0.5, sustain: 0, release: 0 },
+});
+// Reading leaves the preset alone: the host omits untouched groups.
+const grainGroupSettings = () =>
+  preset?.grain_groups ?? { advanced: false, groups: GRAIN_GROUP_NAMES.map(grainGroupDefault) };
+function ensureGrainGroups() {
+  preset.grain_groups ??= structuredClone(grainGroupSettings());
+  return preset.grain_groups;
+}
+// Host field → where it lives in a group, e.g. amp_attack → amp.attack.
+const grainGroupPath = (field) =>
+  /^(amp|filter)_(attack|decay|sustain|release)$/.test(field)
+    ? [field.startsWith("amp") ? "amp" : "filter_env", field.replace(/^(amp|filter)_/, "")]
+    : [field];
+function grainGroupField(group, field) {
+  const [a, b] = grainGroupPath(field);
+  return b ? group[a][b] : group[a];
+}
+let grainGroupPage = 0;
+function editGrainGroup(index, field, value) {
+  const group = ensureGrainGroups().groups[index],
+    [a, b] = grainGroupPath(field);
+  if (b) group[a] = { ...group[a], [b]: value };
+  else group[a] = value;
+  const key = `grain_group${index + 1}_${field}`;
+  controls.get(key)?.();
+  scheduleParameter(
+    key,
+    field === "filter_type" ? GRAIN_FILTER_TYPES.findIndex(([id]) => id === value) : value,
+  );
+  syncGrainGroupTabs();
+  drawGrainGroupCurve();
+}
+/** One grain's length in milliseconds at the engine's SIZE. */
+const grainMs = (share) =>
+  Math.round(share * grainSeconds(preset?.params.grain_size ?? 0.69) * 1000);
+function buildGrainGroups() {
+  const tabs = $("grain-group-tabs"),
+    pages = $("grain-group-pages");
+  const cutoff = (v) => `${Math.round(20 * 1000 ** v).toLocaleString()} Hz`,
+    time = (v) => {
+      const ms = grainMs(v);
+      return `${Math.round(v * 100)}% ${ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`}`;
+    },
+    pitch = (v) => `${v > 0 ? "+" : ""}${Number.isInteger(v) ? v : v.toFixed(1)} st`;
+  const cards = [
+    ["Grain", [
+      ["share", "SHARE", (v) => (v > 0 ? percent(v) : "Off")],
+      ["level", "LEVEL", percent],
+      ["pitch", "PITCH", pitch, -24, 24],
+      ["shape", "SHAPE", percent],
+    ]],
+    ["Filter", [
+      ["cutoff", "CUTOFF", cutoff],
+      ["resonance", "RESO", percent],
+      ["env_depth", "ENV DEPTH", signedPercent, -1, 1],
+    ]],
+    ["Amp envelope", [
+      ["amp_attack", "ATTACK", time],
+      ["amp_decay", "DECAY", time],
+      ["amp_sustain", "SUSTAIN", percent],
+      ["amp_release", "RELEASE", time],
+    ]],
+    ["Filter envelope", [
+      ["filter_attack", "ATTACK", time],
+      ["filter_decay", "DECAY", time],
+      ["filter_sustain", "SUSTAIN", percent],
+      ["filter_release", "RELEASE", time],
+    ]],
+  ];
+  GRAIN_GROUP_NAMES.forEach((name, index) => {
+    const tab = document.createElement("button");
+    tab.id = `grain-group-tab-${index + 1}`;
+    tab.setAttribute("role", "tab");
+    tab.setAttribute("aria-controls", `grain-group-page-${index + 1}`);
+    tab.style.setProperty("--group-color", `rgb(${GRAIN_GROUP_COLORS[index]})`);
+    tab.innerHTML = `<i aria-hidden="true"></i>Group ${name}<small></small>`;
+    tab.onclick = () => {
+      grainGroupPage = index;
+      syncGrainGroups();
+    };
+    tab.onkeydown = (e) => {
+      const step = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+      if (!step) return;
+      e.preventDefault();
+      grainGroupPage = (index + step + GRAIN_GROUP_NAMES.length) % GRAIN_GROUP_NAMES.length;
+      syncGrainGroups();
+      tabs.children[grainGroupPage].focus();
+    };
+    tabs.append(tab);
+    const page = document.createElement("div");
+    page.id = `grain-group-page-${index + 1}`;
+    page.className = "grain-group-page";
+    page.setAttribute("role", "tabpanel");
+    page.setAttribute("aria-labelledby", tab.id);
+    page.style.setProperty("--group-color", `rgb(${GRAIN_GROUP_COLORS[index]})`);
+    for (const [title, knobs] of cards) {
+      const card = document.createElement("div");
+      card.className = "grain-group-card";
+      card.innerHTML = `<div class="grain-group-card-title"><h3>${title}</h3></div><div class="grain-group-knobs"></div>`;
+      if (title === "Filter") {
+        const select = document.createElement("select");
+        select.className = "grain-filter-type";
+        select.setAttribute("aria-label", `Group ${name} filter type`);
+        for (const [id, label] of GRAIN_FILTER_TYPES) select.append(option(id, label));
+        select.onchange = () => editGrainGroup(index, "filter_type", select.value);
+        card.firstElementChild.append(select);
+      }
+      for (const [field, label, format, min = 0, max = 1] of knobs) {
+        const reset = grainGroupField(grainGroupDefault(), field);
+        createKnob(
+          [`grain_group${index + 1}_${field}`, label, format, min, max,
+            `Group ${name} ${title === "Grain" ? "" : `${title.toLowerCase()} `}${label.toLowerCase()}`],
+          card.lastElementChild,
+          {
+            get: () => grainGroupField(grainGroupSettings().groups[index], field),
+            set: (v) => editGrainGroup(index, field, v),
+            reset: () => reset,
+            // Whole semitones: groups stack intervals over the engine's PITCH.
+            ...(field === "pitch"
+              ? { quantize: (v) => Math.round(v), step: 1, ariaScale: 1 }
+              : {}),
+          },
+        );
+      }
+      page.append(card);
+    }
+    pages.append(page);
+  });
+  $("grain-advanced").onclick = () => {
+    const on = !grainGroupSettings().advanced;
+    if (on && !preset.grain_groups) {
+      // Groups start from the engine's own SHAPE, so switching on keeps the sound.
+      const settings = ensureGrainGroups();
+      for (const group of settings.groups) group.shape = preset.params.grain_shape;
+      settings.advanced = true;
+      schedulePreset();
+    } else {
+      ensureGrainGroups().advanced = on;
+      scheduleParameter("grain_advanced", Number(on));
+    }
+    syncGrainGroups();
+  };
+}
+function syncGrainGroupTabs() {
+  const { groups } = grainGroupSettings();
+  [...$("grain-group-tabs").children].forEach((tab, index) => {
+    const share = groups[index].share;
+    setAttr(tab, "aria-selected", String(index === grainGroupPage));
+    tab.tabIndex = index === grainGroupPage ? 0 : -1;
+    tab.classList.toggle("is-off", share <= 0);
+    setText(tab.lastElementChild, share > 0 ? percent(share) : "Off");
+  });
+}
+function syncGrainGroups() {
+  const settings = grainGroupSettings(),
+    advanced = !!settings.advanced;
+  setAttr($("grain-advanced"), "aria-pressed", String(advanced));
+  $("grain-groups").hidden = !advanced;
+  // Each group sets its own SHAPE while advanced mode is on.
+  const shape = document.querySelector('#grain-controls [data-control-key="grain_shape"]');
+  if (shape) {
+    shape.setAttribute("aria-disabled", String(advanced));
+    shape.tabIndex = advanced ? -1 : 0;
+    const knob = shape.closest(".knob");
+    knob.classList.toggle("is-replaced", advanced);
+    knob.title = advanced ? "Each group sets its own SHAPE in Advanced mode" : "";
+  }
+  [...$("grain-group-pages").children].forEach((page, index) => {
+    page.hidden = index !== grainGroupPage;
+    page.querySelector(".grain-filter-type").value = settings.groups[index].filter_type;
+  });
+  syncGrainGroupTabs();
+  drawGrainGroupCurve();
+}
+/** The selected group over one grain: its amp envelope as an area, the
+ * cutoff its filter envelope moves as a line. */
+function drawGrainGroupCurve() {
+  const canvas = $("grain-group-curve");
+  if (!preset || canvas.closest("[hidden]")) return;
+  const [c, w, h] = resizeCanvas(canvas),
+    group = grainGroupSettings().groups[grainGroupPage],
+    color = GRAIN_GROUP_COLORS[grainGroupPage];
+  // As dsp/grain_groups.rs: `rise` bends the attack, `fall` decay and release.
+  const segments = (env, rise, fall) => {
+    const scale = 1 / Math.max(1, env.attack + env.decay + env.release),
+      attack = env.attack * scale,
+      decay = env.decay * scale,
+      release = env.release * scale;
+    return (t) => {
+      if (t < attack) return rise(t / attack);
+      if (t < attack + decay)
+        return env.sustain + (1 - env.sustain) * fall(1 - (t - attack) / decay);
+      if (release <= 0 || t < 1 - release) return env.sustain;
+      return env.sustain * fall(Math.min(1, Math.max(0, (1 - t) / release)));
+    };
+  };
+  // The window's curve: a ramp bent towards a half cosine by SHAPE.
+  const curve = (x) => x + group.shape * (0.5 - 0.5 * Math.cos(Math.PI * x) - x);
+  const amp = segments(group.amp, curve, curve),
+    sweep = segments(group.filter_env, (x) => x, (x) => x * x);
+  const top = 4, bottom = h - 4, points = 96;
+  c.clearRect(0, 0, w, h);
+  c.fillStyle = `rgba(${color},0.28)`;
+  c.strokeStyle = `rgb(${color})`;
+  c.lineWidth = 1.5;
+  c.beginPath();
+  c.moveTo(0, bottom);
+  for (let i = 0; i <= points; i++) {
+    const t = i / points;
+    c.lineTo(t * w, bottom - amp(t) * group.level * (bottom - top));
+  }
+  c.lineTo(w, bottom);
+  c.fill();
+  c.stroke();
+  c.strokeStyle = "#8cdcd1";
+  c.setLineDash([3, 3]);
+  c.beginPath();
+  for (let i = 0; i <= points; i++) {
+    const t = i / points,
+      cutoff = Math.min(1, Math.max(0, group.cutoff + group.env_depth * sweep(t))),
+      y = bottom - cutoff * (bottom - top);
+    if (i === 0) c.moveTo(0, y);
+    else c.lineTo(t * w, y);
+  }
+  c.stroke();
+  c.setLineDash([]);
+}
 function createKnob(
   [key, label, format, min = 0, max = 1, aria = label],
   bank,
@@ -720,6 +975,10 @@ function createKnob(
 }
 function syncControl(key) {
   controls.get(key)?.();
+  // Group envelope times read in milliseconds of the current grain SIZE.
+  if (key === "grain_size")
+    for (const [k, update] of controls)
+      if (/^grain_group\d_(amp|filter)_(attack|decay|release)$/.test(k)) update();
   if (key.startsWith("filter") || key.startsWith("vcf")) syncFilters();
   if (key === "mix" || key === "master_volume") syncSliders();
   if (key === "bpm") syncColors();
@@ -1206,6 +1465,7 @@ function syncAll() {
   syncResynth();
   syncTaps();
   for (const update of controls.values()) update();
+  syncGrainGroups();
   syncSliders();
   $("antialias").checked = preset.params.antialiasing;
   $("bpm").value = preset.params.bpm;
@@ -3021,6 +3281,10 @@ function destinationGroups() {
   const groups = [
     { choices: [DESTINATIONS[0]] },
     { label: "Main", choices: DESTINATIONS.slice(1).filter(([id]) => !id.startsWith("filter")) },
+    { label: "Grain groups", choices: [
+      ...take("Grain groups"),
+      ...pull(/^Grain group [A-D]$/).map(([label, choices]) => section(label, choices)),
+    ] },
     { label: "Filters", choices: filters },
     { label: "LFO", choices: pull(/^LFO \d+$/).map(([label, choices]) => section(label, choices)) },
     { label: "Envelopes", choices: pull(/^ENV \d+$/).map(([label, choices]) => section(label, choices)) },
@@ -3277,6 +3541,20 @@ function modulationGroups() {
     const osc = /^resynth_osc(\d+)_/.exec(spec.id);
     const drum = /^drum(\d+)_/.exec(spec.id);
     const synthOsc = /^synth_osc(\d+)_/.exec(spec.id);
+    const grainGroup = /^grain_group(\d)_/.exec(spec.id);
+    if (grainGroup || spec.id === "grain_advanced") {
+      const label = grainGroup
+        ? `Grain group ${GRAIN_GROUP_NAMES[grainGroup[1] - 1]}`
+        : "Grain groups";
+      if (!extra.has(label)) extra.set(label, []);
+      extra.get(label).push([
+        { control: { index: spec.index } },
+        grainGroup
+          ? spec.name.replace(/^Grain group ([A-D]) (.)/, (_, g, c) => `Group ${g} · ${c.toUpperCase()}`)
+          : "Advanced mode",
+      ]);
+      continue;
+    }
     const group = drum
       ? `Drum ${drum[1]}`
       : osc
@@ -4646,13 +4924,15 @@ function draw() {
     sampleSelection?.draw(c, w, h);
     for (const grain of state.grains) {
       const x = grain.position * w,
-        alpha = Math.sin(Math.PI * grain.age) * 0.6 + 0.15;
-      c.strokeStyle = `rgba(203,255,148,${alpha})`;
+        alpha = Math.sin(Math.PI * grain.age) * 0.6 + 0.15,
+        // Advanced mode grains take their group's color.
+        color = grain.group ? GRAIN_GROUP_COLORS[grain.group - 1] : null;
+      c.strokeStyle = `rgba(${color ?? "203,255,148"},${alpha})`;
       c.beginPath();
       c.moveTo(x, 8);
       c.lineTo(x, h - 8);
       c.stroke();
-      c.fillStyle = `rgba(219,255,182,${alpha})`;
+      c.fillStyle = `rgba(${color ?? "219,255,182"},${alpha})`;
       c.beginPath();
       c.arc(x, h * 0.25 + grain.pan * h * 0.5, 2.5, 0, Math.PI * 2);
       c.fill();
@@ -4895,6 +5175,7 @@ async function init() {
     state = await request("/api/state");
     preset = structuredClone(state.preset);
     for (const s of grainSchema) createKnob(s, "grain-controls");
+    buildGrainGroups();
     buildFilters();
     buildColors();
     buildResynth();

@@ -183,6 +183,24 @@ plug-ins, including modes, tempo sync, Smooth and Mix.
   at Grain engine CHAIN 0% as with Granular off. The knobs
   are host parameters (`tap_grains_chain`, `tap_grains_send`, `tap_grains_bus`…;
   Resynth keeps `resynth_send` and `resynth_bus`).
+- **Advanced grain mode.** **Advanced** in the Grain engine heading of any timbre
+  (Granular, Drums, Synth, Bus) deals the grains to four groups, A–D. **SHARE**
+  sets each group's part of the grains (equal shares take turns, 0% switches a
+  group off). Every group has its own **LEVEL**, a **PITCH** added to the
+  engine's in semitones and a low-, band- or high-pass **FILTER** in every
+  grain. Its **AMP** and **FILTER** envelopes run over each grain's own life,
+  in shares of the grain (the knobs also show milliseconds at the current
+  SIZE). The AMP envelope is the grains' window: by default it rises over the
+  first half and falls over the second, as the engine's window does, and a
+  short attack and decay make plucked grains. **SHAPE** bends its segments
+  from straight lines to the window's half-cosine, in place of the engine's
+  SHAPE. **ENV DEPTH** moves the cutoff by the FILTER envelope either way. The
+  curve beside the tabs draws the selected group over one grain, and the
+  waveform colors grains by group. The first switch-on starts every group from
+  the engine's SHAPE, so the sound stays the same until a group changes.
+  Every control is a host parameter
+  (`grain_advanced`, `grain_group1_share` … `grain_group4_filter_release`) that
+  LFOs, envelopes, the matrix, macros and sequencer lanes can reach.
 - **Vocal timbres** sing a score, in the manner of VOCALOID5 (browser, DAW
   plug-ins and app). Draw notes in the piano roll, double-click one to type its
   lyric (Tab moves on) or use **Lyrics…** for a whole line, in **Japanese**

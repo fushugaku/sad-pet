@@ -1,6 +1,6 @@
 //! Advanced grain mode: grains are dealt to four groups, each with its own
-//! pitch, window shape, level, filter and two envelopes that run over every
-//! grain's own life.
+//! pitch, level, filter and two envelopes that run over every grain's own
+//! life. A group's amp envelope is its grains' window, curved by its shape.
 use serde::{Deserialize, Serialize};
 
 pub const GROUPS: usize = 4;
@@ -32,13 +32,13 @@ pub struct Envelope {
     pub release: f32,
 }
 impl Default for Envelope {
-    /// Flat: the grain keeps its window alone.
+    /// The engine's grain window: up over the first half, down over the second.
     fn default() -> Self {
         Self {
-            attack: 0.0,
+            attack: 0.5,
             decay: 0.0,
             sustain: 1.0,
-            release: 0.0,
+            release: 0.5,
         }
     }
 }
@@ -71,13 +71,15 @@ pub struct Group {
     pub level: f32,
     /// Semitones added to the engine's pitch.
     pub pitch: f32,
-    /// Window shape, in place of the engine's SHAPE.
+    /// How the amp envelope's segments bend, from straight lines to the
+    /// window's half-cosine, in place of the engine's SHAPE.
     pub shape: f32,
     pub filter_type: FilterType,
     pub cutoff: f32,
     pub resonance: f32,
     /// How far the filter envelope moves the cutoff, either way.
     pub env_depth: f32,
+    /// The grains' window.
     pub amp: Envelope,
     pub filter_env: Envelope,
 }
