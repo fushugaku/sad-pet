@@ -12,12 +12,32 @@
     node.onclick = action;
     return node;
   };
+  /** Timbres that route other timbres, listed under the instruments. */
+  const BUS_KINDS = new Set(["bus", "master"]);
+  /**
+   * Whether Bus `from` sending to Bus `to` would close a loop: `to` is
+   * `from` or already feeds it, by its sends or its sections (`feeds`, which
+   * the host notes on every bus), directly or through other buses.
+   */
+  const closesLoop = (timbres, from, to) => {
+    const feeds = new Map();
+    for (const t of timbres)
+      if (t.kind === "bus" && t.bus > 0)
+        feeds.set(t.bus, (t.sends ?? []).reduce((m, level, i) => (level > 0 ? m | (1 << i) : m), t.feeds ?? 0));
+    const seen = new Set([to]);
+    for (const bus of seen) {
+      if (bus === from) return true;
+      for (let next = 1; next <= 8; next++) if (feeds.get(bus) & (1 << (next - 1))) seen.add(next);
+    }
+    return false;
+  };
   class Timbres {
     constructor(root, hooks) {
       this.root = root;
       this.hooks = hooks;
-      root.innerHTML = `<div class="timbre-top"><div class="timbre-tabs" role="tablist" aria-label="Timbres"></div><div class="timbre-add"><select aria-label="New timbre type"><option value="granular">Granular</option><option value="drums">Drum machine</option><option value="synth">Synth engine</option><option value="vocal">Vocal</option><option value="sampler" hidden>Sampler</option><option value="bus">Bus</option></select><button>+ Timbre</button></div></div><div class="timbre-mix"><input aria-label="Timbre name" maxlength="80"><div class="instrument-picker"><button aria-label="Instrument presets" aria-haspopup="dialog" aria-expanded="false">Instruments<span aria-hidden="true">⌄</span></button></div><button aria-pressed="false">Mute</button><button aria-pressed="false">Solo</button><label class="timbre-midi">MIDI<select aria-label="Timbre MIDI channel"><option value="0">All</option>${Array.from({ length: 16 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("")}</select></label><label><span class="timbre-level-name">MASTER</span><input aria-label="Timbre level" type="range" min="0" max="2" step=".01"></label><button aria-label="Remove timbre">×</button></div><div class="timbre-sends" aria-label="Bus sends"></div>`;
-      this.tabs = root.querySelector(".timbre-tabs");
+      root.innerHTML = `<div class="timbre-top"><div class="timbre-lists"><div class="timbre-row"><span class="timbre-list-name">Instruments</span><div class="timbre-tabs" role="tablist" aria-label="Instruments"></div></div><div class="timbre-row"><span class="timbre-list-name">Buses</span><div class="timbre-tabs bus-tabs" role="tablist" aria-label="Buses"></div></div></div><div class="timbre-add"><select aria-label="New timbre type"><option value="granular">Granular</option><option value="drums">Drum machine</option><option value="synth">Synth engine</option><option value="vocal">Vocal</option><option value="sampler" hidden>Sampler</option><option value="bus">Bus</option></select><button>+ Timbre</button></div></div><div class="timbre-mix"><input aria-label="Timbre name" maxlength="80"><div class="instrument-picker"><button aria-label="Instrument presets" aria-haspopup="dialog" aria-expanded="false">Instruments<span aria-hidden="true">⌄</span></button></div><button aria-pressed="false">Mute</button><button aria-pressed="false">Solo</button><label class="timbre-midi">MIDI<select aria-label="Timbre MIDI channel"><option value="0">All</option>${Array.from({ length: 16 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("")}</select></label><label><span class="timbre-level-name">MASTER</span><input aria-label="Timbre level" type="range" min="0" max="2" step=".01"></label><button aria-label="Remove timbre">×</button></div><div class="timbre-sends" aria-label="Bus sends"></div>`;
+      // Instruments on one row, Buses and Master under them.
+      [this.tabs, this.busTabs] = root.querySelectorAll(".timbre-tabs");
       this.addType = root.querySelector(".timbre-add select");
       this.samplerOption = this.addType.querySelector('[value="sampler"]');
       root.querySelector(".timbre-add button").onclick = () =>
@@ -68,6 +88,7 @@
       ]);
       if (signature !== this.signature) {
         this.tabs.replaceChildren();
+        this.busTabs.replaceChildren();
         for (const part of context.timbres) {
           if (part.kind === "pad_fx" && part.owner !== family) continue;
           const tab = button(part.kind === "pad_fx" ? `↳ ${part.name}` : part.name, `${part.name} timbre`, () =>
@@ -76,27 +97,25 @@
           if (part.kind === "pad_fx") tab.classList.add("timbre-child");
           tab.setAttribute("role", "tab");
           tab.dataset.id = part.id;
+          const row = BUS_KINDS.has(part.kind) ? this.busTabs : this.tabs;
+          // The arrow keys move along the tab's own row.
           tab.onkeydown = (e) => {
-            const index = context.timbres.findIndex((t) => t.id === part.id);
+            const tabs = [...row.children];
+            const index = tabs.indexOf(tab);
             let next = index;
-            if (e.key === "ArrowRight")
-              next = (index + 1) % context.timbres.length;
-            else if (e.key === "ArrowLeft")
-              next =
-                (index + context.timbres.length - 1) % context.timbres.length;
+            if (e.key === "ArrowRight") next = (index + 1) % tabs.length;
+            else if (e.key === "ArrowLeft") next = (index + tabs.length - 1) % tabs.length;
             else if (e.key === "Home") next = 0;
-            else if (e.key === "End") next = context.timbres.length - 1;
+            else if (e.key === "End") next = tabs.length - 1;
             else return;
             e.preventDefault();
-            this.hooks.change("/api/timbres/select", {
-              id: context.timbres[next].id,
-            });
+            this.hooks.change("/api/timbres/select", { id: Number(tabs[next].dataset.id) });
           };
-          this.tabs.append(tab);
+          row.append(tab);
         }
         this.signature = signature;
       }
-      for (const tab of this.tabs.children) {
+      for (const tab of [...this.tabs.children, ...this.busTabs.children]) {
         const selected = Number(tab.dataset.id) === context.active;
         tab.setAttribute("aria-selected", String(selected));
         tab.tabIndex = selected ? 0 : -1;
@@ -122,19 +141,21 @@
       this.remove.disabled = part.id === 0 || part.kind === "master";
       this.syncSends(part, routing);
     }
-    /** One send per Bus; a timbre's output reaches the bus at this level. */
+    /** One send per Bus; a timbre's output reaches the bus at this level. A
+     * Bus sends to the other buses, but not to one that already feeds it. */
     syncSends(part, routing) {
-      const buses = routing
+      const buses = routing && part.kind !== "bus"
         ? []
         : this.context.timbres
-            .filter((t) => t.kind === "bus" && t.bus > 0)
+            .filter((t) => t.kind === "bus" && t.bus > 0 && t.id !== part.id)
             .sort((a, b) => a.bus - b.bus);
+      const loops = buses.map((b) => part.kind === "bus" && closesLoop(this.context.timbres, part.bus, b.bus));
       this.sends.hidden = !buses.length;
-      const signature = JSON.stringify([part.id, buses.map((b) => [b.bus, b.name])]);
+      const signature = JSON.stringify([part.id, buses.map((b) => [b.bus, b.name]), loops]);
       if (signature !== this.sendSignature) {
         this.sendSignature = signature;
         this.sends.replaceChildren(
-          ...buses.map((bus) => {
+          ...buses.map((bus, i) => {
             const label = el("label", "timbre-send", `→ ${bus.name}`);
             const range = el("input");
             range.type = "range";
@@ -148,6 +169,9 @@
               sends[bus.bus - 1] = Number(range.value);
               this.update({ sends });
             };
+            range.disabled = loops[i];
+            label.classList.toggle("loop", loops[i]);
+            if (loops[i]) label.title = `${bus.name} already feeds ${part.name}: a send back would loop`;
             label.append(range);
             return label;
           }),
@@ -221,30 +245,35 @@
       if (target === null) return;
       this.context = context;
       this.target = target;
-      // Every timbre can reach a bus; Master also sums the buses.
-      const parts = context.timbres.filter((t) =>
-        KINDS[t.kind] || (target === 0 && t.kind === "bus" && t.bus > 0));
-      const signature = JSON.stringify([target, parts.map((t) => [t.id, t.name, t.kind, t.bus])]);
+      // Every timbre and every other bus can reach a bus, and all reach
+      // Master; the buses follow the instruments.
+      const bus = (t) => t.kind === "bus" && t.bus > 0 && t.bus !== target;
+      const parts = [...context.timbres.filter((t) => KINDS[t.kind]), ...context.timbres.filter(bus)];
+      // A bus that this one already feeds cannot send back.
+      const loops = parts.map((t) => target > 0 && t.kind === "bus" && closesLoop(context.timbres, t.bus, target));
+      const signature = JSON.stringify([target, parts.map((t) => [t.id, t.name, t.kind, t.bus]), loops]);
       if (signature !== this.signature) {
         this.signature = signature;
-        this.build(parts);
+        this.build(parts, loops);
       }
       for (const view of this.views) view.sync(this.part(view.id));
     }
-    build(parts) {
+    build(parts, loops) {
       const master = this.target === 0;
       this.note.textContent = master
         ? "Level into Master and where each timbre and bus enters its chain"
-        : "Send level and where each timbre enters this bus";
+        : "Send level and where each timbre and bus enters this bus";
       this.strips.setAttribute("aria-label", master ? "Master mixer" : "Bus mixer");
       this.strips.replaceChildren();
-      this.views = parts.map((part) => this.strip(part));
+      this.views = parts.map((part, i) => this.strip(part, loops[i]));
       if (!parts.length) this.strips.append(el("p", "mixer-empty", "No timbres yet"));
     }
-    strip(part) {
+    strip(part, loop) {
       const { id } = part;
       const box = el("div", "mixer-strip");
       box.dataset.id = id;
+      box.classList.toggle("bus", part.kind === "bus");
+      box.classList.toggle("loop", loop);
       const name = button(part.name, `Open ${part.name}`, () =>
         this.hooks.change("/api/timbres/select", { id }));
       name.className = "mixer-name";
@@ -269,6 +298,8 @@
       range.setAttribute("aria-label", this.target === 0 ? `${part.name} level into Master` : `${part.name} send to ${where}`);
       range.oninput = () => this.setLevel(id, Number(range.value));
       range.ondblclick = () => this.setLevel(id, this.target === 0 ? 1 : 0);
+      range.disabled = loop;
+      if (loop) box.title = `${where} already feeds ${part.name}: a send back would loop`;
       const value = el("output", "mixer-level");
       fader.append(range, value);
       body.append(knobs, fader);
@@ -1393,6 +1424,7 @@
   }
   window.SadTimbres = Timbres;
   window.SadMixer = Mixer;
+  window.SadBuses = { closesLoop };
   Drums.filterGain = filterGain;
   Drums.controlSections = controlSections;
   // A control's display for modulation depths in its own units.

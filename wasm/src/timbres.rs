@@ -121,12 +121,18 @@ impl Registry {
         self.target.unwrap_or(self.selected)
     }
     pub fn context(&self) -> Context {
-        Context {
+        let mut context = Context {
             name: self.parts[0].host.engine.preset.name.clone(),
             active: self.parts[self.selected].meta.id,
             revision: self.revision,
             timbres: self.parts.iter().map(|p| p.meta.clone()).collect(),
-        }
+        };
+        context.note_feeds(&self.bus_feeds());
+        context
+    }
+    /// Which buses each Bus feeds, loops left out.
+    fn bus_feeds(&self) -> sad_pet::timbres::Feeds {
+        sad_pet::timbres::bus_feeds(self.parts.iter().map(|p| (&p.meta, &p.host.engine.preset)))
     }
     pub fn refresh_context(&mut self) {
         let context = self.context();
@@ -359,9 +365,11 @@ impl Registry {
                 }
                 "/api/timbres/update" => {
                     let id = data["id"].as_u64().ok_or("Choose a timbre")? as u32;
+                    // A bus refuses a send that would feed back into itself.
+                    let feeds = self.bus_feeds();
                     let part = self
                         .parts
-                        .iter_mut()
+                        .iter()
                         .find(|p| p.meta.id == id)
                         .ok_or("Unknown timbre")?;
                     let mut value = json!(part.meta);
@@ -375,6 +383,14 @@ impl Registry {
                     let mut meta: Meta =
                         serde_json::from_value(value).map_err(|e| e.to_string())?;
                     meta.sanitize();
+                    if meta.kind == Kind::Bus {
+                        sad_pet::timbres::refuse_loops(&mut meta.mix, &feeds, meta.bus);
+                    }
+                    let part = self
+                        .parts
+                        .iter_mut()
+                        .find(|p| p.meta.id == id)
+                        .ok_or("Unknown timbre")?;
                     if meta.mix.channel != part.meta.mix.channel
                         && part.host.engine.preset.drums.is_none()
                     {
@@ -557,9 +573,10 @@ impl Registry {
         self.sync_vocal();
         Ok(result)
     }
-    /// Timbres sum into Master and send to buses; buses then feed Master,
-    /// whose engine renders the output. With no buses and Master at its
-    /// defaults, the output is the plain sum of the timbres as before.
+    /// Timbres sum into Master and send to buses; buses then feed the buses
+    /// after them and Master, whose engine renders the output. With no buses
+    /// and Master at its defaults, the output is the plain sum of the
+    /// timbres as before.
     pub fn process(&mut self, count: usize) -> *const Stereo {
         let solo = self
             .parts
@@ -567,9 +584,26 @@ impl Registry {
             .any(|p| p.meta.mix.solo && !p.meta.kind.routing());
         let open = sad_pet::timbres::open_buses(self.parts.iter().map(|p| &p.meta));
         let buses = open != 0;
-        // Buses take no sends: a bus's sections only pass on down its chain.
-        for part in &mut self.parts {
-            let open = if part.meta.kind.routing() { 0 } else { open };
+        // A bus renders after every bus that feeds it, so a send never
+        // reaches a bus that already rendered the frame: no loop can form.
+        let feeds = self.bus_feeds();
+        let order = sad_pet::timbres::BusOrder::new(
+            self.parts
+                .iter()
+                .filter(|p| p.meta.kind == Kind::Bus)
+                .map(|p| p.meta.bus),
+            &feeds,
+        );
+        let mut at = [0; MAX_BUSES];
+        for (i, part) in self.parts.iter_mut().enumerate() {
+            let open = match part.meta.kind {
+                Kind::Bus if part.meta.bus > 0 => {
+                    at[part.meta.bus as usize - 1] = i;
+                    u16::from(feeds[part.meta.bus as usize - 1]) << 1
+                }
+                kind if kind.routing() => 0,
+                _ => open,
+            };
             part.host.engine.set_open_buses(open);
         }
         let master = self.parts.iter().position(|p| p.meta.kind == Kind::Master);
@@ -673,25 +707,39 @@ impl Registry {
                 }
             }
             if buses {
-                for part in &mut self.parts {
-                    if part.meta.kind != Kind::Bus || part.meta.bus == 0 {
-                        continue;
-                    }
-                    let level = gain(part, !part.meta.mix.muted);
-                    let bus = part.meta.bus as usize;
+                for &bus in order.buses() {
+                    let bus = bus as usize;
+                    let part = &mut self.parts[at[bus - 1]];
+                    let audible = !part.meta.mix.muted;
+                    let level = gain(part, audible);
                     if split & 1 << bus != 0 {
                         part.host.engine.enter(entered[bus]);
                     }
                     let out = part.host.engine.process_input_frame(sends[bus - 1]);
-                    if part.sends.split() & 1 == 0 {
+                    let Part {
+                        meta,
+                        host,
+                        sends: gains,
+                        ..
+                    } = part;
+                    let mix = &meta.mix;
+                    if gains.split() & 1 == 0 {
                         for c in 0..2 {
                             frame[c] += out[c] * level;
                         }
                     } else {
                         let out = out.map(|v| v * level);
-                        let entries = &part.meta.mix.entries[0];
-                        part.sends
-                            .enter(0, entries, out, &mut frame, &mut entered[0]);
+                        gains.enter(0, &mix.entries[0], out, &mut frame, &mut entered[0]);
+                    }
+                    // Into the buses after it; `order` put them later.
+                    if gains.split() >> 1 == 0 {
+                        gains.send(&mix.sends, audible, out, &mut sends);
+                        gains.send_taps(audible, host.engine.bus_sends(), &mut sends);
+                    } else {
+                        let mut own = [[0.; 2]; MAX_BUSES];
+                        gains.send(&mix.sends, audible, out, &mut own);
+                        gains.send_taps(audible, host.engine.bus_sends(), &mut own);
+                        gains.enter_buses(&mix.entries, &own, &mut sends, &mut entered);
                     }
                 }
             }

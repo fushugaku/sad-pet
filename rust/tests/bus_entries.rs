@@ -150,7 +150,7 @@ fn entries_ramp_from_the_input_and_settle_back_to_the_plain_sum() {
 }
 
 #[test]
-fn entries_serialize_only_when_set_and_buses_keep_only_masters() {
+fn entries_serialize_only_when_set_and_a_bus_never_enters_itself() {
     let mut mix = Mix::default();
     let plain = serde_json::to_value(mix).unwrap();
     assert!(
@@ -168,6 +168,7 @@ fn entries_serialize_only_when_set_and_buses_keep_only_masters() {
         ..Default::default()
     };
     meta.mix.entries[0] = [0.0, 0.0, 0.0, 1.0];
+    meta.mix.entries[1] = [0.0, 1.0, 0.0, 0.0];
     meta.mix.entries[3] = [0.0, 1.0, 0.0, 0.0];
     meta.sanitize();
     assert_eq!(
@@ -175,7 +176,15 @@ fn entries_serialize_only_when_set_and_buses_keep_only_masters() {
         [0.0, 0.0, 0.0, 1.0],
         "a Bus enters Master"
     );
-    assert_eq!(meta.mix.entries[3], INPUT, "a Bus enters no other bus");
+    assert_eq!(
+        meta.mix.entries[3],
+        [0.0, 1.0, 0.0, 0.0],
+        "a Bus enters the other buses"
+    );
+    assert_eq!(
+        meta.mix.entries[1], INPUT,
+        "a Bus never enters its own chain"
+    );
     meta.kind = Kind::Master;
     meta.sanitize();
     assert_eq!(

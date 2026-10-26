@@ -121,10 +121,11 @@ pub struct Mix {
     pub solo: bool,
     /// 0 = any channel, 1–16 = a specific incoming MIDI channel.
     pub channel: u8,
-    /// Send levels to Bus 1–8; Bus and Master timbres do not send.
+    /// Send levels to Bus 1–8; a Bus sends to other buses, Master and Pad
+    /// FX do not send.
     pub sends: [f32; MAX_BUSES],
-    /// Where this timbre enters Master (0) and Bus 1–8; a Bus has only
-    /// Master's, and Master none.
+    /// Where this timbre enters Master (0) and Bus 1–8; a Bus enters no
+    /// chain of its own, and Master none.
     #[serde(skip_serializing_if = "at_inputs")]
     pub entries: [Entries; DESTINATIONS],
 }
@@ -200,11 +201,16 @@ pub struct Meta {
     pub owner: Option<u32>,
     #[serde(skip_serializing_if = "is_zero")]
     pub pad: u32,
+    /// For a Bus: the buses it feeds (bit b − 1 for Bus b) by its sends and
+    /// its sections, as the host last routed them; the page offers no
+    /// route that would close a loop.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub feeds: u8,
     #[serde(flatten)]
     pub mix: Mix,
 }
-fn is_zero(value: &u32) -> bool {
-    *value == 0
+fn is_zero<T: Default + PartialEq>(value: &T) -> bool {
+    *value == T::default()
 }
 impl Default for Meta {
     fn default() -> Self {
@@ -215,6 +221,7 @@ impl Default for Meta {
             bus: 0,
             owner: None,
             pad: 0,
+            feeds: 0,
             mix: Mix::default(),
         }
     }
@@ -222,21 +229,25 @@ impl Default for Meta {
 impl Meta {
     pub fn sanitize(&mut self) {
         self.mix.sanitize();
-        if self.kind.routing() {
-            self.mix.sends = [0.; MAX_BUSES];
-            self.mix.channel = 0;
-            self.mix.solo = false;
-            // A Bus enters Master; Master and Pad FX enter no chain.
-            let master = if self.kind == Kind::Bus {
-                self.mix.entries[0]
-            } else {
-                INPUT
-            };
-            self.mix.entries = [INPUT; DESTINATIONS];
-            self.mix.entries[0] = master;
-        }
         if self.kind != Kind::Bus || self.bus as usize > MAX_BUSES {
             self.bus = 0;
+        }
+        if self.kind.routing() {
+            self.mix.channel = 0;
+            self.mix.solo = false;
+        }
+        if self.kind == Kind::Bus {
+            // A Bus sends to and enters the other buses, never its own.
+            if self.bus > 0 {
+                self.mix.forget_bus(self.bus);
+            }
+        } else {
+            self.feeds = 0;
+            if self.kind.routing() {
+                // Master and Pad FX send nowhere and enter no chain.
+                self.mix.sends = [0.; MAX_BUSES];
+                self.mix.entries = [INPUT; DESTINATIONS];
+            }
         }
         if self.kind != Kind::PadFx {
             self.owner = None;
@@ -389,6 +400,171 @@ impl SendGains {
         }
     }
 }
+/// For each Bus b (index b − 1), the buses it feeds: bit t − 1 for Bus t.
+pub type Feeds = [u8; MAX_BUSES];
+
+/// The buses a timbre's sections are routed to (bit b − 1 for Bus b),
+/// whatever their send levels: modulation can open a send at any time.
+pub fn tapped(preset: &crate::preset::Preset) -> u8 {
+    // Outside advanced mode the grain groups keep their taps closed.
+    let groups = &preset.grain_groups;
+    let groups = groups
+        .groups
+        .iter()
+        .filter(|_| groups.advanced)
+        .map(|g| &g.output);
+    crate::taps::Stage::ALL
+        .iter()
+        .map(|&stage| preset.taps.get(stage))
+        .chain(groups)
+        .filter(|tap| (1..=MAX_BUSES as u8).contains(&tap.bus))
+        .fold(0, |buses, tap| buses | 1 << (tap.bus - 1))
+}
+/// The routes between buses that make no loop: each Bus feeds the buses it
+/// sends to above zero and those its sections are routed to (`tapped`).
+/// A route that would close a loop is left out, the later bus's first; the
+/// page refuses such routes, so only automation or a loaded preset makes one.
+pub fn bus_feeds<'a>(
+    buses: impl IntoIterator<Item = (&'a Meta, &'a crate::preset::Preset)>,
+) -> Feeds {
+    let mut wanted = [0; MAX_BUSES];
+    let mut open = 0;
+    for (meta, preset) in buses {
+        if meta.kind != Kind::Bus || meta.bus == 0 {
+            continue;
+        }
+        let b = meta.bus as usize - 1;
+        open |= 1 << b;
+        wanted[b] = meta
+            .mix
+            .sends
+            .iter()
+            .enumerate()
+            .filter(|(_, level)| **level > 0.)
+            .fold(tapped(preset), |feeds, (t, _)| feeds | 1 << t);
+    }
+    let mut feeds = [0; MAX_BUSES];
+    for from in 0..MAX_BUSES {
+        let mut pending = wanted[from] & open;
+        while pending != 0 {
+            let to = pending.trailing_zeros() as usize;
+            pending &= pending - 1;
+            if !reaches(&feeds, to, from) {
+                feeds[from] |= 1 << to;
+            }
+        }
+    }
+    feeds
+}
+/// Whether Bus index `from` is Bus index `to` or feeds it, directly or
+/// through other buses.
+fn reaches(feeds: &Feeds, from: usize, to: usize) -> bool {
+    let mut seen = 1_u8 << from;
+    let mut frontier = seen;
+    while frontier != 0 && seen & 1 << to == 0 {
+        let mut next = 0;
+        while frontier != 0 {
+            next |= feeds[frontier.trailing_zeros() as usize];
+            frontier &= frontier - 1;
+        }
+        frontier = next & !seen;
+        seen |= next;
+    }
+    seen & 1 << to != 0
+}
+/// Whether a route from Bus `from` to Bus `to` (1–8) would close a loop:
+/// `to` is `from` or already feeds it.
+pub fn closes_loop(feeds: &Feeds, from: u8, to: u8) -> bool {
+    let valid = 1..=MAX_BUSES as u8;
+    !valid.contains(&from)
+        || !valid.contains(&to)
+        || reaches(feeds, to as usize - 1, from as usize - 1)
+}
+/// Drops the sends of Bus `from` that would close a loop through `feeds`;
+/// true when any was dropped.
+pub fn refuse_loops(mix: &mut Mix, feeds: &Feeds, from: u8) -> bool {
+    let mut refused = false;
+    for (t, level) in mix.sends.iter_mut().enumerate() {
+        if *level > 0. && closes_loop(feeds, from, t as u8 + 1) {
+            *level = 0.;
+            refused = true;
+        }
+    }
+    refused
+}
+/// The order buses render in: waves, each holding the buses that only
+/// buses of earlier waves feed, in list order. Without routes between
+/// buses it is one wave in list order, as before buses fed buses.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BusOrder {
+    /// Bus numbers 1–8, wave after wave.
+    buses: [u8; MAX_BUSES],
+    /// Where each wave ends in `buses`.
+    ends: [u8; MAX_BUSES],
+    len: u8,
+    waves: u8,
+}
+impl BusOrder {
+    /// `listed` holds the bus numbers in list order.
+    pub fn new(listed: impl IntoIterator<Item = u8>, feeds: &Feeds) -> Self {
+        let mut order = Self::default();
+        let mut buses = [0; MAX_BUSES];
+        let mut count = 0;
+        let mut open = 0_u8;
+        for bus in listed {
+            let valid = (1..=MAX_BUSES as u8).contains(&bus);
+            if valid && open & 1 << (bus - 1) == 0 {
+                open |= 1 << (bus - 1);
+                buses[count] = bus;
+                count += 1;
+            }
+        }
+        let mut done = 0_u8;
+        while (order.len as usize) < count {
+            let before = done;
+            for &bus in &buses[..count] {
+                let b = bus as usize - 1;
+                if done & 1 << b != 0 {
+                    continue;
+                }
+                // Waits while a bus not yet rendered feeds it; a loop, which
+                // `bus_feeds` never leaves, breaks into list order.
+                let waiting = (0..MAX_BUSES)
+                    .any(|x| x != b && open & !before & 1 << x != 0 && feeds[x] & 1 << b != 0);
+                if !waiting {
+                    order.buses[order.len as usize] = bus;
+                    order.len += 1;
+                    done |= 1 << b;
+                }
+            }
+            if done == before {
+                for &bus in &buses[..count] {
+                    if done & 1 << (bus - 1) == 0 {
+                        order.buses[order.len as usize] = bus;
+                        order.len += 1;
+                        done |= 1 << (bus - 1);
+                    }
+                }
+            }
+            order.ends[order.waves as usize] = order.len;
+            order.waves += 1;
+        }
+        order
+    }
+    /// Every bus, wave after wave.
+    pub fn buses(&self) -> &[u8] {
+        &self.buses[..self.len as usize]
+    }
+    /// The waves in order; the buses of one wave can render together.
+    pub fn waves(&self) -> impl Iterator<Item = &[u8]> {
+        let ends = &self.ends[..self.waves as usize];
+        ends.iter().scan(0, |start, &end| {
+            let wave = &self.buses[*start..end as usize];
+            *start = end as usize;
+            Some(wave)
+        })
+    }
+}
 /// Bit n set for each Bus n that a timbre can send to.
 pub fn open_buses<'a>(timbres: impl IntoIterator<Item = &'a Meta>) -> u16 {
     timbres
@@ -408,4 +584,15 @@ pub struct Context {
     pub active: u32,
     pub revision: u64,
     pub timbres: Vec<Meta>,
+}
+impl Context {
+    /// Notes on every Bus which buses it feeds.
+    pub fn note_feeds(&mut self, feeds: &Feeds) {
+        for meta in &mut self.timbres {
+            meta.feeds = match meta.kind {
+                Kind::Bus if meta.bus > 0 => feeds[meta.bus as usize - 1],
+                _ => 0,
+            };
+        }
+    }
 }
