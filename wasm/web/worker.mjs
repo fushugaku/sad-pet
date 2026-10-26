@@ -178,6 +178,15 @@ async function handle(message) {
       case "scene-prepare":
         result = core.call("sad_scene_prepare", data);
         break;
+      // Instrument presets: the active timbre's state, and a timbre's new
+      // sound prepared here, where Source FX will read its sample.
+      case "part-document":
+        core.call("sad_scene_adopt", data);
+        result = core.json("sad_part_document");
+        break;
+      case "instrument-prepare":
+        result = core.call("sad_instrument_prepare", data);
+        break;
       case "scene-render": {
         // Rendered Vocal phrases arrive from the vocal worker.
         const wasm = core.wasm;

@@ -35,6 +35,22 @@ Plug-in instances share the disk library in the **Effects** subfolder of the
 User preset folder. The web version keeps its bank in IndexedDB; use `.sadfx`
 to transfer an effect preset between browsers, macOS and Windows.
 
+## Instrument presets
+
+**Instruments** next to a timbre's name saves and loads one timbre's sound:
+its engine (Granular, Drums, Synth, Vocal or Sampler), every setting, its
+sample and source selection, and a Sampler's kit. **Save…** asks for a name and
+a category of your own; a name already in that category is replaced. The
+browser lists instruments by category with search. Clicking one replaces the
+active timbre's sound in place, keeping its level, sends, MIDI channel and
+position, while the other timbres play on; **+** loads it as a new timbre. The
+**⋯** menu renames or moves an instrument, exports a portable `.sadinst` file or
+deletes it, and **Rename category…** renames a whole category. Bus and Master
+hold no instrument. Plug-in instances share the disk library in the
+**Instruments** subfolder of the User preset folder (deleted files go to its
+**Trash**); the web version keeps its library in IndexedDB. Sampler instruments
+play in the web version for now.
+
 ## Timbres and drum machine
 
 Use the top **Timbres** bank: choose Granular, Drum machine, Synth engine or Bus,

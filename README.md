@@ -42,6 +42,11 @@ are shared across the three FX racks and all timbres of the same effect type.
 Portable `.sadfx` import/export moves settings between the web and native
 plug-ins, including modes, tempo sync, Smooth and Mix.
 
+**Instruments** next to a timbre's name saves that timbre's whole sound (engine,
+settings, sample or kit) as an instrument preset in a category of your own, and
+loads one into the timbre in place or as a new timbre. Portable `.sadinst`
+files move instruments between the web version and the native app and plug-ins.
+
 - 414 categorized built-in audio sources, WAV import and an IndexedDB file library, including
   Matrix POV video audio and a 42.67-second Harvest Dawn harp/chamber-string cover
   loop: 16 bars at 90 BPM, with the recognizable eight-bar introduction played

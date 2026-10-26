@@ -50,6 +50,18 @@
           );
       });
     }
+    remove(store, key) {
+      return new Promise((resolve, reject) => {
+        const transaction = this.db.transaction(store, "readwrite");
+        transaction.objectStore(store).delete(key);
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () =>
+          reject(
+            transaction.error || new Error("Library write was cancelled."),
+          );
+      });
+    }
     async put(record) {
       const existing = await this.read("files", record.id);
       return this.write("files", {

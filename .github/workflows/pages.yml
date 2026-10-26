@@ -65,6 +65,8 @@ jobs:
           node wasm/test-clock-ui.mjs
           node wasm/test-modulation-ui.mjs
           node wasm/test-effect-presets.mjs
+          node wasm/test-instrument-presets.mjs
+          node wasm/test-instruments.mjs
           node wasm/test-parameters.mjs
           node wasm/test-vocal.mjs
           node wasm/test-vocal-ui.mjs

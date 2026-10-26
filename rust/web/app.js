@@ -16,6 +16,7 @@ let noteChain = Promise.resolve();
 let fileLibrary = null;
 let presetLibrary = null;
 let effectPresetLibrary = null;
+let instrumentPresets = null;
 let presetWrites = Promise.resolve();
 let presetWriteCount = 0;
 let structuralPending = false;
@@ -132,6 +133,8 @@ async function request(path, data) {
       "/api/input",
       "/api/region",
       "/api/fades",
+      "/api/timbres/load",
+      "/api/instruments/load",
     ].includes(path)
   )
     presetLibrary?.markDirty();
@@ -1515,6 +1518,41 @@ function changeTimbre(path, data, scalar = false) {
       }
     });
   return timbreWrites;
+}
+/**
+ * Loads an instrument preset with `work`, after the queued timbre changes,
+ * then shows the scene it leaves. A load that `replaces` the active timbre's
+ * sound drops its unsent edits; its errors reach the caller.
+ */
+function changeInstrument(work, replaces) {
+  const run = timbreWrites
+    .catch(() => {})
+    .then(async () => {
+      timbreBusy = true;
+      try {
+        if (replaces) await preparePresetRecall();
+        else {
+          await flushEdits();
+          await sampleSelection?.flush();
+        }
+        await noteChain;
+        await work();
+        state = await request("/api/state");
+        preset = structuredClone(state.preset);
+        if (neuroEditor) {
+          neuroEditor.signature = "";
+          neuroEditor.selected = preset.sequencer.tracks[0]?.id ?? 0;
+        }
+        drumEditor && (drumEditor.signature = "");
+        syncAll();
+        sampleSelection?.sync(state);
+        fileLibrary?.observe(state);
+      } finally {
+        timbreBusy = false;
+      }
+    });
+  timbreWrites = run.catch(() => {});
+  return run;
 }
 function syncTimbreRouting() {
   const bus = preset?.bus,
@@ -5485,6 +5523,19 @@ async function init() {
         waveshaper_type: WAVESHAPER_TYPES.map(([value]) => value),
       },
     );
+    if (window.SadInstrumentPresets && state.timbres?.timbres)
+      instrumentPresets = new window.SadInstrumentPresets(
+        timbreEditor.instruments,
+        {
+          native: Boolean(state.plugin),
+          request, api, notify, download,
+          context: () => state?.timbres,
+          flush: flushPreset,
+          change: changeInstrument,
+          rename: (id, name) => changeTimbre("/api/timbres/update", { id, name }, true),
+        },
+        fileLibrary.store,
+      );
     colorSignature = "";
     syncColors();
     Promise.resolve(state)
