@@ -5331,11 +5331,25 @@ function sameWaveform(a, b) {
     if (a[i][0] !== b[i][0] || a[i][1] !== b[i][1]) return false;
   return true;
 }
-function paintWaveform(context, w, h) {
+/**
+ * The waveform's colors: a Rack module's own when the panel stands in one,
+ * else the green the page has always drawn it in.
+ */
+function waveColors() {
+  const module = $("wave").closest(".rack-module");
+  const accent = module && getComputedStyle(module).getPropertyValue("--accent").trim();
+  if (!/^#[0-9a-f]{6}$/i.test(accent || ""))
+    return { grid: "#2b392a", axis: "#354832", fill: "#8cba627a", grains: "203,255,148",
+      dots: "219,255,182", playhead: "#d8f8b6" };
+  const rgb = [1, 3, 5].map((i) => parseInt(accent.slice(i, i + 2), 16)).join(",");
+  return { grid: `${accent}1c`, axis: `${accent}30`, fill: `${accent}6b`, grains: rgb, dots: rgb,
+    playhead: accent };
+}
+function paintWaveform(context, w, h, colors) {
   // Layout can report an empty canvas before the first resize.
   if (!w || !h) return;
   const dpr = Math.min(devicePixelRatio || 1, 2);
-  const key = [w, h, dpr, state.sample_frames, state.sample_seconds, state.input?.active,
+  const key = [w, h, dpr, colors.fill, state.sample_frames, state.sample_seconds, state.input?.active,
     sampleSelection?.region.start, sampleSelection?.region.end,
     sampleSelection?.fades.fade_in, sampleSelection?.fades.fade_out].join(":");
   if (!waveBackground || waveBackground.key !== key || !sameWaveform(waveBackground.waveform, state.waveform)) {
@@ -5344,7 +5358,7 @@ function paintWaveform(context, w, h) {
     bitmap.height = Math.round(h * dpr);
     const c = bitmap.getContext("2d");
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    c.strokeStyle = "#2b392a";
+    c.strokeStyle = colors.grid;
     c.lineWidth = 1;
     for (let i = 0; i < 17; i++) {
       const x = (i * w) / 16;
@@ -5353,14 +5367,14 @@ function paintWaveform(context, w, h) {
       c.lineTo(x, h);
       c.stroke();
     }
-    c.strokeStyle = "#354832";
+    c.strokeStyle = colors.axis;
     c.beginPath();
     c.moveTo(0, h / 2);
     c.lineTo(w, h / 2);
     c.stroke();
     const waveform = state.waveform;
     if (waveform.length) {
-      c.fillStyle = "#8cba627a";
+      c.fillStyle = colors.fill;
       c.beginPath();
       for (let i = 0; i < waveform.length; i++) {
         const x = (i * w) / (waveform.length - 1),
@@ -5396,8 +5410,9 @@ function draw() {
   drawnState = state;
   if (visibleCanvas($("wave"))) {
     const [c, w, h] = resizeCanvas($("wave"));
+    const colors = waveColors();
     c.clearRect(0, 0, w, h);
-    paintWaveform(c, w, h);
+    paintWaveform(c, w, h, colors);
     sampleSelection?.draw(c, w, h);
     // A Rack's Grain engine may read another chain than the file shown.
     const foreign = !!preset?.rack && rackFile() && !rackStep("grains")?.readsFile;
@@ -5406,25 +5421,25 @@ function draw() {
         alpha = Math.sin(Math.PI * grain.age) * 0.6 + 0.15,
         // Advanced mode grains take their group's color.
         color = grain.group ? GRAIN_GROUP_COLORS[grain.group - 1] : null;
-      c.strokeStyle = `rgba(${color ?? "203,255,148"},${alpha})`;
+      c.strokeStyle = `rgba(${color ?? colors.grains},${alpha})`;
       c.beginPath();
       c.moveTo(x, 8);
       c.lineTo(x, h - 8);
       c.stroke();
-      c.fillStyle = `rgba(${color ?? "219,255,182"},${alpha})`;
+      c.fillStyle = `rgba(${color ?? colors.dots},${alpha})`;
       c.beginPath();
       c.arc(x, h * 0.25 + grain.pan * h * 0.5, 2.5, 0, Math.PI * 2);
       c.fill();
     }
     const x = state.center * w;
     if (!foreign) {
-      c.strokeStyle = "#d8f8b6";
+      c.strokeStyle = colors.playhead;
       c.lineWidth = 1;
       c.beginPath();
       c.moveTo(x, 0);
       c.lineTo(x, h);
       c.stroke();
-      c.fillStyle = "#d8f8b6";
+      c.fillStyle = colors.playhead;
       c.beginPath();
       c.moveTo(x - 4, 0);
       c.lineTo(x + 4, 0);

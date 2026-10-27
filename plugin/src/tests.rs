@@ -94,6 +94,14 @@ fn call(control: &mut Controller, path: &str, data: Value) -> Value {
         .request(&json!({"path":path,"method":if data.is_null(){"GET"}else{"POST"},"data":data}))
         .unwrap()
 }
+/// A timbre of `kind`'s own engine. A new instrument is a Rack, so the
+/// kind's preset loads into it, as a saved preset of that kind would.
+fn add_classic(control: &mut Controller, kind: &str) -> Value {
+    call(control, "/api/timbres/add", json!({ "kind": kind }));
+    let kind: sad_pet::timbres::Kind = serde_json::from_value(json!(kind)).unwrap();
+    call(control, "/api/preset", json!(kind.preset().unwrap()));
+    call(control, "/api/timbres", Value::Null)
+}
 fn render(audio: &mut Audio, frames: usize, input: Stereo) -> f32 {
     let mut peak = 0.0_f32;
     for _ in 0..frames {
@@ -1040,7 +1048,7 @@ fn queue_backpressure_never_frees_or_blocks_on_the_audio_thread() {
 #[test]
 fn drum_timbres_mix_independently_save_all_parts_and_edit_without_audio_allocations() {
     let mut control = Controller::new(false);
-    let context = call(&mut control, "/api/timbres/add", json!({"kind":"drums"}));
+    let context = add_classic(&mut control, "drums");
     assert_eq!(context["active"], 1);
     call(
         &mut control,
@@ -1105,7 +1113,7 @@ fn new_and_removed_timbres_are_adopted_and_retired_away_from_audio() {
     control.meta.mix.muted = true;
     let mut audio = control.prepare(8000);
     let values = control.values();
-    call(&mut control, "/api/timbres/add", json!({"kind":"drums"}));
+    add_classic(&mut control, "drums");
     no_heap(|| {
         audio.begin(&values, 120., None, false, 256);
         render(&mut audio, 256, [0.; 2]);
@@ -1143,7 +1151,7 @@ fn new_and_removed_timbres_are_adopted_and_retired_away_from_audio() {
 #[test]
 fn factory_recall_replaces_the_scene_and_a_drum_route_toggle_does_not_rebuild_audio() {
     let mut control = Controller::new(false);
-    call(&mut control, "/api/timbres/add", json!({"kind":"drums"}));
+    add_classic(&mut control, "drums");
     let mut audio = control.prepare(8000);
     let values = control.values();
     call(&mut control, "/api/parameters", json!({"drum_granular":1}));
@@ -1187,7 +1195,7 @@ fn factory_recall_replaces_the_scene_and_a_drum_route_toggle_does_not_rebuild_au
 fn drum_audition_rings_out_while_the_daw_transport_is_stopped() {
     let mut control = Controller::new(false);
     control.meta.mix.muted = true;
-    call(&mut control, "/api/timbres/add", json!({"kind":"drums"}));
+    add_classic(&mut control, "drums");
     let mut audio = control.prepare(8000);
     let values = control.values();
     call(
@@ -1229,7 +1237,7 @@ fn drum_audition_rings_out_while_the_daw_transport_is_stopped() {
 fn native_drum_buffer_choices_use_reserved_history_without_audio_heap_work() {
     let mut control = Controller::new(false);
     control.meta.mix.muted = true;
-    call(&mut control, "/api/timbres/add", json!({"kind":"drums"}));
+    add_classic(&mut control, "drums");
     let mut audio = control.prepare(8000);
     call(
         &mut control,
@@ -1262,7 +1270,7 @@ fn native_drum_buffer_choices_use_reserved_history_without_audio_heap_work() {
 #[test]
 fn synth_timbres_play_notes_switch_grains_and_save_without_audio_allocations() {
     let mut control = Controller::new(false);
-    let context = call(&mut control, "/api/timbres/add", json!({"kind":"synth"}));
+    let context = add_classic(&mut control, "synth");
     assert_eq!(context["active"], 1);
     assert_eq!(context["timbres"][1]["kind"], "synth");
     assert_eq!(context["timbres"][1]["name"], "Synth 1");
@@ -1774,7 +1782,7 @@ fn sections_send_to_a_bus_and_leave_the_chain_as_their_chain_share_says() {
 fn projects_with_master_and_buses_survive_repeated_save_and_restore() {
     let mut control = Controller::new_plugin(false);
     call(&mut control, "/api/timbres/add", json!({"kind":"bus"}));
-    call(&mut control, "/api/timbres/add", json!({"kind":"drums"}));
+    add_classic(&mut control, "drums");
     for round in 0..3 {
         let saved = control.save().unwrap();
         let mut restored = Controller::new_plugin(false);
@@ -2199,15 +2207,11 @@ fn vocal_timbres_sing_at_the_daw_position_and_survive_project_recall() {
     control.meta.mix.muted = true;
     let mut audio = control.prepare(8000);
     let values = control.values();
+    // A new Vocal instrument is a Rack of one Vocal module.
     let context = call(&mut control, "/api/timbres/add", json!({"kind":"vocal"}));
-    let id = context["timbres"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|t| t["kind"] == "vocal")
-        .unwrap()["id"]
-        .as_u64()
-        .unwrap();
+    let id = context["active"].as_u64().unwrap();
+    let vocal = &context["timbres"][1];
+    assert_eq!([&vocal["kind"], &vocal["name"]], ["rack", "Vocal 1"]);
     call(&mut control, "/api/timbres/select", json!({ "id": id }));
     let score = json!({"score":{"language":"ja","style":{"auto_breath":false},"notes":[
         {"id":1,"start":480,"length":480,"key":64,"lyric":"ら"},
@@ -2229,13 +2233,6 @@ fn vocal_timbres_sing_at_the_daw_position_and_survive_project_recall() {
         audio.begin(&values, 120., Some(1.0), false, 1024);
         assert!(render(&mut audio, 1024, [0.; 2]) < 1e-3);
     });
-    // A Vocal timbre does not take a file or MIDI.
-    assert!(
-        control
-            .request(&json!({"path":"/api/region","method":"POST","data":{"start":0,"end":1}}))
-            .is_err()
-    );
-
     // Project recall renders the saved score again in a new instance.
     let saved = control.save().unwrap();
     let mut recalled = Controller::new(false);
@@ -2410,7 +2407,7 @@ fn host_midi_controllers_reach_the_editor_for_midi_learn_without_heap_work() {
     let mut control = Controller::new(false);
     let mut audio = control.prepare(48000);
     // The editor shows another timbre; the scene still reports the host input.
-    call(&mut control, "/api/timbres/add", json!({"kind":"synth"}));
+    add_classic(&mut control, "synth");
     let bytes = [
         0xb2, 74, 10, 0xb2, 74, 0xf8, 101, 0x90, 60, 100, 0xb0, 1, 64,
     ];
@@ -2448,7 +2445,7 @@ fn instrument_presets_file_one_timbre_in_categories_and_load_it_in_place() {
     assert_eq!(glass["kind"], "granular");
 
     // A Synth timbre at half level on channel 3.
-    call(&mut control, "/api/timbres/add", json!({"kind":"synth"}));
+    add_classic(&mut control, "synth");
     call(
         &mut control,
         "/api/parameters",
@@ -2741,4 +2738,70 @@ fn instrument_presets_file_one_timbre_in_categories_and_load_it_in_place() {
         );
     }
     without_audio(call(&mut standalone, "/api/instruments", Value::Null));
+}
+
+#[test]
+fn instruments_are_racks_and_the_first_one_can_go_while_its_place_stays() {
+    let mut control = Controller::new(false);
+    let mut audio = control.prepare(8000);
+    let values = control.values();
+    // A new Synth is a Rack of the Synth engine's modules.
+    let context = call(&mut control, "/api/timbres/add", json!({"kind":"synth"}));
+    let synth = context["active"].as_u64().unwrap();
+    assert_eq!(context["timbres"][1]["kind"], "rack");
+    assert_eq!(context["timbres"][1]["name"], "Synth 1");
+    let preset = call(&mut control, "/api/preset", Value::Null);
+    let modules: Vec<&str> = preset["rack"]["modules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["module"].as_str().unwrap())
+        .collect();
+    assert_eq!(modules, ["synth", "filters", "post_fx"]);
+    control.drain();
+    // The first timbre goes: its place stays empty and silent, unseen.
+    let context = call(&mut control, "/api/timbres/remove", json!({"id":0}));
+    assert_eq!(context["timbres"][0]["kind"], "empty");
+    assert_eq!(context["active"], synth);
+    assert!(
+        control
+            .request(&json!({"path":"/api/timbres/select","method":"POST","data":{"id":0}}))
+            .is_err()
+    );
+    control.drain();
+    no_heap(|| {
+        audio.begin(&values, 120.0, None, false, 1024);
+        audio.midi(Message::NoteOn {
+            channel: 0,
+            note: 60,
+            velocity: 100,
+        });
+        render(&mut audio, 1024, [0.25; 2]);
+    });
+    assert!(
+        audio
+            .engine
+            .preset
+            .rack
+            .as_ref()
+            .unwrap()
+            .modules
+            .is_empty()
+    );
+    // A saved project keeps the empty place.
+    let saved = control.save().unwrap();
+    let mut recalled = Controller::new(false);
+    recalled.restore(&saved).unwrap();
+    let context = call(&mut recalled, "/api/timbres", Value::Null);
+    assert_eq!(context["timbres"][0]["kind"], "empty");
+    assert_eq!(context["active"], synth);
+    // The next instrument fills it, first in the list again.
+    let context = call(&mut control, "/api/timbres/add", json!({"kind":"drums"}));
+    assert_eq!(context["active"], 0);
+    assert_eq!(context["timbres"][0]["kind"], "rack");
+    assert_eq!(context["timbres"][0]["name"], "Drums 1");
+    let preset = call(&mut control, "/api/preset", Value::Null);
+    assert_eq!(preset["rack"]["modules"][0]["module"], "drums");
+    control.drain();
+    recalled.drain();
 }

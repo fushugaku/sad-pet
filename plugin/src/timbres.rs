@@ -331,6 +331,73 @@ impl Controller {
             self.parts.push(master);
         }
     }
+    /// The timbre to open when the open one goes: the first instrument, else
+    /// the first bus, else Master.
+    pub(super) fn shown(&self) -> u32 {
+        let metas = || std::iter::once(&self.meta).chain(self.parts.iter().map(|p| &p.meta));
+        metas()
+            .find(|m| !m.kind.routing() && m.kind != Kind::Empty)
+            .or_else(|| metas().find(|m| m.kind == Kind::Bus))
+            .or_else(|| metas().find(|m| m.kind == Kind::Master))
+            .map_or(0, |m| m.id)
+    }
+    /// The first timbre goes: the scene keeps its place, where DAW automation
+    /// and the scene's name stay, empty and silent until the next instrument
+    /// fills it.
+    fn empty_first(&mut self) -> Result<(), String> {
+        if self.meta.kind == Kind::Empty {
+            return Err("Unknown timbre".into());
+        }
+        let mut preset = Kind::Empty.preset().unwrap();
+        preset.name = self.preset.name.clone();
+        self.enqueue(Command::Preset(Box::new(
+            preset.prepared_clone_for(self.rate),
+        )))?;
+        self.preset = preset;
+        self.meta = Meta {
+            id: 0,
+            kind: Kind::Empty,
+            name: Kind::Empty.label().into(),
+            ..Meta::default()
+        };
+        self.enqueue(Command::PartMix(0, self.meta.mix))?;
+        self.update_vocal()?;
+        self.active = self.shown();
+        self.selection.dirty = true;
+        Ok(())
+    }
+    /// The emptied first timbre becomes instrument `name` of `kind`.
+    fn fill_first(
+        &mut self,
+        kind: Kind,
+        name: String,
+        mut preset: Preset,
+        gate: bool,
+    ) -> Result<(), String> {
+        // Its preset keeps holding the scene's name.
+        preset.name = self.preset.name.clone();
+        preset.sanitize();
+        self.enqueue(Command::Preset(Box::new(
+            preset.prepared_clone_for(self.rate),
+        )))?;
+        self.preset = preset;
+        self.meta = Meta {
+            id: 0,
+            kind,
+            name,
+            ..Meta::default()
+        };
+        self.enqueue(Command::PartMix(0, self.meta.mix))?;
+        self.enqueue(Command::Transport(super::Transport {
+            midi_gate: Some(gate),
+            ..Default::default()
+        }))?;
+        self.midi_gate = gate;
+        self.update_vocal()?;
+        self.active = 0;
+        self.selection.dirty = true;
+        Ok(())
+    }
     pub(super) fn context(&self) -> Context {
         let mut context = Context {
             name: self.preset.name.clone(),
@@ -418,14 +485,41 @@ impl Controller {
                     if kind == Kind::Master {
                         return Err("The scene always has one Master".into());
                     }
-                    if matches!(kind, Kind::Sampler | Kind::PadFx) {
+                    if matches!(kind, Kind::Sampler | Kind::PadFx | Kind::Empty) {
                         return Err("Sampler timbres play in the browser version for now".into());
+                    }
+                    // Every instrument is built as a Rack of its engine's modules,
+                    // or with `classic` as that engine's own timbre.
+                    let instrument = kind;
+                    let rack = kind
+                        .rack_instrument()
+                        .filter(|_| !data["classic"].as_bool().unwrap_or(false));
+                    let kind = if rack.is_some() { Kind::Rack } else { kind };
+                    let label = instrument.label();
+                    let count = std::iter::once(&self.meta)
+                        .chain(self.parts.iter().map(|p| &p.meta))
+                        .filter(|m| m.name.starts_with(label))
+                        .count()
+                        + 1;
+                    let name = format!("{label} {count}");
+                    // A synth waits for notes, and so does a Rack, whose drums
+                    // play their pattern anyway; drums run free with the
+                    // transport, and a Granular instrument keeps the host's way.
+                    let gate = if instrument == Kind::Granular {
+                        self.midi_gate
+                    } else {
+                        instrument.waits_for_notes()
+                    };
+                    let preset = rack.or_else(|| kind.preset());
+                    // The emptied first timbre takes the next instrument.
+                    if self.meta.kind == Kind::Empty && kind != Kind::Bus {
+                        self.fill_first(kind, name, preset.unwrap_or_default(), gate)?;
+                        self.offer_workers();
+                        self.scene_revision = self.scene_revision.wrapping_add(1);
+                        return Ok(json!(self.context()));
                     }
                     let id = self.next_timbre_id;
                     let next_id = id.checked_add(1).ok_or("Timbre identity overflow")?;
-                    let count = self.parts.iter().filter(|p| p.meta.kind == kind).count()
-                        + usize::from(kind == Kind::Granular)
-                        + 1;
                     let mut part = if kind == Kind::Bus {
                         let bus = sad_pet::timbres::free_bus(
                             std::iter::once(&self.meta).chain(self.parts.iter().map(|p| &p.meta)),
@@ -437,19 +531,16 @@ impl Controller {
                         part.meta = Meta {
                             id,
                             kind,
-                            name: format!("{} {count}", kind.label()),
+                            name,
                             ..Meta::default()
                         };
                         part.source = Source::File;
                         part.playing = self.playing;
-                        part.midi_gate = self.midi_gate;
+                        part.midi_gate = gate;
                         part.sync = self.sync;
-                        if let Some(preset) = kind.preset() {
+                        if let Some(preset) = preset {
                             part.preset = preset;
                             part.preset.sanitize();
-                            // Drums run free with the transport; a synth waits for
-                            // notes, and so does a Rack, whose drums play anyway.
-                            part.midi_gate = matches!(kind, Kind::Synth | Kind::Rack);
                         }
                         part
                     };
@@ -471,7 +562,8 @@ impl Controller {
                 }
                 "/api/timbres/select" => {
                     let id = data["id"].as_u64().ok_or("Choose a timbre")? as u32;
-                    if id != 0 && !self.parts.iter().any(|p| p.meta.id == id) {
+                    let first = id == 0 && self.meta.kind != Kind::Empty;
+                    if !first && !self.parts.iter().any(|p| p.meta.id == id) {
                         return Err("Unknown timbre".into());
                     }
                     self.active = id;
@@ -517,7 +609,10 @@ impl Controller {
                 "/api/timbres/remove" => {
                     let id = data["id"].as_u64().ok_or("Choose a timbre")? as u32;
                     if id == 0 {
-                        return Err("Keep the first timbre for DAW automation".into());
+                        self.empty_first()?;
+                        self.offer_workers();
+                        self.scene_revision = self.scene_revision.wrapping_add(1);
+                        return Ok(json!(self.context()));
                     }
                     let part = self
                         .parts
@@ -547,7 +642,7 @@ impl Controller {
                     }
                     self.parts.retain(|p| p.meta.id != id);
                     if self.active == id {
-                        self.active = 0;
+                        self.active = self.shown();
                     }
                     self.selection.dirty = true;
                 }

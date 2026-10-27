@@ -64,7 +64,7 @@ core.call("sad_load", utility.call("sad_pack"));
 core.request("/api/timbres/update", { id: 0, muted: true });
 peak(0.2);
 
-const context = core.request("/api/timbres/add", { kind: "sampler" });
+const context = core.request("/api/timbres/add", { kind: "sampler", classic: true });
 const kit = context.timbres.find((t) => t.kind === "sampler");
 assert.ok(kit, "a Sampler timbre");
 assert.equal(context.active, kit.id);

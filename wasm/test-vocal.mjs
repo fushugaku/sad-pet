@@ -59,7 +59,7 @@ const max = (list) => list.reduce((m, v) => Math.max(m, v), 0);
 
 // Silence the first timbre so only the voice is heard.
 core.request("/api/timbres/update", { id: 0, gain: 0 });
-let context = core.request("/api/timbres/add", { kind: "vocal" });
+let context = core.request("/api/timbres/add", { kind: "vocal", classic: true });
 const part = context.timbres.find((t) => t.kind === "vocal");
 assert.ok(part, "A Vocal timbre was added");
 assert.equal(part.name, "Vocal 1");

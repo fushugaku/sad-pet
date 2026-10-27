@@ -41,6 +41,8 @@ impl Part {
 }
 struct Preparing {
     kind: Kind,
+    /// What the page asked for: an instrument kind arrives as a Rack.
+    instrument: Kind,
     stage: u8,
     host: Option<Host>,
     preset: Option<Preset>,
@@ -135,6 +137,10 @@ impl Registry {
         sad_pet::timbres::bus_feeds(self.parts.iter().map(|p| (&p.meta, &p.host.engine.preset)))
     }
     pub fn refresh_context(&mut self) {
+        // An emptied first timbre does not show: another one is open.
+        if self.parts[self.selected].meta.kind == Kind::Empty {
+            self.selected = self.shown();
+        }
         let context = self.context();
         for p in &mut self.parts {
             p.host.context = context.clone();
@@ -188,11 +194,47 @@ impl Registry {
         self.refresh_context();
         Ok(())
     }
-    fn begin_part(&mut self, kind: Kind) -> Result<(), String> {
+    /// The timbre to open when the open one goes: the first instrument, else
+    /// the first bus, else Master.
+    fn shown(&self) -> usize {
+        let kind = |i: &usize| self.parts[*i].meta.kind;
+        (0..self.parts.len())
+            .find(|i| !kind(i).routing() && kind(i) != Kind::Empty)
+            .or_else(|| (0..self.parts.len()).find(|i| kind(i) == Kind::Bus))
+            .or_else(|| (0..self.parts.len()).find(|i| kind(i) == Kind::Master))
+            .unwrap_or(0)
+    }
+    /// The first timbre goes: its place stays, empty and silent, as the
+    /// scene's anchor (its preset holds the scene's name), until the next
+    /// instrument fills it. Its Pad FX timbres go with it.
+    fn empty_first(&mut self) -> Result<(), String> {
+        if self.parts[0].meta.kind == Kind::Empty {
+            return Err("Unknown timbre".into());
+        }
+        let host = &mut self.parts[0].host;
+        let mut preset = Kind::Empty.preset().unwrap();
+        preset.name = host.engine.preset.name.clone();
+        host.engine.set_preset(preset);
+        host.config_revision = host.config_revision.wrapping_add(1);
+        self.parts[0].meta = Meta {
+            id: 0,
+            kind: Kind::Empty,
+            name: Kind::Empty.label().into(),
+            ..Meta::default()
+        };
+        self.parts[0].vocal = None;
+        self.parts.retain(|p| p.meta.owner != Some(0));
+        self.selected = self.shown();
+        Ok(())
+    }
+    /// A new timbre of `kind`: an instrument is a Rack of its engine's
+    /// modules, or with `classic` that engine's own timbre, as scenes saved
+    /// before Racks hold.
+    fn begin_part(&mut self, kind: Kind, classic: bool) -> Result<(), String> {
         if self.preparing.is_some() {
             return Err("A timbre is already being prepared".into());
         }
-        if kind == Kind::Master {
+        if matches!(kind, Kind::Master | Kind::Empty) {
             return Err("The scene always has one Master".into());
         }
         if kind == Kind::Bus
@@ -203,8 +245,16 @@ impl Registry {
         self.next_id
             .checked_add(1)
             .ok_or("Timbre identity overflow")?;
+        // Every instrument is built as a Rack of its engine's modules.
+        let instrument = kind;
+        let kind = if !classic && kind.rack_instrument().is_some() {
+            Kind::Rack
+        } else {
+            kind
+        };
         self.preparing = Some(Preparing {
             kind,
+            instrument,
             stage: 0,
             host: None,
             preset: None,
@@ -221,7 +271,13 @@ impl Registry {
         match pending.stage {
             0 => pending.host = Some(Host::new(rate)),
             1 if pending.kind != Kind::Granular => {
-                let mut preset = pending.kind.preset().unwrap();
+                let mut preset = if pending.kind == Kind::Rack {
+                    pending.instrument.rack_instrument()
+                } else {
+                    None
+                }
+                .or_else(|| pending.kind.preset())
+                .unwrap();
                 preset.sanitize();
                 preset.prepare_effects_reusing(rate, &pending.host.as_ref().unwrap().engine.preset);
                 pending.preset = Some(preset);
@@ -281,16 +337,59 @@ impl Registry {
                 }
                 host.engine.set_midi_gate(primary.engine.midi_gate);
                 host.file_generation = primary.file_generation;
+                let playing = primary.engine.playing;
+                // A synth waits for notes, and so does a Rack, whose drums
+                // play their pattern anyway; drums run free with the
+                // transport, and a Granular instrument keeps the host's way.
+                let gate = (pending.instrument != Kind::Granular)
+                    .then(|| pending.instrument.waits_for_notes());
+                let instrument = pending.instrument;
+                let label = instrument.label();
+                let name = |parts: &[Part]| {
+                    let count = parts
+                        .iter()
+                        .filter(|p| p.meta.name.starts_with(label))
+                        .count()
+                        + 1;
+                    format!("{label} {count}")
+                };
+                // The emptied first timbre takes the next instrument.
+                if self.parts[0].meta.kind == Kind::Empty && pending.kind != Kind::Bus {
+                    let name = name(&self.parts);
+                    let first = &mut self.parts[0];
+                    if let Some(mut preset) = pending.preset.take() {
+                        // Its preset keeps holding the scene's name.
+                        preset.name = first.host.engine.preset.name.clone();
+                        first.host.engine.exchange_preset(&mut preset);
+                    }
+                    if let Some(gate) = gate {
+                        first.host.engine.set_midi_gate(gate);
+                    }
+                    first.host.engine.set_playing(playing);
+                    first.host.resize_snapshot();
+                    first.host.config_revision = first.host.config_revision.wrapping_add(1);
+                    first.meta = Meta {
+                        id: 0,
+                        kind: pending.kind,
+                        name,
+                        ..Meta::default()
+                    };
+                    first.gain = 1.;
+                    first.sends = SendGains::default();
+                    self.selected = 0;
+                    self.target = None;
+                    self.revision = self.revision.wrapping_add(1);
+                    self.refresh_context();
+                    return Ok(true);
+                }
                 if let Some(mut preset) = pending.preset.take() {
                     host.engine.exchange_preset(&mut preset);
-                    // Drums run free with the transport; a synth waits for notes,
-                    // and so does a Rack, whose drums play their pattern anyway.
-                    host.engine
-                        .set_midi_gate(matches!(pending.kind, Kind::Synth | Kind::Rack));
                 }
-                host.engine.set_playing(primary.engine.playing);
+                if let Some(gate) = gate {
+                    host.engine.set_midi_gate(gate);
+                }
+                host.engine.set_playing(playing);
                 let kind = pending.kind;
-                let count = self.parts.iter().filter(|p| p.meta.kind == kind).count() + 1;
                 let bus = if kind == Kind::Bus {
                     sad_pet::timbres::free_bus(self.parts.iter().map(|p| &p.meta))
                         .ok_or("No free bus")?
@@ -315,7 +414,7 @@ impl Registry {
                             name: if kind == Kind::Bus {
                                 format!("Bus {bus}")
                             } else {
-                                format!("{} {count}", kind.label())
+                                name(&self.parts)
                             },
                             ..Meta::default()
                         },
@@ -351,13 +450,22 @@ impl Registry {
                 "/api/timbres/add" => {
                     let kind =
                         serde_json::from_value(data["kind"].clone()).map_err(|e| e.to_string())?;
-                    self.begin_part(kind)?;
+                    self.begin_part(kind, data["classic"].as_bool().unwrap_or(false))?;
                     while !self.prepare_part()? {}
                     self.sync_vocal();
                     return Ok(json!(self.context()));
                 }
                 "/api/timbres/reset" => {
                     self.parts.retain(|p| p.meta.id == 0);
+                    // An emptied first timbre comes back as the default one.
+                    if self.parts[0].meta.kind == Kind::Empty {
+                        let host = &mut self.parts[0].host;
+                        let name = host.engine.preset.name.clone();
+                        host.engine.set_preset(Preset {
+                            name,
+                            ..Preset::default()
+                        });
+                    }
                     self.selected = 0;
                     self.parts[0].meta = Meta::default();
                     self.parts[0].gain = 1.;
@@ -369,7 +477,7 @@ impl Registry {
                     self.selected = self
                         .parts
                         .iter()
-                        .position(|p| p.meta.id == id)
+                        .position(|p| p.meta.id == id && p.meta.kind != Kind::Empty)
                         .ok_or("Unknown timbre")?;
                     self.parts[self.selected].host.sent_revision = None;
                 }
@@ -410,9 +518,6 @@ impl Registry {
                 }
                 "/api/timbres/remove" => {
                     let id = data["id"].as_u64().ok_or("Choose a timbre")? as u32;
-                    if id == 0 {
-                        return Err("Keep the first timbre for DAW automation".into());
-                    }
                     let removed = self.parts.iter().find(|p| p.meta.id == id);
                     if removed.is_some_and(|p| p.meta.kind == Kind::Master) {
                         return Err("The scene always has one Master".into());
@@ -426,15 +531,19 @@ impl Registry {
                             part.meta.mix.forget_bus(bus);
                         }
                     }
-                    let active = self.parts[self.selected].meta.id;
-                    // A Sampler's Pad FX timbres go with it.
-                    self.parts
-                        .retain(|p| p.meta.id != id && p.meta.owner != Some(id));
-                    self.selected = self
-                        .parts
-                        .iter()
-                        .position(|p| p.meta.id == active)
-                        .unwrap_or(0);
+                    if id == 0 {
+                        self.empty_first()?;
+                    } else {
+                        let active = self.parts[self.selected].meta.id;
+                        // A Sampler's Pad FX timbres go with it.
+                        self.parts
+                            .retain(|p| p.meta.id != id && p.meta.owner != Some(id));
+                        self.selected = self
+                            .parts
+                            .iter()
+                            .position(|p| p.meta.id == active)
+                            .unwrap_or_else(|| self.shown());
+                    }
                 }
                 _ => return Err("Unknown timbre command".into()),
             }
@@ -1061,7 +1170,7 @@ impl Part {
         sample.library_id = state["sample_id"].as_str().map(str::to_string);
         let preset: Preset =
             serde_json::from_value(state["preset"].clone()).map_err(|e| e.to_string())?;
-        if meta.kind != Kind::PadFx || meta.owner.is_none() {
+        if (meta.kind != Kind::PadFx || meta.owner.is_none()) && meta.kind != Kind::Empty {
             meta.kind = Kind::of(&preset);
         }
         meta.sanitize();
@@ -1370,8 +1479,10 @@ pub extern "C" fn sad_timbre_prepare_begin() -> u32 {
         let index = r.index();
         let result = serde_json::from_slice::<Value>(&r.parts[index].host.input)
             .map_err(|e| e.to_string())
-            .and_then(|v| serde_json::from_value(v["kind"].clone()).map_err(|e| e.to_string()))
-            .and_then(|kind| r.begin_part(kind))
+            .and_then(|v| {
+                let kind = serde_json::from_value(v["kind"].clone()).map_err(|e| e.to_string())?;
+                r.begin_part(kind, v["classic"].as_bool().unwrap_or(false))
+            })
             .map(|_| b"{}".to_vec());
         r.parts[index].host.finish(result)
     })

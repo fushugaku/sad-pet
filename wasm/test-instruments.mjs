@@ -69,7 +69,7 @@ const sceneName = core.request("/api/timbres").name;
 const grains = preset(0);
 grains.params.mix = 0.375;
 core.request("/api/preset", grains);
-let context = core.request("/api/timbres/add", { kind: "synth" });
+let context = core.request("/api/timbres/add", { kind: "synth", classic: true });
 const synth = context.timbres.find((t) => t.kind === "synth");
 core.request("/api/timbres/update", { id: synth.id, gain: 0.5, channel: 3 });
 
@@ -104,7 +104,7 @@ core.request("/api/transport", { playing: false });
 // A Synth sound into the scene's own timbre: the engine changes, the scene's
 // name and the timbre's identity stay.
 const synthSound = preset(synth.id);
-context = core.request("/api/timbres/add", { kind: "synth" });
+context = core.request("/api/timbres/add", { kind: "synth", classic: true });
 const second = context.timbres.find((t) => t.kind === "synth");
 const bass = preset(second.id);
 bass.params.mix = 0.625;
@@ -127,7 +127,7 @@ assert.throws(() => load(second.id, documentOf(bus.id), "Bus sound"), /instrumen
 assert.equal(timbre(core.request("/api/timbres"), second.id).kind, "synth", "a refused load changes nothing");
 
 // A Sampler's kit travels with it; its Pad FX timbres stay with the scene.
-context = core.request("/api/timbres/add", { kind: "sampler" });
+context = core.request("/api/timbres/add", { kind: "sampler", classic: true });
 const kit = context.timbres.find((t) => t.kind === "sampler");
 core.prefixedJson("sad_sampler_sample", "tone", worker.call("sad_sampler_prepare", sine(440, 0.3)), kit.id);
 const pads = preset(kit.id).sampler;
@@ -153,7 +153,7 @@ assert.ok(!context.timbres.some((t) => t.kind === "pad_fx"), "a kit's Pad FX tim
 
 // A Vocal sound asks the vocal worker to render it afresh.
 core.json("sad_vocal_jobs");
-context = core.request("/api/timbres/add", { kind: "vocal" });
+context = core.request("/api/timbres/add", { kind: "vocal", classic: true });
 const voice = context.timbres.find((t) => t.kind === "vocal");
 const voiceDocument = documentOf(voice.id);
 core.json("sad_vocal_jobs");

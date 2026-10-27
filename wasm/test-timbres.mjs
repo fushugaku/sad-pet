@@ -16,7 +16,7 @@ const root = core.request("/api/preset");
 assert.equal(root.lfos.length, 8);
 assert.equal(root.envs.length, 8);
 // Master (always present) takes an id too, so read the new timbre's id.
-const drumsId = core.request("/api/timbres/add", { kind: "drums" }).active;
+const drumsId = core.request("/api/timbres/add", { kind: "drums", classic: true }).active;
 assert.ok(drumsId > 0);
 core.request("/api/timbres/update", { id: 0, muted: true });
 core.request("/api/drums/edit", [
@@ -129,7 +129,7 @@ recalled.call("sad_scene_load", utility.call("sad_scene_prepare", withBuffer));
 assert.equal(recalled.request("/api/state").sample_seconds, 1);
 imported.request("/api/timbres/remove", { id: drumsId });
 const ids = imported.request("/api/timbres").timbres.map((t) => t.id);
-const added = imported.request("/api/timbres/add", { kind: "granular" }).active;
+const added = imported.request("/api/timbres/add", { kind: "granular", classic: true }).active;
 assert.ok(added > Math.max(drumsId, ...ids), "A deleted identity was reused");
 console.log(
   "Timbres: 128-step drum playback, independent controls, stable IDs, cross-part snapshot acknowledgements, whole-scene recall and granular routing passed.",
@@ -141,3 +141,53 @@ for (let i = 0; i < 4; i++)
 const context = imported.request("/api/timbres/select", { id: 0 });
 utility.request("/api/timbres/context", context);
 assert.equal(utility.request("/api/state").timbres.active, 0);
+
+// New instruments are Racks of their engine's modules; the first timbre can
+// go, leaving its place empty and unseen until the next instrument fills it.
+{
+  const scene = new Core(module, 8000);
+  scene.call("sad_load", utility.call("sad_pack"));
+  const modules = (preset) => preset.rack.modules.map((m) => m.module);
+  for (const [kind, expected, name] of [
+    ["granular", ["sample", "grains", "filters", "post_fx"], "Granular 2"],
+    ["drums", ["drums", "filters", "post_fx"], "Drums 1"],
+    ["synth", ["synth", "filters", "post_fx"], "Synth 1"],
+    ["sampler", ["sampler"], "Sampler 1"],
+    ["vocal", ["vocal"], "Vocal 1"],
+  ]) {
+    const context = scene.request("/api/timbres/add", { kind });
+    const part = context.timbres.find((t) => t.id === context.active);
+    assert.deepEqual([part.kind, part.name], ["rack", name], kind);
+    assert.deepEqual(modules(scene.request("/api/preset")), expected, kind);
+  }
+  // The first timbre goes: it stays first, empty, and another one is open.
+  let context = scene.request("/api/timbres/remove", { id: 0 });
+  assert.equal(context.timbres[0].kind, "empty");
+  assert.notEqual(context.active, 0);
+  assert.throws(() => scene.request("/api/timbres/select", { id: 0 }));
+  for (let i = 0; i < 8; i++) assert.ok(scene.process(128).every(Number.isFinite));
+  // Scenes keep the empty place.
+  utility.call("sad_scene_load", scene.call("sad_scene_pack"));
+  const saved = utility.json("sad_scene_document");
+  assert.equal(saved.meta.kind, "empty");
+  const restored = new Core(module, 8000);
+  restored.call("sad_scene_load", utility.call("sad_scene_prepare", saved));
+  context = restored.request("/api/timbres");
+  assert.equal(context.timbres[0].kind, "empty");
+  assert.notEqual(context.active, 0);
+  // The next instrument fills it, first in the list again.
+  context = scene.request("/api/timbres/add", { kind: "synth" });
+  assert.equal(context.active, 0);
+  assert.deepEqual([context.timbres[0].kind, context.timbres[0].name], ["rack", "Synth 2"]);
+  assert.deepEqual(modules(scene.request("/api/preset")), ["synth", "filters", "post_fx"]);
+  // A bus never takes it; Master never goes.
+  scene.request("/api/timbres/remove", { id: 0 });
+  context = scene.request("/api/timbres/add", { kind: "bus" });
+  assert.equal(context.timbres[0].kind, "empty");
+  const master = context.timbres.find((t) => t.kind === "master");
+  assert.throws(() => scene.request("/api/timbres/remove", { id: master.id }));
+  // A new scene brings the first timbre back.
+  context = scene.request("/api/timbres/reset", {});
+  assert.equal(context.timbres[0].kind, "granular");
+  assert.equal(context.active, 0);
+}

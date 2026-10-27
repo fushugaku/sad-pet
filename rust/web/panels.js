@@ -35,9 +35,10 @@
     constructor(root, hooks) {
       this.root = root;
       this.hooks = hooks;
-      root.innerHTML = `<div class="timbre-top"><div class="timbre-lists"><div class="timbre-row"><span class="timbre-list-name">Instruments</span><div class="timbre-tabs" role="tablist" aria-label="Instruments"></div></div><div class="timbre-row"><span class="timbre-list-name">Buses</span><div class="timbre-tabs bus-tabs" role="tablist" aria-label="Buses"></div></div></div><div class="timbre-add"><select aria-label="New timbre type"><option value="granular">Granular</option><option value="drums">Drum machine</option><option value="synth">Synth engine</option><option value="rack">Rack</option><option value="vocal">Vocal</option><option value="sampler" hidden>Sampler</option><option value="bus">Bus</option></select><button>+ Timbre</button></div></div><div class="timbre-mix"><input aria-label="Timbre name" maxlength="80"><div class="instrument-picker"><button aria-label="Instrument presets" aria-haspopup="dialog" aria-expanded="false">Instruments<span aria-hidden="true">⌄</span></button></div><button aria-pressed="false">Mute</button><button aria-pressed="false">Solo</button><label class="timbre-midi">MIDI<select aria-label="Timbre MIDI channel"><option value="0">All</option>${Array.from({ length: 16 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("")}</select></label><label><span class="timbre-level-name">MASTER</span><input aria-label="Timbre level" type="range" min="0" max="2" step=".01"></label><button aria-label="Remove timbre">×</button></div><div class="timbre-sends" aria-label="Bus sends"></div>`;
+      root.innerHTML = `<div class="timbre-top"><div class="timbre-lists"><div class="timbre-row"><span class="timbre-list-name">Instruments</span><div class="timbre-tabs" role="tablist" aria-label="Instruments"></div><span class="timbre-none" hidden>None yet: add one with + Timbre</span></div><div class="timbre-row"><span class="timbre-list-name">Buses</span><div class="timbre-tabs bus-tabs" role="tablist" aria-label="Buses"></div></div></div><div class="timbre-add"><select aria-label="New timbre type"><option value="granular">Granular</option><option value="drums">Drum machine</option><option value="synth">Synth</option><option value="sampler" hidden>Sampler</option><option value="vocal">Vocal</option><option value="rack">Rack: drums + synth</option><option value="bus">Bus</option></select><button>+ Timbre</button></div></div><div class="timbre-mix"><input aria-label="Timbre name" maxlength="80"><div class="instrument-picker"><button aria-label="Instrument presets" aria-haspopup="dialog" aria-expanded="false">Instruments<span aria-hidden="true">⌄</span></button></div><button aria-pressed="false">Mute</button><button aria-pressed="false">Solo</button><label class="timbre-midi">MIDI<select aria-label="Timbre MIDI channel"><option value="0">All</option>${Array.from({ length: 16 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("")}</select></label><label><span class="timbre-level-name">MASTER</span><input aria-label="Timbre level" type="range" min="0" max="2" step=".01"></label><button aria-label="Remove timbre">×</button></div><div class="timbre-sends" aria-label="Bus sends"></div>`;
       // Instruments on one row, Buses and Master under them.
       [this.tabs, this.busTabs] = root.querySelectorAll(".timbre-tabs");
+      this.none = root.querySelector(".timbre-none");
       this.addType = root.querySelector(".timbre-add select");
       this.samplerOption = this.addType.querySelector('[value="sampler"]');
       root.querySelector(".timbre-add button").onclick = () =>
@@ -90,6 +91,8 @@
         this.tabs.replaceChildren();
         this.busTabs.replaceChildren();
         for (const part of context.timbres) {
+          // An emptied first timbre keeps the scene's place, unseen.
+          if (part.kind === "empty") continue;
           if (part.kind === "pad_fx" && part.owner !== family) continue;
           const tab = button(part.kind === "pad_fx" ? `↳ ${part.name}` : part.name, `${part.name} timbre`, () =>
             this.hooks.change("/api/timbres/select", { id: part.id }),
@@ -114,6 +117,7 @@
           row.append(tab);
         }
         this.signature = signature;
+        this.none.hidden = this.tabs.children.length > 0;
       }
       for (const tab of [...this.tabs.children, ...this.busTabs.children]) {
         const selected = Number(tab.dataset.id) === context.active;
@@ -138,7 +142,8 @@
         "aria-label",
         part.kind === "master" ? "Master output level" : "Level into Master",
       );
-      this.remove.disabled = part.id === 0 || part.kind === "master";
+      // Any timbre but Master can go, the first one too.
+      this.remove.disabled = part.kind === "master";
       this.syncSends(part, routing);
     }
     /** One send per Bus; a timbre's output reaches the bus at this level. A

@@ -987,8 +987,10 @@
         g.fillStyle = "rgba(140,220,209,0.09)";
         g.fillRect(x(zone.loop_start), 0, x(end) - x(zone.loop_start), height);
       }
+      // The accent of the module the editor stands in.
+      const accent = getComputedStyle(g.canvas).getPropertyValue("--accent").trim() || "#c4f486";
       if (this.selection) {
-        g.fillStyle = "rgba(196,244,134,0.16)";
+        g.fillStyle = `${accent}29`;
         g.fillRect(x(this.selection[0]), 0, x(this.selection[1]) - x(this.selection[0]), height);
       }
       const half = height / 4;
@@ -1021,7 +1023,7 @@
       // Fades as ramps over the region's edges.
       const fadeIn = (zone.fade_in * audio.rate) / 1000,
         fadeOut = (zone.fade_out * audio.rate) / 1000;
-      g.strokeStyle = "#c4f486";
+      g.strokeStyle = accent;
       g.lineWidth = 1.5;
       if (fadeIn > 0 || fadeOut > 0) {
         g.beginPath();
@@ -1048,8 +1050,8 @@
         g.font = "10px Inter, sans-serif";
         g.fillText(text, Math.round(px) + 3, top ? 11 : height - 4);
       };
-      marker(zone.start, "#c4f486", "S");
-      marker(end, "#c4f486", "E");
+      marker(zone.start, accent, "S");
+      marker(end, accent, "E");
       if (zone.loop_mode !== "off") marker(zone.loop_start, "#8cdcd1", "L", false);
       if (zone.crossfade > 0 && zone.loop_mode !== "off") {
         g.fillStyle = "rgba(140,220,209,0.2)";

@@ -23,6 +23,11 @@ pub enum Kind {
     Bus,
     /// Always present: the sum of every timbre and bus, then the output.
     Master,
+    /// What the first timbre leaves when it is removed. The scene keeps its
+    /// place, where DAW automation and the host's own engine stay, but it
+    /// sounds nothing, takes no MIDI and does not show; the next instrument
+    /// added fills it.
+    Empty,
 }
 impl Kind {
     pub fn label(self) -> &'static str {
@@ -36,6 +41,7 @@ impl Kind {
             Kind::Rack => "Rack",
             Kind::Bus => "Bus",
             Kind::Master => "Master",
+            Kind::Empty => "Empty",
         }
     }
     /// Bus, Master and Pad FX take their input from other timbres, not MIDI
@@ -45,7 +51,61 @@ impl Kind {
     }
     /// Plays notes from MIDI and the keyboard; a Vocal timbre sings its score.
     pub fn takes_midi(self) -> bool {
-        !self.routing() && self != Kind::Vocal
+        !self.routing() && !matches!(self, Kind::Vocal | Kind::Empty)
+    }
+    /// A new instrument waits for notes rather than playing its voice 0 with
+    /// the transport (a Granular one keeps its host's choice).
+    pub fn waits_for_notes(self) -> bool {
+        matches!(self, Kind::Synth | Kind::Rack)
+    }
+    /// A new instrument of this kind, built as a Rack that plays as a timbre
+    /// of the kind does: the modules its engine runs, in their order. None
+    /// for a Rack, which starts from its own default, and for what is not an
+    /// instrument.
+    pub fn rack_instrument(self) -> Option<crate::preset::Preset> {
+        use crate::rack::{Module, Slot};
+        let modules: &[Module] = match self {
+            Kind::Granular => &[
+                Module::Sample,
+                Module::Grains,
+                Module::Filters,
+                Module::PostFx,
+            ],
+            Kind::Drums => &[Module::Drums, Module::Filters, Module::PostFx],
+            Kind::Synth => &[Module::Synth, Module::Filters, Module::PostFx],
+            Kind::Sampler => &[Module::Sampler],
+            Kind::Vocal => &[Module::Vocal],
+            _ => return None,
+        };
+        let mut preset = crate::preset::Preset {
+            name: self.label().into(),
+            ..Default::default()
+        };
+        if self == Kind::Drums {
+            // A Drum timbre plays its pattern through voice 0's envelope,
+            // held at sustain; a Rack's drums have no envelope.
+            preset.params.master_volume *= preset.params.adsr_sustain;
+        }
+        if matches!(self, Kind::Sampler | Kind::Vocal) {
+            // As those timbres pass their kit or voice: at unity, no effects.
+            preset.params.master_volume = 1.0;
+            preset.params.mix = 0.5;
+            preset.color_chain.clear();
+        }
+        preset.rack = Some(Box::new(crate::rack::Settings {
+            modules: modules
+                .iter()
+                .map(|&module| Slot {
+                    module,
+                    enabled: true,
+                    id: 0,
+                })
+                .collect(),
+            ..Default::default()
+        }));
+        // Each source module's settings start from that engine's own.
+        preset.sanitize();
+        Some(preset)
     }
     /// Keeps its engine role when a preset loads into it.
     pub fn keeps_role(self) -> bool {
@@ -83,6 +143,15 @@ impl Kind {
             Kind::Synth => preset.synth = Some(Box::default()),
             Kind::Rack => {
                 preset.rack = Some(Box::default());
+                preset.sanitize();
+            }
+            Kind::Empty => {
+                // A Rack without modules: silent, and it costs next to nothing.
+                preset.rack = Some(Box::new(crate::rack::Settings {
+                    modules: Vec::new(),
+                    ..Default::default()
+                }));
+                preset.color_chain.clear();
                 preset.sanitize();
             }
             Kind::Bus | Kind::Master | Kind::Vocal | Kind::Sampler | Kind::PadFx => {

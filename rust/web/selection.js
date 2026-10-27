@@ -350,9 +350,11 @@
       context.fillStyle = "#0d140db3";
       context.fillRect(0, 0, start, height);
       context.fillRect(end, 0, width - end, height);
-      context.fillStyle = "#c4f48609";
+      // The accent of the section the waveform stands in: a Rack module's own.
+      const accent = getComputedStyle(context.canvas).getPropertyValue("--accent").trim() || "#c4f486";
+      context.fillStyle = `${accent}09`;
       context.fillRect(start, 0, end - start, height);
-      context.strokeStyle = "#c4f486";
+      context.strokeStyle = accent;
       context.lineWidth = 1;
       context.beginPath();
       context.moveTo(Math.max(0.5, start), 0);

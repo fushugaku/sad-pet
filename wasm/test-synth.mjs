@@ -14,7 +14,7 @@ const utility = new Core(module, rate),
   core = new Core(module, rate);
 utility.call("sad_prepare", utility.call("sad_factory", undefined, 0));
 core.call("sad_load", utility.call("sad_pack"));
-const context = core.request("/api/timbres/add", { kind: "synth" });
+const context = core.request("/api/timbres/add", { kind: "synth", classic: true });
 const synthId = context.active;
 const part = context.timbres.find((t) => t.id === synthId);
 assert.equal(part.kind, "synth");

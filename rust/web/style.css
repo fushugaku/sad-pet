@@ -4591,6 +4591,14 @@ input[type="range"] {
   text-transform: uppercase;
   color: var(--muted);
 }
+.timbre-none {
+  color: var(--muted);
+  font-size: 12px;
+}
+.timbre-none[hidden],
+.timbre-tabs:empty {
+  display: none;
+}
 .timbre-tabs {
   display: flex;
   gap: 4px;
@@ -6477,4 +6485,78 @@ input[type="range"] {
   letter-spacing: 1.4px;
   text-transform: uppercase;
   white-space: nowrap;
+}
+
+/* Each Rack module in a color of its own, as muted as the green it takes
+   over there: the title, knobs, toggles and power wear it, so a module reads
+   at a glance. Sources keep their chain's color; the Grain engine keeps the
+   green. */
+.rack-stack > .rack-module {
+  --module: var(--accent);
+}
+.rack-stack > .rack-module[data-module="sample"] { --module: #7fb2ee; }
+.rack-stack > .rack-module[data-module="synth"] { --module: #d19af2; }
+.rack-stack > .rack-module[data-module="drums"] { --module: #efb661; }
+.rack-stack > .rack-module[data-module="sampler"] { --module: #62d3c3; }
+.rack-stack > .rack-module[data-module="vocal"] { --module: #f38ea6; }
+.rack-stack > .rack-module[data-module="grains"] { --module: #c4f486; }
+.rack-stack > .rack-module[data-module="filters"] { --module: #d6c665; }
+.rack-stack > .rack-module[data-module="resynth"] { --module: #5cd5fc; }
+.rack-stack > .rack-module[data-module="source_fx"] { --module: #ffad91; }
+.rack-stack > .rack-module[data-module="pre_fx"] { --module: #a9b0fd; }
+.rack-stack > .rack-module[data-module="post_fx"] { --module: #eea3e4; }
+.rack-stack > .rack-module[data-module="eq"] { --module: #78dca9; }
+.rack-stack > .rack-module[data-module="mixer"] { --module: #cdd4c7; }
+.rack-stack > .rack-module {
+  --accent: var(--module);
+  --accent-dim: color-mix(in srgb, var(--module) 38%, #1b201c);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--module) 7%, #1b201c), #171b18 140px);
+}
+.rack-stack > .rack-module > .section-heading h2 {
+  color: var(--module);
+}
+.rack-stack > .rack-module button[aria-pressed="true"],
+.rack-stack > .rack-module .sad-select[aria-expanded="true"] {
+  border-color: color-mix(in srgb, var(--accent) 55%, #1c221b);
+}
+.rack-stack > .rack-module button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 17%, #1c221b);
+}
+.rack-stack > .rack-module .power[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--accent) 72%, white);
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--accent) 78%, white) 0 38%,
+    var(--accent) 62%
+  );
+  color: #161b14;
+  box-shadow:
+    inset 0 1px 0 #fff6,
+    0 0 16px -3px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+.rack-stack > .rack-module .power[aria-pressed="true"]:hover {
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--accent) 66%, white) 0 38%,
+    color-mix(in srgb, var(--accent) 90%, white) 62%
+  );
+}
+/* The module menu shows each module in its color. */
+.rack-menu-item[data-module="sample"] { --chain: #7fb2ee; }
+.rack-menu-item[data-module="synth"] { --chain: #d19af2; }
+.rack-menu-item[data-module="drums"] { --chain: #efb661; }
+.rack-menu-item[data-module="sampler"] { --chain: #62d3c3; }
+.rack-menu-item[data-module="vocal"] { --chain: #f38ea6; }
+.rack-menu-item[data-module="grains"] { --chain: #c4f486; }
+.rack-menu-item[data-module="filters"] { --chain: #d6c665; }
+.rack-menu-item[data-module="resynth"] { --chain: #5cd5fc; }
+.rack-menu-item[data-module="source_fx"] { --chain: #ffad91; }
+.rack-menu-item[data-module="pre_fx"] { --chain: #a9b0fd; }
+.rack-menu-item[data-module="post_fx"] { --chain: #eea3e4; }
+.rack-menu-item[data-module="eq"] { --chain: #78dca9; }
+.rack-menu-item[data-module="mixer"] { --chain: #cdd4c7; }
+.rack-stack > .rack-module .color-bypass[aria-pressed="false"] {
+  border-color: color-mix(in srgb, var(--accent) 40%, #1c221b);
+  background: color-mix(in srgb, var(--accent) 12%, #1c221b);
 }

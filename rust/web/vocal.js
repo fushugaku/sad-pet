@@ -888,7 +888,8 @@
     paint() {
       const c = this.canvas.getContext("2d");
       const { width, height, ratio, view } = this;
-      const css = getComputedStyle(document.documentElement);
+      // The canvas's own: a Rack's Vocal module wears its color.
+      const css = getComputedStyle(this.canvas);
       const color = (name, fallback) => css.getPropertyValue(name).trim() || fallback;
       const bg = color("--panel", "#1c201d"), line = color("--line", "#303831"),
         text = color("--text", "#e6ebe5"), muted = color("--muted", "#8c9a8c"),
@@ -1038,7 +1039,7 @@
       c.fillStyle = "rgba(255,255,255,0.08)";
       c.fillRect(KEYS, Math.round(valueY(param.value)), width - KEYS, 1);
       // Note shadows show where singing happens.
-      c.fillStyle = "rgba(196,244,134,0.06)";
+      c.fillStyle = `${colors.accent}0f`;
       for (const n of this.score.notes) {
         const x = this.x(n.start);
         c.fillRect(x, top + 1, n.length * this.view.pixels, LANE - 1);
@@ -1050,7 +1051,7 @@
       if (!curve.length) {
         c.moveTo(KEYS, valueY(param.value));
         c.lineTo(width, valueY(param.value));
-        c.strokeStyle = "rgba(196,244,134,0.35)";
+        c.strokeStyle = `${colors.accent}59`;
       } else {
         c.moveTo(KEYS, valueY(curve[0].value));
         for (const p of curve) c.lineTo(clamp(this.x(p.tick), KEYS, width), valueY(p.value));

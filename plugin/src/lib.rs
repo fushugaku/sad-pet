@@ -854,7 +854,10 @@ impl Controller {
             return Err("Invalid timbre identity".into());
         }
         saved.meta.sanitize();
-        saved.meta.kind = sad_pet::timbres::Kind::of(&saved.preset);
+        // An emptied first timbre stays empty.
+        if saved.meta.kind != sad_pet::timbres::Kind::Empty {
+            saved.meta.kind = sad_pet::timbres::Kind::of(&saved.preset);
+        }
         saved.preset.sanitize();
         let decoded = BASE64
             .decode(&saved.sample_wav)
@@ -905,6 +908,9 @@ impl Controller {
         } else {
             0
         };
+        if self.active == 0 && self.meta.kind == sad_pet::timbres::Kind::Empty {
+            self.active = self.shown();
+        }
         self.scene_revision = self.scene_revision.wrapping_add(1);
         self.preset = saved.preset;
         self.sample = sample;
