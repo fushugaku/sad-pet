@@ -10,6 +10,7 @@ block time for a training scene); the summary is the geometric mean of the
 PGO/normal ratios. Fails if the profile-guided engine changes any sample or
 training hash.
   python3 plugin/scripts/pgo_benchmark.py --rounds 5
+  python3 plugin/scripts/pgo_benchmark.py --target x86_64-apple-darwin  # under Rosetta
 """
 import argparse
 import json
@@ -68,12 +69,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--build-dir", type=Path, default=ROOT / "target/pgo-benchmark")
     parser.add_argument("--rounds", type=int, default=5, help="Runs of each build (default 5)")
+    parser.add_argument("--target", help="Another target this machine runs, e.g. x86_64-apple-darwin under Rosetta")
     args = parser.parse_args()
     if args.rounds < 1:
         parser.error("--rounds must be at least 1")
     build = args.build_dir.resolve()
     cargo, rust_env = rust_toolchain()
-    target = rustc_info(rust_env)[1]
+    target = args.target or rustc_info(rust_env)[1]
     # Trains (or reuses) the profile and checks the optimized trainer's hashes.
     if not profile_guided(build, cargo, rust_env, target):
         sys.exit(f"PGO is unavailable for {target}, so there is nothing to compare")
