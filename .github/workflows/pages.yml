@@ -42,6 +42,7 @@ jobs:
           node wasm/test-loader.mjs
           node wasm/test-tailcall.mjs
           node wasm/test-simd.mjs
+          node wasm/test-grain-quality.mjs
           node wasm/test-resynth.mjs
           node wasm/test-filters.mjs
           node wasm/test-imported.mjs

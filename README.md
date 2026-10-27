@@ -16,7 +16,10 @@ share immutable filter tables at the same sample rate, and
 unchanged gain controls reuse their exact conversion. A lightweight telemetry
 decoder keeps only preset/view metadata, without creating DSP engines for its
 timbres. Sample rates, antialiasing, interpolation and effect algorithms are
-unchanged. No backend
+unchanged, unless the Grain engine's Reads select is set to Eco on that device:
+then playback reads every grain like an unpitched one, lighter on the CPU when
+grains are pitched up, which fold their top back as they did before the wide
+kernels; exports still render High. No backend
 or installation is required. Click Play or a keyboard key to enable sound.
 The standalone **SAD PET app** for macOS and Windows runs the native Rust engine
 on the computer's audio and MIDI devices in its own window; its editor never
