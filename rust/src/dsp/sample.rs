@@ -1,5 +1,71 @@
 use crate::{Stereo, tables::Random};
-use std::f64::consts::PI;
+use std::{f64::consts::PI, sync::LazyLock};
+
+/// Frames the interpolator weighs: base-5 ..= base+6.
+const TAPS: usize = 12;
+const HALF: i64 = TAPS as i64 / 2;
+/// Kernel rows per frame; a read takes the nearest one (±1/2048 frame).
+const PHASES: usize = 1024;
+
+/// Kaiser-windowed sinc (β = 5) for every 1/PHASES of a frame, each row at
+/// unity gain. Grains read between frames almost always: at 44.1 kHz this
+/// stays within 0.1 dB to 16 kHz (0.4 dB at 18 kHz) and images tones below
+/// 13 kHz 60 dB down, where the cubic it replaces lost 1.8 dB at 16 kHz and
+/// 2.4 dB at 18 kHz and imaged them at -18 dB. Sixteen taps kept 0.3 dB more
+/// at 18 kHz but took WASM 15% longer to render 128 grains.
+static KERNEL: LazyLock<Box<[[f32; TAPS]]>> = LazyLock::new(|| {
+    const BETA: f64 = 5.0;
+    let i0 = |x: f64| {
+        let (mut sum, mut term) = (1.0, 1.0);
+        for k in 1..40 {
+            term *= (x * 0.5 / k as f64).powi(2);
+            sum += term;
+        }
+        sum
+    };
+    (0..=PHASES)
+        .map(|row| {
+            let mut weights = [0.0; TAPS];
+            if row % PHASES == 0 {
+                // Whole frames read exactly the frame.
+                weights[(HALF - 1) as usize + row / PHASES] = 1.0;
+                return weights;
+            }
+            let t = row as f64 / PHASES as f64;
+            let taps: [f64; TAPS] = std::array::from_fn(|k| {
+                let x = k as f64 - (HALF - 1) as f64 - t;
+                let ratio = x / HALF as f64;
+                let window = i0(BETA * (1.0 - ratio * ratio).max(0.0).sqrt()) / i0(BETA);
+                (PI * x).sin() / (PI * x) * window
+            });
+            let sum: f64 = taps.iter().sum();
+            for (weight, tap) in weights.iter_mut().zip(taps) {
+                *weight = (tap / sum) as f32;
+            }
+            weights
+        })
+        .collect()
+});
+
+/// Build the kernel off the audio thread.
+pub fn prepare_interpolation() {
+    LazyLock::force(&KERNEL);
+}
+
+/// The frame `fraction` (0..1) past `frames[HALF - 1]`.
+#[inline(always)]
+fn interpolate(frames: &[Stereo; TAPS], fraction: f64) -> Stereo {
+    let row = &KERNEL[(fraction * PHASES as f64 + 0.5) as usize];
+    // Four partial sums a channel keep the multiply-adds independent.
+    let mut sums = [[0.0_f32; 4]; 2];
+    for i in (0..TAPS).step_by(4) {
+        for j in 0..4 {
+            sums[0][j] += row[i + j] * frames[i + j][0];
+            sums[1][j] += row[i + j] * frames[i + j][1];
+        }
+    }
+    sums.map(|s| (s[0] + s[1]) + (s[2] + s[3]))
+}
 
 /// Normalized, non-destructive playback/trim boundaries. End is exclusive.
 #[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize, PartialEq)]
@@ -570,15 +636,8 @@ impl SampleBuffer {
         // Keep indices in f64: f32 loses sub-sample precision on long recordings.
         // Scaling by 2^-level is exact, like the division by 2^level it replaces.
         let p = wrap_position(position, self.len() as f64) * level_scale(level);
-        let base = p.floor() as i64;
-        let fraction = (p - p.floor()) as f32;
-        let [a, b, c, d] = interpolation_frames(data, base, &(0..data.len()));
-        std::array::from_fn(|i| {
-            let c1 = 0.5 * (c[i] - a[i]);
-            let c2 = a[i] - 2.5 * b[i] + 2.0 * c[i] - 0.5 * d[i];
-            let c3 = 0.5 * (d[i] - a[i]) + 1.5 * (b[i] - c[i]);
-            ((c3 * fraction + c2) * fraction + c1) * fraction + b[i]
-        })
+        let base = p.floor();
+        interpolated(data, base as i64, p - base, &(0..data.len()))
     }
 
     /// Wrap interpolation inside the selection, including backwards grains.
@@ -614,22 +673,15 @@ impl SampleBuffer {
             // Multiplying by 2^-level is the same exact value as the division.
             let base = (p * level_scale(level)).floor();
             let support = 16.0 * (scale - 1.0);
-            if (base - 1.0) * scale - support >= range.start as f64
-                && (base + 2.0) * scale + support < range.end as f64
+            if (base - (HALF - 1) as f64) * scale - support >= range.start as f64
+                && (base + HALF as f64) * scale + support < range.end as f64
             {
                 return self.read_level(p, level);
             }
             level -= 1;
         }
-        let base = p.floor() as i64;
-        let fraction = (p - p.floor()) as f32;
-        let [a, b, c, d] = interpolation_frames(self.frames(), base, range);
-        std::array::from_fn(|i| {
-            let c1 = 0.5 * (c[i] - a[i]);
-            let c2 = a[i] - 2.5 * b[i] + 2.0 * c[i] - 0.5 * d[i];
-            let c3 = 0.5 * (d[i] - a[i]) + 1.5 * (b[i] - c[i]);
-            ((c3 * fraction + c2) * fraction + c1) * fraction + b[i]
-        })
+        let base = p.floor();
+        interpolated(self.frames(), base as i64, p - base, range)
     }
 
     pub fn trim_wav(&self, region: Region) -> Result<Vec<u8>, String> {
@@ -690,26 +742,30 @@ pub(crate) fn level_scale(level: usize) -> f64 {
     f64::from_bits((1023 - level as u64) << 52)
 }
 
+/// The frame `fraction` past `base`, from the frames around it in `range`.
 #[inline(always)]
-fn interpolation_frames(data: &[Stereo], base: i64, range: &std::ops::Range<usize>) -> [Stereo; 4] {
+fn interpolated(
+    data: &[Stereo],
+    base: i64,
+    fraction: f64,
+    range: &std::ops::Range<usize>,
+) -> Stereo {
+    let first = base - (HALF - 1);
     // Most grain reads are inside the region. Boundary reads retain the exact
     // wrap used for tiny selections, negative positions and reverse grains.
-    if base > range.start as i64 && base + 2 < range.end as i64 {
-        let i = base as usize;
-        // One bounds check for the four frames instead of one per frame.
-        if let Some(frames) = data.get(i - 1..i + 3) {
-            return [frames[0], frames[1], frames[2], frames[3]];
-        }
-        let i = i % data.len();
-        if i > 0 && i + 2 < data.len() {
-            return [data[i - 1], data[i], data[i + 1], data[i + 2]];
+    if first >= range.start as i64 && base + HALF < range.end as i64 {
+        let i = first as usize;
+        // One bounds check for the taps instead of one per frame.
+        if let Some(frames) = data.get(i..i + TAPS) {
+            return interpolate(frames.try_into().unwrap(), fraction);
         }
     }
-    std::array::from_fn(|i| {
+    let frames = std::array::from_fn(|i| {
         data[(range.start
-            + (base + i as i64 - 1 - range.start as i64).rem_euclid(range.len() as i64) as usize)
+            + (first + i as i64 - range.start as i64).rem_euclid(range.len() as i64) as usize)
             % data.len()]
-    })
+    });
+    interpolate(&frames, fraction)
 }
 
 /// `rem_euclid` without its `fmod` call when the position is less than one

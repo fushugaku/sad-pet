@@ -134,6 +134,27 @@ fn interpolation_preserves_long_recording_fractional_positions_and_wraps() {
 }
 
 #[test]
+fn reads_between_frames_keep_the_highs() {
+    // Grains almost never land on whole frames. Half a frame late, the
+    // cubic interpolation this replaced lost 5 dB of an 18 kHz tone at
+    // 48 kHz and 4.6 dB of a 16 kHz tone at 44.1 kHz.
+    for (rate, hz) in [(48000, 18000.0), (44100, 16000.0)] {
+        let sample = sine(rate, hz);
+        let whole = rms((64..8192).map(|i| sample.read(i as f64, 1.0, false)[0]));
+        for offset in [0.25, 0.5, 0.75] {
+            let between = rms((64..8192).map(|i| sample.read(i as f64 + offset, 1.0, false)[0]));
+            assert!(
+                (between / whole - 1.0).abs() < 0.02,
+                "{hz} Hz {offset} frames late: {between} / {whole}"
+            );
+        }
+        for i in 0..64 {
+            assert_eq!(sample.read(i as f64, 1.0, false), sample.frames()[i]);
+        }
+    }
+}
+
+#[test]
 fn antialiasing_rejects_high_frequencies_in_both_directions() {
     let sample = sine(48000, 18000.0);
     for rate in [3.0_f64, -3.0, 7.0, -7.0] {

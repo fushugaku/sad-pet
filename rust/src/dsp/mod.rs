@@ -584,6 +584,7 @@ pub struct Engine {
 impl Engine {
     pub fn new(sample_rate: u32, sample: Arc<SampleBuffer>, preset: Preset) -> Self {
         fast::warm_up();
+        sample::prepare_interpolation();
         let sr = sample_rate.clamp(8_000, 384_000);
         let mut engine = Self {
             sample_rate: sr,

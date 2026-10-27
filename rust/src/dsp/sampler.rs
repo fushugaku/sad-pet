@@ -1,5 +1,5 @@
 //! The voices of a Sampler timbre. Notes pick pads by key, pads pick zones by
-//! key and velocity, and every zone plays its sample region with cubic
+//! key and velocity, and every zone plays its sample region with windowed-sinc
 //! interpolation from the antialiasing mips, through the pad's envelope and
 //! filter. Pads with a Pad FX timbre write into their own send instead of the
 //! kit's mix; the host feeds each send to its timbre.
