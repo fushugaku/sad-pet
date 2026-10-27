@@ -271,10 +271,11 @@ fn grain_group_controls_append_after_the_macros() {
     );
     // Then the five LFO shaping controls of each LFO, then a Rack's Mixer
     // strips and Grain engine history, then Resynth's track and tracking,
-    // then the Rack's Sampler and Vocal strips, then Resynth's carrier envelope.
+    // then the Rack's Sampler and Vocal strips, then Resynth's carrier envelope,
+    // then the grain attack and each group's.
     let rack = filter2 + 4 * 5 + 8 * 5;
     // Then the Rack EQs: each band's on, frequency, gain and Q, and output.
-    let eqs = rack + 3 * 4 + 1 + 2 + 2 * 4 + 3;
+    let eqs = rack + 3 * 4 + 1 + 2 + 2 * 4 + 3 + 1 + 4;
     assert_eq!(ids.len(), eqs + 8 * (4 * 8 + 1));
     assert_eq!(ids[eqs + 1], "rack_eq1_band1_frequency");
     assert_eq!(ids[filter2 + 4 * 5], "lfo1_shape");
@@ -288,7 +289,16 @@ fn grain_group_controls_append_after_the_macros() {
     assert_eq!(ids[rack + 3 * 4 + 3 + 7], "rack_vocal_solo");
     assert_eq!(
         ids[rack + 3 * 4 + 3 + 8..eqs],
-        ["resynth_hold", "resynth_sustain", "resynth_fade"]
+        [
+            "resynth_hold",
+            "resynth_sustain",
+            "resynth_fade",
+            "grain_attack",
+            "grain_group1_attack",
+            "grain_group2_attack",
+            "grain_group3_attack",
+            "grain_group4_attack"
+        ]
     );
     let mut preset = Preset::default();
     let changes = parameters::parse(&serde_json::json!({

@@ -508,6 +508,29 @@ assert.deepEqual(
   "microphone takes must preserve exact input samples",
 );
 assert.ok(!messages.some((m) => m.error || m.type === "fatal"));
+
+// Grain ATTACK: below 100% a note starts with a played-in cloud, so long
+// grains sound at once instead of building up from none.
+function noteOnset(attack) {
+  const core = new Core(module, 48000);
+  core.json("sad_load", prepared);
+  // The Init preset, whose grains alone sound.
+  const settings = utility.request("/api/presets")[0];
+  Object.assign(settings.params, { grain_size: 0.8, cloud: 0, reverb: 0 });
+  settings.color_chain = [];
+  core.request("/api/preset", settings);
+  core.request("/api/transport", { midi_gate: true });
+  core.request("/api/transport", { playing: true });
+  core.request("/api/parameters", { grain_attack: attack });
+  for (let i = 0; i < 96; i++) core.process(128);
+  core.request("/api/note", { kind: "note_on", channel: 0, note: 60, velocity: 127 });
+  // The first 32 ms, from the same place in the file for both.
+  return signalEnergy(core.process(1536));
+}
+const grownOnset = noteOnset(1), playedOnset = noteOnset(0);
+assert.ok(grownOnset > 0, "a growing cloud has begun");
+assert.ok(playedOnset > grownOnset * 20, `a played-in cloud sounds at once: ${playedOnset} / ${grownOnset}`);
+
 console.log(
-  "WASM checks passed: 414 factory sources, bounded bank memory, stereo audio at 44.1/48 kHz, deterministic quanta, chord entry, MIDI, effect stack, live microphone, sample-exact recording, region loops and non-destructive trims/renders.",
+  "WASM checks passed: 414 factory sources, bounded bank memory, stereo audio at 44.1/48 kHz, deterministic quanta, chord entry, MIDI, effect stack, live microphone, sample-exact recording, region loops and non-destructive trims/renders, grain attack.",
 );

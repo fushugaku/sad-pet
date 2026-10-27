@@ -290,6 +290,16 @@ files move instruments between the web version and the native app and plug-ins.
   from an overdub ring written where they are centered (about five seconds,
   longer files share it). Freeze stops the overdubs and keeps what is there;
   at 0% the overdubs go unheard at once and the ring clears.
+- **Grain attack.** **ATTACK** in the Grain engine sets how a new note's
+  cloud comes in. At 100% (the default, as before) its grains build up from
+  none, so long grains take over 100 ms to sound. Lower, the note starts with
+  the grains it would hold after playing a while and fades them in over
+  ATTACK × 40% of a grain, without the level bump of a growing cloud; at 0% it
+  sounds whole at once and ENV1 alone shapes the attack. In advanced mode each
+  group's own **ATTACK** (Grain card) takes its place, over that group's grain
+  length; the first switch-on copies the engine's. Host parameters
+  `grain_attack`, then `grain_group1_attack` … `grain_group4_attack`, after
+  `resynth_fade`.
 - **Vocal timbres** sing a score, in the manner of VOCALOID5 (browser, DAW
   plug-ins and app). Draw notes in the piano roll, double-click one to type its
   lyric (Tab moves on) or use **Lyrics…** for a whole line, in **Japanese**

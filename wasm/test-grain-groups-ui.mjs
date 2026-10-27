@@ -78,7 +78,7 @@ const calls = [];
 const context = vm.createContext({
   $,
   controls,
-  preset: { params: { grain_shape: 0.35, grain_size: 0.75 } },
+  preset: { params: { grain_shape: 0.35, grain_attack: 0.2, grain_size: 0.75 } },
   document: {
     createElement: (tag) => new Element(tag),
     querySelector: (selector) =>
@@ -118,8 +118,10 @@ const context = vm.createContext({
 const run = (code) => vm.runInContext(code, context);
 run(`${source}\nbuildGrainGroups(); syncGrainGroups();`);
 
-// Four groups of twenty-five knobs each, and CHAIN and SEND, under the host IDs.
-assert.equal(knobs.size, 4 * 27);
+// Four groups of twenty-six knobs each, and CHAIN and SEND, under the host IDs.
+assert.equal(knobs.size, 4 * 28);
+assert.equal(knobs.get("grain_group2_attack").aria, "Group B attack");
+assert.equal(knobs.get("grain_group2_attack").binding.get(), 1);
 assert.equal(knobs.get("grain_group2_filter2_cutoff").aria, "Group B filter 2 cutoff");
 assert.equal(knobs.get("grain_group3_random_pitch").aria, "Group C random pitch");
 assert.equal(knobs.get("grain_group1_size").format(-2), "×0.25");
@@ -136,12 +138,14 @@ assert.equal($("grain-groups").hidden, true);
 assert.equal($("grain-advanced").getAttribute("aria-pressed"), "false");
 assert.equal(shapeDial.getAttribute("aria-disabled"), "false");
 
-// The first switch-on starts every group from the engine's SHAPE in one preset write.
+// The first switch-on starts every group from the engine's SHAPE and ATTACK
+// in one preset write.
 $("grain-advanced").onclick();
 assert.deepEqual(calls.splice(0), [["preset"]]);
 const groups = () => JSON.parse(run("JSON.stringify(preset.grain_groups)"));
 assert.equal(groups().advanced, true);
 assert.deepEqual(groups().groups.map((g) => g.shape), [0.35, 0.35, 0.35, 0.35]);
+assert.deepEqual(groups().groups.map((g) => g.attack), [0.2, 0.2, 0.2, 0.2]);
 assert.equal($("grain-groups").hidden, false);
 assert.equal(shapeDial.getAttribute("aria-disabled"), "true");
 assert.ok(shapeKnob.classes.has("is-replaced"));
