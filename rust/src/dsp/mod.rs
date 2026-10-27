@@ -104,6 +104,11 @@ struct Voice {
     loop_phase: f64,
     /// Counts note-ons, so Synth engine carriers restart with each note.
     generation: u32,
+    /// How far a played-in cloud has faded in (0..1) for each group and,
+    /// last, the ungrouped grains, while `Engine::onsets` has this voice's
+    /// bit, and how much further each frame.
+    onset: [f32; crate::grain_groups::GROUPS + 1],
+    onset_step: [f32; crate::grain_groups::GROUPS + 1],
 }
 impl Voice {
     fn on(&mut self, count: usize) {
@@ -490,6 +495,8 @@ pub struct Engine {
     /// Occupied grain slots, bit n for slot n. Visiting set bits from the lowest
     /// keeps the order of a full slot scan, so voices still sum in that order.
     live_grains: u128,
+    /// Voices whose played-in grain cloud is still fading in.
+    onsets: u64,
     /// Each grain's group, envelopes and filter in advanced mode.
     group_grains: Box<grain_groups::Runtime>,
     /// The grains' own output on its way back to later grains.
@@ -605,6 +612,7 @@ impl Engine {
             sequence_running: true,
             grains: [Grain::default(); MAX_GRAINS],
             live_grains: 0,
+            onsets: 0,
             group_grains: Box::new(grain_groups::Runtime::new(sr)),
             grain_feedback: feedback::Feedback::new(),
             voices: Box::new([Voice::default(); VOICES]),
@@ -1111,6 +1119,7 @@ impl Engine {
         self.voices[index].on(self.preset.env_count as usize);
         self.sounding |= 1 << index;
         self.maybe_active |= 1 << index;
+        self.prefill_grains(index);
     }
     /// Voice 0 is the note held while playing without keys or note tracks.
     fn start_free_voice(&mut self) {
@@ -1375,6 +1384,7 @@ impl Engine {
     }
     pub fn reset_grains(&mut self) {
         self.live_grains = 0;
+        self.onsets = 0;
         self.grain_clock = 1.0;
         self.group_grains.reset();
         self.grain_feedback.reset();
@@ -1548,6 +1558,8 @@ impl Engine {
         self.live_grain_slots().map(|slot| &self.grains[slot])
     }
     fn kill_voice_grains(&mut self, voice: usize) {
+        // Its next note fades in afresh, or not at all.
+        self.onsets &= !(1 << voice);
         for slot in self.live_grain_slots() {
             if self.grains[slot].voice == voice {
                 self.live_grains &= !(1 << slot);
@@ -2353,19 +2365,22 @@ impl Engine {
             })
     }
 
-    fn spawn(&mut self) {
-        // Lowest free slot, as the previous linear scan chose.
-        let slot = (!self.live_grains).trailing_zeros() as usize;
-        if slot == MAX_GRAINS {
-            return;
-        }
-        // Synth grains read the mixed history after every voice's VCA: they
-        // belong to no note and keep its tails while playing. So do a Rack's
-        // that read their chain rather than the file, transport or not.
-        let synth = match &self.rack {
+    /// Synth grains read the mixed history after every voice's VCA: they
+    /// belong to no note and keep its tails while playing. So do a Rack's
+    /// that read their chain rather than the file, transport or not.
+    fn synth_grains(&self) -> bool {
+        match &self.rack {
             Some(rack) => !rack.reads_file,
             None => self.synth.is_some(),
-        };
+        }
+    }
+
+    fn spawn(&mut self) {
+        // Lowest free slot, as the previous linear scan chose.
+        if (!self.live_grains).trailing_zeros() as usize == MAX_GRAINS {
+            return;
+        }
+        let synth = self.synth_grains();
         let voice = if synth {
             if !self.playing && self.rack.is_none() {
                 return;
@@ -2382,6 +2397,18 @@ impl Engine {
             self.next_voice = (voice + 1) % VOICES;
             voice
         };
+        self.spawn_grain(voice, synth, 0);
+    }
+
+    /// Start a grain of `voice` as it would be `age` frames after it began.
+    fn spawn_grain(&mut self, voice: usize, synth: bool, age: u32) {
+        let slot = (!self.live_grains).trailing_zeros() as usize;
+        if slot == MAX_GRAINS {
+            return;
+        }
+        // Since it began, the grain moved at its rate and the centre it
+        // started from at the cursor's.
+        let drift_speed = if age > 0 { self.center_speed() } else { 0.0 };
         let groups = &self.modulated.grain_groups;
         let group = if groups.advanced {
             let Some(index) = self.group_grains.deal(groups) else {
@@ -2391,6 +2418,10 @@ impl Engine {
         } else {
             None
         };
+        // A group at 100% ATTACK grows from none: it plays no grains in.
+        if age > 0 && group.is_some_and(|(_, g)| g.attack >= 1.0) {
+            return;
+        }
         let p = &self.modulated.params;
         let note = self.voices[voice];
         let bend = if synth {
@@ -2450,21 +2481,21 @@ impl Engine {
         let rate = tables::pitch_ratio(semis) * self.source_sample().sample_rate as f64
             / self.sample_rate as f64
             * if forward { 1.0 } else { -1.0 };
-        let seconds = match group {
-            Some((_, g)) if g.size != 0.0 => {
-                (self.grain_seconds(p.grain_size) * g.size.exp2()).min(self.grain_seconds(1.0))
-            }
-            _ => self.grain_seconds(p.grain_size),
-        };
+        let seconds = self.layer_seconds(group.map(|(_, g)| g.size));
         let duration = (seconds * self.sample_rate as f32).round().max(4.0) as u32;
+        if age >= duration {
+            return;
+        }
         let center = match group {
             Some((_, g)) => self.layer_center(voice, g.position),
             None => self.voice_center(voice),
         };
-        let position = range.start as f64
-            + (center - range.start as f64
-                + self.random.bipolar() as f64 * p.cloud as f64 * length * 0.5)
-                .rem_euclid(length);
+        let mut offset = center - range.start as f64
+            + self.random.bipolar() as f64 * p.cloud as f64 * length * 0.5;
+        if age > 0 {
+            offset += (rate - drift_speed) * age as f64;
+        }
+        let position = range.start as f64 + offset.rem_euclid(length);
         let spread = group.map_or(p.stereo_spread, |(_, g)| {
             (p.stereo_spread + g.spread).clamp(0.0, 1.0)
         });
@@ -2479,12 +2510,118 @@ impl Engine {
             position,
             rate,
             read_level: self.source_sample().level_for_rate(rate, true),
-            age: 0,
+            age,
             duration,
             shape: shape.clamp(0.0, 1.0),
             pan: tables::pan(pan),
             voice,
         };
+    }
+
+    /// How far the grains' centre moves each frame: the cursor's step, a bar
+    /// loop's or the history head's, none while frozen or stopped on a file.
+    fn center_speed(&self) -> f64 {
+        if self.frozen || (self.live_input.is_none() && !self.playing) {
+            0.0
+        } else if self.bar_loop_active() {
+            self.file_range.len() as f64 * self.bar_phase_step
+        } else {
+            self.source_sample().sample_rate as f64 / self.sample_rate as f64
+        }
+    }
+
+    /// A grain's seconds at the engine's SIZE, made `octaves` longer for a
+    /// group's SIZE but never longer than the engine's longest.
+    fn layer_seconds(&self, octaves: Option<f32>) -> f32 {
+        let size = self.modulated.params.grain_size;
+        match octaves {
+            Some(octaves) if octaves != 0.0 => {
+                (self.grain_seconds(size) * octaves.exp2()).min(self.grain_seconds(1.0))
+            }
+            _ => self.grain_seconds(size),
+        }
+    }
+
+    /// Below 100% ATTACK a new note starts with the grains it would hold
+    /// after playing a while, its share of the cloud dealt at the grain rate,
+    /// and fades in over ATTACK × 40% of a grain, which near 100% takes as
+    /// long as a cloud growing from nothing: at 0% the cloud sounds whole at
+    /// once and ENV1 alone shapes the attack. At 100% grains build up from
+    /// none, as they always did. Played in, the cloud skips the level bump a
+    /// growing one has while all its grains are young. In advanced mode each
+    /// group does so at its own ATTACK, over its own grains' length.
+    fn prefill_grains(&mut self, voice: usize) {
+        const UNGROUPED: usize = crate::grain_groups::GROUPS;
+        let mut attacks = [1.0_f32; UNGROUPED + 1];
+        let mut seconds = [0.0_f32; UNGROUPED + 1];
+        let groups = &self.modulated.grain_groups;
+        if groups.advanced {
+            for (k, g) in groups.groups.iter().enumerate() {
+                if g.share > 0.0 {
+                    attacks[k] = g.attack.max(0.0);
+                    seconds[k] = self.layer_seconds(Some(g.size));
+                }
+            }
+        } else {
+            attacks[UNGROUPED] = self.modulated.params.grain_attack.max(0.0);
+            seconds[UNGROUPED] = self.layer_seconds(None);
+        }
+        if attacks.iter().all(|&a| a >= 1.0)
+            || self.grain_density <= 0.0
+            || self.synth_grains()
+            || self.preset.bus.is_some()
+            || self.live_input.as_ref().is_some_and(|i| i.effects_only)
+            // A sounding voice keeps the grains it has.
+            || self.live_grain_slots().any(|slot| self.grains[slot].voice == voice)
+        {
+            return;
+        }
+        let sr = self.sample_rate as f64;
+        // The round robin deals each sounding voice its share of the grains.
+        let voices = self
+            .voices
+            .iter()
+            .filter(|v| v.envelopes[0].active())
+            .count()
+            .max(1);
+        let interval = voices as f64 * sr / self.grain_density as f64;
+        let longest = (0..=UNGROUPED)
+            .filter(|&k| attacks[k] < 1.0)
+            .map(|k| seconds[k])
+            .fold(0.0, f32::max) as f64
+            * sr;
+        // The newest grain, at age 0, is the one the grain clock spawns next.
+        // Older ones than their own length died already and are left out.
+        let mut n = 1;
+        while n as f64 * interval < longest && self.live_grains != u128::MAX {
+            // Whole refresh steps, so a group's filters tune on their first frame.
+            let age = (n as f64 * interval) as u32 / grain_groups::REFRESH * grain_groups::REFRESH;
+            self.spawn_grain(voice, false, age);
+            n += 1;
+        }
+        // The overlap level follows at once, or the cloud would enter loud.
+        self.overlap = self.overlap.max(self.active_grains() as f32);
+        let v = &mut self.voices[voice];
+        let mut fading = false;
+        for k in 0..=UNGROUPED {
+            let frames = if attacks[k] < 1.0 {
+                attacks[k] as f64 * seconds[k] as f64 * sr * 0.4
+            } else {
+                0.0
+            };
+            if frames >= 1.0 {
+                v.onset[k] = 0.0;
+                v.onset_step[k] = (1.0 / frames) as f32;
+                fading = true;
+            } else {
+                v.onset[k] = 1.0;
+            }
+        }
+        if fading {
+            self.onsets |= 1 << voice;
+        } else {
+            self.onsets &= !(1 << voice);
+        }
     }
 
     /// The held notes as intervals above `voice`'s note (above the lowest
@@ -3391,6 +3528,12 @@ impl Engine {
         let synth_grains = follow_mix;
         // A file's grains also read what feedback overdubbed.
         let overdub = file_source && self.grain_feedback.readable();
+        // Played-in clouds of new notes fade in on a smoothstep.
+        let onsets = self.onsets;
+        let fade = |x: f32| {
+            let x = x.min(1.0);
+            x * x * (3.0 - 2.0 * x)
+        };
         let mut pending = self.live_grains;
         while pending != 0 {
             let slot = pending.trailing_zeros() as usize;
@@ -3431,6 +3574,12 @@ impl Engine {
                 && let Some((group, shaped)) =
                     self.group_grains.process(slot, grain.age, frame, groups)
             {
+                let shaped = if onsets & 1 << grain.voice != 0 {
+                    let gain = fade(self.voices[grain.voice].onset[group]);
+                    shaped.map(|x| x * gain)
+                } else {
+                    shaped
+                };
                 let panned: Stereo = std::array::from_fn(|c| shaped[c] * grain.pan[c]);
                 let chain = group_chains[group];
                 for c in 0..2 {
@@ -3450,7 +3599,10 @@ impl Engine {
                 }
             } else {
                 let phase = 2.0 * grain.age as f32 / (grain.duration - 1) as f32;
-                let amplitude = tables::grain_window(phase, grain.shape);
+                let mut amplitude = tables::grain_window(phase, grain.shape);
+                if onsets & 1 << grain.voice != 0 {
+                    amplitude *= fade(self.voices[grain.voice].onset[crate::grain_groups::GROUPS]);
+                }
                 for c in 0..2 {
                     voice_frames[grain.voice][c] += frame[c] * amplitude * grain.pan[c];
                 }
@@ -3463,6 +3615,19 @@ impl Engine {
             grain.age += 1;
             if grain.age >= grain.duration {
                 self.live_grains &= !(1 << slot);
+            }
+        }
+        for i in bits(onsets) {
+            let voice = &mut self.voices[i];
+            let mut done = true;
+            for (onset, step) in voice.onset.iter_mut().zip(voice.onset_step) {
+                if *onset < 1.0 {
+                    *onset += step;
+                    done &= *onset >= 1.0;
+                }
+            }
+            if done {
+                self.onsets &= !(1 << i);
             }
         }
         (voice_frames, group_sent)

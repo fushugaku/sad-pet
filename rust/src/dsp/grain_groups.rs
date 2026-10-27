@@ -9,7 +9,7 @@ use crate::{
 };
 
 /// A filtering grain's coefficients follow its envelope this often, in samples.
-const REFRESH: u32 = 16;
+pub(crate) const REFRESH: u32 = 16;
 /// Steps of the cutoff → SVF gain table, which spares every refresh a powf
 /// and a tan. Neighbours differ by 1.4%, so interpolation stays within 2e-5.
 const CUTOFF_STEPS: usize = 512;

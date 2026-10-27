@@ -787,12 +787,16 @@ h2 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
+/* SHARE, LEVEL, RND LEVEL, SHAPE and ATTACK share one row. */
+.grain-group-card[data-card="Grain"] .grain-group-knobs {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
 .grain-group-page .dial .arc {
   stroke: var(--group-color);
 }
-/* The engine's knobs and FEEDBACK in one row on wide screens. */
+/* The engine's knobs, ATTACK and FEEDBACK in one row on wide screens. */
 #grain-controls {
-  grid-template-columns: repeat(9, minmax(0, 1fr));
+  grid-template-columns: repeat(10, minmax(0, 1fr));
 }
 @media (max-width: 760px) {
   #grain-controls {

@@ -1468,6 +1468,33 @@ pub fn specs() -> &'static [Spec] {
         resynth!(hold, "hold", 0.0, 1.0);
         resynth!(sustain, "sustain", 0.0, 1.0);
         resynth!(fade, "fade", 0.0, 1.0);
+        // Then how much of the grain cloud's build-up a note waits through.
+        result.push(Spec {
+            id: "grain_attack".into(),
+            name: "Grain attack".into(),
+            min: 0.0,
+            max: 1.0,
+            default: 1.0,
+            target: Target::Core {
+                get: |p| p.params.grain_attack,
+                set: |p, v| p.params.grain_attack = v,
+                frame_get: |m| m.params.grain_attack,
+                frame_set: |m, v| m.params.grain_attack = v,
+            },
+        });
+        // Then each group's, which takes its place in advanced mode.
+        for (i, name) in grain_groups::NAMES.iter().enumerate() {
+            let mut spec = Spec {
+                id: format!("grain_group{}_attack", i + 1),
+                name: format!("Grain group {name} attack"),
+                min: 0.0,
+                max: 1.0,
+                default: 0.0,
+                target: Target::GrainGroup(i, grain_groups::ATTACK_FIELD),
+            };
+            spec.default = spec.get(&preset);
+            result.push(spec);
+        }
         result
     })
 }
@@ -1605,19 +1632,17 @@ mod tests {
             ],
             [0.0; 3]
         );
-        let last: Vec<_> = specs()
-            .iter()
-            .rev()
-            .take(4)
-            .map(|s| s.id.as_str())
-            .collect();
+        // Appended after the Rack's Vocal strip; the grain attacks came later.
+        let ids: Vec<_> = specs().iter().map(|s| s.id.as_str()).collect();
+        let hold = ids.iter().position(|&id| id == "resynth_hold").unwrap();
         assert_eq!(
-            last,
+            ids[hold - 1..hold + 4],
             [
-                "resynth_fade",
-                "resynth_sustain",
+                "rack_vocal_solo",
                 "resynth_hold",
-                "rack_vocal_solo"
+                "resynth_sustain",
+                "resynth_fade",
+                "grain_attack"
             ]
         );
         let changes = parse(&json!({

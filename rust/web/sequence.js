@@ -1167,7 +1167,7 @@ window.SadNeuropolis = class {
       order = ["Main", "Grains", "Filters", "LFO", "Envelopes", "Arpeggiator", "Pre-filter FX", "Post-filter FX", "Resynth", "Synth engine", "Drums"],
       voices = window.SadDrums?.controlSections,
       grainControls = new Set(["position", "grains", "min_grains", "grain_size", "pitch", "grain_shape",
-        "cloud", "detune", "stereo_spread", "grain_feedback", "grain_advanced"]);
+        "cloud", "detune", "stereo_spread", "grain_feedback", "grain_advanced", "grain_attack"]);
     for (const spec of this.catalog.parameters) {
       const id = spec.id, fx = /^(pre_)?fx(\d+)_/.exec(id);
       let slot = null;

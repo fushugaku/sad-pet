@@ -520,6 +520,9 @@ const grainSchema = [
     (v) => `${((v * 2 - 1) * preset.params.pitch_range).toFixed(1)} st`,
   ],
   ["grain_shape", "SHAPE", percent],
+  // How much of the cloud's build-up a new note waits through: 0% starts
+  // it whole, so ENV1 alone shapes the attack; 100% grows it grain by grain.
+  ["grain_attack", "ATTACK", percent],
   ["cloud", "CLOUD", percent],
   [
     "detune",
@@ -616,6 +619,8 @@ const grainGroupDefault = () => ({
   filter2_cutoff: 1,
   filter2_resonance: 0.1,
   filter2_env_depth: 0,
+  // A new note's grains build up from none, as the engine's ATTACK at 100%.
+  attack: 1,
 });
 // Reading leaves the preset alone: the host omits untouched groups.
 const grainGroupSettings = () =>
@@ -672,6 +677,7 @@ function buildGrainGroups() {
       ["level", "LEVEL", percent],
       ["random_level", "RND LEVEL", (v) => (v > 0 ? `−${percent(v)}` : "0%"), 0, 1, "random level"],
       ["shape", "SHAPE", percent],
+      ["attack", "ATTACK", percent],
     ]],
     ["Pitch", ["scale"], [
       ["pitch", "PITCH", pitch, -24, 24],
@@ -765,6 +771,9 @@ function buildGrainGroups() {
           },
         );
       }
+      if (title === "Grain")
+        card.lastElementChild.querySelectorAll(".dial")[4].closest(".knob").title =
+          "How a new note's grains of this group come in: 0% at once, 100% building up from none";
       page.append(card);
     }
     // Where the group's grains go, as a section's Output row does.
@@ -798,9 +807,13 @@ function buildGrainGroups() {
   $("grain-advanced").onclick = () => {
     const on = !grainGroupSettings().advanced;
     if (on && !preset.grain_groups) {
-      // Groups start from the engine's own SHAPE, so switching on keeps the sound.
+      // Groups start from the engine's own SHAPE and ATTACK, so switching on
+      // keeps the sound.
       const settings = ensureGrainGroups();
-      for (const group of settings.groups) group.shape = preset.params.grain_shape;
+      for (const group of settings.groups) {
+        group.shape = preset.params.grain_shape;
+        group.attack = preset.params.grain_attack ?? 1;
+      }
       settings.advanced = true;
       schedulePreset();
     } else {
@@ -869,14 +882,18 @@ function syncGrainGroups() {
     advanced = !!settings.advanced;
   setAttr($("grain-advanced"), "aria-pressed", String(advanced));
   $("grain-groups").hidden = !advanced;
-  // Each group sets its own SHAPE while advanced mode is on.
-  const shape = document.querySelector('#grain-controls [data-control-key="grain_shape"]');
-  if (shape) {
-    shape.setAttribute("aria-disabled", String(advanced));
-    shape.tabIndex = advanced ? -1 : 0;
-    const knob = shape.closest(".knob");
+  // Each group sets its own SHAPE and ATTACK while advanced mode is on.
+  for (const [key, label, help] of [
+    ["grain_shape", "SHAPE", ""],
+    ["grain_attack", "ATTACK", "How a new note's grains come in: 0% at once, so ENV1 alone shapes the attack; 100% building up from none"],
+  ]) {
+    const dial = document.querySelector(`#grain-controls [data-control-key="${key}"]`);
+    if (!dial) continue;
+    dial.setAttribute("aria-disabled", String(advanced));
+    dial.tabIndex = advanced ? -1 : 0;
+    const knob = dial.closest(".knob");
     knob.classList.toggle("is-replaced", advanced);
-    knob.title = advanced ? "Each group sets its own SHAPE in Advanced mode" : "";
+    knob.title = advanced ? `Each group sets its own ${label} in Advanced mode` : help;
   }
   [...$("grain-group-pages").children].forEach((page, index) => {
     page.hidden = index !== grainGroupPage;
@@ -3844,7 +3861,7 @@ function modulationGroups() {
     const drum = /^drum(\d+)_/.exec(spec.id);
     const synthOsc = /^synth_osc(\d+)_/.exec(spec.id);
     const grainGroup = /^grain_group(\d)_/.exec(spec.id);
-    if (grainGroup || ["grain_advanced", "grain_feedback"].includes(spec.id)) {
+    if (grainGroup || ["grain_advanced", "grain_feedback", "grain_attack"].includes(spec.id)) {
       const label = grainGroup
         ? `Grain group ${GRAIN_GROUP_NAMES[grainGroup[1] - 1]}`
         : "Grains";
@@ -3853,7 +3870,8 @@ function modulationGroups() {
         { control: { index: spec.index } },
         grainGroup
           ? spec.name.replace(/^Grain group ([A-D]) (.)/, (_, g, c) => `Group ${g} · ${c.toUpperCase()}`)
-          : spec.id === "grain_advanced" ? "Advanced mode" : "Feedback",
+          : spec.id === "grain_advanced" ? "Advanced mode"
+            : spec.id === "grain_attack" ? "Attack" : "Feedback",
       ]);
       continue;
     }

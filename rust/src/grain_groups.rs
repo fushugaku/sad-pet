@@ -194,6 +194,9 @@ pub struct Group {
     pub filter2_resonance: f32,
     /// How far the filter envelope moves Filter 2's cutoff, either way.
     pub filter2_env_depth: f32,
+    /// How much of its cloud's build-up a new note waits through, in place
+    /// of the engine's ATTACK.
+    pub attack: f32,
 }
 impl Default for Group {
     fn default() -> Self {
@@ -222,6 +225,7 @@ impl Default for Group {
             filter2_cutoff: 1.0,
             filter2_resonance: 0.1,
             filter2_env_depth: 0.0,
+            attack: crate::preset::Params::default().grain_attack,
         }
     }
 }
@@ -246,6 +250,7 @@ impl Group {
         crate::preset::finite_clamp(&mut self.random_pitch, 0.0, PITCH_RANGE, 0.0);
         crate::preset::finite_clamp(&mut self.random_cutoff, 0.0, 1.0, 0.0);
         crate::preset::finite_clamp(&mut self.random_level, 0.0, 1.0, 0.0);
+        crate::preset::finite_clamp(&mut self.attack, 0.0, 1.0, fallback.attack);
         crate::preset::finite_clamp(&mut self.filter2_cutoff, 0.0, 1.0, fallback.filter2_cutoff);
         crate::preset::finite_clamp(
             &mut self.filter2_resonance,
@@ -324,6 +329,9 @@ pub const FILTER2_FIELDS: [(&str, &str, f32, f32); 5] = [
     ("filter2_env_depth", "filter 2 envelope", -1.0, 1.0),
 ];
 pub const FILTER2_FIELD: usize = PLAY_FIELD + PLAY_FIELDS.len();
+/// Each group's ATTACK, appended after the grain attack; get and set number
+/// it after FILTER2_FIELDS.
+pub const ATTACK_FIELD: usize = FILTER2_FIELD + FILTER2_FIELDS.len();
 const ROUTINGS: [crate::preset::FilterRouting; 3] = [
     crate::preset::FilterRouting::Single,
     crate::preset::FilterRouting::Serial,
@@ -362,7 +370,8 @@ pub fn get(group: &Group, field: usize) -> f32 {
         28 => group.filter2_type as u8 as f32,
         29 => group.filter2_cutoff,
         30 => group.filter2_resonance,
-        _ => group.filter2_env_depth,
+        31 => group.filter2_env_depth,
+        _ => group.attack,
     }
 }
 pub fn set(group: &mut Group, field: usize, value: f32) {
@@ -398,7 +407,8 @@ pub fn set(group: &mut Group, field: usize, value: f32) {
         28 => group.filter2_type = FilterType::ALL[(value.round().max(0.0) as usize).min(2)],
         29 => group.filter2_cutoff = value,
         30 => group.filter2_resonance = value,
-        _ => group.filter2_env_depth = value,
+        31 => group.filter2_env_depth = value,
+        _ => group.attack = value,
     }
 }
 

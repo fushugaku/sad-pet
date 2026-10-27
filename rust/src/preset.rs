@@ -681,6 +681,9 @@ pub struct Params {
     pub min_grains: f32,
     /// How much of the grains' own output they read again.
     pub grain_feedback: f32,
+    /// How much of the grain cloud's build-up a note waits through: at 1 its
+    /// grains start from none, at 0 it starts with a played-in cloud.
+    pub grain_attack: f32,
     pub bpm: f32,
     pub loop_one_bar: bool,
     pub sample_root_note: f32,
@@ -740,6 +743,7 @@ impl Default for Params {
             midi_pitchbend_range: 2.0,
             min_grains: 0.0,
             grain_feedback: 0.0,
+            grain_attack: 1.0,
             bpm: 120.0,
             loop_one_bar: false,
             sample_root_note: 60.0,
@@ -795,7 +799,8 @@ impl Params {
             adsr_sustain,
             adsr_release,
             master_volume,
-            grain_feedback
+            grain_feedback,
+            grain_attack
         );
         finite_clamp(&mut self.filter_env_depth, -1.0, 1.0, 0.0);
         finite_clamp(&mut self.filter2_env_depth, -1.0, 1.0, 0.0);
