@@ -16,7 +16,7 @@ for (const path of engines) {
   utility.call("sad_prepare", utility.call("sad_factory", undefined, 0));
   const prepared = utility.call("sad_pack");
   const preset = utility.request("/api/presets")[0];
-  // Dense grains a fifth up: the sinc kernels and the cubic read them apart.
+  // Dense grains a fifth up: the wide kernels and the flat one read them apart.
   Object.assign(preset.params, { grains: 1, grain_size: 0.9, pitch: 0.5 + 7 / 72 });
   const render = (quality) => {
     const core = new Core(module, 48000);
@@ -35,7 +35,7 @@ for (const path of engines) {
   const high = render();
   assert.equal(render("high"), high, `${path}: High is the default`);
   const eco = render("eco");
-  assert.notEqual(eco, high, `${path}: Eco reads the cubic`);
+  assert.notEqual(eco, high, `${path}: Eco reads the flat kernel`);
   assert.equal(render("eco"), eco, `${path}: Eco renders reproducibly`);
   // Each instance keeps its own choice: offline renders in another keep High.
   assert.equal(render(), high, `${path}: another instance stays High`);
