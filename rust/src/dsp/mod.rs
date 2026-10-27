@@ -920,9 +920,13 @@ impl Engine {
         self.previous_source = None;
         self.source_fade_remaining = 0;
     }
+    /// Whether the file plays through a Source FX cache. A live input has no
+    /// file, and a Rack's Insert FX runs live wherever it stands.
+    pub fn reads_source_cache(&self) -> bool {
+        self.live_input.is_none() && self.preset.rack.is_none()
+    }
     pub fn source_effects_pending(&self) -> bool {
-        // A Rack's Insert FX runs live wherever it stands.
-        if self.live_input.is_some() || self.source_fx_error || self.preset.rack.is_some() {
+        if !self.reads_source_cache() || self.source_fx_error {
             return false;
         }
         let slot = self

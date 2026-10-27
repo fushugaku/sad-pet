@@ -173,4 +173,57 @@ assert.deepEqual(
   recalled.request("/api/timbres").timbres.map((t) => [t.id, t.kind, t.name]),
   core.request("/api/timbres").timbres.map((t) => [t.id, t.kind, t.name]),
 );
+
+// Source FX rendered ahead into a copy of the file stay out of timbres that
+// do not play the file through it, so their instruments and the scene save.
+{
+  const core = new Core(module, rate),
+    worker = new Core(module, rate);
+  worker.call("sad_prepare", worker.call("sad_factory", undefined, 0));
+  core.call("sad_load", worker.call("sad_pack"));
+  const save = (id) => {
+    core.request("/api/timbres/select", { id });
+    worker.call("sad_scene_adopt", core.call("sad_scene_pack"));
+    return worker.json("sad_part_document");
+  };
+  /** The page's Source FX for the active timbre: the worker renders, the worklet uploads. */
+  const sourceFx = () => {
+    const state = core.request("/api/state"),
+      recipe = state.source_fx.recipe;
+    worker.call("sad_scene_adopt", core.call("sad_scene_pack"));
+    const prepared = worker.call("sad_source_prepare", recipe),
+      n = new DataView(prepared).getUint32(8, true);
+    const header = JSON.parse(new TextDecoder().decode(new Uint8Array(prepared, 12, n)));
+    if (!core.json("sad_source_begin", { recipe, header, generation: state.source_generation }).started)
+      return "refused";
+    const bytes = new Uint8Array(prepared, 12 + n);
+    for (let at = 0, status = 0; ; at += core.sourceCopied)
+      if ((status = core.sourceChunk(bytes, at)) !== 0) return status === 1 ? "installed" : status;
+  };
+  const slot = { ...core.request("/api/color-defaults").slot, id: 90, kind: "waveshaper", mix: 1 };
+  const modules = (...names) => names.map((module) => ({ module, enabled: true }));
+
+  // A Rack's Insert FX runs live, so it takes no cache; a Grain engine that
+  // later records the Rack's output leaves none behind to break the save.
+  const rack = core.request("/api/timbres/add", { kind: "rack" }).active;
+  let p = core.request("/api/preset");
+  Object.assign(p, { source_color_chain: [slot], rack: { ...p.rack, modules: modules("sample", "source_fx", "mixer") } });
+  core.request("/api/preset", p);
+  assert.equal(sourceFx(), "refused", "a Rack plays its file without a Source FX cache");
+  p = core.request("/api/preset");
+  p.rack.modules = modules("sample", "source_fx", "mixer", "grains");
+  core.request("/api/preset", p);
+  assert.equal(core.request("/api/state").input.active, true);
+  assert.equal(save(rack).meta.kind, "rack", "the Rack saves as an instrument");
+
+  // A Granular timbre's cache stays while its input plays instead of the file.
+  core.request("/api/timbres/select", { id: 0 });
+  p = core.request("/api/preset");
+  p.source_color_chain = [slot];
+  core.request("/api/preset", p);
+  assert.equal(sourceFx(), "installed");
+  core.request("/api/input", { active: true });
+  assert.equal(save(0).meta.kind, "granular", "a timbre on its input saves as an instrument");
+  assert.equal(worker.json("sad_scene_document").timbres.length, 2, "and the scene saves");
+}
 console.log("instrument preset tests passed");
