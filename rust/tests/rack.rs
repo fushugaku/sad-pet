@@ -16,6 +16,7 @@ fn slots(modules: &[Module]) -> Vec<Slot> {
         .map(|&module| Slot {
             module,
             enabled: true,
+            id: 0,
         })
         .collect()
 }

@@ -3578,6 +3578,15 @@ function destinationGroups() {
     { label: "Envelopes", choices: pull(/^ENV \d+$/).map(([label, choices]) => section(label, choices)) },
     { label: "Pre-filter FX", choices: effects("pre_color_chain") },
     { label: "Post-filter FX", choices: effects("color_chain") },
+    // A Rack's EQs: a section per band, then the output.
+    ...pull(/^EQ \d+$/).map(([label, choices]) => ({
+      label,
+      choices: [
+        ...Array.from({ length: 8 }, (_, b) => section(`Band ${b + 1}`,
+          choices.filter(([, text]) => text.startsWith(`${label} · Band ${b + 1} ·`)))),
+        ...choices.filter(([, text]) => text === `${label} · Output`),
+      ],
+    })),
     section("Resynth", [
       ...take("Resynth"),
       ...pull(/^OSC \d+$/).map(([label, choices]) => section(label, choices, `Resynth ${label}`)),
@@ -3792,6 +3801,17 @@ function modulationGroups() {
   ]);
   const extra = new Map();
   for (const spec of sequenceCatalog?.modulation || []) {
+    // A Rack's EQs, each band in a section of its own.
+    const eq = /^rack_eq(\d)_(?:band(\d)_(on|frequency|gain|q)|output)$/.exec(spec.id);
+    if (eq) {
+      if (!preset.rack?.modules?.some((m) => m.module === "eq" && m.id === Number(eq[1]))) continue;
+      const label = `EQ ${eq[1]}`;
+      if (!extra.has(label)) extra.set(label, []);
+      const field = { on: "On", frequency: "Frequency", gain: "Gain", q: "Q" }[eq[3]];
+      extra.get(label).push([{ control: { index: spec.index } },
+        eq[2] ? `${label} · Band ${eq[2]} · ${field}` : `${label} · Output`]);
+      continue;
+    }
     // A Rack's Mixer strips, for the chains it has.
     const strip = /^rack_(sample|synth|drums)_(level|pan|mute|solo)$/.exec(spec.id);
     if (spec.id.startsWith("rack_")) {

@@ -4,6 +4,7 @@ pub mod color;
 pub mod compressor;
 pub mod delay;
 pub mod effects;
+pub mod eq;
 pub mod fast;
 mod feedback;
 pub mod filter;
@@ -174,6 +175,8 @@ pub(crate) struct Modulated {
     pub(crate) grain_groups: crate::grain_groups::Settings,
     /// A Rack's Mixer strips.
     pub(crate) rack_strips: crate::rack::Strips,
+    /// A Rack's EQs, by number less one.
+    pub(crate) rack_eqs: [crate::eq::Equalizer; crate::eq::MAX_EQS],
 }
 /// An LFO or ENV of a frame, by index.
 #[derive(Clone, Copy)]
@@ -223,6 +226,12 @@ impl Modulated {
             .rack
             .as_ref()
             .map_or_else(Default::default, |r| r.strips);
+        // Only EQs in the rack play, so others keep what they had.
+        if let Some(rack) = preset.rack.as_deref()
+            && !rack.equalizers.is_empty()
+        {
+            self.rack_eqs = rack.equalizer_bank();
+        }
     }
     /// An LFO's or ENV's routes, each at its depth as modulated so far.
     pub(crate) fn modulator_routes(
@@ -519,6 +528,8 @@ pub struct Engine {
     sampler: Option<Box<sampler::Runtime>>,
     /// Present while the preset is a Rack: its modules' order and Mixer.
     rack: Option<rack::Runtime>,
+    /// A Rack's EQ modules, by number.
+    equalizers: Box<eq::Bank>,
     pub processed_source: Option<Arc<source_fx::ProcessedSource>>,
     previous_source: Option<Arc<source_fx::ProcessedSource>>,
     source_fade_remaining: u32,
@@ -626,6 +637,7 @@ impl Engine {
             synth: None,
             sampler: None,
             rack: None,
+            equalizers: Box::new(eq::Bank::new(sr)),
             processed_source: None,
             previous_source: None,
             source_fade_remaining: 0,
@@ -851,6 +863,8 @@ impl Engine {
             .rack
             .as_deref()
             .map(|settings| rack::Runtime::new(settings, self.rack.as_ref()));
+        self.equalizers
+            .activate(self.rack.as_ref().map_or(0, |r| r.equalizers));
         if let Some(bus) = &preset.bus {
             // Granular staying on keeps the running history and its audio.
             if !(bus.granular && self.bus_history()) {
@@ -2246,6 +2260,7 @@ impl Engine {
         }
         if let Some(rack) = &mut self.rack {
             rack.retarget(&m.rack_strips);
+            self.equalizers.retarget(&m.rack_eqs);
         }
         let params = m.params;
         self.spare_modulated = Some(std::mem::replace(&mut self.modulated, m));

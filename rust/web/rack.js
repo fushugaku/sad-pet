@@ -26,7 +26,8 @@
   };
   const POWER = '<svg aria-hidden="true"><use href="#power-glyph" /></svg>';
 
-  /** What a Rack can hold, as the module menu lists it. Each at most once. */
+  /** What a Rack can hold, as the module menu lists it. Each at most once,
+   * but for the EQ: up to MAX_EQS of those, each with its number. */
   const MODULES = [
     { key: "sample", label: "Sample", group: "Sources",
       hint: "The loaded file, played by the notes" },
@@ -44,6 +45,8 @@
       hint: "Filter 1 and 2; per note right under a Synth or Sample" },
     { key: "resynth", label: "Resynth", group: "Processing",
       hint: "16 bands of analysis played by up to four oscillators" },
+    { key: "eq", label: "EQ", group: "Effects",
+      hint: "Eight-band parametric EQ · add as many as you need" },
     { key: "source_fx", label: "Insert FX", group: "Effects", hint: "One effect" },
     { key: "pre_fx", label: "FX A", group: "Effects", hint: "A chain of up to 12 effects" },
     { key: "post_fx", label: "FX B", group: "Effects", hint: "A chain of up to 12 effects" },
@@ -61,6 +64,12 @@
   const STAGES = { source_fx: "source", grains: "grains", resynth: "resynth",
     pre_fx: "pre_fx", filters: "filters", post_fx: "post_fx" };
   const STRIP = { level: 1, pan: 0.5, muted: false, solo: false };
+  /** EQ modules a rack can hold (eq::MAX_EQS). */
+  const MAX_EQS = 8;
+  /** A module's key in the rack: its kind, or "eq3" for EQ number 3. */
+  const keyOf = (slot) => (slot.module === "eq" ? `eq${slot.id}` : slot.module);
+  const moduleOf = (key) => (/^eq\d+$/.test(key) ? "eq" : key);
+  const labelOf = (key) => (moduleOf(key) === "eq" ? `EQ ${key.slice(2)}` : INFO[key].label);
 
   /**
    * Which chain each module processes, as the engine plans it (rack::Plan):
@@ -72,7 +81,8 @@
     let chain = null, perNote = false, previous = null;
     return modules.map((slot, i) => {
       const enabled = slot.enabled !== false;
-      const step = { module: slot.module, enabled, chain, perNote: false, readsFile: false, mixed: false };
+      const step = { module: slot.module, key: keyOf(slot), id: slot.id ?? 0, enabled, chain,
+        perNote: false, readsFile: false, mixed: false };
       if (SOURCES.includes(slot.module)) {
         chain = step.chain = slot.module;
         // Drums, kit and voice are streams with no notes of their own.
@@ -177,6 +187,7 @@
           button(`+ ${INFO[key].label}`, `Add ${INFO[key].label}`, () => this.add(key, 0)));
       for (const [key, section] of Object.entries(this.sections)) {
         section.dataset.module = key;
+        section.dataset.key = key;
         if (section.isConnected) {
           const home = document.createComment(`rack home: ${key}`);
           section.before(home);
@@ -216,7 +227,7 @@
       const section = this.sections[key];
       const heading = section.querySelector(":scope > .section-heading");
       const h2 = heading.querySelector("h2");
-      const label = INFO[key].label;
+      const label = labelOf(key);
       const lead = el("div", "rack-lead");
       const grip = button("", `Move ${label}`, null, "rack-grip");
       grip.title = `Drag to move ${label} · ↑ ↓ keys move it too`;
@@ -255,6 +266,31 @@
       section.rack = { heading, h2, text, original: text?.nodeValue ?? "", chip, summary, power, up, down, fold, remove, grip };
     }
 
+    /** EQ number `id`'s card: made the first time a rack shows it. */
+    equalizer(id) {
+      const key = `eq${id}`;
+      if (this.sections[key]) return this.sections[key];
+      const section = this.card("eq", `EQ ${id}`, "rack-eq");
+      section.dataset.module = "eq";
+      section.dataset.key = key;
+      section.dataset.id = String(id);
+      this.sections[key] = section;
+      this.decorate(key);
+      if (window.SadEq) {
+        section.eq = new window.SadEq.Editor(section, id, {
+          read: () => this.preset()?.rack?.equalizers?.find((eq) => eq.id === id) ?? null,
+          rate: () => this.hooks.state()?.sample_rate,
+          parameter: this.hooks.parameter,
+          structure: this.hooks.structure,
+          knob: this.hooks.knob,
+          label: () => `EQ ${id}`,
+          // A folded EQ shows what it does in its heading.
+          changed: () => this.refresh(plan(this.modules())),
+        });
+      } else section.append(el("p", "muted", "The EQ editor did not load."));
+      return section;
+    }
+
     preset() {
       return this.hooks.read();
     }
@@ -279,7 +315,7 @@
       const steps = plan(rack.modules);
       const layout = JSON.stringify([
         this.timbre(),
-        steps.map((s) => [s.module, s.enabled, s.chain, s.perNote, s.readsFile, s.mixed]),
+        steps.map((s) => [s.key, s.enabled, s.chain, s.perNote, s.readsFile, s.mixed]),
         !!preset.drums,
         !!preset.synth,
       ]);
@@ -290,11 +326,13 @@
       // The page's own routing shows the waveform again on every sync.
       this.place(steps);
       this.refresh(steps);
+      for (const step of steps) if (step.module === "eq") this.sections[step.key]?.eq?.sync();
     }
 
     /** Puts the modules in order, with the links that show where sound goes. */
     arrange(steps) {
-      const present = new Set(steps.map((s) => s.module));
+      for (const step of steps) if (step.module === "eq") this.equalizer(step.id);
+      const present = new Set(steps.map((s) => s.key));
       for (const [key, section] of Object.entries(this.sections)) {
         if (present.has(key)) continue;
         this.home(key);
@@ -303,7 +341,7 @@
       const nodes = [];
       steps.forEach((step, i) => {
         if (i) nodes.push(this.link(steps, i));
-        const section = this.sections[step.module];
+        const section = this.sections[step.key];
         section.classList.remove("rack-absent");
         section.classList.add("rack-module");
         section.classList.toggle("rack-idle", step.chain === null);
@@ -341,7 +379,7 @@
         }), document.createTextNode(chains.length ? " meet in the Mixer" : "No chain reaches the Mixer yet"));
         link.append(label);
       }
-      const insert = button("+", `Add a module between ${INFO[previous.module].label} and ${INFO[next.module].label}`,
+      const insert = button("+", `Add a module between ${labelOf(previous.key)} and ${labelOf(next.key)}`,
         null, "rack-insert");
       insert.onclick = () => this.openMenu(insert, index);
       link.append(insert);
@@ -446,28 +484,30 @@
       const id = this.timbre();
       const count = steps.length;
       steps.forEach((step, index) => {
-        const section = this.sections[step.module];
+        const section = this.sections[step.key];
+        if (!section) return;
         const r = section.rack;
-        if (r.text) r.text.nodeValue = `${INFO[step.module].label} `;
+        const label = labelOf(step.key);
+        if (r.text) r.text.nodeValue = `${label} `;
         const on = step.module === "resynth" ? !!preset.resynth?.enabled : step.enabled;
         section.classList.toggle("rack-off", !on);
         if (r.power) {
           r.power.setAttribute("aria-pressed", String(on));
-          r.power.setAttribute("aria-label", `${INFO[step.module].label} ${on ? "on" : "off"}`);
-          r.power.title = on ? `Switch ${INFO[step.module].label} off` : `Switch ${INFO[step.module].label} on`;
+          r.power.setAttribute("aria-label", `${label} ${on ? "on" : "off"}`);
+          r.power.title = on ? `Switch ${label} off` : `Switch ${label} on`;
         }
         r.up.disabled = index === 0;
         r.down.disabled = index === count - 1;
-        const folded = this.folded.has(`${id}:${step.module}`);
+        const folded = this.folded.has(`${id}:${step.key}`);
         section.classList.toggle("rack-folded", folded);
         r.fold.setAttribute("aria-expanded", String(!folded));
-        r.fold.setAttribute("aria-label", `${folded ? "Unfold" : "Fold"} ${INFO[step.module].label}`);
+        r.fold.setAttribute("aria-label", `${folded ? "Unfold" : "Fold"} ${label}`);
         r.fold.title = r.fold.getAttribute("aria-label");
         this.setText(r.chip, this.chip(step, steps));
         r.chip.dataset.chain = step.chain ?? "none";
         this.setText(r.summary, folded ? this.summary(step, preset) : "");
       });
-      const allFolded = count > 0 && steps.every((s) => this.folded.has(`${id}:${s.module}`));
+      const allFolded = count > 0 && steps.every((s) => this.folded.has(`${id}:${s.key}`));
       this.foldAll.textContent = allFolded ? "Unfold all" : "Fold all";
       this.foldAll.setAttribute("aria-pressed", String(allFolded));
       this.syncStrips();
@@ -532,6 +572,8 @@
           return effects(preset.pre_color_chain);
         case "post_fx":
           return effects(preset.color_chain);
+        case "eq":
+          return this.sections[step.key]?.eq?.summary() ?? "";
         case "mixer":
           return plan(preset.rack.modules).filter((s) => s.mixed)
             .map(({ module }) => `${CHAINS[module]} ${decibels(this.strip(module).level)}`).join(" · ");
@@ -559,7 +601,7 @@
         for (const step of steps) {
           if (step.module === source) seen = true;
           else if (seen && (SOURCES.includes(step.module) || step.module === "mixer")) break;
-          else if (seen) chain.push(INFO[step.module].label);
+          else if (seen) chain.push(labelOf(step.key));
         }
         this.stripViews.push(this.stripView(source, chain));
       }
@@ -633,7 +675,12 @@
 
     /** Each chain's level after its strip, from the host's latest peaks. */
     meters(peaks) {
-      if (!this.active || !peaks) return;
+      if (!this.active) return;
+      // The EQ curves follow modulation as it plays.
+      const knobs = this.hooks.state()?.knobs;
+      for (const slot of this.modules())
+        if (slot.module === "eq") this.sections[keyOf(slot)]?.eq?.live(knobs);
+      if (!peaks) return;
       for (const view of this.stripViews ?? []) {
         const index = SOURCES.indexOf(view.source);
         const peak = Math.min(1, peaks[index] ?? 0);
@@ -683,14 +730,14 @@
 
     toggle(key) {
       this.edit((modules) => {
-        const slot = modules.find((m) => m.module === key);
+        const slot = modules.find((m) => keyOf(m) === key);
         if (slot) slot.enabled = slot.enabled === false;
       });
     }
 
     move(key, by, control) {
       const modules = this.modules();
-      const from = modules.findIndex((m) => m.module === key);
+      const from = modules.findIndex((m) => keyOf(m) === key);
       const to = from + by;
       if (from < 0 || to < 0 || to >= modules.length) return;
       const section = this.sections[key];
@@ -713,15 +760,24 @@
 
     toggleAll() {
       const id = this.timbre();
-      const keys = this.modules().map((m) => `${id}:${m.module}`);
+      const keys = this.modules().map((m) => `${id}:${keyOf(m)}`);
       const fold = !keys.every((k) => this.folded.has(k));
       for (const k of keys) fold ? this.folded.add(k) : this.folded.delete(k);
       this.refresh(plan(this.modules()));
     }
 
-    /** Adds `key` at `index` (null: where it usually goes). */
+    /** The lowest EQ number the rack has free, or 0 when it holds them all. */
+    freeEq() {
+      const used = new Set(this.modules().filter((m) => m.module === "eq").map((m) => m.id));
+      for (let id = 1; id <= MAX_EQS; id++) if (!used.has(id)) return id;
+      return 0;
+    }
+
+    /** Adds `key` at `index` (null: where it usually goes). Every EQ added
+     * is a new one, with settings of its own. */
     add(key, index = null) {
       const modules = this.modules();
+      if (key === "eq") return this.addEq(index);
       if (modules.some((m) => m.module === key)) return this.reveal(key);
       if (index === null) {
         const mixer = modules.findIndex((m) => m.module === "mixer");
@@ -739,10 +795,30 @@
       });
     }
 
+    /** A new EQ at `index` (null: at the end), or `restore`d settings. */
+    addEq(index = null, restore = null) {
+      const id = restore && !this.modules().some((m) => m.module === "eq" && m.id === restore.id)
+        ? restore.id : this.freeEq();
+      if (!id) return;
+      const rack = this.preset()?.rack;
+      if (!rack) return;
+      rack.equalizers ??= [];
+      const settings = restore ? { ...structuredClone(restore), id } : window.SadEq?.defaults(id) ?? { id };
+      rack.equalizers = rack.equalizers.filter((eq) => eq.id !== id).concat([settings])
+        .sort((a, b) => a.id - b.id);
+      this.hideUndo();
+      const at = index ?? this.modules().length;
+      this.edit((list) => list.splice(Math.min(at, list.length), 0, { module: "eq", enabled: true, id }), {
+        focus: () => this.reveal(`eq${id}`, true),
+      });
+      return id;
+    }
+
     remove(key) {
       const modules = this.modules();
-      const index = modules.findIndex((m) => m.module === key);
+      const index = modules.findIndex((m) => keyOf(m) === key);
       if (index < 0) return;
+      if (moduleOf(key) === "eq") return this.removeEq(key, index);
       const preset = this.preset();
       const slot = modules[index];
       const timbre = this.timbre();
@@ -750,19 +826,41 @@
       const kept = KEPT.includes(key);
       if (kept) stash[key] = structuredClone(preset[key]);
       this.stash.set(timbre, stash);
-      const neighbor = this.sections[(modules[index + 1] ?? modules[index - 1])?.module];
+      const next = modules[index + 1] ?? modules[index - 1];
+      const neighbor = next && this.sections[keyOf(next)];
       this.edit((list) => list.splice(index, 1), {
         reload: kept,
         // Keys go on from the module that takes its place.
         focus: () => neighbor?.rack.grip.focus({ preventScroll: true }),
       });
       this.showUndo(`${INFO[key].label} removed`, () => {
-        if (this.timbre() !== timbre || this.modules().some((m) => m.module === key)) return;
+        if (this.timbre() !== timbre || this.modules().some((m) => keyOf(m) === key)) return;
         if (kept) this.preset()[key] = stash[key];
         this.edit((list) => list.splice(Math.min(index, list.length), 0, slot), {
           reload: kept,
           focus: () => this.reveal(key, true),
         });
+      });
+    }
+
+    /** An EQ goes with its settings; Undo brings both back where it stood. */
+    removeEq(key, index) {
+      const modules = this.modules();
+      const rack = this.preset().rack;
+      const id = modules[index].id;
+      const enabled = modules[index].enabled !== false;
+      const settings = structuredClone(rack.equalizers?.find((eq) => eq.id === id) ?? null);
+      const timbre = this.timbre();
+      const next = modules[index + 1] ?? modules[index - 1];
+      const neighbor = next && this.sections[keyOf(next)];
+      rack.equalizers = (rack.equalizers ?? []).filter((eq) => eq.id !== id);
+      this.edit((list) => list.splice(index, 1), {
+        focus: () => neighbor?.rack.grip.focus({ preventScroll: true }),
+      });
+      this.showUndo(`${labelOf(key)} removed`, () => {
+        if (this.timbre() !== timbre || !settings) return;
+        const restored = this.addEq(Math.min(index, this.modules().length), settings);
+        if (restored && !enabled) this.toggle(`eq${restored}`);
       });
     }
 
@@ -806,6 +904,9 @@
       this.menuAnchor = anchor;
       anchor.setAttribute("aria-expanded", "true");
       const present = new Set(this.modules().map((m) => m.module));
+      // EQs come in any number until the rack holds them all.
+      present.delete("eq");
+      const eqs = this.modules().filter((m) => m.module === "eq").length;
       this.menu.replaceChildren();
       let group = "";
       for (const module of MODULES.filter((m) => !this.unavailable.has(m.key))) {
@@ -819,9 +920,13 @@
         item.dataset.module = module.key;
         if (SOURCES.includes(module.key) || module.key === "mixer") item.dataset.chain = module.key === "mixer" ? "mix" : module.key;
         const name = el("strong", "", module.label);
-        const hint = el("span", "", present.has(module.key) ? "In the rack — show it" : module.hint);
+        const full = module.key === "eq" && eqs >= MAX_EQS;
+        const hint = el("span", "", present.has(module.key) ? "In the rack — show it"
+          : full ? `All ${MAX_EQS} EQs are in the rack`
+          : module.key === "eq" && eqs ? `${module.hint} · ${eqs} in the rack` : module.hint);
         item.append(el("i", "rack-menu-dot"), name, hint);
         item.classList.toggle("present", present.has(module.key));
+        item.disabled = full;
         item.onclick = () => {
           this.closeMenu();
           this.add(module.key, index);
@@ -873,7 +978,7 @@
       event.preventDefault();
       const grip = event.currentTarget;
       const section = this.sections[key];
-      const order = this.modules().map((m) => m.module);
+      const order = this.modules().map(keyOf);
       const before = section.getBoundingClientRect().top;
       this.stack.classList.add("rack-arranging");
       section.classList.add("rack-dragging");
@@ -882,7 +987,7 @@
       let pointer = event.clientY;
       let frame = 0;
       const modules = () => [...this.stack.querySelectorAll(":scope > .rack-module")];
-      const enabled = new Map(this.modules().map((m) => [m.module, m.enabled !== false]));
+      const enabled = new Map(this.modules().map((m) => [keyOf(m), m.enabled !== false]));
       const place = () => {
         const others = modules().filter((m) => m !== section);
         const target = others.find((m) => {
@@ -894,7 +999,8 @@
         } else if (this.stack.lastElementChild !== section) this.stack.append(section);
         // Each module takes the color of the chain it would join here.
         const now = modules();
-        plan(now.map((m) => ({ module: m.dataset.module, enabled: enabled.get(m.dataset.module) })))
+        plan(now.map((m) => ({ module: m.dataset.module, id: Number(m.dataset.id) || 0,
+          enabled: enabled.get(m.dataset.key) })))
           .forEach((step, i) => {
             now[i].dataset.chain = step.chain ?? "none";
             now[i].classList.toggle("rack-idle", step.chain === null);
@@ -921,12 +1027,12 @@
         window.removeEventListener("pointercancel", abort, true);
         window.removeEventListener("blur", abort);
         document.removeEventListener("keydown", cancel, true);
-        const next = modules().map((m) => m.dataset.module);
+        const next = modules().map((m) => m.dataset.key);
         const top = section.getBoundingClientRect().top;
         this.stack.classList.remove("rack-arranging");
         section.classList.remove("rack-dragging");
         if (commit && next.join() !== order.join()) {
-          const slots = new Map(this.modules().map((m) => [m.module, m]));
+          const slots = new Map(this.modules().map((m) => [keyOf(m), m]));
           this.edit((list) => list.splice(0, list.length, ...next.map((k) => slots.get(k))));
         } else {
           this.layout = "";
@@ -961,6 +1067,7 @@
     }
   }
   Rack.plan = plan;
+  Rack.keyOf = keyOf;
   Rack.reorder = reorder;
   Rack.modules = MODULES;
   window.SadRack = Rack;

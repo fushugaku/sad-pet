@@ -273,7 +273,10 @@ fn grain_group_controls_append_after_the_macros() {
     // strips and Grain engine history, then Resynth's track and tracking,
     // then the Rack's Sampler and Vocal strips, then Resynth's carrier envelope.
     let rack = filter2 + 4 * 5 + 8 * 5;
-    assert_eq!(ids.len(), rack + 3 * 4 + 1 + 2 + 2 * 4 + 3);
+    // Then the Rack EQs: each band's on, frequency, gain and Q, and output.
+    let eqs = rack + 3 * 4 + 1 + 2 + 2 * 4 + 3;
+    assert_eq!(ids.len(), eqs + 8 * (4 * 8 + 1));
+    assert_eq!(ids[eqs + 1], "rack_eq1_band1_frequency");
     assert_eq!(ids[filter2 + 4 * 5], "lfo1_shape");
     assert_eq!(ids[rack], "rack_sample_level");
     assert_eq!(ids[rack + 3 * 4], "rack_buffer_seconds");
@@ -284,7 +287,7 @@ fn grain_group_controls_append_after_the_macros() {
     assert_eq!(ids[rack + 3 * 4 + 3], "rack_sampler_level");
     assert_eq!(ids[rack + 3 * 4 + 3 + 7], "rack_vocal_solo");
     assert_eq!(
-        ids[rack + 3 * 4 + 3 + 8..],
+        ids[rack + 3 * 4 + 3 + 8..eqs],
         ["resynth_hold", "resynth_sustain", "resynth_fade"]
     );
     let mut preset = Preset::default();

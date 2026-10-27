@@ -7,6 +7,7 @@ pub mod color;
 pub mod drums;
 pub mod dsp;
 pub mod effect_presets;
+pub mod eq;
 pub mod firmware;
 pub mod grain_groups;
 pub mod imported_fx;

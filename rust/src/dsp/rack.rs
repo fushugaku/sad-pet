@@ -35,6 +35,8 @@ pub(super) struct Runtime {
     /// The Sampler and Vocal modules are in the rack.
     kit: bool,
     vocal: bool,
+    /// The EQs that play: on and under a source, bit n for EQ n + 1.
+    pub(super) equalizers: u16,
 }
 impl Runtime {
     pub(super) fn new(settings: &Settings, previous: Option<&Runtime>) -> Self {
@@ -56,6 +58,11 @@ impl Runtime {
             peaks: previous.map_or([0.0; STRIPS], |p| p.peaks),
             kit: settings.has(Module::Sampler),
             vocal: settings.has(Module::Vocal),
+            equalizers: plan
+                .iter()
+                .filter(|s| s.module == Module::Eq && s.enabled && s.chain != Chain::None)
+                .filter_map(|s| s.id.checked_sub(1))
+                .fold(0, |mask, index| mask | 1 << index),
         }
     }
     /// A solo keeps the soloed chains among those that reach the Mixer.
@@ -406,6 +413,12 @@ impl Engine {
                         Instance::Shared,
                     );
                     flow.signal = self.tap(Stage::Resynth, input, output);
+                }
+                Module::Eq => {
+                    self.rack_collapse(&mut flow);
+                    if let Some(index) = step.id.checked_sub(1) {
+                        flow.signal = self.equalizers.process(usize::from(index), flow.signal);
+                    }
                 }
                 Module::SourceFx => {
                     self.rack_collapse(&mut flow);

@@ -307,14 +307,19 @@ fn synth_controls_append_after_every_other_host_parameter() {
     assert_eq!(later[shaping + 8 * 5], "rack_sample_level");
     let rack = shaping + 8 * 5 + 3 * 4 + 1;
     // Then Resynth's track and tracking mode, then the Rack's Sampler and
-    // Vocal strips, then Resynth's carrier envelope.
+    // Vocal strips, then Resynth's carrier envelope, then the Rack EQs.
     assert_eq!(later[rack..rack + 2], ["resynth_track", "resynth_tracking"]);
     assert_eq!(later[rack + 2], "rack_sampler_level");
     assert_eq!(later[rack + 2 + 4], "rack_vocal_level");
+    let eqs = rack + 2 + 2 * 4 + 3;
     assert_eq!(
-        later[rack + 2 + 2 * 4..],
+        later[eqs - 3..eqs],
         ["resynth_hold", "resynth_sustain", "resynth_fade"]
     );
+    assert_eq!(later[eqs], "rack_eq1_band1_on");
+    assert_eq!(later[eqs + 4 * 8], "rack_eq1_output");
+    assert_eq!(later.len(), eqs + 8 * (4 * 8 + 1));
+    assert_eq!(later[later.len() - 1], "rack_eq8_output");
 }
 
 #[test]

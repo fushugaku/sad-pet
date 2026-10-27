@@ -4,6 +4,7 @@
 //! whose sum the modules under it process in turn. The sequencer and the
 //! modulators are the timbre's own and stay under every module.
 use crate::dsp::sample::LiveInput;
+use crate::eq::{Equalizer, MAX_EQS};
 use crate::taps::Stage;
 use serde::{Deserialize, Serialize};
 
@@ -42,9 +43,12 @@ pub enum Module {
     PostFx,
     /// Where the chains above it meet, each on a strip of its own.
     Mixer,
+    /// A parametric equalizer. A rack may hold up to `MAX_EQS`, each with
+    /// its number in its slot and its settings in `Settings::equalizers`.
+    Eq,
 }
 impl Module {
-    pub const ALL: [Module; 12] = [
+    pub const ALL: [Module; 13] = [
         Module::Sample,
         Module::Synth,
         Module::Drums,
@@ -57,6 +61,7 @@ impl Module {
         Module::Filters,
         Module::PostFx,
         Module::Mixer,
+        Module::Eq,
     ];
     pub fn source(self) -> bool {
         matches!(
@@ -90,9 +95,13 @@ impl Module {
             Module::Filters => "Filters",
             Module::PostFx => "FX B",
             Module::Mixer => "Mixer",
+            Module::Eq => "EQ",
         }
     }
 }
+
+/// Modules a rack can hold: one of each, and every EQ.
+pub const MAX_MODULES: usize = Module::ALL.len() - 1 + MAX_EQS;
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -100,12 +109,19 @@ pub struct Slot {
     pub module: Module,
     /// Off, a source is silent and any other module passes its input on.
     pub enabled: bool,
+    /// An EQ's number, 1 to `MAX_EQS`; 0 for every other module.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub id: u8,
+}
+fn is_zero(id: &u8) -> bool {
+    *id == 0
 }
 impl Default for Slot {
     fn default() -> Self {
         Self {
             module: Module::Mixer,
             enabled: true,
+            id: 0,
         }
     }
 }
@@ -238,12 +254,15 @@ impl Strips {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
-    /// Top to bottom; each module at most once.
+    /// Top to bottom; each module at most once, but for the EQs.
     pub modules: Vec<Slot>,
     pub strips: Strips,
     /// Seconds of its chain a Grain engine keeps when it does not read the
     /// Sample right above it.
     pub buffer_seconds: f32,
+    /// Each EQ module's settings, in the order of their numbers.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub equalizers: Vec<Equalizer>,
 }
 impl Default for Settings {
     /// Drums and a filtered Synth meeting in the Mixer, then the FX B rack.
@@ -259,21 +278,62 @@ impl Default for Settings {
             .map(|module| Slot {
                 module,
                 enabled: true,
+                id: 0,
             })
             .to_vec(),
             strips: Strips::default(),
             buffer_seconds: 8.0,
+            equalizers: Vec::new(),
         }
     }
 }
 impl Settings {
     pub fn sanitize(&mut self) {
         let mut seen = Vec::with_capacity(Module::ALL.len());
-        self.modules.retain(|slot| {
+        let mut numbered = [false; MAX_EQS];
+        self.modules.retain_mut(|slot| {
+            if slot.module == Module::Eq {
+                // Each EQ keeps its number unless another has it already.
+                let index = usize::from(slot.id).wrapping_sub(1);
+                if index < MAX_EQS && !numbered[index] {
+                    numbered[index] = true;
+                } else {
+                    slot.id = 0;
+                }
+                return true;
+            }
+            slot.id = 0;
             let first = !seen.contains(&slot.module);
             seen.push(slot.module);
             first
         });
+        // An EQ without a number takes the first free one, if any is left.
+        self.modules.retain_mut(|slot| {
+            if slot.module != Module::Eq || slot.id != 0 {
+                return true;
+            }
+            let Some(free) = numbered.iter().position(|n| !n) else {
+                return false;
+            };
+            numbered[free] = true;
+            slot.id = free as u8 + 1;
+            true
+        });
+        // Settings for every EQ in the rack, and only for those.
+        let mut equalizers: Vec<Equalizer> = (1..=MAX_EQS as u8)
+            .filter(|&id| numbered[usize::from(id) - 1])
+            .map(|id| {
+                self.equalizers
+                    .iter()
+                    .find(|eq| eq.id == id)
+                    .copied()
+                    .unwrap_or_else(|| Equalizer::numbered(id))
+            })
+            .collect();
+        for eq in &mut equalizers {
+            eq.sanitize();
+        }
+        self.equalizers = equalizers;
         for source in STRIP_SOURCES {
             if let Some(strip) = self.strips.get_mut(source) {
                 strip.sanitize();
@@ -287,6 +347,23 @@ impl Settings {
     }
     pub fn has(&self, module: Module) -> bool {
         self.modules.iter().any(|slot| slot.module == module)
+    }
+    /// The settings of EQ number `id`.
+    pub fn equalizer(&self, id: u8) -> Option<&Equalizer> {
+        self.equalizers.iter().find(|eq| eq.id == id)
+    }
+    pub fn equalizer_mut(&mut self, id: u8) -> Option<&mut Equalizer> {
+        self.equalizers.iter_mut().find(|eq| eq.id == id)
+    }
+    /// Every EQ's settings by its number less one; absent ones at defaults.
+    pub fn equalizer_bank(&self) -> [Equalizer; MAX_EQS] {
+        let mut bank = [Equalizer::default(); MAX_EQS];
+        for eq in &self.equalizers {
+            if let Some(to) = bank.get_mut(usize::from(eq.id).wrapping_sub(1)) {
+                *to = *eq;
+            }
+        }
+        bank
     }
     fn enabled(&self, module: Module) -> bool {
         self.modules
@@ -342,16 +419,18 @@ pub struct Step {
     pub reads_file: bool,
     /// For a source: its chain ends in the Mixer rather than at the output.
     pub mixed: bool,
+    /// For an EQ: its number.
+    pub id: u8,
 }
 
 /// The modules in order, with what each one processes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Plan {
-    pub steps: [Option<Step>; Module::ALL.len()],
+    pub steps: [Option<Step>; MAX_MODULES],
 }
 impl Plan {
     pub fn new(modules: &[Slot]) -> Self {
-        let mut steps = [None; Module::ALL.len()];
+        let mut steps = [None; MAX_MODULES];
         let mut chain = Chain::None;
         let mut per_note = false;
         let mut previous: Option<Slot> = None;
@@ -364,6 +443,7 @@ impl Plan {
                 per_note: false,
                 reads_file: false,
                 mixed: false,
+                id: slot.id,
             };
             match slot.module {
                 Module::Sample
@@ -447,6 +527,7 @@ mod tests {
             .map(|&module| Slot {
                 module,
                 enabled: true,
+                id: 0,
             })
             .collect()
     }
@@ -511,6 +592,41 @@ mod tests {
         assert_eq!(settings.strips.synth.level, 1.0);
         assert_eq!(settings.strips.drums.pan, 1.0);
         assert_eq!(settings.buffer_seconds, MAX_BUFFER_SECONDS);
+    }
+
+    #[test]
+    fn eqs_come_in_any_number_up_to_the_most_each_with_its_own_number() {
+        use Module::*;
+        let mut settings = Settings {
+            modules: slots(&[Synth, Eq, Drums, Eq, Mixer, Eq]),
+            ..Settings::default()
+        };
+        settings.modules[3].id = 5;
+        settings.modules[5].id = 5;
+        settings.equalizers = vec![Equalizer {
+            output: 3.0,
+            ..Equalizer::numbered(5)
+        }];
+        settings.equalizers.push(Equalizer::numbered(7));
+        settings.sanitize();
+        let ids: Vec<_> = settings.modules.iter().map(|s| s.id).collect();
+        // The first EQ is numbered 1, the second keeps 5, the third's 5 is taken.
+        assert_eq!(ids, [0, 1, 0, 5, 0, 2]);
+        let numbers: Vec<_> = settings.equalizers.iter().map(|eq| eq.id).collect();
+        assert_eq!(numbers, [1, 2, 5]);
+        assert_eq!(settings.equalizer(5).unwrap().output, 3.0);
+        assert_eq!(settings.equalizer_bank()[4].output, 3.0);
+        let steps: Vec<_> = settings.plan().iter().collect();
+        assert_eq!(steps.len(), 6);
+        assert_eq!(steps[1].chain, Chain::Source(Synth));
+        assert_eq!(steps[3].id, 5);
+        assert_eq!(steps[5].chain, Chain::Mixed);
+        // A ninth EQ finds no number left and goes.
+        settings.modules = slots(&[Eq; MAX_EQS + 1]);
+        settings.sanitize();
+        assert_eq!(settings.modules.len(), MAX_EQS);
+        assert_eq!(settings.equalizers.len(), MAX_EQS);
+        assert_eq!(settings.plan().iter().count(), MAX_EQS);
     }
 
     #[test]

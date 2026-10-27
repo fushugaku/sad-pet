@@ -174,6 +174,8 @@ enum Target {
     RackStrip(usize, usize),
     /// How much of its chain a Rack's Grain engine keeps.
     RackBuffer,
+    /// A Rack EQ's control: the EQ's number less one, then `eq::CONTROLS`.
+    RackEq(usize, usize),
 }
 
 /// Host controls of each added filter, in host order.
@@ -256,6 +258,7 @@ impl Spec {
             | Target::RackBuffer
             | Target::Macro(_) => return None,
             Target::RackStrip(i, field) => m.rack_strips.at(i).field(field),
+            Target::RackEq(i, control) => m.rack_eqs[i].control(control),
             Target::ResynthOsc(i, field) => oscillator_get(m.resynth.oscillators[i], field),
             Target::SynthOsc(i, field) => oscillator_get(m.synth.oscillators[i], field),
             Target::FilterSlot(i, field) => {
@@ -322,6 +325,7 @@ impl Spec {
             | Target::RackBuffer
             | Target::Macro(_) => {}
             Target::RackStrip(i, field) => m.rack_strips.at_mut(i).set_field(field, value),
+            Target::RackEq(i, control) => m.rack_eqs[i].set_control(control, value),
             Target::ResynthOsc(i, field) => {
                 oscillator_set(&mut m.resynth.oscillators[i], field, value)
             }
@@ -368,6 +372,11 @@ impl Spec {
                 .as_ref()
                 .map_or(self.default, |r| r.strips.at(i).field(field)),
             Target::RackBuffer => preset.rack.as_ref().map_or(8., |r| r.buffer_seconds),
+            Target::RackEq(i, control) => preset
+                .rack
+                .as_ref()
+                .and_then(|r| r.equalizer(i as u8 + 1))
+                .map_or(self.default, |eq| eq.control(control)),
             Target::SynthGrain => f32::from(preset.synth.as_ref().is_some_and(|s| s.granular)),
             Target::SynthBuffer => preset.synth.as_ref().map_or(8., |s| s.buffer_seconds),
             Target::SynthOsc(i, field) => preset
@@ -463,6 +472,15 @@ impl Spec {
             Target::RackBuffer => {
                 if let Some(r) = &mut preset.rack {
                     r.buffer_seconds = value;
+                }
+            }
+            Target::RackEq(i, control) => {
+                if let Some(eq) = preset
+                    .rack
+                    .as_mut()
+                    .and_then(|r| r.equalizer_mut(i as u8 + 1))
+                {
+                    eq.set_control(control, value);
                 }
             }
             Target::FilterSlot(i, field) => {
@@ -1468,6 +1486,39 @@ pub fn specs() -> &'static [Spec] {
         resynth!(hold, "hold", 0.0, 1.0);
         resynth!(sustain, "sustain", 0.0, 1.0);
         resynth!(fade, "fade", 0.0, 1.0);
+        // Then each Rack EQ's bands and output gain, by the EQ's number.
+        let defaults = crate::eq::Equalizer::default();
+        for i in 0..crate::eq::MAX_EQS {
+            for control in 0..crate::eq::CONTROLS {
+                let fields = crate::eq::FIELDS.len();
+                let (id, name, min, max) = if control / fields < crate::eq::BANDS {
+                    let (key, label, min, max) = crate::eq::FIELDS[control % fields];
+                    let band = control / fields + 1;
+                    (
+                        format!("rack_eq{}_band{band}_{key}", i + 1),
+                        format!("Rack EQ {} band {band} {label}", i + 1),
+                        min,
+                        max,
+                    )
+                } else {
+                    let max = crate::eq::MAX_GAIN;
+                    (
+                        format!("rack_eq{}_output", i + 1),
+                        format!("Rack EQ {} output", i + 1),
+                        -max,
+                        max,
+                    )
+                };
+                result.push(Spec {
+                    id,
+                    name,
+                    min,
+                    max,
+                    default: defaults.control(control),
+                    target: Target::RackEq(i, control),
+                });
+            }
+        }
         result
     })
 }
@@ -1605,9 +1656,11 @@ mod tests {
             ],
             [0.0; 3]
         );
+        // The Rack EQs append after them.
         let last: Vec<_> = specs()
             .iter()
             .rev()
+            .skip(crate::eq::MAX_EQS * crate::eq::CONTROLS)
             .take(4)
             .map(|s| s.id.as_str())
             .collect();

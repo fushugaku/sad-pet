@@ -24,6 +24,21 @@ impl Serialize for Edits<'_> {
     }
 }
 
+/// A Rack's EQs as modulated: those it holds (bit n for EQ n + 1) only.
+struct Equalizers<'a>(&'a [sad_pet::eq::Equalizer; sad_pet::eq::MAX_EQS], u16);
+impl Serialize for Equalizers<'_> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut list = s.serialize_seq(Some(self.1.count_ones() as usize))?;
+        for (i, eq) in self.0.iter().enumerate() {
+            if self.1 & 1 << i != 0 {
+                list.serialize_element(eq)?;
+            }
+        }
+        list.end()
+    }
+}
+
 struct DrumEdits<'a>(&'a [(u64, sad_pet::drums::Edit)]);
 impl Serialize for DrumEdits<'_> {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
@@ -71,6 +86,7 @@ struct Packet<'a> {
     grains: &'a [sad_pet::dsp::GrainView],
     color: &'a [sad_pet::color::ColorSlot],
     pre_color: &'a [sad_pet::color::ColorSlot],
+    rack_eqs: Equalizers<'a>,
 }
 #[derive(Deserialize)]
 struct OwnedPacket {
@@ -89,6 +105,8 @@ struct OwnedPacket {
     grains: Vec<sad_pet::dsp::GrainView>,
     color: Vec<sad_pet::color::ColorSlot>,
     pre_color: Vec<sad_pet::color::ColorSlot>,
+    #[serde(default)]
+    rack_eqs: Vec<sad_pet::eq::Equalizer>,
 }
 
 #[derive(Default)]
@@ -221,6 +239,16 @@ impl Host {
             grains: &self.view.grains[..self.view.grain_count],
             color: &self.view.color[..self.view.color_len],
             pre_color: &self.view.pre_color[..self.view.pre_color_len],
+            rack_eqs: Equalizers(
+                &self.view.modulated_rack_eqs,
+                self.engine.preset.rack.as_ref().map_or(0, |r| {
+                    r.equalizers.iter().fold(0, |mask, eq| {
+                        mask | 1u16
+                            .checked_shl(u32::from(eq.id).wrapping_sub(1))
+                            .unwrap_or(0)
+                    })
+                }),
+            ),
             waveform: if changed || self.engine.live_input.is_some() {
                 &self.view.waveform[..self.view.waveform_len]
             } else {
@@ -346,6 +374,14 @@ fn decode_snapshot(
     v.grains[..v.grain_count].copy_from_slice(&packet.grains);
     v.color[..v.color_len].copy_from_slice(&packet.color);
     v.pre_color[..v.pre_color_len].copy_from_slice(&packet.pre_color);
+    for eq in packet.rack_eqs {
+        if let Some(to) = v
+            .modulated_rack_eqs
+            .get_mut(usize::from(eq.id).wrapping_sub(1))
+        {
+            *to = eq;
+        }
+    }
     if v.chord_len > 32 {
         return Err("Invalid chord count".into());
     }

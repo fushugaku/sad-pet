@@ -71,6 +71,10 @@ pub struct RealtimeView {
     /// last view.
     #[serde(default)]
     pub rack_peaks: [f32; crate::rack::STRIPS],
+    /// A Rack's EQs as modulated, by number less one. A browser snapshot
+    /// carries those the rack holds beside the view, as it does color slots.
+    #[serde(skip)]
+    pub modulated_rack_eqs: [crate::eq::Equalizer; crate::eq::MAX_EQS],
 }
 
 impl Default for RealtimeView {
@@ -122,6 +126,7 @@ impl Default for RealtimeView {
             step_entry: None,
             step_edits: [None; 16],
             rack_peaks: [0.0; crate::rack::STRIPS],
+            modulated_rack_eqs: Default::default(),
         }
     }
 }
@@ -213,6 +218,7 @@ impl Engine {
         view.modulated_synth = self.modulated.synth;
         view.modulated_lfos = self.modulated.lfos;
         view.modulated_envs = self.modulated.envs;
+        view.modulated_rack_eqs = self.modulated.rack_eqs;
         view.filter_cutoffs = self.current_filter_cutoffs();
         view.resynth_bands = self.resynth.carrier_levels();
         view.resynth_frequencies = self.resynth.frequencies();
@@ -473,12 +479,21 @@ impl ControlFeedback<'_> {
             }
         }
         let base_frame = Modulated::from_preset(self.preset);
+        // A Rack's EQs report only for those in it.
+        let equalizers: Vec<String> = self
+            .preset
+            .rack
+            .iter()
+            .flat_map(|r| &r.equalizers)
+            .map(|eq| format!("rack_eq{}_", eq.id))
+            .collect();
         for spec in crate::parameters::specs().iter().filter(|s| {
             s.id.starts_with("resynth_")
                 || s.id.starts_with("lfo")
                 || s.id.starts_with("env")
                 || (self.preset.drums.is_some() && s.id.starts_with("drum"))
                 || (self.preset.synth.is_some() && s.id.starts_with("synth_"))
+                || equalizers.iter().any(|prefix| s.id.starts_with(prefix))
         }) {
             if let (Some(base), Some(current), Some(min), Some(max)) = (
                 spec.frame_get(&base_frame),
@@ -508,5 +523,6 @@ pub fn knob_states_from_view(
     m.envs = view.modulated_envs;
     m.drums = view.drum_controls;
     m.drum_shifts = view.drums.shifts.map(|s| s as f32);
+    m.rack_eqs = view.modulated_rack_eqs;
     ControlFeedback { preset }.knob_states_at(&m, view.filter_cutoffs)
 }
