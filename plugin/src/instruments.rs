@@ -276,7 +276,8 @@ impl Controller {
                     "Choose an instrument timbre, or load the instrument as a new timbre.".into(),
                 );
             }
-            // Its audio has no vocal voice to give or take.
+            // It never becomes a Vocal timbre, nor stops being one; a Rack's
+            // Vocal module comes and goes with the preset below.
             if kind == Kind::Vocal || self.meta.kind == Kind::Vocal {
                 return Err("Load Vocal instruments as a new timbre.".into());
             }
@@ -308,7 +309,7 @@ impl Controller {
             self.fades = state.fades;
             self.frozen = false;
             self.midi_gate = state.midi_gate;
-            return Ok(());
+            return self.update_vocal();
         }
         let index = self
             .parts
@@ -337,9 +338,10 @@ impl Controller {
         state.playing = self.playing;
         state.frozen = false;
         state.bypass = old.bypass;
-        let was_vocal = old.meta.kind == Kind::Vocal;
+        // A Vocal timbre's score, or a Rack's, leaves with it.
+        let sang = old.vocal.is_some();
         part.restore_saved(state)?;
-        if was_vocal {
+        if sang {
             self.voice_service().forget(id);
         }
         let audio = part.prepare(self.rate);
