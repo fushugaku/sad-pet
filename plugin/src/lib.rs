@@ -74,6 +74,10 @@ enum Command {
     Region(Region),
     Fades(Fades),
     Midi(Message),
+    /// A preset gave this part a voice to sing, or took it away: a Vocal
+    /// timbre's, or a Rack's Vocal module's. Built on the control thread;
+    /// the voice it replaces goes back with the update.
+    Vocal(Option<Box<VocalAudio>>),
     /// Play or stop the song clock that Vocal timbres follow without a host.
     VocalTransport {
         playing: Option<bool>,
@@ -206,7 +210,8 @@ pub struct Controller {
     files: audio_library::Files,
     /// The scene's last /api/state answer, for delta answers.
     sent: SentState,
-    /// Present while this part is a Vocal timbre.
+    /// Present while this part sings: a Vocal timbre, or a Rack with a Vocal
+    /// module. Its audio then has a `VocalAudio` on this mailbox.
     vocal: Option<Arc<sad_pet::vocal::Mailbox>>,
     /// The render thread, shared by every part and started on first use.
     voices: Arc<std::sync::OnceLock<vocal::Service>>,
@@ -653,16 +658,25 @@ impl Controller {
     pub(crate) fn voice_service(&self) -> &vocal::Service {
         self.voices.get_or_init(vocal::Service::new)
     }
-    /// Gives a Vocal part its mailbox and sends its score to the render
+    /// The score this part sings: a Vocal timbre's, or a Rack's with a Vocal
+    /// module.
+    fn sung(&self) -> Option<&sad_pet::vocal::Settings> {
+        use sad_pet::timbres::Kind;
+        let sings = match self.meta.kind {
+            Kind::Vocal => true,
+            Kind::Rack => self
+                .preset
+                .rack
+                .as_ref()
+                .is_some_and(|r| r.has(sad_pet::rack::Module::Vocal)),
+            _ => false,
+        };
+        self.preset.vocal.as_deref().filter(|_| sings)
+    }
+    /// Gives a singing part its mailbox and sends its score to the render
     /// thread; any other part drops both.
     fn sync_vocal(&mut self) -> Option<Arc<sad_pet::vocal::Mailbox>> {
-        let vocal = self
-            .preset
-            .vocal
-            .as_deref()
-            .filter(|_| self.meta.kind == sad_pet::timbres::Kind::Vocal)
-            .cloned();
-        match vocal {
+        match self.sung().cloned() {
             Some(settings) => {
                 let mailbox = self
                     .vocal
@@ -679,6 +693,21 @@ impl Controller {
                 None
             }
         }
+    }
+    /// `sync_vocal` for running audio: a part that starts to sing hands its
+    /// audio a voice on a new mailbox, and one that stops takes it back.
+    /// Without a queue slot nothing changes, and a later edit tries again.
+    fn update_vocal(&mut self) -> Result<(), String> {
+        let sings = self.sung().is_some();
+        if sings && self.vocal.is_none() {
+            let mailbox = sad_pet::vocal::Mailbox::new();
+            self.enqueue(Command::Vocal(Some(VocalAudio::new(mailbox.clone()))))?;
+            self.vocal = Some(mailbox);
+        } else if !sings && self.vocal.is_some() {
+            self.enqueue(Command::Vocal(None))?;
+        }
+        self.sync_vocal();
+        Ok(())
     }
 
     fn values(&self) -> Vec<f32> {
@@ -766,6 +795,8 @@ impl Controller {
         state["sequencer"] = json!(view.sequencer);
         state["drums"] = json!(view.drums);
         state["rack_peaks"] = json!(view.rack_peaks);
+        // A Rack's Vocal module sings here; its Sampler kit does not play.
+        state["features"] = json!({"rack_vocal": true});
         if drums {
             state["playing"] = json!(view.drums.playing);
         }
@@ -886,6 +917,8 @@ impl Controller {
         self.midi_gate = saved.midi_gate;
         self.playing = saved.playing;
         self.selection = saved.selection;
+        // The scene's own timbre may be a Rack that sings, or stop being one.
+        self.update_vocal()?;
         self.offer_workers();
         Ok(())
     }
@@ -958,7 +991,8 @@ impl Controller {
                 // A loaded preset can change the timbre's engine type.
                 self.meta.kind = sad_pet::timbres::Kind::of(&preset);
                 self.preset = preset;
-                self.sync_vocal();
+                // A Rack gains or loses its Vocal module here.
+                self.update_vocal()?;
                 Ok(json!(self.preset))
             }
             ("/api/parameters", true) => {
@@ -989,7 +1023,7 @@ impl Controller {
                 score.sanitize();
                 settings.score = score;
                 let reply = json!({"ok":true,"score":settings.score});
-                self.sync_vocal();
+                self.update_vocal()?;
                 self.selection.dirty = true;
                 Ok(reply)
             }
@@ -1316,6 +1350,7 @@ impl Audio {
                     let _ = self.engine.set_fades(*fades);
                 }
                 Command::Midi(message) => self.engine.midi(*message),
+                Command::Vocal(vocal) => std::mem::swap(&mut self.vocal, vocal),
                 Command::VocalTransport { playing, start } => {
                     if let Some(start) = start {
                         self.clock.start = *start;

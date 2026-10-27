@@ -400,6 +400,8 @@ impl Controller {
                     id: format!("factory:{index}"),
                     dirty: false,
                 };
+                // The scene's own timbre stops singing with a factory scene.
+                self.update_vocal()?;
                 Ok(self.state())
             }
             ("/api/preset-library/delete", true) => {

@@ -195,9 +195,10 @@ files move instruments between the web version and the native app and plug-ins.
   (`rack_sample_level` … `rack_drums_solo`, then `rack_buffer_seconds`; the
   Sampler's and Vocal's, `rack_sampler_level` … `rack_vocal_solo`, come after
   `resynth_tracking`) that LFOs, envelopes, the matrix, macros and sequencer
-  lanes can move. Kits play and voices sing in the browser for now: in the
-  plug-ins a Rack keeps a saved Sampler or Vocal module, silent, and its menu
-  leaves them out.
+  lanes can move. The Vocal module sings in the plug-ins and the standalone app
+  too, with the DAW's transport or the app's own. Kits play only in the browser
+  for now: in the plug-ins a Rack keeps a saved Sampler module, silent, and its
+  menu leaves it out.
 - **Bus and Master** (browser and DAW plug-ins). Every scene has one **Master**
   tab that sums all timbres and buses into the output; add up to eight **Bus**
   timbres with **+ Timbre**. The tabs list the instruments on one row and the

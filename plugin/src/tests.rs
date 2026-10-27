@@ -1385,7 +1385,7 @@ fn rack_timbres_mix_drums_and_a_synth_and_rebuild_without_audio_allocations() {
     assert_eq!(state["preset"]["rack"]["modules"][4]["module"], "grains");
     assert_eq!(state["preset"]["rack"]["strips"]["drums"]["muted"], true);
     assert_eq!(state["rack_peaks"].as_array().unwrap().len(), 5);
-    // A Rack made in the browser keeps its kit and score here, silent.
+    // A Rack keeps the score of its Vocal module through a preset load.
     let mut preset = state["preset"].clone();
     preset["rack"]["modules"][1]["module"] = json!("vocal");
     preset["vocal"] =
@@ -2274,6 +2274,135 @@ fn vocal_timbres_sing_at_the_daw_position_and_survive_project_recall() {
     assert!(render(&mut audio, 2048, [0.; 2]) > 0.01);
     control.drain();
     recalled.drain();
+}
+
+#[test]
+fn a_racks_vocal_module_sings_once_added_and_leaves_without_audio_allocations() {
+    let voices = PresetDirectory::new();
+    // SAFETY: tests that read the variable set the same value.
+    unsafe { std::env::set_var("SAD_PET_VOICE_DIR", &voices.0) };
+    let mut control = Controller::new(false);
+    control.meta.mix.muted = true;
+    let mut audio = control.prepare(8000);
+    let values = control.values();
+    let id = call(&mut control, "/api/timbres/add", json!({"kind":"rack"}))["active"]
+        .as_u64()
+        .unwrap() as u32;
+    let state = call(&mut control, "/api/state", Value::Null);
+    assert_eq!(state["features"]["rack_vocal"], true);
+    assert!(state["features"]["sampler"].is_null());
+    let modules = |names: &[&str]| {
+        json!(
+            names
+                .iter()
+                .map(|module| json!({"module":module,"enabled":true}))
+                .collect::<Vec<_>>()
+        )
+    };
+    // The page's + Module adds it to the running Rack, as a preset edit.
+    let mut preset = call(&mut control, "/api/preset", Value::Null);
+    preset["rack"]["modules"] = modules(&["synth", "vocal", "mixer"]);
+    let preset = call(&mut control, "/api/preset", preset);
+    assert!(preset["vocal"]["score"].is_object());
+    let score = json!({"score":{"language":"ja","style":{"auto_breath":false},"notes":[
+        {"id":1,"start":480,"length":480,"key":64,"lyric":"ら"},
+        {"id":2,"start":960,"length":480,"key":67,"lyric":"ら"}]}});
+    call(&mut control, "/api/vocal/score", score);
+    wait_for_vocal(&mut control);
+    let strips = |control: &mut Controller| {
+        call(control, "/api/state", Value::Null)["rack_peaks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_f64().unwrap())
+            .collect::<Vec<_>>()
+    };
+    // At the DAW's beat 1 (0.5 s at 120 BPM) the first note sings in the
+    // Vocal strip; the synth has no notes.
+    no_heap(|| {
+        audio.begin(&values, 120., Some(0.0), false, 256);
+        render(&mut audio, 256, [0.; 2]);
+    });
+    strips(&mut control);
+    no_heap(|| {
+        audio.begin(&values, 120., Some(1.0), true, 2048);
+        assert!(render(&mut audio, 2048, [0.; 2]) > 0.01);
+    });
+    let peaks = strips(&mut control);
+    assert!(peaks[4] > 0.01 && peaks[1] == 0.0, "{peaks:?}");
+    // Stopped, it is silent.
+    no_heap(|| {
+        audio.begin(&values, 120., Some(1.0), false, 1024);
+        render(&mut audio, 1024, [0.; 2]);
+        audio.begin(&values, 120., Some(1.0), false, 1024);
+        assert!(render(&mut audio, 1024, [0.; 2]) < 1e-3);
+    });
+    // The app's own song clock plays it without a host transport.
+    let clock = |control: &mut Controller, playing: bool| {
+        call(
+            control,
+            "/api/vocal/transport",
+            json!({"start": 0.5, "playing": playing}),
+        );
+    };
+    clock(&mut control, true);
+    no_heap(|| {
+        audio.begin(&values, 0., None, false, 2048);
+        assert!(render(&mut audio, 2048, [0.; 2]) > 0.01);
+    });
+    clock(&mut control, false);
+
+    // Project recall sings the Rack's score in a new instance.
+    let saved = control.save().unwrap();
+    let mut recalled = Controller::new(false);
+    recalled.restore(&saved).unwrap();
+    let mut recalled_audio = recalled.prepare(8000);
+    call(&mut recalled, "/api/timbres/select", json!({ "id": id }));
+    wait_for_vocal(&mut recalled);
+    recalled_audio.begin(&values, 120., Some(1.0), true, 2048);
+    let _ = render(&mut recalled_audio, 1, [0.; 2]);
+    recalled_audio.begin(&values, 120., Some(1.0), true, 2048);
+    assert!(render(&mut recalled_audio, 2048, [0.; 2]) > 0.01);
+    recalled.drain();
+
+    // Without the module the Rack is silent and the render thread forgets it.
+    let mut preset = call(&mut control, "/api/preset", Value::Null);
+    preset["rack"]["modules"] = modules(&["synth", "mixer"]);
+    assert!(call(&mut control, "/api/preset", preset)["vocal"].is_null());
+    no_heap(|| {
+        audio.begin(&values, 120., Some(1.0), true, 1024);
+        render(&mut audio, 1024, [0.; 2]);
+        audio.begin(&values, 120., Some(1.25), true, 2048);
+        assert!(render(&mut audio, 2048, [0.; 2]) < 1e-3);
+    });
+    assert_eq!(strips(&mut control)[4], 0.0);
+    let part = control.parts.iter().find(|p| p.meta.id == id).unwrap();
+    assert!(part.vocal.is_none());
+    assert_eq!(control.voice_service().progress(id).phrases, 0);
+    assert!(
+        control
+            .request(&json!({"path":"/api/vocal/score","method":"POST","data":{"score":{}}}))
+            .is_err()
+    );
+
+    // Removing a Rack that sings forgets its score too.
+    let mut preset = call(&mut control, "/api/preset", Value::Null);
+    preset["rack"]["modules"] = modules(&["vocal", "mixer"]);
+    call(&mut control, "/api/preset", preset);
+    call(
+        &mut control,
+        "/api/vocal/score",
+        json!({"score":{"language":"ja","notes":[
+            {"id":1,"start":0,"length":480,"key":64,"lyric":"ら"}]}}),
+    );
+    wait_for_vocal(&mut control);
+    call(&mut control, "/api/timbres/remove", json!({ "id": id }));
+    assert_eq!(control.voice_service().progress(id).phrases, 0);
+    no_heap(|| {
+        audio.begin(&values, 120., Some(0.0), true, 1024);
+        assert!(render(&mut audio, 1024, [0.; 2]) < 1e-3);
+    });
+    control.drain();
 }
 
 #[test]

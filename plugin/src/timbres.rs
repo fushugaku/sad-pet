@@ -519,13 +519,13 @@ impl Controller {
                     if id == 0 {
                         return Err("Keep the first timbre for DAW automation".into());
                     }
-                    let removed = self
+                    let part = self
                         .parts
                         .iter()
                         .find(|p| p.meta.id == id)
-                        .ok_or("Unknown timbre")?
-                        .meta
-                        .clone();
+                        .ok_or("Unknown timbre")?;
+                    // A Vocal timbre or a Rack with a Vocal module sings.
+                    let (removed, sang) = (part.meta.clone(), part.vocal.is_some());
                     if removed.kind == Kind::Master {
                         return Err("The scene always has one Master".into());
                     }
@@ -542,7 +542,7 @@ impl Controller {
                         }
                     }
                     self.enqueue(Command::RemovePart(id, None))?;
-                    if removed.kind == Kind::Vocal {
+                    if sang {
                         self.voice_service().forget(id);
                     }
                     self.parts.retain(|p| p.meta.id != id);
