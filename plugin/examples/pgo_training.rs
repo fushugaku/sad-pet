@@ -269,13 +269,6 @@ impl Host {
     }
 }
 
-fn timbre_id(context: &Value, kind: &str) -> u64 {
-    let timbres = context["timbres"].as_array().unwrap();
-    timbres.iter().find(|t| t["kind"] == kind).unwrap()["id"]
-        .as_u64()
-        .unwrap()
-}
-
 /// A factory preset with the grain engine fully open and a note-following filter.
 fn grains(index: usize) -> Preset {
     let mut p = Preset::builtin(index % 5);
@@ -366,11 +359,15 @@ fn main() {
     h.report("app_default", true);
 
     // Drums, a synth and a bus fed by sends, then a saved and restored scene.
+    // Drums and synths come as Racks of their engine, as the editor adds them.
     let mut h = Host::new(Wrapper::App, 48_000);
-    h.request("/api/timbres/add", json!({"kind":"drums"}));
-    h.request("/api/timbres/add", json!({"kind":"synth"}));
-    let context = h.request("/api/timbres/add", json!({"kind":"bus"}));
-    let (drums, synth) = (timbre_id(&context, "drums"), timbre_id(&context, "synth"));
+    let mut add = |kind: &str| {
+        h.request("/api/timbres/add", json!({ "kind": kind }))["active"]
+            .as_u64()
+            .unwrap()
+    };
+    let (drums, synth) = (add("drums"), add("synth"));
+    add("bus");
     let mut sends = [0.0; 8];
     sends[0] = 0.5;
     h.request("/api/timbres/update", json!({"id":0,"sends":sends}));
