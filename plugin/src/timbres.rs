@@ -42,12 +42,13 @@ pub(super) fn keep_role(preset: &mut Preset, current: &Preset, kind: Kind) {
     } else {
         preset.bus = None;
     }
-    // A Vocal timbre keeps its score; nothing else gains one.
+    // A Vocal timbre keeps its score, and a Rack preset brings that of its
+    // Vocal module; nothing else gains one.
     if kind == Kind::Vocal {
         if preset.vocal.is_none() {
             preset.vocal = current.vocal.clone();
         }
-    } else {
+    } else if preset.rack.is_none() {
         preset.vocal = None;
     }
 }

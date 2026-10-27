@@ -1151,8 +1151,9 @@ h2 {
     text-align: left;
   }
 }
-/* Out of the chain the section still runs for its bus: dimmed, not off. */
-.bank.tap-skipped > :not(.section-heading, .tap) {
+/* Out of the chain the section still runs for its bus: dimmed, not off. The
+   Grain engine's waveform is its input and stays lit. */
+.bank.tap-skipped > :not(.section-heading, .tap, .sample-panel) {
   opacity: 0.45;
   transition: opacity 0.15s;
 }
@@ -5546,6 +5547,12 @@ input[type="range"] {
 [data-chain="drums"] {
   --chain: #efb661;
 }
+[data-chain="sampler"] {
+  --chain: #62d3c3;
+}
+[data-chain="vocal"] {
+  --chain: #f38ea6;
+}
 [data-chain="mix"] {
   --chain: #c4f486;
 }
@@ -5921,6 +5928,10 @@ input[type="range"] {
 /* The Sample module holds the waveform panel. */
 .rack-sample .sample-panel {
   margin-bottom: 0;
+}
+/* A Sampler or Vocal module saved where this host cannot play it. */
+.rack-unavailable-note {
+  margin: 2px 0 0;
 }
 /* Dry/Wet sits with the Grain engine in a Rack. */
 .rack-mix {

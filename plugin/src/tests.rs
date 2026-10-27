@@ -1384,7 +1384,18 @@ fn rack_timbres_mix_drums_and_a_synth_and_rebuild_without_audio_allocations() {
     assert_eq!(state["sample_name"], "Rack");
     assert_eq!(state["preset"]["rack"]["modules"][4]["module"], "grains");
     assert_eq!(state["preset"]["rack"]["strips"]["drums"]["muted"], true);
-    assert_eq!(state["rack_peaks"].as_array().unwrap().len(), 3);
+    assert_eq!(state["rack_peaks"].as_array().unwrap().len(), 5);
+    // A Rack made in the browser keeps its kit and score here, silent.
+    let mut preset = state["preset"].clone();
+    preset["rack"]["modules"][1]["module"] = json!("vocal");
+    preset["vocal"] =
+        json!({"score":{"notes":[{"id":1,"start":0,"length":480,"key":64,"lyric":"ra"}]}});
+    let kept = call(&mut control, "/api/preset", preset);
+    assert_eq!(kept["vocal"]["score"]["notes"][0]["lyric"], "ra");
+    assert!(kept["synth"].is_null());
+    let mut preset = kept;
+    preset["rack"]["modules"][1]["module"] = json!("synth");
+    call(&mut control, "/api/preset", preset);
     let saved = control.save().unwrap();
     let mut restored = Controller::new(false);
     restored.restore(&saved).unwrap();

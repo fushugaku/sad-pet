@@ -1415,20 +1415,25 @@ pub fn specs() -> &'static [Spec] {
             }
         }
         // Then a Rack's Mixer strips and its Grain engine's history.
-        for (i, source) in crate::rack::STRIP_SOURCES.into_iter().enumerate() {
-            for (field, (key, label, min, max, default)) in
-                crate::rack::STRIP_FIELDS.into_iter().enumerate()
-            {
-                result.push(Spec {
-                    id: format!("rack_{}_{key}", source.label().to_lowercase()),
-                    name: format!("Rack {} {label}", source.label()),
-                    min,
-                    max,
-                    default,
-                    target: Target::RackStrip(i, field),
-                });
+        let rack_strips = |result: &mut Vec<Spec>, strips: std::ops::Range<usize>| {
+            for i in strips {
+                let source = crate::rack::STRIP_SOURCES[i];
+                for (field, (key, label, min, max, default)) in
+                    crate::rack::STRIP_FIELDS.into_iter().enumerate()
+                {
+                    result.push(Spec {
+                        id: format!("rack_{}_{key}", source.label().to_lowercase()),
+                        name: format!("Rack {} {label}", source.label()),
+                        min,
+                        max,
+                        default,
+                        target: Target::RackStrip(i, field),
+                    });
+                }
             }
-        }
+        };
+        // Sample, Synth and Drums.
+        rack_strips(&mut result, 0..3);
         result.push(Spec {
             id: "rack_buffer_seconds".into(),
             name: "Rack grain buffer seconds".into(),
@@ -1457,6 +1462,8 @@ pub fn specs() -> &'static [Spec] {
                 },
             },
         });
+        // Then the Rack's Sampler and Vocal strips.
+        rack_strips(&mut result, 3..crate::rack::STRIPS);
         // Then the envelope Resynth carriers play their band levels through.
         resynth!(hold, "hold", 0.0, 1.0);
         resynth!(sustain, "sustain", 0.0, 1.0);
@@ -1568,9 +1575,12 @@ mod tests {
         assert_eq!(preset.resynth.track, 0.0);
         assert_eq!(preset.resynth.tracking, crate::resynth::Tracking::Fixed);
         assert_eq!(Preset::default().resynth.track, 1.0);
-        let ids: Vec<_> = specs().iter().map(|s| s.id.as_str()).collect();
-        let track = ids.iter().position(|&id| id == "resynth_track").unwrap();
-        assert_eq!(ids[track + 1], "resynth_tracking");
+        let at = specs()
+            .iter()
+            .position(|s| s.id == "resynth_track")
+            .unwrap();
+        assert_eq!(specs()[at - 1].id, "rack_buffer_seconds");
+        assert_eq!(specs()[at + 1].id, "resynth_tracking");
         let changes = parse(&json!({"resynth_track": 0.4, "resynth_tracking": 1})).unwrap();
         apply(&mut preset, &changes);
         assert_eq!(preset.resynth.track, 0.4);
@@ -1598,7 +1608,7 @@ mod tests {
         let last: Vec<_> = specs()
             .iter()
             .rev()
-            .take(5)
+            .take(4)
             .map(|s| s.id.as_str())
             .collect();
         assert_eq!(
@@ -1607,8 +1617,7 @@ mod tests {
                 "resynth_fade",
                 "resynth_sustain",
                 "resynth_hold",
-                "resynth_tracking",
-                "resynth_track"
+                "rack_vocal_solo"
             ]
         );
         let changes = parse(&json!({

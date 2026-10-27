@@ -511,6 +511,8 @@ pub struct Engine {
     taps: taps::Runtime,
     /// What enters a Bus or Master chain after its input in the next frame.
     entered: Option<crate::timbres::Entered>,
+    /// What a Rack's Pad FX timbres returned, for its Sampler's next frame.
+    pad_return: Stereo,
     drums: Option<Box<crate::drums::Runtime>>,
     synth: Option<Box<synth::Runtime>>,
     /// Present while the preset is a Sampler kit: its pads replace the input.
@@ -618,6 +620,7 @@ impl Engine {
             resynth: Box::new(resynth::Resynth::new(sr)),
             taps: taps::Runtime::new(),
             entered: None,
+            pad_return: [0.0; 2],
             drums: None,
             synth: None,
             sampler: None,
@@ -2535,16 +2538,28 @@ impl Engine {
                             {
                                 sampler.release_owner(settings, id);
                             }
+                            // A Rack's voices slide while its kit replays.
+                            let slides = self.sampler.is_none() || self.rack.is_some();
                             if let Some(voice) = self
                                 .voices
                                 .iter_mut()
-                                .find(|v| v.owner == id && v.held && self.sampler.is_none())
+                                .find(|v| v.owner == id && v.held && slides)
                             {
                                 voice.note = note;
                                 voice.channel = channel;
                                 voice.velocity = velocity as f32 / 127.0;
                                 self.source_note = note;
                                 self.source_channel = channel;
+                                if self.sampler.is_some() {
+                                    self.sampler_midi(
+                                        Message::NoteOn {
+                                            channel,
+                                            note,
+                                            velocity,
+                                        },
+                                        id,
+                                    );
+                                }
                             } else {
                                 self.apply_owned_midi(
                                     Message::NoteOn {
@@ -2653,11 +2668,14 @@ impl Engine {
         }
     }
     /// Notes, the sustain pedal and panics of a Sampler kit. Returns whether
-    /// the message is used up; pitch bend and controllers continue.
+    /// the message is used up; pitch bend and controllers continue. In a
+    /// Rack the notes and the pedal go on to its voices too: only a pad's
+    /// own track is the kit's alone.
     fn sampler_midi(&mut self, message: Message, owner: u32) -> bool {
         let (Some(sampler), Some(settings)) = (&mut self.sampler, &self.preset.sampler) else {
             return false;
         };
+        let alone = self.rack.is_none();
         match message {
             Message::NoteOn {
                 channel,
@@ -2666,8 +2684,11 @@ impl Engine {
             } if channel < 16 && note < 128 && velocity < 128 => {
                 let sustain = owner == 0 && self.sustain[channel as usize];
                 if velocity == 0 {
-                    sampler.note_off(settings, channel, note, owner, sustain);
-                    return true;
+                    // In a Rack it comes back as a note off.
+                    if alone {
+                        sampler.note_off(settings, channel, note, owner, sustain);
+                    }
+                    return alone;
                 }
                 let pad = self
                     .preset
@@ -2688,13 +2709,17 @@ impl Engine {
                     }
                     None => sampler.note_on(settings, channel, note, velocity, owner),
                 }
+                if !alone && pad.is_none() {
+                    // The voice that starts next notes the modulation source.
+                    return false;
+                }
                 self.mod_note_on(channel, note, velocity);
                 true
             }
             Message::NoteOff { channel, note, .. } if channel < 16 => {
                 let sustain = owner == 0 && self.sustain[channel as usize];
                 sampler.note_off(settings, channel, note, owner, sustain);
-                true
+                alone
             }
             Message::Control {
                 channel,
@@ -2705,7 +2730,7 @@ impl Engine {
                 if value < 64 {
                     sampler.release_sustained(settings, channel);
                 }
-                true
+                alone
             }
             Message::Control {
                 controller: 120, ..
@@ -2800,8 +2825,8 @@ impl Engine {
 
     pub fn process_input_frame(&mut self, input: Stereo) -> Stereo {
         if self.rack.is_some() {
-            // A Rack's sources are its own; it takes no input.
-            return self.process_rack_frame();
+            // A Rack's sources are its own; the input is its Vocal's voice.
+            return self.process_rack_frame(input);
         }
         self.taps.begin_frame();
         let input = if self.sampler.is_some() {

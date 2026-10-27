@@ -282,6 +282,23 @@
           no CPU. Switch on Granular, Filters or Resynth, or add effects below.
         </p>
       </section>
+      <section class="bank color-bank" aria-label="Source effects" data-tap="source">
+        <div class="section-heading">
+          <h2>
+            Source FX
+            <output id="source-fx-status" class="muted" role="status"></output>
+          </h2>
+          <div class="color-add">
+            <button
+              type="button"
+              id="source-color-add-type"
+              aria-label="Source effect to add"
+            ></button>
+            <button id="source-color-add">+ Add effect</button>
+          </div>
+        </div>
+        <div id="source-color-chain" class="color-chain"></div>
+      </section>
       <div id="sample-panel-home" hidden></div>
       <section class="sample-panel" aria-label="Sample and grains">
         <div class="input-source" id="browser-input" hidden>
@@ -524,23 +541,6 @@
           </div>
           <div id="library-list" class="library-list"></div>
         </section>
-      </section>
-      <section class="bank color-bank" aria-label="Source effects" data-tap="source">
-        <div class="section-heading">
-          <h2>
-            Source FX
-            <output id="source-fx-status" class="muted" role="status"></output>
-          </h2>
-          <div class="color-add">
-            <button
-              type="button"
-              id="source-color-add-type"
-              aria-label="Source effect to add"
-            ></button>
-            <button id="source-color-add">+ Add effect</button>
-          </div>
-        </div>
-        <div id="source-color-chain" class="color-chain"></div>
       </section>
       <div id="grain-engine-home" hidden></div>
       <section class="bank" id="grain-engine" aria-label="Grain engine" data-tap="grains">

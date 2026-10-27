@@ -164,8 +164,10 @@ files move instruments between the web version and the native app and plug-ins.
 - **Rack timbres** (browser and DAW plug-ins) are instruments you build from
   modules in any order: **+ Timbre → Rack**. Sound runs from the top module down.
   Sources — **Sample** (the loaded file), **Synth** (up to four oscillators per
-  note) and **Drums** (the drum machine with its own pattern) — each start a
-  chain of their own, and the modules under a source process its chain:
+  note), **Drums** (the drum machine with its own pattern), **Sampler** (a kit
+  of pads, as a Sampler timbre has) and **Vocal** (a sung score, as a Vocal
+  timbre has) — each start a chain of their own, and the modules under a source
+  process its chain:
   **Grain engine**, **Filters**, **Resynth**, **Insert FX** (one effect) and the
   effect racks **FX A** and **FX B**. Chains meet in the **Mixer**, a strip per
   chain with level, pan, Mute, Solo and a meter; the modules under the Mixer
@@ -179,12 +181,23 @@ files move instruments between the web version and the native app and plug-ins.
   granulates the file note by note, as a Granular timbre does; anywhere else it
   granulates a live history of its chain (**Buffer** up to 32 s). Filters right
   under a Synth or Sample run per note before the notes' VCA, as in those
-  timbres; elsewhere they filter the chain. Notes play the Synth and Sample; the
-  Drums play their pattern. A Sample, Grain engine, Filters and FX B rack plays
-  bit for bit as a Granular timbre, and a Synth over its Filters as a Synth
-  timbre (a frame sooner: no history stands between them). The strips are host parameters (`rack_sample_level` …
-  `rack_drums_solo`, then `rack_buffer_seconds`) that LFOs, envelopes, the
-  matrix, macros and sequencer lanes can move.
+  timbres; elsewhere they filter the chain. Notes play the Synth, the Sample and
+  the Sampler's pads by key together, and so does the sustain pedal; a pad
+  track plays only its pad. The Drums play their pattern, and the Vocal sings
+  with **▶ Play** or the main transport. The Sampler module is the Sampler
+  editor — pads, Sample editor, library and packs, **Pad FX** chains, which
+  return into the Sampler's chain, and Bounce — and the Vocal module is the
+  score editor. A Sample, Grain engine, Filters and FX B rack plays bit for bit
+  as a Granular timbre, and a Synth over its Filters as a Synth timbre (a frame
+  sooner: no history stands between them); a Sampler or Vocal alone sounds as
+  those timbres do with their chains off. Scenes and instrument presets keep the
+  kit with its samples and the score. The strips are host parameters
+  (`rack_sample_level` … `rack_drums_solo`, then `rack_buffer_seconds`; the
+  Sampler's and Vocal's, `rack_sampler_level` … `rack_vocal_solo`, come after
+  `resynth_tracking`) that LFOs, envelopes, the matrix, macros and sequencer
+  lanes can move. Kits play and voices sing in the browser for now: in the
+  plug-ins a Rack keeps a saved Sampler or Vocal module, silent, and its menu
+  leaves them out.
 - **Bus and Master** (browser and DAW plug-ins). Every scene has one **Master**
   tab that sums all timbres and buses into the output; add up to eight **Bus**
   timbres with **+ Timbre**. The tabs list the instruments on one row and the

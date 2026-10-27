@@ -1622,18 +1622,19 @@ function syncTimbreRouting() {
   const samplePanel = document.querySelector(".sample-panel");
   samplePanel.classList.toggle("drum-waveform", history);
   // The transport stays on top of every timbre; below it each engine keeps the
-  // Granular order: its own section, then the waveform, Source FX and Grain engine.
-  // A Rack places them with its modules instead.
-  if (!rack && $("sample-panel-home").nextElementSibling !== samplePanel)
-    $("sample-panel-home").after(samplePanel);
+  // Granular order: its own section, then Source FX and the Grain engine, whose
+  // waveform sits under its heading. A Rack places them with its modules instead.
+  const grainHeading = $("grain-engine").querySelector(":scope > .section-heading");
+  if (!rack && grainHeading.nextElementSibling !== samplePanel)
+    grainHeading.after(samplePanel);
   samplePanel.setAttribute("aria-label", drums ? "Drum waveform and grains"
     : synth ? "Synth waveform and grains" : rackLive ? "Grain engine input and grains"
     : "Sample and grains");
   $("drum-source-name").hidden = !history;
-  $("drum-source-name").textContent = preset?.vocal ? "Vocal"
+  $("drum-source-name").textContent = rack ? "Grain engine input"
+    : preset?.vocal ? "Vocal"
     : preset?.sampler ? "Kit"
     : bus ? bus.master ? "Master input" : "Bus input"
-    : rack ? "Grain engine input"
     : synth ? "Synth engine" : "Drum machine";
   $("wave").setAttribute("aria-label", drums
     ? "Live drum waveform and grains"
@@ -5668,26 +5669,11 @@ async function init() {
           ),
       });
     }
-    if (window.SadRack && state.timbres?.timbres)
-      rackEditor = new window.SadRack({
-        read: () => preset,
-        state: () => state,
-        context: () => state?.timbres,
-        structure: schedulePreset,
-        // A new source starts from the host's settings for it.
-        reload: () => flushPreset().catch((e) => notify(e.message, true)),
-        sync: syncAll,
-        routing: syncTimbreRouting,
-        parameter: scheduleParameter,
-        knob: createKnob,
-        slider: sliderMenu,
-        drums: () => drumEditor,
-        effectName: (kind) => COLOR_TYPES.find(([key]) => key === kind)?.[1] ?? kind,
-      });
     if (window.SadSampler && state.timbres?.timbres)
       samplerEditor = new window.SadSampler($("sampler-editor"), {
         read: () => preset,
         context: () => state?.timbres,
+        features: () => state?.features,
         structure: schedulePreset,
         flush: flushEdits,
         change: changeTimbre,
@@ -5707,6 +5693,24 @@ async function init() {
         api,
         notify,
         download,
+      });
+    // After the Sampler and Vocal editors, whose sections become its modules.
+    if (window.SadRack && state.timbres?.timbres)
+      rackEditor = new window.SadRack({
+        read: () => preset,
+        state: () => state,
+        context: () => state?.timbres,
+        structure: schedulePreset,
+        // A new source starts from the host's settings for it.
+        reload: () => flushPreset().catch((e) => notify(e.message, true)),
+        sync: syncAll,
+        routing: syncTimbreRouting,
+        parameter: scheduleParameter,
+        knob: createKnob,
+        slider: sliderMenu,
+        drums: () => drumEditor,
+        features: () => state?.features,
+        effectName: (kind) => COLOR_TYPES.find(([key]) => key === kind)?.[1] ?? kind,
       });
     window.SadModulation?.setup({
       read: () => preset,
