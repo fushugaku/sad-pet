@@ -112,6 +112,46 @@ assert.deepEqual(steps.map((s) => s.chain), ["sampler", "sampler", "vocal", "mix
 assert.deepEqual(steps.map((s) => s.perNote), [false, false, false, false]);
 assert.deepEqual(steps.map((s) => s.mixed), [true, false, true, false]);
 
+// Rearranging takes out only what moves: a module switched on or off stays
+// in, so its button keeps focus and the page its scroll.
+{
+  const parent = {
+    children: [],
+    taken: [],
+    get firstElementChild() {
+      return this.children[0] ?? null;
+    },
+    insertBefore(node, before) {
+      if (this.children.includes(node)) node.remove();
+      const i = before ? this.children.indexOf(before) : this.children.length;
+      this.children.splice(i, 0, node);
+    },
+  };
+  const node = (name) => ({
+    name,
+    get nextElementSibling() {
+      return parent.children[parent.children.indexOf(this) + 1] ?? null;
+    },
+    remove() {
+      parent.taken.push(name);
+      parent.children.splice(parent.children.indexOf(this), 1);
+    },
+  });
+  const [a, b, c] = ["a", "b", "c"].map(node);
+  const reorder = (nodes) => {
+    parent.taken = [];
+    context.window.SadRack.reorder(parent, nodes);
+    assert.deepEqual(parent.children.map((n) => n.name), nodes.map((n) => n.name));
+    return parent.taken;
+  };
+  reorder([a, node("link"), b, node("link"), c]);
+  // New links between the same modules.
+  assert.deepEqual(reorder([a, node("link"), b, node("link"), c]), ["link", "link"]);
+  // Moving c up takes out c alone.
+  assert.deepEqual(reorder([a, node("link"), c, node("link"), b]), ["link", "link", "c"]);
+  assert.deepEqual(reorder([b]), ["a", "link", "c", "link"]);
+}
+
 // A Sampler and a Vocal module, at the rate the Vocal tests sing at: the kit
 // takes samples into the Rack's pool, its pads and Pad FX play into the
 // Sampler strip, and the voice the worker renders into the Vocal strip.

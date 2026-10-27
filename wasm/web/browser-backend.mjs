@@ -558,7 +558,8 @@ export class BrowserBackend {
   scheduleSourceEffects(state) {
     if (state?.input?.active || this.loadingSource) return;
     const p = state?.preset;
-    if (!p) return;
+    // A Rack's Insert FX runs live; its file plays without a cache.
+    if (!p || p.rack) return;
     const slot = p.source_color_chain?.[0];
     const recipe = state.source_fx?.recipe || {
       region: state.region,

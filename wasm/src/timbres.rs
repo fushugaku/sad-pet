@@ -840,14 +840,20 @@ fn unframed<'a, T: serde::de::DeserializeOwned>(
 /// One part packed alone, for an instrument preset loading into a timbre.
 const PART: &[u8; 8] = b"SADPRT01";
 impl Part {
+    /// The ready Source FX cache its file plays through. One left over from
+    /// before a live input or a Rack took over is not part of the sound.
+    fn source_cache(&self) -> Option<&Arc<sad_pet::dsp::source_fx::ProcessedSource>> {
+        let e = &self.host.engine;
+        e.processed_source
+            .as_ref()
+            .filter(|_| e.reads_source_cache() && !e.source_effects_pending())
+    }
     fn packed_state(&self) -> PartState {
         let e = &self.host.engine;
         PartState {
             generation: self.host.file_generation,
-            processed: e
-                .processed_source
-                .as_ref()
-                .filter(|_| !e.source_effects_pending())
+            processed: self
+                .source_cache()
                 .map(|_| sad_pet::dsp::source_fx::Recipe::from_engine(e)),
             meta: self.meta.clone(),
             preset: e.preset.clone(),
@@ -868,9 +874,7 @@ impl Part {
     fn pack_audio(&self, bytes: &mut Vec<u8>) {
         let e = &self.host.engine;
         put_sample(bytes, &e.sample);
-        if let Some(cache) = &e.processed_source
-            && !e.source_effects_pending()
-        {
+        if let Some(cache) = self.source_cache() {
             put_sample(bytes, &cache.sample);
         }
         for sample in e.sampler_pool().into_iter().flat_map(|p| p.values()) {

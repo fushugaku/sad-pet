@@ -42,7 +42,7 @@ pub extern "C" fn sad_source_begin() -> u32 {
             .and_then(|begin| {
                 if begin.generation != h.file_generation
                     || begin.recipe != Recipe::from_engine(&h.engine)
-                    || h.engine.live_input.is_some()
+                    || !h.engine.reads_source_cache()
                 {
                     return Ok(json!({"started":false}));
                 }
@@ -152,7 +152,7 @@ pub extern "C" fn sad_source_push(count: usize) -> u32 {
         }
         if stage.level == stage.lengths.len() {
             if stage.recipe == Recipe::from_engine(&h.engine)
-                && h.engine.live_input.is_none()
+                && h.engine.reads_source_cache()
                 && stage
                     .cache
                     .as_ref()
