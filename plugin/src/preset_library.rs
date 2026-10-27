@@ -352,7 +352,11 @@ impl Controller {
                     .as_u64()
                     .filter(|n| *n <= sad_pet::startup::INDEX as u64)
                     .ok_or("Unknown factory preset.")?;
-                let preset = Preset::builtin(index as usize);
+                let preset = if self.effect {
+                    Preset::builtin(index as usize)
+                } else {
+                    Preset::factory(index as usize)
+                };
                 let startup = index as usize == sad_pet::startup::INDEX;
                 let sample = if startup {
                     sad_pet::startup::sample()
@@ -390,7 +394,11 @@ impl Controller {
                 })))?;
                 self.parts = parts;
                 self.active = 0;
-                self.meta = sad_pet::timbres::Meta::default();
+                // A factory preset arrives as a Rack in an instrument.
+                self.meta = sad_pet::timbres::Meta {
+                    kind: sad_pet::timbres::Kind::of(&preset),
+                    ..Default::default()
+                };
                 self.scene_revision = self.scene_revision.wrapping_add(1);
                 self.preset = preset;
                 self.sample = sample;

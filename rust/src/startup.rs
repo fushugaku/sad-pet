@@ -31,8 +31,9 @@ pub fn configuration() -> serde_json::Value {
         .iter()
         .position(|s| s.id == SAMPLE_ID)
         .unwrap();
+    // The scene opens on its preset as a Rack, which plays it the same.
     serde_json::json!({
-        "index": INDEX, "preset": preset(), "sample_index": sample_index,
+        "index": INDEX, "preset": Preset::factory(INDEX), "sample_index": sample_index,
         "sample_id": format!("factory:{SAMPLE_ID}:v1"),
         "sample_name": crate::samples::TRACKS[sample_index].name,
         "region": REGION, "fades": FADES,

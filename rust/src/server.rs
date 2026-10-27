@@ -208,7 +208,7 @@ fn handle(
                     json(&value)
                 }
                 "/api/preset" => json(&state.lock().map_err(|e| e.to_string())?.preset),
-                "/api/presets" => json(&(0..5).map(Preset::builtin).collect::<Vec<_>>()),
+                "/api/presets" => json(&(0..5).map(Preset::factory).collect::<Vec<_>>()),
                 "/api/samples" => json(&crate::samples::TRACKS),
                 "/api/sample.wav" => {
                     let sample = state.lock().map_err(|e| e.to_string())?.sample.clone();

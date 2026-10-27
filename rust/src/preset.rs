@@ -1392,6 +1392,52 @@ impl Preset {
         }
     }
 
+    /// Factory preset `index` as the library offers it: a Rack of the
+    /// modules its engine runs (`as_rack`), else the preset as it is.
+    pub fn factory(index: usize) -> Self {
+        let preset = Self::builtin(index);
+        preset.as_rack().unwrap_or(preset)
+    }
+    /// This Granular preset as a Rack that plays it the same: the Sample, its
+    /// Grain engine, Resynth when it is on, FX A when it holds effects, then
+    /// Filters and FX B, every setting kept. None for any other engine, and
+    /// for Source FX, which a Granular timbre renders into its file ahead.
+    pub fn as_rack(&self) -> Option<Self> {
+        use crate::rack::{Module, Slot};
+        let classic = self.rack.is_none()
+            && self.drums.is_none()
+            && self.synth.is_none()
+            && self.bus.is_none()
+            && self.sampler.is_none()
+            && self.vocal.is_none();
+        if !classic || self.source_color_chain.iter().any(|s| s.enabled) {
+            return None;
+        }
+        let mut modules = vec![Module::Sample, Module::Grains];
+        if self.resynth.enabled {
+            modules.push(Module::Resynth);
+        }
+        if !self.pre_color_chain.is_empty() {
+            modules.push(Module::PreFx);
+        }
+        modules.extend([Module::Filters, Module::PostFx]);
+        let mut preset = self.clone();
+        preset.source_color_chain.clear();
+        preset.rack = Some(Box::new(crate::rack::Settings {
+            modules: modules
+                .into_iter()
+                .map(|module| Slot {
+                    module,
+                    enabled: true,
+                    id: 0,
+                })
+                .collect(),
+            ..Default::default()
+        }));
+        preset.sanitize();
+        Some(preset)
+    }
+
     pub fn builtin(index: usize) -> Self {
         if index == crate::startup::INDEX {
             return crate::startup::preset();

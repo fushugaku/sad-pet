@@ -378,8 +378,15 @@ impl Controller {
         let mut control = Self::new(effect);
         control.standalone = standalone;
         control.sync = !standalone;
-        control.preset = sad_pet::startup::preset();
+        // An instrument starts on the factory scene as a Rack; the effect
+        // processes its input, which only a Granular timbre's file takes.
+        control.preset = if effect {
+            sad_pet::startup::preset()
+        } else {
+            Preset::factory(sad_pet::startup::INDEX)
+        };
         control.preset.sanitize();
+        control.meta.kind = sad_pet::timbres::Kind::of(&control.preset);
         control.sample = sad_pet::startup::sample();
         control.region = sad_pet::startup::REGION;
         control.fades = sad_pet::startup::FADES;
@@ -531,9 +538,10 @@ impl Controller {
                 None
             },
             sample,
-            // A Rack's history comes with its preset; it takes no input.
+            // A Rack's history comes with its preset; a Rack takes an input
+            // only in its Sample's place.
             live: (preset.bus.is_none()
-                && preset.rack.is_none()
+                && preset.rack.as_ref().is_none_or(|r| r.takes_input())
                 && (source != Source::File || preset.history().is_some()))
             .then(|| {
                 let mut input = preset.history().map_or_else(
@@ -964,7 +972,11 @@ impl Controller {
             ("/api/preset", false) => Ok(json!(self.preset)),
             ("/api/presets", false) => Ok(json!(
                 (0..=sad_pet::startup::INDEX)
-                    .map(Preset::builtin)
+                    .map(if self.effect {
+                        Preset::builtin
+                    } else {
+                        Preset::factory
+                    })
                     .collect::<Vec<_>>()
             )),
             ("/api/color-defaults", false) => Ok(

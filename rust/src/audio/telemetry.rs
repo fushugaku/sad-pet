@@ -31,7 +31,7 @@ impl Applied {
         let mut state = state.lock().unwrap();
         match self {
             Self::Program(value) => {
-                let mut preset = Preset::builtin(value as usize % 5);
+                let mut preset = Preset::factory(value as usize % 5);
                 preset.sanitize();
                 state.preset = preset;
             }

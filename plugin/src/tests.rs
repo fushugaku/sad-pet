@@ -1795,11 +1795,8 @@ fn projects_with_master_and_buses_survive_repeated_save_and_restore() {
             .iter()
             .map(|t| t["kind"].as_str().unwrap().to_owned())
             .collect();
-        assert_eq!(
-            kinds,
-            ["granular", "bus", "drums", "master"],
-            "round {round}"
-        );
+        // The factory scene's first timbre is a Rack.
+        assert_eq!(kinds, ["rack", "bus", "drums", "master"], "round {round}");
         // Parts never nest their own timbres, and only the scene has a Master.
         assert!(
             restored.parts.iter().all(|p| p.parts.is_empty()),
@@ -1836,7 +1833,7 @@ fn user_preset_recall_survives_daw_state_with_a_master() {
         .iter()
         .map(|t| t["kind"].as_str().unwrap())
         .collect();
-    assert_eq!(kinds, ["granular", "master"]);
+    assert_eq!(kinds, ["rack", "master"]);
 }
 
 impl PresetDirectory {
@@ -2804,4 +2801,34 @@ fn instruments_are_racks_and_the_first_one_can_go_while_its_place_stays() {
     assert_eq!(preset["rack"]["modules"][0]["module"], "drums");
     control.drain();
     recalled.drain();
+}
+
+#[test]
+fn the_apps_factory_rack_plays_its_audio_input_in_the_samples_place() {
+    let mut control = Controller::new_scene(false, true);
+    let context = call(&mut control, "/api/timbres", Value::Null);
+    assert_eq!(context["timbres"][0]["kind"], "rack");
+    let mut audio = control.prepare(44100);
+    let values = control.values();
+    call(&mut control, "/api/transport", json!({"midi_gate":false}));
+    call(
+        &mut control,
+        "/api/input",
+        json!({"active":true,"mode":"grains"}),
+    );
+    // A second of input fills the history the Grain engine reads.
+    no_heap(|| {
+        audio.begin(&values, 120.0, None, false, 44100);
+        render(&mut audio, 44100, [0.2; 2]);
+    });
+    assert!(
+        audio.engine.live_input.is_some(),
+        "the input plays in the Rack"
+    );
+    let state = call(&mut control, "/api/state", Value::Null);
+    assert_eq!(state["input"]["active"], true);
+    call(&mut control, "/api/input", json!({"active":false}));
+    no_heap(|| audio.begin(&values, 120.0, None, false, 128));
+    assert!(audio.engine.live_input.is_none());
+    control.drain();
 }

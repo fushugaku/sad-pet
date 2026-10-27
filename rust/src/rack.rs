@@ -380,6 +380,13 @@ impl Settings {
                 && pair[1].enabled
         })
     }
+    /// A live input (a microphone, a DAW's audio) plays in place of the
+    /// Sample's file, as a Granular timbre's does: when there is a Sample, no
+    /// Grain engine keeps a history of some chain in the input's place, and
+    /// no Vocal module takes the input for its voice.
+    pub fn takes_input(&self) -> bool {
+        self.has(Module::Sample) && self.history().is_none() && !self.has(Module::Vocal)
+    }
     /// The live history a Grain engine reads when it does not read the file.
     pub fn history(&self) -> Option<crate::synth::History> {
         (self.enabled(Module::Grains) && !self.grains_read_file()).then_some(
@@ -412,8 +419,10 @@ pub struct Step {
     pub enabled: bool,
     pub chain: Chain,
     /// Every note of the chain still has a signal of its own here: a Synth or
-    /// Sample, the Grain engine granulating that Sample, and Filters right
-    /// under them. The notes' VCA follows the last such module.
+    /// Sample, the Grain engine granulating that Sample, and Filters, Resynth
+    /// and FX A under them. Resynth and FX A process the notes' mean and hand
+    /// each note what they did to it, as a classic timbre's do before its
+    /// filters. The notes' VCA follows the last such module.
     pub per_note: bool,
     /// For a Grain engine: it granulates the file of the Sample above it.
     pub reads_file: bool,
@@ -471,8 +480,9 @@ impl Plan {
                     per_note = step.reads_file;
                     step.per_note = per_note;
                 }
-                // A filter that is off keeps the notes apart for the next one.
-                Module::Filters => step.per_note = per_note,
+                // A filter that is off keeps the notes apart for the next one;
+                // Resynth and FX A keep them apart for the filters under them.
+                Module::Filters | Module::Resynth | Module::PreFx => step.per_note = per_note,
                 _ => per_note = false,
             }
             steps[i] = Some(step);

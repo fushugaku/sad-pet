@@ -128,6 +128,41 @@ impl Engine {
         }
     }
 
+    /// The notes' signals as one, each weighed by its VCA and the sum by
+    /// all of them: what a classic timbre's Resynth and Pre-filter FX hear.
+    #[inline]
+    fn rack_mean(&self, flow: &Flow) -> (Stereo, f32) {
+        let mut sum = [0.0; 2];
+        let mut weight = 0.0;
+        for i in bits(self.sounding) {
+            let value = self.voices[i].value;
+            if value <= 0.0 {
+                continue;
+            }
+            for (total, x) in sum.iter_mut().zip(flow.notes[i]) {
+                *total += x * value;
+            }
+            weight += value;
+        }
+        if weight > 0.0 {
+            sum = sum.map(|x| x / weight);
+        }
+        (sum, weight)
+    }
+    /// Each note takes what a stage did to the notes' `mean`.
+    #[inline]
+    fn rack_share(&self, flow: &mut Flow, mean: Stereo, output: Stereo) {
+        let change = [output[0] - mean[0], output[1] - mean[1]];
+        for i in bits(self.sounding) {
+            if self.voices[i].value <= 0.0 {
+                continue;
+            }
+            for (x, d) in flow.notes[i].iter_mut().zip(change) {
+                *x += d;
+            }
+        }
+    }
+
     /// `input` is the voice of a Vocal module, which the host renders.
     pub(super) fn process_rack_frame(&mut self, input: Stereo) -> Stereo {
         self.taps.begin_frame();
@@ -174,7 +209,30 @@ impl Engine {
         } else {
             [0.0; 2]
         };
-        let file = if self
+        // A live input plays in the Sample's place and fills the history its
+        // Grain engine reads, as a Granular timbre's does; grain feedback
+        // enters that history.
+        let live = self.rack_input();
+        let file = if live {
+            let clean = input.map(|x| {
+                if x.is_finite() {
+                    x.clamp(-16.0, 16.0)
+                } else {
+                    0.0
+                }
+            });
+            let fed = self.grain_feedback.output;
+            let recorded = if fed == [0.0; 2] {
+                clean
+            } else {
+                std::array::from_fn(|c| clean[c] + fed[c])
+            };
+            let frozen = self.frozen;
+            if let Some(history) = &mut self.live_input {
+                history.push_with_meter(recorded, input, frozen);
+            }
+            clean
+        } else if self
             .preset
             .rack
             .as_ref()
@@ -214,7 +272,14 @@ impl Engine {
             return [0.0; 2];
         };
         self.grain_clock += self.grain_step;
-        if rack.grains && !bypass && self.grain_density > 0.0 && self.grain_clock >= 1.0 {
+        // A live input for effects only plays without grains.
+        let effects_only = live && self.live_input.as_ref().is_some_and(|i| i.effects_only);
+        if rack.grains
+            && !bypass
+            && !effects_only
+            && self.grain_density > 0.0
+            && self.grain_clock >= 1.0
+        {
             self.grain_clock = self.grain_clock.fract();
             self.spawn();
         }
@@ -386,6 +451,55 @@ impl Engine {
                         flow.signal = self.tap(Stage::Filters, input, output);
                     }
                 }
+                Module::Resynth if flow.per_note => {
+                    // As a classic timbre's: on the notes' mean, each note
+                    // then taking what it did to that mean.
+                    let (mean, weight) = self.rack_mean(&flow);
+                    let grains = flow.grains.map_or(mean, |g| {
+                        if weight > 0.0 {
+                            g.map(|x| x / weight)
+                        } else {
+                            g
+                        }
+                    });
+                    let output = self.resynth.process_with_filters(
+                        mean,
+                        flow.source,
+                        grains,
+                        self.lfo_values[0],
+                        dry_scale,
+                        &self.sample,
+                        &self.file_range,
+                        self.playing,
+                        [
+                            masks[FilterPosition::AfterOsc1 as usize],
+                            masks[FilterPosition::AfterOsc2 as usize],
+                            masks[FilterPosition::AfterOsc3 as usize],
+                            masks[FilterPosition::AfterOsc4 as usize],
+                        ],
+                        &mut self.filter_banks,
+                    );
+                    let output = filter_slots::chain(
+                        &mut self.filter_banks,
+                        masks[FilterPosition::AfterResynth as usize],
+                        output,
+                        Instance::Shared,
+                    );
+                    if self.taps.sends(Stage::Resynth) {
+                        self.taps.send(Stage::Resynth, output.map(|x| x * weight));
+                    }
+                    let output = self.taps.mix(Stage::Resynth, mean, output);
+                    self.rack_share(&mut flow, mean, output);
+                }
+                Module::PreFx if flow.per_note => {
+                    let (mean, weight) = self.rack_mean(&flow);
+                    let output = self.pre_color_rack.process(mean);
+                    if self.taps.sends(Stage::PreFx) {
+                        self.taps.send(Stage::PreFx, output.map(|x| x * weight));
+                    }
+                    let output = self.taps.mix(Stage::PreFx, mean, output);
+                    self.rack_share(&mut flow, mean, output);
+                }
                 Module::Resynth => {
                     self.rack_collapse(&mut flow);
                     let input = flow.signal;
@@ -485,7 +599,11 @@ impl Engine {
     /// note by note, blended with the file by Dry/Wet as a Granular timbre's.
     fn rack_file_grains(&mut self, flow: &mut Flow, file: Stereo, dry_scale: f32) {
         let (voice_frames, group_sent) = self.render_grains(false);
-        let norm = self.grain_norm();
+        // A live input fills a history rather than a file; for effects only
+        // it plays dry.
+        let live = self.rack_input();
+        let effects_only = live && self.live_input.as_ref().is_some_and(|i| i.effects_only);
+        let norm = if effects_only { 1.0 } else { self.grain_norm() };
         let input_gain = self.input_gain;
         let feedback = self.modulated.params.grain_feedback;
         if feedback > 0.0 || self.grain_feedback.output != [0.0; 2] {
@@ -497,14 +615,17 @@ impl Engine {
                 }
             }
             self.grain_feedback.feed(grains.map(|x| x * norm), feedback);
-            if feedback > 0.0 && !self.frozen {
+            if !live && feedback > 0.0 && !self.frozen {
                 let center = self.center();
                 self.grain_feedback.write(center);
             }
         }
         self.send_groups(group_sent, norm * input_gain);
-        let (dry_amount, grain_amount) =
-            (dry_scale * (1.0 - self.smooth_mix), norm * self.smooth_mix);
+        let (dry_amount, grain_amount) = if effects_only {
+            (dry_scale, 0.0)
+        } else {
+            (dry_scale * (1.0 - self.smooth_mix), norm * self.smooth_mix)
+        };
         let grain_chain = self.taps.chain(Stage::Grains);
         let (chain_dry, chain_grain) = if grain_chain == 1.0 {
             (dry_amount, grain_amount)

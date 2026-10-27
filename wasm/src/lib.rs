@@ -244,7 +244,7 @@ impl Host {
             }
             "/api/presets" => Ok(json!(
                 (0..=sad_pet::startup::INDEX)
-                    .map(Preset::builtin)
+                    .map(Preset::factory)
                     .collect::<Vec<_>>()
             )),
             "/api/startup" => Ok(sad_pet::startup::configuration()),

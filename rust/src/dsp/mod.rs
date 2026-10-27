@@ -730,7 +730,8 @@ impl Engine {
         preset.rack_runtime.prepare_reusing(
             preset.rack.as_deref(),
             self.sample_rate,
-            self.rack.is_some() && self.live_input.is_some(),
+            // A running history of the Rack's own, not an input in its Sample.
+            self.rack.is_some() && self.live_input.is_some() && !self.rack_input(),
         );
         preset.bus_runtime.prepare_reusing(
             preset.bus.as_deref(),
@@ -749,9 +750,21 @@ impl Engine {
     /// Structural FX/drum edits must use `prepared_clone_for(sample_rate)`.
     /// The caller retires the previous preset away from the audio callback.
     pub fn exchange_preset(&mut self, preset: &mut Preset) {
+        // A live input stays while the next preset can play it: a Granular
+        // timbre or a Rack whose Sample it stands in for.
+        let plays_input = |p: &Preset| {
+            p.history().is_none()
+                && p.bus.is_none()
+                && p.drums.is_none()
+                && p.synth.is_none()
+                && p.rack.as_ref().is_none_or(|r| r.takes_input())
+        };
+        let input = self.live_input.is_some() && plays_input(&self.preset);
+        let keep_input = input && plays_input(preset);
         // A Rack's history waits aside while the sources change, so no Drum
         // or Synth runtime takes it; it stays if the next Rack still reads one.
-        let mut rack_history = if self.preset.rack.is_some() {
+        // An input is never one: where it cannot play on, it retires.
+        let mut rack_history = if self.preset.rack.is_some() && !input {
             self.live_input.take()
         } else {
             None
@@ -850,7 +863,10 @@ impl Engine {
         }
         filter_slots::inherit(&mut preset.filter_banks.0, &mut self.filter_banks);
         std::mem::swap(&mut self.filter_banks, &mut preset.filter_banks.0);
-        if preset.rack.is_some() {
+        if preset.rack.is_some() && keep_input {
+            // The input plays on in the next Rack; what the old one held retires.
+            preset.rack_runtime.0 = rack_history.take();
+        } else if preset.rack.is_some() {
             let prepared = preset.rack_runtime.0.take();
             let (kept, retired) = if rack_history.is_some() && preset.history().is_some() {
                 // The running history stays; the prepared one retires unused.
@@ -901,7 +917,7 @@ impl Engine {
         self.refresh_sequence_free_voice();
     }
     pub fn set_sample(&mut self, sample: Arc<SampleBuffer>) {
-        if self.preset.bus.is_none() && self.preset.rack.is_none() {
+        if self.preset.bus.is_none() && self.takes_input() {
             self.live_input = None;
         }
         self.sample = sample;
@@ -978,8 +994,9 @@ impl Engine {
         live_input: &mut Option<LiveInput>,
     ) {
         std::mem::swap(&mut self.sample, sample);
-        // A Rack keeps the history its Grain engine records.
-        if self.preset.rack.is_none() {
+        // A Rack keeps the history its Grain engine records; one whose Sample
+        // an input can stand in for takes the input as a Granular timbre does.
+        if self.takes_input() {
             std::mem::swap(&mut self.live_input, live_input);
         }
         self.reset_source();
@@ -1273,7 +1290,7 @@ impl Engine {
         Ok(())
     }
     pub fn set_live_input(&mut self, enabled: bool, effects_only: bool) {
-        if self.preset.history().is_some() || self.preset.rack.is_some() {
+        if self.preset.history().is_some() || !self.takes_input() {
             // Drum and Synth timbres record their own output.
             return;
         }
@@ -1338,12 +1355,21 @@ impl Engine {
             .map_or(&self.sample, |input| &input.sample)
     }
     /// A Rack with a Sample shows its file, even while its Grain engine
-    /// reads a history of some chain.
+    /// reads a history of some chain, unless a live input plays instead.
     fn shows_file(&self) -> bool {
         self.preset
             .rack
             .as_ref()
-            .is_some_and(|rack| rack.has(crate::rack::Module::Sample))
+            .is_some_and(|rack| rack.has(crate::rack::Module::Sample) && !self.rack_input())
+    }
+    /// Whether a live input can play here: in any timbre but a Rack, and in a
+    /// Rack whose Sample it can stand in for (`rack::Settings::takes_input`).
+    pub fn takes_input(&self) -> bool {
+        self.preset.rack.as_ref().is_none_or(|r| r.takes_input())
+    }
+    /// A Rack's Sample plays a live input now.
+    pub(crate) fn rack_input(&self) -> bool {
+        self.live_input.is_some() && self.preset.rack.as_ref().is_some_and(|r| r.takes_input())
     }
     /// What a host shows as the source: `source_sample` but for a Rack's file.
     pub fn shown_sample(&self) -> &SampleBuffer {
@@ -2016,7 +2042,7 @@ impl Engine {
                     _ => {}
                 }
             }
-            Message::Program { value, .. } => self.set_preset(Preset::builtin(value as usize % 5)),
+            Message::Program { value, .. } => self.set_preset(Preset::factory(value as usize % 5)),
             Message::Start | Message::Continue => self.set_playing(true),
             Message::Stop => self.set_playing(false),
             Message::Reset => {

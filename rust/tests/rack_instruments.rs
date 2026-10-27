@@ -145,3 +145,132 @@ fn granular_synth_and_drum_racks_sound_as_their_timbres() {
     let off = difference(&rendered[settled..], &expected[settled..], 0);
     assert!(off < 0.015, "Drums: {off}");
 }
+
+#[test]
+fn factory_presets_are_racks_that_play_as_their_granular_engines() {
+    use Module::*;
+    for index in 0..=sad_pet::startup::INDEX {
+        let classic = Preset::builtin(index);
+        let rack = Preset::factory(index);
+        assert_eq!(Kind::of(&rack), Kind::Rack, "{}", classic.name);
+        assert_eq!(rack.name, classic.name);
+        let modules: Vec<_> = rack
+            .rack
+            .as_ref()
+            .unwrap()
+            .modules
+            .iter()
+            .map(|s| s.module)
+            .collect();
+        assert_eq!(modules[..2], [Sample, Grains], "{}", classic.name);
+        assert_eq!(
+            modules[modules.len() - 2..],
+            [Filters, PostFx],
+            "{}",
+            classic.name
+        );
+        assert_eq!(modules.contains(&Resynth), classic.resynth.enabled);
+        assert_eq!(
+            modules.contains(&PreFx),
+            !classic.pre_color_chain.is_empty()
+        );
+        // With notes, and with voice 0 playing the file without them.
+        for gate in [true, false] {
+            let run = |preset: Preset| {
+                let mut engine = Engine::new(RATE, Arc::new(SampleBuffer::demo(RATE)), preset);
+                engine.set_midi_gate(gate);
+                engine.set_playing(true);
+                play(&mut engine)
+            };
+            let expected = run(classic.clone());
+            let rendered = run(rack.clone());
+            assert!(peak(&expected) > 0.01, "{} plays", classic.name);
+            let off = difference(&rendered, &expected, 0);
+            assert!(off < 1e-5, "{} (gate {gate}): {off}", classic.name);
+        }
+    }
+    // Startup's own preset converts too, and Source FX keep a preset classic.
+    assert_eq!(
+        Kind::of(&sad_pet::startup::preset().as_rack().unwrap()),
+        Kind::Rack
+    );
+    let mut fx = Preset::builtin(1);
+    fx.source_color_chain = vec![sad_pet::color::ColorSlot::default()];
+    assert!(fx.as_rack().is_none());
+    assert!(Kind::Synth.preset().unwrap().as_rack().is_none());
+}
+
+#[test]
+fn a_live_input_plays_in_a_racks_sample_as_in_a_granular_timbre() {
+    use Module::*;
+    // What a microphone hands the engine: a chirp that runs on across renders.
+    let input = |i: usize| {
+        let t = i as f32 / RATE as f32;
+        [(std::f32::consts::TAU * (220.0 + 180.0 * t) * t).sin() * 0.3; 2]
+    };
+    for (index, effects_only) in [(1, false), (sad_pet::startup::INDEX, false), (3, true)] {
+        let run = |preset: Preset| {
+            let mut engine = Engine::new(RATE, Arc::new(SampleBuffer::demo(RATE)), preset);
+            engine.set_midi_gate(true);
+            engine.set_playing(true);
+            engine.set_live_input(true, effects_only);
+            assert!(engine.live_input.is_some());
+            let mut frame = 0;
+            let mut render = |engine: &mut Engine, n: usize| {
+                (0..n)
+                    .map(|_| {
+                        frame += 1;
+                        engine.process_input_frame(input(frame))
+                    })
+                    .collect::<Vec<_>>()
+            };
+            // A second of input fills the history before a note plays it.
+            let mut out = render(&mut engine, RATE as usize);
+            note(&mut engine, 57, true);
+            out.extend(render(&mut engine, RATE as usize * 3 / 2));
+            note(&mut engine, 57, false);
+            out.extend(render(&mut engine, RATE as usize / 2));
+            out
+        };
+        let classic = Preset::builtin(index);
+        let expected = run(classic.clone());
+        let rendered = run(Preset::factory(index));
+        assert!(peak(&expected) > 0.01, "{} plays the input", classic.name);
+        let off = difference(&rendered, &expected, 0);
+        assert!(
+            off < 1e-5,
+            "{} (effects only {effects_only}): {off}",
+            classic.name
+        );
+    }
+    // The input stays through edits of a Rack that can play it, and from a
+    // Granular timbre into one and back.
+    let mut engine = Engine::new(RATE, Arc::new(SampleBuffer::demo(RATE)), Preset::builtin(1));
+    engine.set_live_input(true, false);
+    let mut rack = Preset::factory(1);
+    engine.set_preset(rack.clone());
+    assert!(
+        engine.live_input.is_some(),
+        "a Granular timbre's input plays in its Rack"
+    );
+    rack.rack.as_mut().unwrap().modules[3].enabled = false;
+    engine.set_preset(rack.clone());
+    assert!(engine.live_input.is_some(), "a Rack's edit keeps the input");
+    engine.set_preset(Preset::builtin(2));
+    assert!(
+        engine.live_input.is_some(),
+        "and so does a Granular timbre after it"
+    );
+    engine.set_preset(rack.clone());
+    // A Grain engine reading its chain's history takes the input's place.
+    let modules = &mut rack.rack.as_mut().unwrap().modules;
+    modules.swap(1, 2);
+    assert_eq!(modules[2].module, Grains);
+    engine.set_preset(rack.clone());
+    assert!(!engine.takes_input());
+    engine.set_live_input(true, false);
+    assert_eq!(engine.live_input.as_ref().unwrap().sample.name, "Rack");
+    // A Synth Rack has no Sample for it.
+    engine.set_preset(Kind::Synth.rack_instrument().unwrap());
+    assert!(!engine.takes_input());
+}
