@@ -90,6 +90,20 @@
       return step;
     });
   }
+  /**
+   * Gives `parent` the children `nodes`, in order, moving only those out of
+   * place. Taking every module out would blur the button just clicked, and
+   * Chrome would lay out the short page then and cut its scroll.
+   */
+  function reorder(parent, nodes) {
+    const kept = new Set(nodes);
+    for (const child of [...parent.children]) if (!kept.has(child)) child.remove();
+    let at = parent.firstElementChild;
+    for (const node of nodes) {
+      if (node === at) at = node.nextElementSibling;
+      else parent.insertBefore(node, at);
+    }
+  }
   const decibels = (v) => (v < 1e-4 ? "−∞ dB" : `${v >= 1 ? "+" : ""}${(20 * Math.log10(v)).toFixed(1)} dB`.replace("+0.0", "0.0"));
   const panText = (v) => (Math.abs(v - 0.5) < 0.005 ? "C"
     : `${Math.round(Math.abs(v - 0.5) * 200)}${v < 0.5 ? "L" : "R"}`);
@@ -296,7 +310,7 @@
         section.dataset.chain = step.chain ?? "none";
         nodes.push(section);
       });
-      this.stack.replaceChildren(...nodes);
+      reorder(this.stack, nodes);
       this.empty.hidden = steps.length > 0;
       this.count.textContent = steps.length
         ? `${steps.length} ${steps.length === 1 ? "module" : "modules"}`
@@ -652,10 +666,18 @@
     async edit(change, { reload = false, focus = null } = {}) {
       const rack = this.preset()?.rack;
       if (!rack) return;
+      // The control in use stays under the pointer and keeps focus while its
+      // module stays: the next click lands where the last one did.
+      const active = this.stack.contains(document.activeElement) ? document.activeElement : null;
+      const top = active?.getBoundingClientRect().top;
       change(rack.modules);
       this.hooks.structure();
       if (reload) await this.hooks.reload();
       else this.hooks.sync();
+      if (active && this.stack.contains(active)) {
+        window.scrollBy(0, active.getBoundingClientRect().top - top);
+        if (document.activeElement !== active) active.focus({ preventScroll: true });
+      }
       if (focus) requestAnimationFrame(focus);
     }
 
@@ -728,7 +750,12 @@
       const kept = KEPT.includes(key);
       if (kept) stash[key] = structuredClone(preset[key]);
       this.stash.set(timbre, stash);
-      this.edit((list) => list.splice(index, 1), { reload: kept });
+      const neighbor = this.sections[(modules[index + 1] ?? modules[index - 1])?.module];
+      this.edit((list) => list.splice(index, 1), {
+        reload: kept,
+        // Keys go on from the module that takes its place.
+        focus: () => neighbor?.rack.grip.focus({ preventScroll: true }),
+      });
       this.showUndo(`${INFO[key].label} removed`, () => {
         if (this.timbre() !== timbre || this.modules().some((m) => m.module === key)) return;
         if (kept) this.preset()[key] = stash[key];
@@ -934,6 +961,7 @@
     }
   }
   Rack.plan = plan;
+  Rack.reorder = reorder;
   Rack.modules = MODULES;
   window.SadRack = Rack;
 })();
