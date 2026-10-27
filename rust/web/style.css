@@ -1151,8 +1151,9 @@ h2 {
     text-align: left;
   }
 }
-/* Out of the chain the section still runs for its bus: dimmed, not off. */
-.bank.tap-skipped > :not(.section-heading, .tap) {
+/* Out of the chain the section still runs for its bus: dimmed, not off. The
+   Grain engine's waveform is its input and stays lit. */
+.bank.tap-skipped > :not(.section-heading, .tap, .sample-panel) {
   opacity: 0.45;
   transition: opacity 0.15s;
 }

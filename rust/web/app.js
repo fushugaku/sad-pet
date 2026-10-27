@@ -1622,10 +1622,11 @@ function syncTimbreRouting() {
   const samplePanel = document.querySelector(".sample-panel");
   samplePanel.classList.toggle("drum-waveform", history);
   // The transport stays on top of every timbre; below it each engine keeps the
-  // Granular order: its own section, then the waveform, Source FX and Grain engine.
-  // A Rack places them with its modules instead.
-  if (!rack && $("sample-panel-home").nextElementSibling !== samplePanel)
-    $("sample-panel-home").after(samplePanel);
+  // Granular order: its own section, then Source FX and the Grain engine, whose
+  // waveform sits under its heading. A Rack places them with its modules instead.
+  const grainHeading = $("grain-engine").querySelector(":scope > .section-heading");
+  if (!rack && grainHeading.nextElementSibling !== samplePanel)
+    grainHeading.after(samplePanel);
   samplePanel.setAttribute("aria-label", drums ? "Drum waveform and grains"
     : synth ? "Synth waveform and grains" : rackLive ? "Grain engine input and grains"
     : "Sample and grains");
