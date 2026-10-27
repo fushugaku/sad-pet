@@ -843,16 +843,18 @@ pub struct Preset {
     pub bus: Option<Box<crate::bus::Settings>>,
     #[serde(skip)]
     pub bus_runtime: crate::bus::Prepared,
-    /// Present only in Vocal timbres, which also carry Bus settings: their
-    /// engine processes the sung voice the way a bus processes its input.
+    /// Present in Vocal timbres, which also carry Bus settings: their engine
+    /// processes the sung voice the way a bus processes its input; and in a
+    /// Rack with a Vocal module.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vocal: Option<Box<crate::vocal::Settings>>,
-    /// Present only in Sampler timbres, which also carry Bus settings: their
-    /// engine processes the kit the way a bus processes its input.
+    /// Present in Sampler timbres, which also carry Bus settings: their engine
+    /// processes the kit the way a bus processes its input; and in a Rack
+    /// with a Sampler module.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sampler: Option<Box<crate::sampler::Settings>>,
-    /// Present only in Rack timbres, which may also hold Drum and Synth
-    /// settings for their modules; other presets serialize unchanged.
+    /// Present only in Rack timbres, which may also hold Drum, Synth, Sampler
+    /// and Vocal settings for their modules; other presets serialize unchanged.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rack: Option<Box<crate::rack::Settings>>,
     #[serde(skip)]
@@ -1240,8 +1242,20 @@ impl Preset {
             // A Rack holds the settings of the sources it has, and only those.
             rack.sanitize();
             self.bus = None;
-            self.vocal = None;
-            self.sampler = None;
+            if rack.has(crate::rack::Module::Vocal) {
+                self.vocal
+                    .get_or_insert_with(|| Box::new(crate::vocal::Settings::new()))
+                    .sanitize();
+            } else {
+                self.vocal = None;
+            }
+            if rack.has(crate::rack::Module::Sampler) {
+                self.sampler
+                    .get_or_insert_with(|| Box::new(crate::sampler::Settings::new()))
+                    .sanitize();
+            } else {
+                self.sampler = None;
+            }
             if rack.has(crate::rack::Module::Drums) {
                 self.drums.get_or_insert_with(Default::default).sanitize();
             } else {

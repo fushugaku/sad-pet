@@ -661,7 +661,8 @@ export class BrowserBackend {
   snapshot() {
     return {
       ...this.state,
-      features: { sampler: true },
+      // It plays kits, and sings a Rack's Vocal module as well.
+      features: { sampler: true, rack_vocal: true },
       instance_id: this.instanceId,
       clock: this.midiClock?.status(),
       audio_enabled: this.context.state === "running" && !this.fatal,
