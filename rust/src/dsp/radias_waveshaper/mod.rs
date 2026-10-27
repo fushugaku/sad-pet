@@ -52,7 +52,7 @@ impl WaveshaperMode {
         Self::LevelBoost,
     ];
 
-    fn coefficients(self, depth: f32, pitch: u16) -> ShaperCoefficients {
+    pub(crate) fn coefficients(self, depth: f32, pitch: u16) -> ShaperCoefficients {
         // Retain fractional DEPTH modulation through the original manual offset.
         let raw = (depth.clamp(0.0, 1.0) * 127.0 * 256.0).round() as u16;
         let control = ShaperControl {
@@ -125,11 +125,7 @@ impl RadiasWaveshaper {
     pub fn new(sample_rate: u32) -> Self {
         let mut result = Self {
             states: [Waveshaper::default(); 2],
-            tables: ShaperTables {
-                sub_edges: std::array::from_fn(|i| {
-                    16384usize.checked_div(i).unwrap_or(32767) as i16
-                }),
-            },
+            tables: tables(),
             mode: WaveshaperMode::Drive,
             current: WaveshaperMode::Drive.coefficients(0.5, 60 * 256),
             target: WaveshaperMode::Drive.coefficients(0.5, 60 * 256),
@@ -167,14 +163,7 @@ impl RadiasWaveshaper {
         self.pitch
     }
     pub fn set_pitch(&mut self, note: f32) {
-        let note = note.clamp(0.0, 127.996);
-        self.pitch = (note * 256.0).round().clamp(0.0, 32767.0) as u16;
-        let hz = 440.0 * 2.0_f64.powf((note as f64 - 69.0) / 12.0);
-        self.increment = PhaseIncrement(
-            (hz * 4294967296.0 / self.sample_rate)
-                .round()
-                .clamp(0.0, i32::MAX as f64) as u32,
-        );
+        (self.pitch, self.increment) = pitch(note, self.sample_rate);
     }
     pub fn process(&mut self, input: Stereo) -> Stereo {
         self.process_with_voice_gain(input, 1.0)
@@ -187,24 +176,13 @@ impl RadiasWaveshaper {
             c.gain_current = (c.gain_current as f32 * voice_gain.clamp(0.0, 1.0)).round() as i16;
         }
         let result = std::array::from_fn(|channel| {
-            let sample = if input[channel].is_finite() {
-                (input[channel].clamp(-1.0, 1.0) as f64 * 2147483648.0)
-                    .clamp(i32::MIN as f64, i32::MAX as f64) as i32
-            } else {
-                0
-            };
-            self.states[channel]
-                .process(
-                    ShaperSignal {
-                        input: Sample(sample),
-                        primary_pitch_code: self.pitch,
-                        primary_increment: self.increment,
-                    },
-                    coefficients,
-                    &self.tables,
-                )
-                .0 as f32
-                / 2147483648.0
+            shape(
+                &mut self.states[channel],
+                input[channel],
+                coefficients,
+                (self.pitch, self.increment),
+                &self.tables,
+            )
         });
         // Same four-frame publication and staged Q15 rounding as VoiceRenderer.
         if self.frame & 3 == 3 {
@@ -218,6 +196,53 @@ impl RadiasWaveshaper {
         self.frame = self.frame.wrapping_add(1);
         result
     }
+}
+/// The sub oscillators' edge slopes.
+pub(crate) fn tables() -> ShaperTables {
+    ShaperTables {
+        sub_edges: std::array::from_fn(|i| 16384usize.checked_div(i).unwrap_or(32767) as i16),
+    }
+}
+/// A MIDI note as the kernels' pitch code and phase increment.
+pub(crate) fn pitch(note: f32, sample_rate: f64) -> (u16, PhaseIncrement) {
+    let note = note.clamp(0.0, 127.996);
+    let hz = 440.0 * 2.0_f64.powf((note as f64 - 69.0) / 12.0);
+    (
+        (note * 256.0).round().clamp(0.0, 32767.0) as u16,
+        PhaseIncrement(
+            (hz * 4294967296.0 / sample_rate)
+                .round()
+                .clamp(0.0, i32::MAX as f64) as u32,
+        ),
+    )
+}
+/// One channel's sample through a kernel, in and out of its fixed point.
+#[inline(always)]
+pub(crate) fn shape(
+    state: &mut Waveshaper,
+    input: f32,
+    coefficients: ShaperCoefficients,
+    (pitch, increment): (u16, PhaseIncrement),
+    tables: &ShaperTables,
+) -> f32 {
+    let sample = if input.is_finite() {
+        (input.clamp(-1.0, 1.0) as f64 * 2147483648.0).clamp(i32::MIN as f64, i32::MAX as f64)
+            as i32
+    } else {
+        0
+    };
+    state
+        .process(
+            ShaperSignal {
+                input: Sample(sample),
+                primary_pitch_code: pitch,
+                primary_increment: increment,
+            },
+            coefficients,
+            tables,
+        )
+        .0 as f32
+        / 2147483648.0
 }
 fn slew(current: i16, target: i16) -> i16 {
     (fixed::saturate(2 * (target as i64 * 0x1d4 + current as i64 * 0x7e2d)) >> 16) as i16

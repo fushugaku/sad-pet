@@ -691,7 +691,7 @@ h2 {
   pointer-events: none;
 }
 /* Advanced grain mode: group tabs beside a curve of the selected group over
-   one grain, then that group's controls in four cards. */
+   one grain, then that group's controls in eight cards and its Output. */
 .grain-groups {
   margin-top: 16px;
   padding-top: 14px;
@@ -803,12 +803,14 @@ h2 {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
-/* A group's Output row takes the cell beside its filter envelope. */
+/* A group's Output row takes the last row, under its eight cards. */
 .grain-group-page .grain-group-output {
+  grid-column: 1 / -1;
   margin-top: 0;
   align-content: center;
 }
-.grain-group-card.is-idle .grain-group-knobs {
+.grain-group-card.is-idle .grain-group-knobs,
+.grain-group-knobs > .knob.is-idle {
   opacity: 0.45;
 }
 .grain-group-page .grain-group-output.sending {

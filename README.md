@@ -276,11 +276,19 @@ files move instruments between the web version and the native app and plug-ins.
   group's offset from its note — PITCH, DETUNE and RND PITCH together — to a
   scale built on that note (Chromatic, Major, Minor, Dorian, Mixolydian,
   Harmonic minor, both Pentatonics, Whole tone, Fifths, Octaves) or to the
-  **Held chord**, so random grains stay in key. Every control is a host
+  **Held chord**, so random grains stay in key. **Drive · Waveshaper** works
+  on each grain before its filters and envelopes: **DRIVE** saturates it as
+  the FX Distortion's DRIVE does (0% leaves it clean), then the menu picks one
+  of the FX Waveshaper's RADIAS types (Off by default) at its **DEPTH**. The
+  sub oscillators and Pickup follow each grain's own pitch, so a SubSaw sits
+  an octave under every grain, inside its window. A grain keeps the type its
+  group had when it started; DRIVE and DEPTH follow the knobs while it plays.
+  Every control is a host
   parameter (`grain_advanced`, `grain_group1_share` …
   `grain_group4_filter_release`, then `grain_group1_chain`, `_send`, `_bus` for
   each group, then `grain_feedback` and each group's `_size` … `_scale`, then
-  each group's `_filter_routing` … `_filter2_env_depth`) that
+  each group's `_filter_routing` … `_filter2_env_depth`, and after the L/C/R
+  controls each group's `_drive`, `_waveshaper` and `_waveshaper_depth`) that
   LFOs, envelopes, the matrix, macros and sequencer lanes can reach; a bus is
   chosen, not modulated.
 - **Grain feedback.** **FEEDBACK** in the Grain engine of any timbre lets the

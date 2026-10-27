@@ -46,6 +46,8 @@ class Element {
     this.children.push(...nodes);
   }
   querySelector(selector) {
+    const card = /^\[data-card="(.+)"\]$/.exec(selector)?.[1];
+    if (card) return this.children.find((n) => n.dataset.card === card);
     return this.parts?.get(selector);
   }
   querySelectorAll(selector) {
@@ -118,8 +120,8 @@ const context = vm.createContext({
 const run = (code) => vm.runInContext(code, context);
 run(`${source}\nbuildGrainGroups(); syncGrainGroups();`);
 
-// Four groups of twenty-six knobs each, and CHAIN and SEND, under the host IDs.
-assert.equal(knobs.size, 4 * 28);
+// Four groups of twenty-eight knobs each, and CHAIN and SEND, under the host IDs.
+assert.equal(knobs.size, 4 * 30);
 assert.equal(knobs.get("grain_group2_attack").aria, "Group B attack");
 assert.equal(knobs.get("grain_group2_attack").binding.get(), 1);
 assert.equal(knobs.get("grain_group2_filter2_cutoff").aria, "Group B filter 2 cutoff");
@@ -132,6 +134,10 @@ assert.ok(knobs.has("grain_group1_share") && knobs.has("grain_group4_filter_rele
 assert.equal(knobs.get("grain_group2_pitch").aria, "Group B pitch");
 assert.equal(knobs.get("grain_group3_amp_attack").aria, "Group C amp envelope attack");
 assert.equal(knobs.get("grain_group1_pitch").min, -24);
+assert.equal(knobs.get("grain_group3_drive").aria, "Group C drive");
+assert.equal(knobs.get("grain_group3_drive").binding.get(), 0);
+assert.equal(knobs.get("grain_group4_waveshaper_depth").aria, "Group D waveshaper depth");
+assert.equal(knobs.get("grain_group4_waveshaper_depth").format(64 / 127), "64");
 
 // Off: no groups panel, the main SHAPE plays.
 assert.equal($("grain-groups").hidden, true);
@@ -210,6 +216,24 @@ assert.deepEqual(
   [groups().groups[0].filter_routing, groups().groups[0].filter2_type],
   ["parallel", "band_pass"],
 );
+
+// The waveshaper goes by its host index, Off first; DEPTH dims while it is
+// off and DRIVE writes the group.
+const shaper = menu(0, "waveshaper");
+assert.equal(shaper.value, "off");
+assert.equal(shaper.getAttribute("aria-label"), "Group A waveshaper");
+const depthKnob = pages[0].querySelector('[data-card="Drive · Waveshaper"]').lastElementChild.children[1];
+assert.ok(depthKnob.classes.has("is-idle"));
+shaper.value = "hard_clip";
+shaper.onchange();
+knobs.get("grain_group1_drive").binding.set(0.6);
+assert.deepEqual(calls.splice(0), [
+  ["parameter", "grain_group1_waveshaper", 2],
+  ["parameter", "grain_group1_drive", 0.6],
+]);
+assert.deepEqual([groups().groups[0].waveshaper, groups().groups[0].drive], ["hard_clip", 0.6]);
+assert.ok(!depthKnob.classes.has("is-idle"));
+assert.equal(knobs.get("grain_group1_waveshaper_depth").binding.get(), 64 / 127);
 
 // Tabs show each group's share, Off at zero, and pick the page.
 knobs.get("grain_group3_share").binding.set(0);

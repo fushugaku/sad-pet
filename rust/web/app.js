@@ -540,9 +540,9 @@ const grainSchema = [
   ["grain_feedback", "FEEDBACK", percent],
 ];
 // Advanced grain mode (rust/src/grain_groups.rs): grains are dealt to four
-// groups, each with its own pitch, level, filter and two envelopes that run
-// over every grain's own life. The amp envelope is the grains' window, its
-// segments curved by the group's SHAPE.
+// groups, each with its own pitch, level, drive, waveshaper, filter and two
+// envelopes that run over every grain's own life. The amp envelope is the
+// grains' window, its segments curved by the group's SHAPE.
 const GRAIN_GROUP_NAMES = ["A", "B", "C", "D"];
 const GRAIN_GROUP_COLORS = [
   [203, 255, 148],
@@ -577,18 +577,36 @@ const GRAIN_ROUTINGS = [
   ["serial", "Serial"],
   ["parallel", "Parallel"],
 ];
+// The RADIAS waveshaper's types, in host order: the FX Waveshaper's and each
+// grain group's.
+const WAVESHAPER_TYPES = [
+  ["drive", "Drive"],
+  ["hard_clip", "Hard Clip"],
+  ["decimator", "Decimator"],
+  ["oct_saw", "OctSaw"],
+  ["multi_triangle", "MultiTri"],
+  ["multi_sine", "MultiSin"],
+  ["sub_saw", "SubSaw"],
+  ["sub_square", "SubSquare"],
+  ["sub_triangle", "SubTriangle"],
+  ["sub_sine", "SubSine"],
+  ["pickup", "Pickup"],
+  ["level_boost", "LvlBoost"],
+];
 // The group menus, their choices and names, by field.
 const GRAIN_GROUP_CHOICES = {
   filter_type: GRAIN_FILTER_TYPES,
   scale: GRAIN_SCALES,
   filter_routing: GRAIN_ROUTINGS,
   filter2_type: GRAIN_FILTER_TYPES,
+  waveshaper: [["off", "Off"], ...WAVESHAPER_TYPES],
 };
 const GRAIN_GROUP_MENUS = {
   filter_type: "filter type",
   scale: "scale",
   filter_routing: "filter 2 routing",
   filter2_type: "filter 2 type",
+  waveshaper: "waveshaper",
 };
 const grainGroupDefault = () => ({
   share: 1,
@@ -621,6 +639,10 @@ const grainGroupDefault = () => ({
   filter2_env_depth: 0,
   // A new note's grains build up from none, as the engine's ATTACK at 100%.
   attack: 1,
+  // Clean grains; the waveshaper waits at the FX Waveshaper's DEPTH of 64.
+  drive: 0,
+  waveshaper: "off",
+  waveshaper_depth: 64 / 127,
 });
 // Reading leaves the preset alone: the host omits untouched groups.
 const grainGroupSettings = () =>
@@ -652,7 +674,7 @@ function editGrainGroup(index, field, value) {
   controls.get(key)?.();
   const choices = GRAIN_GROUP_CHOICES[field];
   scheduleParameter(key, choices ? choices.findIndex(([id]) => id === value) : value);
-  if (field === "filter_routing") syncGrainGroups();
+  if (field === "filter_routing" || field === "waveshaper") syncGrainGroups();
   else syncGrainGroupOutputs();
   drawGrainGroupCurve();
 }
@@ -694,6 +716,11 @@ function buildGrainGroups() {
       ["amp_decay", "DECAY", time],
       ["amp_sustain", "SUSTAIN", percent],
       ["amp_release", "RELEASE", time],
+    ]],
+    // Each grain is driven, then shaped, before its filters.
+    ["Drive · Waveshaper", ["waveshaper"], [
+      ["drive", "DRIVE", percent],
+      ["waveshaper_depth", "DEPTH", (v) => String(Math.round(v * 127)), 0, 1, "waveshaper depth"],
     ]],
     ["Filter 1", ["filter_type"], [
       ["cutoff", "CUTOFF", cutoff, 0, 1, "filter cutoff"],
@@ -899,11 +926,18 @@ function syncGrainGroups() {
     page.hidden = index !== grainGroupPage;
     for (const select of page.querySelectorAll(".grain-group-menu"))
       select.value = grainGroupField(settings.groups[index], select.dataset.field);
-    // Filter 2 dims while routed off; its knobs stay ready to set.
+    // Filter 2 dims while routed off, DEPTH while the waveshaper is; their
+    // knobs stay ready to set.
     page.querySelector('[data-card="Filter 2"]')?.classList.toggle(
       "is-idle",
       grainGroupField(settings.groups[index], "filter_routing") === "single",
     );
+    page
+      .querySelector('[data-card="Drive · Waveshaper"]')
+      ?.lastElementChild.children[1]?.classList.toggle(
+        "is-idle",
+        grainGroupField(settings.groups[index], "waveshaper") === "off",
+      );
   });
   syncGrainGroupOutputs();
   drawGrainGroupCurve();
@@ -2732,20 +2766,6 @@ const COLOR_RACKS = [
     prefix: "pre_",
   },
   { key: "color_chain", element: "color-chain", add: "color-add", label: "FX" },
-];
-const WAVESHAPER_TYPES = [
-  ["drive", "Drive"],
-  ["hard_clip", "Hard Clip"],
-  ["decimator", "Decimator"],
-  ["oct_saw", "OctSaw"],
-  ["multi_triangle", "MultiTri"],
-  ["multi_sine", "MultiSin"],
-  ["sub_saw", "SubSaw"],
-  ["sub_square", "SubSquare"],
-  ["sub_triangle", "SubTriangle"],
-  ["sub_sine", "SubSine"],
-  ["pickup", "Pickup"],
-  ["level_boost", "LvlBoost"],
 ];
 function colorEntries() {
   return COLOR_RACKS.flatMap((rack) =>

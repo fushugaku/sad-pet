@@ -2543,7 +2543,17 @@ impl Engine {
         let pan = (self.modulated.pan + self.random.bipolar() * spread * 0.5).clamp(0.0, 1.0);
         let shape = group.map_or(p.grain_shape, |(_, g)| g.shape);
         match group {
-            Some((index, g)) => self.group_grains.start(slot, index, &g, duration),
+            Some((index, g)) => {
+                // The pitch the grain plays, which its waveshaper follows: a
+                // Synth's history and a bus play at the latest note.
+                let base = if voice == 0 {
+                    self.source_note as f32
+                } else {
+                    p.sample_root_note
+                };
+                self.group_grains
+                    .start(slot, index, &g, duration, base + semis)
+            }
             None => self.group_grains.release(slot),
         }
         self.live_grains |= 1 << slot;

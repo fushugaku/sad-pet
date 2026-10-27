@@ -1,9 +1,13 @@
 //! The advanced grain mode's per-grain state: which group a grain joined, its
-//! two envelopes over its own life and its own stereo filter.
+//! two envelopes over its own life, its drive, waveshaper and stereo filter.
+use super::radias_waveshaper::{
+    self as shaper, PhaseIncrement, WaveshaperMode,
+    kernels::{self, ShaperCoefficients, ShaperTables},
+};
 use super::{MAX_GRAINS, fast, filter};
 use crate::{
     Stereo,
-    grain_groups::{Envelope, FilterType, GROUPS, Group, Settings},
+    grain_groups::{Envelope, FilterType, GROUPS, Group, Settings, Waveshaper},
     preset::{self, FilterRouting},
     tables::{self, Random},
 };
@@ -80,6 +84,68 @@ impl Segments {
     }
 }
 
+/// A grain's DRIVE: the FX Distortion's saturator, eased in over DRIVE's
+/// first 10% so that turning it up from 0 makes no step.
+#[derive(Clone, Copy, Debug)]
+struct Drive {
+    gain: f32,
+    level: f32,
+    wet: f32,
+}
+impl Drive {
+    fn new(amount: f32) -> Self {
+        let gain = 1.0 + 18.0 * amount;
+        Self {
+            gain,
+            level: 1.0 / gain.sqrt(),
+            wet: (amount * 10.0).min(1.0),
+        }
+    }
+    #[inline(always)]
+    fn process(&self, frame: Stereo) -> Stereo {
+        frame.map(|x| x + (fast::tanh(x * self.gain) * self.level - x) * self.wet)
+    }
+}
+
+/// A grain's RADIAS waveshaper: the type its group had as it started, at the
+/// group's DEPTH and the grain's own pitch, which the sub oscillators and
+/// Pickup follow. Its gains start where the FX's slew to, as a grain may be
+/// over before they would get there.
+#[derive(Clone, Copy, Debug)]
+struct Shaper {
+    mode: WaveshaperMode,
+    coefficients: ShaperCoefficients,
+    states: [kernels::Waveshaper; 2],
+    pitch: (u16, PhaseIncrement),
+}
+impl Shaper {
+    fn new(mode: WaveshaperMode, depth: f32, pitch: (u16, PhaseIncrement)) -> Self {
+        Self {
+            mode,
+            coefficients: Self::coefficients(mode, depth, pitch.0),
+            states: Default::default(),
+            pitch,
+        }
+    }
+    fn coefficients(mode: WaveshaperMode, depth: f32, pitch: u16) -> ShaperCoefficients {
+        let mut coefficients = mode.coefficients(depth, pitch);
+        if let Some(gain) = coefficients.gain_target(pitch) {
+            coefficients.set_gain_current(gain);
+        }
+        coefficients
+    }
+    fn tune(&mut self, depth: f32) {
+        self.coefficients = Self::coefficients(self.mode, depth, self.pitch.0);
+    }
+    #[inline(always)]
+    fn process(&mut self, frame: Stereo, tables: &ShaperTables) -> Stereo {
+        let (coefficients, pitch) = (self.coefficients, self.pitch);
+        std::array::from_fn(|c| {
+            shaper::shape(&mut self.states[c], frame[c], coefficients, pitch, tables)
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 struct Grain {
     /// Started in advanced mode; other grains pass through untouched.
@@ -95,6 +161,9 @@ struct Grain {
     filtering: [bool; 2],
     amp: Segments,
     filter_env: Segments,
+    /// None for DRIVE at 0 or the waveshaper off as the grain started.
+    drive: Option<Drive>,
+    shaper: Option<Shaper>,
     filters: [Svf; 2],
 }
 
@@ -140,8 +209,10 @@ impl Svf {
 }
 
 pub(crate) struct Runtime {
+    sample_rate: f64,
     /// tan(pi f / fs) at each step of the 0..1 cutoff scale.
     gains: [f32; CUTOFF_STEPS + 1],
+    shaper_tables: ShaperTables,
     grains: [Grain; MAX_GRAINS],
     /// Smooth weighted round robin: each deal adds every share, the richest
     /// group takes the grain and pays the total back.
@@ -154,11 +225,13 @@ impl Runtime {
     pub(crate) fn new(sample_rate: u32) -> Self {
         let rate = sample_rate as f32;
         Self {
+            sample_rate: sample_rate as f64,
             gains: std::array::from_fn(|i| {
                 let cutoff = i as f32 / CUTOFF_STEPS as f32;
                 let hz = filter::cutoff_hz(preset::FilterType::LowPass, cutoff).min(rate * 0.45);
                 (std::f32::consts::PI * hz / rate).tan()
             }),
+            shaper_tables: shaper::tables(),
             grains: [Grain::default(); MAX_GRAINS],
             credit: [0.0; GROUPS],
             random: Random(0x6772_6169_6e5f_6772),
@@ -190,7 +263,15 @@ impl Runtime {
         self.credit[chosen] -= total;
         Some(chosen)
     }
-    pub(crate) fn start(&mut self, slot: usize, index: usize, group: &Group, duration: u32) {
+    /// `note` is the pitch the grain plays at, as a MIDI note.
+    pub(crate) fn start(
+        &mut self,
+        slot: usize,
+        index: usize,
+        group: &Group,
+        duration: u32,
+        note: f32,
+    ) {
         let cutoff_offset = if group.random_cutoff > 0.0 {
             self.random.bipolar() * group.random_cutoff
         } else {
@@ -218,6 +299,15 @@ impl Runtime {
             ],
             amp: Segments::new(&group.amp, duration),
             filter_env: Segments::new(&group.filter_env, duration),
+            drive: (group.drive > 0.0).then(|| Drive::new(group.drive)),
+            shaper: match group.waveshaper {
+                Waveshaper::Off => None,
+                Waveshaper::Type(mode) => Some(Shaper::new(
+                    mode,
+                    group.waveshaper_depth,
+                    shaper::pitch(note, self.sample_rate),
+                )),
+            },
             ..Grain::default()
         };
     }
@@ -229,10 +319,10 @@ impl Runtime {
         let grain = &self.grains[slot];
         grain.grouped.then_some(grain.group)
     }
-    /// A grain's group and one frame of it through its filter, amp envelope
-    /// and level, or None for a grain outside the groups, which keeps the
-    /// engine's window. Filter and level follow the group's current settings
-    /// while it plays.
+    /// A grain's group and one frame of it through its drive, waveshaper,
+    /// filter, amp envelope and level, or None for a grain outside the
+    /// groups, which keeps the engine's window. All but the waveshaper's type
+    /// follow the group's current settings while it plays.
     #[inline]
     pub(crate) fn process(
         &mut self,
@@ -249,6 +339,24 @@ impl Runtime {
         let group = &settings.groups[index];
         let age_f = age as f32;
         let gain = grain.amp.shaped(age_f, grain.shape) * group.level * grain.level;
+        // Each grain is driven and shaped whole, before its filters and
+        // envelope, as a voice's oscillators are.
+        let mut frame = frame;
+        if grain.drive.is_some() || grain.shaper.is_some() {
+            let refresh = age.is_multiple_of(REFRESH);
+            if let Some(drive) = &mut grain.drive {
+                if refresh {
+                    *drive = Drive::new(group.drive);
+                }
+                frame = drive.process(frame);
+            }
+            if let Some(shaper) = &mut grain.shaper {
+                if refresh {
+                    shaper.tune(group.waveshaper_depth);
+                }
+                frame = shaper.process(frame, &self.shaper_tables);
+            }
+        }
         let [first, second] = grain.filtering;
         let routing = group.filter_routing;
         let second = second && routing != FilterRouting::Single;
@@ -370,7 +478,7 @@ mod tests {
         };
         let (mut offsets, mut levels) = (Vec::new(), Vec::new());
         for slot in 0..MAX_GRAINS {
-            runtime.start(slot, 0, &group, 1_000);
+            runtime.start(slot, 0, &group, 1_000, 60.0);
             offsets.push(runtime.grains[slot].cutoff_offset);
             levels.push(runtime.grains[slot].level);
         }
@@ -380,12 +488,93 @@ mod tests {
         assert!(levels.iter().any(|&l| l < 0.6) && levels.iter().any(|&l| l > 0.9));
         // A random cutoff below the top keeps a filter open at 100% working.
         assert!(runtime.grains.iter().any(|g| g.filtering[0]));
-        runtime.start(0, 0, &Group::default(), 1_000);
+        runtime.start(0, 0, &Group::default(), 1_000, 60.0);
         assert_eq!(
             (runtime.grains[0].cutoff_offset, runtime.grains[0].level),
             (0.0, 1.0)
         );
         assert_eq!(runtime.grains[0].filtering, [false; 2]);
+    }
+
+    #[test]
+    fn drive_and_the_waveshaper_shape_each_grain_before_its_envelope() {
+        // One grain of a held envelope, fed a 1 kHz sine at half scale.
+        const LENGTH: u32 = 4_800;
+        let play = |group: Group| {
+            let group = Group {
+                amp: Envelope {
+                    attack: 0.0,
+                    decay: 0.0,
+                    sustain: 1.0,
+                    release: 0.0,
+                },
+                ..group
+            };
+            let settings = Settings {
+                advanced: true,
+                groups: [group; GROUPS],
+            };
+            let mut runtime = Runtime::new(48_000);
+            // C5: a sub oscillator plays C4.
+            runtime.start(0, 0, &group, LENGTH, 72.0);
+            (0..LENGTH)
+                .map(|age| {
+                    let x = 0.5 * (std::f32::consts::TAU * age as f32 / 48.0).sin();
+                    runtime.process(0, age, [x, x], &settings).unwrap().1[0]
+                })
+                .collect::<Vec<_>>()
+        };
+        let amplitude = |signal: &[f32], hz: f32| {
+            let (mut re, mut im) = (0.0, 0.0);
+            for (i, x) in signal.iter().enumerate() {
+                let phase = std::f32::consts::TAU * hz * i as f32 / 48_000.0;
+                re += x * phase.cos();
+                im += x * phase.sin();
+            }
+            2.0 * (re * re + im * im).sqrt() / signal.len() as f32
+        };
+        let clean = play(Group::default());
+        assert!((amplitude(&clean, 1_000.0) - 0.5).abs() < 1e-3);
+        assert!(amplitude(&clean, 3_000.0) < 1e-4);
+        // DRIVE squeezes the sine: odd harmonics, a lower peak.
+        let driven = play(Group {
+            drive: 1.0,
+            ..Group::default()
+        });
+        assert!(
+            amplitude(&driven, 3_000.0) > 0.03,
+            "{}",
+            amplitude(&driven, 3_000.0)
+        );
+        assert!(driven.iter().all(|x| x.abs() < 0.24));
+        // Leaving 0 makes no step.
+        let barely = play(Group {
+            drive: 0.001,
+            ..Group::default()
+        });
+        let step = clean
+            .iter()
+            .zip(&barely)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0, f32::max);
+        assert!(step < 0.002, "{step}");
+        // A sub oscillator adds the octave below the grain's pitch.
+        let sub = play(Group {
+            waveshaper: crate::grain_groups::Waveshaper::Type(WaveshaperMode::SubSine),
+            waveshaper_depth: 1.0,
+            ..Group::default()
+        });
+        let c4 = 440.0 * 2.0_f32.powf(-9.0 / 12.0);
+        assert!(amplitude(&clean, c4) < 0.01);
+        assert!(amplitude(&sub, c4) > 0.1, "{}", amplitude(&sub, c4));
+        // Hard Clip at full depth turns it into a square.
+        let clipped = play(Group {
+            waveshaper: crate::grain_groups::Waveshaper::Type(WaveshaperMode::HardClip),
+            waveshaper_depth: 1.0,
+            ..Group::default()
+        });
+        let ratio = amplitude(&clipped, 3_000.0) / amplitude(&clipped, 1_000.0);
+        assert!((ratio - 1.0 / 3.0).abs() < 0.05, "{ratio}");
     }
 
     #[test]

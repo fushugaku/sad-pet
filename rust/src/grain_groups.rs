@@ -1,8 +1,9 @@
 //! Advanced grain mode: grains are dealt to four groups, each with its own
-//! pitch, length, placement, level, filter and two envelopes that run over
-//! every grain's own life. A group's amp envelope is its grains' window,
+//! pitch, length, placement, level, drive, waveshaper, filter and two
+//! envelopes that run over every grain's own life. A group's amp envelope is its grains' window,
 //! curved by its shape. A group's controls that the engine also has move
 //! from the engine's value, so untouched groups play as the engine does.
+use crate::dsp::radias_waveshaper::WaveshaperMode;
 use serde::{Deserialize, Serialize};
 
 pub const GROUPS: usize = 4;
@@ -106,6 +107,37 @@ impl FilterType {
     pub const ALL: [Self; 3] = [Self::LowPass, Self::BandPass, Self::HighPass];
 }
 
+/// The RADIAS waveshaper a group's grains pass through: one of the FX
+/// Waveshaper's types, or none. Host values index `ALL`, Off first.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Waveshaper {
+    #[default]
+    Off,
+    #[serde(untagged)]
+    Type(WaveshaperMode),
+}
+impl Waveshaper {
+    pub const COUNT: usize = WaveshaperMode::ALL.len() + 1;
+    pub fn index(self) -> usize {
+        match self {
+            Self::Off => 0,
+            Self::Type(mode) => {
+                1 + WaveshaperMode::ALL
+                    .iter()
+                    .position(|&m| m == mode)
+                    .unwrap_or(0)
+            }
+        }
+    }
+    pub fn from_index(index: usize) -> Self {
+        match index {
+            0 => Self::Off,
+            i => Self::Type(WaveshaperMode::ALL[(i - 1).min(WaveshaperMode::ALL.len() - 1)]),
+        }
+    }
+}
+
 /// An ADSR over one grain's life: attack, decay and release are shares of
 /// the grain's length, scaled down together when they add up to more.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -197,6 +229,11 @@ pub struct Group {
     /// How much of its cloud's build-up a new note waits through, in place
     /// of the engine's ATTACK.
     pub attack: f32,
+    /// How hard each grain drives a saturator before the waveshaper and the
+    /// filters, as the FX Distortion's DRIVE; 0 passes it clean.
+    pub drive: f32,
+    pub waveshaper: Waveshaper,
+    pub waveshaper_depth: f32,
 }
 impl Default for Group {
     fn default() -> Self {
@@ -226,6 +263,10 @@ impl Default for Group {
             filter2_resonance: 0.1,
             filter2_env_depth: 0.0,
             attack: crate::preset::Params::default().grain_attack,
+            drive: 0.0,
+            waveshaper: Waveshaper::Off,
+            // The FX Waveshaper's DEPTH of 64.
+            waveshaper_depth: 64.0 / 127.0,
         }
     }
 }
@@ -259,6 +300,13 @@ impl Group {
             fallback.filter2_resonance,
         );
         crate::preset::finite_clamp(&mut self.filter2_env_depth, -1.0, 1.0, 0.0);
+        crate::preset::finite_clamp(&mut self.drive, 0.0, 1.0, 0.0);
+        crate::preset::finite_clamp(
+            &mut self.waveshaper_depth,
+            0.0,
+            1.0,
+            fallback.waveshaper_depth,
+        );
     }
 }
 
@@ -332,6 +380,19 @@ pub const FILTER2_FIELD: usize = PLAY_FIELD + PLAY_FIELDS.len();
 /// Each group's ATTACK, appended after the grain attack; get and set number
 /// it after FILTER2_FIELDS.
 pub const ATTACK_FIELD: usize = FILTER2_FIELD + FILTER2_FIELDS.len();
+/// Each group's drive and waveshaper, appended after the L/C/R controls; get
+/// and set number them on from SHAPER_FIELD.
+pub const SHAPER_FIELDS: [(&str, &str, f32, f32); 3] = [
+    ("drive", "drive", 0.0, 1.0),
+    (
+        "waveshaper",
+        "waveshaper",
+        0.0,
+        (Waveshaper::COUNT - 1) as f32,
+    ),
+    ("waveshaper_depth", "waveshaper depth", 0.0, 1.0),
+];
+pub const SHAPER_FIELD: usize = ATTACK_FIELD + 1;
 const ROUTINGS: [crate::preset::FilterRouting; 3] = [
     crate::preset::FilterRouting::Single,
     crate::preset::FilterRouting::Serial,
@@ -371,7 +432,10 @@ pub fn get(group: &Group, field: usize) -> f32 {
         29 => group.filter2_cutoff,
         30 => group.filter2_resonance,
         31 => group.filter2_env_depth,
-        _ => group.attack,
+        32 => group.attack,
+        33 => group.drive,
+        34 => group.waveshaper.index() as f32,
+        _ => group.waveshaper_depth,
     }
 }
 pub fn set(group: &mut Group, field: usize, value: f32) {
@@ -408,7 +472,10 @@ pub fn set(group: &mut Group, field: usize, value: f32) {
         29 => group.filter2_cutoff = value,
         30 => group.filter2_resonance = value,
         31 => group.filter2_env_depth = value,
-        _ => group.attack = value,
+        32 => group.attack = value,
+        33 => group.drive = value,
+        34 => group.waveshaper = Waveshaper::from_index(value.round().max(0.0) as usize),
+        _ => group.waveshaper_depth = value,
     }
 }
 

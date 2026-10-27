@@ -1,6 +1,7 @@
 use sad_pet::{
+    dsp::radias_waveshaper::WaveshaperMode,
     dsp::{Engine, SampleBuffer},
-    grain_groups::{Envelope, FilterType, GROUPS, Settings},
+    grain_groups::{Envelope, FilterType, GROUPS, Settings, Waveshaper},
     parameters,
     preset::Preset,
     timbres::Kind,
@@ -53,6 +54,16 @@ fn presets_without_advanced_mode_serialize_as_before() {
         json["grain_groups"]["groups"][1]["filter_type"],
         "high_pass"
     );
+    let back: Preset = serde_json::from_value(json).unwrap();
+    assert_eq!(back.grain_groups, preset.grain_groups);
+    // The waveshaper is "off" or the FX Waveshaper's type name.
+    preset.grain_groups.groups[3].waveshaper = Waveshaper::Type(WaveshaperMode::SubSquare);
+    let json = serde_json::to_value(&preset).unwrap();
+    assert_eq!(
+        json["grain_groups"]["groups"][3]["waveshaper"],
+        "sub_square"
+    );
+    assert_eq!(json["grain_groups"]["groups"][0]["waveshaper"], "off");
     let back: Preset = serde_json::from_value(json).unwrap();
     assert_eq!(back.grain_groups, preset.grain_groups);
 }
@@ -207,6 +218,84 @@ fn each_group_filters_and_shapes_its_own_grains() {
     assert!((half / open - 0.5).abs() < 0.05, "{half} vs {open}");
 }
 
+/// The first difference's energy as a share of the signal's: what a folding
+/// shaper adds to the demo's low tones raises it.
+fn brightness(frames: &[[f32; 2]]) -> f32 {
+    let mut high = 0.0;
+    for pair in frames.windows(2) {
+        let d = pair[1][0] - pair[0][0];
+        high += d * d;
+    }
+    high / frames.iter().map(|f| f[0] * f[0]).sum::<f32>()
+}
+
+#[test]
+fn each_group_drives_and_shapes_its_own_grains() {
+    let clean = render(&mut engine(advanced), 24_000);
+    // DRIVE at 0 and the waveshaper off leave the grains as they were.
+    let mut untouched = engine(|p| {
+        advanced(p);
+        for g in &mut p.grain_groups.groups {
+            g.drive = 0.0;
+            g.waveshaper_depth = 1.0;
+        }
+    });
+    assert_eq!(render(&mut untouched, 24_000), clean);
+    let driven = render(
+        &mut engine(|p| {
+            advanced(p);
+            p.grain_groups.groups.iter_mut().for_each(|g| g.drive = 1.0);
+        }),
+        24_000,
+    );
+    let shaped = |mode, depth| {
+        render(
+            &mut engine(move |p| {
+                advanced(p);
+                for g in &mut p.grain_groups.groups {
+                    g.waveshaper = Waveshaper::Type(mode);
+                    g.waveshaper_depth = depth;
+                }
+            }),
+            24_000,
+        )
+    };
+    let folded = shaped(WaveshaperMode::MultiSine, 0.8);
+    let tail = 12_000..;
+    let base = brightness(&clean[tail.clone()]);
+    assert!(rms(&clean[tail.clone()]) > 0.01);
+    // Driven grains are squeezed: the quiet ones come up.
+    assert!(rms(&driven[tail.clone()]) > rms(&clean[tail.clone()]) * 1.4);
+    assert!(error(&driven, &clean) > 0.01);
+    assert!(brightness(&folded[tail.clone()]) > base * 3.0, "{base}");
+    // A sub oscillator under every grain adds a low tone at the grain's
+    // own pitch, inside its window.
+    let sub = shaped(WaveshaperMode::SubSine, 1.0);
+    assert!(rms(&sub[tail.clone()]) > rms(&clean[tail.clone()]) * 1.2);
+    assert!(sub.iter().all(|f| f[0].is_finite() && f[0].abs() < 4.0));
+
+    // Only the group set plays shaped: with B silent its fold leaves A as
+    // it was; heard, B's folded grains brighten the pair.
+    let pair = |b_level: f32, b_folds: bool| {
+        let mut e = engine(move |p| {
+            advanced(p);
+            for (i, g) in p.grain_groups.groups.iter_mut().enumerate() {
+                g.share = if i < 2 { 1.0 } else { 0.0 };
+            }
+            let b = &mut p.grain_groups.groups[1];
+            b.level = b_level;
+            if b_folds {
+                b.waveshaper = Waveshaper::Type(WaveshaperMode::MultiSine);
+                b.waveshaper_depth = 0.8;
+            }
+        });
+        render(&mut e, 24_000)
+    };
+    assert_eq!(pair(0.0, true), pair(0.0, false));
+    let (folded, clean) = (pair(1.0, true), pair(1.0, false));
+    assert!(brightness(&folded[tail.clone()]) > brightness(&clean[tail]) * 1.5);
+}
+
 #[test]
 fn drum_and_synth_tracks_play_grain_groups_too() {
     for kind in [Kind::Drums, Kind::Synth] {
@@ -276,8 +365,21 @@ fn grain_group_controls_append_after_the_macros() {
     let rack = filter2 + 4 * 5 + 8 * 5;
     // Then the Rack EQs: each band's on, frequency, gain and Q, and output.
     let eqs = rack + 3 * 4 + 1 + 2 + 2 * 4 + 3 + 1 + 4;
-    // Then L/C/R Converge and Reverse of every FX, Pre FX and Source FX slot.
-    assert_eq!(ids.len(), eqs + 8 * (4 * 8 + 1) + (2 * 12 + 1) * 2);
+    // Then L/C/R Converge and Reverse of every FX, Pre FX and Source FX
+    // slot, then each group's drive and waveshaper.
+    let shapers = eqs + 8 * (4 * 8 + 1) + (2 * 12 + 1) * 2;
+    assert_eq!(ids.len(), shapers + 4 * 3);
+    assert_eq!(ids[shapers - 1], "source_fx1_lcr_reverse");
+    assert_eq!(
+        ids[shapers..shapers + 4],
+        [
+            "grain_group1_drive",
+            "grain_group1_waveshaper",
+            "grain_group1_waveshaper_depth",
+            "grain_group2_drive"
+        ]
+    );
+    assert_eq!(ids[ids.len() - 1], "grain_group4_waveshaper_depth");
     assert_eq!(ids[eqs + 1], "rack_eq1_band1_frequency");
     assert_eq!(ids[filter2 + 4 * 5], "lfo1_shape");
     assert_eq!(ids[rack], "rack_sample_level");
@@ -307,6 +409,10 @@ fn grain_group_controls_append_after_the_macros() {
         "grain_group2_cutoff": 0.3,
         "grain_group3_pitch": 99.0,
         "grain_group4_filter_type": 2.0,
+        "grain_group1_drive": 0.4,
+        "grain_group2_waveshaper": 2.0,
+        "grain_group3_waveshaper": 12.0,
+        "grain_group3_waveshaper_depth": 0.25,
     }))
     .unwrap();
     assert!(parameters::apply(&mut preset, &changes));
@@ -315,6 +421,18 @@ fn grain_group_controls_append_after_the_macros() {
     assert_eq!(g.groups[1].cutoff, 0.3);
     assert_eq!(g.groups[2].pitch, 24.0);
     assert_eq!(g.groups[3].filter_type, FilterType::HighPass);
+    // The waveshaper menu goes by host index: Off, then the FX's types.
+    assert_eq!(g.groups[0].drive, 0.4);
+    assert_eq!(
+        g.groups[1].waveshaper,
+        Waveshaper::Type(WaveshaperMode::HardClip)
+    );
+    assert_eq!(
+        g.groups[2].waveshaper,
+        Waveshaper::Type(WaveshaperMode::LevelBoost)
+    );
+    assert_eq!(g.groups[2].waveshaper_depth, 0.25);
+    assert_eq!(g.groups[3].waveshaper, Waveshaper::Off);
     // LFOs and the matrix reach every group control.
     let catalog = sad_pet::sequence::catalog();
     let modulation = catalog["modulation"].as_array().unwrap();
@@ -326,6 +444,12 @@ fn grain_group_controls_append_after_the_macros() {
     );
     assert!(modulation.iter().any(|s| s["id"] == "grain_group2_send"));
     assert!(!modulation.iter().any(|s| s["id"] == "grain_group2_bus"));
+    assert!(modulation.iter().any(|s| s["id"] == "grain_group3_drive"));
+    assert!(
+        modulation
+            .iter()
+            .any(|s| s["id"] == "grain_group4_waveshaper_depth")
+    );
 }
 
 /// Only group B plays, sending to Bus 2.

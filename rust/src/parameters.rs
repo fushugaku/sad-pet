@@ -1572,6 +1572,23 @@ pub fn specs() -> &'static [Spec] {
                 }
             }
         }
+        // Then each grain group's drive and waveshaper.
+        for (i, name) in grain_groups::NAMES.iter().enumerate() {
+            for (offset, (key, label, min, max)) in
+                grain_groups::SHAPER_FIELDS.into_iter().enumerate()
+            {
+                let mut spec = Spec {
+                    id: format!("grain_group{}_{key}", i + 1),
+                    name: format!("Grain group {name} {label}"),
+                    min,
+                    max,
+                    default: 0.0,
+                    target: Target::GrainGroup(i, grain_groups::SHAPER_FIELD + offset),
+                };
+                spec.default = spec.get(&preset);
+                result.push(spec);
+            }
+        }
         result
     })
 }
