@@ -308,6 +308,13 @@ files move instruments between the web version and the native app and plug-ins.
   length; the first switch-on copies the engine's. Host parameters
   `grain_attack`, then `grain_group1_attack` … `grain_group4_attack`, after
   `resynth_fade`.
+- **Cloud in time.** **Cloud** in the Grain engine heading picks what CLOUD
+  scatters grains over. **% of source** (the default, as before) is a share of
+  the whole file or history, so on a long file even 12% mixes pieces seconds
+  apart. **Time** is a span that stays the same whatever the source's length:
+  up to 4 s at 100% on a square law (12% ≈ 58 ms, 50% = 1 s), never wider than
+  the source. CLOUD shows the span in Time mode; it stays the same host
+  parameter, and the mode is saved with the preset.
 - **Vocal timbres** sing a score, in the manner of VOCALOID5 (browser, DAW
   plug-ins and app). Draw notes in the piano roll, double-click one to type its
   lyric (Tab moves on) or use **Lyrics…** for a whole line, in **Japanese**

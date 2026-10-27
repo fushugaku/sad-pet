@@ -631,6 +631,10 @@ fn default_envs() -> [Env; crate::preset::MODULATORS] {
     })
 }
 
+/// The span CLOUD at 100% scatters grains over in Time mode; the knob
+/// follows a square law, so 50% is a quarter of it.
+pub const CLOUD_SECONDS: f32 = 4.0;
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Params {
@@ -684,6 +688,9 @@ pub struct Params {
     /// How much of the grain cloud's build-up a note waits through: at 1 its
     /// grains start from none, at 0 it starts with a played-in cloud.
     pub grain_attack: f32,
+    /// CLOUD scatters grains over a span of time, up to `CLOUD_SECONDS`,
+    /// rather than over a share of the whole source.
+    pub cloud_time: bool,
     pub bpm: f32,
     pub loop_one_bar: bool,
     pub sample_root_note: f32,
@@ -744,6 +751,7 @@ impl Default for Params {
             min_grains: 0.0,
             grain_feedback: 0.0,
             grain_attack: 1.0,
+            cloud_time: false,
             bpm: 120.0,
             loop_one_bar: false,
             sample_root_note: 60.0,

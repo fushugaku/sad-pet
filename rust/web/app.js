@@ -505,6 +505,11 @@ function grainSeconds(value) {
     : 2;
   return 0.01 + span * Math.abs(value * 2 - 1) ** 3;
 }
+/** CLOUD's span in Time mode: up to 4 s on a square law (dsp/mod.rs `cloud_width`). */
+function cloudSpan(value) {
+  const ms = 4000 * value * value;
+  return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(2)} s`;
+}
 const grainSchema = [
   ["position", "POSITION", (v) => percent(v)],
   ["grains", "GRAINS", (v) => `${(128 * v ** 3).toFixed(1)} /s`],
@@ -523,7 +528,8 @@ const grainSchema = [
   // How much of the cloud's build-up a new note waits through: 0% starts
   // it whole, so ENV1 alone shapes the attack; 100% grows it grain by grain.
   ["grain_attack", "ATTACK", percent],
-  ["cloud", "CLOUD", percent],
+  // A share of the whole source, or in Time mode a span of time.
+  ["cloud", "CLOUD", (v) => (preset.params.cloud_time ? cloudSpan(v) : percent(v))],
   [
     "detune",
     "DETUNE",
@@ -1741,6 +1747,7 @@ function syncAll() {
   syncGrainGroups();
   syncSliders();
   $("antialias").checked = preset.params.antialiasing;
+  $("cloud-mode").value = preset.params.cloud_time ? "time" : "region";
   $("bpm").value = preset.params.bpm;
   syncLoopControls();
   syncFilters();
@@ -5187,6 +5194,10 @@ function bind() {
   sliderMenu($("mix"), "mix", "Dry / wet");
   sliderMenu($("volume"), "master_volume", "Output volume");
   $("antialias").onchange = (e) => setParam("antialiasing", e.target.checked);
+  $("cloud-mode").onchange = (e) => {
+    setParam("cloud_time", e.target.value === "time");
+    syncControl("cloud");
+  };
   $("loop-one-bar").onchange = (e) =>
     setParam("loop_one_bar", e.target.checked);
   for (let note = 0; note < 128; note++)

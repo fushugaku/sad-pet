@@ -566,6 +566,14 @@
                 aria-label="Granular buffer duration"
               ></select
             ></label>
+            <label
+              class="history-buffer"
+              title="What CLOUD scatters grains over: a share of the whole source, or a span of time up to 4 s"
+              >Cloud<select id="cloud-mode" aria-label="Cloud scatter range">
+                <option value="region">% of source</option>
+                <option value="time">Time</option>
+              </select></label
+            >
             <label class="check"
               ><input id="antialias" type="checkbox" checked />Anti-alias</label
             >

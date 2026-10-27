@@ -1560,8 +1560,20 @@ impl Engine {
         } else {
             self.grain_seconds(p.grain_size)
         };
-        (seconds as f64 * self.sample_rate as f64 * 2.0 + p.cloud as f64 * length * 0.5 + 4.0)
+        (seconds as f64 * self.sample_rate as f64 * 2.0 + self.cloud_width() * 0.5 + 4.0)
             .min(length * 0.9)
+    }
+    /// How wide CLOUD scatters grains, in source frames: its share of the
+    /// source, or in Time mode its span of time, never wider than the source.
+    fn cloud_width(&self) -> f64 {
+        let p = &self.modulated.params;
+        let length = self.source_range().len() as f64;
+        if p.cloud_time {
+            let seconds = crate::preset::CLOUD_SECONDS * p.cloud * p.cloud;
+            (seconds as f64 * self.source_sample().sample_rate as f64).min(length)
+        } else {
+            p.cloud as f64 * length
+        }
     }
     /// A group's grain center: its POSITION moves the engine's, around a
     /// file and, within a history, no nearer the head than the engine goes.
@@ -2531,8 +2543,13 @@ impl Engine {
             Some((_, g)) => self.layer_center(voice, g.position),
             None => self.voice_center(voice),
         };
+        let scatter = self.random.bipolar() as f64;
         let mut offset = center - range.start as f64
-            + self.random.bipolar() as f64 * p.cloud as f64 * length * 0.5;
+            + if p.cloud_time {
+                scatter * self.cloud_width() * 0.5
+            } else {
+                scatter * p.cloud as f64 * length * 0.5
+            };
         if age > 0 {
             offset += (rate - drift_speed) * age as f64;
         }
