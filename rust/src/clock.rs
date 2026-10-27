@@ -312,6 +312,129 @@ impl Follower {
     }
 }
 
+const TICK: u8 = 0xf8;
+const START: u8 = 0xfa;
+const CONTINUE: u8 = 0xfb;
+const STOP: u8 = 0xfc;
+const SONG_POSITION: u8 = 0xf2;
+
+/// The scene's transport at a block's first frame, for clock out; `epoch`
+/// changes whenever it starts, stops or moves.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Transport {
+    pub beat: f64,
+    pub bpm: f32,
+    pub playing: bool,
+    pub epoch: u32,
+}
+
+/// Clock out: the scene's transport as the messages a slave follows, at the
+/// frames of a block they sound on. While it plays, a tick every 24th of a
+/// beat after Start, or after a song position and Continue; Stop when it
+/// stops. Ticks carry on at the tempo while stopped, so a slave keeps it.
+#[derive(Clone, Debug)]
+pub struct Sender {
+    rate: f64,
+    /// The transport's epoch at the last block; None before the first.
+    epoch: Option<u32>,
+    playing: bool,
+    /// The next tick: its beat while playing, its frame while stopped.
+    beat: f64,
+    frame: f64,
+    /// The sixteenth the transport starts on, announced with the next tick.
+    announce: Option<u16>,
+    /// The frame of the last tick sent: the next comes a tick after it.
+    last: f64,
+}
+impl Sender {
+    pub fn new(rate: u32) -> Self {
+        Self {
+            rate: rate.max(1) as f64,
+            epoch: None,
+            playing: false,
+            beat: 0.0,
+            frame: 0.0,
+            announce: None,
+            last: f64::NEG_INFINITY,
+        }
+    }
+    /// Forgets the transport: the next block starts the clock afresh.
+    pub fn reset(&mut self) {
+        *self = Self::new(self.rate as u32);
+    }
+    /// The messages of the block that starts at `frame` and lasts `frames`,
+    /// with the transport there. Each message goes to `send` with its offset
+    /// in the block, in order.
+    pub fn block(
+        &mut self,
+        frame: f64,
+        frames: usize,
+        transport: Transport,
+        mut send: impl FnMut(usize, &[u8]),
+    ) {
+        let Transport {
+            beat,
+            bpm,
+            playing,
+            epoch,
+        } = transport;
+        if frames == 0 {
+            return;
+        }
+        let frames_per_beat = 60.0 * self.rate / (bpm as f64).clamp(MIN_BPM, MAX_BPM);
+        let period = frames_per_beat / TICKS_PER_BEAT;
+        let frame_of = |b: f64| frame + (b - beat) * frames_per_beat;
+        let offset = |at: f64| ((at - frame).round().max(0.0) as usize).min(frames - 1);
+        if self.epoch != Some(epoch) {
+            if self.playing {
+                send(0, &[STOP]);
+            }
+            if playing {
+                // A slave counts every tick after Start or Continue, so the
+                // song resumes on the first sixteenth after what went out.
+                let mut sixteenth = (beat * 4.0 - 1e-6).ceil().max(0.0);
+                while frame_of(sixteenth / 4.0) <= self.last {
+                    sixteenth += 1.0;
+                }
+                self.beat = sixteenth / 4.0;
+                self.announce = Some(sixteenth.min(16_383.0) as u16);
+            } else if self.epoch.is_none() || self.playing {
+                self.frame = frame.max(self.last + period);
+            }
+            self.epoch = Some(epoch);
+            self.playing = playing;
+        }
+        let end = frame + frames as f64;
+        loop {
+            let at = if self.playing {
+                frame_of(self.beat)
+            } else {
+                self.frame
+            };
+            if at >= end - 0.5 {
+                break;
+            }
+            let offset = offset(at);
+            if let Some(sixteenth) = self.announce.take() {
+                if sixteenth == 0 {
+                    send(offset, &[START]);
+                } else {
+                    let low = (sixteenth & 0x7f) as u8;
+                    send(offset, &[SONG_POSITION, low, (sixteenth >> 7) as u8]);
+                    send(offset, &[CONTINUE]);
+                }
+            }
+            send(offset, &[TICK]);
+            self.last = at;
+            if self.playing {
+                self.beat += 1.0 / TICKS_PER_BEAT;
+            } else {
+                self.frame = at.max(frame) + period;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -567,5 +690,93 @@ mod tests {
             frame += BLOCK as f64;
         }
         assert!((p.unwrap().bpm - 140.0).abs() < 0.2, "{p:?}");
+    }
+
+    /// Every message a Sender gives over `blocks` blocks of BLOCK frames,
+    /// as (frame, bytes), with the transport `at` each block's first frame.
+    fn sent(
+        sender: &mut Sender,
+        start: u64,
+        blocks: u64,
+        at: impl Fn(u64) -> (f64, f32, bool, u32),
+    ) -> Vec<(u64, Vec<u8>)> {
+        let mut out = Vec::new();
+        for block in start..start + blocks {
+            let frame = block * BLOCK as u64;
+            let (beat, bpm, playing, epoch) = at(frame);
+            let transport = Transport {
+                beat,
+                bpm,
+                playing,
+                epoch,
+            };
+            sender.block(frame as f64, BLOCK, transport, |offset, bytes| {
+                out.push((frame + offset as u64, bytes.to_vec()))
+            });
+        }
+        out
+    }
+
+    #[test]
+    fn the_sender_ticks_24_times_a_beat_from_start_and_stops() {
+        let mut sender = Sender::new(RATE);
+        // 120 BPM from beat 0: a tick every 1000 frames, Start before the first.
+        let beat = |frame: u64| frame as f64 / 24_000.0;
+        let out = sent(&mut sender, 0, 375, |f| (beat(f), 120.0, true, 1));
+        assert_eq!(out[0], (0, vec![START]));
+        let ticks: Vec<u64> = out.iter().filter(|m| m.1 == [TICK]).map(|m| m.0).collect();
+        assert_eq!(ticks.len(), 48);
+        assert!(ticks.iter().enumerate().all(|(i, &f)| f == i as u64 * 1000));
+        // Stopped: Stop at once, then ticks go on at the tempo.
+        let out = sent(&mut sender, 375, 100, |_| (2.0, 120.0, false, 2));
+        assert_eq!(out[0], (48_000, vec![STOP]));
+        let ticks: Vec<u64> = out.iter().filter(|m| m.1 == [TICK]).map(|m| m.0).collect();
+        assert_eq!(ticks[0], 48_000);
+        assert!(ticks.windows(2).all(|w| w[1] - w[0] == 1000));
+        // Continuing at beat 2.3 resumes on the next sixteenth, 2.5, with its
+        // song position (10 sixteenths) and Continue.
+        let from = 475 * BLOCK as u64;
+        let at = |f: u64| 2.3 + (f - from) as f64 / 24_000.0;
+        let out = sent(&mut sender, 475, 50, |f| (at(f), 120.0, true, 3));
+        let resume = from + 4_800;
+        assert_eq!(out[0], (resume, vec![SONG_POSITION, 10, 0]));
+        assert_eq!(out[1], (resume, vec![CONTINUE]));
+        assert_eq!(out[2], (resume, vec![TICK]));
+    }
+
+    #[test]
+    fn a_follower_locks_onto_a_senders_clock() {
+        let mut sender = Sender::new(RATE);
+        let mut follower = Follower::new(RATE);
+        let beat = |frame: u64| 1.0 + frame as f64 * 97.0 / (60.0 * RATE as f64);
+        let mut position = None;
+        for block in 0..3_000_u64 {
+            let frame = block * BLOCK as u64;
+            let transport = Transport {
+                beat: beat(frame),
+                bpm: 97.0,
+                playing: true,
+                epoch: 1,
+            };
+            sender.block(frame as f64, BLOCK, transport, |offset, bytes| {
+                let mut parser = crate::midi::Parser::default();
+                for &byte in bytes {
+                    if let Some(message) = parser.feed(byte) {
+                        follower.event((frame + offset as u64) as f64, message);
+                    }
+                }
+            });
+            position = follower.block(frame as f64, BLOCK, 120.0);
+        }
+        let position = position.unwrap();
+        assert!(position.playing);
+        assert!((position.bpm - 97.0).abs() < 0.1, "{}", position.bpm);
+        let end = 3_000 * BLOCK as u64;
+        assert!(
+            (position.beat - beat(end)).abs() < 0.01,
+            "{} vs {}",
+            position.beat,
+            beat(end)
+        );
     }
 }

@@ -8,6 +8,8 @@ extern "C" {
 struct SadController;
 struct SadAudio;
 struct SadBytes { std::uint8_t* data; std::size_t len; };
+// One MIDI clock message at its frame in the block (the app's clock out).
+struct SadClockEvent { std::uint32_t offset; std::uint8_t size; std::uint8_t bytes[3]; };
 SadBytes sad_parameters();
 SadController* sad_control_new(bool effect);
 SadController* sad_control_new_standalone();
@@ -29,4 +31,6 @@ void sad_audio_midi(SadAudio*, const std::uint8_t*, std::size_t);
 void sad_audio_process(SadAudio*, const float* left, const float* right,
                       float* outputLeft, float* outputRight, std::size_t frames);
 void sad_audio_end(SadAudio*, std::size_t frames);
+// The app's MIDI clock out for the block just ended, valid until the next one.
+const SadClockEvent* sad_audio_clock_out(const SadAudio*, std::size_t* count);
 }

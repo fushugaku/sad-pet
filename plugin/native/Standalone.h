@@ -1,7 +1,10 @@
 #pragma once
+#include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_gui_extra/juce_gui_extra.h>
+#include <array>
 #include <optional>
+#include "Engine.h"
 
 class SadPetProcessor;
 
@@ -23,6 +26,9 @@ struct Host {
     void setDevice(const juce::var& summary);
     juce::var describe() const;
     std::atomic<double> cpu { 0.0 };
+    /// Seconds from rendering a block to hearing it: the device's output
+    /// latency and one buffer.
+    std::atomic<double> outputLatency { 0.0 };
     /// Engine state answers delivered to the editor.
     std::atomic<int> statePolls { 0 };
 
@@ -79,6 +85,40 @@ private:
     juce::String error;
 };
 
+/// The app's MIDI clock out: the engine's messages for each block, sent to
+/// the chosen MIDI output when their frame sounds, from a thread of its own
+/// so that the audio thread never waits on the device.
+class ClockOut : private juce::Thread {
+public:
+    ClockOut();
+    ~ClockOut() override;
+    /// Opens the output with this identifier, or closes it for an empty one;
+    /// returns an error message.
+    juce::String open(const juce::String& identifier);
+    /// The outputs to choose from and the one open, for /api/clock.
+    void listOutputs(juce::DynamicObject& answer) const;
+    /// The open output's name and the last error, for the editor's status.
+    void describe(juce::DynamicObject& clock) const;
+    /// Audio thread: one block's messages; its first frame sounds `latency`
+    /// seconds from now.
+    void push(const SadClockEvent* events, std::size_t count, double sampleRate, double latency) noexcept;
+
+private:
+    void run() override;
+    struct Message {
+        double time;
+        std::uint8_t size;
+        std::uint8_t bytes[3];
+    };
+    static constexpr int capacity = 1024;
+    std::array<Message, capacity> queue {};
+    juce::AbstractFifo fifo { capacity };
+    juce::CriticalSection lock;
+    std::unique_ptr<juce::MidiOutput> output;
+    juce::String outputId, outputName, error;
+    std::atomic<bool> active { false };
+};
+
 class Services {
 public:
     explicit Services(SadPetProcessor&);
@@ -90,6 +130,7 @@ public:
     void importDropped(const juce::StringArray& files, std::function<void(juce::var)> done);
 
     Recorder recorder;
+    ClockOut clockOut;
 
 private:
     void choose(const juce::var& request, juce::WebBrowserComponent::NativeFunctionCompletion complete);

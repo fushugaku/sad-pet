@@ -2832,3 +2832,175 @@ fn the_apps_factory_rack_plays_its_audio_input_in_the_samples_place() {
     assert!(audio.engine.live_input.is_none());
     control.drain();
 }
+
+/// Renders `blocks` blocks through the C ABI as the app does, sending a
+/// master's clock (a tick every `period` frames, Start first) when given,
+/// and adds the clock out to `out` as (frame, message), frames counted from
+/// `first`. `out` needs room for it: the audio side must not allocate.
+fn clock_blocks(
+    audio: *mut Audio,
+    values: &[f32],
+    (first, blocks): (u64, u64),
+    mut master: Option<(f64, &mut f64)>,
+    out: &mut Vec<(u64, clock::ClockEvent)>,
+) {
+    const BLOCK: usize = 256;
+    let (mut left, mut right) = ([0.0_f32; BLOCK], [0.0_f32; BLOCK]);
+    for block in first..first + blocks {
+        let start = block * BLOCK as u64;
+        let mut cursor = 0;
+        let mut render = |from: usize, to: usize| unsafe {
+            sad_audio_process(
+                audio,
+                std::ptr::null(),
+                std::ptr::null(),
+                left[from..].as_mut_ptr(),
+                right[from..].as_mut_ptr(),
+                to - from,
+            );
+        };
+        unsafe {
+            sad_audio_begin(
+                audio,
+                values.as_ptr(),
+                values.len(),
+                0.0,
+                0.0,
+                false,
+                false,
+                BLOCK,
+            );
+        }
+        if let Some((period, next)) = master.as_mut() {
+            while **next < (start + BLOCK as u64) as f64 {
+                let offset = (**next - start as f64).max(0.0) as usize;
+                render(cursor, offset);
+                cursor = offset;
+                let bytes: &[u8] = if **next == 0.0 {
+                    &[0xfa, 0xf8]
+                } else {
+                    &[0xf8]
+                };
+                unsafe { sad_audio_midi(audio, bytes.as_ptr(), bytes.len()) };
+                **next += *period;
+            }
+        }
+        render(cursor, BLOCK);
+        unsafe {
+            sad_audio_end(audio, BLOCK);
+            let mut count = 0;
+            let events = sad_audio_clock_out(audio, &mut count);
+            for &event in std::slice::from_raw_parts(events, count) {
+                assert!(out.len() < out.capacity());
+                out.push((start + event.offset as u64, event));
+            }
+        }
+    }
+}
+/// `clock_blocks` in chunks of a sixteenth of a second, with the editor's
+/// polls between them taking the audio side's reports.
+fn clock_run(
+    control: &mut Controller,
+    audio: *mut Audio,
+    (first, blocks): (u64, u64),
+    mut master: Option<(f64, &mut f64)>,
+    out: &mut Vec<(u64, clock::ClockEvent)>,
+) {
+    let values = control.values();
+    for chunk in (first..first + blocks).step_by(12) {
+        let count = (first + blocks - chunk).min(12);
+        let master = master.as_mut().map(|(period, next)| (*period, &mut **next));
+        no_heap(|| clock_blocks(audio, &values, (chunk, count), master, out));
+        control.drain();
+    }
+}
+fn message(event: &clock::ClockEvent) -> &[u8] {
+    &event.bytes[..event.size as usize]
+}
+
+#[test]
+fn the_app_follows_a_midi_clock_and_sends_its_own() {
+    let mut control = Controller::new_scene(false, true);
+    let audio = Box::into_raw(Box::new(control.prepare(48_000)));
+    let summary = call(&mut control, "/api/clock", json!({"follow": true}));
+    assert_eq!(summary["supported"], json!({"follow": true, "send": true}));
+    assert_eq!(summary["follow"], true);
+    // A master at 126 BPM for three seconds: the scene plays at its tempo.
+    let mut next = 0.0;
+    let period = 48_000.0 * 60.0 / (126.0 * 24.0);
+    let mut sent = Vec::with_capacity(1024);
+    clock_run(
+        &mut control,
+        audio,
+        (0, 562),
+        Some((period, &mut next)),
+        &mut sent,
+    );
+    let state = call(&mut control, "/api/state", Value::Null);
+    let clock = &state["clock"];
+    assert_eq!(
+        (clock["present"].clone(), clock["running"].clone()),
+        (json!(true), json!(true))
+    );
+    let tempo = clock["tempo"].as_f64().unwrap();
+    assert!((tempo - 126.0).abs() < 0.05, "{tempo}");
+    let shown = state["preset"]["params"]["bpm"].as_f64().unwrap();
+    assert!((shown - 126.0).abs() < 126.0 * 0.021, "{shown}");
+    assert_eq!(state["playing"], true);
+    // Clock out follows it: once the scene plays the master's beat, a song
+    // position and Continue, then ticks a 126 BPM tick apart.
+    let starts: Vec<_> = sent
+        .iter()
+        .filter(|m| !matches!(message(&m.1), [0xf8]))
+        .map(|m| (m.0, message(&m.1).to_vec()))
+        .collect();
+    eprintln!("{starts:?}");
+    assert_eq!(starts.len(), 2, "{starts:?}");
+    assert_eq!(starts[0].1[0], 0xf2);
+    assert_eq!(starts[1].1, [0xfb]);
+    let ticks: Vec<u64> = sent
+        .iter()
+        .filter(|m| message(&m.1) == [0xf8])
+        .map(|m| m.0)
+        .collect();
+    let late: Vec<u64> = ticks.windows(2).skip(48).map(|w| w[1] - w[0]).collect();
+    assert!(
+        late.iter().all(|&d| (d as f64 - period).abs() < 30.0),
+        "{late:?}"
+    );
+    // The master stops sending: the scene keeps its tempo, to a tenth.
+    sent.clear();
+    clock_run(&mut control, audio, (562, 188), None, &mut sent);
+    let state = call(&mut control, "/api/state", Value::Null);
+    assert_eq!(state["clock"]["present"], false);
+    assert_eq!(control.preset.params.bpm, 126.0);
+    assert_eq!(state["preset"]["params"]["bpm"], 126.0);
+    // Without Follow the scene's own transport goes out: Stop, then ticks at
+    // its tempo, and Start when it plays from the top.
+    call(&mut control, "/api/clock", json!({"follow": false}));
+    call(&mut control, "/api/transport", json!({"playing": false}));
+    sent.clear();
+    clock_run(&mut control, audio, (750, 20), None, &mut sent);
+    assert!(sent.iter().any(|m| message(&m.1) == [0xfc]));
+    call(&mut control, "/api/transport", json!({"playing": true}));
+    sent.clear();
+    clock_run(&mut control, audio, (770, 200), None, &mut sent);
+    let start = sent.iter().position(|m| message(&m.1) == [0xfa]).unwrap();
+    assert_eq!(message(&sent[start + 1].1), [0xf8]);
+    let ticks: Vec<u64> = sent[start..]
+        .iter()
+        .filter(|m| message(&m.1) == [0xf8])
+        .map(|m| m.0)
+        .collect();
+    assert!(
+        ticks
+            .windows(2)
+            .all(|w| ((w[1] - w[0]) as f64 - period).abs() < 1.5),
+        "{ticks:?}"
+    );
+    // A plug-in in a DAW follows the DAW: it has no MIDI clock of its own.
+    let mut plugin = Controller::new_plugin(false);
+    let request = json!({"path": "/api/clock", "method": "GET", "data": null});
+    assert!(plugin.request(&request).is_err());
+    unsafe { sad_audio_free(audio) };
+}

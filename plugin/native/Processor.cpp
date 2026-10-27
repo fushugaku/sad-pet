@@ -223,6 +223,9 @@ void SadPetProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     sad_audio_end(audio, static_cast<std::size_t>(frames));
    #if SAD_PET_STANDALONE
     standalone->recorder.write(buffer.getArrayOfReadPointers(), frames, false);
+    std::size_t clockCount = 0;
+    const auto* clockEvents = sad_audio_clock_out(audio, &clockCount);
+    standalone->clockOut.push(clockEvents, clockCount, getSampleRate(), sadpet::host().outputLatency.load());
    #endif
     for (int channel = 2; channel < buffer.getNumChannels(); ++channel) buffer.clear(channel, 0, frames);
     midi.clear();

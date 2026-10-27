@@ -256,9 +256,21 @@ void Services::importDropped(const juce::StringArray& files, std::function<void(
 
 void Services::finish(const juce::var& request, juce::var& result) {
     const auto path = request["path"].toString().upToFirstOccurrenceOf("?", false, false);
-    if (path != "/api/state" || static_cast<int>(result["status"]) != 200) return;
+    if (static_cast<int>(result["status"]) != 200) return;
     auto* data = result["data"].getDynamicObject();
     if (data == nullptr) return;
+    if (path == "/api/clock") {
+        // The engine answers Follow and the lead; the output is the app's.
+        if (request["data"].hasProperty("out")) {
+            const auto out = request["data"]["out"];
+            clockOut.open(out.isVoid() ? juce::String() : out.toString());
+        }
+        clockOut.listOutputs(*data);
+        clockOut.describe(*data);
+        return;
+    }
+    if (path != "/api/state") return;
+    if (auto* clock = data->getProperty("clock").getDynamicObject()) clockOut.describe(*clock);
     data->setProperty("recording", recorder.state());
     ++host().statePolls;
     const auto device = host().describe();
@@ -272,6 +284,87 @@ void Services::finish(const juce::var& request, juce::var& result) {
         juce::MessageManager::callAsync([wanted] {
             if (host().setInputWanted) host().setInputWanted(wanted);
         });
+    }
+}
+
+ClockOut::ClockOut() : juce::Thread("SAD PET MIDI clock") { startThread(juce::Thread::Priority::high); }
+
+ClockOut::~ClockOut() { stopThread(2000); }
+
+juce::String ClockOut::open(const juce::String& identifier) {
+    std::unique_ptr<juce::MidiOutput> opened;
+    juce::String name;
+    if (identifier.isNotEmpty()) {
+        for (const auto& device : juce::MidiOutput::getAvailableDevices())
+            if (device.identifier == identifier) name = device.name;
+        opened = name.isEmpty() ? nullptr : juce::MidiOutput::openDevice(identifier);
+    }
+    const juce::ScopedLock guard(lock);
+    output = std::move(opened);
+    outputId = output != nullptr ? identifier : juce::String();
+    outputName = output != nullptr ? name : juce::String();
+    error = identifier.isNotEmpty() && output == nullptr ? "Could not open that MIDI output" : "";
+    active = output != nullptr;
+    return error;
+}
+
+void ClockOut::listOutputs(juce::DynamicObject& answer) const {
+    juce::Array<juce::var> outputs;
+    for (const auto& device : juce::MidiOutput::getAvailableDevices()) {
+        auto* port = new juce::DynamicObject();
+        port->setProperty("id", device.identifier);
+        port->setProperty("name", device.name);
+        outputs.add(juce::var(port));
+    }
+    answer.setProperty("outputs", outputs);
+    const juce::ScopedLock guard(lock);
+    answer.setProperty("out", outputId.isNotEmpty() ? juce::var(outputId) : juce::var());
+}
+
+void ClockOut::describe(juce::DynamicObject& clock) const {
+    const juce::ScopedLock guard(lock);
+    clock.setProperty("sending", outputName.isNotEmpty() ? juce::var(outputName) : juce::var());
+    clock.setProperty("error", error.isNotEmpty() ? juce::var(error) : juce::var());
+}
+
+void ClockOut::push(const SadClockEvent* events, std::size_t count, double sampleRate, double latency) noexcept {
+    if (events == nullptr || count == 0 || sampleRate <= 0.0 || !active.load(std::memory_order_relaxed)) return;
+    const auto start = juce::Time::getMillisecondCounterHiRes() + latency * 1000.0;
+    const auto scope = fifo.write(static_cast<int>(juce::jmin(count, static_cast<std::size_t>(fifo.getFreeSpace()))));
+    std::size_t index = 0;
+    const auto fill = [&](int first, int size) {
+        for (int i = first; i < first + size; ++i, ++index) {
+            const auto& event = events[index];
+            auto& message = queue[static_cast<std::size_t>(i)];
+            message.time = start + event.offset * 1000.0 / sampleRate;
+            message.size = juce::jmin<std::uint8_t>(event.size, 3);
+            std::copy(event.bytes, event.bytes + 3, message.bytes);
+        }
+    };
+    fill(scope.startIndex1, scope.blockSize1);
+    fill(scope.startIndex2, scope.blockSize2);
+}
+
+void ClockOut::run() {
+    while (!threadShouldExit()) {
+        int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
+        fifo.prepareToRead(1, start1, size1, start2, size2);
+        if (size1 == 0) {
+            wait(2);
+            continue;
+        }
+        const auto& next = queue[static_cast<std::size_t>(start1)];
+        const auto due = next.time - juce::Time::getMillisecondCounterHiRes();
+        if (due > 0.5) {
+            // The thread wakes to the millisecond: a tick goes out within one.
+            wait(juce::jmax(1, static_cast<int>(due)));
+            continue;
+        }
+        {
+            const juce::ScopedLock guard(lock);
+            if (output != nullptr) output->sendMessageNow(juce::MidiMessage(next.bytes, next.size));
+        }
+        fifo.finishedRead(1);
     }
 }
 

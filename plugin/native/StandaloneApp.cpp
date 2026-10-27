@@ -213,6 +213,10 @@ private:
         auto* summary = new juce::DynamicObject();
         auto* device = holder->deviceManager.getCurrentAudioDevice();
         const auto inputs = device != nullptr ? device->getActiveInputChannels().countNumberOfSetBits() : 0;
+        // MIDI clock out goes when the audio rendered with it is heard.
+        sadpet::host().outputLatency = device != nullptr && device->getCurrentSampleRate() > 0.0
+            ? (device->getOutputLatencyInSamples() + device->getCurrentBufferSizeSamples()) / device->getCurrentSampleRate()
+            : 0.0;
         summary->setProperty("audio_device", device != nullptr ? device->getName() : juce::String("No audio device"));
         summary->setProperty("audio_enabled", device != nullptr);
         summary->setProperty("audio_input", inputs > 0);

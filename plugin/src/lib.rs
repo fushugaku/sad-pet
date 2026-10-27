@@ -1,6 +1,7 @@
 //! Native plugin boundary. Only Audio is touched by the host's audio callback.
 //! Controller prepares files/presets and reclaims retired allocations off-thread.
 mod audio_library;
+mod clock;
 mod effect_presets;
 mod instruments;
 mod parameters;
@@ -90,6 +91,11 @@ enum Command {
     },
     /// Render workers, started on a control thread once a scene has two timbres.
     Workers(Option<Box<workers::Pool>>),
+    /// The app's MIDI clock: follow a master, playing this many seconds ahead.
+    Clock {
+        follow: bool,
+        lead: f64,
+    },
 }
 
 struct Restore {
@@ -116,6 +122,8 @@ struct Feedback {
     /// The song clock or the host's song position, for Vocal timbres.
     song_playing: bool,
     song_position: i64,
+    /// The app's MIDI clock.
+    clock: clock::View,
 }
 
 /// The editor polls /api/state about twelve times a second. The preset and
@@ -221,6 +229,11 @@ pub struct Controller {
     workers_started: bool,
     /// Controllers moved on the host's MIDI input, for the editor's MIDI learn.
     controls: Arc<Controls>,
+    /// The app's MIDI clock: Follow, the lead in milliseconds, and what the
+    /// audio side last reported.
+    clock_follow: bool,
+    clock_lead_ms: f64,
+    clock_view: clock::View,
 }
 
 pub struct Audio {
@@ -266,6 +279,8 @@ pub struct Audio {
     chunk: Box<timbres::Chunk>,
     /// The scene's render workers; only the scene's own part has them.
     pool: Option<Box<workers::Pool>>,
+    /// The app's MIDI clock, on the scene's own part.
+    midi_clock: Option<Box<clock::AppClock>>,
 }
 
 /// A Vocal part's audio side: rendered clips, read a chunk at a time.
@@ -441,6 +456,9 @@ impl Controller {
             preview_generation: 0,
             workers_started: false,
             controls: Arc::default(),
+            clock_follow: false,
+            clock_lead_ms: 0.0,
+            clock_view: clock::View::default(),
         }
     }
 
@@ -473,6 +491,18 @@ impl Controller {
             self.host_playing = feedback.host_playing;
             self.song_playing = feedback.song_playing;
             self.song_position = feedback.song_position;
+            // A master that has gone leaves its tempo, as the audio kept it.
+            if self.clock_view.present
+                && !feedback.clock.present
+                && let Some(tempo) = self.clock_view.tempo
+            {
+                let bpm = ((tempo * 10.0).round() / 10.0).clamp(20.0, 300.0) as f32;
+                self.preset.params.bpm = bpm;
+                for part in &mut self.parts {
+                    part.preset.params.bpm = bpm;
+                }
+            }
+            self.clock_view = feedback.clock;
             if feedback.revision == self.revision {
                 self.playing = self.view.playing;
                 self.midi_gate = self.view.midi_gate;
@@ -635,6 +665,9 @@ impl Controller {
             offline: false,
             chunk: timbres::Chunk::new(),
             pool: self.start_workers(),
+            midi_clock: (self.standalone && self.meta.id == 0).then(|| {
+                clock::AppClock::new(self.rate, self.clock_follow, self.clock_lead_ms / 1000.0)
+            }),
         }
     }
 
@@ -743,7 +776,8 @@ impl Controller {
     fn state(&mut self) -> Value {
         self.drain();
         let mut displayed_preset = self.preset.clone();
-        if self.sync {
+        // A DAW or a followed MIDI clock sets the tempo.
+        if self.sync || self.clock_view.present {
             displayed_preset.params.bpm = self.host_bpm;
         }
         let view = &self.view;
@@ -808,7 +842,38 @@ impl Controller {
         if drums {
             state["playing"] = json!(view.drums.playing);
         }
+        if self.standalone && self.meta.id == 0 {
+            state["clock"] = self.clock_summary();
+        }
         state
+    }
+    /// `/api/clock` in the app: Follow and the lead; the app adds its MIDI
+    /// outputs and the one clock out goes to.
+    fn clock_request(&mut self, data: &Value) -> Result<Value, String> {
+        let follow = data["follow"].as_bool();
+        let lead = data["lead_ms"].as_f64().filter(|ms| ms.is_finite());
+        if follow.is_some() || lead.is_some() {
+            let follow = follow.unwrap_or(self.clock_follow);
+            let lead = lead.map_or(self.clock_lead_ms, |ms| ms.clamp(-500.0, 500.0));
+            self.enqueue(Command::Clock {
+                follow,
+                lead: lead / 1000.0,
+            })?;
+            (self.clock_follow, self.clock_lead_ms) = (follow, lead);
+        }
+        let mut summary = self.clock_summary();
+        summary["supported"] = json!({"follow": true, "send": true});
+        Ok(summary)
+    }
+    fn clock_summary(&self) -> Value {
+        let view = self.clock_view;
+        json!({
+            "follow": self.clock_follow,
+            "lead_ms": self.clock_lead_ms,
+            "present": view.present,
+            "running": view.running,
+            "tempo": view.tempo,
+        })
     }
 
     fn snapshot(&mut self) -> Result<SavedState, String> {
@@ -969,6 +1034,7 @@ impl Controller {
         }
         let result = match (path, post) {
             ("/api/state", _) => Ok(self.state()),
+            ("/api/clock", _) if self.standalone && self.meta.id == 0 => self.clock_request(data),
             ("/api/preset", false) => Ok(json!(self.preset)),
             ("/api/presets", false) => Ok(json!(
                 (0..=sad_pet::startup::INDEX)
@@ -1274,6 +1340,17 @@ impl Audio {
         self.engine.set_frozen(false);
         self.engine.exchange_processed_source(&mut source.processed);
     }
+    /// A followed master has gone: every timbre keeps its tempo.
+    fn keep_tempo(&mut self, bpm: f32) {
+        self.engine.preset.params.bpm = bpm;
+        self.engine.refresh_parameters();
+        let mut part = self.parts.as_mut();
+        while let Some(p) = part {
+            p.audio.engine.preset.params.bpm = bpm;
+            p.audio.engine.refresh_parameters();
+            part = p.next.as_mut();
+        }
+    }
     /// The longest lead-in of a Vocal part's first note, before 0.
     fn vocal_lead_in(&self) -> u64 {
         let mut lead_in = self.vocal.as_ref().map_or(0, |v| v.track.song.lead_in());
@@ -1287,6 +1364,19 @@ impl Audio {
         lead_in
     }
     fn begin(&mut self, values: &[f32], bpm: f32, beat: Option<f64>, playing: bool, frames: usize) {
+        self.begin_following(values, bpm, beat, playing, frames, false);
+    }
+    /// `follow`: the scene follows a MIDI clock this block, and plays its
+    /// transport as it would a DAW's.
+    fn begin_following(
+        &mut self,
+        values: &[f32],
+        bpm: f32,
+        beat: Option<f64>,
+        playing: bool,
+        frames: usize,
+        follow: bool,
+    ) {
         let sequence_was_enabled = self.engine.preset.sequencer.enabled;
         let mut preset_changed = false;
         let mut numeric_changed = false;
@@ -1394,6 +1484,11 @@ impl Audio {
                 // Any previous pool goes back with the update, so its
                 // threads are joined on the control thread.
                 Command::Workers(pool) => std::mem::swap(&mut self.pool, pool),
+                Command::Clock { follow, lead } => {
+                    if let Some(clock) = &mut self.midi_clock {
+                        clock.configure(*follow, *lead);
+                    }
+                }
             }
             self.revision = update.revision;
             // Space was checked above; no allocation can be freed in this callback.
@@ -1415,13 +1510,34 @@ impl Audio {
         if numeric_changed {
             parameters::mirror(&mut self.engine.preset);
         }
+        // The app's MIDI clock: a followed master's tempo, beat and transport
+        // stand in for a DAW's.
+        let (mut follow, mut bpm, mut beat, mut playing) = (follow, bpm, beat, playing);
+        let mut followed = None;
+        if let Some(clock) = &mut self.midi_clock {
+            let (position, released) = clock.begin(frames, self.engine.preset.params.bpm);
+            if let Some(tempo) = released {
+                self.keep_tempo(tempo);
+            }
+            if let Some(position) = position {
+                (follow, bpm, beat, playing) =
+                    (true, position.bpm, Some(position.beat), position.playing);
+            }
+            followed = position;
+        }
+        if follow && playing != self.engine.playing {
+            self.engine.set_playing(playing);
+            let lead_in = self.vocal_lead_in();
+            self.clock.play(playing, lead_in);
+        }
+        let sync = self.sync || follow;
         let bpm = if bpm.is_finite() && (20.0..=300.0).contains(&bpm) {
             bpm
         } else {
             self.engine.preset.params.bpm
         };
         let previous_bpm = self.engine.preset.params.bpm;
-        if self.sync {
+        if sync {
             let jumped = playing
                 && beat
                     .zip(self.expected_beat)
@@ -1468,7 +1584,18 @@ impl Audio {
         self.source_renderer.update(&mut self.engine);
         // Vocal timbres play at the DAW's song position, or at the scene's
         // own clock in the app and while a host has no transport.
-        let (song_playing, song_position, tempo) = match beat.filter(|_| self.sync) {
+        if let Some(clock) = &mut self.midi_clock {
+            match followed {
+                Some(p) => clock.transport(p.playing, p.bpm, Some(p.beat), p.restart),
+                None => clock.transport(
+                    self.engine.playing,
+                    self.engine.preset.params.bpm,
+                    None,
+                    false,
+                ),
+            }
+        }
+        let (song_playing, song_position, tempo) = match beat.filter(|_| sync) {
             Some(beat) => {
                 self.tempo.observe(beat, bpm);
                 let seconds = self.tempo.seconds(beat.max(0.0), bpm);
@@ -1485,7 +1612,8 @@ impl Audio {
         let mut solo = self.meta.mix.solo;
         let mut open = 0;
         while let Some(p) = part {
-            p.audio.begin(&[], bpm, beat, playing, frames);
+            p.audio
+                .begin_following(&[], bpm, beat, playing, frames, follow);
             if let Some(vocal) = &mut p.audio.vocal {
                 vocal.begin(song_position, song_playing, tempo, self.offline);
             }
@@ -1532,6 +1660,9 @@ impl Audio {
             part = p.next.as_mut();
         }
         self.clock.advance(frames);
+        if let Some(clock) = &mut self.midi_clock {
+            clock.end(frames);
+        }
         self.frames_since_feedback += frames;
         if self.frames_since_feedback >= self.engine.sample_rate as usize / 30
             && self.feedback.slots() > 0
@@ -1544,6 +1675,11 @@ impl Audio {
                 host_playing: self.host_playing,
                 song_playing: self.song.0,
                 song_position: self.song.1,
+                clock: self
+                    .midi_clock
+                    .as_ref()
+                    .map(|c| c.view())
+                    .unwrap_or_default(),
             });
             debug_assert!(result.is_ok());
             self.frames_since_feedback = 0;
@@ -1757,6 +1893,9 @@ pub unsafe extern "C" fn sad_audio_midi(audio: *mut Audio, data: *const u8, len:
     let audio = unsafe { &mut *audio };
     for &byte in unsafe { std::slice::from_raw_parts(data, len) } {
         if let Some(message) = audio.parser.feed(byte) {
+            if audio.midi_clock.as_mut().is_some_and(|c| c.event(message)) {
+                continue;
+            }
             audio.controls.record(message);
             audio.midi(message);
         }
@@ -1799,6 +1938,9 @@ pub unsafe extern "C" fn sad_audio_process(
             ];
         }
         audio.process_block(&input[..n], &mut output[..n]);
+        if let Some(clock) = &mut audio.midi_clock {
+            clock.rendered(n);
+        }
         for (i, frame) in output[..n].iter().enumerate() {
             unsafe {
                 *out_left.add(start + i) = frame[0];
@@ -1815,6 +1957,24 @@ pub unsafe extern "C" fn sad_audio_end(audio: *mut Audio, frames: usize) {
     if !audio.is_null() {
         unsafe { &mut *audio }.end(frames);
     }
+}
+/// The app's MIDI clock out for the block that just ended: `count` messages
+/// at their frames in it, valid until the next block. None outside the app.
+/// # Safety
+/// Audio must be live and exclusively held by the render thread; count must be writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sad_audio_clock_out(
+    audio: *const Audio,
+    count: *mut usize,
+) -> *const clock::ClockEvent {
+    if count.is_null() {
+        return std::ptr::null();
+    }
+    let events = unsafe { audio.as_ref() }
+        .and_then(|a| a.midi_clock.as_deref())
+        .map_or(&[][..], |c| c.events());
+    unsafe { *count = events.len() };
+    events.as_ptr()
 }
 
 #[cfg(test)]

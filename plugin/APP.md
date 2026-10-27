@@ -47,6 +47,13 @@ macro or matrix source to the knob. See MIDI learn in [README.md](README.md).
 The app keeps its own transport: **Play** starts the sequencer, arpeggiator and
 drum patterns at the editor's BPM.
 
+**MIDI clock** in the footer links the app to other instruments. **Follow input**
+plays the tempo, song position, Start and Stop of a clock arriving on any MIDI
+input, the way a plug-in follows its DAW; when the clock stops arriving the app
+keeps its tempo. **OFFSET** plays ahead of a slow link (behind when negative).
+The clock-out menu sends the scene's clock, with Start, Stop and song position,
+to a MIDI output, timed to when the audio it goes with is heard.
+
 ## Microphone
 
 The audio input opens only while **Microphone** is the source; macOS asks for
