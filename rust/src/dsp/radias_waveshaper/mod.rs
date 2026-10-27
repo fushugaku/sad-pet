@@ -9,8 +9,8 @@ pub mod kernels;
 use crate::Stereo;
 use controller::{ShaperControl, WaveshaperType as NativeType};
 use kernels::{
-    DriveCoefficients, ShaperCoefficients, ShaperSignal, ShaperTables, SubOscillatorCoefficients,
-    SubOscillatorWaveform, Waveshaper,
+    DriveCoefficients, PickupCoefficients, ShaperCoefficients, ShaperSignal, ShaperTables,
+    SubOscillatorCoefficients, SubOscillatorWaveform, Waveshaper,
 };
 use serde::{Deserialize, Serialize};
 
@@ -90,10 +90,9 @@ impl WaveshaperMode {
             Self::OctSaw => ShaperCoefficients::OctSaw { depth },
             Self::MultiTriangle => ShaperCoefficients::MultiTriangle { depth },
             Self::MultiSine => ShaperCoefficients::MultiSine { depth },
-            Self::Pickup => ShaperCoefficients::Pickup {
-                depth,
-                pitch_current: pitch as i16,
-            },
+            Self::Pickup => {
+                ShaperCoefficients::Pickup(PickupCoefficients::new(depth, pitch as i16))
+            }
             Self::LevelBoost => ShaperCoefficients::LevelBoost { depth },
             _ => ShaperCoefficients::SubOscillator(SubOscillatorCoefficients {
                 waveform: match self {
@@ -140,7 +139,7 @@ impl RadiasWaveshaper {
     pub fn clear(&mut self) {
         self.states = [Waveshaper::default(); 2];
         self.current = self.target;
-        if !matches!(self.current, ShaperCoefficients::Pickup { .. }) {
+        if !matches!(self.current, ShaperCoefficients::Pickup(_)) {
             self.current.set_gain_current(0);
         }
         self.frame = 0;

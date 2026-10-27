@@ -46,7 +46,41 @@ pub enum ShaperCoefficients {
     OctSaw { depth: i16 },
     LevelBoost { depth: i16 },
     SubOscillator(SubOscillatorCoefficients),
-    Pickup { depth: i16, pitch_current: i16 },
+    Pickup(PickupCoefficients),
+}
+
+/// Pickup's DEPTH and current pitch, with what the kernel derives from
+/// them alone worked out once when either changes rather than every sample.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PickupCoefficients {
+    depth: i16,
+    pitch_current: i16,
+    frequency: i16,
+    offset: i64,
+    gain: i16,
+}
+impl PickupCoefficients {
+    pub fn new(depth: i16, pitch_current: i16) -> Self {
+        let frequency =
+            high_square(0x7fff0000 - ((pitch_current as i64) << 16)) as i64 + 0x00a30000;
+        let mut normalization = 0x7fff0000 - ((depth as i64) << 16);
+        for _ in 0..4 {
+            normalization = high_square(normalization) as i64;
+        }
+        Self {
+            depth,
+            pitch_current,
+            frequency: (frequency >> 16) as i16,
+            offset: high_product(819, pitch_current) + 0x028f0000,
+            gain: (saturate((normalization >> 1) + 0x40000000) >> 16) as i16,
+        }
+    }
+}
+/// A value's high 16 bits squared, doubled and truncated to 32 bits, as
+/// the original's multiplier does.
+#[inline(always)]
+fn high_square(value: i64) -> i32 {
+    ((value >> 16) * (value >> 16) * 2) as i32
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -93,7 +127,7 @@ impl ShaperCoefficients {
             | Self::OctSaw { depth }
             | Self::LevelBoost { depth } => depth,
             Self::SubOscillator(c) => c.depth,
-            Self::Pickup { depth, .. } => depth,
+            Self::Pickup(c) => c.depth,
         }
     }
     pub fn set_depth(&mut self, value: i16) {
@@ -106,14 +140,14 @@ impl ShaperCoefficients {
             | Self::OctSaw { depth }
             | Self::LevelBoost { depth } => *depth = value,
             Self::SubOscillator(c) => c.depth = value,
-            Self::Pickup { depth, .. } => *depth = value,
+            Self::Pickup(c) => *c = PickupCoefficients::new(value, c.pitch_current),
         }
     }
     pub fn gain_current(self) -> Option<i16> {
         match self {
             Self::Drive(c) => Some(c.feedback_gain),
             Self::SubOscillator(c) => Some(c.gain_current),
-            Self::Pickup { pitch_current, .. } => Some(pitch_current),
+            Self::Pickup(c) => Some(c.pitch_current),
             _ => None,
         }
     }
@@ -121,7 +155,7 @@ impl ShaperCoefficients {
         match self {
             Self::Drive(c) => c.feedback_gain = value,
             Self::SubOscillator(c) => c.gain_current = value,
-            Self::Pickup { pitch_current, .. } => *pitch_current = value,
+            Self::Pickup(c) => *c = PickupCoefficients::new(c.depth, value),
             _ => {}
         }
     }
@@ -139,7 +173,7 @@ impl ShaperCoefficients {
                     c.target_depth,
                 ) >> 16) as i16,
             ),
-            Self::Pickup { .. } => Some(pitch as i16),
+            Self::Pickup(_) => Some(pitch as i16),
             _ => None,
         }
     }
@@ -196,10 +230,7 @@ impl Waveshaper {
             ShaperCoefficients::OctSaw { depth } => oct_saw(input, depth),
             ShaperCoefficients::LevelBoost { depth } => level_boost(input, depth),
             ShaperCoefficients::SubOscillator(c) => self.sub_oscillator(signal, c, tables),
-            ShaperCoefficients::Pickup {
-                depth,
-                pitch_current,
-            } => self.pickup(signal, depth, pitch_current),
+            ShaperCoefficients::Pickup(c) => self.pickup(signal, c),
         }
     }
 
@@ -243,18 +274,14 @@ impl Waveshaper {
         ))
     }
 
-    fn pickup(&mut self, s: ShaperSignal, depth: i16, pitch: i16) -> Sample {
-        let square = |value: i64| ((value >> 16) * (value >> 16) * 2) as i32;
-        let frequency = square(0x7fff0000 - ((pitch as i64) << 16)) as i64 + 0x00a30000;
-        let frequency = (frequency >> 16) as i16;
-        let scaled = saturate(multiply_q15(s.input.0, depth) * 8);
-        let driven =
-            saturate((multiply_q15(scaled, frequency) + high_product(819, pitch) + 0x028f0000) * 8);
+    fn pickup(&mut self, s: ShaperSignal, c: PickupCoefficients) -> Sample {
+        let scaled = saturate(multiply_q15(s.input.0, c.depth) * 8);
+        let driven = saturate((multiply_q15(scaled, c.frequency) + c.offset) * 8);
         let absolute = ((driven | 1) as i64).abs();
         let slope = i32::MAX as i64 - ((absolute >> 16) * 26214 * 2) as i32 as i64;
-        let second = square(slope);
-        let fourth = square(second as i64);
-        let alpha = square(i32::MAX as i64 - fourth as i64);
+        let second = high_square(slope);
+        let fourth = high_square(second as i64);
+        let alpha = high_square(i32::MAX as i64 - fourth as i64);
         let mut value =
             self.state.words[0] as i64 - alpha as i64 + multiply_q15(self.state.words[1], 32440);
         self.state.words[0] = alpha;
@@ -263,12 +290,7 @@ impl Waveshaper {
             self.state.startup_counter = self.state.startup_counter.wrapping_add(1);
         }
         self.state.words[1] = saturate(value);
-        let mut normalization = 0x7fff0000 - ((depth as i64) << 16);
-        for _ in 0..4 {
-            normalization = square(normalization) as i64;
-        }
-        let gain = (saturate((normalization >> 1) + 0x40000000) >> 16) as i16;
-        Sample(saturate(multiply_q15(self.state.words[1], gain) * 2))
+        Sample(saturate(multiply_q15(self.state.words[1], c.gain) * 2))
     }
 }
 
@@ -372,4 +394,77 @@ pub fn level_boost(input: Sample, depth: i16) -> Sample {
     Sample(saturate(
         shaped as i64 + (high_product((shaped >> 16) as i16, 7809) as i32) as i64,
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The Pickup kernel as ported, deriving everything every sample.
+    fn original_pickup(state: &mut ShaperState, input: i32, depth: i16, pitch: i16) -> i32 {
+        let square = |value: i64| ((value >> 16) * (value >> 16) * 2) as i32;
+        let frequency = square(0x7fff0000 - ((pitch as i64) << 16)) as i64 + 0x00a30000;
+        let frequency = (frequency >> 16) as i16;
+        let scaled = saturate(multiply_q15(input, depth) * 8);
+        let driven =
+            saturate((multiply_q15(scaled, frequency) + high_product(819, pitch) + 0x028f0000) * 8);
+        let absolute = ((driven | 1) as i64).abs();
+        let slope = i32::MAX as i64 - ((absolute >> 16) * 26214 * 2) as i32 as i64;
+        let second = square(slope);
+        let fourth = square(second as i64);
+        let alpha = square(i32::MAX as i64 - fourth as i64);
+        let mut value = state.words[0] as i64 - alpha as i64 + multiply_q15(state.words[1], 32440);
+        state.words[0] = alpha;
+        if state.startup_counter as i16 != 1 {
+            value = 0;
+            state.startup_counter = state.startup_counter.wrapping_add(1);
+        }
+        state.words[1] = saturate(value);
+        let mut normalization = 0x7fff0000 - ((depth as i64) << 16);
+        for _ in 0..4 {
+            normalization = square(normalization) as i64;
+        }
+        let gain = (saturate((normalization >> 1) + 0x40000000) >> 16) as i16;
+        saturate(multiply_q15(state.words[1], gain) * 2)
+    }
+
+    #[test]
+    fn pickup_with_derived_coefficients_matches_the_original_kernel() {
+        let mut seed = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut next = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let tables = ShaperTables {
+            sub_edges: [0; 129],
+        };
+        // Edges of every range, then random values, as the slews move them.
+        let mut picks = vec![0, 1, -1, i16::MIN, i16::MAX, 409, 32767 - 409, 15360];
+        picks.extend((0..56).map(|_| next() as i16));
+        for (k, &depth) in picks.iter().enumerate() {
+            let pitch = picks[(k * 7 + 3) % picks.len()];
+            let mut coefficients = ShaperCoefficients::Pickup(PickupCoefficients::new(depth, 0));
+            coefficients.set_gain_current(pitch);
+            let (mut shaper, mut state) = (Waveshaper::default(), ShaperState::default());
+            for step in 0..20_000 {
+                let input = match step % 5 {
+                    0 => i32::MIN,
+                    1 => i32::MAX,
+                    _ => next() as i32 >> (next() % 24),
+                };
+                let signal = ShaperSignal {
+                    input: Sample(input),
+                    primary_pitch_code: 0,
+                    primary_increment: PhaseIncrement(0),
+                };
+                let shaped = shaper.process(signal, coefficients, &tables).0;
+                assert_eq!(shaped, original_pickup(&mut state, input, depth, pitch));
+                assert_eq!(shaper.state, state);
+            }
+            assert_eq!(coefficients.depth(), depth);
+            assert_eq!(coefficients.gain_current(), Some(pitch));
+        }
+    }
 }
