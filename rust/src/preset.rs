@@ -866,6 +866,9 @@ pub struct Preset {
     /// with a Sampler module.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sampler: Option<Box<crate::sampler::Settings>>,
+    /// A native host's kit runtime, built with the pool it holds.
+    #[serde(skip)]
+    pub sampler_runtime: crate::dsp::sampler::Prepared,
     /// Present only in Rack timbres, which may also hold Drum, Synth, Sampler
     /// and Vocal settings for their modules; other presets serialize unchanged.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -911,6 +914,7 @@ impl Default for Preset {
             bus_runtime: Default::default(),
             vocal: None,
             sampler: None,
+            sampler_runtime: Default::default(),
             rack: None,
             rack_runtime: Default::default(),
             pre_color_chain: Vec::new(),
@@ -1125,6 +1129,7 @@ impl<'de> Deserialize<'de> for Preset {
             bus_runtime: Default::default(),
             vocal: d.vocal,
             sampler: d.sampler,
+            sampler_runtime: Default::default(),
             rack: d.rack,
             rack_runtime: Default::default(),
             pre_color_chain: d.pre_color_chain,

@@ -6,13 +6,72 @@
 use super::{SampleBuffer, fast};
 use crate::{
     Stereo,
-    sampler::{FilterKind, LayerMode, LoopMode, MAX_VOICES, Pad, Settings, Trigger, Zone},
+    sampler::{
+        FilterKind, LayerMode, LoopMode, MAX_PADS, MAX_VOICES, Pad, Settings, Trigger, Zone,
+    },
     tables::Random,
 };
 use std::{collections::BTreeMap, sync::Arc};
 
 /// Samples by pool id, shared by the voices that play them.
 pub type Pool = BTreeMap<String, Arc<SampleBuffer>>;
+
+/// A kit's runtime built off the audio thread from its settings and pool,
+/// which the engine takes over in `exchange_preset`; the one it replaces
+/// retires with the outgoing preset.
+#[derive(Default)]
+pub struct Prepared(pub Option<Box<Runtime>>);
+impl Clone for Prepared {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+impl std::fmt::Debug for Prepared {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PreparedSampler")
+            .field("runtime", &self.0.is_some())
+            .finish()
+    }
+}
+impl Prepared {
+    pub fn prepare(&mut self, settings: Option<&Settings>, pool: &Pool, routes: &[u32], rate: u32) {
+        self.0 = settings.map(|s| Runtime::prepared(s, pool, routes, rate));
+    }
+}
+
+/// What an editor shows of a kit, in storage the audio thread fills
+/// without allocating: each sounding voice's pad id, zone and frame, and
+/// the notes played per pad id.
+#[derive(Clone, Copy)]
+pub struct Snapshot {
+    pub voices: [(u32, u32, f64); MAX_VOICES],
+    pub voice_count: usize,
+    pub hits: [(u32, u32); MAX_PADS],
+    pub pad_count: usize,
+}
+impl Default for Snapshot {
+    fn default() -> Self {
+        Self {
+            voices: [(0, 0, 0.0); MAX_VOICES],
+            voice_count: 0,
+            hits: [(0, 0); MAX_PADS],
+            pad_count: 0,
+        }
+    }
+}
+impl Snapshot {
+    /// The editor's view, with the pool ids it holds.
+    pub fn view(&self, loaded: Vec<String>) -> crate::sampler::View {
+        crate::sampler::View {
+            voices: self.voices[..self.voice_count]
+                .iter()
+                .map(|&(pad, zone, frame)| (pad, zone as usize, frame))
+                .collect(),
+            hits: self.hits[..self.pad_count].to_vec(),
+            loaded,
+        }
+    }
+}
 
 /// Control-rate updates: pitch, gains and filter coefficients.
 const CONTROL: u32 = 16;
@@ -395,6 +454,57 @@ impl Runtime {
             hits: Vec::new(),
         }
     }
+    /// A runtime for `settings` built off the audio thread, with its own
+    /// copy of the pool and the pads that go to Pad FX timbres.
+    pub fn prepared(settings: &Settings, pool: &Pool, routes: &[u32], rate: u32) -> Box<Self> {
+        let mut runtime = Box::new(Self::new(rate));
+        runtime.pool = pool.clone();
+        runtime.routes = routes.to_vec();
+        runtime.configure(settings);
+        runtime
+    }
+    /// Takes over the sounding voices of the runtime this one replaces,
+    /// without allocating: by pad identity, as `configure` keeps them. A
+    /// voice whose pad is gone, or whose sample this pool no longer holds,
+    /// stops and stays with `old`, so no sample is freed on the audio thread.
+    pub fn inherit(&mut self, old: &mut Runtime) {
+        std::mem::swap(&mut self.voices, &mut old.voices);
+        for (voice, spare) in self.voices.iter_mut().zip(&mut old.voices) {
+            let pad = self.pads.iter().position(|p| p.id == voice.pad_id);
+            let held = voice
+                .sample
+                .as_ref()
+                .is_some_and(|s| self.pool.values().any(|p| Arc::ptr_eq(p, s)));
+            match pad {
+                Some(index) if voice.active && held => voice.pad = index,
+                _ => std::mem::swap(voice, spare),
+            }
+        }
+        for (map, hits) in self.pads.iter_mut().zip(&mut self.hits) {
+            if let Some(i) = old.pads.iter().position(|p| p.id == map.id) {
+                map.cycle = old.pads[i].cycle;
+                *hits = old.hits.get(i).copied().unwrap_or(0);
+            }
+        }
+        std::mem::swap(&mut self.random, &mut old.random);
+        self.clock = old.clock;
+    }
+    /// Fills `view` with what an editor shows, without allocating.
+    pub fn snapshot(&self, view: &mut Snapshot) {
+        view.voice_count = 0;
+        for voice in self.voices.iter().filter(|v| v.active) {
+            view.voices[view.voice_count] = (
+                voice.pad_id,
+                voice.zone as u32,
+                voice.frame_of(voice.position),
+            );
+            view.voice_count += 1;
+        }
+        view.pad_count = self.pads.len().min(view.hits.len());
+        for ((slot, map), hits) in view.hits.iter_mut().zip(&self.pads).zip(&self.hits) {
+            *slot = (map.id, *hits);
+        }
+    }
     /// Follows edited settings or pool: voices keep sounding when their pad
     /// still exists, by identity, and stop when it is gone.
     pub fn configure(&mut self, settings: &Settings) {
@@ -410,7 +520,8 @@ impl Runtime {
                     .iter()
                     .map(|z| self.pool.get(&z.sample).cloned())
                     .collect(),
-                routed: self.routes.contains(&pad.id),
+                // A bounced pad plays into the mix, as `set_routes` has it.
+                routed: self.routes.contains(&pad.id) && pad.bounce.is_none(),
                 cycle: 0,
             })
             .collect();

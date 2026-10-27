@@ -262,7 +262,8 @@ juce::var SadPetProcessor::request(const juce::var& requestValue) {
             || path == "/api/preset-library/load" || path == "/api/preset-library/factory"
             || path == "/api/preset-library/save" || path == "/api/preset-library/delete"
             || path.startsWith("/api/timbres/") || path == "/api/drums/edit" || path == "/api/scene"
-            || path == "/api/instruments/load")
+            || path == "/api/instruments/load" || path == "/api/sampler/upload" || path == "/api/sampler/forget"
+            || path == "/api/sampler/chain")
             updateHostDisplay(juce::AudioProcessorListener::ChangeDetails{}.withNonParameterStateChanged(true));
     }
    #if SAD_PET_STANDALONE

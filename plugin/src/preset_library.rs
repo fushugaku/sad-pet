@@ -383,8 +383,14 @@ impl Controller {
                 }
                 self.enqueue(Command::Restore(Box::new(super::Restore {
                     parts: part_audio,
+                    chains: None,
                     mix: Default::default(),
-                    preset: preset.prepared_clone_for(self.rate),
+                    preset: *super::sampler::prepared_with(
+                        &preset,
+                        &Default::default(),
+                        &[],
+                        self.rate,
+                    ),
                     source,
                     sync: self.sync,
                     frozen: self.frozen,
@@ -401,6 +407,8 @@ impl Controller {
                 };
                 self.scene_revision = self.scene_revision.wrapping_add(1);
                 self.preset = preset;
+                self.kit.clear();
+                self.pad_routes.clear();
                 self.sample = sample;
                 self.region = region;
                 self.fades = fades;

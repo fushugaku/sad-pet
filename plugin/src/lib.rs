@@ -7,6 +7,7 @@ mod instruments;
 mod parameters;
 mod preset_library;
 mod preview;
+mod sampler;
 mod timbres;
 mod vocal;
 mod workers;
@@ -96,11 +97,25 @@ enum Command {
         follow: bool,
         lead: f64,
     },
+    /// A kit's samples or Pad FX routes changed: its runtime, built on the
+    /// control thread. The one it replaces goes back with the update.
+    Sampler(Option<Box<sad_pet::dsp::sampler::Runtime>>),
+    /// Plays a pad as a click on it does, or lets it go.
+    Pad {
+        pad: u32,
+        note: Option<u8>,
+        velocity: u8,
+        off: bool,
+    },
+    /// A Pad FX timbre joins the kit of timbre `owner`, after its others.
+    AddChain(u32, Option<Box<timbres::PartAudio>>),
 }
 
 struct Restore {
     mix: sad_pet::timbres::Mix,
     parts: Option<Box<timbres::PartAudio>>,
+    /// The Pad FX timbres of the scene's own kit.
+    chains: Option<Box<timbres::PartAudio>>,
     preset: Preset,
     source: PreparedSource,
     sync: bool,
@@ -124,6 +139,8 @@ struct Feedback {
     song_position: i64,
     /// The app's MIDI clock.
     clock: clock::View,
+    /// A kit's sounding voices and pad hits.
+    kit: sad_pet::dsp::sampler::Snapshot,
 }
 
 /// The editor polls /api/state about twelve times a second. The preset and
@@ -234,6 +251,16 @@ pub struct Controller {
     clock_follow: bool,
     clock_lead_ms: f64,
     clock_view: clock::View,
+    /// The samples of this part's kit, by pool id: a Sampler timbre's, or a
+    /// Rack's with a Sampler module. Its audio plays them from a runtime
+    /// built here.
+    kit: sad_pet::dsp::sampler::Pool,
+    /// The kit's pads that play through a Pad FX timbre, as the scene has them.
+    pad_routes: Vec<u32>,
+    /// A kit update found the queue full; the next scene request sends it.
+    kit_pending: bool,
+    /// The kit as its audio last showed it.
+    kit_view: sad_pet::dsp::sampler::Snapshot,
 }
 
 pub struct Audio {
@@ -281,6 +308,10 @@ pub struct Audio {
     pool: Option<Box<workers::Pool>>,
     /// The app's MIDI clock, on the scene's own part.
     midi_clock: Option<Box<clock::AppClock>>,
+    /// The Pad FX timbres of this part's kit, each fed its pad's voices.
+    chains: Option<Box<timbres::PartAudio>>,
+    /// On a Pad FX timbre: its pad plays its bounce instead, so it rests.
+    bounced: bool,
 }
 
 /// A Vocal part's audio side: rendered clips, read a chunk at a time.
@@ -380,6 +411,9 @@ struct SavedState {
     playing: bool,
     #[serde(default)]
     selection: preset_library::Selection,
+    /// A kit's samples, as the browser saves them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    kit_samples: Vec<sampler::KitSample>,
 }
 
 impl Controller {
@@ -459,6 +493,10 @@ impl Controller {
             clock_follow: false,
             clock_lead_ms: 0.0,
             clock_view: clock::View::default(),
+            kit: Default::default(),
+            pad_routes: Vec::new(),
+            kit_pending: false,
+            kit_view: Default::default(),
         }
     }
 
@@ -503,6 +541,7 @@ impl Controller {
                 }
             }
             self.clock_view = feedback.clock;
+            self.kit_view = feedback.kit;
             if feedback.revision == self.revision {
                 self.playing = self.view.playing;
                 self.midi_gate = self.view.midi_gate;
@@ -609,6 +648,12 @@ impl Controller {
             self.sample.clone(),
             self.preset.clone(),
         ));
+        // A kit plays the samples this part holds.
+        let mut kit = self.kit_runtime();
+        if kit.is_some() {
+            engine.exchange_sampler(&mut kit);
+        }
+        self.kit_pending = false;
         engine.set_midi_gate(self.midi_gate);
         // A Bus or Master reads other timbres: it has no file source, and its
         // Granular history comes prepared with the preset.
@@ -630,10 +675,11 @@ impl Controller {
         engine.bypass = self.bypass;
         let source_renderer = source_fx::Renderer::new(&engine);
         let vocal = self.sync_vocal().map(VocalAudio::new);
+        let (parts, chains) = timbres::prepare_audio(&mut self.parts, self.rate);
         Audio {
             preview: None,
             meta: self.meta.clone(),
-            parts: self.prepare_parts(self.rate),
+            parts,
             audible: !self.meta.mix.muted,
             smooth_part_gain: if self.meta.mix.muted {
                 0.
@@ -668,6 +714,8 @@ impl Controller {
             midi_clock: (self.standalone && self.meta.id == 0).then(|| {
                 clock::AppClock::new(self.rate, self.clock_follow, self.clock_lead_ms / 1000.0)
             }),
+            chains,
+            bounced: false,
         }
     }
 
@@ -837,8 +885,9 @@ impl Controller {
         state["sequencer"] = json!(view.sequencer);
         state["drums"] = json!(view.drums);
         state["rack_peaks"] = json!(view.rack_peaks);
-        // A Rack's Vocal module sings here; its Sampler kit does not play.
-        state["features"] = json!({"rack_vocal": true});
+        // A Rack's Vocal module sings here and its Sampler plays. The app's
+        // kits play, but their samples never cross its editor boundary.
+        state["features"] = json!({"rack_vocal": true, "sampler": !self.standalone});
         if drums {
             state["playing"] = json!(view.drums.playing);
         }
@@ -901,6 +950,11 @@ impl Controller {
             midi_gate: self.midi_gate,
             playing: self.playing && !self.midi_gate,
             selection: self.selection.clone(),
+            kit_samples: if self.plays_kit() {
+                sampler::encode_kit(&self.kit)?
+            } else {
+                Vec::new()
+            },
         })
     }
 
@@ -927,11 +981,14 @@ impl Controller {
             return Err("Invalid timbre identity".into());
         }
         saved.meta.sanitize();
-        // An emptied first timbre stays empty.
-        if saved.meta.kind != sad_pet::timbres::Kind::Empty {
+        // An emptied first timbre stays empty, and a Pad FX timbre with its
+        // Sampler one.
+        let pad_fx = saved.meta.kind == sad_pet::timbres::Kind::PadFx && saved.meta.owner.is_some();
+        if saved.meta.kind != sad_pet::timbres::Kind::Empty && !pad_fx {
             saved.meta.kind = sad_pet::timbres::Kind::of(&saved.preset);
         }
         saved.preset.sanitize();
+        let kit = sampler::decode_kit(&saved.kit_samples)?;
         let decoded = BASE64
             .decode(&saved.sample_wav)
             .map_err(|e| format!("Saved sample: {e}"))?;
@@ -950,15 +1007,18 @@ impl Controller {
             saved.fades,
             &saved.preset,
         );
-        let (mut parts, mut part_audio) = self.restore_parts(std::mem::take(&mut saved.timbres))?;
+        let (mut parts, mut part_audio, chains) =
+            self.restore_parts(std::mem::take(&mut saved.timbres))?;
         // Restoration recurses into each part; only the scene owns a Master.
         if self.meta.id == 0 {
             timbres::ensure_master_in(&mut parts, &mut part_audio, self, self.rate);
         }
         self.enqueue(Command::Restore(Box::new(Restore {
             parts: part_audio,
+            chains,
             mix: saved.meta.mix,
-            preset: saved.preset.prepared_clone_for(self.rate),
+            // The scene routes the kit's pads to its Pad FX timbres below.
+            preset: *sampler::prepared_with(&saved.preset, &kit, &[], self.rate),
             source,
             sync: saved.sync,
             frozen: saved.frozen,
@@ -986,6 +1046,9 @@ impl Controller {
         }
         self.scene_revision = self.scene_revision.wrapping_add(1);
         self.preset = saved.preset;
+        self.kit = kit;
+        self.pad_routes.clear();
+        self.forget_unused_kit();
         self.sample = sample;
         self.source = saved.source;
         self.region = saved.region;
@@ -998,13 +1061,19 @@ impl Controller {
         self.selection = saved.selection;
         // The scene's own timbre may be a Rack that sings, or stop being one.
         self.update_vocal()?;
+        if self.meta.id == 0 {
+            self.sync_chains();
+        }
         self.offer_workers();
         Ok(())
     }
 
     fn request(&mut self, request: &Value) -> Result<Value, String> {
         if self.meta.id == 0 {
-            return self.scene_request(request);
+            let result = self.scene_request(request);
+            // Kits may have lost a pad or a Pad FX timbre, or gained one.
+            self.sync_chains();
+            return result;
         }
         self.request_part(request)
     }
@@ -1069,12 +1138,14 @@ impl Controller {
                     serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
                 timbres::keep_role(&mut preset, &self.preset, self.meta.kind);
                 preset.sanitize();
-                self.enqueue(Command::Preset(Box::new(
-                    preset.prepared_clone_for(self.rate),
-                )))?;
-                // A loaded preset can change the timbre's engine type.
-                self.meta.kind = sad_pet::timbres::Kind::of(&preset);
+                self.enqueue(Command::Preset(self.prepared_preset(&preset)))?;
+                // A loaded preset can change the timbre's engine type; a Pad
+                // FX timbre stays one.
+                if self.meta.kind != sad_pet::timbres::Kind::PadFx {
+                    self.meta.kind = sad_pet::timbres::Kind::of(&preset);
+                }
                 self.preset = preset;
+                self.forget_unused_kit();
                 // A Rack gains or loses its Vocal module here.
                 self.update_vocal()?;
                 Ok(json!(self.preset))
@@ -1401,9 +1472,8 @@ impl Audio {
                         self.parts = Some(part);
                     }
                 }
-                Command::RemovePart(id, retired) => {
-                    timbres::remove_part(&mut self.parts, *id, retired)
-                }
+                Command::RemovePart(id, retired) => self.remove_part(*id, retired),
+                Command::AddChain(owner, chain) => self.add_chain(*owner, chain),
                 Command::PartMix(id, mix) => self.set_part_mix(*id, *mix),
                 Command::Preset(preset) => {
                     self.engine.exchange_preset(preset);
@@ -1417,6 +1487,7 @@ impl Audio {
                 Command::Source(source) => self.source(source),
                 Command::Restore(state) => {
                     std::mem::swap(&mut self.parts, &mut state.parts);
+                    std::mem::swap(&mut self.chains, &mut state.chains);
                     self.meta.mix = state.mix;
                     self.engine.midi(Message::Reset);
                     self.engine.exchange_preset(&mut state.preset);
@@ -1487,6 +1558,19 @@ impl Audio {
                 Command::Clock { follow, lead } => {
                     if let Some(clock) = &mut self.midi_clock {
                         clock.configure(*follow, *lead);
+                    }
+                }
+                Command::Sampler(runtime) => self.engine.exchange_sampler(runtime),
+                Command::Pad {
+                    pad,
+                    note,
+                    velocity,
+                    off,
+                } => {
+                    if *off {
+                        self.engine.release_pad(*pad);
+                    } else {
+                        self.engine.trigger_pad(*pad, *note, *velocity);
                     }
                 }
             }
@@ -1608,6 +1692,18 @@ impl Audio {
         if let Some(vocal) = &mut self.vocal {
             vocal.begin(song_position, song_playing, tempo, self.offline);
         }
+        // A kit's Pad FX timbres take their own updates; one whose pad plays
+        // its bounce rests.
+        let kit = self.engine.preset.sampler.as_deref();
+        let mut chain = self.chains.as_mut();
+        while let Some(c) = chain {
+            c.audio
+                .begin_following(&[], bpm, beat, playing, frames, follow);
+            c.audio.bounced = kit
+                .and_then(|k| k.pad(c.audio.meta.pad))
+                .is_none_or(|pad| pad.bounce.is_some());
+            chain = c.next.as_mut();
+        }
         let mut part = self.parts.as_mut();
         let mut solo = self.meta.mix.solo;
         let mut open = 0;
@@ -1659,6 +1755,11 @@ impl Audio {
             p.audio.end(frames);
             part = p.next.as_mut();
         }
+        let mut chain = self.chains.as_mut();
+        while let Some(c) = chain {
+            c.audio.end(frames);
+            chain = c.next.as_mut();
+        }
         self.clock.advance(frames);
         if let Some(clock) = &mut self.midi_clock {
             clock.end(frames);
@@ -1668,6 +1769,8 @@ impl Audio {
             && self.feedback.slots() > 0
         {
             self.engine.realtime_view(&mut self.view);
+            let mut kit = sad_pet::dsp::sampler::Snapshot::default();
+            self.engine.sampler_snapshot(&mut kit);
             let result = self.feedback.push(Feedback {
                 revision: self.revision,
                 view: self.view,
@@ -1680,6 +1783,7 @@ impl Audio {
                     .as_ref()
                     .map(|c| c.view())
                     .unwrap_or_default(),
+                kit,
             });
             debug_assert!(result.is_ok());
             self.frames_since_feedback = 0;

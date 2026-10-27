@@ -179,7 +179,9 @@
         if (ready && hooks.features?.()?.[feature]) continue;
         this.unavailable.add(key);
         const card = this.card(key, INFO[key].label, "rack-unavailable");
-        card.append(el("p", "muted rack-unavailable-note", `A Rack's ${key === "sampler" ? "kit plays" : "voice sings"} in the browser version for now; here this module is silent.`));
+        card.append(el("p", "muted rack-unavailable-note", key === "sampler"
+          ? "A Rack's kit is edited in the browser version or the plug-ins for now; here it plays as saved."
+          : "A Rack's voice sings in the browser version for now; here this module is silent."));
         this.sections[key] = card;
       }
       for (const key of SOURCES.filter((k) => !this.unavailable.has(k)))

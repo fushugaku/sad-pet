@@ -2284,7 +2284,7 @@ fn a_racks_vocal_module_sings_once_added_and_leaves_without_audio_allocations() 
         .unwrap() as u32;
     let state = call(&mut control, "/api/state", Value::Null);
     assert_eq!(state["features"]["rack_vocal"], true);
-    assert!(state["features"]["sampler"].is_null());
+    assert_eq!(state["features"]["sampler"], true);
     let modules = |names: &[&str]| {
         json!(
             names
@@ -3003,4 +3003,211 @@ fn the_app_follows_a_midi_clock_and_sends_its_own() {
     let request = json!({"path": "/api/clock", "method": "GET", "data": null});
     assert!(plugin.request(&request).is_err());
     unsafe { sad_audio_free(audio) };
+}
+
+/// A second of a 220 Hz tone at half scale, as the editor uploads it.
+fn tone_wav() -> String {
+    let frames: Vec<Stereo> = (0..48_000)
+        .map(|i| [(i as f32 * 220. * std::f32::consts::TAU / 48_000.).sin() * 0.5; 2])
+        .collect();
+    BASE64.encode(wav::bytes(48_000, &frames).unwrap())
+}
+/// The editor's upload of the tone to timbre `part`'s kit, then pad 1
+/// (C1, MIDI 36) given a zone of it, as a preset edit.
+fn load_pad(control: &mut Controller, part: u32) {
+    let loaded = call(
+        control,
+        "/api/sampler/upload",
+        json!({"id":"tone","part":part,"wav":tone_wav()}),
+    );
+    assert_eq!(loaded["frames"], 48_000);
+    let mut preset = call(control, "/api/preset", Value::Null);
+    preset["sampler"]["pads"][0]["zones"] = json!([{"sample":"tone"}]);
+    call(control, "/api/preset", preset);
+}
+fn hit(audio: &mut Audio) {
+    audio.midi(Message::NoteOn {
+        channel: 0,
+        note: 36,
+        velocity: 110,
+    });
+}
+
+#[test]
+fn sampler_kits_play_their_pads_natively_without_audio_allocations() {
+    let mut control = Controller::new(false);
+    control.meta.mix.muted = true;
+    let mut audio = control.prepare(48_000);
+    let values = control.values();
+    assert_eq!(
+        call(&mut control, "/api/state", Value::Null)["features"]["sampler"],
+        true
+    );
+
+    // A Sampler timbre plays the pad on its key.
+    let context = call(
+        &mut control,
+        "/api/timbres/add",
+        json!({"kind":"sampler","classic":true}),
+    );
+    let sampler = context["active"].as_u64().unwrap() as u32;
+    assert_eq!(context["timbres"][1]["kind"], "sampler");
+    no_heap(|| {
+        audio.begin(&values, 120., None, false, 4800);
+        assert!(render(&mut audio, 4800, [0.; 2]) < 1e-6);
+    });
+    load_pad(&mut control, sampler);
+    no_heap(|| {
+        audio.begin(&values, 120., None, false, 4800);
+        hit(&mut audio);
+        assert!(render(&mut audio, 4800, [0.; 2]) > 0.1);
+    });
+    let state = call(&mut control, "/api/sampler/state", Value::Null);
+    assert_eq!(state["view"]["loaded"], json!(["tone"]));
+    assert_eq!(state["view"]["hits"][0], json!([1, 1]));
+    assert_eq!(state["view"]["voices"][0][0], 1);
+    assert_eq!(state["rate"], 48_000);
+    let wav = call(
+        &mut control,
+        "/api/sampler/sample.wav",
+        json!({"part":sampler,"id":"tone"}),
+    );
+    assert_eq!(wav["mime"], "audio/wav");
+
+    // A Rack's Sampler module plays its own kit; a pad click plays it too.
+    call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":sampler,"muted":true}),
+    );
+    let context = call(&mut control, "/api/timbres/add", json!({"kind":"sampler"}));
+    let rack = context["active"].as_u64().unwrap() as u32;
+    assert_eq!(context["timbres"][2]["kind"], "rack");
+    load_pad(&mut control, rack);
+    assert_eq!(
+        call(&mut control, "/api/preset", Value::Null)["rack"]["modules"][0]["module"],
+        "sampler"
+    );
+    no_heap(|| {
+        audio.begin(&values, 120., None, false, 9600);
+        render(&mut audio, 9600, [0.; 2]);
+        audio.begin(&values, 120., None, false, 4800);
+        assert!(render(&mut audio, 4800, [0.; 2]) < 1e-4);
+    });
+    call(&mut control, "/api/sampler/trigger", json!({"pad":1}));
+    no_heap(|| {
+        audio.begin(&values, 120., None, false, 4800);
+        assert!(render(&mut audio, 4800, [0.; 2]) > 0.1);
+    });
+
+    // A Pad FX timbre takes the pad's voices and returns them to the Rack.
+    let context = call(&mut control, "/api/sampler/chain", json!({"pad":1}));
+    let chain = context["active"].as_u64().unwrap() as u32;
+    let fx = &context["timbres"][3];
+    assert_eq!(
+        (
+            fx["kind"].as_str(),
+            fx["owner"].as_u64(),
+            fx["pad"].as_u64()
+        ),
+        (Some("pad_fx"), Some(rack as u64), Some(1))
+    );
+    assert_eq!(fx["name"], "A01 FX");
+    call(&mut control, "/api/timbres/select", json!({ "id": rack }));
+    no_heap(|| {
+        audio.begin(&values, 120., None, false, 4800);
+        hit(&mut audio);
+        assert!(render(&mut audio, 4800, [0.; 2]) > 0.1);
+    });
+    let chains = call(&mut control, "/api/sampler/state", Value::Null)["chains"].clone();
+    assert_eq!(chains, json!([{"pad":1,"id":chain,"name":"A01 FX"}]));
+    call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":chain,"muted":true}),
+    );
+    no_heap(|| {
+        // The chain fades the pad out; nothing of it reaches the mix.
+        audio.begin(&values, 120., None, false, 4800);
+        render(&mut audio, 4800, [0.; 2]);
+        audio.begin(&values, 120., None, false, 2400);
+        assert!(render(&mut audio, 2400, [0.; 2]) < 1e-4);
+    });
+    call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":chain,"muted":false}),
+    );
+
+    // The project keeps both kits and the chain.
+    let saved = control.save().unwrap();
+    let document: Value = serde_json::from_slice(&saved).unwrap();
+    assert_eq!(document["timbres"][0]["kit_samples"][0]["id"], "tone");
+    assert_eq!(document["timbres"][1]["kit_samples"][0]["id"], "tone");
+    assert_eq!(document["timbres"][2]["meta"]["kind"], "pad_fx");
+    assert!(document.get("kit_samples").is_none());
+    let mut recalled = Controller::new(false);
+    recalled.restore(&saved).unwrap();
+    let mut recalled_audio = recalled.prepare(48_000);
+    let state = call(&mut recalled, "/api/state", Value::Null);
+    assert_eq!(state["timbres"]["timbres"][3]["kind"], "pad_fx");
+    assert_eq!(state["timbres"]["timbres"][3]["owner"], rack);
+    no_heap(|| {
+        recalled_audio.begin(&values, 120., None, false, 4800);
+        hit(&mut recalled_audio);
+        assert!(render(&mut recalled_audio, 4800, [0.; 2]) > 0.1);
+    });
+    // Its pad still plays through the recalled chain.
+    call(
+        &mut recalled,
+        "/api/timbres/update",
+        json!({"id":chain,"muted":true}),
+    );
+    no_heap(|| {
+        recalled_audio.begin(&values, 120., None, false, 4800);
+        render(&mut recalled_audio, 4800, [0.; 2]);
+        recalled_audio.begin(&values, 120., None, false, 2400);
+        assert!(render(&mut recalled_audio, 2400, [0.; 2]) < 1e-4);
+    });
+    recalled.drain();
+
+    // A sample forgotten while a voice plays it stops that voice; the
+    // sample is freed here, not on the audio thread.
+    no_heap(|| {
+        audio.begin(&values, 120., None, false, 2400);
+        hit(&mut audio);
+        assert!(render(&mut audio, 2400, [0.; 2]) > 0.1);
+    });
+    call(&mut control, "/api/sampler/forget", json!({"ids":["tone"]}));
+    no_heap(|| {
+        audio.begin(&values, 120., None, false, 2400);
+        render(&mut audio, 2400, [0.; 2]);
+        audio.begin(&values, 120., None, false, 2400);
+        assert!(render(&mut audio, 2400, [0.; 2]) < 1e-4);
+    });
+    assert!(
+        call(&mut control, "/api/sampler/state", Value::Null)["view"]["loaded"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+
+    // Without its Sampler module the Rack lets the kit and its chain go.
+    let mut preset = call(&mut control, "/api/preset", Value::Null);
+    preset["rack"]["modules"] = json!([{"module":"synth","enabled":true}]);
+    assert!(call(&mut control, "/api/preset", preset)["sampler"].is_null());
+    let state = call(&mut control, "/api/state", Value::Null);
+    assert_eq!(state["timbres"]["timbres"].as_array().unwrap().len(), 3);
+    assert!(
+        state["timbres"]["timbres"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|t| t["kind"] != "pad_fx")
+    );
+    no_heap(|| {
+        audio.begin(&values, 120., None, false, 2400);
+        render(&mut audio, 2400, [0.; 2]);
+    });
+    control.drain();
 }

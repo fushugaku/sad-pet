@@ -897,7 +897,21 @@ impl Engine {
             std::mem::swap(&mut self.preset.bus_runtime.0, &mut preset.bus_runtime.0);
         }
         std::mem::swap(&mut self.preset, preset);
-        self.sync_sampler();
+        // A kit's runtime prepared off the audio thread takes over its
+        // voices; the one it replaces, or a kit's last, retires with the
+        // outgoing preset, whose slot was emptied when it was installed.
+        match self.preset.sampler_runtime.0.take() {
+            Some(mut next) => {
+                if let Some(old) = &mut self.sampler {
+                    next.inherit(old);
+                }
+                preset.sampler_runtime.0 = self.sampler.replace(next);
+            }
+            None if self.preset.sampler.is_none() => {
+                preset.sampler_runtime.0 = self.sampler.take();
+            }
+            None => self.sync_sampler(),
+        }
         if !was_bus && self.preset.bus.is_some() {
             // The input passes at unity from the first frame, without a fade-in.
             self.voices[0].note = 60;
@@ -2974,6 +2988,29 @@ impl Engine {
     }
     pub fn refresh_sampler(&mut self) {
         self.sync_sampler();
+    }
+    /// Installs a kit runtime prepared off the audio thread, for a changed
+    /// pool or Pad FX routes: the sounding voices carry over, and the
+    /// replaced runtime comes back in `runtime` for the caller to free. A
+    /// preset without a kit leaves it there unused.
+    pub fn exchange_sampler(&mut self, runtime: &mut Option<Box<sampler::Runtime>>) {
+        if self.preset.sampler.is_none() {
+            return;
+        }
+        if let (Some(next), Some(old)) = (runtime.as_deref_mut(), self.sampler.as_deref_mut()) {
+            next.inherit(old);
+        }
+        std::mem::swap(&mut self.sampler, runtime);
+    }
+    /// `sampler_view` without allocating: the pool ids stay with the host.
+    pub fn sampler_snapshot(&self, view: &mut sampler::Snapshot) {
+        match &self.sampler {
+            Some(sampler) => sampler.snapshot(view),
+            None => {
+                view.voice_count = 0;
+                view.pad_count = 0;
+            }
+        }
     }
     /// The pads whose voices go to their Pad FX timbre rather than the mix.
     pub fn set_sampler_routes(&mut self, routes: &[u32]) {

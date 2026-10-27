@@ -134,9 +134,6 @@ fn check(state: &mut SavedState) -> Result<(Kind, SampleBuffer), String> {
     if kind.routing() {
         return Err(WRONG_FILE.into());
     }
-    if kind == Kind::Sampler {
-        return Err("Sampler instruments play in the browser version for now.".into());
-    }
     let bytes = BASE64
         .decode(&state.sample_wav)
         .map_err(|_| "The instrument's sample is invalid.")?;
@@ -282,6 +279,7 @@ impl Controller {
                 return Err("Load Vocal instruments as a new timbre.".into());
             }
             state.preset.name = self.preset.name.clone();
+            let kit = super::sampler::decode_kit(&state.kit_samples)?;
             let sample = Arc::new(sample);
             let source = self.prepared_source_for(
                 sample.clone(),
@@ -290,8 +288,12 @@ impl Controller {
                 state.fades,
                 &state.preset,
             );
-            self.enqueue(Command::Preset(Box::new(
-                state.preset.prepared_clone_for(self.rate),
+            // The scene routes the kit's pads to its Pad FX timbres after.
+            self.enqueue(Command::Preset(super::sampler::prepared_with(
+                &state.preset,
+                &kit,
+                &[],
+                self.rate,
             )))?;
             self.enqueue(Command::Source(Box::new(source)))?;
             self.enqueue(Command::Transport(Transport {
@@ -303,6 +305,8 @@ impl Controller {
             self.meta.name = title.into();
             self.meta.sanitize();
             self.preset = state.preset;
+            self.kit = kit;
+            self.pad_routes.clear();
             self.sample = sample;
             self.source = Source::File;
             self.region = state.region;
@@ -344,7 +348,9 @@ impl Controller {
         if sang {
             self.voice_service().forget(id);
         }
-        let audio = part.prepare(self.rate);
+        let mut audio = part.prepare(self.rate);
+        // Its Pad FX timbres move into the new sound's audio.
+        audio.chains = super::timbres::chain_audio(&mut self.parts, id, self.rate);
         self.enqueue(Command::RemovePart(id, None))?;
         self.enqueue(Command::AddPart(Some(Box::new(
             super::timbres::PartAudio { audio, next: None },
