@@ -1,6 +1,9 @@
 //! Source effects precede grain reads. Files are prepared off-thread; live audio
 //! is processed once before entering the granular history buffer.
-use super::{SampleBuffer, sample::Region};
+use super::{
+    SampleBuffer,
+    sample::{Mip, Region},
+};
 use crate::{Stereo, color::ColorSlot};
 use std::sync::Arc;
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -113,24 +116,24 @@ pub(super) fn read(
     previous: &Option<Arc<ProcessedSource>>,
     remaining: u32,
     position: f64,
-    level: usize,
+    mip: Mip,
     range: &std::ops::Range<usize>,
 ) -> Stereo {
     if current.is_none() && remaining == 0 {
-        return raw.read_region_level(position, level, range);
+        return raw.read_region_mip(position, mip, range);
     }
     let sample = |cache: &Option<Arc<ProcessedSource>>| {
         if let Some(cache) = cache
             .as_ref()
             .filter(|c| Arc::ptr_eq(&c.original, raw) && c.range == *range)
         {
-            cache.sample.read_region_level(
+            cache.sample.read_region_mip(
                 position - range.start as f64,
-                level,
+                mip,
                 &(0..cache.sample.len()),
             )
         } else {
-            raw.read_region_level(position, level, range)
+            raw.read_region_mip(position, mip, range)
         }
     };
     let frame = sample(current);

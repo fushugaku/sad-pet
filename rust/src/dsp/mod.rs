@@ -48,8 +48,8 @@ use color::ColorRack;
 use filter::FilterBank;
 use filter_slots::Instance;
 use modulation::{Envelope, Oscillator};
-use sample::LiveInput;
 pub use sample::{Fades, Region, SampleBuffer};
+use sample::{LiveInput, Mip};
 use serde::Serialize;
 use std::sync::Arc;
 
@@ -70,7 +70,7 @@ const AUDITION: u32 = 1 << 31;
 struct Grain {
     position: f64,
     rate: f64,
-    read_level: usize,
+    mip: Mip,
     age: u32,
     duration: u32,
     shape: f32,
@@ -504,6 +504,9 @@ pub struct Engine {
     /// Occupied grain slots, bit n for slot n. Visiting set bits from the lowest
     /// keeps the order of a full slot scan, so voices still sum in that order.
     live_grains: u128,
+    /// Grains a wide kernel reads, live or not, and their frames this sample.
+    wide_grains: u128,
+    wide_frames: [Stereo; MAX_GRAINS],
     /// Voices whose played-in grain cloud is still fading in.
     onsets: u64,
     /// Each grain's group, envelopes and filter in advanced mode.
@@ -623,6 +626,8 @@ impl Engine {
             sequence_running: true,
             grains: [Grain::default(); MAX_GRAINS],
             live_grains: 0,
+            wide_grains: 0,
+            wide_frames: [[0.0; 2]; MAX_GRAINS],
             onsets: 0,
             group_grains: Box::new(grain_groups::Runtime::new(sr)),
             grain_feedback: feedback::Feedback::new(),
@@ -2588,10 +2593,16 @@ impl Engine {
             None => self.group_grains.release(slot),
         }
         self.live_grains |= 1 << slot;
+        let mip = self.source_sample().mip_for_rate(rate, true);
+        if mip.is_wide() {
+            self.wide_grains |= 1 << slot;
+        } else {
+            self.wide_grains &= !(1 << slot);
+        }
         self.grains[slot] = Grain {
             position,
             rate,
-            read_level: self.source_sample().level_for_rate(rate, true),
+            mip,
             age,
             duration,
             shape: shape.clamp(0.0, 1.0),
@@ -3172,14 +3183,14 @@ impl Engine {
             let fade = self
                 .fades
                 .gain(self.cursor, self.sample.sample_rate, &self.file_range);
-            let level = self.sample.level_for_rate(source_rate, true);
+            let mip = self.sample.mip_for_rate(source_rate, true);
             let processed = source_fx::read(
                 &self.sample,
                 &self.processed_source,
                 &self.previous_source,
                 self.source_fade_remaining,
                 self.cursor,
-                level,
+                mip,
                 &self.file_range,
             )
             .map(|v| v * fade);
@@ -3194,7 +3205,7 @@ impl Engine {
                 // them out of the chain blends back to the file itself.
                 let raw = self
                     .sample
-                    .read_region_level(self.cursor, level, &self.file_range)
+                    .read_region_mip(self.cursor, mip, &self.file_range)
                     .map(|v| v * fade);
                 self.taps.mix(Stage::Source, raw, processed)
             } else {
@@ -3625,6 +3636,26 @@ impl Engine {
         let whole_file = !source_effects && range.start == 0 && range.end == sample.len();
         let source_chain = self.taps.chain(Stage::Source);
         let top_level = sample.active_levels() - 1;
+        // Grains that step faster than their level's frames read the whole
+        // file with a wide kernel here, in a loop of their own: inlined in the
+        // loop below, those kernels slow every grain's read by a third.
+        let wide = if antialiasing && whole_file {
+            self.live_grains & self.wide_grains
+        } else {
+            0
+        };
+        if wide != 0 {
+            let mut pending = wide;
+            let grains = &self.grains;
+            let reads = std::iter::from_fn(move || {
+                (pending != 0).then(|| {
+                    let slot = pending.trailing_zeros() as usize;
+                    pending &= pending - 1;
+                    (slot, grains[slot].position, grains[slot].mip)
+                })
+            });
+            sample.read_mips(reads, &mut self.wide_frames);
+        }
         let groups = &self.modulated.grain_groups;
         // Each group's grains in the chain, and what it sends to its bus.
         let group_chains = self.taps.group_chains();
@@ -3644,9 +3675,15 @@ impl Engine {
             let slot = pending.trailing_zeros() as usize;
             pending &= pending - 1;
             let grain = &mut self.grains[slot];
-            let level = if antialiasing { grain.read_level } else { 0 };
-            let mut frame = if whole_file {
-                sample.read_level(grain.position, level.min(top_level))
+            let mip = if antialiasing {
+                grain.mip
+            } else {
+                Mip::default()
+            };
+            let mut frame = if wide != 0 && grain.mip.is_wide() {
+                self.wide_frames[slot]
+            } else if whole_file {
+                sample.read_level(grain.position, mip.level.min(top_level))
             } else if source_effects {
                 let processed = source_fx::read(
                     &self.sample,
@@ -3654,17 +3691,17 @@ impl Engine {
                     &self.previous_source,
                     self.source_fade_remaining,
                     grain.position,
-                    level,
+                    mip,
                     &range,
                 );
                 if source_chain < 1.0 {
-                    let raw = sample.read_region_level(grain.position, level, &range);
+                    let raw = sample.read_region_mip(grain.position, mip, &range);
                     std::array::from_fn(|c| raw[c] + (processed[c] - raw[c]) * source_chain)
                 } else {
                     processed
                 }
             } else {
-                sample.read_region_level(grain.position, level, &range)
+                sample.read_region_mip(grain.position, mip, &range)
             };
             if fading {
                 let gain = self.fades.gain(grain.position, sample.sample_rate, &range);

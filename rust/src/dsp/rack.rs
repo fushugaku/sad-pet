@@ -241,9 +241,9 @@ impl Engine {
             let fade = self
                 .fades
                 .gain(self.cursor, self.sample.sample_rate, &self.file_range);
-            let level = self.sample.level_for_rate(source_rate, true);
+            let mip = self.sample.mip_for_rate(source_rate, true);
             self.sample
-                .read_region_level(self.cursor, level, &self.file_range)
+                .read_region_mip(self.cursor, mip, &self.file_range)
                 .map(|v| v * fade)
         } else {
             [0.0; 2]

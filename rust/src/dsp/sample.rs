@@ -6,6 +6,7 @@ const TAPS: usize = 12;
 const HALF: i64 = TAPS as i64 / 2;
 /// Kernel rows per frame; a read takes the nearest one (±1/2048 frame).
 const PHASES: usize = 1024;
+const ROWS: usize = PHASES + 1;
 
 /// Kaiser-windowed sinc (β = 5) for every 1/PHASES of a frame, each row at
 /// unity gain. Grains read between frames almost always: at 44.1 kHz this
@@ -47,24 +48,299 @@ static KERNEL: LazyLock<Box<[[f32; TAPS]]>> = LazyLock::new(|| {
         .collect()
 });
 
-/// Build the kernel off the audio thread.
-pub fn prepare_interpolation() {
-    LazyLock::force(&KERNEL);
+/// Reads that step more than one frame of their level fold what lies above
+/// the new Nyquist back down. Up to 2^(1/8) frames a read all of it lands
+/// above 20 kHz, and the flat kernel reads on. Each faster band of steps, an
+/// eighth of an octave wide, has the flat kernel stretched by its middle
+/// step: the cutoff falls with the step, and the taps grow with it so the
+/// transition stays about as narrow at the output as the flat kernel's.
+const WIDE_KERNELS: usize = 7;
+/// The steps where the flat kernel's band and each wide one end, 2^(k/8).
+const BAND_TOPS: [f64; WIDE_KERNELS + 1] = [
+    1.090_507_732_665_257_7,
+    1.189_207_115_002_721,
+    1.296_839_554_651_009_6,
+    std::f64::consts::SQRT_2,
+    1.542_210_825_407_940_8,
+    1.681_792_830_507_429,
+    1.834_008_086_409_342_6,
+    2.0,
+];
+/// Kernels 1..=3 have 16 taps, 4 and 5 have 20, 6 and 7 have 24.
+struct Wide {
+    taps16: Box<[[f32; 16]]>,
+    taps20: Box<[[f32; 20]]>,
+    taps24: Box<[[f32; 24]]>,
 }
+static WIDE: LazyLock<Wide> = LazyLock::new(|| {
+    // The middle of band k, 2^((k + 1/2)/8).
+    let stretch = |k: usize| BAND_TOPS[k - 1] * 1.044_273_782_427_413_8;
+    Wide {
+        taps16: (1..=3).flat_map(|k| wide_kernel(stretch(k))).collect(),
+        taps20: (4..=5).flat_map(|k| wide_kernel(stretch(k))).collect(),
+        taps24: (6..=7).flat_map(|k| wide_kernel(stretch(k))).collect(),
+    }
+});
 
-/// The frame `fraction` (0..1) past `frames[HALF - 1]`.
-#[inline(always)]
-fn interpolate(frames: &[Stereo; TAPS], fraction: f64) -> Stereo {
-    let row = &KERNEL[(fraction * PHASES as f64 + 0.5) as usize];
-    // Four partial sums a channel keep the multiply-adds independent.
-    let mut sums = [[0.0_f32; 4]; 2];
-    for i in (0..TAPS).step_by(4) {
-        for j in 0..4 {
-            sums[0][j] += row[i + j] * frames[i + j][0];
-            sums[1][j] += row[i + j] * frames[i + j][1];
+/// ROWS rows of an N-tap Kaiser-windowed sinc (β = 5) with its cutoff at
+/// 1/`stretch` of Nyquist, each at unity gain.
+fn wide_kernel<const N: usize>(stretch: f64) -> Vec<[f32; N]> {
+    const BETA: f64 = 5.0;
+    let half = (N / 2) as f64;
+    // I0's series; past twenty terms they are below an f64's precision.
+    let inverse_squares: [f64; 19] = std::array::from_fn(|k| 1.0 / ((k + 1) * (k + 1)) as f64);
+    let i0 = |x: f64| {
+        let quarter = x * x * 0.25;
+        let (mut sum, mut term) = (1.0, 1.0);
+        for inverse in inverse_squares {
+            term *= quarter * inverse;
+            sum += term;
+        }
+        sum
+    };
+    let i0_beta = i0(BETA);
+    let mut rows = vec![[0.0; N]; ROWS];
+    // Row PHASES - r is row r backwards.
+    for row in 0..=PHASES / 2 {
+        let t = row as f64 / PHASES as f64;
+        let taps: [f64; N] = std::array::from_fn(|k| {
+            let x = k as f64 - (half - 1.0) - t;
+            let ratio = x / half;
+            let window = i0(BETA * (1.0 - ratio * ratio).max(0.0).sqrt()) / i0_beta;
+            let y = PI * x / stretch;
+            if y == 0.0 {
+                window
+            } else {
+                y.sin() / y * window
+            }
+        });
+        let sum: f64 = taps.iter().sum();
+        for (k, tap) in taps.into_iter().enumerate() {
+            let weight = (tap / sum) as f32;
+            rows[row][k] = weight;
+            rows[PHASES - row][N - 1 - k] = weight;
         }
     }
-    sums.map(|s| (s[0] + s[1]) + (s[2] + s[3]))
+    rows
+}
+
+/// Build the kernels off the audio thread.
+pub fn prepare_interpolation() {
+    LazyLock::force(&KERNEL);
+    LazyLock::force(&WIDE);
+}
+
+/// The kernel for a read that steps `step` frames of its level.
+fn kernel_for_step(step: f32) -> u8 {
+    if step.is_nan() {
+        return 0;
+    }
+    BAND_TOPS
+        .iter()
+        .position(|&top| step as f64 <= top)
+        .unwrap_or(WIDE_KERNELS) as u8
+}
+
+/// The mip level a read takes its frames from, and the kernel that reads it.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct Mip {
+    pub(crate) level: usize,
+    /// Frames of the level each read steps; 0 where the rate is not followed.
+    step: f32,
+    /// 0 is the flat kernel, 1..=WIDE_KERNELS read ever faster steps.
+    kernel: u8,
+}
+impl Mip {
+    fn new(level: usize, step: f32) -> Self {
+        Self {
+            level,
+            step,
+            kernel: kernel_for_step(step),
+        }
+    }
+    /// The flat kernel on `level`, wherever the read lands.
+    pub(crate) fn flat(level: usize) -> Self {
+        Self {
+            level,
+            step: 0.0,
+            kernel: 0,
+        }
+    }
+    /// Whether a wide kernel reads it.
+    pub(crate) fn is_wide(self) -> bool {
+        self.kernel != 0
+    }
+    /// The next level down, which the same read steps twice as fast through.
+    fn finer(self) -> Self {
+        Self::new(self.level - 1, self.step * 2.0)
+    }
+    #[inline(always)]
+    fn at_most(self, top: usize) -> Self {
+        if self.level > top {
+            self.down_to(top)
+        } else {
+            self
+        }
+    }
+    #[cold]
+    fn down_to(mut self, top: usize) -> Self {
+        while self.level > top {
+            self = self.finer();
+        }
+        self
+    }
+    /// The frames the kernel weighs on each side.
+    fn half(self) -> i64 {
+        match self.kernel {
+            0 => HALF,
+            1..=3 => 8,
+            4 | 5 => 10,
+            _ => 12,
+        }
+    }
+}
+
+/// The frame `fraction` past `base` in `range` of `data`, read by `kernel`.
+/// Inlined where the kernel is known, the other kernels compile away: in the
+/// grain loop their code would slow the flat kernel's reads by a third.
+/// MONO weighs the left channel alone, for files whose channels are equal.
+#[inline(always)]
+fn read_kernel<const MONO: bool>(
+    data: &[Stereo],
+    base: i64,
+    fraction: f64,
+    range: &std::ops::Range<usize>,
+    kernel: u8,
+) -> Stereo {
+    let rows = |offset: u8| offset as usize * ROWS..(offset as usize + 1) * ROWS;
+    match kernel {
+        0 => interpolated::<TAPS, MONO>(data, base, fraction, range, &KERNEL[..]),
+        1..=3 => {
+            interpolated::<16, MONO>(data, base, fraction, range, &WIDE.taps16[rows(kernel - 1)])
+        }
+        4 | 5 => {
+            interpolated::<20, MONO>(data, base, fraction, range, &WIDE.taps20[rows(kernel - 4)])
+        }
+        _ => interpolated::<24, MONO>(data, base, fraction, range, &WIDE.taps24[rows(kernel - 6)]),
+    }
+}
+
+/// The frame `fraction` (0..1) past `frames[N / 2 - 1]`.
+#[inline(always)]
+fn interpolate<const N: usize, const MONO: bool>(
+    frames: &[Stereo; N],
+    fraction: f64,
+    rows: &[[f32; N]],
+) -> Stereo {
+    weigh::<N, MONO>(frames, &rows[(fraction * PHASES as f64 + 0.5) as usize])
+}
+
+/// `frames` weighed by `row`. Four partial sums a channel keep the
+/// multiply-adds independent: tap i adds into sum i % 4, then
+/// (s0 + s1) + (s2 + s3). SIMD lanes are those sums, multiplied and added as
+/// the scalar code does them, so every target and build renders the same
+/// bits. MONO leaves out the right channel, whose sums would take the same
+/// steps to the same bits.
+#[cfg(not(any(
+    target_arch = "aarch64",
+    target_arch = "x86_64",
+    all(target_arch = "wasm32", target_feature = "simd128")
+)))]
+#[inline(always)]
+fn weigh<const N: usize, const MONO: bool>(frames: &[Stereo; N], row: &[f32; N]) -> Stereo {
+    let mut sums = [[0.0_f32; 4]; 2];
+    for i in (0..N).step_by(4) {
+        for j in 0..4 {
+            sums[0][j] += row[i + j] * frames[i + j][0];
+            if !MONO {
+                sums[1][j] += row[i + j] * frames[i + j][1];
+            }
+        }
+    }
+    let [left, right] = sums.map(|s| (s[0] + s[1]) + (s[2] + s[3]));
+    [left, if MONO { left } else { right }]
+}
+
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+fn weigh<const N: usize, const MONO: bool>(frames: &[Stereo; N], row: &[f32; N]) -> Stereo {
+    use std::arch::aarch64::*;
+    // SAFETY: NEON is part of every aarch64 target, and each load reads taps
+    // i..i + 4 of N, a multiple of four.
+    unsafe {
+        let (mut left, mut right) = (vdupq_n_f32(0.0), vdupq_n_f32(0.0));
+        for i in (0..N).step_by(4) {
+            // Four frames, split into their left and right channels.
+            let channels = vld2q_f32(frames.as_ptr().add(i).cast());
+            let weights = vld1q_f32(row.as_ptr().add(i));
+            left = vaddq_f32(left, vmulq_f32(weights, channels.0));
+            if !MONO {
+                right = vaddq_f32(right, vmulq_f32(weights, channels.1));
+            }
+        }
+        // [s0 + s1, s2 + s3] of each channel, then their sum.
+        let halves = vpaddq_f32(left, right);
+        let sums = vpaddq_f32(halves, halves);
+        let left = vgetq_lane_f32(sums, 0);
+        [left, if MONO { left } else { vgetq_lane_f32(sums, 1) }]
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+fn weigh<const N: usize, const MONO: bool>(frames: &[Stereo; N], row: &[f32; N]) -> Stereo {
+    use std::arch::x86_64::*;
+    // SAFETY: SSE is part of every x86_64 target, and each load reads taps
+    // i..i + 4 of N, a multiple of four.
+    unsafe {
+        let (mut left, mut right) = (_mm_setzero_ps(), _mm_setzero_ps());
+        for i in (0..N).step_by(4) {
+            let first = _mm_loadu_ps(frames.as_ptr().add(i).cast());
+            let second = _mm_loadu_ps(frames.as_ptr().add(i + 2).cast());
+            let weights = _mm_loadu_ps(row.as_ptr().add(i));
+            left = _mm_add_ps(
+                left,
+                _mm_mul_ps(weights, _mm_shuffle_ps::<0x88>(first, second)),
+            );
+            if !MONO {
+                let rights = _mm_shuffle_ps::<0xdd>(first, second);
+                right = _mm_add_ps(right, _mm_mul_ps(weights, rights));
+            }
+        }
+        let sum = |v: __m128| {
+            let s: [f32; 4] = std::mem::transmute(v);
+            (s[0] + s[1]) + (s[2] + s[3])
+        };
+        let left = sum(left);
+        [left, if MONO { left } else { sum(right) }]
+    }
+}
+
+#[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+#[inline(always)]
+fn weigh<const N: usize, const MONO: bool>(frames: &[Stereo; N], row: &[f32; N]) -> Stereo {
+    use std::arch::wasm32::*;
+    // SAFETY: each load reads taps i..i + 4 of N, a multiple of four.
+    unsafe {
+        let (mut left, mut right) = (f32x4_splat(0.0), f32x4_splat(0.0));
+        for i in (0..N).step_by(4) {
+            let first = v128_load(frames.as_ptr().add(i).cast());
+            let second = v128_load(frames.as_ptr().add(i + 2).cast());
+            let weights = v128_load(row.as_ptr().add(i).cast());
+            let lefts = i32x4_shuffle::<0, 2, 4, 6>(first, second);
+            left = f32x4_add(left, f32x4_mul(weights, lefts));
+            if !MONO {
+                let rights = i32x4_shuffle::<1, 3, 5, 7>(first, second);
+                right = f32x4_add(right, f32x4_mul(weights, rights));
+            }
+        }
+        let sum = |v: v128| {
+            (f32x4_extract_lane::<0>(v) + f32x4_extract_lane::<1>(v))
+                + (f32x4_extract_lane::<2>(v) + f32x4_extract_lane::<3>(v))
+        };
+        let left = sum(left);
+        [left, if MONO { left } else { sum(right) }]
+    }
 }
 
 /// Normalized, non-destructive playback/trim boundaries. End is exclusive.
@@ -144,7 +420,15 @@ pub struct SampleBuffer {
     pub sample_rate: u32,
     levels: Vec<Vec<Stereo>>,
     active_levels: usize,
+    /// Every frame of every level has the same bits left and right, so a
+    /// read can weigh one channel. Never set for a live history.
+    mono: bool,
     pub waveform: Vec<[f32; 2]>,
+}
+
+/// Whether `frames` have the same bits left and right.
+fn mono(frames: &[Stereo]) -> bool {
+    frames.iter().all(|f| f[0].to_bits() == f[1].to_bits())
 }
 
 /// Input history allocated once when the input is enabled. Drum captures reserve
@@ -200,9 +484,12 @@ impl LiveInput {
             levels.push(vec![[0.0; 2]; length]);
             length = length.div_ceil(2);
         }
+        let mut sample =
+            SampleBuffer::from_prepared("Microphone".into(), None, sample_rate, levels)
+                .expect("valid input buffer");
+        sample.mono = false;
         Self {
-            sample: SampleBuffer::from_prepared("Microphone".into(), None, sample_rate, levels)
-                .expect("valid input buffer"),
+            sample,
             effects_only,
             peak: [0.0; 2],
             write: 0,
@@ -374,6 +661,7 @@ impl LiveInputPreparation {
                 sample_rate: self.sample_rate,
                 levels: self.levels,
                 active_levels: 7,
+                mono: false,
                 waveform: vec![[0.0; 2]; capacity.min(640)],
             },
             effects_only: self.effects_only,
@@ -411,6 +699,7 @@ impl SampleBuffer {
             sample_rate,
             levels: lengths.iter().map(|n| Vec::with_capacity(*n)).collect(),
             active_levels: lengths.len(),
+            mono: true,
             waveform: vec![[0.0; 2]; lengths[0].min(640)],
         })
     }
@@ -430,6 +719,7 @@ impl SampleBuffer {
             level.clear();
         }
         self.active_levels = lengths.len();
+        self.mono = true;
         self.waveform.resize(lengths[0].min(640), [0.0; 2]);
         Ok(())
     }
@@ -451,6 +741,7 @@ impl SampleBuffer {
             return Err("Invalid prepared PCM");
         }
         self.levels[level].extend_from_slice(frames);
+        self.mono &= mono(frames);
         if level == 0 {
             for (i, frame) in frames.iter().enumerate() {
                 let index = offset + i;
@@ -542,6 +833,8 @@ impl SampleBuffer {
             library_id: None,
             sample_rate,
             active_levels: levels.len(),
+            // The mips of a mono file are filtered alike on both channels.
+            mono: mono(&levels[0]),
             levels,
             waveform,
         })
@@ -609,13 +902,14 @@ impl SampleBuffer {
             library_id,
             sample_rate,
             active_levels: levels.len(),
+            mono: levels.iter().all(|level| mono(level)),
             levels,
             waveform,
         })
     }
 
     pub fn read(&self, position: f64, rate: f64, antialiasing: bool) -> Stereo {
-        self.read_level(position, self.level_for_rate(rate, antialiasing))
+        self.read_mip(position, self.mip_for_rate(rate, antialiasing))
     }
 
     pub(crate) fn level_for_rate(&self, rate: f64, antialiasing: bool) -> usize {
@@ -626,9 +920,57 @@ impl SampleBuffer {
         }
     }
 
-    /// Read one mip level over the whole file; `level` must be an active level.
+    /// The level and kernel that read at `rate` without folding back.
+    pub(crate) fn mip_for_rate(&self, rate: f64, antialiasing: bool) -> Mip {
+        let level = self.level_for_rate(rate, antialiasing);
+        if antialiasing {
+            Mip::new(level, (rate.abs() * level_scale(level)) as f32)
+        } else {
+            Mip::flat(level)
+        }
+    }
+
+    /// Read one mip level over the whole file with the flat kernel; `level`
+    /// must be an active level.
     #[inline(always)]
     pub(crate) fn read_level(&self, position: f64, level: usize) -> Stereo {
+        self.read_whole::<false>(position, level, 0)
+    }
+
+    /// Read `mip` over the whole file; levels above the active ones read the
+    /// top one, stepping faster.
+    #[inline(always)]
+    pub(crate) fn read_mip(&self, position: f64, mip: Mip) -> Stereo {
+        let mip = mip.at_most(self.active_levels - 1);
+        if self.mono {
+            self.read_whole::<true>(position, mip.level, mip.kernel)
+        } else {
+            self.read_whole::<false>(position, mip.level, mip.kernel)
+        }
+    }
+
+    /// Read each whole-file grain `(slot, position, mip)` into `frames[slot]`:
+    /// the grains a wide kernel reads, before the grain loop, so that loop
+    /// keeps the flat kernel's read alone.
+    #[inline(never)]
+    pub(crate) fn read_mips(
+        &self,
+        reads: impl Iterator<Item = (usize, f64, Mip)>,
+        frames: &mut [Stereo],
+    ) {
+        let top = self.active_levels - 1;
+        for (slot, position, mip) in reads {
+            let mip = mip.at_most(top);
+            frames[slot] = if self.mono {
+                self.read_whole::<true>(position, mip.level, mip.kernel)
+            } else {
+                self.read_whole::<false>(position, mip.level, mip.kernel)
+            };
+        }
+    }
+
+    #[inline(always)]
+    fn read_whole<const MONO: bool>(&self, position: f64, level: usize, kernel: u8) -> Stereo {
         if !position.is_finite() {
             return [0.0; 2];
         }
@@ -637,7 +979,7 @@ impl SampleBuffer {
         // Scaling by 2^-level is exact, like the division by 2^level it replaces.
         let p = wrap_position(position, self.len() as f64) * level_scale(level);
         let base = p.floor();
-        interpolated(data, base as i64, p - base, &(0..data.len()))
+        read_kernel::<MONO>(data, base as i64, p - base, &(0..data.len()), kernel)
     }
 
     /// Wrap interpolation inside the selection, including backwards grains.
@@ -650,38 +992,63 @@ impl SampleBuffer {
         antialiasing: bool,
         range: &std::ops::Range<usize>,
     ) -> Stereo {
-        self.read_region_level(position, self.level_for_rate(rate, antialiasing), range)
+        self.read_region_mip(position, self.mip_for_rate(rate, antialiasing), range)
     }
 
     pub(crate) fn read_region_level(
         &self,
         position: f64,
-        mut level: usize,
+        level: usize,
         range: &std::ops::Range<usize>,
     ) -> Stereo {
-        level = level.min(self.active_levels - 1);
+        self.read_region_mip(position, Mip::flat(level), range)
+    }
+
+    pub(crate) fn read_region_mip(
+        &self,
+        position: f64,
+        mip: Mip,
+        range: &std::ops::Range<usize>,
+    ) -> Stereo {
+        if self.mono {
+            self.read_region_as::<true>(position, mip, range)
+        } else {
+            self.read_region_as::<false>(position, mip, range)
+        }
+    }
+
+    #[inline(always)]
+    fn read_region_as<const MONO: bool>(
+        &self,
+        position: f64,
+        mip: Mip,
+        range: &std::ops::Range<usize>,
+    ) -> Stereo {
+        let mut mip = mip.at_most(self.active_levels - 1);
         if range.start == 0 && range.end == self.len() {
-            return self.read_level(position, level);
+            return self.read_whole::<MONO>(position, mip.level, mip.kernel);
         }
         if !position.is_finite() {
             return [0.0; 2];
         }
         let p =
             range.start as f64 + wrap_position(position - range.start as f64, range.len() as f64);
-        while level > 0 {
-            let scale = (1_usize << level) as f64;
+        while mip.level > 0 {
+            let scale = (1_usize << mip.level) as f64;
             // Multiplying by 2^-level is the same exact value as the division.
-            let base = (p * level_scale(level)).floor();
+            let base = (p * level_scale(mip.level)).floor();
             let support = 16.0 * (scale - 1.0);
-            if (base - (HALF - 1) as f64) * scale - support >= range.start as f64
-                && (base + HALF as f64) * scale + support < range.end as f64
+            let half = mip.half() as f64;
+            if (base - (half - 1.0)) * scale - support >= range.start as f64
+                && (base + half) * scale + support < range.end as f64
             {
-                return self.read_level(p, level);
+                return self.read_whole::<MONO>(p, mip.level, mip.kernel);
             }
-            level -= 1;
+            // A finer level, stepped through twice as fast.
+            mip = mip.finer();
         }
         let base = p.floor();
-        interpolated(self.frames(), base as i64, p - base, range)
+        read_kernel::<MONO>(self.frames(), base as i64, p - base, range, mip.kernel)
     }
 
     pub fn trim_wav(&self, region: Region) -> Result<Vec<u8>, String> {
@@ -744,20 +1111,22 @@ pub(crate) fn level_scale(level: usize) -> f64 {
 
 /// The frame `fraction` past `base`, from the frames around it in `range`.
 #[inline(always)]
-fn interpolated(
+fn interpolated<const N: usize, const MONO: bool>(
     data: &[Stereo],
     base: i64,
     fraction: f64,
     range: &std::ops::Range<usize>,
+    rows: &[[f32; N]],
 ) -> Stereo {
-    let first = base - (HALF - 1);
+    let half = N as i64 / 2;
+    let first = base - (half - 1);
     // Most grain reads are inside the region. Boundary reads retain the exact
     // wrap used for tiny selections, negative positions and reverse grains.
-    if first >= range.start as i64 && base + HALF < range.end as i64 {
+    if first >= range.start as i64 && base + half < range.end as i64 {
         let i = first as usize;
         // One bounds check for the taps instead of one per frame.
-        if let Some(frames) = data.get(i..i + TAPS) {
-            return interpolate(frames.try_into().unwrap(), fraction);
+        if let Some(frames) = data.get(i..i + N) {
+            return interpolate::<N, MONO>(frames.try_into().unwrap(), fraction, rows);
         }
     }
     let frames = std::array::from_fn(|i| {
@@ -765,7 +1134,7 @@ fn interpolated(
             + (first + i as i64 - range.start as i64).rem_euclid(range.len() as i64) as usize)
             % data.len()]
     });
-    interpolate(&frames, fraction)
+    interpolate::<N, MONO>(&frames, fraction, rows)
 }
 
 /// `rem_euclid` without its `fmod` call when the position is less than one

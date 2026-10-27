@@ -3,8 +3,8 @@
 // the browser validates them; their arithmetic is the same IEEE float math,
 // so every engine renders identical samples. The tail-call engine
 // (sad_pet.tc.wasm) runs the translated firmware block to block without a
-// dispatch loop; the optional SIMD engine measured slower in V8 and is not
-// built by default.
+// dispatch loop; the SIMD engine (sad_pet.simd.wasm) weighs grain reads four
+// taps at a time.
 const SIMD_PROBE = new Uint8Array([
   0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1,
   8, 0, 65, 0, 253, 15, 253, 98, 11,

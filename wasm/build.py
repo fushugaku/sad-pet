@@ -94,8 +94,9 @@ def main():
                         help="Also run Binaryen's wasm-opt at LEVEL (default -O1). Off by default: "
                              "-O3 measured 25-47%% slower on the translated SuperEcho firmware")
     parser.add_argument("--simd", action="store_true",
-                        help="Also build sad_pet.simd.wasm (+simd128). Experimental: it renders "
-                             "identical samples but measured about 5%% slower in V8")
+                        help="Also build sad_pet.simd.wasm (+simd128), which browsers that validate "
+                             "SIMD load instead of the baseline: grain reads weigh four taps at a "
+                             "time. Identical samples, dense grain scenes 12-30%% faster in V8")
     parser.add_argument("--tail-call", action="store_true",
                         help="Also build sad_pet.tc.wasm (+tail-call), which browsers that validate "
                              "tail calls load instead of the baseline: the translated firmware "
@@ -145,13 +146,15 @@ def main():
     # The Sampler's starter packs: CC0 kits the editor loads into IndexedDB on first use.
     shutil.copytree(ROOT / "rust/assets/sampler-packs", output / "sampler-packs", dirs_exist_ok=True)
     copy_voice_packs(output / "voices")
-    if not args.tail_call:
-        # Without the variant the loader must not spend a request on it.
-        backend = output / "browser-backend.mjs"
-        source = backend.read_text()
-        reference = 'new URL("./sad_pet.tc.wasm", import.meta.url)'
-        assert source.count(reference) == 1, "tail-call engine reference in browser-backend.mjs"
-        backend.write_text(source.replace(reference, "undefined"))
+    # Without a variant the loader must not spend a request on it.
+    backend = output / "browser-backend.mjs"
+    source = backend.read_text()
+    for built, name in ((args.tail_call, "sad_pet.tc.wasm"), (args.simd, "sad_pet.simd.wasm")):
+        reference = f'new URL("./{name}", import.meta.url)'
+        assert source.count(reference) == 1, f"{name} reference in browser-backend.mjs"
+        if not built:
+            source = source.replace(reference, "undefined")
+    backend.write_text(source)
     (output / "licenses").mkdir(exist_ok=True)
     shutil.copy2(ROOT / "rust/licenses/neuropolis-AGPL-3.0.txt", output / "licenses/neuropolis-AGPL-3.0.txt")
     for name in ("superecho", "alphaverb", "dxm088"):
