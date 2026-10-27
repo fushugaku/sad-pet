@@ -682,12 +682,19 @@ window.SadNeuropolis = class {
     const label = `${"ABCDEFGH"[Math.floor(index / 16)]}${String((index % 16) + 1).padStart(2, "0")}`;
     return `Pad ${label}${pads[index].name ? ` · ${pads[index].name}` : ""}`;
   }
+  /** Where a Notes track's notes go: a kit's pads by key, a Rack's voices
+   * and pads, or the grains and envelopes. */
+  notesName() {
+    const preset = this.hooks.read();
+    if (!preset.sampler?.pads?.length) return "Notes → grains + ENV";
+    return preset.rack ? "Notes → voices + pads" : "Notes → pads by key";
+  }
   targetName(t) {
     if (t.target.kind === "pad") return this.padName(t.target.pad);
     return t.target.kind === "main_pitch"
       ? "Main pitch"
       : t.target.kind === "notes"
-        ? this.hooks.read().sampler ? "Notes → pads by key" : "Notes → grains + ENV"
+        ? this.notesName()
         : t.target.kind === "oscillator"
           ? `${this.hooks.read().synth ? "Resynth " : ""}OSC ${t.target.index + 1} offset`
           : t.target.kind === "synth_oscillator"
@@ -1633,7 +1640,7 @@ window.SadNeuropolis = class {
         : track.target.kind === "pad" ? `pad:${track.target.pad}`
         : track.target.kind === "parameter" ? `param:${track.target.parameter}` : track.target.kind,
       [{ label: "Pitch & notes", choices: [
-        ["main_pitch", "Main track pitch"], ["notes", pads.length ? "Notes → pads by key" : "Notes → grains + ENV"],
+        ["main_pitch", "Main track pitch"], ["notes", this.notesName()],
         // A Synth engine timbre plays its own oscillators; Resynth's follow.
         ...(synth ? [0, 1, 2, 3].map(i => [`synth-osc:${i}`, `Synth OSC ${i + 1} pitch offset`]) : []),
         ...[0, 1, 2, 3].map(i => [`osc:${i}`, `${synth ? "Resynth " : ""}OSC ${i + 1} pitch offset`]),

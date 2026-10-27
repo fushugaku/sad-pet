@@ -533,37 +533,41 @@ impl Registry {
             } else {
                 data.remove("bus");
             }
-            // A Sampler keeps its kit; nothing else gains one.
+            // A Sampler keeps its kit and a Vocal timbre its score; a Rack
+            // preset brings those of its modules, or keeps the timbre's own
+            // through an edit of its modules. Nothing else gains one.
+            let rack = data.get("rack").is_some_and(|r| !r.is_null());
             match engine
                 .preset
                 .sampler
                 .as_deref()
-                .filter(|_| kind == Kind::Sampler)
+                .filter(|_| kind == Kind::Sampler || rack)
             {
                 Some(kit) => {
                     if data.get("sampler").is_none_or(Value::is_null) {
                         data.insert("sampler".into(), json!(kit));
                     }
                 }
-                None => {
+                None if !rack => {
                     data.remove("sampler");
                 }
+                None => {}
             }
-            // A Vocal timbre keeps its score; nothing else gains one.
             match engine
                 .preset
                 .vocal
                 .as_deref()
-                .filter(|_| kind == Kind::Vocal)
+                .filter(|_| kind == Kind::Vocal || rack)
             {
                 Some(vocal) => {
                     if data.get("vocal").is_none_or(Value::is_null) {
                         data.insert("vocal".into(), json!(vocal));
                     }
                 }
-                None => {
+                None if !rack => {
                     data.remove("vocal");
                 }
+                None => {}
             }
         }
         let mut result = self.parts[index].host.command(request)?;
@@ -670,7 +674,8 @@ impl Registry {
                     continue;
                 }
                 let mut returned = [0.; 2];
-                if self.parts[p].meta.kind == Kind::Sampler {
+                let kit = matches!(self.parts[p].meta.kind, Kind::Sampler | Kind::Rack);
+                if kit {
                     for &(_, c, pad) in links.iter().filter(|l| l.0 == p) {
                         let send = self.parts[p].host.engine.sampler_send(pad);
                         let chain = &mut self.parts[c];
@@ -688,6 +693,10 @@ impl Registry {
                     None if part.meta.kind == Kind::Sampler => returned,
                     None => input,
                 };
+                if kit && part.meta.kind == Kind::Rack {
+                    // A Rack's input is its voice; the pads return beside it.
+                    part.host.engine.return_pads(returned);
+                }
                 let out = part.host.engine.process_input_frame(source);
                 let Part {
                     meta,

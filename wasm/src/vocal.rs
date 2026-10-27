@@ -26,19 +26,17 @@ impl VocalPart {
 
 impl super::timbres::Registry {
     /// Creates or drops each part's vocal state and queues a render job for
-    /// every score the worker has not seen.
+    /// every score the worker has not seen: a Vocal timbre's, or a Rack's
+    /// with a Vocal module.
     pub fn sync_vocal(&mut self) {
         let rate = self.parts[0].host.rate;
         let mut present = Vec::new();
         let mut jobs = Vec::new();
         for part in &mut self.parts {
-            let settings = part
-                .host
-                .engine
-                .preset
-                .vocal
-                .as_deref()
-                .filter(|_| part.meta.kind == sad_pet::timbres::Kind::Vocal);
+            let settings = part.host.engine.preset.vocal.as_deref().filter(|_| {
+                use sad_pet::timbres::Kind;
+                matches!(part.meta.kind, Kind::Vocal | Kind::Rack)
+            });
             let Some(settings) = settings else {
                 part.vocal = None;
                 continue;
