@@ -5672,8 +5672,8 @@ input[type="range"] {
 .rack-stack.rack-arranging > .rack-module > .section-heading {
   margin-bottom: 0;
 }
-/* Folded, a heading keeps the module's name, chain and summary: its own
-   buttons wait until it opens. */
+/* Folded, a heading keeps the module's name and summary: its own buttons
+   wait until it opens. */
 .rack-stack > .rack-folded > .section-heading > .rack-spacer ~ :not(.rack-tools),
 .rack-stack.rack-arranging > .rack-module > .section-heading > .rack-spacer ~ :not(.rack-tools) {
   display: none !important;
@@ -5717,14 +5717,12 @@ input[type="range"] {
 
 /* The rack's controls in a module heading; elsewhere they stay hidden. */
 .rack-lead,
-.rack-chip,
 .rack-summary,
 .rack-spacer,
 .rack-tools {
   display: none;
 }
 .rack-module > .section-heading > .rack-lead,
-.rack-module > .section-heading .rack-chip,
 .rack-module > .section-heading .rack-summary,
 .rack-module > .section-heading > .rack-tools {
   display: flex;
@@ -5770,21 +5768,8 @@ input[type="range"] {
   background: var(--chain);
   box-shadow: 0 0 10px -2px var(--chain);
 }
-.rack-chip {
-  padding: 3px 9px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--chain) 13%, transparent);
-  color: var(--chain);
-  font-size: 11px;
-  white-space: nowrap;
-}
-.rack-chip:empty,
 .rack-summary:empty {
   display: none !important;
-}
-.rack-idle .rack-chip {
-  background: #efb4a91a;
-  color: var(--error);
 }
 .rack-summary {
   min-width: 0;
@@ -5793,6 +5778,9 @@ input[type="range"] {
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.rack-idle .rack-summary {
+  color: var(--error);
 }
 .rack-tools {
   flex: none;
@@ -6136,7 +6124,7 @@ input[type="range"] {
   .rack-module > .section-heading > .rack-tools {
     margin-left: auto;
   }
-  .rack-chip {
+  .rack-idle .rack-summary {
     white-space: normal;
   }
 }
@@ -6490,7 +6478,9 @@ input[type="range"] {
 /* Each Rack module in a color of its own, as muted as the green it takes
    over there: the title, knobs, toggles and power wear it, so a module reads
    at a glance. Sources keep their chain's color; the Grain engine keeps the
-   green. */
+   green. Processors and effects take dustier tones of the same lightness
+   (about half the sources' chroma) in the hues between the sources', so
+   they stay apart without outshining the chains. */
 .rack-stack > .rack-module {
   --module: var(--accent);
 }
@@ -6500,12 +6490,12 @@ input[type="range"] {
 .rack-stack > .rack-module[data-module="sampler"] { --module: #62d3c3; }
 .rack-stack > .rack-module[data-module="vocal"] { --module: #f38ea6; }
 .rack-stack > .rack-module[data-module="grains"] { --module: #c4f486; }
-.rack-stack > .rack-module[data-module="filters"] { --module: #d6c665; }
-.rack-stack > .rack-module[data-module="resynth"] { --module: #5cd5fc; }
-.rack-stack > .rack-module[data-module="source_fx"] { --module: #ffad91; }
-.rack-stack > .rack-module[data-module="pre_fx"] { --module: #a9b0fd; }
-.rack-stack > .rack-module[data-module="post_fx"] { --module: #eea3e4; }
-.rack-stack > .rack-module[data-module="eq"] { --module: #78dca9; }
+.rack-stack > .rack-module[data-module="filters"] { --module: #cdbd8c; }
+.rack-stack > .rack-module[data-module="resynth"] { --module: #8bc5d5; }
+.rack-stack > .rack-module[data-module="source_fx"] { --module: #e0ae96; }
+.rack-stack > .rack-module[data-module="pre_fx"] { --module: #b2b2df; }
+.rack-stack > .rack-module[data-module="post_fx"] { --module: #d6a7c1; }
+.rack-stack > .rack-module[data-module="eq"] { --module: #99cbb4; }
 .rack-stack > .rack-module[data-module="mixer"] { --module: #cdd4c7; }
 .rack-stack > .rack-module {
   --accent: var(--module);
@@ -6549,12 +6539,12 @@ input[type="range"] {
 .rack-menu-item[data-module="sampler"] { --chain: #62d3c3; }
 .rack-menu-item[data-module="vocal"] { --chain: #f38ea6; }
 .rack-menu-item[data-module="grains"] { --chain: #c4f486; }
-.rack-menu-item[data-module="filters"] { --chain: #d6c665; }
-.rack-menu-item[data-module="resynth"] { --chain: #5cd5fc; }
-.rack-menu-item[data-module="source_fx"] { --chain: #ffad91; }
-.rack-menu-item[data-module="pre_fx"] { --chain: #a9b0fd; }
-.rack-menu-item[data-module="post_fx"] { --chain: #eea3e4; }
-.rack-menu-item[data-module="eq"] { --chain: #78dca9; }
+.rack-menu-item[data-module="filters"] { --chain: #cdbd8c; }
+.rack-menu-item[data-module="resynth"] { --chain: #8bc5d5; }
+.rack-menu-item[data-module="source_fx"] { --chain: #e0ae96; }
+.rack-menu-item[data-module="pre_fx"] { --chain: #b2b2df; }
+.rack-menu-item[data-module="post_fx"] { --chain: #d6a7c1; }
+.rack-menu-item[data-module="eq"] { --chain: #99cbb4; }
 .rack-menu-item[data-module="mixer"] { --chain: #cdd4c7; }
 .rack-stack > .rack-module .color-bypass[aria-pressed="false"] {
   border-color: color-mix(in srgb, var(--accent) 40%, #1c221b);

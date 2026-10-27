@@ -241,9 +241,8 @@
       };
       lead.append(grip, el("span", "rack-dot"));
       heading.prepend(lead);
-      const chip = el("span", "rack-chip");
       const summary = el("span", "rack-summary");
-      h2.after(chip, summary);
+      h2.after(summary);
       const spacer = el("span", "rack-spacer");
       (h2.parentElement === heading ? summary : h2.parentElement).after(spacer);
       const tools = el("div", "rack-tools");
@@ -263,7 +262,7 @@
       tools.append(...[power, up, down, fold, remove].filter(Boolean));
       heading.append(tools);
       const text = [...h2.childNodes].find((n) => n.nodeType === Node.TEXT_NODE);
-      section.rack = { heading, h2, text, original: text?.nodeValue ?? "", chip, summary, power, up, down, fold, remove, grip };
+      section.rack = { heading, h2, text, original: text?.nodeValue ?? "", summary, power, up, down, fold, remove, grip };
     }
 
     /** EQ number `id`'s card: made the first time a rack shows it. */
@@ -478,7 +477,7 @@
       this.hooks.routing?.();
     }
 
-    /** What changes without moving anything: names, power, chips, summaries. */
+    /** What changes without moving anything: names, power, summaries. */
     refresh(steps) {
       const preset = this.preset();
       const id = this.timbre();
@@ -503,9 +502,8 @@
         r.fold.setAttribute("aria-expanded", String(!folded));
         r.fold.setAttribute("aria-label", `${folded ? "Unfold" : "Fold"} ${label}`);
         r.fold.title = r.fold.getAttribute("aria-label");
-        this.setText(r.chip, this.chip(step, steps));
-        r.chip.dataset.chain = step.chain ?? "none";
-        this.setText(r.summary, folded ? this.summary(step, preset) : "");
+        this.setText(r.summary, step.chain === null ? "No sound reaches it — move it under a source"
+          : folded ? this.summary(step, preset) : "");
       });
       const allFolded = count > 0 && steps.every((s) => this.folded.has(`${id}:${s.key}`));
       this.foldAll.textContent = allFolded ? "Unfold all" : "Fold all";
@@ -514,22 +512,6 @@
     }
     setText(node, text) {
       if (node.textContent !== text) node.textContent = text;
-    }
-
-    /** Where a module's sound comes from or goes, beside its name. */
-    chip(step, steps) {
-      if (step.chain === null) return "No sound reaches it — move it under a source";
-      if (SOURCES.includes(step.module))
-        return step.mixed ? "→ Mixer" : steps.some((s) => s.module === "mixer") ? "→ Output, past the Mixer" : "→ Output";
-      if (step.module === "mixer") {
-        const n = steps.filter((s) => s.mixed).length;
-        return n ? `${n} ${n === 1 ? "chain" : "chains"} → Output` : "No chains yet";
-      }
-      if (step.module === "grains")
-        return step.readsFile ? "Granulates the Sample" : `Granulates the ${CHAINS[step.chain]} chain`;
-      if (step.module === "filters")
-        return step.perNote ? `Per note · ${CHAINS[step.chain]}` : `${CHAINS[step.chain]} chain`;
-      return `${CHAINS[step.chain]} chain`;
     }
 
     /** A folded module's settings at a glance. */
