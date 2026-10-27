@@ -423,6 +423,89 @@ impl Default for Layer {
     }
 }
 
+/// Each band's carrier level over its gated band level, shaped like a note:
+/// it rises with the band, keeps its peak for the hold, then falls towards
+/// the sustain share of that peak while the band still hears its input and to
+/// silence once it does not, never below the band itself. With no hold,
+/// sustain or fade it is the band level.
+#[derive(Clone, Copy, Default)]
+struct CarrierEnvelopes {
+    /// Hold in frames.
+    hold: u32,
+    sustain: f32,
+    /// What remains of the distance to the floor after one frame.
+    fade: f32,
+    /// Below the level a band closes at, a fading carrier stops.
+    silence: f32,
+    levels: [f32; BANDS],
+    peaks: [f32; BANDS],
+    held: [u32; BANDS],
+    /// Each band's input level at full precision with the analysis attack and
+    /// release. The 16-bit band envelopes fall at least one step a frame, so
+    /// a quiet band reads silent long before its release has passed.
+    heard: [f32; BANDS],
+    hearing: [bool; BANDS],
+}
+impl CarrierEnvelopes {
+    fn clear(&mut self) {
+        self.levels.fill(0.0);
+        self.peaks.fill(0.0);
+        self.held.fill(0);
+        self.heard.fill(0.0);
+        self.hearing.fill(false);
+    }
+    /// Follows each band's excitation; `rates` are the attack and release
+    /// shares of the old level kept each frame.
+    #[inline]
+    fn hear(&mut self, excitation: [i32; BANDS], rates: [f32; 2], threshold: f32) {
+        for (band, excitation) in excitation.into_iter().enumerate() {
+            let x = excitation as f32 / 2147483648.0;
+            let heard = &mut self.heard[band];
+            let rate = rates[usize::from(x < *heard)];
+            *heard = super::fast::flush(x + (*heard - x) * rate);
+            if *heard > threshold {
+                self.hearing[band] = true;
+            } else if *heard < threshold * 0.5 {
+                self.hearing[band] = false;
+                // The band's note is over; the next sound starts a new one.
+                self.peaks[band] = 0.0;
+            }
+        }
+    }
+    #[inline]
+    fn next(&mut self, band: usize, level: f32) -> f32 {
+        let carrier = &mut self.levels[band];
+        if level >= *carrier {
+            // Rising 6 dB over the carrier starts the band's next note; smaller
+            // rises, such as the band level's ripple, add to the one it plays.
+            let peak = &mut self.peaks[band];
+            *peak = if level > *carrier * 2.0 {
+                level
+            } else {
+                peak.max(level)
+            };
+            *carrier = level;
+            self.held[band] = self.hold;
+        } else if self.held[band] > 0 {
+            self.held[band] -= 1;
+        } else {
+            let floor = if self.hearing[band] {
+                (self.sustain * self.peaks[band]).max(level)
+            } else {
+                level
+            };
+            // The floor only holds a carrier up; it never lifts one.
+            if *carrier > floor {
+                *carrier = floor + (*carrier - floor) * self.fade;
+                if *carrier < self.silence {
+                    *carrier = 0.0;
+                }
+            }
+        }
+        *carrier
+    }
+}
+
 pub struct Resynth {
     sample_rate: f32,
     oversample: usize,
@@ -440,6 +523,7 @@ pub struct Resynth {
     envelopes: BandEnvelopes,
     levels: [f32; BANDS],
     gates: [bool; BANDS],
+    carrier_envelopes: CarrierEnvelopes,
     gains: [f32; BANDS],
     /// The band each band's carriers hand their power to: the band whose
     /// centre is nearest the partial they play, when that band plays it too;
@@ -497,6 +581,7 @@ impl Resynth {
             envelopes: Default::default(),
             levels: [0.0; BANDS],
             gates: [false; BANDS],
+            carrier_envelopes: Default::default(),
             gains: [0.0; BANDS],
             leaders: std::array::from_fn(|band| band),
             shares: [1.0; BANDS],
@@ -534,6 +619,7 @@ impl Resynth {
         self.tracked = self.frequencies;
         self.envelopes.levels.fill(0);
         self.levels.fill(0.0);
+        self.carrier_envelopes.clear();
         self.gains.fill(0.0);
         self.leaders = std::array::from_fn(|band| band);
         self.shares.fill(1.0);
@@ -587,8 +673,21 @@ impl Resynth {
         if !self.configured || settings.release != self.settings.release {
             self.release = gain(settings.release_seconds());
         }
+        let hold = (settings.hold_seconds() as f64 * self.sample_rate as f64).round() as u32;
+        self.carrier_envelopes.hold = hold;
+        for held in &mut self.carrier_envelopes.held {
+            *held = (*held).min(hold);
+        }
+        self.carrier_envelopes.sustain = settings.sustain;
+        let fade = settings.fade_seconds() as f64 * self.sample_rate as f64;
+        self.carrier_envelopes.fade = if fade > 0.0 {
+            (-1000.0_f64.ln() / fade).exp() as f32
+        } else {
+            0.0
+        };
         self.sensitivity = settings.sensitivity_gain();
         self.threshold = settings.threshold_gain();
+        self.carrier_envelopes.silence = self.threshold * 0.5 * std::f32::consts::FRAC_PI_2;
         self.wet_target = if settings.enabled { settings.mix } else { 0.0 };
         let enabled = settings.oscillators[..settings.count as usize]
             .iter()
@@ -785,6 +884,12 @@ impl Resynth {
     pub fn levels(&self) -> [f32; BANDS] {
         self.levels
     }
+    /// Each band's level as its carriers play it, on the same scale.
+    pub fn carrier_levels(&self) -> [f32; BANDS] {
+        self.carrier_envelopes
+            .levels
+            .map(|level| level * std::f32::consts::FRAC_2_PI)
+    }
     pub fn frequencies(&self) -> [f32; BANDS] {
         self.frequencies
     }
@@ -892,6 +997,11 @@ impl Resynth {
                 .clamp(0.0, i32::MAX as f64) as i32
         });
         self.envelopes.update(excitation, self.attack, self.release);
+        self.carrier_envelopes.hear(
+            excitation,
+            [self.attack, self.release].map(|rate| rate as f32 / 2147483648.0),
+            self.threshold,
+        );
         for band in 0..BANDS {
             let level = self.envelopes.levels[band] as i16 as f32 / 32768.0;
             self.levels[band] = level;
@@ -905,6 +1015,7 @@ impl Resynth {
             } else {
                 0.0
             };
+            let gain = self.carrier_envelopes.next(band, gain);
             self.gains[band] =
                 super::fast::flush(self.gains[band] + (gain - self.gains[band]) * 0.0625);
         }
@@ -1843,5 +1954,101 @@ mod tests {
                 .fold((f32::MAX, 0.0_f32), |(l, h), &x| (l.min(x), h.max(x)));
             assert!(high / low < 1.1, "{tracking:?}: {levels:?}");
         }
+    }
+    /// Plays a 220 Hz saw at each (gain, frames) in turn, from and to `phase`.
+    fn swell(r: &mut Resynth, sample: &SampleBuffer, phase: &mut f32, parts: &[(f32, usize)]) {
+        for &(gain, frames) in parts {
+            for _ in 0..frames {
+                *phase = (*phase + 220.0 / r.sample_rate).fract();
+                let x = saw(*phase, 30) * gain;
+                r.process([0.0; 2], [x; 2], 0.0, 1.0, sample, &(0..sample.len()));
+            }
+        }
+    }
+    #[test]
+    fn carriers_without_hold_sustain_or_fade_play_the_band_level() {
+        let (mut r, sample, mut settings) = setup(48000);
+        settings.fade = 0.0;
+        r.configure(settings, &sample, 60.0);
+        let phase = &mut 0.0;
+        for (gain, frames) in [
+            (1.0, 4800),
+            (0.03, 2400),
+            (0.0, 1200),
+            (0.5, 2400),
+            (0.0, 9600),
+        ] {
+            for _ in 0..frames {
+                swell(&mut r, &sample, phase, &[(gain, 1)]);
+                for band in 0..BANDS {
+                    let gated = if r.gates[band] {
+                        r.levels[band] * std::f32::consts::FRAC_PI_2
+                    } else {
+                        0.0
+                    };
+                    assert_eq!(r.carrier_envelopes.levels[band], gated);
+                }
+            }
+        }
+    }
+    #[test]
+    fn sustain_holds_carriers_through_dips_while_their_band_hears_its_input() {
+        let dip = |sustain| {
+            let (mut r, sample, mut settings) = setup(48000);
+            settings.sustain = sustain;
+            settings.fade = 0.0;
+            r.configure(settings, &sample, 60.0);
+            let phase = &mut 0.0;
+            swell(&mut r, &sample, phase, &[(1.0, 9600)]);
+            let audible: Vec<_> = (0..BANDS).filter(|&b| r.gains[b] > 0.05).collect();
+            assert!(audible.len() >= 4, "{audible:?}");
+            let peaks = r.carrier_envelopes.peaks;
+            // 30 dB down for 200 ms.
+            swell(&mut r, &sample, phase, &[(0.03, 2400)]);
+            let mut lowest = f32::MAX;
+            for _ in 0..7200 {
+                swell(&mut r, &sample, phase, &[(0.03, 1)]);
+                for &b in &audible {
+                    lowest = lowest.min(r.carrier_envelopes.levels[b] / peaks[b]);
+                }
+            }
+            // Once the band no longer hears anything the carriers stop.
+            swell(&mut r, &sample, phase, &[(0.0, 48000)]);
+            assert!(r.carrier_envelopes.levels.iter().all(|&level| level == 0.0));
+            lowest
+        };
+        assert!(dip(0.0) < 0.1);
+        let held = dip(0.7);
+        assert!((0.69..=0.71).contains(&held), "{held}");
+    }
+    #[test]
+    fn hold_keeps_the_peak_then_fade_takes_its_time() {
+        let (mut r, sample, mut settings) = setup(48000);
+        settings.hold = 0.5;
+        settings.fade = 0.5;
+        r.configure(settings, &sample, 60.0);
+        assert_eq!(r.carrier_envelopes.hold, 24000);
+        let phase = &mut 0.0;
+        swell(&mut r, &sample, phase, &[(1.0, 4800), (0.0, 480)]);
+        let peaks = r.carrier_envelopes.levels;
+        let audible: Vec<_> = (0..BANDS).filter(|&b| peaks[b] > 0.05).collect();
+        assert!(audible.len() >= 4, "{audible:?}");
+        // Every hold began within the 0.1 s burst, so all still hold.
+        swell(&mut r, &sample, phase, &[(0.0, 24000 - 4800 - 480)]);
+        for &b in &audible {
+            assert_eq!(r.carrier_envelopes.levels[b], peaks[b]);
+        }
+        // Past every hold: 60 dB in 3.75 s, so 12 dB in 0.75 s.
+        swell(&mut r, &sample, phase, &[(0.0, 4800)]);
+        let from = r.carrier_envelopes.levels;
+        swell(&mut r, &sample, phase, &[(0.0, 36000)]);
+        for &b in &audible {
+            let fall = r.carrier_envelopes.levels[b] / from[b];
+            assert!((0.25..0.252).contains(&fall), "{b}: {fall}");
+        }
+        // A carrier that fades below the level a band closes at stops.
+        swell(&mut r, &sample, phase, &[(0.0, 48000 * 4)]);
+        assert!(r.carrier_envelopes.levels.iter().all(|&level| level == 0.0));
+        assert!(r.gains.iter().all(|&gain| gain == 0.0));
     }
 }

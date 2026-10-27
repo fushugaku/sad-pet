@@ -213,7 +213,7 @@ impl Engine {
         view.modulated_lfos = self.modulated.lfos;
         view.modulated_envs = self.modulated.envs;
         view.filter_cutoffs = self.current_filter_cutoffs();
-        view.resynth_bands = self.resynth.levels();
+        view.resynth_bands = self.resynth.carrier_levels();
         view.resynth_frequencies = self.resynth.frequencies();
         view.source_fx_pending = self.source_effects_pending();
         view.source_fx_error = self.source_fx_error;

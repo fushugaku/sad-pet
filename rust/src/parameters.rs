@@ -1457,6 +1457,10 @@ pub fn specs() -> &'static [Spec] {
                 },
             },
         });
+        // Then the envelope Resynth carriers play their band levels through.
+        resynth!(hold, "hold", 0.0, 1.0);
+        resynth!(sustain, "sustain", 0.0, 1.0);
+        resynth!(fade, "fade", 0.0, 1.0);
         result
     })
 }
@@ -1564,17 +1568,64 @@ mod tests {
         assert_eq!(preset.resynth.track, 0.0);
         assert_eq!(preset.resynth.tracking, crate::resynth::Tracking::Fixed);
         assert_eq!(Preset::default().resynth.track, 1.0);
-        let last: Vec<_> = specs()
-            .iter()
-            .rev()
-            .take(2)
-            .map(|s| s.id.as_str())
-            .collect();
-        assert_eq!(last, ["resynth_tracking", "resynth_track"]);
+        let ids: Vec<_> = specs().iter().map(|s| s.id.as_str()).collect();
+        let track = ids.iter().position(|&id| id == "resynth_track").unwrap();
+        assert_eq!(ids[track + 1], "resynth_tracking");
         let changes = parse(&json!({"resynth_track": 0.4, "resynth_tracking": 1})).unwrap();
         apply(&mut preset, &changes);
         assert_eq!(preset.resynth.track, 0.4);
         assert_eq!(preset.resynth.tracking, crate::resynth::Tracking::Follow);
+        let restored: Preset =
+            serde_json::from_slice(&serde_json::to_vec(&preset).unwrap()).unwrap();
+        assert_eq!(restored.resynth, preset.resynth);
+    }
+    #[test]
+    fn resynth_carrier_envelope_appends_and_older_settings_follow_band_levels() {
+        let mut old = serde_json::to_value(Preset::default()).unwrap();
+        let resynth = old["resynth"].as_object_mut().unwrap();
+        for field in ["hold", "sustain", "fade"] {
+            resynth.remove(field);
+        }
+        let mut preset: Preset = serde_json::from_value(old).unwrap();
+        assert_eq!(
+            [
+                preset.resynth.hold,
+                preset.resynth.sustain,
+                preset.resynth.fade
+            ],
+            [0.0; 3]
+        );
+        let last: Vec<_> = specs()
+            .iter()
+            .rev()
+            .take(5)
+            .map(|s| s.id.as_str())
+            .collect();
+        assert_eq!(
+            last,
+            [
+                "resynth_fade",
+                "resynth_sustain",
+                "resynth_hold",
+                "resynth_tracking",
+                "resynth_track"
+            ]
+        );
+        let changes = parse(&json!({
+            "resynth_hold": 0.25,
+            "resynth_sustain": 0.5,
+            "resynth_fade": 0.75
+        }))
+        .unwrap();
+        apply(&mut preset, &changes);
+        assert_eq!(
+            [
+                preset.resynth.hold,
+                preset.resynth.sustain,
+                preset.resynth.fade
+            ],
+            [0.25, 0.5, 0.75]
+        );
         let restored: Preset =
             serde_json::from_slice(&serde_json::to_vec(&preset).unwrap()).unwrap();
         assert_eq!(restored.resynth, preset.resynth);

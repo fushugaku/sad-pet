@@ -1008,8 +1008,8 @@ h2 {
   transition: transform 0.05s linear;
 }
 .resynth-controls {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  max-width: 912px;
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  max-width: 1368px;
   margin: 0 auto 18px;
 }
 /* A section's output: CHAIN goes on down the page, SEND branches to a bus. */
@@ -1270,9 +1270,7 @@ h2 {
     justify-content: space-between;
     gap: 8px;
   }
-  .resynth-controls {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
+
   .resynth-knobs {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -2446,6 +2444,9 @@ input[type="range"] {
   .knob-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 15px 4px;
+  }
+  .knob-grid.resynth-controls {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
   .dial,
   .dial svg {

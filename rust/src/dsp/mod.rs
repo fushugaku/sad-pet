@@ -2283,7 +2283,7 @@ impl Engine {
     }
     pub fn resynth_meter(&self) -> crate::resynth::Meter {
         crate::resynth::Meter {
-            bands: self.resynth.levels(),
+            bands: self.resynth.carrier_levels(),
             frequencies: self.resynth.frequencies(),
         }
     }

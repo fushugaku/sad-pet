@@ -198,6 +198,19 @@ pub struct Settings {
     #[serde(default)]
     pub track: f32,
     pub tracking: Tracking,
+    /// How long carriers keep the peak their band last reached once its
+    /// level falls back. Settings saved before the carrier envelope existed
+    /// follow the band level as they did.
+    #[serde(default)]
+    pub hold: f32,
+    /// How much of that peak carriers keep while their band still hears its
+    /// input: 0 follows every dip, 1 holds the peak until the band falls silent.
+    #[serde(default)]
+    pub sustain: f32,
+    /// How long carriers take to fall 60 dB after the hold: to the sustain
+    /// level, or to silence once their band falls silent.
+    #[serde(default)]
+    pub fade: f32,
     pub count: u8,
     pub oscillators: [Oscillator; MAX_OSCILLATORS],
 }
@@ -213,6 +226,9 @@ impl Default for Settings {
             threshold: 0.2,
             track: 1.0,
             tracking: Tracking::Fixed,
+            hold: 0.0,
+            sustain: 0.0,
+            fade: 0.2,
             count: 1,
             oscillators: [Oscillator::default(); MAX_OSCILLATORS],
         }
@@ -258,6 +274,9 @@ impl Settings {
         finite(&mut self.release, 0.0, 1.0, d.release);
         finite(&mut self.threshold, 0.0, 1.0, d.threshold);
         finite(&mut self.track, 0.0, 1.0, d.track);
+        finite(&mut self.hold, 0.0, 1.0, d.hold);
+        finite(&mut self.sustain, 0.0, 1.0, d.sustain);
+        finite(&mut self.fade, 0.0, 1.0, d.fade);
         self.count = self.count.clamp(1, MAX_OSCILLATORS as u8);
         for o in &mut self.oscillators {
             o.sanitize();
@@ -271,6 +290,12 @@ impl Settings {
     }
     pub fn release_seconds(self) -> f32 {
         0.005 + self.release.powi(3) * 2.0
+    }
+    pub fn hold_seconds(self) -> f32 {
+        self.hold.powi(3) * 4.0
+    }
+    pub fn fade_seconds(self) -> f32 {
+        self.fade.powi(3) * 30.0
     }
     pub fn threshold_gain(self) -> f32 {
         10.0_f32.powf((-84.0 + self.threshold * 60.0) / 20.0)

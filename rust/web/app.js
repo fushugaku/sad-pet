@@ -1777,12 +1777,19 @@ function resynthSettings() {
     threshold: 0.2,
     track: 1,
     tracking: "fixed",
+    hold: 0,
+    sustain: 0,
+    fade: 0.2,
     count: 1,
     oscillators: Array.from({ length: 4 }, resynthOscDefault),
   });
-  // Settings saved before tracking keep their carriers on the band centres.
+  // Settings saved before tracking keep their carriers on the band centres,
+  // and those saved before the carrier envelope play the band levels as is.
   r.track ??= 0;
   r.tracking ??= "fixed";
+  r.hold ??= 0;
+  r.sustain ??= 0;
+  r.fade ??= 0;
   for (let i = 0; i < 4; i++)
     if (r.oscillators[i].model === undefined)
       r.oscillators[i] = { ...resynthOscDefault(), ...r.oscillators[i] };
@@ -1886,6 +1893,9 @@ function oscillatorKnob(
           release: 0.3,
           threshold: 0.2,
           track: 1,
+          hold: 0,
+          sustain: 0,
+          fade: 0.2,
         }
       : defaults(index);
   createKnob(
@@ -1941,6 +1951,11 @@ function buildResynth() {
     "THRESHOLD",
     (v) => `${Math.round(-84 + v * 60)} dB`,
   );
+  const span = (s) =>
+    s < 1 ? `${Math.round(s * 1000)} ms` : `${s.toFixed(s < 10 ? 2 : 1)} s`;
+  resynthKnob(null, "hold", "HOLD", (v) => span(v ** 3 * 4));
+  resynthKnob(null, "sustain", "SUSTAIN");
+  resynthKnob(null, "fade", "FADE", (v) => span(v ** 3 * 30));
   resynthKnob(null, "track", "TRACK");
   resynthKnob(null, "mix", "MIX");
   for (let i = 0; i < 16; i++) {

@@ -306,8 +306,17 @@ fn synth_controls_append_after_every_other_host_parameter() {
     // Then a Rack's Mixer strips and its Grain engine history.
     assert_eq!(later[shaping + 8 * 5], "rack_sample_level");
     let rack = shaping + 8 * 5 + 3 * 4 + 1;
-    // Then Resynth's track and tracking mode.
-    assert_eq!(later[rack..], ["resynth_track", "resynth_tracking"]);
+    // Then Resynth's track and tracking mode, and its carrier envelope.
+    assert_eq!(
+        later[rack..],
+        [
+            "resynth_track",
+            "resynth_tracking",
+            "resynth_hold",
+            "resynth_sustain",
+            "resynth_fade"
+        ]
+    );
 }
 
 #[test]
