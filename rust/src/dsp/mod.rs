@@ -3590,12 +3590,17 @@ impl Engine {
         } else {
             0
         };
-        let mut pending = wide;
-        while pending != 0 {
-            let slot = pending.trailing_zeros() as usize;
-            pending &= pending - 1;
-            let grain = &self.grains[slot];
-            self.wide_frames[slot] = sample.read_mip(grain.position, grain.mip);
+        if wide != 0 {
+            let mut pending = wide;
+            let grains = &self.grains;
+            let reads = std::iter::from_fn(move || {
+                (pending != 0).then(|| {
+                    let slot = pending.trailing_zeros() as usize;
+                    pending &= pending - 1;
+                    (slot, grains[slot].position, grains[slot].mip)
+                })
+            });
+            sample.read_mips(reads, &mut self.wide_frames);
         }
         let groups = &self.modulated.grain_groups;
         // Each group's grains in the chain, and what it sends to its bus.

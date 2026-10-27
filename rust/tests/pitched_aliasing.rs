@@ -133,3 +133,48 @@ fn grains_a_fifth_up_fold_nothing_audible_back() {
     let raw = grains_at_a_fifth(&[22_000.0, 22_700.0, 23_400.0], false);
     assert!(20.0 * (raw / played).log10() > -10.0);
 }
+
+#[test]
+fn mono_files_read_as_their_stereo_twins() {
+    // A mono file weighs one channel. Its twin differs only in one far
+    // frame's right channel, so it weighs both: reads away from that frame
+    // and its mips' footprint come out the same, at every kernel.
+    let mono = tones(&[1_000.0, 9_000.0, 20_000.0], 32_768);
+    let mut frames: Vec<_> = (0..32_768).map(|i| mono.frames()[i]).collect();
+    frames[30_000][1] += 0.5;
+    let twin = SampleBuffer::new("twin".into(), RATE, frames).unwrap();
+    for semis in [-5.0, 0.0, 1.0, 3.0, 7.0, 11.9, 19.0, 30.0] {
+        let rate = 2_f64.powf(semis / 12.0);
+        for i in 0..2000 {
+            let position = 200.37 + i as f64 * 7.3;
+            assert_eq!(
+                mono.read(position, rate, true),
+                twin.read(position, rate, true),
+                "{semis} st at {position}"
+            );
+            let range = 100..20_000;
+            assert_eq!(
+                mono.read_region(position, rate, true, &range),
+                twin.read_region(position, rate, true, &range),
+                "{semis} st at {position} in a region"
+            );
+        }
+    }
+}
+
+#[test]
+fn live_histories_keep_both_channels() {
+    // A history starts silent, the same on both channels, and fills later.
+    let mut input = sad_pet::dsp::sample::LiveInput::new(RATE, false);
+    for _ in 0..RATE {
+        input.push([0.5, -0.5], false);
+    }
+    let head = input.head() as f64;
+    for rate in [1.0, 1.5, 3.0] {
+        let frame = input.sample.read(head - 2000.3, rate, true);
+        assert!(
+            (frame[0] - 0.5).abs() < 1e-3 && (frame[1] + 0.5).abs() < 1e-3,
+            "rate {rate}: {frame:?}"
+        );
+    }
+}
