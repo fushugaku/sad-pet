@@ -1,6 +1,10 @@
 use sad_pet::{
-    dsp::{Engine, SampleBuffer},
+    dsp::{Engine, SampleBuffer, resynth::Resynth},
+    midi::Message,
     preset::Preset,
+    resynth::{Mode, Waveform},
+    sampler::Zone,
+    timbres::Kind,
 };
 use std::{f64::consts::TAU, sync::Arc};
 
@@ -177,4 +181,112 @@ fn live_histories_keep_both_channels() {
             "rate {rate}: {frame:?}"
         );
     }
+}
+
+/// Level from 0.25 to 0.75 s of `engine` after a note-on of `note`.
+fn note_level(mut engine: Engine, note: u8) -> f64 {
+    engine.set_playing(true);
+    engine.midi(Message::NoteOn {
+        channel: 0,
+        note,
+        velocity: 127,
+    });
+    for _ in 0..RATE / 4 {
+        engine.process_frame();
+    }
+    rms((0..RATE / 2).map(|_| {
+        let frame = engine.process_frame();
+        (frame[0] + frame[1]) * 0.5
+    }))
+}
+
+/// A Sampler pad playing `hz` a fifth up.
+fn sampler_at_a_fifth(hz: &[f64]) -> f64 {
+    let mut preset = Kind::Sampler.preset().unwrap();
+    let settings = preset.sampler.as_deref_mut().unwrap();
+    let mut zone = Zone::new("tones");
+    zone.tune = 7.0;
+    settings.pads[0].zones.push(zone);
+    let key = settings.pads[0].keys[0];
+    let mut engine = Engine::new(RATE, Arc::new(SampleBuffer::demo(RATE)), preset);
+    let pool = engine.sampler_pool_mut().unwrap();
+    pool.insert("tones".into(), Arc::new(tones(hz, RATE as usize * 2)));
+    engine.refresh_sampler();
+    note_level(engine, key)
+}
+
+#[test]
+fn sampler_voices_a_fifth_up_fold_nothing_audible_back() {
+    // 22-23.4 kHz plays at 33-35 kHz, which folds to 13-15 kHz.
+    let folded = sampler_at_a_fifth(&[22_000.0, 22_700.0, 23_400.0]);
+    let played = sampler_at_a_fifth(&[5_000.0, 6_000.0, 7_000.0]);
+    let rejection = 20.0 * (folded / played).log10();
+    assert!(rejection < -45.0, "folded back at {rejection:.1} dB");
+}
+
+/// A Synth engine PCM oscillator `semitones` above the sample's root.
+fn synth_pcm(hz: &[f64], semitones: f32) -> f64 {
+    let mut preset = Kind::Synth.preset().unwrap();
+    let synth = preset.synth.as_mut().unwrap();
+    synth.count = 1;
+    let o = &mut synth.oscillators[0];
+    o.waveform = Waveform::Pcm;
+    o.transpose = semitones;
+    o.level = 1.0;
+    preset.params.filter = 1.0;
+    preset.params.reverb = 0.0;
+    preset.color_chain.clear();
+    let root = preset.params.sample_root_note as u8;
+    let mut engine = Engine::new(RATE, Arc::new(tones(hz, RATE as usize * 2)), preset);
+    engine.set_midi_gate(true);
+    note_level(engine, root)
+}
+
+#[test]
+fn synth_pcm_carriers_pitched_up_fold_nothing_audible_back() {
+    // Carriers run at 96 kHz: 23 semitones up, 22-23.4 kHz plays at
+    // 83-88 kHz, which folds to 8-13 kHz.
+    let folded = synth_pcm(&[22_000.0, 22_700.0, 23_400.0], 23.0);
+    let played = synth_pcm(&[2_000.0, 3_000.0, 4_000.0], 23.0);
+    let rejection = 20.0 * (folded / played).log10();
+    assert!(rejection < -45.0, "folded back at {rejection:.1} dB");
+}
+
+/// A Resynth PCM layer reading high tones from a file whose root is the note
+/// `root`, while its top band (12 kHz) hears a tone at its centre.
+fn resynth_pcm(root: f32) -> f64 {
+    let sample = tones(&[22_000.0, 22_700.0, 23_400.0], RATE as usize * 2);
+    let mut settings = sad_pet::resynth::Settings {
+        enabled: true,
+        count: 1,
+        mix: 1.0,
+        ..Default::default()
+    };
+    let o = &mut settings.oscillators[0];
+    o.waveform = Waveform::Pcm;
+    o.mode = Mode::Wave;
+    let mut resynth = Resynth::new(RATE);
+    resynth.configure(settings, &sample, root);
+    let range = 0..sample.len();
+    let mut next = |i: usize| {
+        let heard = (i as f64 * 12_000.0 * TAU / RATE as f64).sin() as f32 * 0.25;
+        let frame = resynth.process([0.0; 2], [heard; 2], 0.0, 1.0, &sample, &range);
+        (frame[0] + frame[1]) * 0.5
+    };
+    let half = RATE as usize / 2;
+    for i in 0..half {
+        next(i);
+    }
+    rms((half..2 * half).map(next))
+}
+
+#[test]
+fn resynth_pcm_carriers_pitched_up_fold_nothing_audible_back() {
+    // From a root of 12.5 kHz the top band's carrier plays the tones at
+    // 21-22.4 kHz. From 3.16 kHz it plays them at 84-89 kHz, which the
+    // carriers' 96 kHz folds to 7-12 kHz.
+    let played = resynth_pcm(127.0);
+    let folded = resynth_pcm(103.1);
+    let rejection = 20.0 * (folded / played).log10();
+    assert!(rejection < -45.0, "folded back at {rejection:.1} dB");
 }

@@ -5,6 +5,7 @@ use super::{
     SampleBuffer,
     filter_slots::{self, Bank, Instance},
     radias_oscillator, radias_wavefolder,
+    sample::Mip,
 };
 use crate::{
     Stereo,
@@ -296,7 +297,7 @@ struct Carrier {
     code: PitchCode,
     pcm_phase: f64,
     pcm_rate: f64,
-    pcm_level: usize,
+    pcm_mip: Mip,
     audible: bool,
     folder: radias_wavefolder::Wavefolder,
     phase_initialized: bool,
@@ -327,7 +328,7 @@ impl PcmLoop {
         self.read_at(
             &mut carrier.pcm_phase,
             carrier.pcm_rate,
-            carrier.pcm_level,
+            carrier.pcm_mip,
             sample,
             range,
         )
@@ -336,7 +337,7 @@ impl PcmLoop {
         &self,
         phase: &mut f64,
         rate: f64,
-        level: usize,
+        mip: Mip,
         sample: &SampleBuffer,
         range: &Range<usize>,
     ) -> Stereo {
@@ -345,10 +346,9 @@ impl PcmLoop {
         } else {
             phase.rem_euclid(self.length)
         };
-        let mut x = sample.read_region_level(self.start + p, level, range);
+        let mut x = sample.read_region_mip(self.start + p, mip, range);
         if self.fade > 0.0 && p > self.length - self.fade {
-            let y =
-                sample.read_region_level(self.start + p - self.length + self.fade, level, range);
+            let y = sample.read_region_mip(self.start + p - self.length + self.fade, mip, range);
             let t = ((p - self.length + self.fade) / self.fade) as f32;
             let mix = t * t * (3.0 - 2.0 * t);
             x = std::array::from_fn(|c| x[c] + (y[c] - x[c]) * mix);
@@ -378,7 +378,7 @@ impl Carrier {
         )
         .unwrap();
         self.pcm_rate = hz / root_hz * sample.sample_rate as f64 / rate;
-        self.pcm_level = sample.level_for_rate(self.pcm_rate, true);
+        self.pcm_mip = sample.mip_for_rate(self.pcm_rate, true);
     }
 }
 impl Default for Carrier {
@@ -390,7 +390,7 @@ impl Default for Carrier {
             code: PitchCode::new(60 * 256).unwrap(),
             pcm_phase: 0.0,
             pcm_rate: 1.0,
-            pcm_level: 0,
+            pcm_mip: Mip::default(),
             audible: true,
             folder: Default::default(),
             phase_initialized: false,

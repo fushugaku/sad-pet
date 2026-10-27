@@ -6,7 +6,7 @@
 use super::{
     SampleBuffer, VOICES, radias_oscillator, radias_wavefolder,
     resynth::{Decimator, PcmLoop},
-    sample::LiveInput,
+    sample::{LiveInput, Mip},
 };
 use crate::{
     Stereo,
@@ -36,7 +36,7 @@ struct Carrier {
     audible: bool,
     pcm_phase: f64,
     pcm_rate: f64,
-    pcm_level: usize,
+    pcm_mip: Mip,
 }
 impl Default for Carrier {
     fn default() -> Self {
@@ -49,7 +49,7 @@ impl Default for Carrier {
             audible: true,
             pcm_phase: 0.0,
             pcm_rate: 1.0,
-            pcm_level: 0,
+            pcm_mip: Mip::default(),
         }
     }
 }
@@ -367,7 +367,7 @@ impl Runtime {
                         let x = pcm.read_at(
                             &mut carrier.pcm_phase,
                             carrier.pcm_rate,
-                            carrier.pcm_level,
+                            carrier.pcm_mip,
                             sample,
                             range,
                         );
@@ -466,7 +466,7 @@ fn tune(
         carrier.code =
             PitchCode::new((note.clamp(0.0, 127.996) * 256.0).round().min(32767.0) as u16).unwrap();
         carrier.pcm_rate = hz / root_hz * sample.sample_rate as f64 / rate;
-        carrier.pcm_level = sample.level_for_rate(carrier.pcm_rate, true);
+        carrier.pcm_mip = sample.mip_for_rate(carrier.pcm_rate, true);
     }
 }
 
