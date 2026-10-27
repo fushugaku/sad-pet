@@ -40,6 +40,14 @@ window.sadPetFetch = async (path, options = {}) => {
       name: decodeURIComponent(headers.get("X-File-Name") || "Sample.wav"),
       id: headers.get("X-Library-Id"),
     };
+  } else if (options.body && typeof options.body === "object") {
+    // The Sampler sends its WAVs beside other fields; they cross as base64.
+    data = {};
+    for (const [key, value] of Object.entries(options.body)) {
+      const binary = value instanceof Blob || value instanceof ArrayBuffer || ArrayBuffer.isView(value);
+      data[key] = !binary ? value
+        : base64(value instanceof Blob ? new Uint8Array(await value.arrayBuffer()) : new Uint8Array(value.buffer || value));
+    }
   } else if (options.body) {
     data = JSON.parse(options.body);
   }

@@ -48,8 +48,7 @@ position, while the other timbres play on; **+** loads it as a new timbre. The
 deletes it, and **Rename category…** renames a whole category. Bus and Master
 hold no instrument. Plug-in instances share the disk library in the
 **Instruments** subfolder of the User preset folder (deleted files go to its
-**Trash**); the web version keeps its library in IndexedDB. Sampler instruments
-play in the web version for now.
+**Trash**); the web version keeps its library in IndexedDB.
 
 ## Timbres and drum machine
 

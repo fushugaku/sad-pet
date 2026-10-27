@@ -1211,9 +1211,6 @@
       const context = this.actions.context();
       return context?.timbres?.find((t) => t.id === context.active);
     }
-    playable(record) {
-      return !(this.actions.native && record.kind === "sampler");
-    }
     async toggle() {
       if (!this.browser.hidden) return this.close();
       this.confirm.hidden = true;
@@ -1342,7 +1339,6 @@
       const row = document.createElement("div");
       row.className = "instrument-row";
       row.setAttribute("role", "listitem");
-      const playable = this.playable(record);
       const load = document.createElement("button");
       load.className = "instrument-load";
       const name = document.createElement("span");
@@ -1352,9 +1348,8 @@
       kind.className = "instrument-kind";
       kind.textContent = INSTRUMENT_KINDS[record.kind];
       load.append(name, kind);
-      load.title = !playable ? "Sampler instruments play in the browser version for now"
-        : holds ? `Load into ${part.name}` : "Use + to load it as a new timbre";
-      load.disabled = this.busy || !holds || !playable;
+      load.title = holds ? `Load into ${part.name}` : "Use + to load it as a new timbre";
+      load.disabled = this.busy || !holds;
       load.onclick = () => this.run(() => this.load(record, false));
       if (part && record.kind === part.kind && sameName(record.name, part.name)) {
         row.classList.add("current");
@@ -1365,7 +1360,7 @@
       add.textContent = "+";
       add.title = "Load as a new timbre";
       add.setAttribute("aria-label", `Load ${record.name} as a new timbre`);
-      add.disabled = this.busy || !playable;
+      add.disabled = this.busy;
       add.onclick = () => this.run(() => this.load(record, true));
       const menu = document.createElement("details");
       menu.className = "effect-preset-menu instrument-menu";

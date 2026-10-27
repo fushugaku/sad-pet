@@ -196,9 +196,9 @@ files move instruments between the web version and the native app and plug-ins.
   Sampler's and Vocal's, `rack_sampler_level` … `rack_vocal_solo`, come after
   `resynth_tracking`) that LFOs, envelopes, the matrix, macros and sequencer
   lanes can move. The Vocal module sings in the plug-ins and the standalone app
-  too, with the DAW's transport or the app's own. Kits play only in the browser
-  for now: in the plug-ins a Rack keeps a saved Sampler module, silent, and its
-  menu leaves it out.
+  too, with the DAW's transport or the app's own. The Sampler module's kit
+  plays there as well; the app plays the kits of its scenes but edits none
+  (see Sampler timbres).
 - **Bus and Master** (browser and DAW plug-ins). Every scene has one **Master**
   tab that sums all timbres and buses into the output; add up to eight **Bus**
   timbres with **+ Timbre**. The tabs list the instruments on one row and the
@@ -337,7 +337,7 @@ files move instruments between the web version and the native app and plug-ins.
   Granular, Filters, Resynth and every effect apply to the voice. Plug-ins play
   the score at the DAW position and tempo; the browser and app play it with
   **▶ Play** or the main transport. See [the voice engine](voice/README.md).
-- **Sampler timbres** (browser) play kits of samples in the manner of an MPC: eight
+- **Sampler timbres** (browser and DAW plug-ins) play kits of samples in the manner of an MPC: eight
   banks of sixteen pads, each with **zones** for velocity layers (by velocity, cycle
   or random) and key groups. Every zone has Start/End, a loop (forward, back and
   forth, or while held) with **crossfade**, Reverse, **fade in / fade out** with
@@ -369,8 +369,12 @@ files move instruments between the web version and the native app and plug-ins.
   xylophone and glockenspiel) as keygroups from the Versilian Community Sample
   Library. A pack's samples join IndexedDB on first use. `rust/scripts/
   build_sampler_packs.py` rebuilds them from pinned sources; credits are in each
-  pack's `CREDITS.txt`. The DAW plug-ins and app play Sampler
-  timbres of loaded scenes silently for now.
+  pack's `CREDITS.txt`. The DAW plug-ins play and edit kits as the browser
+  does, Pad FX and Bounce included, but **Record** takes no sample there yet;
+  a project saves each kit's samples. The
+  standalone app plays the kits of its scenes and instruments, but keeps
+  sample data out of its editor, so it neither imports, edits nor records
+  kit samples, and its menu leaves the Sampler out.
 - Two filters with single, serial and parallel routing, envelope depth and key tracking.
 - All **18 Rustias filter models** in either slot: RADIAS, Ladder LP/HP/BP24,
   MS-20 LP/HP12, Pro LP24, SEM, Multi Filter, M/Poly LP24 and Linear LP/HP/BP/Notch

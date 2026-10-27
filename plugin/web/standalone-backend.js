@@ -30,7 +30,8 @@ window.sadPetFetch = async (path, options = {}) => {
   const url = new URL(path, location.href);
   if (!url.pathname.startsWith("/api/")) return originalFetch(path, options);
   const body = options.body;
-  if (body instanceof Blob || body instanceof ArrayBuffer || ArrayBuffer.isView(body))
+  // The Sampler's uploads and edits carry WAVs in an object body.
+  if (body instanceof Blob || body instanceof ArrayBuffer || ArrayBuffer.isView(body) || (body && typeof body === "object"))
     throw new Error(NO_AUDIO);
   const envelope = await call({
     path: url.pathname + url.search,

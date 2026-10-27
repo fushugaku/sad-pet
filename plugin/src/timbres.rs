@@ -51,7 +51,22 @@ pub(super) fn keep_role(preset: &mut Preset, current: &Preset, kind: Kind) {
     } else if preset.rack.is_none() {
         preset.vocal = None;
     }
+    // A Sampler keeps its kit, and a Rack preset brings that of its Sampler
+    // module or keeps the timbre's own; nothing else gains one.
+    if kind == Kind::Sampler || preset.rack.is_some() {
+        if preset.sampler.is_none() {
+            preset.sampler = current.sampler.clone();
+        }
+    } else {
+        preset.sampler = None;
+    }
 }
+
+type RestoredParts = (
+    Vec<Controller>,
+    Option<Box<PartAudio>>,
+    Option<Box<PartAudio>>,
+);
 
 pub(super) struct PartAudio {
     pub audio: Audio,
@@ -128,6 +143,8 @@ pub(super) struct Render<'a> {
     pub engine: &'a mut Engine,
     pub chunk: &'a mut Chunk,
     pub vocal: &'a mut Option<Box<VocalAudio>>,
+    pub chains: &'a mut Option<Box<PartAudio>>,
+    pub kind: Kind,
     pub sends: &'a mut SendGains,
     pub gain: &'a mut f32,
     pub audible: bool,
@@ -142,6 +159,8 @@ impl Render<'_> {
                     *frame = [vocal.next(); 2];
                 }
             }
+            // A Sampler plays its kit and what its Pad FX timbres return.
+            None if self.kind == Kind::Sampler => self.chunk.input[..n].fill([0.; 2]),
             None => self.chunk.input[..n].copy_from_slice(input),
         }
         self.render(n, buses);
@@ -172,23 +191,33 @@ impl Render<'_> {
                 }
             }
         }
-        if taps == 0 && !chunk.entering {
+        if taps == 0 && !chunk.entering && self.chains.is_none() {
             self.engine
                 .process_input_block(&chunk.input[..n], &mut chunk.out[..n]);
         } else {
-            // Section sends and later entries change from frame to frame:
-            // take each frame's as it renders, the way the block renders
-            // anyway.
+            // Section sends, later entries and Pad FX returns change from
+            // frame to frame: take each frame's as it renders, the way the
+            // block renders anyway.
             for (((input, out), sends), entered) in chunk.input[..n]
                 .iter()
                 .zip(&mut chunk.out[..n])
                 .zip(&mut chunk.sends[..n])
                 .zip(&chunk.entered[..n])
             {
+                let mut input = *input;
+                if let Some(chains) = self.chains.as_deref_mut() {
+                    let returned = pad_returns(self.engine, chains);
+                    if self.kind == Kind::Sampler {
+                        input = [input[0] + returned[0], input[1] + returned[1]];
+                    } else {
+                        // A Rack's input is its voice; the pads return beside it.
+                        self.engine.return_pads(returned);
+                    }
+                }
                 if chunk.entering {
                     self.engine.enter(*entered);
                 }
-                *out = self.engine.process_input_frame(*input);
+                *out = self.engine.process_input_frame(input);
                 if taps != 0 {
                     self.sends
                         .send_taps(self.audible, self.engine.bus_sends(), sends);
@@ -204,6 +233,31 @@ impl Render<'_> {
             *out = out.map(|v| v * *self.gain);
         }
     }
+}
+
+/// What a kit's Pad FX timbres return in this frame: each processes its
+/// pad's voices of the frame before, as in the browser.
+fn pad_returns(engine: &Engine, chains: &mut PartAudio) -> Stereo {
+    let mut returned = [0.; 2];
+    let mut chain = Some(chains);
+    while let Some(c) = chain {
+        let audio = &mut c.audio;
+        if !audio.bounced {
+            let target = if audio.meta.mix.muted {
+                0.
+            } else {
+                audio.meta.mix.gain
+            };
+            audio.smooth_part_gain += (target - audio.smooth_part_gain) * 0.004;
+            let out = audio
+                .engine
+                .process_input_frame(engine.sampler_send(audio.meta.pad));
+            returned[0] += out[0] * audio.smooth_part_gain;
+            returned[1] += out[1] * audio.smooth_part_gain;
+        }
+        chain = c.next.as_deref_mut();
+    }
+    returned
 }
 
 /// Adds one part's chunk to the Master input (`output`) and, with `buses`, to
@@ -277,11 +331,12 @@ fn add_sends(sum: &mut [Stereo; MAX_BUSES], part: &[Stereo; MAX_BUSES], mut mask
     }
 }
 
+/// Takes part `id` out of the list into `retired`; false when it has none.
 pub(super) fn remove_part(
     head: &mut Option<Box<PartAudio>>,
     id: u32,
     retired: &mut Option<Box<PartAudio>>,
-) {
+) -> bool {
     let mut cursor = head;
     loop {
         match cursor {
@@ -290,11 +345,50 @@ pub(super) fn remove_part(
                 let mut part = cursor.take().unwrap();
                 *cursor = part.next.take();
                 *retired = Some(part);
-                return;
+                return true;
             }
-            None => return,
+            None => return false,
         }
     }
+}
+
+/// The audio of the Pad FX timbres of kit `owner` among `parts`, in order.
+pub(super) fn chain_audio(
+    parts: &mut [Controller],
+    owner: u32,
+    rate: u32,
+) -> Option<Box<PartAudio>> {
+    let mut head = None;
+    for chain in parts
+        .iter_mut()
+        .rev()
+        .filter(|p| p.meta.kind == Kind::PadFx && p.meta.owner == Some(owner))
+    {
+        head = Some(Box::new(PartAudio {
+            audio: chain.prepare(rate),
+            next: head,
+        }));
+    }
+    head
+}
+
+/// The audio of the scene's `parts` in their order, each kit's Pad FX
+/// timbres inside its Sampler's; those of the scene's own kit come apart.
+pub(super) fn prepare_audio(
+    parts: &mut [Controller],
+    rate: u32,
+) -> (Option<Box<PartAudio>>, Option<Box<PartAudio>>) {
+    let mut head = None;
+    for i in (0..parts.len()).rev() {
+        if parts[i].meta.kind == Kind::PadFx {
+            continue;
+        }
+        let id = parts[i].meta.id;
+        let mut audio = parts[i].prepare(rate);
+        audio.chains = chain_audio(parts, id, rate);
+        head = Some(Box::new(PartAudio { audio, next: head }));
+    }
+    (head, chain_audio(parts, 0, rate))
 }
 
 impl Controller {
@@ -350,10 +444,9 @@ impl Controller {
         }
         let mut preset = Kind::Empty.preset().unwrap();
         preset.name = self.preset.name.clone();
-        self.enqueue(Command::Preset(Box::new(
-            preset.prepared_clone_for(self.rate),
-        )))?;
+        self.enqueue(Command::Preset(self.prepared_preset(&preset)))?;
         self.preset = preset;
+        self.forget_unused_kit();
         self.meta = Meta {
             id: 0,
             kind: Kind::Empty,
@@ -374,12 +467,11 @@ impl Controller {
         mut preset: Preset,
         gate: bool,
     ) -> Result<(), String> {
-        // Its preset keeps holding the scene's name.
+        // Its preset keeps holding the scene's name. An emptied timbre holds
+        // no kit samples.
         preset.name = self.preset.name.clone();
         preset.sanitize();
-        self.enqueue(Command::Preset(Box::new(
-            preset.prepared_clone_for(self.rate),
-        )))?;
+        self.enqueue(Command::Preset(self.prepared_preset(&preset)))?;
         self.preset = preset;
         self.meta = Meta {
             id: 0,
@@ -418,20 +510,9 @@ impl Controller {
                 .map(|p| (&p.meta, &p.preset)),
         )
     }
-    pub(super) fn prepare_parts(&mut self, rate: u32) -> Option<Box<PartAudio>> {
-        let mut head = None;
-        for part in self.parts.iter_mut().rev() {
-            head = Some(Box::new(PartAudio {
-                audio: part.prepare(rate),
-                next: head,
-            }));
-        }
-        head
-    }
-    pub(super) fn restore_parts(
-        &self,
-        states: Vec<SavedState>,
-    ) -> Result<(Vec<Controller>, Option<Box<PartAudio>>), String> {
+    /// The restored parts, their audio and that of the Pad FX timbres of
+    /// the scene's own kit.
+    pub(super) fn restore_parts(&self, states: Vec<SavedState>) -> Result<RestoredParts, String> {
         let mut controls = Vec::with_capacity(states.len());
         let mut ids = std::collections::BTreeSet::new();
         for state in states {
@@ -444,14 +525,8 @@ impl Controller {
             control.restore_saved(state)?;
             controls.push(control);
         }
-        let mut head = None;
-        for control in controls.iter_mut().rev() {
-            head = Some(Box::new(PartAudio {
-                audio: control.prepare(self.rate),
-                next: head,
-            }));
-        }
-        Ok((controls, head))
+        let (head, chains) = prepare_audio(&mut controls, self.rate);
+        Ok((controls, head, chains))
     }
     pub(super) fn scene_request(&mut self, request: &Value) -> Result<Value, String> {
         self.drain();
@@ -476,6 +551,9 @@ impl Controller {
         if let Some(result) = self.vocal_scene_request(path, request["method"] == "POST", data) {
             return result;
         }
+        if path.starts_with("/api/sampler/") {
+            return self.sampler_request(path, request["method"] == "POST", data);
+        }
         if path.starts_with("/api/timbres") {
             match path {
                 "/api/timbres" => {}
@@ -485,8 +563,9 @@ impl Controller {
                     if kind == Kind::Master {
                         return Err("The scene always has one Master".into());
                     }
-                    if matches!(kind, Kind::Sampler | Kind::PadFx | Kind::Empty) {
-                        return Err("Sampler timbres play in the browser version for now".into());
+                    // A Pad FX timbre comes with its pad.
+                    if matches!(kind, Kind::PadFx | Kind::Empty) {
+                        return Err("Unknown timbre kind".into());
                     }
                     // Every instrument is built as a Rack of its engine's modules,
                     // or with `classic` as that engine's own timbre.
@@ -720,7 +799,46 @@ impl Audio {
                 p.audio.set_part_mix(id, mix);
                 part = p.next.as_mut();
             }
+            let mut chain = self.chains.as_mut();
+            while let Some(c) = chain {
+                c.audio.set_part_mix(id, mix);
+                chain = c.next.as_mut();
+            }
         }
+    }
+    /// Takes timbre `id` out of the scene, or a Pad FX timbre out of its
+    /// kit; it goes back with the update.
+    pub(super) fn remove_part(&mut self, id: u32, retired: &mut Option<Box<PartAudio>>) {
+        if remove_part(&mut self.parts, id, retired) || remove_part(&mut self.chains, id, retired) {
+            return;
+        }
+        let mut part = self.parts.as_mut();
+        while let Some(p) = part {
+            if remove_part(&mut p.audio.chains, id, retired) {
+                return;
+            }
+            part = p.next.as_mut();
+        }
+    }
+    /// Appends Pad FX timbre `chain` to the kit of timbre `owner`. Without
+    /// that timbre it goes back with the update.
+    pub(super) fn add_chain(&mut self, owner: u32, chain: &mut Option<Box<PartAudio>>) {
+        let mut list = if self.meta.id == owner {
+            &mut self.chains
+        } else {
+            let mut part = self.parts.as_mut();
+            loop {
+                match part {
+                    Some(p) if p.audio.meta.id == owner => break &mut p.audio.chains,
+                    Some(p) => part = p.next.as_mut(),
+                    None => return,
+                }
+            }
+        };
+        while list.is_some() {
+            list = &mut list.as_mut().unwrap().next;
+        }
+        *list = chain.take();
     }
     /// One part's level-scaled output for a chunk, plus its sends into its
     /// own bus slots. Every part renders its whole chunk before the parts
@@ -739,6 +857,8 @@ impl Audio {
             engine: &mut self.engine,
             chunk: &mut self.chunk,
             vocal: &mut self.vocal,
+            chains: &mut self.chains,
+            kind: self.meta.kind,
             sends: &mut self.sends,
             gain: &mut self.smooth_part_gain,
             audible: self.audible,
@@ -774,6 +894,7 @@ impl Audio {
                 engine,
                 chunk,
                 vocal,
+                chains,
                 sends,
                 smooth_part_gain,
                 audible,
@@ -801,6 +922,8 @@ impl Audio {
                 engine,
                 chunk,
                 vocal,
+                chains,
+                kind: meta.kind,
                 sends,
                 gain: smooth_part_gain,
                 audible: *audible,
@@ -947,6 +1070,11 @@ impl Audio {
         while let Some(p) = part {
             p.audio.time_signature(numerator, denominator);
             part = p.next.as_mut();
+        }
+        let mut chain = self.chains.as_mut();
+        while let Some(c) = chain {
+            c.audio.time_signature(numerator, denominator);
+            chain = c.next.as_mut();
         }
     }
 }

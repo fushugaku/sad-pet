@@ -30,6 +30,14 @@ pub(super) fn check_editor_request(path: &str, post: bool, data: &Value) -> Resu
     let carries_audio = match path {
         "/api/wav" | "/api/sample.wav" | "/api/trim" | "/api/scene" | "/api/render"
         | "/api/input.wav" => true,
+        // A kit's samples come with its scene; the Sample editor's audio
+        // would cross the boundary.
+        "/api/sampler/upload"
+        | "/api/sampler/sample.wav"
+        | "/api/sampler/process"
+        | "/api/sampler/analyze"
+        | "/api/sampler/bounce"
+        | "/api/sampler/record" => post,
         "/api/preset-library/import" | "/api/effect-presets/import" | "/api/instruments/import" => {
             data.get("base64").is_some() || data["path"].as_str().is_none()
         }
@@ -335,7 +343,7 @@ impl Files {
 
 impl Controller {
     /// The timbre the editor shows; file and region commands apply to it.
-    fn active_part(&mut self) -> Result<&mut Controller, String> {
+    pub(super) fn active_part(&mut self) -> Result<&mut Controller, String> {
         if self.active == 0 {
             return Ok(self);
         }
@@ -362,6 +370,8 @@ impl Controller {
         copy.parts = self.parts.iter().map(Controller::offline_copy).collect();
         copy.active = self.active;
         copy.preset = self.preset.clone();
+        copy.kit = self.kit.clone();
+        copy.pad_routes = self.pad_routes.clone();
         copy.sample = self.sample.clone();
         copy.source = self.source;
         copy.region = self.region;
