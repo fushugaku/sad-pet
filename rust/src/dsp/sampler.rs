@@ -3,7 +3,7 @@
 //! interpolation from the antialiasing mips, through the pad's envelope and
 //! filter. Pads with a Pad FX timbre write into their own send instead of the
 //! kit's mix; the host feeds each send to its timbre.
-use super::{SampleBuffer, fast};
+use super::{SampleBuffer, fast, sample::Mip};
 use crate::{
     Stereo,
     sampler::{
@@ -222,24 +222,28 @@ impl Svf {
         self.a2 = g * self.a1;
         self.a3 = g * self.a2;
     }
-    #[inline]
+    #[inline(always)]
     fn process(&mut self, input: Stereo) -> Stereo {
         if self.kind == FilterKind::Off as u8 {
             return input;
         }
-        std::array::from_fn(|c| {
+        // A loop rather than `array::from_fn`, which LLVM stops inlining once
+        // two render loops call this.
+        let mut output = [0.0; 2];
+        for c in 0..2 {
             let v3 = input[c] - self.s2[c];
             let v1 = self.a1 * self.s1[c] + self.a2 * v3;
             let v2 = self.s2[c] + self.a2 * self.s1[c] + self.a3 * v3;
             self.s1[c] = fast::flush(2.0 * v1 - self.s1[c]);
             self.s2[c] = fast::flush(2.0 * v2 - self.s2[c]);
-            match self.kind {
+            output[c] = match self.kind {
                 1 => v2,
                 2 => input[c] - self.k * v1 - v2,
                 3 => v1 * self.k,
                 _ => input[c] - self.k * v1,
-            }
-        })
+            };
+        }
+        output
     }
 }
 
@@ -276,7 +280,7 @@ struct Voice {
     /// Frames per output frame before pitch modulation.
     base: f64,
     step: f64,
-    level: usize,
+    mip: Mip,
     zone_gain: f32,
     zone_pan: f32,
     gains: Stereo,
@@ -310,7 +314,7 @@ impl Voice {
         let semitones = pad.tune + pad.fine * 0.01 + bend + if bounced { 0.0 } else { self.pitch };
         self.step = self.base * fast::exp2(semitones / 12.0) as f64;
         if let Some(sample) = &self.sample {
-            self.level = sample.level_for_rate(self.step, true);
+            self.mip = sample.mip_for_rate(self.step, true);
         }
         let gain = fast::gain_db(pad.gain + self.zone_gain);
         let pan = (pad.pan + self.zone_pan).clamp(-1.0, 1.0);
@@ -330,9 +334,10 @@ impl Voice {
             self.filter.configure(FilterKind::Off, 0.0, 0.0, rate);
         }
     }
-    /// One frame of this voice, or `None` once it has ended.
+    /// One frame of this voice, or `None` once it has ended. WIDE voices step
+    /// faster than the flat kernel reads without folding back.
     #[inline]
-    fn render(&mut self, kill_step: f32) -> Option<Stereo> {
+    fn render<const WIDE: bool>(&mut self, kill_step: f32) -> Option<Stereo> {
         let sample = self.sample.as_ref()?;
         let amp = self.amp.next();
         if self.amp.stage == Stage::Idle {
@@ -345,7 +350,15 @@ impl Voice {
             }
         }
         let frame = self.frame_of(self.position);
-        let mut value = sample.read_level(frame, self.level);
+        let mip = self.mip;
+        let read = |position| {
+            if WIDE {
+                sample.read_mip(position, mip)
+            } else {
+                sample.read_level(position, mip.level)
+            }
+        };
+        let mut value = read(frame);
         let looping = self.looping();
         if looping && self.crossfade > 0.0 && self.loop_mode != LoopMode::Alternate {
             let from = self.loop_end - self.crossfade;
@@ -353,7 +366,7 @@ impl Voice {
                 // The last frame before the wrap is all the audio before the loop.
                 let t = ((self.position - from + 1.0) / self.crossfade) as f32;
                 let length = self.loop_end - self.loop_start;
-                let other = sample.read_level(self.frame_of(self.position - length), self.level);
+                let other = read(self.frame_of(self.position - length));
                 let (out, into) = ((1.0 - t).max(0.0).sqrt(), t.min(1.0).sqrt());
                 value = std::array::from_fn(|c| value[c] * out + other[c] * into);
             }
@@ -435,6 +448,8 @@ pub struct Runtime {
     random: Random,
     clock: u64,
     solo: bool,
+    /// Voices left for the wide pass this frame.
+    wide: bool,
     /// Counts each pad's notes, so an editor can flash it.
     pub hits: Vec<u32>,
 }
@@ -451,6 +466,7 @@ impl Runtime {
             random: Random(0x5341_4d50_4c45_5231),
             clock: 0,
             solo: false,
+            wide: false,
             hits: Vec::new(),
         }
     }
@@ -774,7 +790,6 @@ impl Runtime {
             curves: zone.fade_curve,
             base,
             step: base,
-            level: 0,
             zone_gain: zone.gain + fast::db(level.max(1e-6)),
             zone_pan: zone.pan,
             gains: [1.0; 2],
@@ -885,7 +900,41 @@ impl Runtime {
                 voice.sweep.advance(CONTROL);
             }
             voice.countdown -= 1;
-            match voice.render(kill_step) {
+            if voice.mip.is_wide() {
+                // A field, not a local: a flag in a register made the flat
+                // voices' reads shuffle theirs.
+                self.wide = true;
+                continue;
+            }
+            match voice.render::<false>(kill_step) {
+                Some(frame) => {
+                    let target = match self.pads.get(voice.pad) {
+                        Some(map) if map.routed => &mut self.sends[voice.pad],
+                        _ => &mut mix,
+                    };
+                    target[0] += frame[0];
+                    target[1] += frame[1];
+                }
+                None => {
+                    voice.active = false;
+                }
+            }
+        }
+        if self.wide {
+            self.wide = false;
+            mix = self.render_wide(kill_step, mix);
+        }
+        mix
+    }
+    /// The voices a wide kernel reads, after the others: in their loop the
+    /// wide kernels' code would slow every flat read.
+    #[inline(never)]
+    fn render_wide(&mut self, kill_step: f32, mut mix: Stereo) -> Stereo {
+        for voice in &mut self.voices {
+            if !voice.active || !voice.mip.is_wide() {
+                continue;
+            }
+            match voice.render::<true>(kill_step) {
                 Some(frame) => {
                     let target = match self.pads.get(voice.pad) {
                         Some(map) if map.routed => &mut self.sends[voice.pad],

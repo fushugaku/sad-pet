@@ -995,15 +995,6 @@ impl SampleBuffer {
         self.read_region_mip(position, self.mip_for_rate(rate, antialiasing), range)
     }
 
-    pub(crate) fn read_region_level(
-        &self,
-        position: f64,
-        level: usize,
-        range: &std::ops::Range<usize>,
-    ) -> Stereo {
-        self.read_region_mip(position, Mip::flat(level), range)
-    }
-
     pub(crate) fn read_region_mip(
         &self,
         position: f64,

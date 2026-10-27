@@ -3662,7 +3662,7 @@ impl Engine {
             .map_or(&*self.sample, |i| &i.sample);
         // Loop invariants, hoisted out of the per-grain path: default fades
         // return a gain of exactly 1.0, and a whole-file region reads the mip
-        // level directly, as read_region_level would decide for every grain.
+        // level directly, as read_region_mip would decide for every grain.
         let fading = file_source && self.fades != Fades::default();
         let antialiasing = self.preset.params.antialiasing;
         let whole_file = !source_effects && range.start == 0 && range.end == sample.len();
