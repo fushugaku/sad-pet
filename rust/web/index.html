@@ -569,6 +569,16 @@
             <label class="check"
               ><input id="antialias" type="checkbox" checked />Anti-alias</label
             >
+            <label
+              id="grain-quality-field"
+              class="history-buffer"
+              title="How this device's grains read between frames. High: pitched-up grains get kernels that keep what lies above the new Nyquist from folding back. Eco: every grain reads like an unpitched one, lighter on the CPU when pitched up, but the top folds back. Exports always render High."
+              hidden
+              >Reads<select id="grain-quality" aria-label="Grain read quality">
+                <option value="high">High</option>
+                <option value="eco">Eco</option>
+              </select></label
+            >
             <button
               id="grain-advanced"
               class="mode-toggle"

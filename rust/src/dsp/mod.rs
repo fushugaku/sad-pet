@@ -58,6 +58,35 @@ const _: () = assert!(
     MAX_GRAINS == u128::BITS as usize,
     "one occupancy bit per grain slot"
 );
+/// How grains read between frames, a CPU choice of the device rather than of
+/// a preset. High weighs grains that step faster than their mip level's
+/// frames with the wide kernels; Eco reads every grain with the flat kernel,
+/// as before them, so pitched-up grains cost no more but fold back again.
+/// Grains take it when they start.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GrainQuality {
+    #[default]
+    High,
+    Eco,
+}
+static ECO_GRAINS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Set how every engine in this process reads the grains it starts next.
+pub fn set_grain_quality(quality: GrainQuality) {
+    ECO_GRAINS.store(
+        quality == GrainQuality::Eco,
+        std::sync::atomic::Ordering::Relaxed,
+    );
+}
+pub fn grain_quality() -> GrainQuality {
+    if ECO_GRAINS.load(std::sync::atomic::Ordering::Relaxed) {
+        GrainQuality::Eco
+    } else {
+        GrainQuality::High
+    }
+}
+
 /// Voice 0 is the free voice; notes take the other 32, so long releases
 /// overlap under fast sequences before a tail is stolen.
 const VOICES: usize = 33;
@@ -2562,7 +2591,10 @@ impl Engine {
             None => self.group_grains.release(slot),
         }
         self.live_grains |= 1 << slot;
-        let mip = self.source_sample().mip_for_rate(rate, true);
+        let mip = match grain_quality() {
+            GrainQuality::High => self.source_sample().mip_for_rate(rate, true),
+            GrainQuality::Eco => Mip::flat(self.source_sample().level_for_rate(rate, true)),
+        };
         if mip.is_wide() {
             self.wide_grains |= 1 << slot;
         } else {

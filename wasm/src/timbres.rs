@@ -566,6 +566,16 @@ impl Registry {
         if path == "/api/clock" {
             return self.clock_command(data);
         }
+        if path == "/api/interpolation" {
+            // The device's playback choice: the engines of this instance only,
+            // so offline renders in other instances keep High.
+            if !data.is_null() {
+                let quality = serde_json::from_value(data["quality"].clone())
+                    .map_err(|_| "Choose High or Eco grain reads")?;
+                sad_pet::dsp::set_grain_quality(quality);
+            }
+            return Ok(json!({ "quality": sad_pet::dsp::grain_quality() }));
+        }
         if path == "/api/midi-bytes" && !data.is_null() {
             // Each parser keeps running status across packets; filtering follows decoding.
             for part in &mut self.parts {

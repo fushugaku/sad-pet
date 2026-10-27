@@ -66,6 +66,31 @@ function notify(message, persistent = false) {
   if (!persistent)
     noticeTimer = setTimeout(() => ($("notice").hidden = true), 6500);
 }
+// How the browser engine's grains read between frames: this device's CPU
+// choice, kept in localStorage rather than in presets or scenes. Offline
+// renders run in another engine instance and keep High.
+function grainQuality() {
+  if (!window.sadPetAudio) return;
+  const select = $("grain-quality");
+  try {
+    select.value =
+      localStorage.getItem("sad-pet-grain-quality") === "eco" ? "eco" : "high";
+  } catch {
+    select.value = "high";
+  }
+  $("grain-quality-field").hidden = false;
+  const apply = () =>
+    api("/api/interpolation", { quality: select.value }).catch((error) =>
+      notify(error.message),
+    );
+  select.onchange = () => {
+    try {
+      localStorage.setItem("sad-pet-grain-quality", select.value);
+    } catch {}
+    apply();
+  };
+  apply();
+}
 async function api(path, data, headers) {
   const response = await (window.sadPetFetch || window.fetch)(
     path,
@@ -5187,6 +5212,7 @@ function bind() {
   sliderMenu($("mix"), "mix", "Dry / wet");
   sliderMenu($("volume"), "master_volume", "Output volume");
   $("antialias").onchange = (e) => setParam("antialiasing", e.target.checked);
+  grainQuality();
   $("loop-one-bar").onchange = (e) =>
     setParam("loop_one_bar", e.target.checked);
   for (let note = 0; note < 128; note++)
