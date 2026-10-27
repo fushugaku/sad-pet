@@ -132,12 +132,13 @@ export class BrowserBackend {
     );
     this.vocal.onmessage = (message) => this.vocalMessage(message);
     // Browsers with WebAssembly tail calls load sad_pet.tc.wasm when it was
-    // built (build.py --tail-call; build.py blanks this URL otherwise): the
-    // same samples with less firmware dispatch. The optional SIMD engine
-    // (build.py --simd) measured slower in V8 and is not requested.
+    // built (build.py --tail-call), those with SIMD sad_pet.simd.wasm
+    // (build.py --simd), which weighs grain reads four taps at a time; both
+    // render the same samples, and build.py blanks the URL of one it did not
+    // build.
     const module = await compileEngine(
       new URL("./sad_pet.wasm", import.meta.url),
-      undefined,
+      new URL("./sad_pet.simd.wasm", import.meta.url),
       new URL("./sad_pet.tc.wasm", import.meta.url),
     );
     await Promise.all([

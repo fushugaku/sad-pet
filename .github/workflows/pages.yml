@@ -33,7 +33,7 @@ jobs:
           cargo test -p sad-pet-voice --release --locked
           cargo clippy -p sad-pet-voice --all-targets --features cli --locked -- -D warnings
       - name: Build the standalone site
-        run: python3 wasm/build.py
+        run: python3 wasm/build.py --simd
       - name: Exercise the compiled audio engine
         run: |
           node wasm/test.mjs
@@ -41,6 +41,7 @@ jobs:
           node wasm/test-telemetry.mjs
           node wasm/test-loader.mjs
           node wasm/test-tailcall.mjs
+          node wasm/test-simd.mjs
           node wasm/test-resynth.mjs
           node wasm/test-filters.mjs
           node wasm/test-imported.mjs
