@@ -67,9 +67,10 @@ pub struct RealtimeView {
     pub chord_len: usize,
     pub step_entry: Option<usize>,
     pub step_edits: [Option<crate::performance::Step>; 16],
-    /// A Rack's Sample, Synth and Drums chains, loudest since the last view.
+    /// A Rack's source chains (`rack::STRIP_SOURCES`), loudest since the
+    /// last view.
     #[serde(default)]
-    pub rack_peaks: [f32; 3],
+    pub rack_peaks: [f32; crate::rack::STRIPS],
 }
 
 impl Default for RealtimeView {
@@ -120,7 +121,7 @@ impl Default for RealtimeView {
             chord_len: 0,
             step_entry: None,
             step_edits: [None; 16],
-            rack_peaks: [0.0; 3],
+            rack_peaks: [0.0; crate::rack::STRIPS],
         }
     }
 }

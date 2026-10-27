@@ -18,8 +18,15 @@ fn pad_label(index: usize) -> String {
     format!("{bank}{:02}", index % sampler::BANK_PADS + 1)
 }
 
+/// A Sampler timbre, or a Rack with a Sampler module: it has a kit, a pool
+/// and Pad FX timbres.
+pub(super) fn plays_kit(part: &super::timbres::Part) -> bool {
+    matches!(part.meta.kind, Kind::Sampler | Kind::Rack)
+        && part.host.engine.preset.sampler.is_some()
+}
+
 impl super::timbres::Registry {
-    /// Each Sampler, its Pad FX timbres and their pads: (owner, chain, pad).
+    /// Each kit, its Pad FX timbres and their pads: (owner, chain, pad).
     pub fn chain_links(&self) -> Vec<(usize, usize, u32)> {
         let mut links = Vec::new();
         for (c, part) in self.parts.iter().enumerate() {
@@ -29,7 +36,7 @@ impl super::timbres::Registry {
             if let Some(o) = self
                 .parts
                 .iter()
-                .position(|p| Some(p.meta.id) == part.meta.owner && p.meta.kind == Kind::Sampler)
+                .position(|p| Some(p.meta.id) == part.meta.owner && plays_kit(p))
             {
                 links.push((o, c, part.meta.pad));
             }
@@ -40,7 +47,7 @@ impl super::timbres::Registry {
     pub fn sync_sampler_routes(&mut self) {
         let links = self.chain_links();
         for (o, part) in self.parts.iter_mut().enumerate() {
-            if part.meta.kind == Kind::Sampler {
+            if plays_kit(part) {
                 let routes: Vec<u32> = links.iter().filter(|l| l.0 == o).map(|l| l.2).collect();
                 part.host.engine.set_sampler_routes(&routes);
             }
@@ -50,26 +57,27 @@ impl super::timbres::Registry {
     /// Returns whether any went.
     pub fn prune_chains(&mut self) -> bool {
         let mut seen = std::collections::BTreeSet::new();
-        let keep: Vec<bool> =
-            self.parts
-                .iter()
-                .map(|part| {
-                    if part.meta.kind != Kind::PadFx {
-                        return true;
-                    }
-                    let owner = self.parts.iter().find(|p| {
-                        Some(p.meta.id) == part.meta.owner && p.meta.kind == Kind::Sampler
-                    });
-                    owner.is_some_and(|o| {
-                        o.host
-                            .engine
-                            .preset
-                            .sampler
-                            .as_ref()
-                            .is_some_and(|s| s.pad(part.meta.pad).is_some())
-                    }) && seen.insert((part.meta.owner, part.meta.pad))
-                })
-                .collect();
+        let keep: Vec<bool> = self
+            .parts
+            .iter()
+            .map(|part| {
+                if part.meta.kind != Kind::PadFx {
+                    return true;
+                }
+                let owner = self
+                    .parts
+                    .iter()
+                    .find(|p| Some(p.meta.id) == part.meta.owner && plays_kit(p));
+                owner.is_some_and(|o| {
+                    o.host
+                        .engine
+                        .preset
+                        .sampler
+                        .as_ref()
+                        .is_some_and(|s| s.pad(part.meta.pad).is_some())
+                }) && seen.insert((part.meta.owner, part.meta.pad))
+            })
+            .collect();
         if keep.iter().all(|k| *k) {
             return false;
         }
@@ -97,7 +105,7 @@ impl super::timbres::Registry {
             .preset
             .sampler
             .as_deref()
-            .filter(|_| owner.meta.kind == Kind::Sampler)
+            .filter(|_| plays_kit(owner))
             .ok_or("Select a Sampler timbre")?;
         let position = settings
             .pads
@@ -160,7 +168,7 @@ impl super::timbres::Registry {
         }
         let part = &mut self.parts[index];
         let sampler = |part: &super::timbres::Part| {
-            if part.meta.kind == Kind::Sampler && part.host.engine.preset.sampler.is_some() {
+            if plays_kit(part) {
                 Ok(())
             } else {
                 Err("Select a Sampler timbre".to_string())
@@ -243,7 +251,7 @@ pub extern "C" fn sad_sampler_sample(part: u32, id_length: usize) -> u32 {
             let target = r
                 .parts
                 .iter_mut()
-                .find(|p| p.meta.id == part && p.meta.kind == Kind::Sampler)
+                .find(|p| p.meta.id == part && plays_kit(p))
                 .ok_or("Unknown Sampler timbre")?;
             let pool = target
                 .host
@@ -376,7 +384,7 @@ pub extern "C" fn sad_sampler_bounce() -> u32 {
             let owner = r
                 .parts
                 .iter()
-                .find(|p| p.meta.id == part && p.meta.kind == Kind::Sampler)
+                .find(|p| p.meta.id == part && plays_kit(p))
                 .ok_or("Unknown Sampler timbre")?;
             let settings = owner
                 .host

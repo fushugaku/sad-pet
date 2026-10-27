@@ -21,6 +21,12 @@ pub enum Module {
     Synth,
     /// The drum machine with its own pattern; it plays without notes.
     Drums,
+    /// A kit of sample pads, played by the notes and by pad tracks. Its pads
+    /// have their own envelopes, so the chain is one stream, as the Drums'.
+    Sampler,
+    /// Sings its score with the song transport; its phrases render off the
+    /// audio thread and the host hands the voice in.
+    Vocal,
     /// The one-effect Source FX slot.
     SourceFx,
     /// Grains of the Sample right above it, or of a live history of its chain.
@@ -38,10 +44,12 @@ pub enum Module {
     Mixer,
 }
 impl Module {
-    pub const ALL: [Module; 10] = [
+    pub const ALL: [Module; 12] = [
         Module::Sample,
         Module::Synth,
         Module::Drums,
+        Module::Sampler,
+        Module::Vocal,
         Module::SourceFx,
         Module::Grains,
         Module::Resynth,
@@ -51,7 +59,10 @@ impl Module {
         Module::Mixer,
     ];
     pub fn source(self) -> bool {
-        matches!(self, Module::Sample | Module::Synth | Module::Drums)
+        matches!(
+            self,
+            Module::Sample | Module::Synth | Module::Drums | Module::Sampler | Module::Vocal
+        )
     }
     /// The section tap (Output row) this module ends in, if any.
     pub fn stage(self) -> Option<Stage> {
@@ -70,6 +81,8 @@ impl Module {
             Module::Sample => "Sample",
             Module::Synth => "Synth",
             Module::Drums => "Drums",
+            Module::Sampler => "Sampler",
+            Module::Vocal => "Vocal",
             Module::SourceFx => "Insert FX",
             Module::Grains => "Grain engine",
             Module::Resynth => "Resynth",
@@ -160,7 +173,14 @@ impl Strip {
 }
 
 /// The chains with a Mixer strip, in strip order.
-pub const STRIP_SOURCES: [Module; 3] = [Module::Sample, Module::Synth, Module::Drums];
+pub const STRIP_SOURCES: [Module; STRIPS] = [
+    Module::Sample,
+    Module::Synth,
+    Module::Drums,
+    Module::Sampler,
+    Module::Vocal,
+];
+pub const STRIPS: usize = 5;
 /// A strip's numeric controls, in host order.
 pub const STRIP_FIELDS: [(&str, &str, f32, f32, f32); 4] = [
     ("level", "level", 0.0, 2.0, 1.0),
@@ -169,13 +189,15 @@ pub const STRIP_FIELDS: [(&str, &str, f32, f32, f32); 4] = [
     ("solo", "solo", 0.0, 1.0, 0.0),
 ];
 
-/// The Mixer strips of the three source chains.
+/// The Mixer strips of the source chains.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Strips {
     pub sample: Strip,
     pub synth: Strip,
     pub drums: Strip,
+    pub sampler: Strip,
+    pub vocal: Strip,
 }
 impl Strips {
     pub fn get(&self, source: Module) -> Strip {
@@ -183,6 +205,8 @@ impl Strips {
             Module::Sample => self.sample,
             Module::Synth => self.synth,
             Module::Drums => self.drums,
+            Module::Sampler => self.sampler,
+            Module::Vocal => self.vocal,
             _ => Strip::default(),
         }
     }
@@ -194,7 +218,9 @@ impl Strips {
         match index {
             0 => &mut self.sample,
             1 => &mut self.synth,
-            _ => &mut self.drums,
+            2 => &mut self.drums,
+            3 => &mut self.sampler,
+            _ => &mut self.vocal,
         }
     }
     pub fn get_mut(&mut self, source: Module) -> Option<&mut Strip> {
@@ -202,6 +228,8 @@ impl Strips {
             Module::Sample => Some(&mut self.sample),
             Module::Synth => Some(&mut self.synth),
             Module::Drums => Some(&mut self.drums),
+            Module::Sampler => Some(&mut self.sampler),
+            Module::Vocal => Some(&mut self.vocal),
             _ => None,
         }
     }
@@ -246,7 +274,7 @@ impl Settings {
             seen.push(slot.module);
             first
         });
-        for source in [Module::Sample, Module::Synth, Module::Drums] {
+        for source in STRIP_SOURCES {
             if let Some(strip) = self.strips.get_mut(source) {
                 strip.sanitize();
             }
@@ -338,11 +366,17 @@ impl Plan {
                 mixed: false,
             };
             match slot.module {
-                Module::Sample | Module::Synth | Module::Drums => {
+                Module::Sample
+                | Module::Synth
+                | Module::Drums
+                | Module::Sampler
+                | Module::Vocal => {
                     chain = Chain::Source(slot.module);
                     step.chain = chain;
-                    // Off, a voiced source has no notes for the modules under it.
-                    per_note = slot.module != Module::Drums && slot.enabled;
+                    // Off, a voiced source has no notes for the modules under it;
+                    // the stream sources have none of the notes' own.
+                    per_note =
+                        matches!(slot.module, Module::Sample | Module::Synth) && slot.enabled;
                     step.per_note = per_note;
                     step.mixed = mixer.is_some_and(|m| m > i);
                 }

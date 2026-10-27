@@ -8,7 +8,7 @@ use super::{
 };
 use crate::{
     preset::FilterPosition,
-    rack::{Chain, Module, Plan, STRIP_SOURCES as SOURCES, Settings, Strip, Strips},
+    rack::{Chain, Module, Plan, STRIP_SOURCES as SOURCES, STRIPS, Settings, Strip, Strips},
     taps::Stage,
 };
 
@@ -28,10 +28,13 @@ pub(super) struct Runtime {
     /// the chain as one.
     pub(super) filters_per_note: bool,
     /// The strips' gains ramp to their targets so a fader never clicks.
-    targets: [Stereo; 3],
-    gains: [Stereo; 3],
+    targets: [Stereo; STRIPS],
+    gains: [Stereo; STRIPS],
     /// Each chain's loudest sample since the host last read it.
-    peaks: [f32; 3],
+    peaks: [f32; STRIPS],
+    /// The Sampler and Vocal modules are in the rack.
+    kit: bool,
+    vocal: bool,
 }
 impl Runtime {
     pub(super) fn new(settings: &Settings, previous: Option<&Runtime>) -> Self {
@@ -50,11 +53,13 @@ impl Runtime {
                 .any(|step| step.module == Module::Filters && step.per_note),
             targets,
             gains: previous.map_or(targets, |p| p.gains),
-            peaks: previous.map_or([0.0; 3], |p| p.peaks),
+            peaks: previous.map_or([0.0; STRIPS], |p| p.peaks),
+            kit: settings.has(Module::Sampler),
+            vocal: settings.has(Module::Vocal),
         }
     }
     /// A solo keeps the soloed chains among those that reach the Mixer.
-    fn targets(plan: &Plan, strips: &Strips) -> [Stereo; 3] {
+    fn targets(plan: &Plan, strips: &Strips) -> [Stereo; STRIPS] {
         let soloing = SOURCES
             .iter()
             .any(|&s| strips.get(s).solo && plan.iter().any(|step| step.module == s && step.mixed));
@@ -82,15 +87,19 @@ struct Flow {
 }
 
 impl Engine {
-    /// The loudest sample of the Sample, Synth and Drums chains since the
+    /// The loudest sample of each source's chain (`STRIP_SOURCES`) since the
     /// peaks were last cleared, after their Mixer strips.
-    pub fn rack_peaks(&self) -> Option<[f32; 3]> {
+    pub fn rack_peaks(&self) -> Option<[f32; STRIPS]> {
         self.rack.as_ref().map(|rack| rack.peaks)
     }
     pub fn clear_rack_peaks(&mut self) {
         if let Some(rack) = &mut self.rack {
-            rack.peaks = [0.0; 3];
+            rack.peaks = [0.0; STRIPS];
         }
+    }
+    /// What a Rack's Pad FX timbres return, for its Sampler in the next frame.
+    pub fn return_pads(&mut self, frame: Stereo) {
+        self.pad_return = frame;
     }
 
     /// The notes' signals summed through their VCA.
@@ -112,7 +121,8 @@ impl Engine {
         }
     }
 
-    pub(super) fn process_rack_frame(&mut self) -> Stereo {
+    /// `input` is the voice of a Vocal module, which the host renders.
+    pub(super) fn process_rack_frame(&mut self, input: Stereo) -> Stereo {
         self.taps.begin_frame();
         let Some(rack) = &mut self.rack else {
             return [0.0; 2];
@@ -128,6 +138,7 @@ impl Engine {
                 };
             }
         }
+        let streams = (rack.kit, rack.vocal);
         if self.playing {
             self.tick_events();
         }
@@ -135,8 +146,27 @@ impl Engine {
         let input_gain = self.input_gain;
         let bypass = self.bypass;
         let source_rate = self.sample.sample_rate as f64 / self.sample_rate as f64;
-        // The sources render first; the drums keep their clock while off.
+        // The sources render first; the drums keep their clock while off,
+        // and the kit's voices play on.
         let drums = self.drums.as_mut().map_or([0.0; 2], |d| d.frame());
+        let kit = if streams.0 {
+            let pads = self.render_sampler();
+            let returned = std::mem::take(&mut self.pad_return);
+            std::array::from_fn(|c| pads[c] + returned[c])
+        } else {
+            [0.0; 2]
+        };
+        let vocal = if streams.1 {
+            input.map(|x| {
+                if x.is_finite() {
+                    x.clamp(-16.0, 16.0)
+                } else {
+                    0.0
+                }
+            })
+        } else {
+            [0.0; 2]
+        };
         let file = if self
             .preset
             .rack
@@ -153,7 +183,12 @@ impl Engine {
         } else {
             [0.0; 2]
         };
-        let level = (file[0].abs().max(file[1].abs())).max(drums[0].abs().max(drums[1].abs()));
+        let mut level = (file[0].abs().max(file[1].abs())).max(drums[0].abs().max(drums[1].abs()));
+        if streams != (false, false) {
+            for frame in [kit, vocal] {
+                level = level.max(frame[0].abs().max(frame[1].abs()));
+            }
+        }
         self.follower = fast::flush(
             self.follower
                 + (level - self.follower)
@@ -273,8 +308,13 @@ impl Engine {
                         }
                     }
                 }
-                Module::Drums => {
-                    flow.source = drums.map(|x| x * input_gain);
+                Module::Drums | Module::Sampler | Module::Vocal => {
+                    let stream = match step.module {
+                        Module::Drums => drums,
+                        Module::Sampler => kit,
+                        _ => vocal,
+                    };
+                    flow.source = stream.map(|x| x * input_gain);
                     if on {
                         flow.signal = flow.source;
                     }

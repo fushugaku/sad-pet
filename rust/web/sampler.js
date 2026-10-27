@@ -89,10 +89,13 @@
     kit() {
       return this.hooks.read()?.sampler || null;
     }
+    /** The timbre whose kit this is: a Sampler, or a Rack with a Sampler
+     * module where the host plays kits. */
     part() {
       const context = this.hooks.context();
       const active = context?.timbres?.find((t) => t.id === context.active);
-      return active?.kind === "sampler" ? active.id : null;
+      if (active?.kind === "sampler") return active.id;
+      return active?.kind === "rack" && this.kit() && this.hooks.features?.()?.sampler ? active.id : null;
     }
     pad() {
       const kit = this.kit();

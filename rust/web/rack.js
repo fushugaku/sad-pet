@@ -34,6 +34,10 @@
       hint: "Up to four oscillators per note" },
     { key: "drums", label: "Drums", group: "Sources",
       hint: "Drum machine that plays its own pattern" },
+    { key: "sampler", label: "Sampler", group: "Sources",
+      hint: "Pads of samples, played by the notes and pad tracks" },
+    { key: "vocal", label: "Vocal", group: "Sources",
+      hint: "Sings its score with the song transport" },
     { key: "grains", label: "Grain engine", group: "Processing",
       hint: "Grains of the Sample right above, or of the sound above" },
     { key: "filters", label: "Filters", group: "Processing",
@@ -47,8 +51,12 @@
       hint: "Where the chains above meet: level, pan, mute, solo" },
   ];
   const INFO = Object.fromEntries(MODULES.map((m) => [m.key, m]));
-  const SOURCES = ["sample", "synth", "drums"];
-  const CHAINS = { sample: "Sample", synth: "Synth", drums: "Drums", mix: "Mix" };
+  /** The sources in Mixer strip order (rack::STRIP_SOURCES), as the host's
+   * meters list them. */
+  const SOURCES = ["sample", "synth", "drums", "sampler", "vocal"];
+  /** Sources whose settings a removed module leaves for its undo. */
+  const KEPT = ["drums", "synth", "sampler", "vocal"];
+  const CHAINS = { sample: "Sample", synth: "Synth", drums: "Drums", sampler: "Sampler", vocal: "Vocal", mix: "Mix" };
   /** The section tap (Output row) of each processor. */
   const STAGES = { source_fx: "source", grains: "grains", resynth: "resynth",
     pre_fx: "pre_fx", filters: "filters", post_fx: "post_fx" };
@@ -67,7 +75,8 @@
       const step = { module: slot.module, enabled, chain, perNote: false, readsFile: false, mixed: false };
       if (SOURCES.includes(slot.module)) {
         chain = step.chain = slot.module;
-        perNote = step.perNote = slot.module !== "drums" && enabled;
+        // Drums, kit and voice are streams with no notes of their own.
+        perNote = step.perNote = (slot.module === "sample" || slot.module === "synth") && enabled;
         step.mixed = mixer > i;
       } else if (slot.module === "mixer") {
         chain = step.chain = "mix";
@@ -94,7 +103,7 @@
        * adding the module again brings its sound back. */
       this.stash = new Map();
       this.layout = "";
-      this.meterLevels = [0, 0, 0];
+      this.meterLevels = SOURCES.map(() => 0);
       this.area = el("section", "rack-area");
       this.area.id = "rack";
       this.area.setAttribute("aria-label", "Rack");
@@ -110,9 +119,6 @@
       this.foldAll.onclick = () => this.toggleAll();
       this.addButton = this.area.querySelector(".rack-add");
       this.addButton.onclick = () => this.openMenu(this.addButton, null);
-      for (const key of SOURCES)
-        this.empty.querySelector(".rack-empty-sources").append(
-          button(`+ ${INFO[key].label}`, `Add ${INFO[key].label}`, () => this.add(key, 0)));
       $("recording-result-slot").after(this.area);
 
       // The Sample module holds the waveform panel; the Mixer is the rack's own.
@@ -127,6 +133,8 @@
         sample: this.sampleCard,
         synth: $("synth-engine"),
         drums: $("drum-machine"),
+        sampler: $("sampler-editor"),
+        vocal: $("vocal-editor"),
         source_fx: tap("source"),
         grains: $("grain-engine"),
         resynth: tap("resynth"),
@@ -138,6 +146,21 @@
       // Each section returns to where the page keeps it when a timbre that
       // is not a Rack opens.
       this.homes = new Map();
+      // Sampler and Vocal are their editors, where the host plays a Rack's
+      // kit or sings its score; elsewhere a saved module shows as a card
+      // that says so, and the menu leaves it out.
+      this.unavailable = new Set();
+      for (const [key, feature] of [["sampler", "sampler"], ["vocal", "rack_vocal"]]) {
+        const ready = !!this.sections[key]?.querySelector(":scope > .section-heading h2");
+        if (ready && hooks.features?.()?.[feature]) continue;
+        this.unavailable.add(key);
+        const card = this.card(key, INFO[key].label, "rack-unavailable");
+        card.append(el("p", "muted rack-unavailable-note", `A Rack's ${key === "sampler" ? "kit plays" : "voice sings"} in the browser version for now; here this module is silent.`));
+        this.sections[key] = card;
+      }
+      for (const key of SOURCES.filter((k) => !this.unavailable.has(k)))
+        this.empty.querySelector(".rack-empty-sources").append(
+          button(`+ ${INFO[key].label}`, `Add ${INFO[key].label}`, () => this.add(key, 0)));
       for (const [key, section] of Object.entries(this.sections)) {
         section.dataset.module = key;
         if (section.isConnected) {
@@ -154,7 +177,7 @@
       this.pattern = el("section", "bank rack-pattern");
       this.pattern.setAttribute("aria-label", "Drum pattern");
       this.pattern.hidden = true;
-      this.pattern.innerHTML = `<div class="section-heading"><h2>Drum pattern <span>DXM-088</span></h2><span class="rack-pattern-note muted">The Drums module plays it with the transport; notes play the Synth and Sample</span></div><div class="rack-pattern-body"></div>`;
+      this.pattern.innerHTML = `<div class="section-heading"><h2>Drum pattern <span>DXM-088</span></h2><span class="rack-pattern-note muted">The Drums module plays it with the transport; notes play the Synth, Sample and Sampler</span></div><div class="rack-pattern-body"></div>`;
       this.patternBody = this.pattern.querySelector(".rack-pattern-body");
       document.querySelector(".performance-section").before(this.pattern);
       this.menu = el("div", "rack-menu");
@@ -474,6 +497,15 @@
           const set = tracks.filter((t) => t.steps?.some((s) => s.velocity > 0)).length;
           return `${set} of ${tracks.length} tracks play`;
         }
+        case "sampler": {
+          const pads = preset.sampler?.pads ?? [];
+          const set = pads.filter((p) => p.zones?.length || p.bounce).length;
+          return `${set} of ${pads.length} pads hold samples`;
+        }
+        case "vocal": {
+          const n = preset.vocal?.score?.notes?.length ?? 0;
+          return `${n} ${n === 1 ? "note" : "notes"}`;
+        }
         case "grains":
           return `${Math.round((preset.params.mix ?? 1) * 100)}% wet`;
         case "filters":
@@ -676,8 +708,7 @@
       }
       const preset = this.preset();
       const stash = this.stash.get(this.timbre());
-      if (key === "drums" && stash?.drums) preset.drums = stash.drums;
-      if (key === "synth" && stash?.synth) preset.synth = stash.synth;
+      if (KEPT.includes(key) && stash?.[key]) preset[key] = stash[key];
       const source = SOURCES.includes(key) && key !== "sample";
       this.hideUndo();
       this.edit((list) => list.splice(index, 0, { module: key, enabled: true }), {
@@ -694,16 +725,15 @@
       const slot = modules[index];
       const timbre = this.timbre();
       const stash = this.stash.get(timbre) ?? {};
-      if (key === "drums") stash.drums = structuredClone(preset.drums);
-      if (key === "synth") stash.synth = structuredClone(preset.synth);
+      const kept = KEPT.includes(key);
+      if (kept) stash[key] = structuredClone(preset[key]);
       this.stash.set(timbre, stash);
-      this.edit((list) => list.splice(index, 1), { reload: key === "drums" || key === "synth" });
+      this.edit((list) => list.splice(index, 1), { reload: kept });
       this.showUndo(`${INFO[key].label} removed`, () => {
         if (this.timbre() !== timbre || this.modules().some((m) => m.module === key)) return;
-        if (key === "drums") this.preset().drums = stash.drums;
-        if (key === "synth") this.preset().synth = stash.synth;
+        if (kept) this.preset()[key] = stash[key];
         this.edit((list) => list.splice(Math.min(index, list.length), 0, slot), {
-          reload: key === "drums" || key === "synth",
+          reload: kept,
           focus: () => this.reveal(key, true),
         });
       });
@@ -751,7 +781,7 @@
       const present = new Set(this.modules().map((m) => m.module));
       this.menu.replaceChildren();
       let group = "";
-      for (const module of MODULES) {
+      for (const module of MODULES.filter((m) => !this.unavailable.has(m.key))) {
         if (module.group !== group) {
           group = module.group;
           this.menu.append(el("div", "rack-menu-group", group));
