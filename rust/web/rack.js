@@ -368,16 +368,6 @@
       link.classList.add(`rack-link-${kind}`);
       link.dataset.chain = kind === "merge" ? "mix" : next.chain ?? "none";
       link.append(el("span", "rack-wire"));
-      if (kind === "merge") {
-        const chains = steps.filter((s) => s.mixed).map((s) => s.module);
-        const label = el("span", "rack-link-label");
-        label.append(...chains.map((c) => {
-          const dot = el("i", "rack-tag", CHAINS[c]);
-          dot.dataset.chain = c;
-          return dot;
-        }), document.createTextNode(chains.length ? " meet in the Mixer" : "No chain reaches the Mixer yet"));
-        link.append(label);
-      }
       const insert = button("+", `Add a module between ${labelOf(previous.key)} and ${labelOf(next.key)}`,
         null, "rack-insert");
       insert.onclick = () => this.openMenu(insert, index);
@@ -385,17 +375,11 @@
       return link;
     }
 
-    /** Where the rack ends: the chains that reach the output. */
+    /** Where the rack ends: the output, which every source reaches,
+     * straight or through the Mixer. */
     buildOut(steps) {
       this.out.replaceChildren();
       if (!steps.length) return;
-      const reaching = [];
-      let mixed = false;
-      for (const step of steps) {
-        if (SOURCES.includes(step.module) && !step.mixed) reaching.push(step.module);
-        if (step.mixed) mixed = true;
-      }
-      if (mixed) reaching.unshift("mix");
       const last = steps[steps.length - 1];
       const tail = el("div", "rack-link rack-link-flow");
       tail.dataset.chain = last.chain ?? "none";
@@ -405,12 +389,8 @@
       tail.append(insert);
       const label = el("div", "rack-out-label");
       label.append(el("strong", "", "Output"));
-      for (const chain of reaching) {
-        const tag = el("i", "rack-tag", CHAINS[chain]);
-        tag.dataset.chain = chain;
-        label.append(tag);
-      }
-      if (!reaching.length) label.append(el("span", "muted", "nothing reaches it yet"));
+      if (!steps.some((s) => SOURCES.includes(s.module)))
+        label.append(el("span", "muted", "nothing reaches it yet"));
       this.out.append(tail, label);
     }
 

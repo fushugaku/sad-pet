@@ -5855,27 +5855,6 @@ input[type="range"] {
 .rack-link-none .rack-wire {
   background: repeating-linear-gradient(180deg, var(--line) 0 4px, transparent 4px 8px);
 }
-.rack-link-merge {
-  height: 40px;
-}
-.rack-link-label {
-  position: absolute;
-  left: 16px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 11px;
-}
-.rack-tag {
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--chain) 14%, transparent);
-  color: var(--chain);
-  font-size: 10px;
-  font-style: normal;
-  letter-spacing: 0.4px;
-}
 .rack-insert {
   width: 24px;
   height: 24px;
