@@ -276,7 +276,8 @@ fn grain_group_controls_append_after_the_macros() {
     let rack = filter2 + 4 * 5 + 8 * 5;
     // Then the Rack EQs: each band's on, frequency, gain and Q, and output.
     let eqs = rack + 3 * 4 + 1 + 2 + 2 * 4 + 3 + 1 + 4;
-    assert_eq!(ids.len(), eqs + 8 * (4 * 8 + 1));
+    // Then L/C/R Converge and Reverse of every FX, Pre FX and Source FX slot.
+    assert_eq!(ids.len(), eqs + 8 * (4 * 8 + 1) + (2 * 12 + 1) * 2);
     assert_eq!(ids[eqs + 1], "rack_eq1_band1_frequency");
     assert_eq!(ids[filter2 + 4 * 5], "lfo1_shape");
     assert_eq!(ids[rack], "rack_sample_level");

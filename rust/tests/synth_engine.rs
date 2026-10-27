@@ -328,8 +328,16 @@ fn synth_controls_append_after_every_other_host_parameter() {
     );
     assert_eq!(later[eqs], "rack_eq1_band1_on");
     assert_eq!(later[eqs + 4 * 8], "rack_eq1_output");
-    assert_eq!(later.len(), eqs + 8 * (4 * 8 + 1));
-    assert_eq!(later[later.len() - 1], "rack_eq8_output");
+    let colors = eqs + 8 * (4 * 8 + 1);
+    assert_eq!(later[colors - 1], "rack_eq8_output");
+    // Then L/C/R Converge and Reverse of every FX, Pre FX and Source FX slot.
+    assert_eq!(later.len(), colors + (2 * 12 + 1) * 2);
+    assert_eq!(
+        later[colors..colors + 3],
+        ["fx1_lcr_converge", "fx1_lcr_reverse", "fx2_lcr_converge"]
+    );
+    assert_eq!(later[colors + 12 * 2], "pre_fx1_lcr_converge");
+    assert_eq!(later[later.len() - 1], "source_fx1_lcr_reverse");
 }
 
 #[test]

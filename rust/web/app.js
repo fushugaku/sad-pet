@@ -3020,6 +3020,8 @@ const COLOR_SCHEMAS = {
     ["lcr_low_damp", "LOW DAMP", percent],
     ["lcr_trim", "TRIM", percent],
     ["lcr_spread", "SPREAD", percent],
+    ["lcr_converge", "CONVERGE", percent],
+    ["lcr_reverse", "REVERSE", percent],
   ],
   mod_delay: [
     [

@@ -27,6 +27,10 @@ pub struct RadiasDelay {
     low_alpha: f32,
     high_state: Stereo,
     low_state: Stereo,
+    /// Where each L/C/R tap's reversed read is in its window, 0..1.
+    reverse_phase: [f64; 3],
+    forward_gain: f32,
+    reverse_gain: f32,
 }
 impl RadiasDelay {
     pub fn new(sample_rate: u32) -> Self {
@@ -58,6 +62,9 @@ impl RadiasDelay {
             low_alpha: 1.0,
             high_state: [0.0; 2],
             low_state: [0.0; 2],
+            reverse_phase: [0.0; 3],
+            forward_gain: 1.0,
+            reverse_gain: 0.0,
         }
     }
     pub(crate) fn has_storage(&self) -> bool {
@@ -74,6 +81,7 @@ impl RadiasDelay {
         self.phase = 0.0;
         self.high_state = [0.0; 2];
         self.low_state = [0.0; 2];
+        self.reverse_phase = [0.0; 3];
         self.times = self.target_times;
         self.initialized = false;
         self.ratio_glide = false;
@@ -135,6 +143,14 @@ impl RadiasDelay {
         };
         self.high_alpha = alpha(18_000.0 * 0.018_f32.powf(high));
         self.low_alpha = alpha(20.0 + 780.0 * low);
+        // REVERSE crossfades the forward echoes into reversed ones at equal power.
+        let reverse = if lcr {
+            s.lcr_reverse.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let angle = reverse * std::f32::consts::FRAC_PI_2;
+        (self.forward_gain, self.reverse_gain) = (angle.cos(), angle.sin());
     }
     fn damp(&mut self, channel: usize, sample: f32, low_amount: f32) -> f32 {
         self.high_state[channel] = fast::flush(
@@ -145,6 +161,37 @@ impl RadiasDelay {
             self.low_state[channel] + self.low_alpha * (high - self.low_state[channel]),
         );
         high - self.low_state[channel] * low_amount
+    }
+    /// The taps as heard with REVERSE: each plays its echoes backwards in
+    /// windows as long as its own time, its reads centred on that time,
+    /// while C feedback keeps repeating forwards. Two heads half a
+    /// window apart crossfade, each silent where its read jumps back. Both
+    /// lines are read, so CONVERGE narrows reversed echoes the same way.
+    fn reversed(&mut self, taps: [Stereo; 3]) -> [Stereo; 3] {
+        let limit = (self.sample_rate * radias_delay::MAX_SECONDS) as f64;
+        std::array::from_fn(|i| {
+            let time = self.times[i];
+            let window = time.min(limit - time).max(1.0);
+            let phase = self.reverse_phase[i];
+            self.reverse_phase[i] = super::sample::wrap_position(phase + 1.0 / window, 1.0);
+            let other = if phase < 0.5 {
+                phase + 0.5
+            } else {
+                phase - 0.5
+            };
+            // A smoothstep of the triangle: the two heads' gains sum to 1.
+            let ramp = 1.0 - (2.0 * phase - 1.0).abs();
+            let gain = (ramp * ramp * (3.0 - 2.0 * ramp)) as f32;
+            let read = |phase: f64| {
+                self.buffer
+                    .read((time + (2.0 * phase - 1.0) * window) as f32)
+            };
+            let (a, b) = (read(phase), read(other));
+            std::array::from_fn(|c| {
+                taps[i][c] * self.forward_gain
+                    + (a[c] * gain + b[c] * (1.0 - gain)) * self.reverse_gain
+            })
+        })
     }
     pub fn process(&mut self, input: Stereo) -> Stereo {
         if self.smooth || self.ratio_glide {
@@ -166,14 +213,35 @@ impl RadiasDelay {
         let mono = (input[0] + input[1]) * 0.5;
         let s = self.settings;
         if self.kind == SaturatorType::LcrDelay {
-            let taps: [f32; 3] = std::array::from_fn(|i| self.buffer.read(self.times[i] as f32)[0]);
-            let tail = self.damp(0, taps[1], s.lcr_low_damp);
-            let write = fast::flush((mono * s.lcr_trim + tail * self.feedback).clamp(-8.0, 8.0));
-            self.buffer.push([write; 2]);
-            let center = taps[1] * s.lcr_center_level * 0.707;
-            let left = taps[0] * s.lcr_left_level + center;
-            let right = taps[2] * s.lcr_right_level + center;
+            // Channel 0 is the line the echoes' mid plays from. Channel 1 takes
+            // the same input, but each pass through C feedback keeps only
+            // 1 - CONVERGE of it, so the side it plays narrows repeat by repeat
+            // and the echoes close in on the centre. At 0 both lines match.
+            let taps: [Stereo; 3] = std::array::from_fn(|i| self.buffer.read(self.times[i] as f32));
+            let heard = if self.reverse_gain > 0.0 {
+                self.reversed(taps)
+            } else {
+                taps
+            };
+            let keep = (1.0 - s.lcr_converge).clamp(0.0, 1.0);
+            let write: Stereo = std::array::from_fn(|c| {
+                let tail = self.damp(c, taps[1][c], s.lcr_low_damp);
+                let feedback = if c == 0 {
+                    self.feedback
+                } else {
+                    self.feedback * keep
+                };
+                fast::flush((mono * s.lcr_trim + tail * feedback).clamp(-8.0, 8.0))
+            });
+            self.buffer.push(write);
+            let outputs = |c: usize| {
+                let center = heard[1][c] * s.lcr_center_level * 0.707;
+                let left = heard[0][c] * s.lcr_left_level + center;
+                (left, heard[2][c] * s.lcr_right_level + center)
+            };
+            let (left, right) = outputs(0);
             let mid = (left + right) * 0.5;
+            let (left, right) = outputs(1);
             let side = (left - right) * 0.5 * s.lcr_spread;
             [mid + side, mid - side]
         } else {

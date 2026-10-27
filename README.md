@@ -388,6 +388,10 @@ files move instruments between the web version and the native app and plug-ins.
   a stereo-linked compressor (threshold, ratio, attack, release, knee, makeup and mix).
   Delay **Smooth** allows intermediate note divisions and glides the echo time
   under manual, LFO and envelope control; the readout shows both divisions and milliseconds.
+  L/C/R delay **Converge** narrows each repeat through C Feedback by its amount,
+  so echoes that start wide close in on the centre; at 0 every repeat stays as wide.
+  **Reverse** crossfades into echoes played backwards, each tap in windows as long
+  as its own time, while C Feedback keeps repeating; Converge narrows them too.
   All compressor controls accept LFO, envelope and matrix modulation.
   Each compressor has a live gain reduction meter with a dB readout.
 - RADIAS Waveshaper in either chain: Drive, Hard Clip, Decimator, OctSaw,

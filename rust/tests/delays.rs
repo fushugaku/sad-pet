@@ -362,6 +362,8 @@ fn all_delay_controls_change_the_audio_in_their_clock_mode() {
         (Type::LcrDelay, P::LcrLowDamp),
         (Type::LcrDelay, P::LcrTrim),
         (Type::LcrDelay, P::LcrSpread),
+        (Type::LcrDelay, P::LcrConverge),
+        (Type::LcrDelay, P::LcrReverse),
         (Type::ModDelay, P::ModDelayRatio),
         (Type::ModDelay, P::ModDelayLeftDelay),
         (Type::ModDelay, P::ModDelayRightDelay),
@@ -392,6 +394,140 @@ fn all_delay_controls_change_the_audio_in_their_clock_mode() {
             difference(&audio(&[low], 8000, 24000), &audio(&[high], 8000, 24000)) > 1e-9,
             "{kind:?} {param:?}"
         );
+    }
+}
+
+#[test]
+fn lcr_converge_narrows_each_feedback_pass_towards_the_centre() {
+    // At 120 BPM: R at 1/8, L at 3/16 and C (which feeds back) at 1/4, so
+    // pass n plays R at 0.25 + 0.5n s and L at 0.375 + 0.5n s, apart from C.
+    let sr = 8000;
+    for converge in [0.0, 0.25, 0.5, 0.8] {
+        let mut s = slot(1, Type::LcrDelay);
+        s.settings.lcr_left_level = 1.0;
+        s.settings.lcr_right_level = 1.0;
+        s.settings.lcr_feedback = 0.9;
+        s.settings.lcr_spread = 1.0;
+        s.settings.lcr_converge = converge;
+        let mut p = ColorProcessor::new(sr);
+        p.configure_tempo(s, 120.0);
+        let frames: Vec<_> = (0..sr as usize * 3)
+            .map(|i| p.process(if i == 0 { [1.0; 2] } else { [0.0; 2] }))
+            .collect();
+        // Where an echo peaks, its pan: 1 is hard left, -1 hard right, 0 centre.
+        let pan = |seconds: f32| {
+            let at = (seconds * sr as f32).round() as usize;
+            let peak = (at - 3..at + 4)
+                .max_by(|&a, &b| {
+                    let level = |i: usize| frames[i][0].abs() + frames[i][1].abs();
+                    level(a).total_cmp(&level(b))
+                })
+                .unwrap();
+            let [l, r] = frames[peak];
+            assert!(l + r > 1e-3, "no echo at {seconds} s");
+            (l - r) / (l + r)
+        };
+        for pass in 0..4 {
+            let width = (1.0 - converge).powi(pass);
+            let start = 0.5 * pass as f32;
+            assert!(
+                (pan(start + 0.375) - width).abs() < 1e-3,
+                "{converge} L {pass}"
+            );
+            assert!(
+                (pan(start + 0.25) + width).abs() < 1e-3,
+                "{converge} R {pass}"
+            );
+            assert!(pan(start + 0.5).abs() < 1e-3, "{converge} C {pass}");
+        }
+    }
+}
+
+fn lcr_impulse(s: ColorSlot, sr: u32, input: &[f32], n: usize) -> Vec<Stereo> {
+    let mut p = ColorProcessor::new(sr);
+    p.configure_tempo(s, 120.0);
+    (0..n)
+        .map(|i| p.process([input.get(i).copied().unwrap_or(0.0); 2]))
+        .collect()
+}
+
+#[test]
+fn lcr_reverse_plays_each_echo_backwards_ending_at_its_tap_time() {
+    // A burst that fades out comes back fading in, ending where the
+    // forward echo starts: L at 3/16 note, 3000 frames at 8 kHz.
+    let (sr, at, n) = (8000, 3000, 200);
+    let burst: Vec<f32> = (0..n)
+        .map(|i| (i as f32 * std::f32::consts::TAU / 40.0).sin() * (1.0 - i as f32 / n as f32))
+        .collect();
+    let mut s = slot(1, Type::LcrDelay);
+    s.settings.lcr_left_level = 1.0;
+    s.settings.lcr_center_level = 0.0;
+    s.settings.lcr_right_level = 0.0;
+    s.settings.lcr_feedback = 0.0;
+    s.settings.lcr_spread = 1.0;
+    let energy = |f: &[Stereo]| f.iter().map(|f| f[0] * f[0] + f[1] * f[1]).sum::<f32>();
+    let forward = lcr_impulse(s, sr, &burst, at + 2 * n);
+    assert!(energy(&forward[at..at + n / 2]) > 4.0 * energy(&forward[at + n / 2..at + n]));
+    s.settings.lcr_reverse = 1.0;
+    let reversed = lcr_impulse(s, sr, &burst, at + 2 * n);
+    assert!(energy(&reversed[at - n..at - n / 2]) * 4.0 < energy(&reversed[at - n / 2..at]));
+    for (i, x) in burst.iter().enumerate() {
+        let [l, r] = reversed[at - i];
+        assert!(
+            (l - x).abs() < 0.06 && r.abs() < 1e-6,
+            "{i}: {l} {r} for {x}"
+        );
+    }
+    // Nothing is left of the forward echo.
+    assert!(energy(&reversed[at + 1..]) < 1e-6);
+    // Halfway, both are heard.
+    s.settings.lcr_reverse = 0.5;
+    let both = lcr_impulse(s, sr, &burst, at + 2 * n);
+    assert!(energy(&both[at - n..at]) > 0.2 * energy(&reversed[at - n..at]));
+    assert!(energy(&both[at..at + n]) > 0.2 * energy(&forward[at..at + n]));
+}
+
+#[test]
+fn lcr_converge_narrows_reversed_echoes_pass_by_pass() {
+    // Reversed or not, the side keeps 1 - CONVERGE of each pass through C
+    // feedback: it is the side of a delay whose feedback is cut that much,
+    // while the mid is the delay's own.
+    let sr = 8000;
+    let mut s = slot(1, Type::LcrDelay);
+    s.settings.lcr_left_level = 1.0;
+    s.settings.lcr_right_level = 0.8;
+    s.settings.lcr_feedback = 0.9;
+    s.settings.lcr_spread = 1.0;
+    s.settings.lcr_high_damp = 0.3;
+    s.settings.lcr_reverse = 1.0;
+    let impulse = [1.0];
+    let n = sr as usize * 3;
+    let mid = |f: &Stereo| (f[0] + f[1]) * 0.5;
+    let side = |f: &Stereo| (f[0] - f[1]) * 0.5;
+    let full = lcr_impulse(s, sr, &impulse, n);
+    for converge in [0.5, 1.0] {
+        let mut narrowed = s;
+        narrowed.settings.lcr_converge = converge;
+        let mut cut = s;
+        cut.settings.lcr_feedback = 0.9 * (1.0 - converge);
+        let (narrowed, cut) = (
+            lcr_impulse(narrowed, sr, &impulse, n),
+            lcr_impulse(cut, sr, &impulse, n),
+        );
+        let mut late_side = 0.0;
+        for i in 0..n {
+            assert!(
+                (mid(&narrowed[i]) - mid(&full[i])).abs() < 1e-6,
+                "{converge} mid {i}"
+            );
+            assert!(
+                (side(&narrowed[i]) - side(&cut[i])).abs() < 1e-6,
+                "{converge} side {i}"
+            );
+            late_side += side(&narrowed[i]).abs() * (i > sr as usize) as u8 as f32;
+        }
+        let late_full: f32 = full[sr as usize..].iter().map(|f| side(f).abs()).sum();
+        assert!(late_side < late_full * if converge == 1.0 { 1e-6 } else { 0.5 });
     }
 }
 

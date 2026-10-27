@@ -137,6 +137,8 @@ color_parameters! {
     MoozP7 => mooz_p7,
     MoozP8 => mooz_p8,
     MoozP9 => mooz_p9,
+    LcrConverge => lcr_converge,
+    LcrReverse => lcr_reverse,
 }
 
 impl ColorParameter {
@@ -154,13 +156,19 @@ impl ColorParameter {
         Self::MoozP8,
         Self::MoozP9,
     ];
+    /// Controls added after the mooz block, whose host IDs append last.
+    pub const LATER: [Self; 2] = [Self::LcrConverge, Self::LcrReverse];
+    /// Part of the released 0.8 host layout.
+    pub fn is_legacy(self) -> bool {
+        (self as usize) < Self::LEGACY_COUNT
+    }
     /// SuperEcho and AlphaVerb controls, appended after the 0.8 layout.
     pub fn is_imported(self) -> bool {
-        self as usize >= Self::LEGACY_COUNT && !self.is_mooz()
+        !self.is_legacy() && (self as usize) < Self::MoozP1 as usize
     }
-    /// Mooz controls append after every other host ID.
+    /// Mooz controls append after every other host ID but the later ones.
     pub fn is_mooz(self) -> bool {
-        self as usize >= Self::MoozP1 as usize
+        (Self::MoozP1 as usize..=Self::MoozP9 as usize).contains(&(self as usize))
     }
 }
 
@@ -212,6 +220,10 @@ pub struct ColorSettings {
     pub lcr_low_damp: f32,
     pub lcr_trim: f32,
     pub lcr_spread: f32,
+    /// How much of the echoes' width each pass through C FEEDBACK gives up.
+    pub lcr_converge: f32,
+    /// How much of the echoes play backwards.
+    pub lcr_reverse: f32,
     pub mod_delay_sync: bool,
     pub mod_delay_smooth: bool,
     pub mod_delay_ratio: f32,
@@ -332,6 +344,8 @@ impl Default for ColorSettings {
             lcr_low_damp: 0.0,
             lcr_trim: 1.0,
             lcr_spread: 63.0 / 127.0,
+            lcr_converge: 0.0,
+            lcr_reverse: 0.0,
             mod_delay_sync: true,
             mod_delay_smooth: false,
             mod_delay_ratio: 64.0 / 127.0,
@@ -565,6 +579,8 @@ impl ColorSlot {
                 P::LcrLowDamp,
                 P::LcrTrim,
                 P::LcrSpread,
+                P::LcrConverge,
+                P::LcrReverse,
                 P::Mix,
             ],
             SaturatorType::LcrDelay => &[
@@ -580,6 +596,8 @@ impl ColorSlot {
                 P::LcrLowDamp,
                 P::LcrTrim,
                 P::LcrSpread,
+                P::LcrConverge,
+                P::LcrReverse,
                 P::Mix,
             ],
             SaturatorType::ModDelay if self.settings.mod_delay_sync => &[
@@ -880,6 +898,8 @@ impl ColorSlot {
             lcr_low_damp,
             lcr_trim,
             lcr_spread,
+            lcr_converge,
+            lcr_reverse,
             mod_delay_ratio,
             mod_delay_left_delay,
             mod_delay_right_delay,
