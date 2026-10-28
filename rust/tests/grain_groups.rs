@@ -1,7 +1,7 @@
 use sad_pet::{
     dsp::radias_waveshaper::WaveshaperMode,
     dsp::{Engine, SampleBuffer},
-    grain_groups::{Envelope, FilterType, GROUPS, Settings, Waveshaper},
+    grain_groups::{Envelope, FilterType, GROUPS, ORDERS, Settings, Stage, Waveshaper},
     parameters,
     preset::Preset,
     timbres::Kind,
@@ -66,6 +66,26 @@ fn presets_without_advanced_mode_serialize_as_before() {
     assert_eq!(json["grain_groups"]["groups"][0]["waveshaper"], "off");
     let back: Preset = serde_json::from_value(json).unwrap();
     assert_eq!(back.grain_groups, preset.grain_groups);
+    // The stage order is the stages' names in the order grains pass them;
+    // anything but all three once each plays the usual order.
+    preset.grain_groups.groups[1].order = [Stage::Filter2, Stage::Drive, Stage::Filter1];
+    let mut json = serde_json::to_value(&preset).unwrap();
+    assert_eq!(
+        json["grain_groups"]["groups"][1]["order"],
+        serde_json::json!(["filter2", "drive", "filter1"])
+    );
+    assert_eq!(
+        json["grain_groups"]["groups"][0]["order"],
+        serde_json::json!(["drive", "filter1", "filter2"])
+    );
+    json["grain_groups"]["groups"][2]["order"] = serde_json::json!(["drive", "drive", "filter2"]);
+    let mut back: Preset = serde_json::from_value(json).unwrap();
+    back.sanitize();
+    assert_eq!(
+        back.grain_groups.groups[1].order,
+        preset.grain_groups.groups[1].order
+    );
+    assert_eq!(back.grain_groups.groups[2].order, ORDERS[0]);
 }
 
 #[test]
@@ -366,9 +386,10 @@ fn grain_group_controls_append_after_the_macros() {
     // Then the Rack EQs: each band's on, frequency, gain and Q, and output.
     let eqs = rack + 3 * 4 + 1 + 2 + 2 * 4 + 3 + 1 + 4;
     // Then L/C/R Converge and Reverse of every FX, Pre FX and Source FX
-    // slot, then each group's drive and waveshaper.
+    // slot, then each group's drive and waveshaper, then each group's
+    // stage order.
     let shapers = eqs + 8 * (4 * 8 + 1) + (2 * 12 + 1) * 2;
-    assert_eq!(ids.len(), shapers + 4 * 3);
+    assert_eq!(ids.len(), shapers + 4 * 3 + 4);
     assert_eq!(ids[shapers - 1], "source_fx1_lcr_reverse");
     assert_eq!(
         ids[shapers..shapers + 4],
@@ -379,7 +400,16 @@ fn grain_group_controls_append_after_the_macros() {
             "grain_group2_drive"
         ]
     );
-    assert_eq!(ids[ids.len() - 1], "grain_group4_waveshaper_depth");
+    assert_eq!(ids[shapers + 4 * 3 - 1], "grain_group4_waveshaper_depth");
+    assert_eq!(
+        ids[shapers + 4 * 3..],
+        [
+            "grain_group1_order",
+            "grain_group2_order",
+            "grain_group3_order",
+            "grain_group4_order"
+        ]
+    );
     assert_eq!(ids[eqs + 1], "rack_eq1_band1_frequency");
     assert_eq!(ids[filter2 + 4 * 5], "lfo1_shape");
     assert_eq!(ids[rack], "rack_sample_level");
@@ -413,6 +443,8 @@ fn grain_group_controls_append_after_the_macros() {
         "grain_group2_waveshaper": 2.0,
         "grain_group3_waveshaper": 12.0,
         "grain_group3_waveshaper_depth": 0.25,
+        "grain_group2_order": 3.0,
+        "grain_group4_order": 9.0,
     }))
     .unwrap();
     assert!(parameters::apply(&mut preset, &changes));
@@ -433,6 +465,13 @@ fn grain_group_controls_append_after_the_macros() {
     );
     assert_eq!(g.groups[2].waveshaper_depth, 0.25);
     assert_eq!(g.groups[3].waveshaper, Waveshaper::Off);
+    // The stage order goes by host index into every order there is.
+    assert_eq!(
+        g.groups[1].order,
+        [Stage::Filter1, Stage::Filter2, Stage::Drive]
+    );
+    assert_eq!(g.groups[3].order, ORDERS[5]);
+    assert_eq!(g.groups[0].order, ORDERS[0]);
     // LFOs and the matrix reach every group control.
     let catalog = sad_pet::sequence::catalog();
     let modulation = catalog["modulation"].as_array().unwrap();

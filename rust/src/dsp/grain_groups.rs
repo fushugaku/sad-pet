@@ -7,7 +7,7 @@ use super::radias_waveshaper::{
 use super::{MAX_GRAINS, fast, filter};
 use crate::{
     Stereo,
-    grain_groups::{Envelope, FilterType, GROUPS, Group, Settings, Waveshaper},
+    grain_groups::{Envelope, FilterType, GROUPS, Group, Settings, Stage, Waveshaper},
     preset::{self, FilterRouting},
     tables::{self, Random},
 };
@@ -319,8 +319,8 @@ impl Runtime {
         let grain = &self.grains[slot];
         grain.grouped.then_some(grain.group)
     }
-    /// A grain's group and one frame of it through its drive, waveshaper,
-    /// filter, amp envelope and level, or None for a grain outside the
+    /// A grain's group and one frame of it through its drive, waveshaper and
+    /// filters in the group's order, then its amp envelope and level, or None for a grain outside the
     /// groups, which keeps the engine's window. All but the waveshaper's type
     /// follow the group's current settings while it plays.
     #[inline]
@@ -339,11 +339,11 @@ impl Runtime {
         let group = &settings.groups[index];
         let age_f = age as f32;
         let gain = grain.amp.shaped(age_f, grain.shape) * group.level * grain.level;
-        // Each grain is driven and shaped whole, before its filters and
-        // envelope, as a voice's oscillators are.
-        let mut frame = frame;
-        if grain.drive.is_some() || grain.shaper.is_some() {
-            let refresh = age.is_multiple_of(REFRESH);
+        // The drive and waveshaper take each grain whole, as a voice's
+        // oscillators are, wherever the group's order puts them.
+        let refresh = age.is_multiple_of(REFRESH);
+        let tables = &self.shaper_tables;
+        let mut shape = |mut frame: Stereo| {
             if let Some(drive) = &mut grain.drive {
                 if refresh {
                     *drive = Drive::new(group.drive);
@@ -354,14 +354,15 @@ impl Runtime {
                 if refresh {
                     shaper.tune(group.waveshaper_depth);
                 }
-                frame = shaper.process(frame, &self.shaper_tables);
+                frame = shaper.process(frame, tables);
             }
-        }
+            frame
+        };
         let [first, second] = grain.filtering;
         let routing = group.filter_routing;
         let second = second && routing != FilterRouting::Single;
         if !first && !second {
-            return Some((index, frame.map(|x| x * gain)));
+            return Some((index, shape(frame).map(|x| x * gain)));
         }
         // Both cutoffs follow the one filter envelope, each at its depth.
         let sweep = grain.filter_env.swept(age_f);
@@ -369,9 +370,10 @@ impl Runtime {
             group.cutoff + grain.cutoff_offset + group.env_depth * sweep,
             group.filter2_cutoff + grain.cutoff_offset + group.filter2_env_depth * sweep,
         ];
-        if age.is_multiple_of(REFRESH) {
+        let active = [first, second];
+        if refresh {
             for (n, filter) in grain.filters.iter_mut().enumerate() {
-                if [first, second][n] {
+                if active[n] {
                     let step = cutoffs[n].clamp(0.0, 1.0) * CUTOFF_STEPS as f32;
                     let i = (step as usize).min(CUTOFF_STEPS - 1);
                     let g = self.gains[i] + (self.gains[i + 1] - self.gains[i]) * (step - i as f32);
@@ -380,28 +382,38 @@ impl Runtime {
             }
         }
         let kinds = [group.filter_type, group.filter2_type];
-        let open = |n: usize| kinds[n] == FilterType::LowPass && cutoffs[n] >= 0.999;
-        let [one, two] = &mut grain.filters;
-        let filtered = if first {
-            one.process(frame, kinds[0], open(0))
-        } else {
-            frame
-        };
-        // A Filter 2 left open passes its input: after Filter 1 that is
-        // Filter 1's output, beside it the grain itself.
-        let out = match routing {
-            FilterRouting::Single => filtered,
-            FilterRouting::Serial if second => two.process(filtered, kinds[1], open(1)),
-            FilterRouting::Serial => filtered,
-            FilterRouting::Parallel => {
-                let beside = if second {
-                    two.process(frame, kinds[1], open(1))
-                } else {
-                    frame
-                };
-                std::array::from_fn(|c| (filtered[c] + beside[c]) * 0.5)
+        let filters = &mut grain.filters;
+        // A filter skipped or left open passes what it hears.
+        let mut filter = |n: usize, frame: Stereo| {
+            if active[n] {
+                let open = kinds[n] == FilterType::LowPass && cutoffs[n] >= 0.999;
+                filters[n].process(frame, kinds[n], open)
+            } else {
+                frame
             }
         };
+        let mut out = frame;
+        // In parallel, what the earlier filter heard, for the later one.
+        let mut split = None;
+        for stage in group.order {
+            out = match stage {
+                Stage::Drive => shape(out),
+                Stage::Filter1 | Stage::Filter2 => {
+                    let n = (stage == Stage::Filter2) as usize;
+                    match (routing, split) {
+                        (FilterRouting::Parallel, Some(heard)) => {
+                            let beside = filter(n, heard);
+                            std::array::from_fn(|c| (out[c] + beside[c]) * 0.5)
+                        }
+                        (FilterRouting::Parallel, None) => {
+                            split = Some(out);
+                            filter(n, out)
+                        }
+                        _ => filter(n, out),
+                    }
+                }
+            };
+        }
         Some((index, out.map(|x| x * gain)))
     }
 }
@@ -496,43 +508,44 @@ mod tests {
         assert_eq!(runtime.grains[0].filtering, [false; 2]);
     }
 
+    /// One grain of a held envelope, fed a 1 kHz sine at half scale.
+    fn play(group: Group) -> Vec<f32> {
+        const LENGTH: u32 = 4_800;
+        let group = Group {
+            amp: Envelope {
+                attack: 0.0,
+                decay: 0.0,
+                sustain: 1.0,
+                release: 0.0,
+            },
+            ..group
+        };
+        let settings = Settings {
+            advanced: true,
+            groups: [group; GROUPS],
+        };
+        let mut runtime = Runtime::new(48_000);
+        // C5: a sub oscillator plays C4.
+        runtime.start(0, 0, &group, LENGTH, 72.0);
+        (0..LENGTH)
+            .map(|age| {
+                let x = 0.5 * (std::f32::consts::TAU * age as f32 / 48.0).sin();
+                runtime.process(0, age, [x, x], &settings).unwrap().1[0]
+            })
+            .collect()
+    }
+    fn amplitude(signal: &[f32], hz: f32) -> f32 {
+        let (mut re, mut im) = (0.0, 0.0);
+        for (i, x) in signal.iter().enumerate() {
+            let phase = std::f32::consts::TAU * hz * i as f32 / 48_000.0;
+            re += x * phase.cos();
+            im += x * phase.sin();
+        }
+        2.0 * (re * re + im * im).sqrt() / signal.len() as f32
+    }
+
     #[test]
     fn drive_and_the_waveshaper_shape_each_grain_before_its_envelope() {
-        // One grain of a held envelope, fed a 1 kHz sine at half scale.
-        const LENGTH: u32 = 4_800;
-        let play = |group: Group| {
-            let group = Group {
-                amp: Envelope {
-                    attack: 0.0,
-                    decay: 0.0,
-                    sustain: 1.0,
-                    release: 0.0,
-                },
-                ..group
-            };
-            let settings = Settings {
-                advanced: true,
-                groups: [group; GROUPS],
-            };
-            let mut runtime = Runtime::new(48_000);
-            // C5: a sub oscillator plays C4.
-            runtime.start(0, 0, &group, LENGTH, 72.0);
-            (0..LENGTH)
-                .map(|age| {
-                    let x = 0.5 * (std::f32::consts::TAU * age as f32 / 48.0).sin();
-                    runtime.process(0, age, [x, x], &settings).unwrap().1[0]
-                })
-                .collect::<Vec<_>>()
-        };
-        let amplitude = |signal: &[f32], hz: f32| {
-            let (mut re, mut im) = (0.0, 0.0);
-            for (i, x) in signal.iter().enumerate() {
-                let phase = std::f32::consts::TAU * hz * i as f32 / 48_000.0;
-                re += x * phase.cos();
-                im += x * phase.sin();
-            }
-            2.0 * (re * re + im * im).sqrt() / signal.len() as f32
-        };
         let clean = play(Group::default());
         assert!((amplitude(&clean, 1_000.0) - 0.5).abs() < 1e-3);
         assert!(amplitude(&clean, 3_000.0) < 1e-4);
@@ -575,6 +588,64 @@ mod tests {
         });
         let ratio = amplitude(&clipped, 3_000.0) / amplitude(&clipped, 1_000.0);
         assert!((ratio - 1.0 / 3.0).abs() < 0.05, "{ratio}");
+    }
+
+    #[test]
+    fn the_group_order_moves_the_drive_around_its_filters() {
+        use crate::grain_groups::ORDERS;
+        use Stage::*;
+        // Filter 1 a low pass at about 1.3 kHz, DRIVE all the way up.
+        let low = Group {
+            drive: 1.0,
+            cutoff: 0.6,
+            ..Group::default()
+        };
+        // Driven first, the filter takes most of the drive's 3 kHz away;
+        // filtered first, the drive makes it after the filter.
+        let driven = play(low);
+        let filtered = play(Group {
+            order: [Filter1, Drive, Filter2],
+            ..low
+        });
+        let (before, after) = (amplitude(&driven, 3_000.0), amplitude(&filtered, 3_000.0));
+        assert!(after > 3.0 * before, "{before} {after}");
+        // Beside each other, the filters mix where the later one sits, and
+        // what sits between them takes the earlier one's branch only.
+        let high = Group {
+            filter_routing: FilterRouting::Parallel,
+            filter2_type: FilterType::HighPass,
+            filter2_cutoff: 0.7,
+            ..low
+        };
+        let branch = play(Group {
+            order: [Filter1, Drive, Filter2],
+            filter_routing: FilterRouting::Single,
+            ..high
+        });
+        let beside = play(Group {
+            drive: 0.0,
+            cutoff: 1.0,
+            filter_routing: FilterRouting::Serial,
+            ..high
+        });
+        let mixed = play(Group {
+            order: [Filter1, Drive, Filter2],
+            ..high
+        });
+        for ((a, b), x) in branch.iter().zip(&beside).zip(&mixed) {
+            assert_eq!((a + b) * 0.5, *x);
+        }
+        // Which filter comes first makes no difference to their mix.
+        for pair in [[0, 1], [3, 5]] {
+            let [a, b] = pair.map(|i| {
+                play(Group {
+                    order: ORDERS[i],
+                    ..high
+                })
+            });
+            assert_eq!(a, b, "{:?}", pair.map(|i| ORDERS[i]));
+        }
+        assert_ne!(play(high), mixed);
     }
 
     #[test]

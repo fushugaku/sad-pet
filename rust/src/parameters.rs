@@ -1589,6 +1589,19 @@ pub fn specs() -> &'static [Spec] {
                 result.push(spec);
             }
         }
+        // Then the order each group's grains pass its drive and filters in.
+        for (i, name) in grain_groups::NAMES.iter().enumerate() {
+            let mut spec = Spec {
+                id: format!("grain_group{}_order", i + 1),
+                name: format!("Grain group {name} stage order"),
+                min: 0.0,
+                max: (grain_groups::ORDERS.len() - 1) as f32,
+                default: 0.0,
+                target: Target::GrainGroup(i, grain_groups::ORDER_FIELD),
+            };
+            spec.default = spec.get(&preset);
+            result.push(spec);
+        }
         result
     })
 }

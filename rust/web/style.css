@@ -691,7 +691,8 @@ h2 {
   pointer-events: none;
 }
 /* Advanced grain mode: group tabs beside a curve of the selected group over
-   one grain, then that group's controls in eight cards and its Output. */
+   one grain, then that group's controls in three rows of cards (Grain, Pitch
+   and Playback; its stages in order; its envelopes) and its Output. */
 .grain-groups {
   margin-top: 16px;
   padding-top: 14px;
@@ -751,10 +752,20 @@ h2 {
 }
 .grain-group-page {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
+/* Cards share a row by --span, a knob's width each, and wrap onto another
+   line when knobs would get too narrow. */
+.grain-group-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.grain-group-row > .grain-group-card {
+  flex: var(--span) 1 calc(var(--span) * 60px + 26px);
+}
 .grain-group-card {
+  position: relative;
   min-width: 0;
   padding: 11px 12px 12px;
   border: 1px solid var(--line);
@@ -764,13 +775,18 @@ h2 {
 .grain-group-card-title {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   min-height: 27px;
   margin-bottom: 8px;
 }
+/* A narrow card narrows its menus, then shortens its title, before it wraps. */
 .grain-group-card h3 {
-  margin: 0;
+  flex: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0 auto 0 0;
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 1.4px;
@@ -778,18 +794,61 @@ h2 {
   color: var(--muted);
 }
 .grain-group-card select {
-  min-width: 108px;
+  flex: 0 1 108px;
+  min-width: 56px;
   height: 27px;
   font-size: 11px;
 }
 .grain-group-knobs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--knobs, 4), minmax(0, 1fr));
   gap: 8px;
 }
-/* SHARE, LEVEL, RND LEVEL, SHAPE and ATTACK share one row. */
-.grain-group-card[data-card="Grain"] .grain-group-knobs {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+/* A stage's grip, and what joins it to the stage before: › on, + mixed in. */
+.grain-stage-grip {
+  flex: none;
+  width: 18px;
+  height: 24px;
+  margin: 0 -2px 0 -6px;
+  padding: 0;
+  border-color: transparent;
+  background: none;
+  cursor: grab;
+  touch-action: none;
+}
+.grain-stage-grip span {
+  display: block;
+  width: 8px;
+  height: 14px;
+  margin: auto;
+  background: radial-gradient(circle, var(--muted) 1.2px, transparent 1.6px) 0 0 / 4px 4.7px;
+}
+.grain-stage-grip:hover {
+  background: var(--overlay);
+}
+.grain-stage-grip:hover span {
+  background-image: radial-gradient(circle, var(--text) 1.2px, transparent 1.6px);
+}
+.grain-group-chain > .grain-group-card:not([data-join=""])::before {
+  content: attr(data-join);
+  position: absolute;
+  top: 50%;
+  left: -13px;
+  width: 14px;
+  transform: translateY(-50%);
+  color: var(--group-color);
+  font-size: 15px;
+  line-height: 1;
+  text-align: center;
+  pointer-events: none;
+}
+.grain-group-chain.is-arranging,
+.grain-group-chain.is-arranging * {
+  cursor: grabbing;
+}
+.grain-group-card.is-dragging {
+  border-color: var(--group-color);
+  box-shadow: 0 0 0 1px var(--group-color), 0 10px 24px -12px rgb(0 0 0 / 70%);
 }
 .grain-group-page .dial .arc {
   stroke: var(--group-color);
@@ -803,9 +862,8 @@ h2 {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
-/* A group's Output row takes the last row, under its eight cards. */
+/* A group's Output row takes the last row, under its cards. */
 .grain-group-page .grain-group-output {
-  grid-column: 1 / -1;
   margin-top: 0;
   align-content: center;
 }
@@ -824,8 +882,20 @@ h2 {
   cursor: not-allowed;
 }
 @media (max-width: 760px) {
-  .grain-group-page {
-    grid-template-columns: minmax(0, 1fr);
+  /* One card a line, four knobs a row as other cards; Grain keeps five. */
+  .grain-group-row > .grain-group-card {
+    flex-basis: 100%;
+  }
+  .grain-group-knobs {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .grain-group-card[data-card="Grain"] .grain-group-knobs {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .grain-group-chain > .grain-group-card:not([data-join=""])::before {
+    top: -13px;
+    left: 50%;
+    transform: translateX(-50%) rotate(90deg);
   }
   .grain-group-bar {
     flex-direction: column;

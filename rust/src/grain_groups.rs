@@ -138,6 +138,29 @@ impl Waveshaper {
     }
 }
 
+/// One of the three stages each grain passes through in its group's order:
+/// the drive and waveshaper together, Filter 1, Filter 2.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Stage {
+    Drive,
+    Filter1,
+    Filter2,
+}
+/// Every order of the stages, host values index it; the first is the
+/// order grains always had.
+pub const ORDERS: [[Stage; 3]; 6] = {
+    use Stage::*;
+    [
+        [Drive, Filter1, Filter2],
+        [Drive, Filter2, Filter1],
+        [Filter1, Drive, Filter2],
+        [Filter1, Filter2, Drive],
+        [Filter2, Drive, Filter1],
+        [Filter2, Filter1, Drive],
+    ]
+};
+
 /// An ADSR over one grain's life: attack, decay and release are shares of
 /// the grain's length, scaled down together when they add up to more.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -234,6 +257,10 @@ pub struct Group {
     pub drive: f32,
     pub waveshaper: Waveshaper,
     pub waveshaper_depth: f32,
+    /// The order each grain passes the drive and the filters in. With the
+    /// filters in parallel, the later filter hears what the earlier one
+    /// heard, and the two are mixed where the later one sits.
+    pub order: [Stage; 3],
 }
 impl Default for Group {
     fn default() -> Self {
@@ -267,6 +294,7 @@ impl Default for Group {
             waveshaper: Waveshaper::Off,
             // The FX Waveshaper's DEPTH of 64.
             waveshaper_depth: 64.0 / 127.0,
+            order: ORDERS[0],
         }
     }
 }
@@ -307,6 +335,9 @@ impl Group {
             1.0,
             fallback.waveshaper_depth,
         );
+        if !ORDERS.contains(&self.order) {
+            self.order = fallback.order;
+        }
     }
 }
 
@@ -393,6 +424,9 @@ pub const SHAPER_FIELDS: [(&str, &str, f32, f32); 3] = [
     ("waveshaper_depth", "waveshaper depth", 0.0, 1.0),
 ];
 pub const SHAPER_FIELD: usize = ATTACK_FIELD + 1;
+/// Each group's stage order, an index into ORDERS, appended after every
+/// group's SHAPER_FIELDS.
+pub const ORDER_FIELD: usize = SHAPER_FIELD + SHAPER_FIELDS.len();
 const ROUTINGS: [crate::preset::FilterRouting; 3] = [
     crate::preset::FilterRouting::Single,
     crate::preset::FilterRouting::Serial,
@@ -435,7 +469,8 @@ pub fn get(group: &Group, field: usize) -> f32 {
         32 => group.attack,
         33 => group.drive,
         34 => group.waveshaper.index() as f32,
-        _ => group.waveshaper_depth,
+        35 => group.waveshaper_depth,
+        _ => ORDERS.iter().position(|o| *o == group.order).unwrap_or(0) as f32,
     }
 }
 pub fn set(group: &mut Group, field: usize, value: f32) {
@@ -475,7 +510,8 @@ pub fn set(group: &mut Group, field: usize, value: f32) {
         32 => group.attack = value,
         33 => group.drive = value,
         34 => group.waveshaper = Waveshaper::from_index(value.round().max(0.0) as usize),
-        _ => group.waveshaper_depth = value,
+        35 => group.waveshaper_depth = value,
+        _ => group.order = ORDERS[(value.round().max(0.0) as usize).min(ORDERS.len() - 1)],
     }
 }
 

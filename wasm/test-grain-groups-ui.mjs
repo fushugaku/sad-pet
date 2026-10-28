@@ -16,6 +16,7 @@ class Element {
     this.classes = new Set();
     this.classList = {
       toggle: (name, on) => (on ? this.classes.add(name) : this.classes.delete(name)),
+      contains: (name) => this.classes.has(name),
     };
     this.textContent = "";
     this.hidden = false;
@@ -43,11 +44,25 @@ class Element {
     return this.children.at(-1);
   }
   append(...nodes) {
+    for (const node of nodes) {
+      node.parent?.children.splice(node.parent.children.indexOf(node), 1);
+      node.parent = this;
+    }
     this.children.push(...nodes);
   }
+  prepend(node) {
+    node.parent = this;
+    this.children.unshift(node);
+  }
+  get parentElement() {
+    return this.parent;
+  }
   querySelector(selector) {
+    const all = (node) => [node, ...node.children.flatMap(all)];
     const card = /^\[data-card="(.+)"\]$/.exec(selector)?.[1];
-    if (card) return this.children.find((n) => n.dataset.card === card);
+    if (card) return all(this).find((n) => n.dataset.card === card);
+    if (selector === ".grain-group-chain")
+      return all(this).find((n) => n.className?.includes?.("grain-group-chain"));
     return this.parts?.get(selector);
   }
   querySelectorAll(selector) {
@@ -61,6 +76,13 @@ class Element {
   }
   setAttribute(key, value) {
     this.attributes.set(key, String(value));
+  }
+  get className() {
+    return this._className ?? "";
+  }
+  set className(name) {
+    this._className = name;
+    this.classes = new Set(name.split(" ").filter(Boolean));
   }
   getAttribute(key) {
     return this.attributes.get(key);
@@ -234,6 +256,46 @@ assert.deepEqual(calls.splice(0), [
 assert.deepEqual([groups().groups[0].waveshaper, groups().groups[0].drive], ["hard_clip", 0.6]);
 assert.ok(!depthKnob.classes.has("is-idle"));
 assert.equal(knobs.get("grain_group1_waveshaper_depth").binding.get(), 64 / 127);
+
+// Each page has three rows: Grain, Pitch and Playback; the stages in the
+// group's order; the envelopes; then its Output.
+const rowCards = (page) =>
+  pages[page].children.slice(0, 3).map((row) => row.children.map((card) => card.dataset.card));
+assert.deepEqual(rowCards(1), [
+  ["Grain", "Pitch", "Playback"],
+  ["Drive · Waveshaper", "Filter 1", "Filter 2"],
+  ["Amp envelope", "Filter envelope"],
+]);
+const chainOf = (page) => pages[page].querySelector(".grain-group-chain");
+const stagesOf = (page) => chainOf(page).children.map((card) => card.dataset.stage);
+const joinsOf = (page) => chainOf(page).children.map((card) => card.dataset.join);
+// Group A's filters run in parallel: the later filter is mixed in.
+assert.deepEqual(joinsOf(0), ["", "›", "+"]);
+assert.deepEqual(joinsOf(1), ["", "›", "›"]);
+// The arrow keys move a stage by its grip and write the order by host index.
+const grip = (page, stage) =>
+  chainOf(page).children.find((card) => card.dataset.stage === stage).firstElementChild.children[0];
+assert.equal(grip(0, "drive").getAttribute("aria-label"), "Move Group A Drive · Waveshaper");
+const key = (target, name) => target.onkeydown({ key: name, preventDefault() {} });
+key(grip(0, "drive"), "ArrowRight");
+assert.deepEqual(calls.splice(0), [["parameter", "grain_group1_order", 2]]);
+assert.deepEqual(groups().groups[0].order, ["filter1", "drive", "filter2"]);
+assert.deepEqual(stagesOf(0), ["filter1", "drive", "filter2"]);
+// Drive between parallel filters rides the earlier one's branch.
+assert.deepEqual(joinsOf(0), ["", "›", "+"]);
+key(grip(0, "drive"), "ArrowRight");
+key(grip(0, "filter1"), "ArrowLeft");
+assert.deepEqual(calls.splice(0), [["parameter", "grain_group1_order", 3]]);
+key(grip(0, "filter2"), "ArrowLeft");
+assert.deepEqual(calls.splice(0), [["parameter", "grain_group1_order", 5]]);
+assert.deepEqual(stagesOf(0), ["filter2", "filter1", "drive"]);
+assert.deepEqual(joinsOf(0), ["", "+", "›"]);
+// An order from the host rearranges the cards; one that is not every stage
+// once shows the usual order, as the engine plays it.
+run(`preset.grain_groups.groups[1].order = ["filter2", "drive", "filter1"]; syncGrainGroups();`);
+assert.deepEqual(stagesOf(1), ["filter2", "drive", "filter1"]);
+run(`preset.grain_groups.groups[1].order = ["drive", "drive"]; syncGrainGroups();`);
+assert.deepEqual(stagesOf(1), ["drive", "filter1", "filter2"]);
 
 // Tabs show each group's share, Off at zero, and pick the page.
 knobs.get("grain_group3_share").binding.set(0);

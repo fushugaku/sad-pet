@@ -624,6 +624,22 @@ const WAVESHAPER_TYPES = [
   ["pickup", "Pickup"],
   ["level_boost", "LvlBoost"],
 ];
+// The stages each grain passes in its group's order, and every order in host
+// order (rust/src/grain_groups.rs ORDERS).
+const GRAIN_STAGES = [
+  ["drive", "Drive · Waveshaper"],
+  ["filter1", "Filter 1"],
+  ["filter2", "Filter 2"],
+];
+const GRAIN_ORDERS = [
+  ["drive", "filter1", "filter2"],
+  ["drive", "filter2", "filter1"],
+  ["filter1", "drive", "filter2"],
+  ["filter1", "filter2", "drive"],
+  ["filter2", "drive", "filter1"],
+  ["filter2", "filter1", "drive"],
+];
+const grainOrderIndex = (order) => GRAIN_ORDERS.findIndex((o) => o.join() === order?.join?.());
 // The group menus, their choices and names, by field.
 const GRAIN_GROUP_CHOICES = {
   filter_type: GRAIN_FILTER_TYPES,
@@ -674,6 +690,7 @@ const grainGroupDefault = () => ({
   drive: 0,
   waveshaper: "off",
   waveshaper_depth: 64 / 127,
+  order: GRAIN_ORDERS[0],
 });
 // Reading leaves the preset alone: the host omits untouched groups.
 const grainGroupSettings = () =>
@@ -692,6 +709,8 @@ const grainGroupPath = (field) =>
 function grainGroupField(group, field) {
   const [a, b] = grainGroupPath(field);
   const value = b ? group[a]?.[b] : group[a];
+  // An order that is not every stage once plays the usual one, as the engine.
+  if (field === "order" && grainOrderIndex(value) < 0) return GRAIN_ORDERS[0];
   return value ?? grainGroupField(grainGroupDefault(), field);
 }
 let grainGroupPage = 0;
@@ -704,8 +723,13 @@ function editGrainGroup(index, field, value) {
   const key = `grain_group${index + 1}_${field}`;
   controls.get(key)?.();
   const choices = GRAIN_GROUP_CHOICES[field];
-  scheduleParameter(key, choices ? choices.findIndex(([id]) => id === value) : value);
-  if (field === "filter_routing" || field === "waveshaper") syncGrainGroups();
+  scheduleParameter(
+    key,
+    field === "order"
+      ? grainOrderIndex(value)
+      : choices ? choices.findIndex(([id]) => id === value) : value,
+  );
+  if (["filter_routing", "waveshaper", "order"].includes(field)) syncGrainGroups();
   else syncGrainGroupOutputs();
   drawGrainGroupCurve();
 }
@@ -748,7 +772,7 @@ function buildGrainGroups() {
       ["amp_sustain", "SUSTAIN", percent],
       ["amp_release", "RELEASE", time],
     ]],
-    // Each grain is driven, then shaped, before its filters.
+    // Each grain is driven, then shaped, where the group's order puts it.
     ["Drive · Waveshaper", ["waveshaper"], [
       ["drive", "DRIVE", percent],
       ["waveshaper_depth", "DEPTH", (v) => String(Math.round(v * 127)), 0, 1, "waveshaper depth"],
@@ -771,6 +795,10 @@ function buildGrainGroups() {
       ["filter_release", "RELEASE", time],
     ]],
   ];
+  // Cards share a row by width: a knob each, more where menus need it.
+  const spans = { Pitch: 2.5, "Drive · Waveshaper": 3.5, "Filter 2": 3.5 };
+  // Grain, Pitch and Playback; the stages in the group's order; the envelopes.
+  const rows = [["Grain", "Pitch", "Playback"], null, ["Amp envelope", "Filter envelope"]];
   GRAIN_GROUP_NAMES.forEach((name, index) => {
     const tab = document.createElement("button");
     tab.id = `grain-group-tab-${index + 1}`;
@@ -797,11 +825,37 @@ function buildGrainGroups() {
     page.setAttribute("role", "tabpanel");
     page.setAttribute("aria-labelledby", tab.id);
     page.style.setProperty("--group-color", `rgb(${GRAIN_GROUP_COLORS[index]})`);
+    const made = {};
     for (const [title, menus, knobs] of cards) {
       const card = document.createElement("div");
       card.className = "grain-group-card";
       card.dataset.card = title;
+      card.style.setProperty("--knobs", String(knobs.length));
+      card.style.setProperty("--span", String(spans[title] ?? knobs.length));
       card.innerHTML = `<div class="grain-group-card-title"><h3>${title}</h3></div><div class="grain-group-knobs"></div>`;
+      const stage = GRAIN_STAGES.find(([, name]) => name === title)?.[0];
+      if (stage) {
+        // A stage moves by its grip: dragged, or with the arrow keys.
+        card.dataset.stage = stage;
+        const grip = document.createElement("button");
+        grip.className = "grain-stage-grip";
+        grip.setAttribute("aria-label", `Move Group ${name} ${title}`);
+        grip.title = `Drag to change the order grains pass ${title} in · ← → keys move it too`;
+        grip.innerHTML = '<span aria-hidden="true"></span>';
+        grip.onpointerdown = (e) => dragGrainStage(e, index, card);
+        grip.onkeydown = (e) => {
+          const by = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[e.key];
+          if (!by) return;
+          e.preventDefault();
+          const order = [...grainGroupField(grainGroupSettings().groups[index], "order")],
+            at = order.indexOf(stage);
+          if (at + by < 0 || at + by >= order.length) return;
+          [order[at], order[at + by]] = [order[at + by], order[at]];
+          editGrainGroup(index, "order", order);
+          grip.focus();
+        };
+        card.firstElementChild.prepend(grip);
+      }
       for (const menu of menus) {
         const select = document.createElement("select");
         select.className = "grain-group-menu";
@@ -832,7 +886,13 @@ function buildGrainGroups() {
       if (title === "Grain")
         card.lastElementChild.querySelectorAll(".dial")[4].closest(".knob").title =
           "How a new note's grains of this group come in: 0% at once, 100% building up from none";
-      page.append(card);
+      made[title] = card;
+    }
+    for (const titles of rows) {
+      const row = document.createElement("div");
+      row.className = titles ? "grain-group-row" : "grain-group-row grain-group-chain";
+      row.append(...(titles ?? GRAIN_STAGES.map(([, title]) => title)).map((t) => made[t]));
+      page.append(row);
     }
     // Where the group's grains go, as a section's Output row does.
     const row = document.createElement("div");
@@ -969,9 +1029,82 @@ function syncGrainGroups() {
         "is-idle",
         grainGroupField(settings.groups[index], "waveshaper") === "off",
       );
+    const chain = page.querySelector(".grain-group-chain");
+    if (chain && !chain.classList.contains("is-arranging"))
+      arrangeGrainStages(chain, grainGroupField(settings.groups[index], "order"));
+    if (chain) joinGrainStages(chain, grainGroupField(settings.groups[index], "filter_routing"));
   });
   syncGrainGroupOutputs();
   drawGrainGroupCurve();
+}
+/** Puts a group's stage cards in `order`, moving only what is out of place. */
+function arrangeGrainStages(chain, order) {
+  const cards = [...chain.children];
+  if (cards.map((card) => card.dataset.stage).join() === order.join()) return;
+  for (const stage of order) chain.append(cards.find((card) => card.dataset.stage === stage));
+}
+/** What joins each stage to the one before it: the grain goes on (›), or,
+ * with the filters in parallel, the later filter is mixed in (+). */
+function joinGrainStages(chain, routing) {
+  let filters = 0;
+  for (const [i, card] of [...chain.children].entries()) {
+    const filter = card.dataset.stage !== "drive";
+    card.dataset.join = i === 0 ? "" : routing === "parallel" && filter && filters ? "+" : "›";
+    filters += filter;
+  }
+}
+/** Drags a stage card along its group's chain; dropping it sets the order. */
+function dragGrainStage(event, index, card) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  const grip = event.currentTarget,
+    chain = card.parentElement,
+    stages = () => [...chain.children].map((c) => c.dataset.stage),
+    before = stages(),
+    routing = grainGroupField(grainGroupSettings().groups[index], "filter_routing");
+  chain.classList.add("is-arranging");
+  card.classList.add("is-dragging");
+  // In one line the pointer's x decides; wrapped onto lines, its line first.
+  const place = (x, y) => {
+    const others = [...chain.children].filter((c) => c !== card),
+      boxes = others.map((c) => c.getBoundingClientRect()),
+      oneLine = boxes.every((b) => Math.abs(b.top - boxes[0].top) < 4);
+    const at = boxes.findIndex((b) =>
+      oneLine || (y >= b.top && y <= b.bottom) ? x < b.left + b.width / 2 : y < b.top,
+    );
+    const target = others[at];
+    if (target) {
+      if (card.nextElementSibling !== target) chain.insertBefore(card, target);
+    } else if (chain.lastElementChild !== card) chain.append(card);
+    joinGrainStages(chain, routing);
+  };
+  const move = (e) => place(e.clientX, e.clientY);
+  const finish = (commit) => {
+    window.removeEventListener("pointermove", move, true);
+    window.removeEventListener("pointerup", up, true);
+    window.removeEventListener("pointercancel", abort, true);
+    window.removeEventListener("blur", abort);
+    document.removeEventListener("keydown", cancel, true);
+    chain.classList.remove("is-arranging");
+    card.classList.remove("is-dragging");
+    const after = stages();
+    if (commit && after.join() !== before.join()) editGrainGroup(index, "order", after);
+    else syncGrainGroups();
+    grip.focus({ preventScroll: true });
+  };
+  const up = () => finish(true);
+  const abort = () => finish(false);
+  const cancel = (e) => {
+    if (e.key !== "Escape") return;
+    e.preventDefault();
+    e.stopPropagation();
+    finish(false);
+  };
+  window.addEventListener("pointermove", move, true);
+  window.addEventListener("pointerup", up, true);
+  window.addEventListener("pointercancel", abort, true);
+  window.addEventListener("blur", abort);
+  document.addEventListener("keydown", cancel, true);
 }
 /** The selected group over one grain: its amp envelope as an area, the
  * cutoff its filter envelope moves as a line. */
