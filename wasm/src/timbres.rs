@@ -892,6 +892,7 @@ impl Registry {
                     .engine
                     .process_input_frame(frame)
                     .map(|v| v * level);
+                frame = part.host.engine.protect_master(frame);
             }
             self.parts[0].host.frames[i] = frame;
         }

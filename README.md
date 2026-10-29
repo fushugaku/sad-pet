@@ -212,11 +212,18 @@ files move instruments between the web version and the native app and plug-ins.
   and shows disabled. A bus renders after every bus that feeds it, so a chain of
   buses adds no delay. A bus or Master runs the granular engine on its
   input, with switchable **Granular** (125 ms–8 s history) and **Filters**, plus
-  Resynth, all effect racks, added filters, LFOs and the matrix. Everything starts
-  switched off, and then the input passes through bit for bit at almost no CPU:
-  no grains, no history writes and no filters run. Solo selects timbres while
-  buses and Master keep processing them; MIDI never reaches a bus. Scenes saved
-  before buses existed open with a default Master and render unchanged.
+  Resynth, all effect racks, added filters, LFOs and the matrix. Those processors
+  start switched off, passing the input through bit for bit at almost no CPU:
+  no grains, no history writes and no filters run. Processed buses retain their
+  mix headroom instead of applying the instrument's output clipper. Master's
+  **Limiter** protects the final sum after its output fader at −1 dBFS, with
+  linked stereo gain, peak hold and smooth release, without added latency.
+  Its reduction is shown beside the switch. Old scenes enable it too; an
+  explicitly saved bypass is preserved. Grain overlap normalization slews over
+  2 ms in both classic timbres and Racks, so grain births and deaths cannot step
+  the level of the grains already sounding. Solo selects timbres while buses
+  and Master keep processing them; MIDI never reaches a bus. Scenes saved
+  before buses existed open with a default Master.
 - **Bus and Master mixer.** A bus page opens with a strip for every timbre and
   every other bus, and Master's for every timbre and bus; bus strips follow the
   timbres. A bus that the page's bus already feeds shows disabled, since its send

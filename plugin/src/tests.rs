@@ -34,6 +34,87 @@ unsafe impl GlobalAlloc for Allocator {
 static ALLOCATOR: Allocator = Allocator;
 
 #[test]
+fn master_limits_the_final_mix_and_preview_without_audio_allocations() {
+    let mut control = Controller::new_plugin(true);
+    for i in 0..8 {
+        if i > 0 {
+            call(
+                &mut control,
+                "/api/timbres/add",
+                json!({"kind":"granular","classic":true}),
+            );
+        }
+        let mut preset = Preset::default();
+        preset.color_chain.clear();
+        preset.sequencer.enabled = false;
+        preset.params.master_volume = 1.0;
+        call(&mut control, "/api/preset", json!(preset));
+        call(
+            &mut control,
+            "/api/input",
+            json!({"active":true,"mode":"effects"}),
+        );
+        call(&mut control, "/api/transport", json!({"bypass":true}));
+    }
+    let context = call(&mut control, "/api/timbres", Value::Null);
+    let master = context["timbres"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["kind"] == "master")
+        .unwrap()["id"]
+        .clone();
+    call(&mut control, "/api/timbres/select", json!({"id":master}));
+    call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":master,"gain":2.0}),
+    );
+    call(
+        &mut control,
+        "/api/transport",
+        json!({"playing":true,"midi_gate":false}),
+    );
+    call(
+        &mut control,
+        "/api/sample-preview",
+        json!({"id":"factory:glass-sequence:v1","generation":1}),
+    );
+    let mut audio = control.prepare(48000);
+    let values = control.values();
+    let input = [[0.6, -0.3]; 128];
+    let mut output = [[0.0; 2]; 128];
+    let mut peak = 0.0_f32;
+    no_heap(|| {
+        for _ in 0..300 {
+            audio.begin(&values, 120.0, None, true, 128);
+            audio.process_block(&input, &mut output);
+            for sample in output.iter().flatten() {
+                assert!(sample.is_finite() && sample.abs() <= sad_pet::dsp::limiter::CEILING);
+                peak = peak.max(sample.abs());
+            }
+        }
+    });
+    assert!(peak > 0.88, "Master went silent");
+    let mut part = audio.parts.as_ref();
+    while let Some(p) = part {
+        if p.audio.meta.kind == sad_pet::timbres::Kind::Master {
+            assert!(p.audio.engine.master_meter().input_peak > 9.0);
+            assert!(
+                p.audio
+                    .engine
+                    .peak
+                    .iter()
+                    .all(|x| *x <= sad_pet::dsp::limiter::CEILING)
+            );
+            return;
+        }
+        part = p.next.as_ref();
+    }
+    panic!("Missing Master");
+}
+
+#[test]
 fn sample_preview_plays_without_changing_scene_and_stops_without_heap_work() {
     for rate in [44100, 48000] {
         let mut control = Controller::new(false);

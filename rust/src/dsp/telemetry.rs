@@ -75,6 +75,8 @@ pub struct RealtimeView {
     /// carries those the rack holds beside the view, as it does color slots.
     #[serde(skip)]
     pub modulated_rack_eqs: [crate::eq::Equalizer; crate::eq::MAX_EQS],
+    #[serde(default)]
+    pub master_limiter: super::limiter::Meter,
 }
 
 impl Default for RealtimeView {
@@ -127,6 +129,7 @@ impl Default for RealtimeView {
             step_edits: [None; 16],
             rack_peaks: [0.0; crate::rack::STRIPS],
             modulated_rack_eqs: Default::default(),
+            master_limiter: Default::default(),
         }
     }
 }
@@ -202,6 +205,8 @@ impl Engine {
             .map_or_else(crate::sequence::View::default, |r| r.view());
         view.peak = self.peak;
         self.peak = [0.0; 2];
+        view.master_limiter = self.master_meter();
+        self.limiter.clear_peak();
         view.input_peak = self.live_input.as_ref().map_or([0.0; 2], |i| i.peak);
         view.input_seconds = self.live_input.as_ref().map_or(0.0, |i| i.seconds());
         view.center = self.source_position(self.center());

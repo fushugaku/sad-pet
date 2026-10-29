@@ -19,6 +19,9 @@ pub struct Settings {
     /// Filter 1 and 2; otherwise the input bypasses them.
     pub filters: bool,
     pub buffer_seconds: f32,
+    /// Only Master uses this: protection after the complete mix and fader.
+    /// Missing in older scenes, which receive the same protection as new ones.
+    pub limiter: bool,
 }
 impl Default for Settings {
     fn default() -> Self {
@@ -27,6 +30,7 @@ impl Default for Settings {
             granular: false,
             filters: false,
             buffer_seconds: 4.0,
+            limiter: true,
         }
     }
 }

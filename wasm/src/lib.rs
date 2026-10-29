@@ -117,6 +117,7 @@ impl Host {
             "cpu_percent": 0, "underruns": 0,
             "source_fx":{"pending":e.source_effects_pending(),"recipe":sad_pet::dsp::source_fx::Recipe::from_engine(e)},
         });
+        state["master_limiter"] = json!(e.master_meter());
         state["startup_preset_index"] = json!(sad_pet::startup::INDEX);
         state["source_generation"] = json!(self.file_generation);
         state["rack_peaks"] = json!(e.rack_peaks().unwrap_or_default());

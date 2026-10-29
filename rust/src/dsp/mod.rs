@@ -13,6 +13,7 @@ pub mod filter_slots;
 mod grain_group_tests;
 mod grain_groups;
 mod imported_rate;
+pub mod limiter;
 pub mod modulation;
 mod rack;
 mod radias_filter;
@@ -619,6 +620,8 @@ pub struct Engine {
     color_revision: u64,
     applied_shaper_pitch: u32,
     overlap: f32,
+    smooth_grain_norm: f32,
+    grain_norm_smoothing: f32,
     smooth_mix: f32,
     smooth_gain: f32,
     smooth_bypass_gate: f32,
@@ -629,6 +632,7 @@ pub struct Engine {
     grain_step: f64,
     bar_phase_step: f64,
     pub peak: Stereo,
+    limiter: limiter::Limiter,
 }
 
 impl Engine {
@@ -718,6 +722,8 @@ impl Engine {
             color_revision: 0,
             applied_shaper_pitch: 60.0_f32.to_bits(),
             overlap: 1.0,
+            smooth_grain_norm: 1.0,
+            grain_norm_smoothing: 1.0 - (-1.0 / (sr as f32 * 0.002)).exp(),
             smooth_mix: 1.0,
             smooth_gain: 0.0,
             smooth_bypass_gate: 0.0,
@@ -728,6 +734,7 @@ impl Engine {
             grain_step: 0.0,
             bar_phase_step: 0.0,
             peak: [0.0; 2],
+            limiter: limiter::Limiter::new(sr),
         };
         engine.set_preset(preset);
         // Idle voices need their initial coefficients even when the first preset
@@ -1391,11 +1398,29 @@ impl Engine {
         let gain = self.modulated.params.master_volume * self.output_gain;
         self.smooth_gain = fast::flush(self.smooth_gain + (gain - self.smooth_gain) * 0.002);
         let output = input.map(|x| x * self.input_gain * self.smooth_gain);
-        for (peak, value) in self.peak.iter_mut().zip(output) {
-            *peak = peak.max(value.abs());
+        if !self.preset.bus.as_ref().is_some_and(|b| b.master) {
+            for (peak, value) in self.peak.iter_mut().zip(output) {
+                *peak = peak.max(value.abs());
+            }
         }
         self.frame += 1;
         output
+    }
+    /// Hosts call this once, after the Master fader and every return/preview.
+    /// Intermediate buses retain headroom; the Master meter reads the actual
+    /// output rather than the signal before the host's fader.
+    pub fn protect_master(&mut self, input: Stereo) -> Stereo {
+        let Some(bus) = self.preset.bus.as_ref().filter(|b| b.master) else {
+            return input;
+        };
+        let output = self.limiter.process(input, bus.limiter);
+        for (peak, value) in self.peak.iter_mut().zip(output) {
+            *peak = peak.max(value.abs());
+        }
+        output
+    }
+    pub fn master_meter(&self) -> limiter::Meter {
+        self.limiter.meter()
     }
     pub fn source_sample(&self) -> &SampleBuffer {
         self.live_input
@@ -2717,6 +2742,7 @@ impl Engine {
             * sr;
         // The newest grain, at age 0, is the one the grain clock spawns next.
         // Older ones than their own length died already and are left out.
+        let empty = self.live_grains == 0;
         let mut n = 1;
         while n as f64 * interval < longest && self.live_grains != u128::MAX {
             // Whole refresh steps, so a group's filters tune on their first frame.
@@ -2726,6 +2752,11 @@ impl Engine {
         }
         // The overlap level follows at once, or the cloud would enter loud.
         self.overlap = self.overlap.max(self.active_grains() as f32);
+        if empty {
+            // There is no older cloud to declick. Start a prefilled cloud at
+            // its own level, without a gain swell during the note's attack.
+            self.smooth_grain_norm = self.grain_norm_target(false);
+        }
         let v = &mut self.voices[voice];
         let mut fading = false;
         for k in 0..=UNGROUPED {
@@ -3276,11 +3307,7 @@ impl Engine {
         let (voice_frames, group_sent) = self.render_grains(synth_grains);
         let file_source = self.live_input.is_none();
         let group_sends = self.taps.group_sends();
-        let norm = if !effects_only && self.overlap > 2.0 {
-            tables::inverse_sqrt(self.overlap - 1.0)
-        } else {
-            1.0
-        };
+        let norm = self.grain_norm(effects_only);
         let input_gain = self.input_gain;
         let feedback = self.modulated.params.grain_feedback;
         if feedback > 0.0 || self.grain_feedback.output != [0.0; 2] {
@@ -3543,7 +3570,7 @@ impl Engine {
                 || self.previous_source.is_some()
                 || !self.preset.source_color_chain.is_empty()
             {
-                if self.live_input.is_some() {
+                if self.live_input.is_some() || bus.is_some() {
                     input.map(|x| {
                         if x.is_finite() {
                             x.clamp(-16.0, 16.0)
@@ -3841,14 +3868,18 @@ impl Engine {
             }) * self.smooth_gain;
             if !value.is_finite() {
                 0.0
-            } else if value.abs() > 0.98 {
+            } else if self.preset.bus.is_none() && value.abs() > 0.98 {
+                // Instrument protection must not clip a summed bus before
+                // its fader. Hosts protect the complete Master output once.
                 value.signum() * (0.98 + 0.02 * fast::tanh((value.abs() - 0.98) / 0.02))
             } else {
                 value
             }
         });
-        for (c, &value) in output.iter().enumerate() {
-            self.peak[c] = self.peak[c].max(value.abs());
+        if !self.preset.bus.as_ref().is_some_and(|b| b.master) {
+            for (c, &value) in output.iter().enumerate() {
+                self.peak[c] = self.peak[c].max(value.abs());
+            }
         }
         if self.playing {
             let bar_loop = self.bar_loop_active();
@@ -3882,6 +3913,21 @@ impl Engine {
         self.frame += 1;
         self.source_fade_remaining = self.source_fade_remaining.saturating_sub(1);
         output
+    }
+
+    fn grain_norm_target(&self, effects_only: bool) -> f32 {
+        if !effects_only && self.overlap > 2.0 {
+            tables::inverse_sqrt(self.overlap - 1.0)
+        } else {
+            1.0
+        }
+    }
+    /// Grain births/deaths change the control-rate overlap, but the level
+    /// of the already sounding grains must move continuously, sample by sample.
+    fn grain_norm(&mut self, effects_only: bool) -> f32 {
+        let target = self.grain_norm_target(effects_only);
+        self.smooth_grain_norm += (target - self.smooth_grain_norm) * self.grain_norm_smoothing;
+        self.smooth_grain_norm
     }
 
     pub fn process(&mut self, output: &mut [Stereo]) {

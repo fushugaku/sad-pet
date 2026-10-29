@@ -483,6 +483,7 @@ fn decode_snapshot(
     }
     state_cache["knobs"] = knobs;
     state["peak"] = json!(v.peak);
+    state["master_limiter"] = json!(v.master_limiter);
     state["resynth"] = json!({"bands":v.resynth_bands,"frequencies":v.resynth_frequencies});
     state["source_fx"] = json!({"pending":v.source_fx_pending,"recipe":sad_pet::dsp::source_fx::Recipe::new(*region, preset.source_color_chain.first().copied(), preset.params.bpm, preset.params.sample_root_note),"error":if v.source_fx_error {Some("Could not prepare Source FX")}else{None}});
     state["gain_reduction"] = json!(

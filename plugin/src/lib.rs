@@ -879,6 +879,7 @@ impl Controller {
             "peak":view.peak,"gain_reduction":reduction,"cpu_percent":0.0,"underruns":0,
             "source_fx":{"pending":view.source_fx_pending,"error":if view.source_fx_error {Some("Could not prepare Source FX")}else{None}},
         });
+        state["master_limiter"] = json!(view.master_limiter);
         state["startup_preset_index"] = json!(sad_pet::startup::INDEX);
         state["resynth"] =
             json!({"bands":view.resynth_bands,"frequencies":view.resynth_frequencies});

@@ -1031,6 +1031,7 @@ impl Audio {
                 }
             }
         }
+        let mut master = None;
         let mut part = self.parts.as_mut();
         while let Some(p) = part {
             if p.audio.meta.kind == Kind::Master {
@@ -1042,6 +1043,7 @@ impl Audio {
                 }
                 p.audio.source_routing_chunk(n);
                 output.copy_from_slice(&p.audio.chunk.out[..n]);
+                master = Some(&mut p.audio.engine);
                 break;
             }
             part = p.next.as_mut();
@@ -1051,6 +1053,11 @@ impl Audio {
             for out in output.iter_mut() {
                 let frame = preview.next();
                 *out = [out[0] + frame[0], out[1] + frame[1]];
+            }
+        }
+        if let Some(master) = master {
+            for out in output {
+                *out = master.protect_master(*out);
             }
         }
     }

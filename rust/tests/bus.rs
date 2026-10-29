@@ -45,7 +45,7 @@ fn default_master_and_bus_pass_their_input_bit_for_bit() {
 fn switched_on_processing_passes_at_unity_without_notes_or_transport() {
     // An empty-but-present FX slot at zero mix keeps the engine path active.
     let mut e = engine(Kind::Bus, |p| {
-        p.color_chain = vec![ColorSlot {
+        p.source_color_chain = vec![ColorSlot {
             id: 1,
             kind: SaturatorType::Compressor,
             mix: 0.0,
@@ -62,6 +62,77 @@ fn switched_on_processing_passes_at_unity_without_notes_or_transport() {
         }
     }
     assert!(error < 1e-4, "unity path changed the input by {error}");
+}
+
+#[test]
+fn processed_buses_keep_headroom_even_when_bypassed() {
+    for kind in [Kind::Bus, Kind::Master, Kind::PadFx] {
+        for bypass in [false, true] {
+            let mut e = engine(kind, |p| {
+                // A dry Source FX slot exercises the full processing path.
+                p.source_color_chain = vec![ColorSlot {
+                    id: 1,
+                    kind: SaturatorType::Compressor,
+                    mix: 0.0,
+                    ..Default::default()
+                }];
+            });
+            e.bypass = bypass;
+            let mut error = 0.0_f32;
+            for n in 0..12_000 {
+                let x = input(n).map(|x| x * 3.0);
+                let y = e.process_input_frame(x);
+                if n > 6_000 {
+                    for c in 0..2 {
+                        error = error.max((y[c] - x[c]).abs());
+                    }
+                }
+            }
+            assert!(error < 1e-4, "{kind:?}, bypass {bypass}: mix error {error}");
+        }
+    }
+}
+
+#[test]
+fn master_protection_follows_the_fader_and_meter_reads_the_final_output() {
+    let mut e = engine(Kind::Master, |p| {
+        p.source_color_chain = vec![ColorSlot {
+            id: 1,
+            kind: SaturatorType::Compressor,
+            mix: 0.0,
+            ..Default::default()
+        }];
+    });
+    for _ in 0..12_000 {
+        let raw = e.process_input_frame([4.0, -2.0]);
+        let out = e.protect_master(raw.map(|x| x * 0.125));
+        assert!((out[0] - 0.5).abs() < 1e-4);
+        assert_eq!(out[1], out[0] * -0.5);
+    }
+    assert!(e.master_meter().reduction_db.abs() < 0.001);
+    assert!(
+        e.peak[0] <= 0.50001,
+        "Master meter measured before its fader"
+    );
+    let raw = e.process_input_frame([4.0, -2.0]);
+    let out = e.protect_master(raw);
+    assert!(out[0] <= sad_pet::dsp::limiter::CEILING);
+    assert!(e.master_meter().reduction_db > 12.0);
+    e.preset.bus.as_mut().unwrap().limiter = false;
+    assert_eq!(e.protect_master(raw), raw);
+}
+
+#[test]
+fn legacy_masters_enable_protection_and_explicit_bypass_round_trips() {
+    let old: bus::Settings = serde_json::from_str(r#"{"master":true}"#).unwrap();
+    assert!(old.limiter);
+    let mut bypassed = old;
+    bypassed.limiter = false;
+    let json = serde_json::to_string(&bypassed).unwrap();
+    assert_eq!(
+        serde_json::from_str::<bus::Settings>(&json).unwrap(),
+        bypassed
+    );
 }
 
 #[test]

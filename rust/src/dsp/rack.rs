@@ -4,7 +4,6 @@
 use super::{
     CONTROL_INTERVAL, Engine, Stereo, VOICES, bits, fast,
     filter_slots::{self, Instance},
-    tables,
 };
 use crate::{
     preset::FilterPosition,
@@ -603,7 +602,7 @@ impl Engine {
         // it plays dry.
         let live = self.rack_input();
         let effects_only = live && self.live_input.as_ref().is_some_and(|i| i.effects_only);
-        let norm = if effects_only { 1.0 } else { self.grain_norm() };
+        let norm = self.grain_norm(effects_only);
         let input_gain = self.input_gain;
         let feedback = self.modulated.params.grain_feedback;
         if feedback > 0.0 || self.grain_feedback.output != [0.0; 2] {
@@ -696,7 +695,7 @@ impl Engine {
             }
         }
         let (voice_frames, group_sent) = self.render_grains(true);
-        let norm = self.grain_norm();
+        let norm = self.grain_norm(false);
         let feedback = self.modulated.params.grain_feedback;
         if feedback > 0.0 || self.grain_feedback.output != [0.0; 2] {
             self.grain_feedback
@@ -713,16 +712,6 @@ impl Engine {
         let output = std::array::from_fn(|c| input[c] * (1.0 - mix) + grains[c] * norm * mix);
         flow.grains = Some(grains.map(|x| x * norm));
         flow.signal = self.tap(Stage::Grains, input, output);
-    }
-
-    /// The grains' level at the current overlap.
-    #[inline]
-    fn grain_norm(&self) -> f32 {
-        if self.overlap > 2.0 {
-            tables::inverse_sqrt(self.overlap - 1.0)
-        } else {
-            1.0
-        }
     }
 
     /// Each advanced group's grains to its bus, before Dry/Wet.

@@ -2446,6 +2446,12 @@ function syncGrainBuffer() {
   if (document.activeElement !== buffer) buffer.value = String(seconds);
 }
 function buildBus() {
+  $("master-limiter").onclick = () => {
+    if (!preset?.bus?.master) return;
+    preset.bus.limiter = preset.bus.limiter === false;
+    schedulePreset();
+    syncBus();
+  };
   $("bus-filters").onclick = () => {
     if (!preset?.bus) return;
     preset.bus.filters = !preset.bus.filters;
@@ -2458,7 +2464,10 @@ function syncBus() {
   $("bus-engine").hidden = !bus;
   // Only a bus can switch Filter 1 and 2 off; elsewhere they always run.
   $("bus-filters").hidden = !bus;
+  $("master-limiter").hidden = !bus?.master;
+  updateMasterMeter(state?.master_limiter);
   if (!bus) return;
+  setAttr($("master-limiter"), "aria-pressed", bus.limiter !== false);
   const title = $("bus-title");
   const vocal = !!preset.vocal;
   const kit = !!preset.sampler;
@@ -2482,7 +2491,7 @@ function syncBus() {
   const effects = [preset.color_chain, preset.pre_color_chain, preset.source_color_chain]
     .some((chain) => chain?.some((slot) => slot.enabled && slot.mix > 0));
   $("bus-hint").hidden =
-    !!bus.granular || !!bus.filters || !!preset.resynth?.enabled || effects
+    !!bus.master || !!bus.granular || !!bus.filters || !!preset.resynth?.enabled || effects
     || (preset.filter_slots?.length ?? 0) > 0;
 }
 function buildSynth() {
@@ -2798,6 +2807,13 @@ function syncOscillators(bank) {
   }
   for (const [key, update] of controls)
     if (key.startsWith(`${bank}_`)) update();
+}
+function updateMasterMeter(meter) {
+  const output = $("master-reduction"), on = preset?.bus?.limiter !== false;
+  const db = meter?.reduction_db || 0;
+  output.hidden = !preset?.bus?.master || (on ? db < 0.05 : !(meter?.input_peak > 1));
+  output.textContent = on ? `−${db.toFixed(1)} dB` : "Clip";
+  output.style.color = on ? "" : "#ff938c";
 }
 function updateResynthMeter(meter) {
   const active = resynthSettings().enabled && state?.playing;
@@ -5799,6 +5815,7 @@ async function poll() {
     setText($("sample-info"), `${next.sample_seconds.toFixed((next.preset?.drums || next.preset?.synth) && next.sample_seconds < 1 ? 3 : 2)} s`);
     syncInput(next.input);
     updateResynthMeter(next.resynth);
+    updateMasterMeter(next.master_limiter);
     neuroEditor?.update(next.sequencer, next.playing);
     timbreEditor?.sync(next.timbres);
     busMixer?.sync(next.timbres);

@@ -28,6 +28,8 @@ jobs:
           cargo fmt --all -- --check
           cargo clippy -p sad-pet-wasm --target wasm32-unknown-unknown --locked -- -D warnings
           cargo test -p sad-pet-wasm --lib --locked
+          cargo test -p sad-pet --no-default-features --lib dsp::limiter --locked
+          cargo test -p sad-pet --no-default-features --test bus --test grain_continuity --locked
           cargo test -p sad-pet-alphaverb --release --lib --locked
           cargo test -p sad-pet-superecho --release --lib --locked
           cargo test -p sad-pet-voice --release --locked
@@ -51,6 +53,7 @@ jobs:
           node wasm/test-neuropolis.mjs
           node wasm/test-timbres.mjs
           node wasm/test-buses.mjs
+          node wasm/test-master.mjs
           node wasm/test-bus-ui.mjs
           node wasm/test-mixer-ui.mjs
           node wasm/test-taps-ui.mjs
