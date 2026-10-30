@@ -412,18 +412,20 @@ impl Engine {
                                 continue;
                             }
                             let unfiltered = flow.notes[i];
-                            let voice = filter_slots::chain(
+                            let voice = filter_slots::route_chain(
                                 &mut self.filter_banks,
                                 masks[FilterPosition::BeforeFilters as usize],
                                 unfiltered,
                                 Instance::Voice(i),
+                                Some((&mut self.taps, value)),
                             );
-                            let voice = self.filters[i].process(voice);
-                            let voice = filter_slots::chain(
+                            let voice = self.filters[i].process(voice, &mut self.taps, value);
+                            let voice = filter_slots::route_chain(
                                 &mut self.filter_banks,
                                 masks[FilterPosition::AfterFilters as usize],
                                 voice,
                                 Instance::Voice(i),
+                                Some((&mut self.taps, value)),
                             );
                             if sends {
                                 for c in 0..2 {
@@ -437,18 +439,20 @@ impl Engine {
                         }
                     } else {
                         let input = flow.signal;
-                        let output = filter_slots::chain(
+                        let output = filter_slots::route_chain(
                             &mut self.filter_banks,
                             masks[FilterPosition::BeforeFilters as usize],
                             input,
                             Instance::Shared,
+                            Some((&mut self.taps, 1.0)),
                         );
-                        let output = self.filters[0].process(output);
-                        let output = filter_slots::chain(
+                        let output = self.filters[0].process(output, &mut self.taps, 1.0);
+                        let output = filter_slots::route_chain(
                             &mut self.filter_banks,
                             masks[FilterPosition::AfterFilters as usize],
                             output,
                             Instance::Shared,
+                            Some((&mut self.taps, 1.0)),
                         );
                         flow.signal = self.tap(Stage::Filters, input, output);
                     }
@@ -480,12 +484,14 @@ impl Engine {
                             masks[FilterPosition::AfterOsc4 as usize],
                         ],
                         &mut self.filter_banks,
+                        Some((&mut self.taps, weight)),
                     );
-                    let output = filter_slots::chain(
+                    let output = filter_slots::route_chain(
                         &mut self.filter_banks,
                         masks[FilterPosition::AfterResynth as usize],
                         output,
                         Instance::Shared,
+                        Some((&mut self.taps, weight)),
                     );
                     if self.taps.sends(Stage::Resynth) {
                         self.taps.send(Stage::Resynth, output.map(|x| x * weight));
@@ -521,12 +527,14 @@ impl Engine {
                             masks[FilterPosition::AfterOsc4 as usize],
                         ],
                         &mut self.filter_banks,
+                        Some((&mut self.taps, 1.0)),
                     );
-                    let output = filter_slots::chain(
+                    let output = filter_slots::route_chain(
                         &mut self.filter_banks,
                         masks[FilterPosition::AfterResynth as usize],
                         output,
                         Instance::Shared,
+                        Some((&mut self.taps, 1.0)),
                     );
                     flow.signal = self.tap(Stage::Resynth, input, output);
                 }
@@ -554,11 +562,12 @@ impl Engine {
                     let output = self
                         .color_rack
                         .process_with_voice_gain(input, loudest_voice);
-                    let output = filter_slots::chain(
+                    let output = filter_slots::route_chain(
                         &mut self.filter_banks,
                         masks[FilterPosition::AfterFx as usize],
                         output,
                         Instance::Shared,
+                        Some((&mut self.taps, 1.0)),
                     );
                     flow.signal = self.tap(Stage::PostFx, input, output);
                 }
@@ -647,11 +656,12 @@ impl Engine {
             if value <= 0.0 {
                 continue;
             }
-            let frame = filter_slots::chain(
+            let frame = filter_slots::route_chain(
                 &mut self.filter_banks,
                 masks[FilterPosition::AfterGrains as usize],
                 voice_frames[i],
                 Instance::Voice(i),
+                Some((&mut self.taps, norm * input_gain * value)),
             );
             flow.notes[i] = std::array::from_fn(|c| {
                 (source[c] * chain_dry + frame[c] * chain_grain) * input_gain
@@ -705,11 +715,12 @@ impl Engine {
                 .feed(voice_frames[0].map(|x| x * norm), feedback);
         }
         self.send_groups(group_sent, norm);
-        let grains = filter_slots::chain(
+        let grains = filter_slots::route_chain(
             &mut self.filter_banks,
             self.filter_masks[FilterPosition::AfterGrains as usize],
             voice_frames[0],
             Instance::Shared,
+            Some((&mut self.taps, norm)),
         );
         let mix = self.smooth_mix;
         let output = std::array::from_fn(|c| input[c] * (1.0 - mix) + grains[c] * norm * mix);

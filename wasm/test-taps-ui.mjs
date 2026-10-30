@@ -37,7 +37,11 @@ class Element {
     if (!this.nodes.has(selector)) this.nodes.set(selector, new Element());
     return this.nodes.get(selector);
   }
-  querySelectorAll() {
+  querySelectorAll(selector) {
+    if (selector === "input") {
+      const all = node => [node, ...node.children.flatMap(all)];
+      return all(this).filter(node => node.tagName === "INPUT");
+    }
     return this.children.map((knob) => knob.dial);
   }
   closest() {
@@ -56,6 +60,8 @@ const context = vm.createContext({
   window: {},
   preset: { params: {} },
   state: null,
+  timbreEditor: null,
+  syncFilterOutputs: () => {},
   document: {
     activeElement: null,
     createElement: (tag) => new Element(tag),
@@ -191,3 +197,31 @@ context.preset.synth = {};
 sync();
 assert.equal(grains.row.querySelector(".tap-name span").textContent, "Grain engine, after Filters");
 console.log("Section outputs: CHAIN/SEND IDs, bus menu, removed buses, + New bus and chips behave.");
+
+// The timbre header keeps independent send controls, including zero sends,
+// without rebuilding a slider while it is being dragged.
+const header = Object.create(context.window.SadTimbres.prototype);
+const route = { key: "group:0", label: "Grain Group A", bus: 1, value: .4, set: value => { route.value = value; } };
+const extra = { key: "filter:17", label: "Filter 3", bus: 1, value: 0, set: value => { extra.value = value; } };
+header.context = { active: 0, timbres: [
+  { id: 0, kind: "rack", sends: Array(8).fill(0) },
+  { id: 3, kind: "bus", bus: 1, name: "Bus 1" },
+] };
+header.hooks = { routes: () => [route, extra] };
+header.sends = new Element();
+header.syncSends(header.active(), false);
+assert.deepEqual(header.sends.children.map(n => n.textContent), ["→ Bus 1", "Grain Group A → Bus 1", "Filter 3 → Bus 1"]);
+const slider = header.sends.querySelectorAll("input")[1];
+assert.equal(Number(slider.value), .4);
+slider.value = ".75"; slider.oninput();
+assert.equal(route.value, .75);
+header.syncSends(header.active(), false);
+assert.equal(header.sends.querySelectorAll("input")[1], slider);
+header.context.timbres[1].name = "Delay";
+header.syncSends(header.active(), false);
+assert.equal(header.sends.children[1].textContent, "Grain Group A → Delay");
+header.context.timbres.pop();
+header.syncSends(header.active(), false);
+assert.equal(header.sends.children[0].textContent, "Grain Group A → Bus 1 (removed)");
+assert.equal(header.sends.querySelectorAll("input")[0].disabled, true);
+console.log("Timbre send overview: named sources, zero levels, slider edits, stable drag and renamed/removed buses passed.");

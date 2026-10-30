@@ -271,6 +271,18 @@ files move instruments between the web version and the native app and plug-ins.
   at Grain engine CHAIN 0% as with Granular off. The knobs
   are host parameters (`tap_grains_chain`, `tap_grains_send`, `tap_grains_bus`…;
   Resynth keeps `resynth_send` and `resynth_bus`).
+  The timbre header also lists each configured individual send with its own
+  slider, for example **Grain Group A → Bus 1** or **Filter 3 → Delay**, even
+  when its level is zero. The slider edits the same send as the source panel.
+  **Individual filter outputs.** Filter 1, Filter 2 and every added filter have
+  **Chain**, **Bus** and **Send** controls. A send takes that filter's output
+  before its Chain blend; Filter 1 in a serial pair sends before Filter 2.
+  Switched-off filters send nothing. This works in classic timbres and Racks,
+  including filters after any Resynth oscillator, whose sends are decimated
+  to the host rate. Routes survive scene recall, follow Bus mute and the
+  existing loop rules, and their host parameters append without shifting old
+  indices (`tap_filter1_chain/send/bus`, `tap_filter2_chain/send/bus`, and
+  `filter3_chain/send/bus` through `filter18_chain/send/bus`).
 - **Advanced grain mode.** **Advanced** in the Grain engine heading of any timbre
   (Granular, Drums, Synth, Bus) deals the grains to four groups, A–D. **SHARE**
   sets each group's part of the grains (equal shares take turns, 0% switches a

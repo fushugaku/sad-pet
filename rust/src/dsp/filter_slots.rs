@@ -16,6 +16,9 @@ pub(crate) struct Bank {
     voices: [Filter; super::VOICES],
     shared: Filter,
     oscillator: Filter,
+    send_decimator: super::resynth::Decimator,
+    oversampled: bool,
+    send_phase: bool,
 }
 impl Bank {
     fn new(id: u32, rate: u32) -> Box<Self> {
@@ -24,12 +27,17 @@ impl Bank {
             voices: std::array::from_fn(|_| Filter::new(rate)),
             shared: Filter::new(rate),
             oscillator: Filter::new(rate * super::resynth::oversample(rate)),
+            send_decimator: super::resynth::Decimator::new(),
+            oversampled: super::resynth::oversample(rate) == 2,
+            send_phase: false,
         })
     }
     pub(crate) fn clear(&mut self) {
         self.voices.iter_mut().for_each(Filter::clear);
         self.shared.clear();
         self.oscillator.clear();
+        self.send_decimator.clear();
+        self.send_phase = false;
     }
     pub(crate) fn clear_voice(&mut self, voice: usize) {
         self.voices[voice].clear();
@@ -173,11 +181,25 @@ pub(crate) enum Instance {
 
 /// Run one position's filters in list order; an empty mask is a no-op.
 #[inline]
+#[cfg(test)]
 pub(crate) fn chain(
+    banks: &mut [Box<Bank>],
+    mask: u16,
+    frame: Stereo,
+    instance: Instance,
+) -> Stereo {
+    route_chain(banks, mask, frame, instance, None)
+}
+
+/// A tap is taken at each filter, before its Chain blend. `gain` is the
+/// surrounding voice's VCA/normalization; timbre volume is applied at finish.
+#[inline]
+pub(crate) fn route_chain(
     banks: &mut [Box<Bank>],
     mut mask: u16,
     mut frame: Stereo,
     instance: Instance,
+    mut route: Option<(&mut super::taps::Runtime, f32)>,
 ) -> Stereo {
     while mask != 0 {
         let i = mask.trailing_zeros() as usize;
@@ -185,11 +207,30 @@ pub(crate) fn chain(
         let Some(bank) = banks.get_mut(i) else {
             break;
         };
-        frame = match instance {
+        let output = match instance {
             Instance::Voice(voice) => bank.voices[voice].process(frame),
             Instance::Shared => bank.shared.process(frame),
             Instance::Oscillator => bank.oscillator.process(frame),
         };
+        if let Some((taps, gain)) = route.as_mut() {
+            if taps.slot_sends(i) {
+                let (sent, emit) = if matches!(instance, Instance::Oscillator) && bank.oversampled {
+                    bank.send_phase = !bank.send_phase;
+                    (bank.send_decimator.next(output), !bank.send_phase)
+                } else {
+                    (output, true)
+                };
+                if emit {
+                    taps.send_slot(i, sent.map(|x| x * *gain));
+                }
+            } else {
+                bank.send_decimator.clear();
+                bank.send_phase = false;
+            }
+            frame = taps.mix_slot(i, frame, output);
+        } else {
+            frame = output;
+        }
     }
     frame
 }

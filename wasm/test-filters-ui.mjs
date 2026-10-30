@@ -43,8 +43,13 @@ function element() {
       const id = selector.match(/data-id="([^"]+)"/)?.[1];
       if (id) return node.children.find((c) => String(c.dataset.id) === id);
       if (!parts.has(selector)) parts.set(selector, element());
+      const field = selector.match(/data-field="([^"]+)"/)?.[1];
+      if (field) parts.get(selector).dataset.field = field;
       return parts.get(selector);
     },
+    querySelectorAll: selector => selector === "input"
+      ? [node.querySelector('[data-field="chain"]'), node.querySelector('[data-field="send"]')]
+      : [],
   };
   return node;
 }
@@ -68,6 +73,17 @@ const preset = {
 };
 const context = {
   preset,
+  state: null,
+  timbreEditor: null,
+  tapSettings: stage => ({ chain: 1, send: 0, bus: 0, ...preset.taps?.[stage] }),
+  editTap: (stage, field, value) => {
+    preset.taps ??= {};
+    preset.taps[stage] = { ...context.tapSettings(stage), [field]: value };
+    changes.push([`tap_${stage}_${field}`, value]);
+    context.syncFilterOutputs();
+  },
+  sendTargets: () => ({ sends: true, buses: [{ bus: 1, name: "Bus 1" }] }),
+  fillBusMenu: (select, value) => { select.value = String(value); },
   $: get,
   window: {},
   requestAnimationFrame: () => 1,
@@ -80,6 +96,10 @@ const context = {
     createElement: element,
     querySelector: (selector) =>
       dials.get(selector.match(/data-control-key="([^"]+)"/)?.[1]) ?? null,
+    querySelectorAll: selector => {
+      const walk = n => [n, ...n.children.flatMap(walk)];
+      return [get("filters"), get("added-filters")].flatMap(walk).filter(n => n.className === selector.slice(1));
+    },
   },
   createKnob(schema, bank, binding) {
     schemas.push(schema);
@@ -163,7 +183,7 @@ get("add-filter").onclick();
 assert.equal(presetWrites, 1);
 assert.equal(preset.filter_slots.length, 1);
 assert.deepEqual(
-  { ...preset.filter_slots[0] },
+  JSON.parse(JSON.stringify(preset.filter_slots[0])),
   {
     id: 1,
     enabled: true,
@@ -177,9 +197,19 @@ assert.deepEqual(
     env: "env2",
     env_depth: 0,
     keytrack: 0,
+    output: { chain: 1, send: 0, bus: 0 },
   },
 );
 assert.equal(list.children.length, 1);
+const outputRow = c => c.children.find(n => n.className === "filter-output");
+let output = outputRow(list.children[0]);
+output.querySelector("select").value = "1";
+output.querySelector("select").onchange();
+const sendRange = output.querySelector('[data-field="send"]');
+assert.equal(sendRange.disabled, false);
+sendRange.value = ".6"; sendRange.oninput();
+assert.deepEqual(changes.at(-1), ["filter3_send", .6]);
+assert.equal(preset.filter_slots[0].output.send, .6);
 const dial = (field, id = 1) => dials.get(`filter_slot:${id}:${field}`);
 assert.equal(dial("env_depth").getAttribute("aria-disabled"), "false");
 assert.equal(dial("drive").getAttribute("aria-disabled"), "true");
@@ -208,6 +238,11 @@ get("add-filter").onclick();
 assert.equal(preset.filter_slots[1].id, 2);
 list.querySelector('[data-id="2"]').querySelector(".color-up").onclick();
 assert.deepEqual(ids(), [2, 1]);
+output = outputRow(list.querySelector('[data-id="1"]'));
+output.querySelector('[data-field="send"]').value = ".3";
+output.querySelector('[data-field="send"]').oninput();
+assert.deepEqual(changes.at(-1), ["filter4_send", .3], "Reordered send edited the wrong filter");
+assert.equal(preset.filter_slots[1].output.bus, 1);
 bindings.get("filter_slot:1:resonance").set(0.5);
 assert.deepEqual(changes.at(-1), ["filter4_resonance", 0.5]);
 

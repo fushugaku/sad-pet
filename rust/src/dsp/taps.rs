@@ -6,11 +6,13 @@ use crate::{
     Stereo,
     bus::MAX_BUSES,
     grain_groups::GROUPS,
+    preset::{FilterSlot, MAX_FILTER_SLOTS},
     taps::{STAGES, Stage, Tap, Taps},
 };
 
 /// The stages, then the grain groups.
-const SOURCES: usize = STAGES + GROUPS;
+const SLOT_OFFSET: usize = STAGES + GROUPS;
+const SOURCES: usize = SLOT_OFFSET + MAX_FILTER_SLOTS;
 
 /// About 10 ms at 48 kHz from one end of a share to the other.
 const STEP: f32 = 1.0 / 512.0;
@@ -20,6 +22,8 @@ pub(crate) struct Runtime {
     settings: Taps,
     /// The grain groups' outputs; all at their defaults outside advanced mode.
     groups: [Tap; GROUPS],
+    filters: [Tap; MAX_FILTER_SLOTS],
+    filter_ids: [u32; MAX_FILTER_SLOTS],
     /// Bit n set for each Bus n that exists to take a send.
     open: u16,
     chain: [f32; SOURCES],
@@ -29,7 +33,7 @@ pub(crate) struct Runtime {
     /// Every share is at its target: a frame costs one compare.
     settled: bool,
     /// Bit s set while source s has a send gain above zero.
-    sending: u16,
+    sending: u32,
     /// Some send has a target above zero.
     targeted: bool,
     /// Bit b set for each Bus b + 1 that a section is routed to, and for
@@ -47,6 +51,8 @@ impl Runtime {
         Self {
             settings: Taps::default(),
             groups: [Tap::default(); GROUPS],
+            filters: [Tap::default(); MAX_FILTER_SLOTS],
+            filter_ids: [0; MAX_FILTER_SLOTS],
             open: 0,
             chain: [1.0; SOURCES],
             chain_targets: [1.0; SOURCES],
@@ -74,6 +80,27 @@ impl Runtime {
             self.chain = self.chain_targets;
         }
     }
+    /// Keep a filter's ramp history with its ID when the list is reordered.
+    pub(crate) fn configure_filters(&mut self, slots: &[FilterSlot]) {
+        let filters = std::array::from_fn(|i| slots.get(i).map_or(Tap::default(), |s| s.output));
+        let ids = std::array::from_fn(|i| slots.get(i).map_or(0, |s| s.id));
+        if ids != self.filter_ids {
+            let chain = self.chain;
+            let gains = self.gains;
+            for (i, &id) in ids.iter().enumerate() {
+                let previous = self.filter_ids.iter().position(|old| id != 0 && *old == id);
+                self.chain[SLOT_OFFSET + i] =
+                    previous.map_or(filters[i].chain, |j| chain[SLOT_OFFSET + j]);
+                self.gains[SLOT_OFFSET + i] =
+                    previous.map_or([0.0; MAX_BUSES], |j| gains[SLOT_OFFSET + j]);
+            }
+        }
+        if filters != self.filters || ids != self.filter_ids {
+            self.filters = filters;
+            self.filter_ids = ids;
+            self.retarget();
+        }
+    }
     /// Without its bus, a send goes nowhere; the chain is unaffected.
     pub(crate) fn set_open_buses(&mut self, open: u16) {
         if open != self.open {
@@ -87,7 +114,8 @@ impl Runtime {
         let taps = Stage::ALL
             .map(|stage| *self.settings.get(stage))
             .into_iter()
-            .chain(self.groups);
+            .chain(self.groups)
+            .chain(self.filters);
         for (s, tap) in taps.enumerate() {
             self.chain_targets[s] = tap.chain;
             let open = tap.bus > 0 && self.open & 1 << tap.bus != 0;
@@ -147,7 +175,11 @@ impl Runtime {
     /// The stage's input and output blended as its Chain share says.
     #[inline]
     pub(crate) fn mix(&self, stage: Stage, input: Stereo, output: Stereo) -> Stereo {
-        let chain = self.chain(stage);
+        self.mix_source(stage as usize, input, output)
+    }
+    #[inline]
+    fn mix_source(&self, source: usize, input: Stereo, output: Stereo) -> Stereo {
+        let chain = self.chain[source];
         if chain == 1.0 {
             output
         } else if chain == 0.0 {
@@ -173,11 +205,23 @@ impl Runtime {
     /// Bit g set for each grain group that sends this frame.
     #[inline]
     pub(crate) fn group_sends(&self) -> u8 {
-        (self.sending >> STAGES) as u8
+        ((self.sending >> STAGES) & ((1 << GROUPS) - 1)) as u8
     }
     #[inline]
     pub(crate) fn send_group(&mut self, group: usize, frame: Stereo) {
         self.send_source(STAGES + group, frame);
+    }
+    #[inline]
+    pub(crate) fn slot_sends(&self, slot: usize) -> bool {
+        self.sending & (1 << (SLOT_OFFSET + slot)) != 0
+    }
+    #[inline]
+    pub(crate) fn send_slot(&mut self, slot: usize, frame: Stereo) {
+        self.send_source(SLOT_OFFSET + slot, frame);
+    }
+    #[inline]
+    pub(crate) fn mix_slot(&self, slot: usize, input: Stereo, output: Stereo) -> Stereo {
+        self.mix_source(SLOT_OFFSET + slot, input, output)
     }
     #[inline]
     fn send_source(&mut self, source: usize, frame: Stereo) {
@@ -297,5 +341,41 @@ mod tests {
         runtime.configure(&taps, Default::default());
         settled(&mut runtime);
         assert_eq!(runtime.mix(Stage::Filters, [1.0; 2], [3.0; 2]), [1.5; 2]);
+    }
+
+    #[test]
+    fn reordered_filter_sends_keep_their_routes_without_crossfeeding() {
+        let mut runtime = Runtime::new();
+        let mut slots = [
+            FilterSlot {
+                id: 10,
+                output: Tap {
+                    bus: 1,
+                    send: 0.5,
+                    chain: 0.25,
+                },
+                ..Default::default()
+            },
+            FilterSlot {
+                id: 20,
+                output: Tap {
+                    bus: 2,
+                    send: 1.0,
+                    chain: 0.75,
+                },
+                ..Default::default()
+            },
+        ];
+        runtime.configure_filters(&slots);
+        runtime.configure(&Taps::default(), Default::default());
+        runtime.set_open_buses(1 << 1 | 1 << 2);
+        settled(&mut runtime);
+        slots.swap(0, 1);
+        runtime.configure_filters(&slots);
+        runtime.begin_frame();
+        runtime.send_slot(0, [1.0; 2]);
+        assert_eq!(runtime.output().unwrap()[0], [0.0; 2]);
+        assert_eq!(runtime.output().unwrap()[1], [1.0; 2]);
+        assert_eq!(runtime.mix_slot(0, [0.0; 2], [1.0; 2]), [0.75; 2]);
     }
 }

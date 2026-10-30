@@ -115,6 +115,70 @@ fn master_limits_the_final_mix_and_preview_without_audio_allocations() {
 }
 
 #[test]
+fn individual_filter_sends_route_and_mute_without_audio_heap_work() {
+    let mut control = Controller::new_plugin(false);
+    let context = call(&mut control, "/api/timbres/add", json!({"kind":"tb303"}));
+    let id = context["active"].as_u64().unwrap();
+    let context = call(&mut control, "/api/timbres/add", json!({"kind":"bus"}));
+    let bus = context["active"].as_u64().unwrap();
+    call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":0,"muted":true}),
+    );
+    call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":id,"gain":0}),
+    );
+    call(&mut control, "/api/timbres/select", json!({"id":id}));
+    let mut preset = call(&mut control, "/api/preset", Value::Null);
+    preset["rack"]["modules"] = json!([
+        {"module":"tb303","enabled":true}, {"module":"filters","enabled":true}
+    ]);
+    preset["taps"] = json!({"filter1":{"chain":0,"send":0.4,"bus":1}});
+    preset["filter_slots"] = json!([
+        {"id":1,"position":"after_filters","output":{"chain":0,"send":0.4,"bus":1}}
+    ]);
+    call(&mut control, "/api/preset", preset);
+    call(&mut control, "/api/transport", json!({"playing":true}));
+    let mut audio = control.prepare(8000);
+    let values = control.values();
+    let input = [[0.0; 2]; 128];
+    let mut output = [[0.0; 2]; 128];
+    let mut peak = 0.0_f32;
+    no_heap(|| {
+        for _ in 0..80 {
+            audio.begin(&values, 120.0, None, true, 128);
+            audio.process_block(&input, &mut output);
+            for sample in output.iter().flatten() {
+                assert!(sample.is_finite());
+                peak = peak.max(sample.abs());
+            }
+        }
+    });
+    assert!(
+        peak > 0.01,
+        "Only filter sends can reach Master in this scene"
+    );
+    call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":bus,"muted":true}),
+    );
+    no_heap(|| {
+        for _ in 0..80 {
+            audio.begin(&values, 120.0, None, true, 128);
+            audio.process_block(&input, &mut output);
+        }
+    });
+    assert!(
+        output.iter().flatten().all(|x| x.abs() < 1e-8),
+        "Muted bus still passed a filter send"
+    );
+}
+
+#[test]
 fn tb303_pattern_parameters_and_preset_exchange_render_without_heap_work() {
     let mut control = Controller::new_plugin(false);
     let context = call(&mut control, "/api/timbres/add", json!({"kind":"tb303"}));

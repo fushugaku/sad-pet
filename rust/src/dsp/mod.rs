@@ -2374,6 +2374,7 @@ impl Engine {
         } else {
             Default::default()
         };
+        self.taps.configure_filters(&m.filter_slots[..m.filter_len]);
         self.taps.configure(&m.taps, group_taps);
         self.grain_feedback.tidy(m.params.grain_feedback);
         let shaper_note = self.source_note as f32
@@ -3497,11 +3498,12 @@ impl Engine {
                         * self.modulated.params.midi_pitchbend_range;
                 let frame = synth.render(i, voice.generation, note, &self.sample, &self.file_range);
                 // Filters placed after the voice source shape its oscillators.
-                let frame = filter_slots::chain(
+                let frame = filter_slots::route_chain(
                     &mut self.filter_banks,
                     masks[FilterPosition::AfterGrains as usize],
                     frame,
                     Instance::Voice(i),
+                    Some((&mut self.taps, input_gain * voice.value)),
                 );
                 mixed_frames[i] = frame.map(|x| x * input_gain);
                 for (c, total) in before_fx.iter_mut().enumerate() {
@@ -3514,11 +3516,12 @@ impl Engine {
             if self.voices[i].value <= 0.0 || self.synth.is_some() {
                 continue;
             }
-            let frame = filter_slots::chain(
+            let frame = filter_slots::route_chain(
                 &mut self.filter_banks,
                 masks[FilterPosition::AfterGrains as usize],
                 voice_frames[i],
                 Instance::Voice(i),
+                Some((&mut self.taps, norm * input_gain * self.voices[i].value)),
             );
             mixed_frames[i] = std::array::from_fn(|c| {
                 (source[c] * chain_dry + frame[c] * chain_grain) * input_gain
@@ -3563,13 +3566,15 @@ impl Engine {
                 masks[FilterPosition::AfterOsc4 as usize],
             ],
             &mut self.filter_banks,
+            Some((&mut self.taps, voice_sum)),
         );
         let after_resynth = masks[FilterPosition::AfterResynth as usize];
-        let resynth_output = filter_slots::chain(
+        let resynth_output = filter_slots::route_chain(
             &mut self.filter_banks,
             after_resynth,
             resynth_output,
             Instance::Shared,
+            Some((&mut self.taps, voice_sum)),
         );
         // The shared stages reach every voice and are weighted by each, so
         // what they send follows the notes' VCA as their return does.
@@ -3608,22 +3613,24 @@ impl Engine {
                 continue;
             }
             let unfiltered = std::array::from_fn(|c| mixed[c] + correction[c]);
-            let voice = filter_slots::chain(
+            let voice = filter_slots::route_chain(
                 &mut self.filter_banks,
                 masks[FilterPosition::BeforeFilters as usize],
                 unfiltered,
                 Instance::Voice(i),
+                Some((&mut self.taps, self.voices[i].value)),
             );
             let voice = if bus.is_some_and(|b| !b.filters) {
                 voice
             } else {
-                self.filters[i].process(voice)
+                self.filters[i].process(voice, &mut self.taps, self.voices[i].value)
             };
-            let voice = filter_slots::chain(
+            let voice = filter_slots::route_chain(
                 &mut self.filter_banks,
                 masks[FilterPosition::AfterFilters as usize],
                 voice,
                 Instance::Voice(i),
+                Some((&mut self.taps, self.voices[i].value)),
             );
             if filter_sends {
                 for c in 0..2 {
@@ -3666,11 +3673,12 @@ impl Engine {
         let processed = self
             .color_rack
             .process_with_voice_gain(filtered, loudest_voice);
-        let processed = filter_slots::chain(
+        let processed = filter_slots::route_chain(
             &mut self.filter_banks,
             masks[FilterPosition::AfterFx as usize],
             processed,
             Instance::Shared,
+            Some((&mut self.taps, 1.0)),
         );
         if self.taps.sends(Stage::PostFx) {
             self.taps.send(Stage::PostFx, processed);

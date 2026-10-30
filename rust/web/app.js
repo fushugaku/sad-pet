@@ -995,6 +995,7 @@ function syncGrainGroupOutputs() {
     );
   });
   syncGrainGroupTabs();
+  timbreEditor?.sync(state?.timbres);
 }
 function syncGrainGroups() {
   const settings = grainGroupSettings(),
@@ -1407,6 +1408,7 @@ function buildFilters() {
       .join("");
     card.innerHTML = `<div class="filter-title"><strong>Filter ${number}</strong><select id="${prefix}-type" aria-label="Filter ${number} model"><optgroup label="SAD PET">${responses("legacy")}</optgroup><optgroup label="Rustias">${models}</optgroup><optgroup label="RADIAS Filter 2">${responses("radias2")}</optgroup></select><select id="${prefix}-env" aria-label="Filter ${number} envelope"><option value="env1">ENV 1</option><option value="env2">ENV 2</option><option value="env3">ENV 3</option></select></div>${filterGraphMarkup(number)}<div id="${prefix}-controls" class="knob-grid filter-controls"></div>`;
     $("filters").append(card);
+    buildFilterOutput(card, number);
     const type = i === 0 ? "vcf_type" : "vcf2_type";
     card.querySelector(".filter-graph").spec = () => {
       const p = preset?.params;
@@ -1575,6 +1577,7 @@ const FILTER_SLOT_DEFAULT = {
   env: "env2",
   env_depth: 0,
   keytrack: 0,
+  output: { chain: 1, send: 0, bus: 0 },
 };
 const FILTER_SLOT_CONTROLS = [
   ["cutoff", "CUTOFF"],
@@ -1602,6 +1605,7 @@ function filterModelOptions() {
 }
 function editAddedFilters() {
   syncAddedFilters();
+  timbreEditor?.sync(state?.timbres);
   refreshColorDestinations();
   schedulePreset();
 }
@@ -1667,7 +1671,59 @@ function syncAddedFilters() {
     for (const [field] of FILTER_SLOT_CONTROLS)
       controls.get(`filter_slot:${slot.id}:${field}`)?.();
   }
+  syncFilterOutputs();
   refreshFilterGraphs();
+}
+function filterOutput(number, id) {
+  return id === undefined ? tapSettings(`filter${number}`)
+    : { chain: 1, send: 0, bus: 0, ...findFilterSlot(id)?.output };
+}
+function editFilterOutput(number, id, field, value) {
+  if (id === undefined) return editTap(`filter${number}`, field, value);
+  const index = preset.filter_slots?.findIndex(s => s.id === id) ?? -1;
+  if (index < 0) return;
+  const slot = preset.filter_slots[index];
+  slot.output = { ...filterOutput(number, id), [field]: value };
+  scheduleParameter(`filter${index + 3}_${field}`, value);
+  syncFilterOutputs();
+  timbreEditor?.sync(state?.timbres);
+}
+function buildFilterOutput(card, number, id) {
+  const row = document.createElement("div");
+  row.className = "filter-output";
+  row.dataset.number = number;
+  if (id !== undefined) row.dataset.slot = id;
+  row.innerHTML = `<label>Chain<input type="range" min="0" max="1" step=".01" data-field="chain" aria-label="Filter ${number} chain"></label><label>Bus<select aria-label="Filter ${number} bus"></select></label><label>Send<input type="range" min="0" max="1" step=".01" data-field="send" aria-label="Filter ${number} bus send"></label>`;
+  for (const range of row.querySelectorAll("input"))
+    range.oninput = () => editFilterOutput(number, id, range.dataset.field, Number(range.value));
+  row.querySelector('[data-field="chain"]').title = "Share in the chain. At 0% the filter input continues, while its filtered output can still feed the bus.";
+  const select = row.querySelector("select");
+  select.onchange = () => select.value === "new"
+    ? addTapBus(null, bus => editFilterOutput(number, id, "bus", bus))
+    : editFilterOutput(number, id, "bus", Number(select.value));
+  card.append(row);
+}
+function syncFilterOutputs() {
+  if (!preset) return;
+  const { sends, buses } = sendTargets();
+  for (const row of document.querySelectorAll(".filter-output")) {
+    const number = Number(row.dataset.number),
+      id = row.dataset.slot === undefined ? undefined : Number(row.dataset.slot),
+      output = filterOutput(number, id), select = row.querySelector("select"),
+      target = buses.find(b => b.bus === output.bus);
+    const signature = JSON.stringify([output.bus, buses.map(b => [b.bus, b.name, b.self, b.loop])]);
+    if (row.dataset.signature !== signature) {
+      fillBusMenu(select, output.bus, buses);
+      row.dataset.signature = signature;
+    } else if (document.activeElement !== select) select.value = String(output.bus);
+    select.disabled = !sends;
+    for (const range of row.querySelectorAll("input")) {
+      const field = range.dataset.field;
+      if (document.activeElement !== range) range.value = output[field];
+      range.setAttribute("aria-valuetext", percent(output[field]));
+      if (field === "send") range.disabled = !sends || !target || !!target.loop;
+    }
+  }
 }
 function addedFilterCard(index, slot) {
   const number = index + 3,
@@ -1677,6 +1733,7 @@ function addedFilterCard(index, slot) {
   card.classList.toggle("inactive", !slot.enabled);
   card.dataset.id = id;
   card.innerHTML = `<div class="filter-title added-filter-title"><strong>Filter ${number}</strong><select class="added-filter-position" aria-label="Filter ${number} position"></select><select class="added-filter-type" aria-label="Filter ${number} model">${filterModelOptions()}</select><select class="added-filter-env" aria-label="Filter ${number} envelope"><option value="env1">ENV 1</option><option value="env2">ENV 2</option><option value="env3">ENV 3</option></select><div class="color-actions"><button class="color-bypass" aria-label="Bypass Filter ${number}" title="Bypass" aria-pressed="${!slot.enabled}">⏻</button><button class="color-up" aria-label="Move Filter ${number} up" title="Move up">↑</button><button class="color-down" aria-label="Move Filter ${number} down" title="Move down">↓</button><button class="color-remove" aria-label="Remove Filter ${number}" title="Remove">×</button></div></div>${filterGraphMarkup(number)}<div id="filter-slot-${id}-controls" class="knob-grid filter-controls"></div>`;
+  buildFilterOutput(card, number, id);
   card.querySelector(".filter-graph").spec = () => {
     const s = findFilterSlot(id);
     return s && filterGraphSpec(s.model, s.kind, s.cutoff, s.env_depth, s.resonance, s.morph);
@@ -2260,6 +2317,8 @@ function editTap(stage, field, value) {
   preset.taps = { ...preset.taps, [stage]: { ...tapSettings(stage), [field]: value } };
   scheduleParameter(tapId(stage, field), value);
   syncTaps();
+  syncFilterOutputs();
+  timbreEditor?.sync(state?.timbres);
 }
 function buildTaps() {
   for (const [stage, label] of TAP_STAGES) {
@@ -2354,6 +2413,25 @@ function fillBusMenu(select, chosen, buses) {
 }
 /** A Rack names its effect racks by letter, wherever they stand. */
 const RACK_STAGE_LABELS = { source: "Insert FX", pre_fx: "FX A", post_fx: "FX B" };
+/** Every configured individual send, including those currently at zero. */
+function timbreSendRoutes() {
+  if (!preset) return [];
+  const routes = [...TAP_STAGES, ["filter1", "Filter 1"], ["filter2", "Filter 2"]].map(([stage, label]) => {
+    const tap = tapSettings(stage);
+    return { key: `tap:${stage}`, label: preset.rack ? RACK_STAGE_LABELS[stage] ?? label : label,
+      bus: tap.bus, value: tap.send, set: value => editTap(stage, "send", value) };
+  });
+  if (preset.grain_groups?.advanced)
+    preset.grain_groups.groups.forEach((group, i) => routes.push({
+      key: `group:${i}`, label: `Grain Group ${GRAIN_GROUP_NAMES[i]}`, bus: group.output?.bus ?? 0,
+      value: group.output?.send ?? 0, set: value => editGrainGroup(i, "send", value),
+    }));
+  (preset.filter_slots ?? []).forEach((slot, i) => routes.push({
+    key: `filter:${slot.id}`, label: `Filter ${i + 3}`, bus: slot.output?.bus ?? 0,
+    value: slot.output?.send ?? 0, set: value => editFilterOutput(i + 3, slot.id, "send", value),
+  }));
+  return routes;
+}
 function syncTaps() {
   if (!preset || !tapViews.size) return;
   const { sends, buses } = sendTargets();
@@ -5866,6 +5944,7 @@ async function poll() {
     busMixer?.sync(next.timbres);
     rackEditor?.meters(next.rack_peaks);
     syncTaps();
+    syncFilterOutputs();
     syncGrainGroupOutputs();
     drumEditor?.update(next.drums);
     tb303Editor?.update(next.tb303);
@@ -5964,6 +6043,7 @@ async function init() {
     timbreEditor = new window.SadTimbres($("timbres"), {
       change: changeTimbre,
       features: () => state?.features,
+      routes: timbreSendRoutes,
     });
     if (window.SadMixer && state.timbres?.timbres)
       busMixer = new window.SadMixer($("bus-mixer"), {

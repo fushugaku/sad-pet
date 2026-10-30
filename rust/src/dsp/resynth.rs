@@ -931,6 +931,7 @@ impl Resynth {
             running,
             [0; MAX_OSCILLATORS],
             &mut [],
+            None,
         )
     }
     /// As `process_with_grains`, with added filters after oscillators: one
@@ -951,6 +952,7 @@ impl Resynth {
         running: bool,
         layer_filters: [u16; MAX_OSCILLATORS],
         banks: &mut [Box<Bank>],
+        mut route: Option<(&mut super::taps::Runtime, f32)>,
     ) -> Stereo {
         if !self.active() {
             return dry;
@@ -1229,8 +1231,20 @@ impl Resynth {
                     }
                 }
                 if filters != 0 {
-                    let filtered =
-                        filter_slots::chain(banks, filters, layer_wet, Instance::Oscillator);
+                    let send_scale = if self.settings.input == Input::Source {
+                        voice_scale
+                    } else {
+                        1.0
+                    };
+                    let filtered = filter_slots::route_chain(
+                        banks,
+                        filters,
+                        layer_wet,
+                        Instance::Oscillator,
+                        route
+                            .as_mut()
+                            .map(|(taps, gain)| (&mut **taps, *gain * send_scale)),
+                    );
                     for c in 0..2 {
                         wet[c] += filtered[c];
                     }
@@ -1589,6 +1603,7 @@ mod tests {
                 true,
                 [1, 0, 0, 0],
                 &mut banks.0,
+                None,
             );
             changed |= a != b;
             let bits = |r: &Resynth| {

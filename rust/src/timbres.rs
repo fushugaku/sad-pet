@@ -506,6 +506,7 @@ pub fn tapped(preset: &crate::preset::Preset) -> u8 {
         .iter()
         .map(|&stage| preset.taps.get(stage))
         .chain(groups)
+        .chain(preset.filter_slots.iter().map(|slot| &slot.output))
         .filter(|tap| (1..=MAX_BUSES as u8).contains(&tap.bus))
         .fold(0, |buses, tap| buses | 1 << (tap.bus - 1))
 }

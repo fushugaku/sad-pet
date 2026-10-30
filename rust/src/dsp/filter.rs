@@ -321,14 +321,36 @@ impl FilterBank {
             p.filter2_morph,
         );
     }
-    pub fn process(&mut self, frame: Stereo) -> Stereo {
+    pub(crate) fn process(
+        &mut self,
+        frame: Stereo,
+        taps: &mut super::taps::Runtime,
+        gain: f32,
+    ) -> Stereo {
+        use crate::taps::Stage;
         let first = self.filters[0].process(frame);
+        if taps.sends(Stage::Filter1) {
+            taps.send(Stage::Filter1, first.map(|x| x * gain));
+        }
+        let first = taps.mix(Stage::Filter1, frame, first);
         match self.routing {
             FilterRouting::Single => first,
-            FilterRouting::Serial => self.filters[1].process(first),
-            FilterRouting::Parallel => {
-                let second = self.filters[1].process(frame);
-                std::array::from_fn(|c| (first[c] + second[c]) * 0.5)
+            FilterRouting::Serial | FilterRouting::Parallel => {
+                let input = if self.routing == FilterRouting::Serial {
+                    first
+                } else {
+                    frame
+                };
+                let second = self.filters[1].process(input);
+                if taps.sends(Stage::Filter2) {
+                    taps.send(Stage::Filter2, second.map(|x| x * gain));
+                }
+                let second = taps.mix(Stage::Filter2, input, second);
+                if self.routing == FilterRouting::Serial {
+                    second
+                } else {
+                    std::array::from_fn(|c| (first[c] + second[c]) * 0.5)
+                }
             }
         }
     }

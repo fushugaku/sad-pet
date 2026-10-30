@@ -265,3 +265,67 @@ assert.ok(looped.peak < straight * 2.5, `The loop fed back (${looped.peak} vs ${
 console.log(
   "Buses: Master always present, sends reach Master through Bus 1, roles survive preset loads, scenes keep routing, sections send to a bus, timbres enter Master after its filters, buses feed buses without loops.",
 );
+
+// Every external filter sends its own output, before its Chain share.
+function filterSendScene({ target = 1, position = "after_filters", rack = false, send = 1, muted = false, enabled = true, routing = "serial", count = 1, rate = 8000 } = {}) {
+  const scene = new Core(module, rate);
+  scene.call("sad_load", utility.call("sad_pack"));
+  const bus = scene.request("/api/timbres/add", { kind: "bus" }).timbres.find(t => t.kind === "bus");
+  scene.request("/api/timbres/update", { id: bus.id, muted });
+  scene.request("/api/timbres/update", { id: 0, gain: 0 });
+  scene.request("/api/timbres/select", { id: 0 });
+  const p = scene.request("/api/preset");
+  p.sequencer.enabled = false;
+  p.color_chain = []; p.pre_color_chain = []; p.source_color_chain = [];
+  for (const mod of [...p.lfos, ...p.envs])
+    for (const field of ["destination", "destination2", "destination3", "extra_destination"]) mod[field] = "none";
+  p.matrix = []; p.macros = [];
+  Object.assign(p.params, { mix: .5, filter: .85, filter2: .1, filter_env_depth: 0, filter2_env_depth: 0, filter_routing: routing });
+  p.resynth = { enabled: true, count: 4, input: "source", mix: 1, oscillators: Array.from({ length: 4 }, () => ({ waveform: "audio_in", level: .25 })) };
+  if (rack) p.rack = { modules: ["sample", "grains", "resynth", "filters", "post_fx"].map(module => ({ module, enabled: true })) };
+  if (target >= 3) p.filter_slots = Array.from({ length: count }, (_, i) => ({ id: i + 1, enabled, position, cutoff: .6, output: { bus: i === count - 1 ? 1 : 0, send, chain: 0 } }));
+  scene.request("/api/preset", p);
+  if (target <= 2) scene.request("/api/parameters", { [`tap_filter${target}_bus`]: 1, [`tap_filter${target}_send`]: send, [`tap_filter${target}_chain`]: 0 });
+  scene.request("/api/transport", { playing: true, midi_gate: false });
+  const out = [];
+  for (let i = 0; i < 50; i++) {
+    const block = scene.process(128);
+    assert.ok(block.every(Number.isFinite));
+    if (i >= 35) out.push(...block);
+  }
+  const energy = out.reduce((s, x) => s + x * x, 0) / out.length;
+  return { scene, bus, energy };
+}
+for (const rack of [false, true]) {
+  const first = filterSendScene({ rack, target: 1 });
+  const second = filterSendScene({ rack, target: 2 });
+  assert.ok(first.energy > 1e-7 && second.energy > 1e-9, `Individual filters are silent (Rack ${rack})`);
+  assert.ok(first.energy > second.energy * 2, `Filter 1 send was taken after Filter 2 (Rack ${rack})`);
+  assert.ok(filterSendScene({ rack, target: 1, muted: true }).energy < 1e-12, "Filter send ignored Bus mute");
+  assert.ok(filterSendScene({ rack, target: 2, routing: "single" }).energy < 1e-12, "Inactive Filter 2 sent audio");
+  assert.ok(filterSendScene({ rack, target: 2, routing: "parallel" }).energy > 1e-9, "Parallel Filter 2 sent no audio");
+  for (const position of ["after_grains", "after_resynth", "before_filters", "after_filters", "after_fx", "after_osc1", "after_osc2", "after_osc3", "after_osc4"]) {
+    const sent = filterSendScene({ rack, target: 3, position });
+    assert.ok(sent.energy > 1e-9, `${position} sends no audio (Rack ${rack}): ${sent.energy}`);
+    assert.ok(filterSendScene({ rack, target: 3, position, enabled: false }).energy < 1e-12, `${position}: bypassed filter sent audio`);
+    const restored = new Core(module, 8000);
+    restored.call("sad_scene_load", sent.scene.call("sad_scene_pack"));
+    assert.deepEqual(restored.request("/api/preset").filter_slots, sent.scene.request("/api/preset").filter_slots);
+  }
+}
+assert.ok(filterSendScene({ target: 18, count: 16 }).energy > 1e-9, "The last filter slot's send bit was lost");
+for (const rate of [48000, 96000])
+  assert.ok(filterSendScene({ target: 3, position: "after_osc1", rate }).energy > 1e-9, `Oscillator filter send is silent at ${rate}`);
+const filterBusChain = chainScene((scene, ids) => {
+  scene.request("/api/timbres/update", { id: 0, gain: 0, sends: to(2) });
+  scene.request("/api/timbres/update", { id: ids[1], gain: 0 });
+  scene.request("/api/timbres/select", { id: ids[1] });
+  const p = scene.request("/api/preset");
+  p.filter_slots = [{ id: 1, position: "after_fx", cutoff: .9, output: { bus: 1, send: 1, chain: 1 } }];
+  scene.request("/api/preset", p);
+});
+assert.ok(filterBusChain.peak > .001, "An added filter did not route Bus 2 into earlier Bus 1");
+assert.equal(busOf(filterBusChain.scene, filterBusChain.ids[1]).feeds, 1, "Filter sends are missing from the bus graph");
+const blocked = filterBusChain.scene.request("/api/timbres/update", { id: filterBusChain.ids[0], sends: to(2) });
+assert.equal(blocked.timbres.find(t => t.id === filterBusChain.ids[0]).sends[1], 0, "Filter send feedback loop was accepted");
+console.log("Individual filters: own outputs, Chain bypass, Bus mute, serial/parallel, Rack, all positions, oscillator decimation, 16 slots, recall and loop prevention passed.");

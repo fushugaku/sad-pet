@@ -167,6 +167,7 @@ pub struct FilterSlot {
     pub env: EnvSource,
     pub env_depth: f32,
     pub keytrack: f32,
+    pub output: crate::taps::Tap,
 }
 impl Default for FilterSlot {
     fn default() -> Self {
@@ -183,6 +184,7 @@ impl Default for FilterSlot {
             env: EnvSource::default(),
             env_depth: 0.0,
             keytrack: 0.0,
+            output: crate::taps::Tap::default(),
         }
     }
 }
@@ -195,6 +197,7 @@ impl FilterSlot {
         finite_clamp(&mut self.morph, 0.0, 1.0, d.morph);
         finite_clamp(&mut self.env_depth, -1.0, 1.0, d.env_depth);
         finite_clamp(&mut self.keytrack, 0.0, 1.0, d.keytrack);
+        self.output.sanitize();
     }
     /// A modulatable control with its range.
     pub fn parameter_mut(&mut self, parameter: FilterSlotParameter) -> (&mut f32, f32, f32) {

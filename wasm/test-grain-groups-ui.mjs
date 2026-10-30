@@ -100,6 +100,7 @@ const knobs = new Map();
 const controls = new Map();
 const calls = [];
 const context = vm.createContext({
+  timbreEditor: null,
   $,
   controls,
   preset: { params: { grain_shape: 0.35, grain_attack: 0.2, grain_size: 0.75 } },

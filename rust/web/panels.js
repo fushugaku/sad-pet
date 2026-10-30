@@ -155,8 +155,15 @@
             .filter((t) => t.kind === "bus" && t.bus > 0 && t.id !== part.id)
             .sort((a, b) => a.bus - b.bus);
       const loops = buses.map((b) => part.kind === "bus" && closesLoop(this.context.timbres, part.bus, b.bus));
-      this.sends.hidden = !buses.length;
-      const signature = JSON.stringify([part.id, buses.map((b) => [b.bus, b.name]), loops]);
+      const routes = routing && part.kind !== "bus" ? [] : this.hooks.routes?.() ?? [];
+      const individual = routes.filter(r => r.bus > 0).map(route => {
+        const bus = this.context.timbres.find(t => t.kind === "bus" && t.bus === route.bus);
+        const loop = part.kind === "bus" && closesLoop(this.context.timbres, part.bus, route.bus);
+        return { route, bus, loop };
+      });
+      this.sends.hidden = !buses.length && !individual.length;
+      const signature = JSON.stringify([part.id, buses.map((b) => [b.bus, b.name]), loops,
+        individual.map(({route, bus, loop}) => [route.key, route.label, route.bus, bus?.name, loop])]);
       if (signature !== this.sendSignature) {
         this.sendSignature = signature;
         this.sends.replaceChildren(
@@ -180,11 +187,27 @@
             label.append(range);
             return label;
           }),
+          ...individual.map(({ route, bus, loop }) => {
+            const caption = `${route.label} → ${bus?.name ?? `Bus ${route.bus} (removed)`}`;
+            const label = el("label", "timbre-send timbre-send-source", caption);
+            const range = el("input");
+            range.type = "range"; range.min = "0"; range.max = "1"; range.step = ".01";
+            range.dataset.route = route.key;
+            range.setAttribute("aria-label", caption);
+            range.oninput = () => this.hooks.routes?.().find(r => r.key === range.dataset.route)?.set(Number(range.value));
+            range.disabled = !bus || loop;
+            label.classList.toggle("loop", !bus || loop);
+            if (loop) label.title = "This route would create a bus feedback loop";
+            label.append(range);
+            return label;
+          }),
         );
       }
       for (const range of this.sends.querySelectorAll("input")) {
         if (document.activeElement !== range)
-          range.value = part.sends?.[Number(range.dataset.bus) - 1] ?? 0;
+          range.value = range.dataset.route
+            ? routes.find(r => r.key === range.dataset.route)?.value ?? 0
+            : part.sends?.[Number(range.dataset.bus) - 1] ?? 0;
       }
     }
   }

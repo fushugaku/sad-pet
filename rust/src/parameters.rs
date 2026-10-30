@@ -202,7 +202,10 @@ fn filter_slot_get(slot: &crate::preset::FilterSlot, field: usize) -> f32 {
         4 => slot.env_depth,
         5 => slot.keytrack,
         6 => slot.model as u8 as f32,
-        _ => slot.kind as u8 as f32,
+        7 => slot.kind as u8 as f32,
+        8 => slot.output.chain,
+        9 => slot.output.send,
+        _ => slot.output.bus as f32,
     }
 }
 fn filter_slot_set(slot: &mut crate::preset::FilterSlot, field: usize, value: f32) {
@@ -214,7 +217,10 @@ fn filter_slot_set(slot: &mut crate::preset::FilterSlot, field: usize, value: f3
         4 => slot.env_depth = value,
         5 => slot.keytrack = value,
         6 => slot.model = crate::preset::FilterModel::ALL[value.round() as usize],
-        _ => slot.kind = crate::preset::FilterType::ALL[value.round() as usize],
+        7 => slot.kind = crate::preset::FilterType::ALL[value.round() as usize],
+        8 => slot.output.chain = value,
+        9 => slot.output.send = value,
+        _ => slot.output.bus = value.round() as u8,
     }
 }
 
@@ -246,6 +252,7 @@ impl Spec {
                 Target::SourceFx(_)
                     | Target::Performance(3..)
                     | Target::Tap(_, TapField::Bus)
+                    | Target::FilterSlot(_, 10)
                     | Target::Macro(_)
                     | Target::GrainGroup(_, GRAIN_GROUP_BUS)
             )
@@ -1350,10 +1357,14 @@ pub fn specs() -> &'static [Spec] {
         // first builds used, every Chain share, then the other bus sends.
         result.push(tap_spec(Stage::Resynth, TapField::Send));
         result.push(tap_spec(Stage::Resynth, TapField::Bus));
-        for stage in Stage::ALL {
+        for stage in Stage::ALL.into_iter().take(crate::taps::BASE_STAGES) {
             result.push(tap_spec(stage, TapField::Chain));
         }
-        for stage in Stage::ALL.into_iter().filter(|&s| s != Stage::Resynth) {
+        for stage in Stage::ALL
+            .into_iter()
+            .take(crate::taps::BASE_STAGES)
+            .filter(|&s| s != Stage::Resynth)
+        {
             result.push(tap_spec(stage, TapField::Send));
             result.push(tap_spec(stage, TapField::Bus));
         }
@@ -1785,6 +1796,28 @@ pub fn specs() -> &'static [Spec] {
                 default: bass.get(field),
                 target: Target::Tb303(field),
             });
+        }
+        // Individual filter outputs append without moving released host IDs.
+        for stage in [Stage::Filter1, Stage::Filter2] {
+            for field in [TapField::Chain, TapField::Send, TapField::Bus] {
+                result.push(tap_spec(stage, field));
+            }
+        }
+        for i in 0..crate::preset::MAX_FILTER_SLOTS {
+            for (field, key, max, default) in [
+                (8, "chain", 1.0, 1.0),
+                (9, "send", 1.0, 0.0),
+                (10, "bus", crate::bus::MAX_BUSES as f32, 0.0),
+            ] {
+                result.push(Spec {
+                    id: format!("filter{}_{key}", i + 3),
+                    name: format!("Filter {} {key}", i + 3),
+                    min: 0.0,
+                    max,
+                    default,
+                    target: Target::FilterSlot(i, field),
+                });
+            }
         }
         result
     })

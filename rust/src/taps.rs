@@ -3,7 +3,8 @@
 use crate::bus::MAX_BUSES;
 use serde::{Deserialize, Serialize};
 
-pub const STAGES: usize = 6;
+pub const BASE_STAGES: usize = 6;
+pub const STAGES: usize = 8;
 
 /// The sections of a timbre's chain, in the order the page shows them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -18,6 +19,8 @@ pub enum Stage {
     /// Filter 1 and 2 with the filters added around them.
     Filters,
     PostFx,
+    Filter1,
+    Filter2,
 }
 impl Stage {
     pub const ALL: [Stage; STAGES] = [
@@ -27,6 +30,8 @@ impl Stage {
         Stage::PreFx,
         Stage::Filters,
         Stage::PostFx,
+        Stage::Filter1,
+        Stage::Filter2,
     ];
     pub fn key(self) -> &'static str {
         match self {
@@ -36,6 +41,8 @@ impl Stage {
             Stage::PreFx => "pre_fx",
             Stage::Filters => "filters",
             Stage::PostFx => "post_fx",
+            Stage::Filter1 => "filter1",
+            Stage::Filter2 => "filter2",
         }
     }
     pub fn label(self) -> &'static str {
@@ -46,6 +53,8 @@ impl Stage {
             Stage::PreFx => "Pre-filter FX",
             Stage::Filters => "Filters",
             Stage::PostFx => "Post-filter FX",
+            Stage::Filter1 => "Filter 1",
+            Stage::Filter2 => "Filter 2",
         }
     }
 }
@@ -95,6 +104,8 @@ pub struct Taps {
     pub pre_fx: Tap,
     pub filters: Tap,
     pub post_fx: Tap,
+    pub filter1: Tap,
+    pub filter2: Tap,
 }
 impl Taps {
     pub fn get(&self, stage: Stage) -> &Tap {
@@ -105,6 +116,8 @@ impl Taps {
             Stage::PreFx => &self.pre_fx,
             Stage::Filters => &self.filters,
             Stage::PostFx => &self.post_fx,
+            Stage::Filter1 => &self.filter1,
+            Stage::Filter2 => &self.filter2,
         }
     }
     pub fn get_mut(&mut self, stage: Stage) -> &mut Tap {
@@ -115,6 +128,8 @@ impl Taps {
             Stage::PreFx => &mut self.pre_fx,
             Stage::Filters => &mut self.filters,
             Stage::PostFx => &mut self.post_fx,
+            Stage::Filter1 => &mut self.filter1,
+            Stage::Filter2 => &mut self.filter2,
         }
     }
     pub fn sanitize(&mut self) {
