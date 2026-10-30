@@ -146,6 +146,17 @@ pub fn cutoff_hz(kind: FilterType, value: f32) -> f32 {
     base * span.powf(value.clamp(0.0, 1.0))
 }
 
+/// The existing envelopes plus the source voice's dedicated 303 envelope.
+pub(super) fn envelopes(
+    envs: [f32; crate::preset::MODULATORS],
+    tb303: f32,
+) -> [f32; crate::preset::MODULATORS + 1] {
+    let mut values = [0.0; crate::preset::MODULATORS + 1];
+    values[..crate::preset::MODULATORS].copy_from_slice(&envs);
+    values[crate::preset::MODULATORS] = tb303;
+    values
+}
+
 /// Cutoff modulation in logarithmic frequency space. C4 is the tracking pivot;
 /// 100% tracking shifts the cutoff by one octave per octave played, including bend.
 pub fn voice_cutoffs<const N: usize>(p: &Params, note: f32, envs: [f32; N]) -> [f32; 2] {
@@ -154,7 +165,7 @@ pub fn voice_cutoffs<const N: usize>(p: &Params, note: f32, envs: [f32; N]) -> [
             p.filter_model,
             p.vcf_type,
             p.filter,
-            envs[p.filter_env.index()],
+            p.filter_env.value(&envs),
             p.filter_env_depth,
             note,
             p.filter_keytrack,
@@ -163,7 +174,7 @@ pub fn voice_cutoffs<const N: usize>(p: &Params, note: f32, envs: [f32; N]) -> [
             p.filter2_model,
             p.vcf2_type,
             p.filter2,
-            envs[p.filter2_env.index()],
+            p.filter2_env.value(&envs),
             p.filter2_env_depth,
             note,
             p.filter2_keytrack,

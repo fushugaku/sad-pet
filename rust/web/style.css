@@ -6589,6 +6589,8 @@ input[type="range"] {
 .rack-menu-item[data-module="drums"] { --chain: #efb661; }
 .rack-menu-item[data-module="sampler"] { --chain: #62d3c3; }
 .rack-menu-item[data-module="vocal"] { --chain: #f38ea6; }
+.rack-menu-item[data-module="tb303"],
+.rack-stack > .rack-module[data-module="tb303"] { --chain: #b8d78b; --module: #b8d78b; }
 .rack-menu-item[data-module="grains"] { --chain: #c4f486; }
 .rack-menu-item[data-module="filters"] { --chain: #cdbd8c; }
 .rack-menu-item[data-module="resynth"] { --chain: #8bc5d5; }
@@ -6604,6 +6606,7 @@ input[type="range"] {
 
 /* 303: the voice controls and its note/accent/slide pattern. */
 .tb303-bank { border-color: #596749; }
+[data-chain="tb303"] { --chain: #b8d78b; }
 .tb303-waveforms { display: flex; gap: 5px; }
 .tb303-knobs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .tb303-radias { margin-top: 24px; }

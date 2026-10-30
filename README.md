@@ -164,7 +164,7 @@ files move instruments between the web version and the native app and plug-ins.
   destinations (`synth_osc1_waveform`…, `synth_granular`, `synth_buffer_seconds`).
   The desktop app, which has one engine, switches it with **Engine: Granular /
   Synth engine**. Presets of the other timbres serialize unchanged.
-- **303 Bass** is a monophonic circuit-derived instrument with saw/square,
+- **303 Bass** is a monophonic circuit-derived Rack source with saw/square,
   tuning, cutoff, resonance, envelope modulation, decay and accent. Its
   sixteen-step pattern has notes/rests, accents and tied slides. MIDI overlaps
   slide; velocities 100–127 accent. The nonlinear, coupled diode ladder,
@@ -175,6 +175,7 @@ files move instruments between the web version and the native app and plug-ins.
   303 oscillator or another layer. Neuropolis can transpose the group, sequence
   individual layers and parameters while the 303 keeps its own pattern.
   Turn Pattern off explicitly to play it from Neuropolis Notes or MIDI.
+  Its envelope is also available to the Rack's external filters as **303**.
   See [the model and its fidelity boundaries](docs/TB303.md).
 - **Rack timbres** (browser and DAW plug-ins) are instruments you build from
   modules in any order: **+ Timbre → Rack**. Sound runs from the top module down.

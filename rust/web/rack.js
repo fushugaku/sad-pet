@@ -39,6 +39,8 @@
       hint: "Pads of samples, played by the notes and pad tracks" },
     { key: "vocal", label: "Vocal", group: "Sources",
       hint: "Sings its score with the song transport" },
+    { key: "tb303", label: "303 Bass", group: "Sources",
+      hint: "303 voice and pattern with linked RADIAS oscillators" },
     { key: "grains", label: "Grain engine", group: "Processing",
       hint: "Grains of the Sample right above, or of the sound above" },
     { key: "filters", label: "Filters", group: "Processing",
@@ -56,10 +58,10 @@
   const INFO = Object.fromEntries(MODULES.map((m) => [m.key, m]));
   /** The sources in Mixer strip order (rack::STRIP_SOURCES), as the host's
    * meters list them. */
-  const SOURCES = ["sample", "synth", "drums", "sampler", "vocal"];
+  const SOURCES = ["sample", "synth", "drums", "sampler", "vocal", "tb303"];
   /** Sources whose settings a removed module leaves for its undo. */
-  const KEPT = ["drums", "synth", "sampler", "vocal"];
-  const CHAINS = { sample: "Sample", synth: "Synth", drums: "Drums", sampler: "Sampler", vocal: "Vocal", mix: "Mix" };
+  const KEPT = ["drums", "synth", "sampler", "vocal", "tb303"];
+  const CHAINS = { sample: "Sample", synth: "Synth", drums: "Drums", sampler: "Sampler", vocal: "Vocal", tb303: "303 Bass", mix: "Mix" };
   /** The section tap (Output row) of each processor. */
   const STAGES = { source_fx: "source", grains: "grains", resynth: "resynth",
     pre_fx: "pre_fx", filters: "filters", post_fx: "post_fx" };
@@ -159,6 +161,7 @@
         drums: $("drum-machine"),
         sampler: $("sampler-editor"),
         vocal: $("vocal-editor"),
+        tb303: $("tb303-engine"),
         source_fx: tap("source"),
         grains: $("grain-engine"),
         resynth: tap("resynth"),
@@ -319,6 +322,7 @@
         steps.map((s) => [s.key, s.enabled, s.chain, s.perNote, s.readsFile, s.mixed]),
         !!preset.drums,
         !!preset.synth,
+        !!preset.tb303,
       ]);
       if (layout !== this.layout) {
         this.layout = layout;
@@ -506,6 +510,7 @@
       switch (step.module) {
         case "sample":
           return this.hooks.state()?.sample_name ?? "";
+        case "tb303": return `303${preset.tb303?.count ? ` + ${preset.tb303.count} RADIAS` : ""}`;
         case "synth": {
           const n = preset.synth?.count ?? 1;
           return `${n} ${n === 1 ? "oscillator" : "oscillators"}`;

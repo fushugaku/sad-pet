@@ -183,6 +183,7 @@ impl Engine {
         if self.playing {
             self.tick_events();
         }
+        self.track_tb303_note();
         self.sync_history_window();
         let input_gain = self.input_gain;
         let bypass = self.bypass;
@@ -267,6 +268,7 @@ impl Engine {
         if self.frame.is_multiple_of(CONTROL_INTERVAL) {
             self.update_modulation();
         }
+        let bass = self.render_tb303();
         let Some(rack) = self.rack else {
             return [0.0; 2];
         };
@@ -379,10 +381,11 @@ impl Engine {
                         }
                     }
                 }
-                Module::Drums | Module::Sampler | Module::Vocal => {
+                Module::Drums | Module::Sampler | Module::Vocal | Module::Tb303 => {
                     let stream = match step.module {
                         Module::Drums => drums,
                         Module::Sampler => kit,
+                        Module::Tb303 => bass,
                         _ => vocal,
                     };
                     flow.source = stream.map(|x| x * input_gain);

@@ -58,7 +58,7 @@ impl Kind {
     /// A new instrument waits for notes rather than playing its voice 0 with
     /// the transport (a Granular one keeps its host's choice).
     pub fn waits_for_notes(self) -> bool {
-        matches!(self, Kind::Synth | Kind::Rack)
+        matches!(self, Kind::Synth | Kind::Rack | Kind::Tb303)
     }
     /// A new instrument of this kind, built as a Rack that plays as a timbre
     /// of the kind does: the modules its engine runs, in their order. None
@@ -77,6 +77,7 @@ impl Kind {
             Kind::Synth => &[Module::Synth, Module::Filters, Module::PostFx],
             Kind::Sampler => &[Module::Sampler],
             Kind::Vocal => &[Module::Vocal],
+            Kind::Tb303 => &[Module::Tb303],
             _ => return None,
         };
         let mut preset = crate::preset::Preset {
@@ -88,11 +89,14 @@ impl Kind {
             // held at sustain; a Rack's drums have no envelope.
             preset.params.master_volume *= preset.params.adsr_sustain;
         }
-        if matches!(self, Kind::Sampler | Kind::Vocal) {
+        if matches!(self, Kind::Sampler | Kind::Vocal | Kind::Tb303) {
             // As those timbres pass their kit or voice: at unity, no effects.
             preset.params.master_volume = 1.0;
             preset.params.mix = 0.5;
             preset.color_chain.clear();
+        }
+        if self == Kind::Tb303 {
+            preset.sequencer.enabled = false;
         }
         preset.rack = Some(Box::new(crate::rack::Settings {
             modules: modules
@@ -111,7 +115,7 @@ impl Kind {
     }
     /// Keeps its engine role when a preset loads into it.
     pub fn keeps_role(self) -> bool {
-        self.routing() || matches!(self, Kind::Vocal | Kind::Sampler | Kind::Tb303)
+        self.routing() || matches!(self, Kind::Vocal | Kind::Sampler)
     }
     /// Pad FX timbres cannot be told from a Bus by their preset; their Meta
     /// names the Sampler they belong to.
@@ -146,12 +150,7 @@ impl Kind {
             Kind::Drums => preset.drums = Some(Box::default()),
             Kind::Synth => preset.synth = Some(Box::default()),
             Kind::Tb303 => {
-                preset.tb303 = Some(Box::default());
-                preset.bus = Some(Box::default());
-                preset.params.master_volume = 1.0;
-                preset.color_chain.clear();
-                preset.sequencer.enabled = false;
-                preset.sanitize();
+                return self.rack_instrument();
             }
             Kind::Rack => {
                 preset.rack = Some(Box::default());

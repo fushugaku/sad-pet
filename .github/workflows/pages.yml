@@ -33,6 +33,7 @@ jobs:
           cargo test -p sad-pet --no-default-features --lib dsp::synth --locked
           cargo test -p sad-pet --no-default-features --lib dsp::sequence --locked
           cargo test -p sad-pet --no-default-features --test bus --test grain_continuity --locked
+          cargo test -p sad-pet --no-default-features --test rack_instruments --test rack --test rack_sources --locked
           cargo test -p sad-pet-alphaverb --release --lib --locked
           cargo test -p sad-pet-superecho --release --lib --locked
           cargo test -p sad-pet-voice --release --locked

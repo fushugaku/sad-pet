@@ -220,6 +220,24 @@ assert.equal(get("add-filter").disabled, true);
 get("add-filter").onclick();
 assert.equal(preset.filter_slots.length, 16);
 assert.equal(list.children.length, 16);
+// The source envelope appears in every filter only with a 303 module.
+assert.deepEqual(get("filter-env").children.map(o => o.value), ["env1", "env2", "env3"]);
+preset.tb303 = {};
+context.syncFilters();
+for (const prefix of ["filter", "filter2"]) {
+  assert.deepEqual(get(`${prefix}-env`).children.map(o => o.value), ["env1", "env2", "env3", "tb303"]);
+  get(`${prefix}-env`).onchange({ target: { value: "tb303" } });
+  assert.equal(preset.params[`${prefix}_env`], "tb303");
+}
+const addedEnv = list.children[0].querySelector(".added-filter-env");
+assert.ok(addedEnv.children.some(o => o.value === "tb303" && !o.disabled));
+addedEnv.value = "tb303"; addedEnv.onchange();
+assert.equal(preset.filter_slots[0].env, "tb303");
+delete preset.tb303;
+preset.params.filter_env = "env2";
+context.syncFilters();
+assert.ok(!get("filter-env").children.some(o => o.value === "tb303"));
+assert.ok(get("filter2-env").children.find(o => o.value === "tb303").disabled);
 console.log(
   "Filter editor: initialization, 12 controls, model/Comb selection, conditional Morph, scalar transport and added filters (position, model, host IDs, order, removal, limit) passed.",
 );

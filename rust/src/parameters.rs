@@ -1498,11 +1498,16 @@ pub fn specs() -> &'static [Spec] {
         let rack_strips = |result: &mut Vec<Spec>, strips: std::ops::Range<usize>| {
             for i in strips {
                 let source = crate::rack::STRIP_SOURCES[i];
+                let source_key = if source == crate::rack::Module::Tb303 {
+                    "tb303".into()
+                } else {
+                    source.label().to_lowercase()
+                };
                 for (field, (key, label, min, max, default)) in
                     crate::rack::STRIP_FIELDS.into_iter().enumerate()
                 {
                     result.push(Spec {
-                        id: format!("rack_{}_{key}", source.label().to_lowercase()),
+                        id: format!("rack_{source_key}_{key}"),
                         name: format!("Rack {} {label}", source.label()),
                         min,
                         max,
@@ -1543,7 +1548,7 @@ pub fn specs() -> &'static [Spec] {
             },
         });
         // Then the Rack's Sampler and Vocal strips.
-        rack_strips(&mut result, 3..crate::rack::STRIPS);
+        rack_strips(&mut result, 3..5);
         // Then the envelope Resynth carriers play their band levels through.
         resynth!(hold, "hold", 0.0, 1.0);
         resynth!(sustain, "sustain", 0.0, 1.0);
@@ -1759,6 +1764,8 @@ pub fn specs() -> &'static [Spec] {
                 });
             }
         }
+        // The new source strip appends without shifting released host indices.
+        rack_strips(&mut result, 5..crate::rack::STRIPS);
         result
     })
 }

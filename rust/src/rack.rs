@@ -28,6 +28,8 @@ pub enum Module {
     /// Sings its score with the song transport; its phrases render off the
     /// audio thread and the host hands the voice in.
     Vocal,
+    /// Circuit-derived mono bass, its pattern and linked RADIAS layers.
+    Tb303,
     /// The one-effect Source FX slot.
     SourceFx,
     /// Grains of the Sample right above it, or of a live history of its chain.
@@ -48,12 +50,13 @@ pub enum Module {
     Eq,
 }
 impl Module {
-    pub const ALL: [Module; 13] = [
+    pub const ALL: [Module; 14] = [
         Module::Sample,
         Module::Synth,
         Module::Drums,
         Module::Sampler,
         Module::Vocal,
+        Module::Tb303,
         Module::SourceFx,
         Module::Grains,
         Module::Resynth,
@@ -66,7 +69,12 @@ impl Module {
     pub fn source(self) -> bool {
         matches!(
             self,
-            Module::Sample | Module::Synth | Module::Drums | Module::Sampler | Module::Vocal
+            Module::Sample
+                | Module::Synth
+                | Module::Drums
+                | Module::Sampler
+                | Module::Vocal
+                | Module::Tb303
         )
     }
     /// The section tap (Output row) this module ends in, if any.
@@ -88,6 +96,7 @@ impl Module {
             Module::Drums => "Drums",
             Module::Sampler => "Sampler",
             Module::Vocal => "Vocal",
+            Module::Tb303 => "303 Bass",
             Module::SourceFx => "Insert FX",
             Module::Grains => "Grain engine",
             Module::Resynth => "Resynth",
@@ -195,8 +204,9 @@ pub const STRIP_SOURCES: [Module; STRIPS] = [
     Module::Drums,
     Module::Sampler,
     Module::Vocal,
+    Module::Tb303,
 ];
-pub const STRIPS: usize = 5;
+pub const STRIPS: usize = 6;
 /// A strip's numeric controls, in host order.
 pub const STRIP_FIELDS: [(&str, &str, f32, f32, f32); 4] = [
     ("level", "level", 0.0, 2.0, 1.0),
@@ -214,6 +224,7 @@ pub struct Strips {
     pub drums: Strip,
     pub sampler: Strip,
     pub vocal: Strip,
+    pub tb303: Strip,
 }
 impl Strips {
     pub fn get(&self, source: Module) -> Strip {
@@ -223,6 +234,7 @@ impl Strips {
             Module::Drums => self.drums,
             Module::Sampler => self.sampler,
             Module::Vocal => self.vocal,
+            Module::Tb303 => self.tb303,
             _ => Strip::default(),
         }
     }
@@ -236,7 +248,8 @@ impl Strips {
             1 => &mut self.synth,
             2 => &mut self.drums,
             3 => &mut self.sampler,
-            _ => &mut self.vocal,
+            4 => &mut self.vocal,
+            _ => &mut self.tb303,
         }
     }
     pub fn get_mut(&mut self, source: Module) -> Option<&mut Strip> {
@@ -246,6 +259,7 @@ impl Strips {
             Module::Drums => Some(&mut self.drums),
             Module::Sampler => Some(&mut self.sampler),
             Module::Vocal => Some(&mut self.vocal),
+            Module::Tb303 => Some(&mut self.tb303),
             _ => None,
         }
     }
@@ -459,7 +473,8 @@ impl Plan {
                 | Module::Synth
                 | Module::Drums
                 | Module::Sampler
-                | Module::Vocal => {
+                | Module::Vocal
+                | Module::Tb303 => {
                     chain = Chain::Source(slot.module);
                     step.chain = chain;
                     // Off, a voiced source has no notes for the modules under it;

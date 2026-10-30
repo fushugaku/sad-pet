@@ -641,13 +641,9 @@ impl Registry {
             // any other timbre ignores bus settings.
             let engine = &self.parts[index].host.engine;
             let kind = self.parts[index].meta.kind;
-            if kind == Kind::Tb303 {
-                if data.get("tb303").is_none_or(Value::is_null) {
-                    data.insert("tb303".into(), json!(engine.preset.tb303));
-                }
-                data.remove("rack");
-            } else if kind.keeps_role() {
+            if kind.keeps_role() {
                 data.remove("tb303");
+                data.remove("rack");
             }
             if let Some(bus) = engine.preset.bus.as_deref().filter(|_| kind.keeps_role()) {
                 let mut settings = data.get("bus").cloned().unwrap_or(Value::Null);
@@ -1174,6 +1170,7 @@ impl Part {
     /// follows the preset). It starts stopped.
     fn from_document(state: &Value, mut meta: Meta, rate: u32) -> Result<Self, String> {
         use base64::Engine as _;
+        let legacy_303 = meta.kind == Kind::Tb303;
         if state["version"] != 1 || state["timbres"].as_array().is_some_and(|a| !a.is_empty()) {
             return Err("Invalid timbre state".into());
         }
@@ -1222,7 +1219,7 @@ impl Part {
             host.engine.prepare_source_effects()?;
         }
         host.engine
-            .set_midi_gate(state["midi_gate"].as_bool().unwrap_or(true));
+            .set_midi_gate(legacy_303 || state["midi_gate"].as_bool().unwrap_or(true));
         host.engine.set_playing(false);
         host.engine.bypass = state["bypass"] == true;
         host.reset_source_buffers();

@@ -126,7 +126,7 @@ fn tb303_pattern_parameters_and_preset_exchange_render_without_heap_work() {
             .iter()
             .find(|p| p["id"] == id)
             .unwrap()["kind"],
-        "tb303"
+        "rack"
     );
     call(
         &mut control,
@@ -158,6 +158,13 @@ fn tb303_pattern_parameters_and_preset_exchange_render_without_heap_work() {
     );
     let mut preset = call(&mut control, "/api/preset", Value::Null);
     preset["tb303"]["resonance"] = json!(0.9);
+    preset["rack"]["modules"] = json!([
+        {"module":"tb303","enabled":true},
+        {"module":"filters","enabled":true},
+        {"module":"mixer","enabled":true}
+    ]);
+    preset["params"]["filter_env"] = json!("tb303");
+    preset["params"]["filter"] = json!(0.4);
     call(&mut control, "/api/preset", preset);
     let values = control.values();
     no_heap(|| {
@@ -171,6 +178,7 @@ fn tb303_pattern_parameters_and_preset_exchange_render_without_heap_work() {
     assert_eq!(preset["tb303"]["steps"][1]["note"], 55);
     assert_eq!(preset["tb303"]["steps"][1]["slide"], true);
     assert_eq!(preset["tb303"]["count"], 4);
+    assert_eq!(preset["params"]["filter_env"], "tb303");
     assert_eq!(preset["tb303"]["oscillators"][1]["transpose"], 7.0);
     assert!((preset["tb303"]["cutoff"].as_f64().unwrap() - 0.8).abs() < 1e-6);
 }
@@ -1534,7 +1542,10 @@ fn rack_timbres_mix_drums_and_a_synth_and_rebuild_without_audio_allocations() {
     assert_eq!(state["sample_name"], "Rack");
     assert_eq!(state["preset"]["rack"]["modules"][4]["module"], "grains");
     assert_eq!(state["preset"]["rack"]["strips"]["drums"]["muted"], true);
-    assert_eq!(state["rack_peaks"].as_array().unwrap().len(), 5);
+    assert_eq!(
+        state["rack_peaks"].as_array().unwrap().len(),
+        sad_pet::rack::STRIPS
+    );
     // A Rack keeps the score of its Vocal module through a preset load.
     let mut preset = state["preset"].clone();
     preset["rack"]["modules"][1]["module"] = json!("vocal");

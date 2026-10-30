@@ -983,6 +983,9 @@ impl Controller {
             return Err("Invalid timbre identity".into());
         }
         saved.meta.sanitize();
+        if saved.meta.kind == sad_pet::timbres::Kind::Tb303 {
+            saved.midi_gate = true;
+        }
         // An emptied first timbre stays empty, and a Pad FX timbre with its
         // Sampler one.
         let pad_fx = saved.meta.kind == sad_pet::timbres::Kind::PadFx && saved.meta.owner.is_some();

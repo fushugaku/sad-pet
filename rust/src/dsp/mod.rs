@@ -1725,18 +1725,17 @@ impl Engine {
         }
     }
     pub fn held_notes(&self) -> Vec<u8> {
-        if let Some(bass) = &self.tb303 {
-            return bass
-                .note_state()
-                .into_iter()
-                .map(|(_, note, _)| note)
-                .collect();
-        }
-        self.voices[1..]
+        let mut notes: Vec<u8> = self.voices[1..]
             .iter()
             .filter(|v| v.held || v.sustained)
             .map(|v| v.note)
-            .collect()
+            .collect();
+        if let Some((_, note, _)) = self.tb303.as_ref().and_then(|b| b.note_state())
+            && !notes.contains(&note)
+        {
+            notes.push(note);
+        }
+        notes
     }
     pub fn grain_views(&self) -> Vec<GrainView> {
         self.live_grain_slots()
@@ -1958,7 +1957,9 @@ impl Engine {
         self.apply_owned_midi(message, 0);
     }
     fn apply_owned_midi(&mut self, message: Message, owner: u32) {
-        if let Some(bass) = &mut self.tb303
+        let pattern_owns_303 = owner != 0 && self.preset.tb303.as_ref().is_some_and(|s| s.pattern);
+        if !pattern_owns_303
+            && let Some(bass) = &mut self.tb303
             && bass.midi(message, owner)
         {
             if let Message::PitchBend { channel, value } = message
@@ -1966,7 +1967,9 @@ impl Engine {
             {
                 self.bend[channel as usize] = (value.min(16383) as f32 - 8192.0) / 8192.0;
             }
-            return;
+            if self.rack.is_none() {
+                return;
+            }
         }
         if matches!(message, Message::Control { .. } | Message::Program { .. }) {
             self.invalidate_racks();
@@ -2240,8 +2243,12 @@ impl Engine {
             Source::Expression => self.expression[channel],
             Source::RandomNote => self.source_random,
             Source::Gate => {
-                if let Some(bass) = &self.tb303 {
-                    return f32::from(bass.note_state().is_some());
+                if self
+                    .tb303
+                    .as_ref()
+                    .is_some_and(|b| b.note_state().is_some())
+                {
+                    return 1.0;
                 }
                 if self
                     .voices
@@ -2410,12 +2417,14 @@ impl Engine {
         self.filter_masks = filter_slots::masks(slots, &self.filter_banks);
         let last_note = self.source_note as f32
             + self.bend[self.source_channel as usize] * m.params.midi_pitchbend_range;
+        let bass_env = self.tb303_view().envelope;
+        let shared_envs = filter::envelopes(self.env_values, bass_env);
         // Any added filter of a Rack may filter a chain as one.
         filter_slots::configure_shared(
             slots,
             &mut self.filter_banks,
             last_note,
-            self.env_values,
+            shared_envs,
             self.rack.is_some(),
         );
         let bus = self.preset.bus.is_some();
@@ -2423,7 +2432,7 @@ impl Engine {
         if chain_filters {
             // Without notes of its own, a chain's filters follow each
             // envelope's loudest voice and the last note, as added ones do.
-            self.filters[0].configure(&m.params, last_note, self.env_values);
+            self.filters[0].configure(&m.params, last_note, shared_envs);
         }
         for (i, voice) in self.voices.iter().enumerate() {
             if chain_filters || (!voice.envelopes[0].active() && !(bus && i == 0)) {
@@ -2431,8 +2440,9 @@ impl Engine {
             }
             let note = voice.note as f32
                 + self.bend[voice.channel as usize] * m.params.midi_pitchbend_range;
-            self.filters[i].configure(&m.params, note, voice.env_values);
-            filter_slots::configure_voice(slots, &mut self.filter_banks, i, note, voice.env_values);
+            let envs = filter::envelopes(voice.env_values, bass_env);
+            self.filters[i].configure(&m.params, note, envs);
+            filter_slots::configure_voice(slots, &mut self.filter_banks, i, note, envs);
         }
         if let Some(rack) = &mut self.rack {
             rack.retarget(&m.rack_strips);
@@ -2510,13 +2520,14 @@ impl Engine {
         let voice = &self.voices[index];
         let note = voice.note as f32
             + self.bend[voice.channel as usize] * self.modulated.params.midi_pitchbend_range;
-        self.filters[index].configure(&self.modulated.params, note, voice.env_values);
+        let envs = filter::envelopes(voice.env_values, self.tb303_view().envelope);
+        self.filters[index].configure(&self.modulated.params, note, envs);
         filter_slots::configure_voice(
             &self.modulated.filter_slots[..self.modulated.filter_len],
             &mut self.filter_banks,
             index,
             note,
-            voice.env_values,
+            envs,
         );
     }
     fn clear_voice_filters(&mut self, voice: usize) {
@@ -2540,7 +2551,11 @@ impl Engine {
                 let pitch = note as f32
                     + self.bend[voice.channel as usize]
                         * self.modulated.params.midi_pitchbend_range;
-                filter::voice_cutoffs(&self.modulated.params, pitch, voice.env_values)
+                filter::voice_cutoffs(
+                    &self.modulated.params,
+                    pitch,
+                    filter::envelopes(voice.env_values, self.tb303_view().envelope),
+                )
             })
     }
 
@@ -2876,11 +2891,6 @@ impl Engine {
                     .unwrap()
                     .actions(index);
                 for action in actions.into_iter().flatten() {
-                    // Neuropolis modulates an active 303 pattern through its
-                    // pitch/parameter lanes; Notes only play it with Pattern off.
-                    if self.preset.tb303.as_ref().is_some_and(|s| s.pattern) {
-                        continue;
-                    }
                     match action {
                         sequence::Action::Midi(message) => self.apply_owned_midi(message, id),
                         sequence::Action::Legato {
@@ -2888,9 +2898,13 @@ impl Engine {
                             note,
                             velocity,
                         } => {
-                            if let Some(bass) = &mut self.tb303 {
+                            if !self.preset.tb303.as_ref().is_some_and(|s| s.pattern)
+                                && let Some(bass) = &mut self.tb303
+                            {
                                 bass.legato(channel, note, velocity, id);
-                                continue;
+                                if self.rack.is_none() {
+                                    continue;
+                                }
                             }
                             // A kit has no voice to bend: the slide replays the pad.
                             if let (Some(sampler), Some(settings)) =
@@ -3212,34 +3226,8 @@ impl Engine {
             .map_or_else(Default::default, |b| b.view())
     }
 
-    pub fn process_input_frame(&mut self, input: Stereo) -> Stereo {
-        if self.rack.is_some() {
-            // A Rack's sources are its own; the input is its Vocal's voice.
-            return self.process_rack_frame(input);
-        }
-        self.taps.begin_frame();
-        let is_303 = self.tb303.is_some();
-        let source_modulators = if is_303 {
-            if self.playing {
-                self.tick_events();
-            }
-            if let Some((channel, note, velocity)) =
-                self.tb303.as_ref().and_then(|b| b.note_state())
-                && (self.source_channel != channel
-                    || self.source_note != note
-                    || self.source_velocity != velocity as f32 / 127.0)
-            {
-                self.mod_note_on(channel, note, velocity);
-            }
-            let values = self.advance_modulators(self.sample_rate as f32);
-            if self.frame.is_multiple_of(CONTROL_INTERVAL) {
-                self.update_modulation();
-            }
-            Some(values)
-        } else {
-            None
-        };
-        let input = if let (Some(bass), Some(settings)) = (&mut self.tb303, &self.preset.tb303) {
+    fn render_tb303(&mut self) -> Stereo {
+        if let (Some(bass), Some(settings)) = (&mut self.tb303, &self.preset.tb303) {
             bass.configure(
                 &self.modulated.tb303_radias,
                 self.modulated.params.sample_tune_semis
@@ -3253,8 +3241,28 @@ impl Engine {
                 self.preset.params.bpm,
             )
         } else {
-            input
-        };
+            [0.0; 2]
+        }
+    }
+    fn track_tb303_note(&mut self) {
+        if self.voices[1..].iter().any(|v| v.held || v.sustained) {
+            return;
+        }
+        if let Some((channel, note, velocity)) = self.tb303.as_ref().and_then(|b| b.note_state())
+            && (self.source_channel != channel
+                || self.source_note != note
+                || self.source_velocity != velocity as f32 / 127.0)
+        {
+            self.mod_note_on(channel, note, velocity);
+        }
+    }
+
+    pub fn process_input_frame(&mut self, input: Stereo) -> Stereo {
+        if self.rack.is_some() {
+            // A Rack's sources are its own; the input is its Vocal's voice.
+            return self.process_rack_frame(input);
+        }
+        self.taps.begin_frame();
         let input = if self.sampler.is_some() {
             // A kit plays its sequencer even while its chain passes through.
             if self.playing {
@@ -3277,7 +3285,7 @@ impl Engine {
         };
         if bus.is_some() && self.bus_passthrough() {
             // A bus with nothing switched on still runs its sequencer.
-            if self.playing && self.sampler.is_none() && !is_303 {
+            if self.playing && self.sampler.is_none() {
                 self.tick_events();
             }
             return self.pass_bus(input);
@@ -3334,7 +3342,7 @@ impl Engine {
                 }
             }
         }
-        if self.playing && self.sampler.is_none() && !is_303 {
+        if self.playing && self.sampler.is_none() {
             self.tick_events();
         }
         let sr = self.sample_rate as f32;
@@ -3390,8 +3398,7 @@ impl Engine {
                         0.00015
                     },
         );
-        let (mut loudest_voice, mut voice_sum) =
-            source_modulators.unwrap_or_else(|| self.advance_modulators(sr));
+        let (mut loudest_voice, mut voice_sum) = self.advance_modulators(sr);
         if bus.is_some() {
             // A bus has one permanent voice at unity: no notes, no ENV1 VCA.
             for (i, v) in self.voices.iter_mut().enumerate() {
@@ -3400,7 +3407,7 @@ impl Engine {
             loudest_voice = 1.0;
             voice_sum = 1.0;
         }
-        if !is_303 && self.frame.is_multiple_of(CONTROL_INTERVAL) {
+        if self.frame.is_multiple_of(CONTROL_INTERVAL) {
             self.update_modulation();
         }
         let density = self.grain_density;

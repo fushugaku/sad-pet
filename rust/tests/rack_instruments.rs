@@ -74,6 +74,7 @@ fn each_instrument_kind_becomes_a_rack_of_its_engines_modules() {
         (Kind::Synth, vec![Synth, Filters, PostFx]),
         (Kind::Sampler, vec![Sampler]),
         (Kind::Vocal, vec![Vocal]),
+        (Kind::Tb303, vec![Tb303]),
     ] {
         let preset = kind.rack_instrument().unwrap();
         assert_eq!(Kind::of(&preset), Kind::Rack, "{kind:?}");
@@ -85,6 +86,7 @@ fn each_instrument_kind_becomes_a_rack_of_its_engines_modules() {
         assert_eq!(preset.synth.is_some(), kind == Kind::Synth);
         assert_eq!(preset.sampler.is_some(), kind == Kind::Sampler);
         assert_eq!(preset.vocal.is_some(), kind == Kind::Vocal);
+        assert_eq!(preset.tb303.is_some(), kind == Kind::Tb303);
     }
     for kind in [
         Kind::Rack,

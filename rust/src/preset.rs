@@ -83,6 +83,7 @@ pub enum EnvSource {
     #[default]
     Env2,
     Env3,
+    Tb303,
 }
 impl EnvSource {
     pub fn index(self) -> usize {
@@ -90,7 +91,11 @@ impl EnvSource {
             Self::Env1 => 0,
             Self::Env2 => 1,
             Self::Env3 => 2,
+            Self::Tb303 => MODULATORS,
         }
+    }
+    pub fn value(self, envs: &[f32]) -> f32 {
+        envs.get(self.index()).copied().unwrap_or(0.0)
     }
 }
 
@@ -1266,6 +1271,40 @@ impl Preset {
         }
     }
     pub fn sanitize(&mut self) {
+        // Migrate the first 303 projects to a real source chain in a Rack.
+        if self.tb303.is_some() && self.rack.is_none() {
+            use crate::rack::{Module, Slot};
+            let mut modules = vec![Module::Tb303];
+            if !self.source_color_chain.is_empty() {
+                modules.push(Module::SourceFx);
+            }
+            if self.bus.as_ref().is_some_and(|b| b.granular) {
+                modules.push(Module::Grains);
+            }
+            if self.resynth.enabled {
+                modules.push(Module::Resynth);
+            }
+            if !self.pre_color_chain.is_empty() {
+                modules.push(Module::PreFx);
+            }
+            if self.bus.as_ref().is_some_and(|b| b.filters) || !self.filter_slots.is_empty() {
+                modules.push(Module::Filters);
+            }
+            if !self.color_chain.is_empty() {
+                modules.push(Module::PostFx);
+            }
+            self.rack = Some(Box::new(crate::rack::Settings {
+                modules: modules
+                    .into_iter()
+                    .map(|module| Slot {
+                        module,
+                        ..Default::default()
+                    })
+                    .collect(),
+                buffer_seconds: self.bus.as_ref().map_or(4.0, |b| b.buffer_seconds),
+                ..Default::default()
+            }));
+        }
         self.fx_chain_version = 1;
         self.params.sanitize();
         self.lfo_count = self.lfo_count.clamp(1, MODULATORS as u8);
@@ -1274,10 +1313,14 @@ impl Preset {
         self.taps.sanitize();
         self.grain_groups.sanitize();
         if let Some(rack) = &mut self.rack {
-            self.tb303 = None;
             // A Rack holds the settings of the sources it has, and only those.
             rack.sanitize();
             self.bus = None;
+            if rack.has(crate::rack::Module::Tb303) {
+                self.tb303.get_or_insert_with(Default::default).sanitize();
+            } else {
+                self.tb303 = None;
+            }
             if rack.has(crate::rack::Module::Vocal) {
                 self.vocal
                     .get_or_insert_with(|| Box::new(crate::vocal::Settings::new()))

@@ -1503,7 +1503,7 @@ function syncFilters() {
     $(`${prefix}-type`).value = ["legacy", "radias2"].includes(model)
       ? `${model}:${p[type]}`
       : model;
-    $(`${prefix}-env`).value = p[`${prefix}_env`];
+    syncFilterEnvelope($(`${prefix}-env`), p[`${prefix}_env`]);
     for (const [field, active] of [
       ["drive", model !== "legacy"],
       ["morph", ["radias", "sem", "multi_filter"].includes(model)],
@@ -1531,6 +1531,21 @@ function syncFilters() {
   }
   syncAddedFilters();
   refreshFilterGraphs();
+}
+function syncFilterEnvelope(select, value) {
+  const available = !!preset?.tb303;
+  const choices = `${available}:${value === "tb303"}`;
+  if (select.dataset.envChoices !== choices) {
+    select.dataset.envChoices = choices;
+    const sources = [["env1", "ENV 1"], ["env2", "ENV 2"], ["env3", "ENV 3"]];
+    if (available || value === "tb303") sources.push(["tb303", available ? "303" : "303 · unavailable"]);
+    select.replaceChildren(...sources.map(([id, label]) => {
+      const item = option(id, label);
+      item.disabled = id === "tb303" && !available;
+      return item;
+    }));
+  }
+  select.value = value;
 }
 // Filters 3 and up. Positions inside a note's path run one filter per voice
 // with its own envelope and key tracking; the others are one shared filter
@@ -1648,7 +1663,7 @@ function syncAddedFilters() {
   for (const slot of slots) {
     const card = $("added-filters").querySelector(`[data-id="${slot.id}"]`);
     if (!card) continue;
-    card.querySelector(".added-filter-env").value = slot.env;
+    syncFilterEnvelope(card.querySelector(".added-filter-env"), slot.env);
     for (const [field] of FILTER_SLOT_CONTROLS)
       controls.get(`filter_slot:${slot.id}:${field}`)?.();
   }
@@ -4060,7 +4075,7 @@ function modulationGroups() {
       continue;
     }
     // A Rack's Mixer strips, for the chains it has.
-    const strip = /^rack_(sample|synth|drums)_(level|pan|mute|solo)$/.exec(spec.id);
+    const strip = /^rack_(sample|synth|drums|sampler|vocal|tb303)_(level|pan|mute|solo)$/.exec(spec.id);
     if (spec.id.startsWith("rack_")) {
       if (!strip || !preset.rack?.modules?.some((m) => m.module === strip[1])) continue;
       if (!extra.has("Mixer")) extra.set("Mixer", []);

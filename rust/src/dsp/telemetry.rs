@@ -267,16 +267,16 @@ impl Engine {
             view.gain_reduction.iter_mut().for_each(|(_, db)| *db = 0.0);
         }
         view.note_count = 0;
-        if let Some(bass) = &self.tb303 {
-            if let Some((_, note, _)) = bass.note_state() {
-                view.notes[0] = note;
-                view.note_count = 1;
-            }
-        } else {
-            for voice in self.voices[1..].iter().filter(|v| v.held || v.sustained) {
-                view.notes[view.note_count] = voice.note;
-                view.note_count += 1;
-            }
+        for voice in self.voices[1..].iter().filter(|v| v.held || v.sustained) {
+            view.notes[view.note_count] = voice.note;
+            view.note_count += 1;
+        }
+        if let Some((_, note, _)) = self.tb303.as_ref().and_then(|b| b.note_state())
+            && view.note_count < view.notes.len()
+            && !view.notes[..view.note_count].contains(&note)
+        {
+            view.notes[view.note_count] = note;
+            view.note_count += 1;
         }
         view.grain_count = 0;
         for slot in self.live_grain_slots() {
@@ -332,7 +332,11 @@ impl Engine {
                 v.env_values,
             )
         });
-        filter::voice_cutoffs(&m, note, envs)
+        filter::voice_cutoffs(
+            &m,
+            note,
+            filter::envelopes(envs, self.tb303_view().envelope),
+        )
     }
 }
 
@@ -447,10 +451,26 @@ impl ControlFeedback<'_> {
         // Negative notes give the minimum at maximum nonnegative key tracking.
         lo.filter_keytrack = hi.filter_keytrack;
         lo.filter2_keytrack = hi.filter2_keytrack;
-        let below = filter::voice_cutoffs(&lo, -hi.midi_pitchbend_range, [0.0; 3]);
-        let below_env = filter::voice_cutoffs(&lo, -hi.midi_pitchbend_range, [1.0; 3]);
-        let above = filter::voice_cutoffs(&hi, 127.0 + hi.midi_pitchbend_range, [0.0; 3]);
-        let above_env = filter::voice_cutoffs(&hi, 127.0 + hi.midi_pitchbend_range, [1.0; 3]);
+        let below = filter::voice_cutoffs(
+            &lo,
+            -hi.midi_pitchbend_range,
+            [0.0; crate::preset::MODULATORS + 1],
+        );
+        let below_env = filter::voice_cutoffs(
+            &lo,
+            -hi.midi_pitchbend_range,
+            [1.0; crate::preset::MODULATORS + 1],
+        );
+        let above = filter::voice_cutoffs(
+            &hi,
+            127.0 + hi.midi_pitchbend_range,
+            [0.0; crate::preset::MODULATORS + 1],
+        );
+        let above_env = filter::voice_cutoffs(
+            &hi,
+            127.0 + hi.midi_pitchbend_range,
+            [1.0; crate::preset::MODULATORS + 1],
+        );
         for (i, key, base) in [(0, "filter", p.filter), (1, "filter2", p.filter2)] {
             result.insert(
                 key.into(),

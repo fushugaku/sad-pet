@@ -6,7 +6,7 @@
 use super::filter::{Filter, tracked_cutoff};
 use crate::{
     Stereo,
-    preset::{FilterPosition, FilterSlot, MODULATORS},
+    preset::{FilterPosition, FilterSlot},
 };
 
 pub(crate) const POSITIONS: usize = FilterPosition::ALL.len();
@@ -97,12 +97,12 @@ pub(crate) fn masks(slots: &[FilterSlot], banks: &[Box<Bank>]) -> [u16; POSITION
 }
 
 /// The slot's cutoff after its envelope and key tracking.
-fn cutoff(slot: &FilterSlot, note: f32, envs: [f32; MODULATORS]) -> f32 {
+fn cutoff<const N: usize>(slot: &FilterSlot, note: f32, envs: [f32; N]) -> f32 {
     tracked_cutoff(
         slot.model,
         slot.kind,
         slot.cutoff,
-        envs[slot.env.index()],
+        slot.env.value(&envs),
         slot.env_depth,
         note,
         slot.keytrack,
@@ -114,11 +114,11 @@ fn cutoff(slot: &FilterSlot, note: f32, envs: [f32; MODULATORS]) -> f32 {
 /// an ENV routed to a destination does, and track the last note played.
 /// `every` also configures the shared filter of per-voice positions, which a
 /// Rack runs on a whole chain.
-pub(crate) fn configure_shared(
+pub(crate) fn configure_shared<const N: usize>(
     slots: &[FilterSlot],
     banks: &mut [Box<Bank>],
     note: f32,
-    envs: [f32; MODULATORS],
+    envs: [f32; N],
     every: bool,
 ) {
     for (slot, bank) in slots.iter().zip(banks) {
@@ -142,12 +142,12 @@ pub(crate) fn configure_shared(
 }
 
 /// One voice's filters, with its note and envelopes as for Filter 1 and 2.
-pub(crate) fn configure_voice(
+pub(crate) fn configure_voice<const N: usize>(
     slots: &[FilterSlot],
     banks: &mut [Box<Bank>],
     voice: usize,
     note: f32,
-    envs: [f32; MODULATORS],
+    envs: [f32; N],
 ) {
     for (slot, bank) in slots.iter().zip(banks) {
         if slot.id != bank.id || !slot.position.per_voice() {
