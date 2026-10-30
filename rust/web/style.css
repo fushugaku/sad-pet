@@ -6611,6 +6611,12 @@ input[type="range"] {
 .tb303-knobs { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .tb303-radias { margin-top: 24px; }
 .tb303-radias h3 { font-size: 12px; letter-spacing: .14em; }
+.tb303-mods { margin-top: 24px; }
+.tb303-mods h3 { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; }
+.tb303-mod-switches { display: flex; gap: 16px; flex-wrap: wrap; }
+.tb303-mod-switches label { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: 11px; }
+.tb303-mod-switches select { min-width: 105px; height: 32px; }
+.tb303-mod-knobs { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .tb303-radias .resynth-knobs { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .tb303-pattern-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 22px 0 12px; }
 .tb303-pattern-heading label { display: flex; align-items: center; gap: 9px; color: var(--muted); }
@@ -6630,7 +6636,13 @@ input[type="range"] {
   #grain-engine > .section-heading { flex-wrap: wrap; }
   #grain-engine .resynth-actions { flex-wrap: wrap; max-width: 100%; }
   .tb303-radias .resynth-knobs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .tb303-mods > .section-heading { flex-wrap: wrap; gap: 12px; }
+  .tb303-mod-switches { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .tb303-mod-switches label { display: grid; gap: 6px; }
+  .tb303-mod-switches select { width: 100%; min-width: 0; }
+  .tb303-mod-knobs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 380px) {
   .tb303-radias .resynth-knobs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tb303-mod-knobs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

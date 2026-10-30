@@ -176,6 +176,8 @@ files move instruments between the web version and the native app and plug-ins.
   individual layers and parameters while the 303 keeps its own pattern.
   Turn Pattern off explicitly to play it from Neuropolis Notes or MIDI.
   Its envelope is also available to the Rack's external filters as **303**.
+  The Mods section adds soft attack, separate accented decay, filter tracking,
+  variable slide time, sweep speed, high-resonance modes and audio-rate filter FM.
   See [the model and its fidelity boundaries](docs/TB303.md).
 - **Rack timbres** (browser and DAW plug-ins) are instruments you build from
   modules in any order: **+ Timbre → Rack**. Sound runs from the top module down.

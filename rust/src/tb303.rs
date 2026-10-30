@@ -3,7 +3,9 @@
 use serde::{Deserialize, Serialize};
 
 pub const STEPS: usize = 16;
-pub const FIELDS: [&str; 9] = [
+pub const BASE_FIELDS: usize = 9;
+pub const ACCENT_DECAY_DEFAULT: f32 = 0.41195437;
+pub const FIELDS: [&str; 16] = [
     "tuning",
     "cutoff",
     "resonance",
@@ -13,12 +15,20 @@ pub const FIELDS: [&str; 9] = [
     "waveform",
     "level",
     "transpose",
+    "soft_attack",
+    "accent_decay",
+    "filter_tracking",
+    "slide_time",
+    "sweep_speed",
+    "accent_sweep",
+    "filter_fm",
 ];
 
 pub fn range(field: usize) -> (f32, f32) {
     match field {
         0 => (-7.0, 7.0),
         8 => (-48.0, 48.0),
+        13 | 14 => (0.0, 2.0),
         _ => (0.0, 1.0),
     }
 }
@@ -37,6 +47,15 @@ pub struct Controls {
     pub waveform: f32,
     pub level: f32,
     pub transpose: f32,
+    pub soft_attack: f32,
+    pub accent_decay: f32,
+    pub filter_tracking: f32,
+    pub slide_time: f32,
+    /// 0 = fast, 1 = normal, 2 = slow.
+    pub sweep_speed: f32,
+    /// 0 = sweep off + high resonance, 1 = sweep + high resonance, 2 = normal.
+    pub accent_sweep: f32,
+    pub filter_fm: f32,
 }
 impl Default for Controls {
     fn default() -> Self {
@@ -50,6 +69,13 @@ impl Default for Controls {
             waveform: 0.0,
             level: 1.0,
             transpose: 0.0,
+            soft_attack: 0.5,
+            accent_decay: ACCENT_DECAY_DEFAULT,
+            filter_tracking: 0.0,
+            slide_time: 0.0,
+            sweep_speed: 1.0,
+            accent_sweep: 2.0,
+            filter_fm: 0.0,
         }
     }
 }
@@ -64,7 +90,14 @@ impl Controls {
             5 => self.accent,
             6 => self.waveform,
             7 => self.level,
-            _ => self.transpose,
+            8 => self.transpose,
+            9 => self.soft_attack,
+            10 => self.accent_decay,
+            11 => self.filter_tracking,
+            12 => self.slide_time,
+            13 => self.sweep_speed,
+            14 => self.accent_sweep,
+            _ => self.filter_fm,
         }
     }
     pub fn set(&mut self, field: usize, value: f32) {
@@ -77,7 +110,14 @@ impl Controls {
             5 => self.accent = value,
             6 => self.waveform = value.round(),
             7 => self.level = value,
-            _ => self.transpose = value,
+            8 => self.transpose = value,
+            9 => self.soft_attack = value,
+            10 => self.accent_decay = value,
+            11 => self.filter_tracking = value,
+            12 => self.slide_time = value,
+            13 => self.sweep_speed = value.round(),
+            14 => self.accent_sweep = value.round(),
+            _ => self.filter_fm = value,
         }
     }
     pub fn sanitize(&mut self) {
@@ -188,6 +228,7 @@ impl Settings {
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct View {
     pub step: Option<u8>,
     pub gate: bool,
@@ -196,6 +237,7 @@ pub struct View {
     pub note: f32,
     pub envelope: f32,
     pub accent_sweep: f32,
+    pub filter_hz: f32,
 }
 
 #[derive(Default, Debug)]

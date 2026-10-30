@@ -175,9 +175,12 @@ fn solve(mut a: [[f64; 5]; 4]) -> [f64; 4] {
 #[derive(Debug, Default)]
 struct AccentSweep {
     capacitor: f64,
+    fast_memory: f64,
 }
 impl AccentSweep {
-    fn process(&mut self, source: f64, resonance: f64, rate: f64) -> f64 {
+    fn process(&mut self, source: f64, resonance: f64, rate: f64, speed: f64) -> f64 {
+        let fast = (1.0 - speed).clamp(0.0, 1.0);
+        let slow = (speed - 1.0).clamp(0.0, 1.0);
         let ra = 47_000.0 + resonance * 100_000.0;
         let rb = (1.0 - resonance) * 100_000.0;
         let load = 100_000.0;
@@ -191,15 +194,23 @@ impl AccentSweep {
         } else {
             (0.0, rb + load)
         };
-        self.capacitor +=
-            (target - self.capacitor) * (1.0 - (-1.0 / (rate * resistance * 1e-6)).exp());
-        if rb < 1.0 {
+        self.capacitor += (target - self.capacitor)
+            * (1.0 - (-1.0 / (rate * resistance * 1e-6 * (1.0 + 3.7 * slow))).exp());
+        let normal = if rb < 1.0 {
             self.capacitor
         } else if on {
             ((source - 0.6) / ra + self.capacitor / rb) / (1.0 / ra + 1.0 / rb + 1.0 / load)
         } else {
             self.capacitor * load / (rb + load)
-        }
+        };
+        // Fast gives an immediate pulse whose retained DC charge reduces the
+        // next closely spaced accents. Slow retains and releases more charge.
+        // These are reduced models of the switch behavior, not measured TD-3-MO
+        // component values; Normal remains the original C13 circuit.
+        let pulse = (source - 0.6).max(0.0);
+        self.fast_memory += (pulse - self.fast_memory) * (1.0 - (-1.0 / (rate * 0.08)).exp());
+        let fast_output = (pulse - self.fast_memory).max(0.0) * 0.68;
+        normal * (1.0 + slow) * (1.0 - fast) + fast_output * fast
     }
 }
 
@@ -226,6 +237,9 @@ pub struct Runtime {
     accented: bool,
     sliding: bool,
     attack: u32,
+    volume_attack: u32,
+    volume_attack_span: f64,
+    volume_charge_time: f64,
     main_env: f64,
     volume_env: f64,
     accent_vca: f64,
@@ -241,6 +255,8 @@ pub struct Runtime {
     radias_sample: SampleBuffer,
     transpose: f32,
     lfo: f32,
+    fm_sample: f64,
+    fm_dc: f64,
 }
 impl std::fmt::Debug for Runtime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -272,6 +288,9 @@ impl Runtime {
             accented: false,
             sliding: false,
             attack: 0,
+            volume_attack: 0,
+            volume_attack_span: 0.0,
+            volume_charge_time: 0.001,
             main_env: 0.0,
             volume_env: 0.0,
             accent_vca: 0.0,
@@ -294,6 +313,8 @@ impl Runtime {
                 .expect("valid silent sample"),
             transpose: 0.0,
             lfo: 0.0,
+            fm_sample: 0.0,
+            fm_dc: 0.0,
         }
     }
     pub fn inherit(&mut self, old: &mut Self) {
@@ -314,6 +335,7 @@ impl Runtime {
             self.accented = false;
             self.sliding = false;
             self.attack = 0;
+            self.volume_attack = 0;
         }
     }
     pub fn stop(&mut self) {
@@ -322,6 +344,7 @@ impl Runtime {
         self.accented = false;
         self.sliding = false;
         self.attack = 0;
+        self.volume_attack = 0;
         self.running = false;
         self.step = None;
     }
@@ -341,6 +364,19 @@ impl Runtime {
         if !self.sliding {
             self.pitch = self.target_pitch;
             self.attack = (self.rate * self.oversample as f64 * 0.007).round() as u32;
+            let rate = self.rate * self.oversample as f64;
+            let softness = if accent {
+                1.0
+            } else {
+                100.0_f64.powf(self.controls.soft_attack as f64 - 0.5)
+            };
+            self.volume_attack_span = rate * 0.003 * softness;
+            self.volume_charge_time = 0.001 * softness;
+            self.volume_attack = if softness == 1.0 {
+                self.attack
+            } else {
+                (rate * 0.004 + self.volume_attack_span).round() as u32
+            };
         }
         self.gate = true;
     }
@@ -439,6 +475,7 @@ impl Runtime {
                 self.gate = false;
                 self.accented = false;
                 self.attack = 0;
+                self.volume_attack = 0;
                 self.volume_env = 0.0;
                 self.accent_vca = 0.0;
                 self.bend.fill(0.0);
@@ -540,16 +577,20 @@ impl Runtime {
         }
         let smoothing = (1.0 - (-1.0 / (self.rate * 0.002)).exp()) as f32;
         // Waveform also crossfades, although its stored control is a switch.
-        for i in (0..crate::tb303::FIELDS.len()).filter(|&i| i != 6) {
+        for i in (0..crate::tb303::FIELDS.len()).filter(|&i| !matches!(i, 6 | 13 | 14)) {
             self.controls.set(
                 i,
                 self.controls.get(i) + (controls.get(i) - self.controls.get(i)) * smoothing,
             );
         }
         self.controls.waveform += (controls.waveform - self.controls.waveform) * smoothing;
+        self.controls.sweep_speed += (controls.sweep_speed - self.controls.sweep_speed) * smoothing;
+        self.controls.accent_sweep +=
+            (controls.accent_sweep - self.controls.accent_sweep) * smoothing;
         if self.sliding {
+            let slide_tau = SLIDE_TAU * 5.0_f64.powf(self.controls.slide_time as f64);
             self.pitch +=
-                (self.target_pitch - self.pitch) * (1.0 - (-1.0 / (self.rate * SLIDE_TAU)).exp());
+                (self.target_pitch - self.pitch) * (1.0 - (-1.0 / (self.rate * slide_tau)).exp());
         } else {
             self.pitch = self.target_pitch;
         }
@@ -565,7 +606,8 @@ impl Runtime {
         let rate = self.rate * self.oversample as f64;
         let dt = frequency / rate;
         let decay = if self.accented {
-            0.2
+            0.2 * 100.0_f64
+                .powf((self.controls.accent_decay - crate::tb303::ACCENT_DECAY_DEFAULT) as f64)
         } else {
             0.2 * 12.5_f64.powf(self.controls.decay as f64)
         } / LN_10;
@@ -573,37 +615,62 @@ impl Runtime {
         let volume_decay = (-LN_10 / (rate * 3.5)).exp();
         let release = (-1.0 / (rate * 0.004)).exp();
         let charge = 1.0 - (-1.0 / (rate * 0.001)).exp();
+        let volume_charge = 1.0 - (-1.0 / (rate * self.volume_charge_time)).exp();
         let accent_alpha = 1.0 - (-1.0 / (rate * 47_000.0 * 0.033e-6)).exp();
         let cutoff = 80.0 * 32.0_f64.powf(self.controls.cutoff as f64);
+        let tracking = (pitch + self.controls.transpose as f64 - 36.0) / 12.0
+            * (2.0 * self.controls.filter_tracking as f64);
+        let sweep_enabled = (self.controls.accent_sweep as f64).clamp(0.0, 1.0);
+        let high_resonance = 1.0 - (self.controls.accent_sweep as f64 - 1.0).clamp(0.0, 1.0);
+        let fm_alpha = 1.0 - (-TAU * 20.0 / rate).exp();
+        if high_resonance > 0.5 && self.filter.nodes.iter().all(|x| *x == 0.0) {
+            // A noiseless digital state would otherwise never start an unstable
+            // self-resonant filter, even though a physical circuit always does.
+            self.filter.nodes[0] = 1e-7;
+        }
         let mut output = [0.0; 2];
+        let mut filter_hz = cutoff;
         for sample in 0..self.oversample {
             if self.attack > 0 {
                 self.main_env += (1.0 - self.main_env) * charge;
-                if self.gate && self.attack as f64 <= rate * 0.003 {
-                    self.volume_env += (1.0 - self.volume_env) * charge;
-                }
                 self.attack -= 1;
             } else {
                 self.main_env *= main_decay;
+            }
+            if self.volume_attack > 0 {
+                if self.gate && self.volume_attack as f64 <= self.volume_attack_span {
+                    self.volume_env += (1.0 - self.volume_env) * volume_charge;
+                }
+                self.volume_attack -= 1;
+            } else {
                 self.volume_env *= volume_decay;
             }
             if !self.gate {
                 self.volume_env *= release;
             }
             let accent = if self.accented {
-                self.main_env * self.controls.accent as f64
+                self.main_env * self.controls.accent as f64 * sweep_enabled
             } else {
                 0.0
             };
             self.accent_vca += (accent - self.accent_vca) * accent_alpha;
-            let sweep = self
-                .sweep
-                .process(accent * 4.0, self.controls.resonance as f64, rate);
+            let sweep = self.sweep.process(
+                accent * 4.0,
+                self.controls.resonance as f64,
+                rate,
+                self.controls.sweep_speed as f64,
+            ) * sweep_enabled;
+            self.fm_dc += (self.fm_sample - self.fm_dc) * fm_alpha;
+            let fm = (self.fm_sample - self.fm_dc).clamp(-2.0, 2.0);
             let hz = (cutoff
                 * 2.0_f64.powf(
-                    (0.25 + 5.0 * self.controls.env_mod as f64) * self.main_env + 1.5 * sweep,
-                ))
-            .clamp(20.0, 18_000.0_f64.min(rate * 0.15));
+                    (0.25 + 5.0 * self.controls.env_mod as f64) * self.main_env
+                        + 1.5 * sweep
+                        + tracking,
+                )
+                + fm * self.controls.filter_fm as f64 * 8000.0)
+                .clamp(20.0, 18_000.0_f64.min(rate * 0.15));
+            filter_hz = hz;
             let phase = self.phase;
             let saw = 2.0 * phase - 1.0 - blep(phase, dt);
             let square = (if phase < 0.5 { 1.0 } else { -1.0 }) + blep(phase, dt)
@@ -622,11 +689,12 @@ impl Runtime {
             let filtered = self.filter.process(
                 osc * 0.35 * f64::from(self.controls.level) + extra,
                 hz,
-                self.controls.resonance as f64,
+                self.controls.resonance as f64 * (1.0 + high_resonance),
             );
             // OTA/VCA small-signal gain with smooth current saturation.
             let vca = self.volume_env + self.accent_vca * 0.7;
             let value = (filtered * 2.0).tanh() * vca * 2.0;
+            self.fm_sample = value;
             let mut frame = [value as f32; 2];
             for level in 0..self.levels {
                 frame = self.decimators[level].next(frame);
@@ -644,6 +712,7 @@ impl Runtime {
             note: (pitch + f64::from(self.controls.transpose)) as f32,
             envelope: self.main_env as f32,
             accent_sweep: self.sweep.capacitor as f32,
+            filter_hz: filter_hz as f32,
         };
         output
     }
@@ -742,6 +811,149 @@ mod tests {
                 }
             }
             assert_eq!(started, 16);
+        }
+    }
+
+    #[test]
+    fn soft_attack_changes_normal_vca_but_not_filter_or_accent_attack() {
+        for velocity in [80, 127] {
+            let mut s = Settings {
+                pattern: false,
+                ..Default::default()
+            };
+            let mut values = Vec::new();
+            for softness in [0.0, 1.0] {
+                s.controls.soft_attack = softness;
+                let mut r = Runtime::new(48000, s.controls);
+                r.midi(on(36, velocity), 0);
+                render(&mut r, &s, 480, false);
+                values.push((r.main_env, r.volume_env));
+            }
+            assert_eq!(values[0].0, values[1].0);
+            if velocity < 100 {
+                assert!(values[0].1 > values[1].1 * 1.5);
+            } else {
+                assert_eq!(values[0].1, values[1].1);
+            }
+        }
+    }
+
+    #[test]
+    fn accent_decay_and_slide_time_are_independent_controls() {
+        let mut envelopes = Vec::new();
+        for decay in [0.0, 1.0] {
+            let mut s = Settings {
+                pattern: false,
+                ..Default::default()
+            };
+            s.controls.accent_decay = decay;
+            let mut r = Runtime::new(48000, s.controls);
+            r.midi(on(36, 127), 0);
+            render(&mut r, &s, 4800, false);
+            envelopes.push(r.main_env);
+        }
+        assert!(envelopes[1] > envelopes[0] * 10.0);
+        let mut s = Settings {
+            pattern: false,
+            ..Default::default()
+        };
+        s.controls.slide_time = 1.0;
+        let mut r = Runtime::new(48000, s.controls);
+        r.midi(on(36, 80), 0);
+        render(&mut r, &s, 4800, false);
+        r.midi(on(48, 80), 0);
+        render(&mut r, &s, 1056, false);
+        assert!((r.pitch - (48.0 - 12.0 * (-0.2_f64).exp())).abs() < 0.02);
+    }
+
+    #[test]
+    fn tracking_reads_played_pitch_and_fm_uses_the_vca_output() {
+        let mut s = Settings {
+            pattern: false,
+            ..Default::default()
+        };
+        s.controls.filter_tracking = 0.5;
+        let mut cutoffs = Vec::new();
+        for note in [36, 48] {
+            let mut r = Runtime::new(48000, s.controls);
+            r.midi(on(note, 80), 0);
+            render(&mut r, &s, 480, false);
+            cutoffs.push(r.view.filter_hz);
+        }
+        assert!((cutoffs[1] / cutoffs[0] - 2.0).abs() < 1e-5);
+        s.controls.filter_tracking = 0.0;
+        let mut dry = Runtime::new(48000, s.controls);
+        dry.midi(on(36, 80), 0);
+        let mut wet_settings = s.clone();
+        wet_settings.controls.filter_fm = 1.0;
+        let mut wet = Runtime::new(48000, wet_settings.controls);
+        wet.midi(on(36, 80), 0);
+        let mut difference = 0.0;
+        for _ in 0..2400 {
+            let a = dry.frame(&s, s.controls, false, 120.0);
+            let b = wet.frame(&wet_settings, wet_settings.controls, false, 120.0);
+            difference += (a[0] - b[0]).abs();
+        }
+        assert!(difference > 1.0);
+    }
+
+    #[test]
+    fn sweep_speed_changes_pulse_memory_and_high_resonance_can_self_oscillate() {
+        let mut sweeps = [
+            AccentSweep::default(),
+            AccentSweep::default(),
+            AccentSweep::default(),
+        ];
+        let mut early = [0.0; 3];
+        let mut tail = [0.0; 3];
+        for n in 0..57600 {
+            for (i, sweep) in sweeps.iter_mut().enumerate() {
+                let value =
+                    sweep.process(if n < 19200 { 4.0 } else { 0.0 }, 1.0, 192000.0, i as f64);
+                if n == 3840 {
+                    early[i] = value;
+                }
+                tail[i] = value;
+            }
+        }
+        assert!(early[0] > early[1] && early[1] > early[2]);
+        assert!(tail[2] > tail[1] && tail[1] > tail[0]);
+        let mut s = Settings {
+            pattern: false,
+            ..Default::default()
+        };
+        s.controls.level = 0.0;
+        s.controls.resonance = 1.0;
+        s.controls.accent_sweep = 0.0;
+        let mut r = Runtime::new(48000, s.controls);
+        r.midi(on(36, 127), 0);
+        let energy = render(&mut r, &s, 24000, false);
+        assert!(
+            energy > 1e-4,
+            "Self-oscillation did not start: {energy}, {:?}",
+            r.filter.nodes
+        );
+        assert_eq!(r.accent_vca, 0.0, "Off must remove the accent VCA path too");
+        assert_eq!(r.sweep.capacitor, 0.0);
+    }
+
+    #[test]
+    fn modded_feedback_stays_finite_at_extremes() {
+        for rate in [8000, 44100, 48000, 96000] {
+            let mut s = Settings::default();
+            s.controls.filter_fm = 1.0;
+            s.controls.resonance = 1.0;
+            s.controls.accent_decay = 1.0;
+            s.controls.filter_tracking = 1.0;
+            let mut r = Runtime::new(rate, s.controls);
+            for mode in 0..3 {
+                s.controls.accent_sweep = mode as f32;
+                s.controls.sweep_speed = mode as f32;
+                for cutoff in [0.0, 1.0] {
+                    s.controls.cutoff = cutoff;
+                    render(&mut r, &s, rate as usize / 8, true);
+                }
+            }
         }
     }
 

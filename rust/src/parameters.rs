@@ -1677,7 +1677,11 @@ pub fn specs() -> &'static [Spec] {
         }
         // Append new instrument controls: released automation indices stay put.
         let bass = crate::tb303::Controls::default();
-        for (field, key) in crate::tb303::FIELDS.iter().enumerate() {
+        for (field, key) in crate::tb303::FIELDS
+            .iter()
+            .take(crate::tb303::BASE_FIELDS)
+            .enumerate()
+        {
             let (min, max) = crate::tb303::range(field);
             result.push(Spec {
                 id: format!("tb303_{key}"),
@@ -1766,6 +1770,22 @@ pub fn specs() -> &'static [Spec] {
         }
         // The new source strip appends without shifting released host indices.
         rack_strips(&mut result, 5..crate::rack::STRIPS);
+        // Modded controls append after every released 303 and Mixer index.
+        for (field, key) in crate::tb303::FIELDS
+            .iter()
+            .enumerate()
+            .skip(crate::tb303::BASE_FIELDS)
+        {
+            let (min, max) = crate::tb303::range(field);
+            result.push(Spec {
+                id: format!("tb303_{key}"),
+                name: format!("303 {}", key.replace('_', " ")),
+                min,
+                max,
+                default: bass.get(field),
+                target: Target::Tb303(field),
+            });
+        }
         result
     })
 }

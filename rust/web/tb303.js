@@ -1,6 +1,7 @@
 "use strict";
 (() => {
-  const defaults = { tuning: 0, cutoff: .45, resonance: .72, env_mod: .55, decay: .35, accent: .65, waveform: 0, level: 1, transpose: 0 };
+  const defaults = { tuning: 0, cutoff: .45, resonance: .72, env_mod: .55, decay: .35, accent: .65, waveform: 0, level: 1, transpose: 0,
+    soft_attack: .5, accent_decay: .41195437, filter_tracking: 0, slide_time: 0, sweep_speed: 1, accent_sweep: 2, filter_fm: 0 };
   const notes = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
   const noteName = (n) => `${notes[n % 12]}${Math.floor(n / 12) - 1}`;
   const percent = (v) => `${Math.round(v * 100)}%`;
@@ -19,7 +20,7 @@
         ["cutoff", "CUTOFF", percent, 0, 1],
         ["resonance", "RESONANCE", percent, 0, 1],
         ["env_mod", "ENV MOD", percent, 0, 1],
-        ["decay", "DECAY", (v) => `${Math.round(200 * 12.5 ** v)} ms`, 0, 1],
+        ["decay", "DECAY NORMAL", (v) => `${Math.round(200 * 12.5 ** v)} ms`, 0, 1],
         ["accent", "ACCENT", percent, 0, 1],
         ["transpose", "OSC PITCH", (v) => `${v >= 0 ? "+" : ""}${v.toFixed(1)} st`, -48, 48],
         ["level", "OSC LEVEL", percent, 0, 1],
@@ -27,6 +28,26 @@
         get: () => this.settings()?.[key] ?? defaults[key],
         set: (value) => this.edit(key, value), reset: () => defaults[key],
       });
+      const mods = document.createElement("div");
+      mods.className = "tb303-mods";
+      mods.innerHTML = `<div class="section-heading"><h3>Mods</h3><div class="tb303-mod-switches"><label>Sweep speed <select aria-label="303 sweep speed"><option value="0">Fast</option><option value="1">Normal</option><option value="2">Slow</option></select></label><label>Accent sweep <select aria-label="303 accent sweep"><option value="2">Normal</option><option value="1">Hi Res</option><option value="0">Off · Hi Res</option></select></label></div></div><div class="knob-grid tb303-mod-knobs"></div>`;
+      root.querySelector(".tb303-pattern-heading").before(mods);
+      for (const [key, label, format, help] of [
+        ["soft_attack", "SOFT ATTACK", v => `${(3 * 100 ** (v - .5)).toFixed(1)} ms`, "VCA attack for non-accented notes"],
+        ["accent_decay", "DECAY ACCENT", v => `${Math.round(200 * 100 ** (v - defaults.accent_decay))} ms`, "Filter envelope decay for accented notes"],
+        ["filter_tracking", "FILTER TRACK", v => `${Math.round(v * 200)}%`, "Filter pitch tracking: 100% is one octave per octave, around C2"],
+        ["slide_time", "SLIDE TIME", v => `${Math.round(66 * 5 ** v)} ms`, "Time for a slide to cover approximately 95% of the interval"],
+        ["filter_fm", "FILTER FM", percent, "Audio-rate filter modulation from the VCA output"],
+      ]) {
+        const bank = mods.querySelector(".tb303-mod-knobs");
+        hooks.knob([`tb303_${key}`, label, format, 0, 1, `303 ${key.replaceAll("_", " ")}`], bank, {
+          get: () => this.settings()?.[key] ?? defaults[key],
+          set: value => this.edit(key, value), reset: () => defaults[key],
+        });
+        bank.lastElementChild.title = help;
+      }
+      this.modSelectors = [["sweep_speed", mods.querySelector('[aria-label="303 sweep speed"]')], ["accent_sweep", mods.querySelector('[aria-label="303 accent sweep"]')]];
+      for (const [key, select] of this.modSelectors) select.onchange = () => this.edit(key, Number(select.value));
       this.waves = [...root.querySelectorAll("[data-wave]")];
       for (const button of this.waves) button.onclick = () => this.edit("waveform", Number(button.dataset.wave));
       this.pattern = root.querySelector(".tb303-pattern-toggle");
@@ -67,6 +88,8 @@
       for (const button of this.waves) button.setAttribute("aria-pressed", String(Number(button.dataset.wave) === s.waveform));
       this.pattern.setAttribute("aria-pressed", String(s.pattern));
       this.pattern.title = "Play the 303 pattern";
+      for (const [key, select] of this.modSelectors)
+        if (document.activeElement !== select) select.value = String(s[key] ?? defaults[key]);
       if (document.activeElement !== this.length) this.length.value = s.length;
       this.steps.forEach((cell, i) => {
         const step = s.steps[i];

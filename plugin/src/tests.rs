@@ -154,7 +154,8 @@ fn tb303_pattern_parameters_and_preset_exchange_render_without_heap_work() {
         &mut control,
         "/api/parameters",
         json!({"tb303_cutoff":0.8,"tb303_step2_note":55,"tb303_step2_slide":1,
-            "tb303_count":4,"tb303_osc1_mode":3,"tb303_osc2_transpose":7}),
+            "tb303_count":4,"tb303_osc1_mode":3,"tb303_osc2_transpose":7,
+            "tb303_soft_attack":0.8,"tb303_filter_fm":0.7,"tb303_sweep_speed":2,"tb303_accent_sweep":1}),
     );
     let mut preset = call(&mut control, "/api/preset", Value::Null);
     preset["tb303"]["resonance"] = json!(0.9);

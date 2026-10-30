@@ -264,3 +264,26 @@ for (const target of ["filter", "filter2", "added"]) {
   assert.ok(energy(outputs[1]) > energy(outputs[0]) * 1.5, `${target}: 303 envelope did not open the filter`);
 }
 console.log("303 Rack: Mixer, module power/removal, Synth coexistence, legacy migration and all external filter envelope sources passed.");
+
+for (const rate of [8000, 48000]) {
+  const { core } = scene(rate);
+  const values = { tb303_soft_attack: .8, tb303_accent_decay: .9, tb303_filter_tracking: .5,
+    tb303_slide_time: .75, tb303_sweep_speed: 2, tb303_accent_sweep: 1, tb303_filter_fm: .7 };
+  const catalog = core.request("/api/sequencer/catalog");
+  for (const key of Object.keys(values)) assert.ok(catalog.parameters.some(p => p.id === key), `${key} cannot be sequenced`);
+  core.request("/api/parameters", { ...values, tb303_count: 2, tb303_resonance: 1 });
+  core.request("/api/transport", { playing: true });
+  assert.ok(energy(render(core, rate * 2)) > 1e-5);
+  const p = core.request("/api/preset");
+  const restored = new Core(module, rate);
+  restored.call("sad_scene_load", core.call("sad_scene_pack"));
+  assert.deepEqual(restored.request("/api/preset").tb303, p.tb303);
+  for (const [key, value] of Object.entries(values)) assert.ok(Math.abs(p.tb303[key.slice(6)] - value) < 1e-6);
+  const laneFm = lane(core, 1, { kind: "parameter", parameter: "tb303_filter_fm" }, 60);
+  laneFm.absolute = true; laneFm.steps.forEach(s => { s.cv = 0; });
+  p.sequencer.enabled = true; p.sequencer.tracks = [laneFm];
+  core.request("/api/preset", p);
+  render(core, 256);
+  assert.ok(core.request("/api/state").knobs.tb303_filter_fm.current < .51, "Neuropolis cannot control the new mods");
+}
+console.log("303 mods: host controls, extreme FM/resonance, scene recall and Neuropolis modulation passed.");
