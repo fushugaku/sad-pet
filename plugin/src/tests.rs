@@ -115,6 +115,67 @@ fn master_limits_the_final_mix_and_preview_without_audio_allocations() {
 }
 
 #[test]
+fn tb303_pattern_parameters_and_preset_exchange_render_without_heap_work() {
+    let mut control = Controller::new_plugin(false);
+    let context = call(&mut control, "/api/timbres/add", json!({"kind":"tb303"}));
+    let id = context["active"].as_u64().unwrap();
+    assert_eq!(
+        context["timbres"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["id"] == id)
+            .unwrap()["kind"],
+        "tb303"
+    );
+    call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":0,"muted":true}),
+    );
+    call(&mut control, "/api/transport", json!({"playing":true}));
+    let mut audio = control.prepare(8000);
+    let input = [[0.0; 2]; 128];
+    let mut output = [[0.0; 2]; 128];
+    let mut peak = 0.0_f32;
+    let values = control.values();
+    no_heap(|| {
+        for _ in 0..32 {
+            audio.begin(&values, 120.0, None, true, 128);
+            audio.process_block(&input, &mut output);
+            for value in output.iter().flatten() {
+                assert!(value.is_finite());
+                peak = peak.max(value.abs());
+            }
+        }
+    });
+    assert!(peak > 0.01);
+    call(
+        &mut control,
+        "/api/parameters",
+        json!({"tb303_cutoff":0.8,"tb303_step2_note":55,"tb303_step2_slide":1,
+            "tb303_count":4,"tb303_osc1_mode":3,"tb303_osc2_transpose":7}),
+    );
+    let mut preset = call(&mut control, "/api/preset", Value::Null);
+    preset["tb303"]["resonance"] = json!(0.9);
+    call(&mut control, "/api/preset", preset);
+    let values = control.values();
+    no_heap(|| {
+        audio.begin(&values, 120.0, None, true, 128);
+        audio.process_block(&input, &mut output);
+    });
+    let saved = control.save().unwrap();
+    let mut restored = Controller::new(false);
+    restored.restore(&saved).unwrap();
+    let preset = call(&mut restored, "/api/preset", Value::Null);
+    assert_eq!(preset["tb303"]["steps"][1]["note"], 55);
+    assert_eq!(preset["tb303"]["steps"][1]["slide"], true);
+    assert_eq!(preset["tb303"]["count"], 4);
+    assert_eq!(preset["tb303"]["oscillators"][1]["transpose"], 7.0);
+    assert!((preset["tb303"]["cutoff"].as_f64().unwrap() - 0.8).abs() < 1e-6);
+}
+
+#[test]
 fn sample_preview_plays_without_changing_scene_and_stops_without_heap_work() {
     for rate in [44100, 48000] {
         let mut control = Controller::new(false);

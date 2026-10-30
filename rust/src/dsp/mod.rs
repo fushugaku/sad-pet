@@ -29,6 +29,7 @@ pub mod source_fx;
 pub mod source_fx_worker;
 pub mod synth;
 mod taps;
+pub mod tb303;
 pub mod telemetry;
 
 use crate::grain_groups as grain_groups_settings;
@@ -202,6 +203,8 @@ pub(crate) struct Modulated {
     /// Each drum track's pattern note shift, in steps.
     pub(crate) drum_shifts: [f32; crate::drums::TRACKS],
     pub(crate) synth: crate::synth::Settings,
+    pub(crate) tb303: crate::tb303::Controls,
+    pub(crate) tb303_radias: crate::synth::Settings,
     /// A modulation route wrote into a color slot of this frame. Clean frames
     /// carry the preset's own slots, so the racks need no reconfiguration.
     pub(crate) color_dirty: bool,
@@ -253,6 +256,17 @@ impl Modulated {
             }
         }
         self.synth = preset.synth.as_deref().copied().unwrap_or_default();
+        self.tb303 = preset
+            .tb303
+            .as_ref()
+            .map_or_else(Default::default, |s| s.controls);
+        self.tb303_radias = preset.tb303.as_ref().map_or_else(
+            || crate::synth::Settings {
+                count: 0,
+                ..Default::default()
+            },
+            |s| s.radias(),
+        );
         self.color_dirty = false;
         self.filter_len = preset.filter_slots.len();
         self.filter_slots[..self.filter_len].copy_from_slice(&preset.filter_slots);
@@ -564,6 +578,7 @@ pub struct Engine {
     pad_return: Stereo,
     drums: Option<Box<crate::drums::Runtime>>,
     synth: Option<Box<synth::Runtime>>,
+    tb303: Option<Box<tb303::Runtime>>,
     /// Present while the preset is a Sampler kit: its pads replace the input.
     sampler: Option<Box<sampler::Runtime>>,
     /// Present while the preset is a Rack: its modules' order and Mixer.
@@ -681,6 +696,7 @@ impl Engine {
             pad_return: [0.0; 2],
             drums: None,
             synth: None,
+            tb303: None,
             sampler: None,
             rack: None,
             equalizers: Box::new(eq::Bank::new(sr)),
@@ -750,6 +766,9 @@ impl Engine {
 
     pub fn set_preset(&mut self, mut preset: Preset) {
         preset.sanitize();
+        preset
+            .tb303_runtime
+            .prepare(preset.tb303.as_deref(), self.sample_rate);
         preset.prepare_effects_reusing(self.sample_rate, &self.preset);
         if preset.rack.is_some() {
             // A Rack's sources hand their sound down its modules, so only its
@@ -842,6 +861,10 @@ impl Engine {
             }
         }
         std::mem::swap(&mut self.synth, &mut preset.synth_runtime.0);
+        if let (Some(next), Some(old)) = (&mut preset.tb303_runtime.0, &mut self.tb303) {
+            next.inherit(old);
+        }
+        std::mem::swap(&mut self.tb303, &mut preset.tb303_runtime.0);
         if let (Some(next), Some(old)) = (
             &mut preset.sequencer.runtime,
             &mut self.preset.sequencer.runtime,
@@ -1113,6 +1136,9 @@ impl Engine {
         // A playing host moves its playhead; a stopped one leaves the song
         // position counting on from there.
         if let Some(beat) = beat.filter(|b| b.is_finite()) {
+            if let Some(bass) = &mut self.tb303 {
+                bass.seek(beat, restart);
+            }
             if restart || self.host_beat != Some(beat) {
                 self.song_beat = beat.max(0.0);
             }
@@ -1503,6 +1529,13 @@ impl Engine {
         self.grain_feedback.reset();
     }
     pub fn set_playing(&mut self, playing: bool) {
+        if let Some(bass) = &mut self.tb303 {
+            if playing {
+                bass.transport(true);
+            } else {
+                bass.stop();
+            }
+        }
         if playing && !self.playing {
             self.song_beat = 0.0;
         }
@@ -1692,6 +1725,13 @@ impl Engine {
         }
     }
     pub fn held_notes(&self) -> Vec<u8> {
+        if let Some(bass) = &self.tb303 {
+            return bass
+                .note_state()
+                .into_iter()
+                .map(|(_, note, _)| note)
+                .collect();
+        }
         self.voices[1..]
             .iter()
             .filter(|v| v.held || v.sustained)
@@ -1918,6 +1958,16 @@ impl Engine {
         self.apply_owned_midi(message, 0);
     }
     fn apply_owned_midi(&mut self, message: Message, owner: u32) {
+        if let Some(bass) = &mut self.tb303
+            && bass.midi(message, owner)
+        {
+            if let Message::PitchBend { channel, value } = message
+                && channel < 16
+            {
+                self.bend[channel as usize] = (value.min(16383) as f32 - 8192.0) / 8192.0;
+            }
+            return;
+        }
         if matches!(message, Message::Control { .. } | Message::Program { .. }) {
             self.invalidate_racks();
         }
@@ -2190,6 +2240,9 @@ impl Engine {
             Source::Expression => self.expression[channel],
             Source::RandomNote => self.source_random,
             Source::Gate => {
+                if let Some(bass) = &self.tb303 {
+                    return f32::from(bass.note_state().is_some());
+                }
                 if self
                     .voices
                     .iter()
@@ -2830,6 +2883,10 @@ impl Engine {
                             note,
                             velocity,
                         } => {
+                            if let Some(bass) = &mut self.tb303 {
+                                bass.legato(channel, note, velocity, id);
+                                continue;
+                            }
                             // A kit has no voice to bend: the slide replays the pad.
                             if let (Some(sampler), Some(settings)) =
                                 (&mut self.sampler, &self.preset.sampler)
@@ -3144,12 +3201,57 @@ impl Engine {
             })
     }
 
+    pub fn tb303_view(&self) -> crate::tb303::View {
+        self.tb303
+            .as_ref()
+            .map_or_else(Default::default, |b| b.view())
+    }
+
     pub fn process_input_frame(&mut self, input: Stereo) -> Stereo {
         if self.rack.is_some() {
             // A Rack's sources are its own; the input is its Vocal's voice.
             return self.process_rack_frame(input);
         }
         self.taps.begin_frame();
+        let is_303 = self.tb303.is_some();
+        let source_modulators = if is_303 {
+            if self.playing {
+                self.tick_events();
+            }
+            if let Some((channel, note, velocity)) =
+                self.tb303.as_ref().and_then(|b| b.note_state())
+                && (self.source_channel != channel
+                    || self.source_note != note
+                    || self.source_velocity != velocity as f32 / 127.0)
+            {
+                self.mod_note_on(channel, note, velocity);
+            }
+            let values = self.advance_modulators(self.sample_rate as f32);
+            if self.frame.is_multiple_of(CONTROL_INTERVAL) {
+                self.update_modulation();
+            }
+            Some(values)
+        } else {
+            None
+        };
+        let external_notes = is_303 && self.sequence_has_notes();
+        let input = if let (Some(bass), Some(settings)) = (&mut self.tb303, &self.preset.tb303) {
+            bass.configure(
+                &self.modulated.tb303_radias,
+                self.modulated.params.sample_tune_semis
+                    + self.modulated.params.sample_tune_cents * 0.01,
+                self.lfo_values[0],
+                external_notes,
+            );
+            bass.frame(
+                settings,
+                self.modulated.tb303,
+                self.playing && self.sequence_running,
+                self.preset.params.bpm,
+            )
+        } else {
+            input
+        };
         let input = if self.sampler.is_some() {
             // A kit plays its sequencer even while its chain passes through.
             if self.playing {
@@ -3172,7 +3274,7 @@ impl Engine {
         };
         if bus.is_some() && self.bus_passthrough() {
             // A bus with nothing switched on still runs its sequencer.
-            if self.playing && self.sampler.is_none() {
+            if self.playing && self.sampler.is_none() && !is_303 {
                 self.tick_events();
             }
             return self.pass_bus(input);
@@ -3229,7 +3331,7 @@ impl Engine {
                 }
             }
         }
-        if self.playing && self.sampler.is_none() {
+        if self.playing && self.sampler.is_none() && !is_303 {
             self.tick_events();
         }
         let sr = self.sample_rate as f32;
@@ -3285,7 +3387,8 @@ impl Engine {
                         0.00015
                     },
         );
-        let (mut loudest_voice, mut voice_sum) = self.advance_modulators(sr);
+        let (mut loudest_voice, mut voice_sum) =
+            source_modulators.unwrap_or_else(|| self.advance_modulators(sr));
         if bus.is_some() {
             // A bus has one permanent voice at unity: no notes, no ENV1 VCA.
             for (i, v) in self.voices.iter_mut().enumerate() {
@@ -3294,7 +3397,7 @@ impl Engine {
             loudest_voice = 1.0;
             voice_sum = 1.0;
         }
-        if self.frame.is_multiple_of(CONTROL_INTERVAL) {
+        if !is_303 && self.frame.is_multiple_of(CONTROL_INTERVAL) {
             self.update_modulation();
         }
         let density = self.grain_density;

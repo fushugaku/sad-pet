@@ -31,6 +31,7 @@ pub mod startup;
 pub mod synth;
 pub mod tables;
 pub mod taps;
+pub mod tb303;
 pub mod timbres;
 pub mod vocal;
 pub mod wav;

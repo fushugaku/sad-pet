@@ -162,6 +162,10 @@ enum Target {
     SynthOsc(usize, usize),
     SynthGrain,
     SynthBuffer,
+    Tb303(usize),
+    Tb303Osc(usize, usize),
+    Tb303Step(usize, usize),
+    Tb303Pattern(usize),
     /// An added filter by list position: a FILTER_SLOT_FIELDS index.
     FilterSlot(usize, usize),
     /// A section's Chain share or bus send.
@@ -234,6 +238,8 @@ impl Spec {
                 | Target::SynthGrain
                 | Target::SynthBuffer
                 | Target::RackBuffer
+                | Target::Tb303Step(..)
+                | Target::Tb303Pattern(_)
         ) && self.id != "bpm"
             && !matches!(
                 self.target,
@@ -257,10 +263,13 @@ impl Spec {
             | Target::SynthBuffer
             | Target::RackBuffer
             | Target::Macro(_) => return None,
+            Target::Tb303Step(..) | Target::Tb303Pattern(_) => return None,
             Target::RackStrip(i, field) => m.rack_strips.at(i).field(field),
             Target::RackEq(i, control) => m.rack_eqs[i].control(control),
             Target::ResynthOsc(i, field) => oscillator_get(m.resynth.oscillators[i], field),
             Target::SynthOsc(i, field) => oscillator_get(m.synth.oscillators[i], field),
+            Target::Tb303(field) => m.tb303.get(field),
+            Target::Tb303Osc(i, field) => oscillator_get(m.tb303_radias.oscillators[i], field),
             Target::FilterSlot(i, field) => {
                 filter_slot_get(m.filter_slots[..m.filter_len].get(i)?, field)
             }
@@ -324,12 +333,17 @@ impl Spec {
             | Target::SynthBuffer
             | Target::RackBuffer
             | Target::Macro(_) => {}
+            Target::Tb303Step(..) | Target::Tb303Pattern(_) => {}
             Target::RackStrip(i, field) => m.rack_strips.at_mut(i).set_field(field, value),
             Target::RackEq(i, control) => m.rack_eqs[i].set_control(control, value),
             Target::ResynthOsc(i, field) => {
                 oscillator_set(&mut m.resynth.oscillators[i], field, value)
             }
             Target::SynthOsc(i, field) => oscillator_set(&mut m.synth.oscillators[i], field, value),
+            Target::Tb303(field) => m.tb303.set(field, value),
+            Target::Tb303Osc(i, field) => {
+                oscillator_set(&mut m.tb303_radias.oscillators[i], field, value)
+            }
             Target::FilterSlot(i, field) => {
                 if let Some(slot) = m.filter_slots[..m.filter_len].get_mut(i) {
                     filter_slot_set(slot, field, value);
@@ -379,6 +393,30 @@ impl Spec {
                 .map_or(self.default, |eq| eq.control(control)),
             Target::SynthGrain => f32::from(preset.synth.as_ref().is_some_and(|s| s.granular)),
             Target::SynthBuffer => preset.synth.as_ref().map_or(8., |s| s.buffer_seconds),
+            Target::Tb303(field) => preset
+                .tb303
+                .as_ref()
+                .map_or(self.default, |s| s.controls.get(field)),
+            Target::Tb303Osc(i, field) => preset
+                .tb303
+                .as_ref()
+                .map_or(self.default, |s| oscillator_get(s.oscillators[i], field)),
+            Target::Tb303Step(i, field) => preset.tb303.as_ref().map_or(self.default, |s| {
+                let step = s.steps[i];
+                match field {
+                    0 => step.note as f32,
+                    1 => f32::from(step.gate),
+                    2 => f32::from(step.accent),
+                    _ => f32::from(step.slide),
+                }
+            }),
+            Target::Tb303Pattern(field) => preset.tb303.as_ref().map_or(self.default, |s| {
+                if field == 0 {
+                    f32::from(s.pattern)
+                } else {
+                    s.length as f32
+                }
+            }),
             Target::SynthOsc(i, field) => preset
                 .synth
                 .as_ref()
@@ -501,6 +539,36 @@ impl Spec {
             Target::SynthGrain => {
                 if let Some(s) = &mut preset.synth {
                     s.granular = value >= 0.5;
+                }
+            }
+            Target::Tb303(field) => {
+                if let Some(s) = &mut preset.tb303 {
+                    s.controls.set(field, value);
+                }
+            }
+            Target::Tb303Osc(i, field) => {
+                if let Some(s) = &mut preset.tb303 {
+                    oscillator_set(&mut s.oscillators[i], field, value);
+                }
+            }
+            Target::Tb303Step(i, field) => {
+                if let Some(s) = &mut preset.tb303 {
+                    let step = &mut s.steps[i];
+                    match field {
+                        0 => step.note = value.round() as u8,
+                        1 => step.gate = value >= 0.5,
+                        2 => step.accent = value >= 0.5,
+                        _ => step.slide = value >= 0.5,
+                    }
+                }
+            }
+            Target::Tb303Pattern(field) => {
+                if let Some(s) = &mut preset.tb303 {
+                    if field == 0 {
+                        s.pattern = value >= 0.5;
+                    } else {
+                        s.length = value.round() as u8;
+                    }
                 }
             }
             Target::SynthOsc(i, field) => {
@@ -1601,6 +1669,95 @@ pub fn specs() -> &'static [Spec] {
             };
             spec.default = spec.get(&preset);
             result.push(spec);
+        }
+        // Append new instrument controls: released automation indices stay put.
+        let bass = crate::tb303::Controls::default();
+        for (field, key) in crate::tb303::FIELDS.iter().enumerate() {
+            let (min, max) = crate::tb303::range(field);
+            result.push(Spec {
+                id: format!("tb303_{key}"),
+                name: format!("303 {key}"),
+                min,
+                max,
+                default: bass.get(field),
+                target: Target::Tb303(field),
+            });
+        }
+        let pattern = crate::tb303::Settings::default();
+        for (field, (key, min, max, default)) in
+            [("pattern", 0.0, 1.0, 1.0), ("length", 1.0, 16.0, 16.0)]
+                .into_iter()
+                .enumerate()
+        {
+            result.push(Spec {
+                id: format!("tb303_{key}"),
+                name: format!("303 {key}"),
+                min,
+                max,
+                default,
+                target: Target::Tb303Pattern(field),
+            });
+        }
+        for i in 0..crate::tb303::STEPS {
+            for (field, key) in ["note", "gate", "accent", "slide"].into_iter().enumerate() {
+                let step = pattern.steps[i];
+                let default = match field {
+                    0 => step.note as f32,
+                    1 => f32::from(step.gate),
+                    2 => f32::from(step.accent),
+                    _ => f32::from(step.slide),
+                };
+                result.push(Spec {
+                    id: format!("tb303_step{}_{key}", i + 1),
+                    name: format!("303 step {} {key}", i + 1),
+                    min: 0.0,
+                    max: if field == 0 { 127.0 } else { 1.0 },
+                    default,
+                    target: Target::Tb303Step(i, field),
+                });
+            }
+        }
+        result.push(Spec {
+            id: "tb303_count".into(),
+            name: "303 RADIAS oscillator count".into(),
+            min: 0.0,
+            max: 4.0,
+            default: 0.0,
+            target: Target::Core {
+                get: |p| p.tb303.as_ref().map_or(0.0, |s| s.count as f32),
+                set: |p, v| {
+                    if let Some(s) = &mut p.tb303 {
+                        s.count = v.round() as u8;
+                    }
+                },
+                frame_get: |m| m.tb303_radias.count as f32,
+                frame_set: |m, v| m.tb303_radias.count = v.round() as u8,
+            },
+        });
+        for (i, o) in pattern.oscillators.iter().enumerate() {
+            for (field, key, name, min, max) in [
+                (0, "enabled", "enabled", 0.0, 1.0),
+                (1, "waveform", "waveform", 0.0, 5.0),
+                (2, "mode", "mode", 0.0, 3.0),
+                (3, "control1", "control 1", 0.0, 1.0),
+                (4, "control2", "control 2", 0.0, 1.0),
+                (5, "transpose", "transpose", -48.0, 48.0),
+                (6, "fine", "fine tune", -100.0, 100.0),
+                (7, "level", "level", 0.0, 1.0),
+                (9, "cross_source", "cross source", 0.0, 4.0),
+                (12, "interaction", "Ring/Sync", 0.0, 3.0),
+                (13, "interaction_source", "Ring/Sync source", 0.0, 5.0),
+                (14, "cross_input", "external Cross source", 0.0, 1.0),
+            ] {
+                result.push(Spec {
+                    id: format!("tb303_osc{}_{key}", i + 1),
+                    name: format!("303 RADIAS OSC {} {name}", i + 1),
+                    min,
+                    max,
+                    default: oscillator_get(*o, field),
+                    target: Target::Tb303Osc(i, field),
+                });
+            }
         }
         result
     })

@@ -32,6 +32,14 @@ pub(super) fn ensure_master_in(
 /// A Bus or Master keeps its role when a preset loads into it; any other
 /// timbre ignores bus settings.
 pub(super) fn keep_role(preset: &mut Preset, current: &Preset, kind: Kind) {
+    if kind == Kind::Tb303 {
+        if preset.tb303.is_none() {
+            preset.tb303 = current.tb303.clone();
+        }
+        preset.rack = None;
+    } else if kind.keeps_role() {
+        preset.tb303 = None;
+    }
     if kind.keeps_role() {
         if preset.bus.is_none() {
             preset.bus = current.bus.clone();

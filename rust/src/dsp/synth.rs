@@ -112,10 +112,10 @@ impl Default for Layer {
     }
 }
 
-struct State {
+struct State<const N: usize> {
     sample_rate: f32,
     oversample: usize,
-    voices: [Voice; VOICES],
+    voices: [Voice; N],
     layers: [Layer; MAX_OSCILLATORS],
     /// A layer renders when audible or referenced by an audible layer.
     needed: [bool; MAX_OSCILLATORS],
@@ -132,14 +132,19 @@ struct State {
     current: u64,
     lfo: i16,
     output: Stereo,
+    /// Optional unmixed generator outside this bank (the 303 VCO).
+    external: Option<(f32, bool)>,
 }
 
-pub struct Runtime {
-    state: Box<State>,
+pub struct VoiceBank<const N: usize> {
+    state: Box<State<N>>,
     /// Prepared off audio. Also retires a previous live input on a type change.
     pub live: Option<LiveInput>,
 }
-impl Runtime {
+pub type Runtime = VoiceBank<VOICES>;
+pub(super) type Mono = VoiceBank<1>;
+
+impl<const N: usize> VoiceBank<N> {
     pub fn new(sample_rate: u32) -> Self {
         let sample_rate = sample_rate.clamp(8_000, 384_000);
         Self {
@@ -160,6 +165,7 @@ impl Runtime {
                 current: 0,
                 lfo: 0,
                 output: [0.0; 2],
+                external: None,
             }),
             live: None,
         }
@@ -177,6 +183,9 @@ impl Runtime {
     }
     pub(super) fn set_output(&mut self, output: Stereo) {
         self.state.output = output;
+    }
+    pub(super) fn set_source(&mut self, sample: f32, wrapped: bool) {
+        self.state.external = Some((sample, wrapped));
     }
     /// Control-rate configuration; equal settings leave every carrier alone.
     pub(super) fn configure(
@@ -212,13 +221,18 @@ impl Runtime {
             if o.waveform == Waveform::AudioIn {
                 o.waveform = Waveform::Sine;
             }
-            o.interaction_source = o
-                .interaction_source
-                .clamp(FIRST_REFERENCE, FIRST_REFERENCE + MAX_OSCILLATORS as u8 - 1);
+            o.interaction_source = o.interaction_source.clamp(
+                if s.external.is_some() {
+                    0
+                } else {
+                    FIRST_REFERENCE
+                },
+                FIRST_REFERENCE + MAX_OSCILLATORS as u8 - 1,
+            );
             o.cross_source = o.cross_source.min(MAX_OSCILLATORS as u8);
             o
         });
-        let count = (settings.count as usize).clamp(1, MAX_OSCILLATORS);
+        let count = (settings.count as usize).min(MAX_OSCILLATORS);
         let enabled = oscillators[..count]
             .iter()
             .filter(|o| o.enabled)
@@ -269,7 +283,12 @@ impl Runtime {
                 let o = oscillators[i];
                 let references = [
                     (o.interaction != crate::resynth::Interaction::Off)
-                        .then(|| (o.interaction_source - FIRST_REFERENCE) as usize),
+                        .then(|| {
+                            o.interaction_source
+                                .checked_sub(FIRST_REFERENCE)
+                                .map(usize::from)
+                        })
+                        .flatten(),
                     (o.model == Model::Radias && o.mode == Mode::Cross && o.cross_source > 0)
                         .then(|| o.cross_source as usize - 1),
                 ];
@@ -302,6 +321,11 @@ impl Runtime {
         }
         s.current = s.frame;
         s.frame = s.frame.wrapping_add(1);
+    }
+    /// Optional mono layers can fade all the way out when their bank is empty.
+    pub(super) fn active(&self) -> bool {
+        self.state.needed.iter().any(|&on| on)
+            || self.state.layers.iter().any(|layer| layer.gain != 0.0)
     }
     /// Render one engine voice before its filter. `generation` changes with
     /// every note-on of that voice; `note` includes the voice's pitch bend.
@@ -350,10 +374,20 @@ impl Runtime {
                     continue;
                 }
                 let o = layer.settings;
-                let reference = (o.interaction_source - FIRST_REFERENCE) as usize;
-                let sync = o.interaction.sync() && voice.wraps[reference];
+                let (reference, wrapped) = o
+                    .interaction_source
+                    .checked_sub(FIRST_REFERENCE)
+                    .map_or_else(
+                        || s.external.unwrap_or_default(),
+                        |id| (voice.taps[id as usize], voice.wraps[id as usize]),
+                    );
+                let sync = o.interaction.sync() && wrapped;
                 let modulator = if o.cross_source == 0 {
-                    0.0
+                    if o.cross_input == crate::resynth::CrossInput::Source {
+                        s.external.unwrap_or_default().0
+                    } else {
+                        0.0
+                    }
                 } else {
                     voice.taps[o.cross_source as usize - 1]
                 };
@@ -429,7 +463,7 @@ impl Runtime {
                 voice.wraps[id] = voice.initialized[id] && (sync || wrapped);
                 voice.initialized[id] = true;
                 if o.interaction.ring() {
-                    let reference = voice.taps[reference].clamp(-1.0, 1.0);
+                    let reference = reference.clamp(-1.0, 1.0);
                     raw = raw.map(|x| x * reference);
                 }
                 voice.taps[id] = (raw[0] + raw[1]) * 0.5;
@@ -502,3 +536,72 @@ impl Prepared {
     }
 }
 pub const NAME: &str = "Synth engine";
+
+#[cfg(test)]
+mod source_tests {
+    use super::*;
+    use crate::resynth::{CrossInput, Interaction};
+
+    #[test]
+    fn external_source_resets_radias_phase_and_multiplies_the_unmixed_wave() {
+        let sample = SampleBuffer::new(String::new(), 192000, vec![[0.0; 2]]).unwrap();
+        let mut settings = Settings::default();
+        settings.oscillators[0].interaction = Interaction::RingSync;
+        settings.oscillators[0].interaction_source = 0;
+        let mut bank = Mono::new(192000);
+        bank.set_source(1.0, false);
+        bank.configure(&settings, 0.0, &sample, 60.0);
+        for _ in 0..256 {
+            bank.begin_frame(0.0);
+            bank.render(0, 0, 52.0, &sample, &(0..1));
+        }
+        let render = |bank: &mut Mono, source, wrap| {
+            bank.set_source(source, wrap);
+            bank.begin_frame(0.0);
+            bank.render(0, 0, 52.0, &sample, &(0..1))
+        };
+        let full = render(&mut bank, 1.0, true);
+        let reset_phase = bank.state.voices[0].carriers[0].oscillator.phase;
+        for _ in 0..37 {
+            render(&mut bank, 1.0, false);
+        }
+        assert_ne!(
+            bank.state.voices[0].carriers[0].oscillator.phase,
+            reset_phase
+        );
+        let half = render(&mut bank, 0.5, true);
+        assert_eq!(
+            bank.state.voices[0].carriers[0].oscillator.phase,
+            reset_phase
+        );
+        assert_eq!(half, full.map(|v| v * 0.5));
+        assert_ne!(full, [0.0; 2]);
+        assert_eq!(render(&mut bank, 0.0, true), [0.0; 2]);
+    }
+
+    #[test]
+    fn external_cross_input_changes_radias_without_an_internal_modulator() {
+        let sample = SampleBuffer::new(String::new(), 192000, vec![[0.0; 2]]).unwrap();
+        let mut settings = Settings::default();
+        settings.oscillators[0].mode = Mode::Cross;
+        settings.oscillators[0].control1 = 1.0;
+        settings.oscillators[0].cross_source = 0;
+        settings.oscillators[0].cross_input = CrossInput::Source;
+        let mut plain = Mono::new(192000);
+        let mut cross = Mono::new(192000);
+        for bank in [&mut plain, &mut cross] {
+            bank.set_source(0.0, false);
+            bank.configure(&settings, 0.0, &sample, 60.0);
+        }
+        let mut difference = 0.0_f32;
+        for i in 0..4096 {
+            plain.begin_frame(0.0);
+            cross.set_source((i as f32 * 0.13).sin(), false);
+            cross.begin_frame(0.0);
+            let a = plain.render(0, 0, 52.0, &sample, &(0..1));
+            let b = cross.render(0, 0, 52.0, &sample, &(0..1));
+            difference += (a[0] - b[0]).abs();
+        }
+        assert!(difference > 1.0);
+    }
+}

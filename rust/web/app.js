@@ -30,6 +30,7 @@ let timbreEditor = null,
   drumEditor = null,
   vocalEditor = null,
   samplerEditor = null,
+  tb303Editor = null,
   timbreBusy = false;
 const drumEdits = new Map();
 let sequenceCatalog = null;
@@ -1847,6 +1848,7 @@ function syncTimbreRouting() {
     : "Sample and grains");
   $("drum-source-name").hidden = !history;
   $("drum-source-name").textContent = rack ? "Grain engine input"
+    : preset?.tb303 ? "303 Bass"
     : preset?.vocal ? "Vocal"
     : preset?.sampler ? "Kit"
     : bus ? bus.master ? "Master input" : "Bus input"
@@ -1893,6 +1895,7 @@ function syncTimbreRouting() {
   drumEditor?.sync();
   vocalEditor?.sync();
   samplerEditor?.sync();
+  tb303Editor?.sync();
   syncSynth();
   rackEditor?.sync();
 }
@@ -2056,6 +2059,15 @@ const OSC_BANKS = {
     sync: () => syncSynth(),
     signature: "",
   },
+  tb303: {
+    label: "303 RADIAS",
+    settings: () => preset.tb303,
+    defaults: (index) => ({ ...synthOscDefault(index), interaction_source: 0 }),
+    waves: RESYNTH_WAVES.slice(0, 6),
+    references: [[0, "303"]], detached: 0, cross: [["analysis", "Off"], ["source", "303"]],
+    minCount: 0, fixedModel: true, mono: true,
+    sync: () => tb303Editor?.sync(), signature: "",
+  },
 };
 const OSC_CHOICES = {
   waveform: RESYNTH_WAVES,
@@ -2070,6 +2082,7 @@ function editOscillator(bank, field, value, index = null) {
   target[field] = value;
   // Synth oscillators always take their Cross input from another oscillator.
   if (bank === "synth" && field === "cross_input") return;
+  if (bank === "tb303" && ["model", "fold_shape", "pan"].includes(field)) return;
   let numeric = value;
   if (OSC_CHOICES[field])
     numeric = OSC_CHOICES[field].findIndex(([key]) => key === value);
@@ -2461,7 +2474,7 @@ function buildBus() {
 }
 function syncBus() {
   const bus = preset?.bus;
-  $("bus-engine").hidden = !bus;
+  $("bus-engine").hidden = !bus || !!preset?.tb303;
   // Only a bus can switch Filter 1 and 2 off; elsewhere they always run.
   $("bus-filters").hidden = !bus;
   $("master-limiter").hidden = !bus?.master;
@@ -2608,7 +2621,7 @@ function syncOscillators(bank) {
         edit("enabled", !config.settings().oscillators[i].enabled, i);
         config.sync();
       };
-      card.querySelector(".resynth-remove").disabled = r.count === 1;
+      card.querySelector(".resynth-remove").disabled = r.count === (config.minCount ?? 1);
       card.querySelector(".resynth-remove").onclick = () => {
         const current = config.settings();
         const remaining = current.oscillators
@@ -2667,6 +2680,7 @@ function syncOscillators(bank) {
         },
       );
       model.classList.toggle("resynth-choice-wide", !folder);
+      model.hidden = !!config.fixedModel;
       if (folder)
         choice("fold_shape", "Shaper", RESYNTH_FOLDS, o.fold_shape, (value) =>
           edit("fold_shape", value, i),
@@ -2780,7 +2794,7 @@ function syncOscillators(bank) {
         );
       }
       knob(i, "level", "LEVEL");
-      knob(i, "pan", "PAN", (v) =>
+      if (!config.mono) knob(i, "pan", "PAN", (v) =>
         v === 0.5
           ? "C"
           : `${Math.round(Math.abs(v - 0.5) * 200)}${v < 0.5 ? "L" : "R"}`,
@@ -2807,6 +2821,19 @@ function syncOscillators(bank) {
   }
   for (const [key, update] of controls)
     if (key.startsWith(`${bank}_`)) update();
+}
+function sync303Oscillators() {
+  if (!preset?.tb303) {
+    OSC_BANKS.tb303.signature = "";
+    $("tb303-oscillators").replaceChildren();
+    for (const key of controls.keys()) if (key.startsWith("tb303_osc")) {
+      controls.delete(key);
+      modulationViews.delete(key);
+    }
+    return;
+  }
+  $("tb303-add").disabled = preset.tb303.count >= 4;
+  syncOscillators("tb303");
 }
 function updateMasterMeter(meter) {
   const output = $("master-reduction"), on = preset?.bus?.limiter !== false;
@@ -4043,6 +4070,7 @@ function modulationGroups() {
     }
     if (spec.id.startsWith("drum") && !preset.drums) continue;
     if (spec.id.startsWith("synth_") && !preset.synth) continue;
+    if (spec.id.startsWith("tb303_") && !preset.tb303) continue;
     // Added filters have their own groups, addressed by slot id.
     if (
       /^(pre_)?fx\d+_/.test(spec.id) ||
@@ -4108,7 +4136,9 @@ function modulationGroups() {
             ? "Resynth"
             : spec.id.startsWith("synth_")
               ? "Synth engine"
-              : "Other controls";
+              : spec.id.startsWith("tb303_osc")
+                ? `303 RADIAS OSC ${/^tb303_osc(\d+)/.exec(spec.id)[1]}`
+                : spec.id.startsWith("tb303_") ? "303 Bass" : "Other controls";
     if (!extra.has(group)) extra.set(group, []);
     extra.get(group).push([{ control: { index: spec.index } }, spec.name]);
   }
@@ -5823,6 +5853,7 @@ async function poll() {
     syncTaps();
     syncGrainGroupOutputs();
     drumEditor?.update(next.drums);
+    tb303Editor?.update(next.tb303);
     sampleSelection?.sync(next);
     setText($("sample-end"), formatTime(next.sample_seconds));
     setText($("position-info"), formatTime(next.center * next.sample_seconds));
@@ -5902,6 +5933,15 @@ async function init() {
     buildResynth();
     buildTaps();
     buildSynth();
+    tb303Editor = new window.Sad303($("tb303-engine"), {
+      read: () => preset, parameter: scheduleParameter, knob: createKnob,
+      oscillators: sync303Oscillators,
+      addOscillator: () => {
+        if (preset.tb303.count >= 4) return;
+        editOscillator("tb303", "count", preset.tb303.count + 1);
+        tb303Editor.sync();
+      },
+    });
     buildLfos();
     buildEnvs();
     buildMatrix();

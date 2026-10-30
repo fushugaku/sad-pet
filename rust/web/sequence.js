@@ -580,7 +580,7 @@ window.SadNeuropolis = class {
   }
   // Resynth and Synth engine oscillator lanes edit a signed offset.
   relative(track) {
-    return ["oscillator", "synth_oscillator"].includes(track?.target.kind);
+    return ["oscillator", "synth_oscillator", "tb303_oscillator"].includes(track?.target.kind);
   }
   pitchText(track, value) {
     return this.relative(track)
@@ -686,6 +686,7 @@ window.SadNeuropolis = class {
    * and pads, or the grains and envelopes. */
   notesName() {
     const preset = this.hooks.read();
+    if (preset.tb303) return "Notes → 303 + RADIAS";
     if (!preset.sampler?.pads?.length) return "Notes → grains + ENV";
     return preset.rack ? "Notes → voices + pads" : "Notes → pads by key";
   }
@@ -699,6 +700,8 @@ window.SadNeuropolis = class {
           ? `${this.hooks.read().synth ? "Resynth " : ""}OSC ${t.target.index + 1} offset`
           : t.target.kind === "synth_oscillator"
             ? `Synth OSC ${t.target.index + 1} offset`
+          : t.target.kind === "tb303_oscillator"
+            ? `303 RADIAS OSC ${t.target.index + 1} offset`
           : this.catalog.parameters.find((p) => p.id === t.target.parameter)
               ?.name ||
             t.target.parameter.replace(/^lfo(\d+)_reset$/, "LFO $1 reset");
@@ -1164,7 +1167,7 @@ window.SadNeuropolis = class {
   // oscillators and drum voices each get a submenu inside their family.
   parameterGroups(prefix = "") {
     const preset = this.hooks.read(), families = new Map(), drums = new Map(),
-      order = ["Main", "Grains", "Filters", "LFO", "Envelopes", "Arpeggiator", "Pre-filter FX", "Post-filter FX", "Resynth", "Synth engine", "Drums"],
+      order = ["Main", "303 Bass", "Grains", "Filters", "LFO", "Envelopes", "Arpeggiator", "Pre-filter FX", "Post-filter FX", "Resynth", "Synth engine", "Drums"],
       voices = window.SadDrums?.controlSections,
       grainControls = new Set(["position", "grains", "min_grains", "grain_size", "pitch", "grain_shape",
         "cloud", "detune", "stereo_spread", "grain_feedback", "grain_advanced", "grain_attack"]);
@@ -1177,6 +1180,7 @@ window.SadNeuropolis = class {
           continue;
       }
       if (id.startsWith("drum") && !preset.drums) continue;
+      if (id.startsWith("tb303_") && !preset.tb303) continue;
       const drum = /^drum(\d+)_(\d+|note_shift)$/.exec(id);
       if (drum && voices) {
         drums.set(id, spec.name);
@@ -1196,6 +1200,8 @@ window.SadNeuropolis = class {
         : id.startsWith("arp_") ? ["Arpeggiator"]
         : id.startsWith("synth_osc") ? ["Synth engine", `Synth OSC ${n}`]
         : id.startsWith("synth_") ? ["Synth engine"]
+        : id.startsWith("tb303_osc") ? ["303 Bass", `RADIAS OSC ${/^tb303_osc(\d+)/.exec(id)[1]}`, `303 RADIAS OSC ${/^tb303_osc(\d+)/.exec(id)[1]}`]
+        : id.startsWith("tb303_") ? ["303 Bass"]
         : group ? ["Grains", `Group ${"ABCD"[group - 1]}`]
         : grainControls.has(id) || id.startsWith("tap_grains_") ? ["Grains"]
         : filter ? ["Filters", `Filter ${filter[1] || 1}`] : ["Main"];
@@ -1633,17 +1639,20 @@ window.SadNeuropolis = class {
     const target = document.createElement("button");
     target.setAttribute("aria-label", "Track destination");
     const pads = this.hooks.read().sampler?.pads || [],
-      synth = !!this.hooks.read().synth;
+      synth = !!this.hooks.read().synth,
+      bass = !!this.hooks.read().tb303;
     window.SadLazySelect.configure(target,
       track.target.kind === "oscillator" ? `osc:${track.target.index}`
         : track.target.kind === "synth_oscillator" ? `synth-osc:${track.target.index}`
+        : track.target.kind === "tb303_oscillator" ? `tb303-osc:${track.target.index}`
         : track.target.kind === "pad" ? `pad:${track.target.pad}`
         : track.target.kind === "parameter" ? `param:${track.target.parameter}` : track.target.kind,
       [{ label: "Pitch & notes", choices: [
         ["main_pitch", "Main track pitch"], ["notes", this.notesName()],
         // A Synth engine timbre plays its own oscillators; Resynth's follow.
         ...(synth ? [0, 1, 2, 3].map(i => [`synth-osc:${i}`, `Synth OSC ${i + 1} pitch offset`]) : []),
-        ...[0, 1, 2, 3].map(i => [`osc:${i}`, `${synth ? "Resynth " : ""}OSC ${i + 1} pitch offset`]),
+        ...(bass ? [0, 1, 2, 3].map(i => [`tb303-osc:${i}`, `303 RADIAS OSC ${i + 1} pitch offset`]) : []),
+        ...[0, 1, 2, 3].map(i => [`osc:${i}`, `${synth || bass ? "Resynth " : ""}OSC ${i + 1} pitch offset`]),
       ] },
       // A kit's pads, each played by its own track whatever its keys.
       ...(pads.length ? [{ label: "Sampler pads", choices: pads
@@ -1656,6 +1665,8 @@ window.SadNeuropolis = class {
         ? { kind: "oscillator", index: Number(target.value.slice(4)) }
         : target.value.startsWith("synth-osc:")
           ? { kind: "synth_oscillator", index: Number(target.value.slice(10)) }
+        : target.value.startsWith("tb303-osc:")
+          ? { kind: "tb303_oscillator", index: Number(target.value.slice(10)) }
         : target.value.startsWith("pad:")
           ? { kind: "pad", pad: Number(target.value.slice(4)) }
           : target.value.startsWith("param:")
@@ -1697,7 +1708,7 @@ window.SadNeuropolis = class {
       const routing = document.createElement("div");
       routing.className = "neuro-pitch-routing";
       const label = document.createElement("span");
-      label.textContent = this.hooks.read().synth ? "Main pitch → Resynth" : "Main pitch →";
+      label.textContent = synth || bass ? "Main pitch → Resynth" : "Main pitch →";
       routing.append(label);
       for (let i = 0; i < 4; i++) {
         const check = document.createElement("label");

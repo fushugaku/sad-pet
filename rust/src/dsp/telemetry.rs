@@ -77,6 +77,12 @@ pub struct RealtimeView {
     pub modulated_rack_eqs: [crate::eq::Equalizer; crate::eq::MAX_EQS],
     #[serde(default)]
     pub master_limiter: super::limiter::Meter,
+    #[serde(default)]
+    pub tb303: crate::tb303::View,
+    #[serde(default)]
+    pub modulated_tb303: crate::tb303::Controls,
+    #[serde(default)]
+    pub modulated_tb303_radias: crate::synth::Settings,
 }
 
 impl Default for RealtimeView {
@@ -130,6 +136,9 @@ impl Default for RealtimeView {
             rack_peaks: [0.0; crate::rack::STRIPS],
             modulated_rack_eqs: Default::default(),
             master_limiter: Default::default(),
+            tb303: Default::default(),
+            modulated_tb303: Default::default(),
+            modulated_tb303_radias: Default::default(),
         }
     }
 }
@@ -206,6 +215,9 @@ impl Engine {
         view.peak = self.peak;
         self.peak = [0.0; 2];
         view.master_limiter = self.master_meter();
+        view.tb303 = self.tb303_view();
+        view.modulated_tb303 = self.modulated.tb303;
+        view.modulated_tb303_radias = self.modulated.tb303_radias;
         self.limiter.clear_peak();
         view.input_peak = self.live_input.as_ref().map_or([0.0; 2], |i| i.peak);
         view.input_seconds = self.live_input.as_ref().map_or(0.0, |i| i.seconds());
@@ -255,9 +267,16 @@ impl Engine {
             view.gain_reduction.iter_mut().for_each(|(_, db)| *db = 0.0);
         }
         view.note_count = 0;
-        for voice in self.voices[1..].iter().filter(|v| v.held || v.sustained) {
-            view.notes[view.note_count] = voice.note;
-            view.note_count += 1;
+        if let Some(bass) = &self.tb303 {
+            if let Some((_, note, _)) = bass.note_state() {
+                view.notes[0] = note;
+                view.note_count = 1;
+            }
+        } else {
+            for voice in self.voices[1..].iter().filter(|v| v.held || v.sustained) {
+                view.notes[view.note_count] = voice.note;
+                view.note_count += 1;
+            }
         }
         view.grain_count = 0;
         for slot in self.live_grain_slots() {
@@ -498,6 +517,7 @@ impl ControlFeedback<'_> {
                 || s.id.starts_with("env")
                 || (self.preset.drums.is_some() && s.id.starts_with("drum"))
                 || (self.preset.synth.is_some() && s.id.starts_with("synth_"))
+                || (self.preset.tb303.is_some() && s.id.starts_with("tb303_"))
                 || equalizers.iter().any(|prefix| s.id.starts_with(prefix))
         }) {
             if let (Some(base), Some(current), Some(min), Some(max)) = (
@@ -524,6 +544,8 @@ pub fn knob_states_from_view(
     m.pre_color_slots = view.pre_color;
     m.resynth = view.modulated_resynth;
     m.synth = view.modulated_synth;
+    m.tb303 = view.modulated_tb303;
+    m.tb303_radias = view.modulated_tb303_radias;
     m.lfos = view.modulated_lfos;
     m.envs = view.modulated_envs;
     m.drums = view.drum_controls;

@@ -9,6 +9,7 @@ pub enum Kind {
     Granular,
     Drums,
     Synth,
+    Tb303,
     /// Sings a score; its voice runs through the chain like a Bus input.
     Vocal,
     /// Plays a kit of sample pads; the kit runs through the chain like a
@@ -35,6 +36,7 @@ impl Kind {
             Kind::Granular => "Granular",
             Kind::Drums => "Drums",
             Kind::Synth => "Synth",
+            Kind::Tb303 => "303 Bass",
             Kind::Vocal => "Vocal",
             Kind::Sampler => "Sampler",
             Kind::PadFx => "Pad FX",
@@ -109,13 +111,15 @@ impl Kind {
     }
     /// Keeps its engine role when a preset loads into it.
     pub fn keeps_role(self) -> bool {
-        self.routing() || matches!(self, Kind::Vocal | Kind::Sampler)
+        self.routing() || matches!(self, Kind::Vocal | Kind::Sampler | Kind::Tb303)
     }
     /// Pad FX timbres cannot be told from a Bus by their preset; their Meta
     /// names the Sampler they belong to.
     pub fn of(preset: &crate::preset::Preset) -> Self {
         if preset.rack.is_some() {
             Kind::Rack
+        } else if preset.tb303.is_some() {
+            Kind::Tb303
         } else if preset.vocal.is_some() {
             Kind::Vocal
         } else if preset.sampler.is_some() {
@@ -141,6 +145,14 @@ impl Kind {
             Kind::Granular => return None,
             Kind::Drums => preset.drums = Some(Box::default()),
             Kind::Synth => preset.synth = Some(Box::default()),
+            Kind::Tb303 => {
+                preset.tb303 = Some(Box::default());
+                preset.bus = Some(Box::default());
+                preset.params.master_volume = 1.0;
+                preset.color_chain.clear();
+                preset.sequencer.enabled = false;
+                preset.sanitize();
+            }
             Kind::Rack => {
                 preset.rack = Some(Box::default());
                 preset.sanitize();

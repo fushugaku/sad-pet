@@ -164,6 +164,17 @@ files move instruments between the web version and the native app and plug-ins.
   destinations (`synth_osc1_waveform`…, `synth_granular`, `synth_buffer_seconds`).
   The desktop app, which has one engine, switches it with **Engine: Granular /
   Synth engine**. Presets of the other timbres serialize unchanged.
+- **303 Bass** is a monophonic circuit-derived instrument with saw/square,
+  tuning, cutoff, resonance, envelope modulation, decay and accent. Its
+  sixteen-step pattern has notes/rests, accents and tied slides. MIDI overlaps
+  slide; velocities 100–127 accent. The nonlinear, coupled diode ladder,
+  frequency-dependent feedback, RC slide and accent charge run in the shared
+  Rust engine, with oversampling and no audio-thread allocation. Its voice and
+  pattern controls support host automation, scene recall, effects and Bus sends.
+  Add up to four RADIAS layers before its filter, with Ring/Sync/Cross from the
+  303 oscillator or another layer. Neuropolis can transpose the group, sequence
+  individual layers and parameters, or take over notes, gates and slides.
+  See [the model and its fidelity boundaries](docs/TB303.md).
 - **Rack timbres** (browser and DAW plug-ins) are instruments you build from
   modules in any order: **+ Timbre → Rack**. Sound runs from the top module down.
   Sources — **Sample** (the loaded file), **Synth** (up to four oscillators per

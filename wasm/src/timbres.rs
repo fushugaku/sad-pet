@@ -284,6 +284,7 @@ impl Registry {
             }
             2 if pending.kind != Kind::Granular => {
                 let preset = pending.preset.as_mut().unwrap();
+                preset.tb303_runtime.prepare(preset.tb303.as_deref(), rate);
                 preset
                     .drum_runtime
                     .prepare_engine(preset.drums.as_deref(), rate);
@@ -640,6 +641,14 @@ impl Registry {
             // any other timbre ignores bus settings.
             let engine = &self.parts[index].host.engine;
             let kind = self.parts[index].meta.kind;
+            if kind == Kind::Tb303 {
+                if data.get("tb303").is_none_or(Value::is_null) {
+                    data.insert("tb303".into(), json!(engine.preset.tb303));
+                }
+                data.remove("rack");
+            } else if kind.keeps_role() {
+                data.remove("tb303");
+            }
             if let Some(bus) = engine.preset.bus.as_deref().filter(|_| kind.keeps_role()) {
                 let mut settings = data.get("bus").cloned().unwrap_or(Value::Null);
                 if settings.is_null() {

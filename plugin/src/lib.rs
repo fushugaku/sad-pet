@@ -880,6 +880,7 @@ impl Controller {
             "source_fx":{"pending":view.source_fx_pending,"error":if view.source_fx_error {Some("Could not prepare Source FX")}else{None}},
         });
         state["master_limiter"] = json!(view.master_limiter);
+        state["tb303"] = json!(view.tb303);
         state["startup_preset_index"] = json!(sad_pet::startup::INDEX);
         state["resynth"] =
             json!({"bands":view.resynth_bands,"frequencies":view.resynth_frequencies});
@@ -1629,7 +1630,8 @@ impl Audio {
                     .is_some_and(|(now, expected)| (now - expected).abs() > 0.02);
             let started = playing && !self.host_playing;
             let sequence_started = self.engine.preset.sequencer.enabled && !sequence_was_enabled;
-            let drums = self.engine.preset.drums.is_some();
+            let own_pattern = self.engine.preset.drums.is_some()
+                || self.engine.preset.tb303.as_ref().is_some_and(|s| s.pattern);
             let performance = self.engine.preset.performance.mode != Mode::Keys;
             if performance
                 && (playing != self.host_playing
@@ -1640,7 +1642,10 @@ impl Audio {
                 self.engine.set_playing(playing);
             }
             self.engine.set_sequence_transport(playing);
-            if (self.engine.preset.sequencer.enabled || drums) && playing && !self.engine.playing {
+            if (self.engine.preset.sequencer.enabled || own_pattern)
+                && playing
+                && !self.engine.playing
+            {
                 self.engine.set_playing(true);
             }
             let moved = started || jumped || sequence_started;
@@ -1648,7 +1653,7 @@ impl Audio {
             self.engine.host_transport(
                 bpm,
                 beat,
-                (performance || drums || sequencer) && (moved || preset_changed),
+                (performance || own_pattern || sequencer) && (moved || preset_changed),
                 sequencer && moved,
             );
         } else {

@@ -25,6 +25,10 @@ pub enum Target {
     SynthOscillator {
         index: u8,
     },
+    /// One RADIAS layer inside the 303 voice, as a signed offset.
+    Tb303Oscillator {
+        index: u8,
+    },
     Parameter {
         parameter: String,
     },
@@ -47,7 +51,10 @@ pub fn lfo_reset(id: &str) -> Option<usize> {
 impl Target {
     /// Oscillator lanes edit a signed offset instead of notes from a root.
     pub fn oscillator(&self) -> bool {
-        matches!(self, Self::Oscillator { .. } | Self::SynthOscillator { .. })
+        matches!(
+            self,
+            Self::Oscillator { .. } | Self::SynthOscillator { .. } | Self::Tb303Oscillator { .. }
+        )
     }
 }
 
@@ -433,8 +440,9 @@ impl Program {
             track.root_note = track.root_note.min(127);
             track.pages = track.pages.clamp(1, PAGES as u8);
             track.notes &= 0x0fff;
-            if let Target::Oscillator { index } | Target::SynthOscillator { index } =
-                &mut track.target
+            if let Target::Oscillator { index }
+            | Target::SynthOscillator { index }
+            | Target::Tb303Oscillator { index } = &mut track.target
             {
                 *index = (*index).min(3);
                 // Keep older root-relative patterns at the same offset while

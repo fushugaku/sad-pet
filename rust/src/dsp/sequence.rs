@@ -322,6 +322,7 @@ enum Binding {
     MainPitch,
     Oscillator(usize),
     SynthOscillator(usize),
+    Tb303Oscillator(usize),
     Parameter(usize),
     Notes,
     /// Each gate starts this LFO over.
@@ -443,6 +444,7 @@ impl Runtime {
                     Target::MainPitch => Binding::MainPitch,
                     Target::Oscillator { index } => Binding::Oscillator(*index as usize),
                     Target::SynthOscillator { index } => Binding::SynthOscillator(*index as usize),
+                    Target::Tb303Oscillator { index } => Binding::Tb303Oscillator(*index as usize),
                     Target::Notes | Target::Pad { .. } => Binding::Notes,
                     Target::Parameter { parameter } => crate::sequence::lfo_reset(parameter)
                         .map_or_else(
@@ -465,6 +467,10 @@ impl Runtime {
                     }
                     Binding::SynthOscillator(index) => {
                         let id = format!("synth_osc{}_transpose", index + 1);
+                        parameters::specs().iter().position(|s| s.id == id)
+                    }
+                    Binding::Tb303Oscillator(index) => {
+                        let id = format!("tb303_osc{}_transpose", index + 1);
                         parameters::specs().iter().position(|s| s.id == id)
                     }
                     Binding::Parameter(index) => Some(index),
@@ -545,7 +551,9 @@ impl Runtime {
             .filter(|&i| {
                 matches!(
                     lanes[i].binding,
-                    Binding::Oscillator(_) | Binding::SynthOscillator(_)
+                    Binding::Oscillator(_)
+                        | Binding::SynthOscillator(_)
+                        | Binding::Tb303Oscillator(_)
                 )
             })
             .collect();
@@ -1054,7 +1062,10 @@ impl Runtime {
                     })
                 } else if matches!(
                     l.binding,
-                    Binding::MainPitch | Binding::Oscillator(_) | Binding::SynthOscillator(_)
+                    Binding::MainPitch
+                        | Binding::Oscillator(_)
+                        | Binding::SynthOscillator(_)
+                        | Binding::Tb303Oscillator(_)
                 ) {
                     (l.pitch.value(now) - l.root as f32) * l.amount
                 } else {
@@ -1082,6 +1093,9 @@ impl Runtime {
                 match l.binding {
                     Binding::Oscillator(index) => m.resynth.oscillators[index].level = 0.0,
                     Binding::SynthOscillator(index) => m.synth.oscillators[index].level = 0.0,
+                    Binding::Tb303Oscillator(index) => {
+                        m.tb303_radias.oscillators[index].level = 0.0
+                    }
                     _ => {}
                 }
             }
@@ -1291,6 +1305,33 @@ mod tests {
             m.resynth.oscillators[1].level,
             p.resynth.oscillators[1].level
         );
+    }
+
+    #[test]
+    fn tb303_radias_pitch_and_gates_do_not_edit_other_banks() {
+        let mut osc = lane(1, Target::Tb303Oscillator { index: 2 }, 67);
+        osc.gate_output = true;
+        let main = lane(2, Target::MainPitch, 72);
+        let mut r = Runtime::new(&[osc, main]);
+        r.tick(8000, 120.0, true);
+        let mut p = Preset {
+            tb303: Some(Box::default()),
+            ..Default::default()
+        };
+        p.tb303.as_mut().unwrap().oscillators[2].transpose = -12.0;
+        let m = current(&r, &p);
+        assert_eq!(m.params.sample_tune_semis, 12.0);
+        assert_eq!(m.tb303_radias.oscillators[2].transpose, -5.0);
+        assert_eq!(m.synth.oscillators[2].transpose, 0.0);
+        assert_eq!(m.resynth.oscillators[2].transpose, 0.0);
+        for _ in 0..8000 {
+            if !r.core.gate(0) {
+                break;
+            }
+            r.tick(8000, 120.0, true);
+        }
+        assert_eq!(current(&r, &p).tb303_radias.oscillators[2].level, 0.0);
+        assert!(current(&r, &p).tb303.level > 0.0);
     }
 
     #[test]

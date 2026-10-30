@@ -851,6 +851,10 @@ pub struct Preset {
     pub synth: Option<Box<crate::synth::Settings>>,
     #[serde(skip)]
     pub synth_runtime: crate::dsp::synth::Prepared,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tb303: Option<Box<crate::tb303::Settings>>,
+    #[serde(skip)]
+    pub tb303_runtime: crate::tb303::Prepared,
     /// Present only in Bus and Master timbres; other presets serialize unchanged.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bus: Option<Box<crate::bus::Settings>>,
@@ -910,6 +914,8 @@ impl Default for Preset {
             drum_runtime: Default::default(),
             synth: None,
             synth_runtime: Default::default(),
+            tb303: None,
+            tb303_runtime: Default::default(),
             bus: None,
             bus_runtime: Default::default(),
             vocal: None,
@@ -951,6 +957,7 @@ impl<'de> Deserialize<'de> for Preset {
             grain_groups: crate::grain_groups::Settings,
             drums: Option<Box<crate::drums::Settings>>,
             synth: Option<Box<crate::synth::Settings>>,
+            tb303: Option<Box<crate::tb303::Settings>>,
             bus: Option<Box<crate::bus::Settings>>,
             vocal: Option<Box<crate::vocal::Settings>>,
             sampler: Option<Box<crate::sampler::Settings>>,
@@ -981,6 +988,7 @@ impl<'de> Deserialize<'de> for Preset {
                     grain_groups: Default::default(),
                     drums: None,
                     synth: None,
+                    tb303: None,
                     bus: None,
                     vocal: None,
                     sampler: None,
@@ -1125,6 +1133,8 @@ impl<'de> Deserialize<'de> for Preset {
             drum_runtime: Default::default(),
             synth: d.synth,
             synth_runtime: Default::default(),
+            tb303: d.tb303,
+            tb303_runtime: Default::default(),
             bus: d.bus,
             bus_runtime: Default::default(),
             vocal: d.vocal,
@@ -1152,6 +1162,7 @@ impl Preset {
     pub fn prepared_clone_for(&self, rate: u32) -> Self {
         let mut preset = self.clone();
         preset.sanitize();
+        preset.tb303_runtime.prepare(preset.tb303.as_deref(), rate);
         preset.prepare_effects(rate);
         if preset.rack.is_some() {
             // A Rack's sources hand their sound down its modules, so only its
@@ -1221,6 +1232,12 @@ impl Preset {
     }
     /// The engine settings of every other kind: one source at most.
     fn sanitize_engine(&mut self) {
+        if let Some(bass) = &mut self.tb303 {
+            bass.sanitize();
+            self.bus.get_or_insert_with(Default::default).master = false;
+            self.vocal = None;
+            self.sampler = None;
+        }
         if let Some(vocal) = &mut self.vocal {
             // A Vocal timbre's engine is a bus fed by its voice, never Master.
             vocal.sanitize();
@@ -1257,6 +1274,7 @@ impl Preset {
         self.taps.sanitize();
         self.grain_groups.sanitize();
         if let Some(rack) = &mut self.rack {
+            self.tb303 = None;
             // A Rack holds the settings of the sources it has, and only those.
             rack.sanitize();
             self.bus = None;

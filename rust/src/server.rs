@@ -155,6 +155,10 @@ fn handle(
                     include_bytes!("../web/eq.js").to_vec(),
                     "application/javascript",
                 )),
+                "/tb303.js" => Ok((
+                    include_bytes!("../web/tb303.js").to_vec(),
+                    "application/javascript",
+                )),
                 "/rack.js" => Ok((
                     include_bytes!("../web/rack.js").to_vec(),
                     "application/javascript",
