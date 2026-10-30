@@ -274,8 +274,9 @@ files move instruments between the web version and the native app and plug-ins.
   The timbre header also lists each configured individual send with its own
   slider, for example **Grain Group A → Bus 1** or **Filter 3 → Delay**, even
   when its level is zero. The slider edits the same send as the source panel.
-  **Individual filter outputs.** Filter 1, Filter 2 and every added filter have
-  **Chain**, **Bus** and **Send** controls. A send takes that filter's output
+  **Individual filter outputs.** The **Output** area below the filters has a
+  row for Filter 1, Filter 2 and every added filter, with **Chain** and **Send**
+  knobs and a **Bus** menu. A send takes that filter's output
   before its Chain blend; Filter 1 in a serial pair sends before Filter 2.
   Switched-off filters send nothing. This works in classic timbres and Racks,
   including filters after any Resynth oscillator, whose sends are decimated

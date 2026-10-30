@@ -58,6 +58,7 @@ const sections = new Map();
 const calls = [];
 const context = vm.createContext({
   window: {},
+  $: () => new Element(),
   preset: { params: {} },
   state: null,
   timbreEditor: null,

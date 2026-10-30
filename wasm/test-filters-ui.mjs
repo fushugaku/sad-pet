@@ -28,6 +28,7 @@ function element() {
     classList: box.classList,
     children: [],
     dataset: {},
+    style: { setProperty() {} },
     append(...nodes) {
       node.children.push(...nodes);
     },
@@ -47,8 +48,8 @@ function element() {
       if (field) parts.get(selector).dataset.field = field;
       return parts.get(selector);
     },
-    querySelectorAll: selector => selector === "input"
-      ? [node.querySelector('[data-field="chain"]'), node.querySelector('[data-field="send"]')]
+    querySelectorAll: selector => selector === ".dial"
+      ? node.children
       : [],
   };
   return node;
@@ -103,8 +104,11 @@ const context = {
   },
   createKnob(schema, bank, binding) {
     schemas.push(schema);
-    dials.set(schema[0], element());
+    const dial = element();
+    dials.set(schema[0], dial);
+    if (typeof bank !== "string") bank.append(dial);
     if (binding) bindings.set(schema[0], binding);
+    return () => {};
   },
   syncControl() {
     context.syncFilters();
@@ -201,13 +205,14 @@ assert.deepEqual(
   },
 );
 assert.equal(list.children.length, 1);
-const outputRow = c => c.children.find(n => n.className === "filter-output");
-let output = outputRow(list.children[0]);
+const outputRow = number => get("filter-outputs").children[number - 1];
+let output = outputRow(3);
+assert.equal(output.className, "tap filter-output");
+assert.ok(!list.children[0].children.includes(output), "Output belongs below the filter cards");
 output.querySelector("select").value = "1";
 output.querySelector("select").onchange();
-const sendRange = output.querySelector('[data-field="send"]');
-assert.equal(sendRange.disabled, false);
-sendRange.value = ".6"; sendRange.oninput();
+assert.equal(dials.get("filter3_send").getAttribute("aria-disabled"), "false");
+bindings.get("filter3_send").set(.6);
 assert.deepEqual(changes.at(-1), ["filter3_send", .6]);
 assert.equal(preset.filter_slots[0].output.send, .6);
 const dial = (field, id = 1) => dials.get(`filter_slot:${id}:${field}`);
@@ -238,9 +243,7 @@ get("add-filter").onclick();
 assert.equal(preset.filter_slots[1].id, 2);
 list.querySelector('[data-id="2"]').querySelector(".color-up").onclick();
 assert.deepEqual(ids(), [2, 1]);
-output = outputRow(list.querySelector('[data-id="1"]'));
-output.querySelector('[data-field="send"]').value = ".3";
-output.querySelector('[data-field="send"]').oninput();
+bindings.get("filter4_send").set(.3);
 assert.deepEqual(changes.at(-1), ["filter4_send", .3], "Reordered send edited the wrong filter");
 assert.equal(preset.filter_slots[1].output.bus, 1);
 bindings.get("filter_slot:1:resonance").set(0.5);

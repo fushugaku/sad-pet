@@ -1408,7 +1408,6 @@ function buildFilters() {
       .join("");
     card.innerHTML = `<div class="filter-title"><strong>Filter ${number}</strong><select id="${prefix}-type" aria-label="Filter ${number} model"><optgroup label="SAD PET">${responses("legacy")}</optgroup><optgroup label="Rustias">${models}</optgroup><optgroup label="RADIAS Filter 2">${responses("radias2")}</optgroup></select><select id="${prefix}-env" aria-label="Filter ${number} envelope"><option value="env1">ENV 1</option><option value="env2">ENV 2</option><option value="env3">ENV 3</option></select></div>${filterGraphMarkup(number)}<div id="${prefix}-controls" class="knob-grid filter-controls"></div>`;
     $("filters").append(card);
-    buildFilterOutput(card, number);
     const type = i === 0 ? "vcf_type" : "vcf2_type";
     card.querySelector(".filter-graph").spec = () => {
       const p = preset?.params;
@@ -1588,6 +1587,8 @@ const FILTER_SLOT_CONTROLS = [
   ["morph", "MORPH"],
 ];
 let addedFilterSignature = "";
+const filterOutputViews = new Map();
+let filterOutputSignature = "";
 const findFilterSlot = (id) => preset.filter_slots?.find((s) => s.id === id);
 function filterModelOptions() {
   const responses = (model) =>
@@ -1688,41 +1689,62 @@ function editFilterOutput(number, id, field, value) {
   syncFilterOutputs();
   timbreEditor?.sync(state?.timbres);
 }
-function buildFilterOutput(card, number, id) {
-  const row = document.createElement("div");
-  row.className = "filter-output";
-  row.dataset.number = number;
-  if (id !== undefined) row.dataset.slot = id;
-  row.innerHTML = `<label>Chain<input type="range" min="0" max="1" step=".01" data-field="chain" aria-label="Filter ${number} chain"></label><label>Bus<select aria-label="Filter ${number} bus"></select></label><label>Send<input type="range" min="0" max="1" step=".01" data-field="send" aria-label="Filter ${number} bus send"></label>`;
-  for (const range of row.querySelectorAll("input"))
-    range.oninput = () => editFilterOutput(number, id, range.dataset.field, Number(range.value));
-  row.querySelector('[data-field="chain"]').title = "Share in the chain. At 0% the filter input continues, while its filtered output can still feed the bus.";
-  const select = row.querySelector("select");
+function buildFilterOutput(number, id) {
+  const row = document.createElement("div"), label = `Filter ${number}`;
+  row.className = "tap filter-output";
+  row.setAttribute("aria-label", `${label} output`);
+  row.innerHTML = `<svg class="tap-flow" viewBox="0 0 30 52" aria-hidden="true"><path class="tap-chain" d="M9 0V52"/><path class="tap-branch" d="M9 26H23"/><path class="tap-branch" d="M19 21.5l4.5 4.5-4.5 4.5"/></svg><div class="tap-name"><strong>Output</strong><span>${label}</span></div><div class="tap-knobs"></div><label class="tap-bus">to<select aria-label="${label} bus"></select></label><output class="tap-status"></output>`;
+  const knobs = row.querySelector(".tap-knobs"), updates = [], keys = [];
+  for (const [field, caption, aria] of [["chain", "CHAIN", "chain"], ["send", "SEND", "bus send"]]) {
+    const key = id === undefined ? `tap_filter${number}_${field}` : `filter${number}_${field}`;
+    keys.push(key);
+    updates.push(createKnob([key, caption, percent, 0, 1, `${label} ${aria}`], knobs, {
+      get: () => filterOutput(number, id)[field],
+      set: value => editFilterOutput(number, id, field, value),
+      reset: () => field === "chain" ? 1 : 0,
+    }));
+  }
+  const [chain, send] = knobs.querySelectorAll(".dial"), select = row.querySelector("select");
+  chain.title = "Share of the filtered output in the chain. At 0% its input continues, while the bus can still hear the filtered output.";
   select.onchange = () => select.value === "new"
     ? addTapBus(null, bus => editFilterOutput(number, id, "bus", bus))
     : editFilterOutput(number, id, "bus", Number(select.value));
-  card.append(row);
+  return { row, select, send, updates, keys, number, id, signature: "" };
 }
 function syncFilterOutputs() {
   if (!preset) return;
-  const { sends, buses } = sendTargets();
-  for (const row of document.querySelectorAll(".filter-output")) {
-    const number = Number(row.dataset.number),
-      id = row.dataset.slot === undefined ? undefined : Number(row.dataset.slot),
-      output = filterOutput(number, id), select = row.querySelector("select"),
-      target = buses.find(b => b.bus === output.bus);
-    const signature = JSON.stringify([output.bus, buses.map(b => [b.bus, b.name, b.self, b.loop])]);
-    if (row.dataset.signature !== signature) {
-      fillBusMenu(select, output.bus, buses);
-      row.dataset.signature = signature;
-    } else if (document.activeElement !== select) select.value = String(output.bus);
-    select.disabled = !sends;
-    for (const range of row.querySelectorAll("input")) {
-      const field = range.dataset.field;
-      if (document.activeElement !== range) range.value = output[field];
-      range.setAttribute("aria-valuetext", percent(output[field]));
-      if (field === "send") range.disabled = !sends || !target || !!target.loop;
+  const definitions = [[1], [2], ...(preset.filter_slots ?? []).map((slot, i) => [i + 3, slot.id])];
+  const signature = JSON.stringify(definitions);
+  if (signature !== filterOutputSignature) {
+    for (const view of filterOutputViews.values()) for (const key of view.keys) {
+      controls.delete(key); modulationViews.delete(key);
     }
+    filterOutputViews.clear();
+    for (const [number, id] of definitions) filterOutputViews.set(number, buildFilterOutput(number, id));
+    $("filter-outputs").replaceChildren(...[...filterOutputViews.values()].map(view => view.row));
+    filterOutputSignature = signature;
+  }
+  const { sends, buses } = sendTargets();
+  for (const view of filterOutputViews.values()) {
+    const { number, id, row, select, send } = view, output = filterOutput(number, id),
+      target = buses.find(b => b.bus === output.bus),
+      active = id === undefined ? number === 1 || preset.params.filter_routing !== "single" : !!findFilterSlot(id)?.enabled;
+    row.classList.toggle("no-sends", !sends);
+    row.classList.toggle("sending", active && !!target && !target.loop && output.send > 0);
+    row.classList.toggle("skipped", output.chain === 0);
+    row.classList.toggle("inactive", !active);
+    row.style.setProperty("--chain", String(output.chain));
+    const signature = JSON.stringify([output.bus, buses.map(b => [b.bus, b.name, b.self, b.loop])]);
+    if (view.signature !== signature) {
+      fillBusMenu(select, output.bus, buses); view.signature = signature;
+    } else if (document.activeElement !== select) select.value = String(output.bus);
+    const unavailable = !sends || !target || !!target.loop;
+    send.setAttribute("aria-disabled", String(unavailable));
+    send.tabIndex = unavailable ? -1 : 0;
+    send.closest(".knob").classList.toggle("filter-unused", unavailable);
+    row.querySelector(".tap-status").textContent = target?.loop ? "This route would create a bus loop"
+      : output.bus && !target ? `Bus ${output.bus} is gone: nothing is sent` : "";
+    for (const update of view.updates) update();
   }
 }
 function addedFilterCard(index, slot) {
@@ -1733,7 +1755,6 @@ function addedFilterCard(index, slot) {
   card.classList.toggle("inactive", !slot.enabled);
   card.dataset.id = id;
   card.innerHTML = `<div class="filter-title added-filter-title"><strong>Filter ${number}</strong><select class="added-filter-position" aria-label="Filter ${number} position"></select><select class="added-filter-type" aria-label="Filter ${number} model">${filterModelOptions()}</select><select class="added-filter-env" aria-label="Filter ${number} envelope"><option value="env1">ENV 1</option><option value="env2">ENV 2</option><option value="env3">ENV 3</option></select><div class="color-actions"><button class="color-bypass" aria-label="Bypass Filter ${number}" title="Bypass" aria-pressed="${!slot.enabled}">⏻</button><button class="color-up" aria-label="Move Filter ${number} up" title="Move up">↑</button><button class="color-down" aria-label="Move Filter ${number} down" title="Move down">↓</button><button class="color-remove" aria-label="Remove Filter ${number}" title="Remove">×</button></div></div>${filterGraphMarkup(number)}<div id="filter-slot-${id}-controls" class="knob-grid filter-controls"></div>`;
-  buildFilterOutput(card, number, id);
   card.querySelector(".filter-graph").spec = () => {
     const s = findFilterSlot(id);
     return s && filterGraphSpec(s.model, s.kind, s.cutoff, s.env_depth, s.resonance, s.morph);
@@ -2358,6 +2379,7 @@ function buildTaps() {
     chips.className = "tap-chips";
     section.querySelector(".section-heading h2").append(chips);
     tapViews.set(stage, { section, row, select, send, chips, label, signature: "" });
+    if (stage === "filters") section.append($("filter-outputs"));
   }
 }
 /** Adds the next Bus timbre for this section, or for what `choose` routes

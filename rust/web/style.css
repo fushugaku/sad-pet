@@ -4747,12 +4747,10 @@ input[type="range"] {
   flex: 0 0 100px;
 }
 .timbre-send { max-width: 100%; overflow-wrap: anywhere; }
-.filter-output { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, 1fr) minmax(0, 1fr); gap: 12px; align-items: end; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
-.filter-output label { display: grid; gap: 6px; min-width: 0; color: var(--muted); font-size: 11px; }
-.filter-output input[type="range"], .filter-output select { width: 100%; min-width: 0; height: 32px; margin: 0; }
+.filter-output.inactive { opacity: .45; }
+.bank.tap-skipped > .filter-outputs { opacity: 1; }
 @media (max-width: 600px) {
   .timbre-send { width: 100%; justify-content: space-between; }
-  .filter-output { gap: 8px; grid-template-columns: minmax(0, 1fr) minmax(90px, 1fr) minmax(0, 1fr); }
 }
 /* A bus that already feeds this one: a send back would loop. */
 .timbre-send.loop {
