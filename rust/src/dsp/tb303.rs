@@ -1,7 +1,7 @@
 //! Circuit-derived mono bass voice. The diode ladder is a coupled nonlinear
 //! nodal system, integrated implicitly; it is not four buffered Moog poles.
 //! See docs/TB303.md for equations, component values, sources and approximations.
-use super::{SampleBuffer, resynth::Decimator, synth};
+use super::{SampleBuffer, synth};
 use crate::{
     Stereo,
     midi::Message,
@@ -11,6 +11,68 @@ use std::f64::consts::{LN_10, TAU};
 
 const CAP_RATIO: f64 = 33.0 / 18.0; // C19/C18; C19, C24 and C26 are 33 nF.
 const SLIDE_TAU: f64 = 100_000.0 * 0.22e-6; // R91, C35.
+
+mod oscillator;
+use oscillator::Tables;
+
+/// 63-tap Kaiser half-band (beta 8.6): flat below 0.4 of the receiving
+/// rate and >85 dB rejection above 0.6. Symmetry/zero taps cost 17 products
+/// only on the samples that survive each 2:1 stage. The voice is mono.
+struct Decimator {
+    delay: [f64; 63],
+    cursor: usize,
+    odd: bool,
+}
+impl Decimator {
+    const PAIRS: [f64; 16] = [
+        -1.3682285878178986e-5,
+        7.367969303926715e-5,
+        -2.1592026964457515e-4,
+        4.987361983222278e-4,
+        -1.0020207935613867e-3,
+        1.8300513548989146e-3,
+        -3.114985681419836e-3,
+        5.023280438437596e-3,
+        -7.769915287323391e-3,
+        1.1651123840920525e-2,
+        -1.712109867718959e-2,
+        2.4981867601263325e-2,
+        -3.691132044853078e-2,
+        5.727102975006566e-2,
+        -1.0215334928790423e-1,
+        3.169725238545044e-1,
+    ];
+    fn new() -> Self {
+        Self {
+            delay: [0.0; 63],
+            cursor: 0,
+            odd: false,
+        }
+    }
+    fn at(&self, age: usize) -> f64 {
+        let index = self.cursor + 62 - age;
+        self.delay[if index >= 63 { index - 63 } else { index }]
+    }
+    fn next(&mut self, value: f64) -> Option<f64> {
+        self.delay[self.cursor] = value;
+        self.cursor += 1;
+        if self.cursor == 63 {
+            self.cursor = 0;
+        }
+        self.odd = !self.odd;
+        if self.odd {
+            return None;
+        }
+        Some(
+            0.5 * self.at(31)
+                + Self::PAIRS
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| c * (self.at(i * 2) + self.at(62 - i * 2)))
+                    .sum::<f64>(),
+        )
+    }
+}
 
 /// Bilinear (s + zero)/(s + pole), with an affine instantaneous output.
 /// The latter lets the entire resonance loop participate in the implicit solve.
@@ -227,6 +289,7 @@ pub struct Runtime {
     oversample: usize,
     levels: usize,
     decimators: [Decimator; 5],
+    waves: &'static Tables,
     filter: Ladder,
     sweep: AccentSweep,
     controls: Controls,
@@ -278,6 +341,7 @@ impl Runtime {
             oversample,
             levels,
             decimators: std::array::from_fn(|_| Decimator::new()),
+            waves: Tables::shared(),
             filter: Ladder::new(rate * oversample as f64),
             sweep: AccentSweep::default(),
             controls,
@@ -600,11 +664,13 @@ impl Runtime {
             0.0
         };
         let pitch = self.pitch + bend + f64::from(self.transpose + self.controls.tuning);
+        let rate = self.rate * self.oversample as f64;
         let frequency = (440.0
             * 2.0_f64.powf((pitch + f64::from(self.controls.transpose) - 69.0) / 12.0))
-        .min(self.rate * 0.4);
-        let rate = self.rate * self.oversample as f64;
+        .min(rate * 0.4);
         let dt = frequency / rate;
+        let band = Tables::band(dt);
+        let osc_pitch = pitch + f64::from(self.controls.transpose);
         let decay = if self.accented {
             0.2 * 100.0_f64
                 .powf((self.controls.accent_decay - crate::tb303::ACCENT_DECAY_DEFAULT) as f64)
@@ -672,10 +738,9 @@ impl Runtime {
                 .clamp(20.0, 18_000.0_f64.min(rate * 0.15));
             filter_hz = hz;
             let phase = self.phase;
-            let saw = 2.0 * phase - 1.0 - blep(phase, dt);
-            let square = (if phase < 0.5 { 1.0 } else { -1.0 }) + blep(phase, dt)
-                - blep((phase + 0.5).fract(), dt);
-            let osc = saw + (square - saw) * self.controls.waveform as f64;
+            let osc = self
+                .waves
+                .sample(phase, band, osc_pitch, self.controls.waveform as f64);
             self.phase = (phase + dt).fract();
             let extra = if self.radias.active() {
                 self.radias.set_source(osc as f32, phase + dt >= 1.0);
@@ -695,14 +760,16 @@ impl Runtime {
             let vca = self.volume_env + self.accent_vca * 0.7;
             let value = (filtered * 2.0).tanh() * vca * 2.0;
             self.fm_sample = value;
-            let mut frame = [value as f32; 2];
+            let mut frame = value;
             for level in 0..self.levels {
-                frame = self.decimators[level].next(frame);
-                if (sample + 1) % (1 << (level + 1)) != 0 {
+                let Some(next) = self.decimators[level].next(frame) else {
                     break;
-                }
+                };
+                frame = next;
             }
-            output = frame;
+            if (sample + 1) == self.oversample {
+                output = [frame as f32; 2];
+            }
         }
         self.view = View {
             step: pattern.then_some(index as u8),
@@ -718,21 +785,49 @@ impl Runtime {
     }
 }
 
-fn blep(phase: f64, dt: f64) -> f64 {
-    if phase < dt {
-        let t = phase / dt;
-        t + t - t * t - 1.0
-    } else if phase > 1.0 - dt {
-        let t = (phase - 1.0) / dt;
-        t * t + t + t + 1.0
-    } else {
-        0.0
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn downsampling_rejects_ultrasonic_partials_before_they_fold() {
+        let n = 4096;
+        for (bin, maximum_error) in [(615, 1e-4), (1229, 8e-5), (1638, 1e-5)] {
+            let mut filter = Decimator::new();
+            let mut re = 0.0;
+            let mut im = 0.0;
+            for i in 0..n + 512 {
+                let angle = TAU * bin as f64 * i as f64 / n as f64;
+                if let Some(x) = filter.next(angle.sin()) {
+                    if i >= 512 {
+                        re += x * angle.cos();
+                        im += x * angle.sin();
+                    }
+                }
+            }
+            let amplitude = 4.0 * re.hypot(im) / n as f64;
+            let error = if bin < 1000 {
+                (1.0 - amplitude).abs()
+            } else {
+                amplitude
+            };
+            assert!(error < maximum_error, "Decimator bin {bin}: {amplitude}");
+        }
+    }
+
+    #[test]
+    fn high_notes_keep_their_pitch_in_the_oversampled_oscillator() {
+        let mut settings = Settings {
+            pattern: false,
+            ..Default::default()
+        };
+        settings.controls.transpose = 12.0;
+        let mut runtime = Runtime::new(48000, settings.controls);
+        runtime.midi(on(127, 80), 0);
+        runtime.frame(&settings, settings.controls, false, 120.0);
+        let expected = (440.0 * 2.0_f64.powf((139.0 - 69.0) / 12.0) / 48000.0).fract();
+        assert!((runtime.phase - expected).abs() < 1e-12);
+    }
 
     fn on(note: u8, velocity: u8) -> Message {
         Message::NoteOn {

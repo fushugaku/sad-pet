@@ -287,3 +287,50 @@ for (const rate of [8000, 48000]) {
   assert.ok(core.request("/api/state").knobs.tb303_filter_fm.current < .51, "Neuropolis cannot control the new mods");
 }
 console.log("303 mods: host controls, extreme FM/resonance, scene recall and Neuropolis modulation passed.");
+
+// Upper-register regression: a periodic note may have harmonics, but should
+// not acquire unrelated audible tones from VCO or downsampling foldback.
+function spectralPower(samples) {
+  const n = samples.length, re = new Float64Array(n), im = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const a = 2 * Math.PI * i / (n - 1);
+    re[i] = samples[i] * (.35875 - .48829 * Math.cos(a) + .14128 * Math.cos(2 * a) - .01168 * Math.cos(3 * a));
+  }
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) [re[i], re[j]] = [re[j], re[i]];
+  }
+  for (let size = 2; size <= n; size *= 2) {
+    const angle = -2 * Math.PI / size, sr = Math.cos(angle), si = Math.sin(angle);
+    for (let start = 0; start < n; start += size) {
+      let wr = 1, wi = 0;
+      for (let k = 0; k < size / 2; k++) {
+        const i = start + k, j = i + size / 2;
+        const vr = re[j] * wr - im[j] * wi, vi = re[j] * wi + im[j] * wr;
+        re[j] = re[i] - vr; im[j] = im[i] - vi; re[i] += vr; im[i] += vi;
+        [wr, wi] = [wr * sr - wi * si, wr * si + wi * sr];
+      }
+    }
+  }
+  return re.slice(0, n / 2 + 1).map((x, i) => x * x + im[i] * im[i]);
+}
+for (const rate of [44100, 48000]) for (const waveform of [0, 1]) for (const note of [84, 96]) {
+  const { core } = scene(rate), n = 32768, nominal = 440 * 2 ** ((note - 69) / 12);
+  const bin = Math.round(nominal * n / rate), frequency = bin * rate / n;
+  core.request("/api/parameters", { tb303_pattern: 0, tb303_cutoff: 1, tb303_resonance: .9,
+    tb303_env_mod: 0, tb303_waveform: waveform, tb303_tuning: 12 * Math.log2(frequency / nominal) });
+  core.request("/api/note", { kind: "note_on", channel: 0, note, velocity: 80 });
+  render(core, rate * 2);
+  const audio = render(core, n), power = spectralPower(Float64Array.from({ length: n }, (_, i) => audio[2 * i]));
+  let total = 0, unrelated = 0;
+  for (let i = 8; i < Math.min(power.length, 18000 * n / rate); i++) {
+    total += power[i];
+    if (Math.abs(i - Math.round(i / bin) * bin) > 7) unrelated += power[i];
+  }
+  assert.ok(total > 1e-6, "High note went silent");
+  const db = 10 * Math.log10(unrelated / total);
+  assert.ok(db < -80, `${rate}, waveform ${waveform}, note ${note}: nonharmonic energy ${db.toFixed(1)} dB`);
+}
+console.log("303 high register: Saw/Square nonharmonic energy below -80 dB at 44.1/48 kHz passed.");
