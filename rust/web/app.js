@@ -1998,7 +1998,7 @@ function syncTimbreRouting() {
 function syncTempo() {
   const input = $("bpm");
   input.disabled = !!(state?.plugin?.sync || (state?.clock?.follow && state.clock.present));
-  if (document.activeElement !== input) input.value = preset.params.bpm;
+  if (document.activeElement !== input) input.value = Math.round(preset.params.bpm * 10) / 10;
 }
 function syncAll() {
   syncTempo();
@@ -6193,7 +6193,7 @@ async function init() {
       hasInput: () =>
         getComputedStyle($("midi")).display === "none" || !!$("midi").value,
       released: () => {
-        if (preset) $("bpm").value = preset.params.bpm;
+        if (preset) syncTempo();
       },
     });
     sampleSelection = new window.SadSampleSelection({
