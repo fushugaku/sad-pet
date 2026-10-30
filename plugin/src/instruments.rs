@@ -267,6 +267,7 @@ impl Controller {
         sample: SampleBuffer,
         title: &str,
     ) -> Result<(), String> {
+        state.preset.params.bpm = self.preset.params.bpm;
         if id == 0 {
             if self.meta.kind.routing() {
                 return Err(

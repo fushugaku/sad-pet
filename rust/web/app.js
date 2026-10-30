@@ -1374,7 +1374,10 @@ function syncControl(key) {
       if (/^grain_group\d_(amp|filter)_(attack|decay|release)$/.test(k)) update();
   if (key.startsWith("filter") || key.startsWith("vcf")) syncFilters();
   if (key === "mix" || key === "master_volume") syncSliders();
-  if (key === "bpm") syncColors();
+  if (key === "bpm") {
+    syncTempo();
+    syncColors();
+  }
   if (["loop_one_bar", "sample_root_note", "bpm"].includes(key))
     syncLoopControls();
   $("reverse").setAttribute(
@@ -1992,7 +1995,13 @@ function syncTimbreRouting() {
   syncSynth();
   rackEditor?.sync();
 }
+function syncTempo() {
+  const input = $("bpm");
+  input.disabled = !!(state?.plugin?.sync || (state?.clock?.follow && state.clock.present));
+  if (document.activeElement !== input) input.value = preset.params.bpm;
+}
 function syncAll() {
+  syncTempo();
   syncTimbreRouting();
   syncColors();
   syncResynth();
@@ -2002,7 +2011,6 @@ function syncAll() {
   syncSliders();
   $("antialias").checked = preset.params.antialiasing;
   $("cloud-mode").value = preset.params.cloud_time ? "time" : "region";
-  $("bpm").value = preset.params.bpm;
   syncLoopControls();
   syncFilters();
   $("reverse").setAttribute(
@@ -5524,8 +5532,21 @@ function bind() {
     $("sample-root-note").append(option(note, noteName(note)));
   $("sample-root-note").onchange = (e) =>
     setParam("sample_root_note", Number(e.target.value));
-  $("bpm").oninput = (e) =>
-    setParam("bpm", Math.max(20, Math.min(300, Number(e.target.value) || 120)));
+  $("bpm").oninput = (e) => {
+    const bpm = e.target.valueAsNumber;
+    if (Number.isFinite(bpm) && bpm >= 20 && bpm <= 300) setParam("bpm", bpm);
+  };
+  $("bpm").onchange = (e) => {
+    const entered = e.target.valueAsNumber;
+    const bpm = Number.isFinite(entered)
+      ? Math.round(Math.max(20, Math.min(300, entered)) * 10) / 10
+      : preset.params.bpm;
+    e.target.value = bpm;
+    if (bpm !== preset.params.bpm) setParam("bpm", bpm);
+  };
+  $("bpm").onkeydown = (e) => {
+    if (e.key === "Enter") e.target.blur();
+  };
   $("load-wav").onclick = () =>
     fileLibrary?.native
       ? fileLibrary.importDialog(true).catch((e) => notify(e.message, true))

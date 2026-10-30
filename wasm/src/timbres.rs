@@ -137,6 +137,16 @@ impl Registry {
         sad_pet::timbres::bus_feeds(self.parts.iter().map(|p| (&p.meta, &p.host.engine.preset)))
     }
     pub fn refresh_context(&mut self) {
+        // The first part stores the scene tempo, including in older scenes.
+        // New parts and recalled instruments inherit it before they can play.
+        let bpm = self.parts[0].host.engine.preset.params.bpm;
+        for part in &mut self.parts {
+            if part.host.engine.preset.params.bpm != bpm {
+                part.host.engine.preset.params.bpm = bpm;
+                part.host.engine.refresh_parameters();
+                part.host.config_revision = part.host.config_revision.wrapping_add(1);
+            }
+        }
         // An emptied first timbre does not show: another one is open.
         if self.parts[self.selected].meta.kind == Kind::Empty {
             self.selected = self.shown();
@@ -214,6 +224,7 @@ impl Registry {
         let host = &mut self.parts[0].host;
         let mut preset = Kind::Empty.preset().unwrap();
         preset.name = host.engine.preset.name.clone();
+        preset.params.bpm = host.engine.preset.params.bpm;
         host.engine.set_preset(preset);
         host.config_revision = host.config_revision.wrapping_add(1);
         self.parts[0].meta = Meta {
@@ -333,6 +344,12 @@ impl Registry {
             _ => {
                 let mut host = pending.host.take().unwrap();
                 let primary = &self.parts[0].host;
+                let bpm = primary.engine.preset.params.bpm;
+                if let Some(preset) = &mut pending.preset {
+                    preset.params.bpm = bpm;
+                }
+                host.engine.preset.params.bpm = bpm;
+                host.engine.refresh_parameters();
                 if !pending.kind.keeps_role() {
                     host.engine.set_sample(primary.engine.sample.clone());
                 }
@@ -633,10 +650,24 @@ impl Registry {
             }
         }
         let index = self.index();
+        if path == "/api/parameters" && data.get("bpm").is_some() {
+            // Validate the whole batch before updating any timbre. Other
+            // parameters in this message still belong to the addressed part.
+            sad_pet::parameters::parse(data)?;
+            for (i, part) in self.parts.iter_mut().enumerate() {
+                if i != index {
+                    part.host
+                        .command(json!({"path":path,"data":{"bpm":data["bpm"]}}))?;
+                }
+            }
+        }
         let state = path == "/api/state";
         let preset_changed = path == "/api/preset" && !data.is_null();
         let mut request = request;
         if preset_changed && let Some(data) = request["data"].as_object_mut() {
+            if index != 0 {
+                data["params"]["bpm"] = json!(self.parts[0].host.engine.preset.params.bpm);
+            }
             // A Bus or Master keeps its role when a preset loads into it;
             // any other timbre ignores bus settings.
             let engine = &self.parts[index].host.engine;
@@ -1344,6 +1375,8 @@ impl Registry {
             return Err("Invalid timbre layout".into());
         }
         let old = &mut self.parts[index];
+        part.host.engine.preset.params.bpm = old.host.engine.preset.params.bpm;
+        part.host.engine.refresh_parameters();
         let (kind, name) = (part.meta.kind, std::mem::take(&mut part.meta.name));
         part.meta = old.meta.clone();
         part.meta.kind = kind;

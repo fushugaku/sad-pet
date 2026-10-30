@@ -448,6 +448,7 @@ impl Controller {
         }
         let mut preset = Kind::Empty.preset().unwrap();
         preset.name = self.preset.name.clone();
+        preset.params.bpm = self.preset.params.bpm;
         self.enqueue(Command::Preset(self.prepared_preset(&preset)))?;
         self.preset = preset;
         self.forget_unused_kit();
@@ -474,6 +475,7 @@ impl Controller {
         // Its preset keeps holding the scene's name. An emptied timbre holds
         // no kit samples.
         preset.name = self.preset.name.clone();
+        preset.params.bpm = self.preset.params.bpm;
         preset.sanitize();
         self.enqueue(Command::Preset(self.prepared_preset(&preset)))?;
         self.preset = preset;
@@ -531,6 +533,18 @@ impl Controller {
         }
         let (head, chains) = prepare_audio(&mut controls, self.rate);
         Ok((controls, head, chains))
+    }
+    /// The first part stores the scene tempo. Also normalizes older scenes
+    /// and newly loaded instruments without rebuilding their audio engines.
+    pub(super) fn sync_tempo(&mut self) -> Result<(), String> {
+        let bpm = self.preset.params.bpm;
+        let request = json!({"path":"/api/parameters","method":"POST","data":{"bpm":bpm}});
+        for part in &mut self.parts {
+            if part.preset.params.bpm != bpm {
+                part.request_part(&request)?;
+            }
+        }
+        Ok(())
     }
     pub(super) fn scene_request(&mut self, request: &Value) -> Result<Value, String> {
         self.drain();
@@ -627,6 +641,7 @@ impl Controller {
                         }
                         part
                     };
+                    part.preset.params.bpm = self.preset.params.bpm;
                     let audio = part.prepare(self.rate);
                     self.enqueue(Command::AddPart(Some(Box::new(PartAudio {
                         audio,
@@ -759,6 +774,19 @@ impl Controller {
                 let global = json!({"path":path,"method":"POST","data":shared});
                 self.request_part(&global)?;
                 for part in &mut self.parts {
+                    part.request_part(&global)?;
+                }
+            }
+        }
+        if path == "/api/parameters" && request["method"] == "POST" && data.get("bpm").is_some() {
+            // Only tempo is shared; validate every edit before changing any part.
+            parameters::parse(data)?;
+            let global = json!({"path":path,"method":"POST","data":{"bpm":data["bpm"]}});
+            if self.active != 0 {
+                self.request_part(&global)?;
+            }
+            for part in &mut self.parts {
+                if part.meta.id != self.active {
                     part.request_part(&global)?;
                 }
             }

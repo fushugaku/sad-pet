@@ -232,12 +232,14 @@ select {
 }
 header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
   margin-bottom: 26px;
 }
 .brand {
+  flex: none;
   display: flex;
   gap: 15px;
   align-items: center;
@@ -300,8 +302,11 @@ header {
 }
 .header-actions {
   display: flex;
+  flex: none;
   gap: 7px;
   align-items: center;
+  min-width: 0;
+  max-width: 100%;
 }
 .header-actions select {
   min-width: 148px;
@@ -1856,26 +1861,41 @@ h2 {
   padding: 13px 0 20px;
 }
 .tempo {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 7px;
+  flex: none;
+  height: 36px;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
   font:
-    9px ui-monospace,
+    10px ui-monospace,
     monospace;
   color: var(--muted);
   letter-spacing: 0.8px;
 }
+.tempo:focus-within {
+  border-color: var(--accent);
+}
+.tempo:has(input:disabled) {
+  opacity: 0.5;
+}
 .tempo input {
-  width: 49px;
-  height: 26px;
+  width: 64px;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
   border: 0;
-  border-bottom: 1px solid var(--line);
+  outline: none;
   background: transparent;
   color: var(--text);
   text-align: center;
   font:
     12px ui-monospace,
     monospace;
+  font-variant-numeric: tabular-nums;
 }
 .lfo-grid {
   display: grid;
@@ -3836,13 +3856,16 @@ input[type="range"] {
   .header-actions {
     grid-template-columns: minmax(0, 1fr) auto auto;
   }
+  .preset-picker {
+    grid-column: 1 / -1;
+  }
   #preset {
     width: 100%;
   }
 }
 @media (max-width: 440px) {
   .header-actions {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr) auto auto;
   }
   .preset-picker {
     grid-column: 1 / -1;

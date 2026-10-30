@@ -1070,6 +1070,9 @@ impl Controller {
             self.sync_chains();
         }
         self.offer_workers();
+        if self.meta.id == 0 {
+            self.sync_tempo()?;
+        }
         Ok(())
     }
 
@@ -1078,6 +1081,9 @@ impl Controller {
             let result = self.scene_request(request);
             // Kits may have lost a pad or a Pad FX timbre, or gained one.
             self.sync_chains();
+            if result.is_ok() {
+                self.sync_tempo()?;
+            }
             return result;
         }
         self.request_part(request)
@@ -1143,6 +1149,9 @@ impl Controller {
                     serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
                 timbres::keep_role(&mut preset, &self.preset, self.meta.kind);
                 preset.sanitize();
+                if self.meta.id != 0 {
+                    preset.params.bpm = self.preset.params.bpm;
+                }
                 self.enqueue(Command::Preset(self.prepared_preset(&preset)))?;
                 // A loaded preset can change the timbre's engine type; a Pad
                 // FX timbre stays one.
@@ -1405,6 +1414,12 @@ impl Controller {
     }
 }
 
+#[derive(Clone, Copy, Default)]
+struct Following {
+    midi_clock: bool,
+    scene_tempo: Option<f32>,
+}
+
 impl Audio {
     fn source(&mut self, source: &mut PreparedSource) {
         self.engine
@@ -1440,7 +1455,7 @@ impl Audio {
         lead_in
     }
     fn begin(&mut self, values: &[f32], bpm: f32, beat: Option<f64>, playing: bool, frames: usize) {
-        self.begin_following(values, bpm, beat, playing, frames, false);
+        self.begin_following(values, bpm, beat, playing, frames, Following::default());
     }
     /// `follow`: the scene follows a MIDI clock this block, and plays its
     /// transport as it would a DAW's.
@@ -1451,8 +1466,12 @@ impl Audio {
         beat: Option<f64>,
         playing: bool,
         frames: usize,
-        follow: bool,
+        following: Following,
     ) {
+        let Following {
+            midi_clock: follow,
+            scene_tempo,
+        } = following;
         let sequence_was_enabled = self.engine.preset.sequencer.enabled;
         let mut preset_changed = false;
         let mut numeric_changed = false;
@@ -1662,6 +1681,11 @@ impl Audio {
         } else {
             self.engine.set_sequence_transport(true);
         }
+        // Child timbres also follow manual/automated scene BPM when DAW
+        // sync is off. Apply after queued presets, without restarting clocks.
+        if let Some(bpm) = scene_tempo {
+            self.engine.preset.params.bpm = bpm;
+        }
         if numeric_changed || self.engine.preset.params.bpm != previous_bpm {
             self.engine.refresh_parameters();
         }
@@ -1704,10 +1728,14 @@ impl Audio {
         // A kit's Pad FX timbres take their own updates; one whose pad plays
         // its bounce rests.
         let kit = self.engine.preset.sampler.as_deref();
+        let following = Following {
+            midi_clock: follow,
+            scene_tempo: Some(self.engine.preset.params.bpm),
+        };
         let mut chain = self.chains.as_mut();
         while let Some(c) = chain {
             c.audio
-                .begin_following(&[], bpm, beat, playing, frames, follow);
+                .begin_following(&[], bpm, beat, playing, frames, following);
             c.audio.bounced = kit
                 .and_then(|k| k.pad(c.audio.meta.pad))
                 .is_none_or(|pad| pad.bounce.is_some());
@@ -1718,7 +1746,7 @@ impl Audio {
         let mut open = 0;
         while let Some(p) = part {
             p.audio
-                .begin_following(&[], bpm, beat, playing, frames, follow);
+                .begin_following(&[], bpm, beat, playing, frames, following);
             if let Some(vocal) = &mut p.audio.vocal {
                 vocal.begin(song_position, song_playing, tempo, self.offline);
             }

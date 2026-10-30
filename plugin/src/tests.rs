@@ -329,6 +329,80 @@ fn render(audio: &mut Audio, frames: usize, input: Stereo) -> f32 {
 }
 
 #[test]
+fn global_tempo_reaches_every_timbre_and_survives_scene_changes() {
+    let mut control = Controller::new(false);
+    call(&mut control, "/api/transport", json!({"sync":false}));
+    call(&mut control, "/api/parameters", json!({"bpm":90}));
+    let context = add_classic(&mut control, "drums");
+    let drums = context["active"].as_u64().unwrap();
+    assert_eq!(control.parts[0].preset.params.bpm, 90.0);
+    let root_mix = control.preset.params.mix;
+    call(
+        &mut control,
+        "/api/parameters",
+        json!({"bpm":150,"mix":0.25}),
+    );
+    assert_eq!(control.preset.params.mix, root_mix);
+    assert_eq!(control.preset.params.bpm, 150.0);
+    assert!(control.parts.iter().all(|p| p.preset.params.bpm == 150.0));
+    let mut audio = control.prepare(8000);
+    let values = control.values();
+    no_heap(|| {
+        audio.begin(&values, 120.0, None, true, 128);
+        render(&mut audio, 128, [0.0; 2]);
+    });
+    assert_eq!(audio.engine.preset.params.bpm, 150.0);
+    let mut part = audio.parts.as_deref();
+    while let Some(p) = part {
+        assert_eq!(p.audio.engine.preset.params.bpm, 150.0);
+        part = p.next.as_deref();
+    }
+    let mut automated = values.clone();
+    let tempo_index = parameters::specs()
+        .iter()
+        .position(|p| p.id == "bpm")
+        .unwrap();
+    automated[tempo_index] = 175.0;
+    no_heap(|| {
+        audio.begin(&automated, 120.0, None, true, 128);
+        render(&mut audio, 128, [0.0; 2]);
+    });
+    let mut part = audio.parts.as_deref();
+    while let Some(p) = part {
+        assert_eq!(p.audio.engine.preset.params.bpm, 175.0);
+        part = p.next.as_deref();
+    }
+    call(&mut control, "/api/timbres/add", json!({"kind":"bus"}));
+    assert!(control.parts.iter().all(|p| p.preset.params.bpm == 150.0));
+    call(&mut control, "/api/timbres/select", json!({"id":drums}));
+    let mut preset = call(&mut control, "/api/preset", Value::Null);
+    preset["params"]["bpm"] = json!(200);
+    call(&mut control, "/api/preset", preset);
+    assert!(control.parts.iter().all(|p| p.preset.params.bpm == 150.0));
+    assert!(
+        control
+            .request(&json!({"path":"/api/parameters","method":"POST",
+        "data":{"bpm":100,"unknown_parameter":0}}))
+            .is_err()
+    );
+    assert_eq!(control.preset.params.bpm, 150.0);
+    let mut saved: Value = serde_json::from_slice(&control.save().unwrap()).unwrap();
+    saved["preset"]["params"]["bpm"] = json!(105);
+    for part in saved["timbres"].as_array_mut().unwrap() {
+        part["preset"]["params"]["bpm"] = json!(200);
+    }
+    control
+        .restore(&serde_json::to_vec(&saved).unwrap())
+        .unwrap();
+    assert_eq!(control.preset.params.bpm, 105.0);
+    assert!(control.parts.iter().all(|p| p.preset.params.bpm == 105.0));
+    call(&mut control, "/api/timbres/remove", json!({"id":0}));
+    call(&mut control, "/api/timbres/add", json!({"kind":"synth"}));
+    assert_eq!(control.preset.params.bpm, 105.0);
+    assert!(control.parts.iter().all(|p| p.preset.params.bpm == 105.0));
+}
+
+#[test]
 fn new_plugin_starts_with_glasses5_and_restoration_replaces_it() {
     for effect in [false, true] {
         let mut control = Controller::new_plugin(effect);

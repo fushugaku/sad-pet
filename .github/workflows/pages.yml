@@ -56,6 +56,7 @@ jobs:
           node wasm/test-filters-ui.mjs
           node wasm/test-neuropolis.mjs
           node wasm/test-timbres.mjs
+          node wasm/test-tempo.mjs
           node wasm/test-buses.mjs
           node wasm/test-master.mjs
           node wasm/test-tb303.mjs

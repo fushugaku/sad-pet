@@ -123,6 +123,19 @@
             </div>
           </div>
           <button id="save-preset" title="Save preset" disabled>Save</button>
+          <label class="tempo"
+            ><input
+              id="bpm"
+              aria-label="Tempo"
+              type="number"
+              min="20"
+              max="300"
+              step="0.1"
+              value="120"
+              inputmode="decimal"
+              disabled
+            /><span>BPM</span></label
+          >
           <button id="load-wav" class="light" disabled>
             Load WAV <span>↗</span>
           </button>
@@ -728,16 +741,6 @@
       <section class="mod-section">
         <div class="section-heading">
           <h2>Modulation</h2>
-          <label class="tempo"
-            >TEMPO<input
-              id="bpm"
-              type="number"
-              min="20"
-              max="300"
-              step="1"
-              value="120"
-            /><span>BPM</span></label
-          >
         </div>
         <div class="mod-bank-tools">
           <strong>LFO <span id="lfo-count">3 / 8</span></strong

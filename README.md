@@ -50,6 +50,11 @@ settings, sample or kit) as an instrument preset in a category of your own, and
 loads one into the timbre in place or as a new timbre. Portable `.sadinst`
 files move instruments between the web version and the native app and plug-ins.
 
+**BPM** beside the preset's **Save** button sets one tempo for the entire scene:
+all timbres, sequencers, tempo-synced modulation and effects. New timbres and
+loaded instrument presets inherit it. Scene presets store the tempo; older scenes
+with different per-timbre BPM values use the first timbre's tempo on recall.
+
 - 414 categorized built-in audio sources, WAV import and an IndexedDB file library, including
   Matrix POV video audio and a 42.67-second Harvest Dawn harp/chamber-string cover
   loop: 16 bars at 90 BPM, with the recognizable eight-bar introduction played
