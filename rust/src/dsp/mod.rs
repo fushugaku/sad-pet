@@ -2876,6 +2876,11 @@ impl Engine {
                     .unwrap()
                     .actions(index);
                 for action in actions.into_iter().flatten() {
+                    // Neuropolis modulates an active 303 pattern through its
+                    // pitch/parameter lanes; Notes only play it with Pattern off.
+                    if self.preset.tb303.as_ref().is_some_and(|s| s.pattern) {
+                        continue;
+                    }
                     match action {
                         sequence::Action::Midi(message) => self.apply_owned_midi(message, id),
                         sequence::Action::Legato {
@@ -3234,14 +3239,12 @@ impl Engine {
         } else {
             None
         };
-        let external_notes = is_303 && self.sequence_has_notes();
         let input = if let (Some(bass), Some(settings)) = (&mut self.tb303, &self.preset.tb303) {
             bass.configure(
                 &self.modulated.tb303_radias,
                 self.modulated.params.sample_tune_semis
                     + self.modulated.params.sample_tune_cents * 0.01,
                 self.lfo_values[0],
-                external_notes,
             );
             bass.frame(
                 settings,

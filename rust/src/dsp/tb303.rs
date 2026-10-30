@@ -241,7 +241,6 @@ pub struct Runtime {
     radias_sample: SampleBuffer,
     transpose: f32,
     lfo: f32,
-    external_notes: bool,
 }
 impl std::fmt::Debug for Runtime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -295,7 +294,6 @@ impl Runtime {
                 .expect("valid silent sample"),
             transpose: 0.0,
             lfo: 0.0,
-            external_notes: false,
         }
     }
     pub fn inherit(&mut self, old: &mut Self) {
@@ -347,6 +345,17 @@ impl Runtime {
         self.gate = true;
     }
     pub fn legato(&mut self, channel: u8, note: u8, velocity: u8, owner: u32) {
+        if !self.notes[..self.held].iter().any(|n| n.owner == owner) {
+            self.midi(
+                Message::NoteOn {
+                    channel,
+                    note,
+                    velocity,
+                },
+                owner,
+            );
+            return;
+        }
         self.notes[..self.held]
             .iter_mut()
             .filter(|n| n.owner == owner)
@@ -451,18 +460,11 @@ impl Runtime {
     pub fn view(&self) -> View {
         self.view
     }
-    pub fn configure(
-        &mut self,
-        radias: &crate::synth::Settings,
-        transpose: f32,
-        lfo: f32,
-        notes: bool,
-    ) {
+    pub fn configure(&mut self, radias: &crate::synth::Settings, transpose: f32, lfo: f32) {
         self.radias
             .configure(radias, 0.0, &self.radias_sample, 60.0);
         self.transpose = transpose;
         self.lfo = lfo;
-        self.external_notes = notes;
     }
     pub fn note_state(&self) -> Option<(u8, u8, u8)> {
         if self.held > 0 {
@@ -484,15 +486,32 @@ impl Runtime {
         bpm: f32,
     ) -> Stereo {
         self.transport(playing);
-        let pattern = playing && settings.pattern && !self.external_notes;
+        let pattern = playing && settings.pattern;
         if pattern != self.pattern_running {
             self.step = None;
             self.pattern_running = pattern;
+            // Returning to the 303 pattern retires held sequencer notes, while
+            // a physically held MIDI/keyboard note can still audition the voice.
+            if pattern {
+                let mut i = 0;
+                while i < self.held {
+                    let n = self.notes[i];
+                    if n.owner != 0 {
+                        self.remove_note(n.channel, n.note, n.owner);
+                    } else {
+                        i += 1;
+                    }
+                }
+            }
             if self.held == 0 {
                 self.gate = false;
             }
         }
-        let serial = (self.beat * 4.0 + 1e-9).floor() as u64;
+        // Derive the step and its gate phase from the same rounded clock.
+        // Otherwise a near-boundary value can start the next note while its
+        // old fractional part immediately closes that new gate.
+        let position = self.beat * 4.0 + 1e-9;
+        let serial = position.floor() as u64;
         let index = serial as usize % settings.length as usize;
         if pattern {
             if self.step != Some(serial) {
@@ -512,10 +531,7 @@ impl Runtime {
                 }
                 self.step = Some(serial);
             }
-            if self.held == 0
-                && !settings.steps[index].slide
-                && (self.beat * 4.0).fract() >= 7.0 / 12.0
-            {
+            if self.held == 0 && !settings.steps[index].slide && position.fract() >= 7.0 / 12.0 {
                 self.gate = false;
             }
         }
@@ -702,6 +718,30 @@ mod tests {
             r.midi(off(36), 0);
             assert!(!r.gate);
             assert!(render(&mut r, &s, rate as usize / 5, false) < 10.0);
+        }
+    }
+
+    #[test]
+    fn every_pattern_step_keeps_its_gate_at_fractional_clock_boundaries() {
+        for rate in [8000, 44100, 48000] {
+            let mut s = Settings::default();
+            s.steps.fill(crate::tb303::Step::default());
+            let mut r = Runtime::new(rate, s.controls);
+            let mut previous = None;
+            let mut started = 0;
+            for _ in 0..rate * 2 {
+                r.frame(&s, s.controls, true, 120.0);
+                if r.view.step != previous {
+                    assert!(
+                        r.view.gate,
+                        "{rate}: step {:?} closed as it started",
+                        r.view.step
+                    );
+                    previous = r.view.step;
+                    started += 1;
+                }
+            }
+            assert_eq!(started, 16);
         }
     }
 

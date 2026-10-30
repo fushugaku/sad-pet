@@ -140,13 +140,16 @@ function lane(core, id, target, pitch) {
   p.tb303.count = 1;
   p.sequencer.enabled = true;
   p.sequencer.tracks = [lane(core, 1, { kind: "main_pitch" }, 72),
-    lane(core, 2, { kind: "tb303_oscillator", index: 0 }, 67)];
+    lane(core, 2, { kind: "tb303_oscillator", index: 0 }, 67),
+    lane(core, 3, { kind: "notes" }, 96)];
   p.sequencer.tracks[0].destinations = ["tb303_cutoff", "tb303_osc1_control1", null];
   p.sequencer.tracks[0].steps.forEach(s => { s.destination1 = .1; s.destination2 = .2; });
   core.request("/api/preset", p);
   core.request("/api/transport", { playing: true });
   render(core, 256);
   const state = core.request("/api/state");
+  assert.equal(state.tb303.step, 0, "Neuropolis Notes disabled the internal 303 pattern");
+  assert.deepEqual(state.preset.tb303.steps, p.tb303.steps, "Neuropolis rewrote the 303 pattern");
   assert.ok(Math.abs(state.tb303.note - 48) < .01, "Main pitch does not transpose the 303 voice");
   assert.ok(Math.abs(state.knobs.tb303_osc1_transpose.current - 7) < .01);
   assert.ok(Math.abs(state.knobs.tb303_cutoff.current - .55) < .01);
@@ -160,6 +163,7 @@ function lane(core, id, target, pitch) {
   const { core } = scene(8000);
   const p = core.request("/api/preset");
   p.tb303.count = 2;
+  p.tb303.pattern = false;
   p.sequencer.enabled = true;
   const notes = lane(core, 1, { kind: "notes" }, 48);
   notes.config[1] = 4;
@@ -170,9 +174,12 @@ function lane(core, id, target, pitch) {
   core.request("/api/transport", { playing: true });
   assert.ok(energy(render(core, 400)) > 1e-6, "Neuropolis Notes do not play 303/RADIAS");
   const state = core.request("/api/state");
-  assert.equal(state.tb303.step, null, "The internal pattern competes with Neuropolis Notes");
+  assert.equal(state.tb303.step, null, "Pattern off did not hand notes to Neuropolis");
   assert.ok(Math.abs(state.tb303.note - 48) < .01);
   render(core, 3000);
   assert.ok(energy(render(core, 256)) < 1e-9, "303 pattern filled a Neuropolis rest");
+  core.request("/api/parameters", { tb303_pattern: 1 });
+  assert.ok(energy(render(core, 800)) > 1e-6, "Pattern did not resume after direct Notes mode");
+  assert.notEqual(core.request("/api/state").tb303.step, null);
 }
-console.log("303 + RADIAS: six waves, four modes, layer removal, Main pitch, individual offsets, parameter lanes, Notes rests and recall passed.");
+console.log("303 + RADIAS: waves, modes, Ring/Sync/Cross, layer removal, pattern transposition, individual offsets, parameter lanes, explicit Notes mode and recall passed.");

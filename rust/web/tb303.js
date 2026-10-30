@@ -66,13 +66,7 @@
       if (!s) return;
       for (const button of this.waves) button.setAttribute("aria-pressed", String(Number(button.dataset.wave) === s.waveform));
       this.pattern.setAttribute("aria-pressed", String(s.pattern));
-      const sequence = this.hooks.read().sequencer;
-      const external = sequence?.enabled && sequence.tracks.some(t => t.target.kind === "notes" && !t.config[8]);
-      this.pattern.textContent = external ? "Neuropolis" : "Pattern";
-      this.pattern.disabled = external;
-      this.pattern.title = external ? "Notes, gates, accent and slide come from the Neuropolis Notes track" : "Play the 303 pattern";
-      this.root.querySelector(".tb303-steps").hidden = external;
-      this.length.parentElement.hidden = external;
+      this.pattern.title = "Play the 303 pattern";
       if (document.activeElement !== this.length) this.length.value = s.length;
       this.steps.forEach((cell, i) => {
         const step = s.steps[i];

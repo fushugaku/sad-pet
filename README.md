@@ -173,7 +173,8 @@ files move instruments between the web version and the native app and plug-ins.
   pattern controls support host automation, scene recall, effects and Bus sends.
   Add up to four RADIAS layers before its filter, with Ring/Sync/Cross from the
   303 oscillator or another layer. Neuropolis can transpose the group, sequence
-  individual layers and parameters, or take over notes, gates and slides.
+  individual layers and parameters while the 303 keeps its own pattern.
+  Turn Pattern off explicitly to play it from Neuropolis Notes or MIDI.
   See [the model and its fidelity boundaries](docs/TB303.md).
 - **Rack timbres** (browser and DAW plug-ins) are instruments you build from
   modules in any order: **+ Timbre → Rack**. Sound runs from the top module down.

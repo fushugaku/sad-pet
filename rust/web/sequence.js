@@ -693,7 +693,7 @@ window.SadNeuropolis = class {
   targetName(t) {
     if (t.target.kind === "pad") return this.padName(t.target.pad);
     return t.target.kind === "main_pitch"
-      ? "Main pitch"
+      ? (this.hooks.read().tb303 ? "303 pattern pitch" : "Main pitch")
       : t.target.kind === "notes"
         ? this.notesName()
         : t.target.kind === "oscillator"
@@ -1648,7 +1648,7 @@ window.SadNeuropolis = class {
         : track.target.kind === "pad" ? `pad:${track.target.pad}`
         : track.target.kind === "parameter" ? `param:${track.target.parameter}` : track.target.kind,
       [{ label: "Pitch & notes", choices: [
-        ["main_pitch", "Main track pitch"], ["notes", this.notesName()],
+        ["main_pitch", bass ? "303 pattern pitch" : "Main track pitch"], ["notes", this.notesName()],
         // A Synth engine timbre plays its own oscillators; Resynth's follow.
         ...(synth ? [0, 1, 2, 3].map(i => [`synth-osc:${i}`, `Synth OSC ${i + 1} pitch offset`]) : []),
         ...(bass ? [0, 1, 2, 3].map(i => [`tb303-osc:${i}`, `303 RADIAS OSC ${i + 1} pitch offset`]) : []),
