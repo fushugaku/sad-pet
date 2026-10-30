@@ -157,7 +157,7 @@ void SadPetProcessor::prepareToPlay(double rate, int) {
     sad_control_set_parameters(control, controlValues.data(), controlValues.size());
     sad_audio_free(audio);
     audio = sad_control_prepare(control, static_cast<std::uint32_t>(std::lround(rate)));
-    setLatencySamples(0);
+    setLatencySamples(static_cast<int>(sad_output_latency(static_cast<std::uint32_t>(std::lround(rate)))));
 }
 
 bool SadPetProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
@@ -225,7 +225,8 @@ void SadPetProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     standalone->recorder.write(buffer.getArrayOfReadPointers(), frames, false);
     std::size_t clockCount = 0;
     const auto* clockEvents = sad_audio_clock_out(audio, &clockCount);
-    standalone->clockOut.push(clockEvents, clockCount, getSampleRate(), sadpet::host().outputLatency.load());
+    standalone->clockOut.push(clockEvents, clockCount, getSampleRate(),
+        sadpet::host().outputLatency.load() + getLatencySamples() / getSampleRate());
    #endif
     for (int channel = 2; channel < buffer.getNumChannels(); ++channel) buffer.clear(channel, 0, frames);
     midi.clear();

@@ -9,6 +9,8 @@ const module = await WebAssembly.compile(await readFile(resolve(folder, "sad_pet
 
 for (const rate of [8000, 44100, 48000]) {
   const core = new Core(module, rate);
+  const latency = core.wasm.sad_output_latency(rate);
+  assert.equal(latency, Math.max(1, Math.floor(rate / 500)));
   const drySlot = {
     ...core.request("/api/color-defaults").slot,
     id: 1, kind: "compressor", enabled: true, mix: 0,
@@ -50,7 +52,8 @@ for (const rate of [8000, 44100, 48000]) {
       for (let i = 0; i < 128; i++) {
         peak = Math.max(peak, Math.abs(out[i * 2]));
         if (scale !== undefined)
-          error = Math.max(error, Math.abs(out[i * 2] - input[0][i] * scale));
+          error = Math.max(error, Math.abs(out[i * 2] -
+            0.6 * Math.sin(2 * Math.PI * 125 * (sample - 128 + i - latency) / rate) * scale));
         assert.ok(Math.abs(out[i * 2 + 1] + out[i * 2] * 0.5) < 1e-6, "Stereo balance changed");
       }
     }
@@ -96,5 +99,21 @@ for (const rate of [8000, 44100, 48000]) {
   legacy.set(new Uint8Array(scene, 12 + size), 12 + bytes.length);
   core.call("sad_scene_load", legacy);
   assert.equal(core.request("/api/preset").bus.limiter, true, "Legacy scene lacks protection");
-  console.log(`Master ${rate}: eight tracks, Bus/FX headroom, final fader/meter, stereo ceiling, bypass and scene recall passed.`);
+  // A transient arriving through the bus must not step a sustained channel.
+  core.request("/api/timbres/update", { id: master.id, gain: 1 });
+  let previous = 0.25, largestStep = 0;
+  for (let n = 0; n < rate; n += 128) {
+    for (let i = 0; i < 128; i++) {
+      input[0][i] = 0.25 / 8;
+      input[1][i] = n + i > rate / 4 && (n + i) % Math.floor(rate / 8) === 0 ? 0.5 : 0;
+    }
+    const out = core.process(128, input);
+    assert.ok(out.every(x => Number.isFinite(x) && Math.abs(x) <= 0.891251));
+    for (let i = 0; i < 128; i++) {
+      if (n + i > rate / 4) largestStep = Math.max(largestStep, Math.abs(out[i * 2] - previous));
+      previous = out[i * 2];
+    }
+  }
+  assert.ok(largestStep * rate < 125, `Bus transient clicked the sustained channel: ${largestStep}`);
+  console.log(`Master ${rate}: eight tracks, Bus/FX headroom, final fader/meter, smooth transient limiting, stereo ceiling, bypass and scene recall passed.`);
 }

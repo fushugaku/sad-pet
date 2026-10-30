@@ -62,6 +62,7 @@ int main() {
         command(processor, "/api/fades", juce::JSON::parse(R"({"fade_in":0,"fade_out":0})"));
         processor.setPlayConfigDetails(SAD_PET_EFFECT ? 2 : 0, 2, 48000.0, 4096);
         processor.prepareToPlay(48000.0, 4096);
+        require(processor.getLatencySamples() == 96, "Master lookahead latency was not reported to the host");
         juce::AudioBuffer<float> buffer(2, 4096);
         juce::MidiBuffer midi;
         buffer.clear();
@@ -168,6 +169,7 @@ int main() {
         restored.setStateInformation(corrupt, sizeof(corrupt));
         require(command(restored, "/api/state")["sample_name"].toString() == "Embedded test.wav", "Malformed host state replaced valid state");
         restored.prepareToPlay(96000.0, 4096);
+        require(restored.getLatencySamples() == 192, "Master latency did not follow the sample rate");
         require(static_cast<int>(command(restored, "/api/state")["sample_rate"]) == 96000, "Host sample rate change was ignored");
         std::cout << JucePlugin_Name << ": host audio, MIDI offsets, automation, embedded state, instance isolation and sample-rate checks passed\n";
         return 0;

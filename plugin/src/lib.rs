@@ -1816,6 +1816,11 @@ pub extern "C" fn sad_parameters() -> Bytes {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn sad_output_latency(rate: u32) -> u32 {
+    sad_pet::dsp::limiter::latency_frames(rate.clamp(8_000, 384_000))
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn sad_control_new(effect: bool) -> *mut Controller {
     Box::into_raw(Box::new(Controller::new_plugin(effect)))
 }

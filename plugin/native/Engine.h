@@ -11,6 +11,7 @@ struct SadBytes { std::uint8_t* data; std::size_t len; };
 // One MIDI clock message at its frame in the block (the app's clock out).
 struct SadClockEvent { std::uint32_t offset; std::uint8_t size; std::uint8_t bytes[3]; };
 SadBytes sad_parameters();
+std::uint32_t sad_output_latency(std::uint32_t rate);
 SadController* sad_control_new(bool effect);
 SadController* sad_control_new_standalone();
 void sad_control_free(SadController*);

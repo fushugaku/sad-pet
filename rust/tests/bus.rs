@@ -103,10 +103,15 @@ fn master_protection_follows_the_fader_and_meter_reads_the_final_output() {
             ..Default::default()
         }];
     });
-    for _ in 0..12_000 {
+    for n in 0..12_000 {
         let raw = e.process_input_frame([4.0, -2.0]);
         let out = e.protect_master(raw.map(|x| x * 0.125));
-        assert!((out[0] - 0.5).abs() < 1e-4);
+        let expected = if n < sad_pet::dsp::limiter::latency_frames(48_000) {
+            0.0
+        } else {
+            0.5
+        };
+        assert!((out[0] - expected).abs() < 1e-4);
         assert_eq!(out[1], out[0] * -0.5);
     }
     assert!(e.master_meter().reduction_db.abs() < 0.001);
@@ -115,10 +120,15 @@ fn master_protection_follows_the_fader_and_meter_reads_the_final_output() {
         "Master meter measured before its fader"
     );
     let raw = e.process_input_frame([4.0, -2.0]);
-    let out = e.protect_master(raw);
-    assert!(out[0] <= sad_pet::dsp::limiter::CEILING);
+    for _ in 0..=sad_pet::dsp::limiter::latency_frames(48_000) {
+        let out = e.protect_master(raw);
+        assert!(out[0] <= sad_pet::dsp::limiter::CEILING);
+    }
     assert!(e.master_meter().reduction_db > 12.0);
     e.preset.bus.as_mut().unwrap().limiter = false;
+    for _ in 0..sad_pet::dsp::limiter::latency_frames(48_000) {
+        e.protect_master(raw);
+    }
     assert_eq!(e.protect_master(raw), raw);
 }
 

@@ -217,7 +217,9 @@ files move instruments between the web version and the native app and plug-ins.
   no grains, no history writes and no filters run. Processed buses retain their
   mix headroom instead of applying the instrument's output clipper. Master's
   **Limiter** protects the final sum after its output fader at −1 dBFS, with
-  linked stereo gain, peak hold and smooth release, without added latency.
+  linked stereo gain, a smooth 2 ms lookahead attack, peak hold and smooth
+  release. The fixed 2 ms delay remains when bypassed; the plugin reports it
+  to its host and MIDI clock out includes it.
   Its reduction is shown beside the switch. Old scenes enable it too; an
   explicitly saved bypass is preserved. Grain overlap normalization slews over
   2 ms in both classic timbres and Racks, so grain births and deaths cannot step

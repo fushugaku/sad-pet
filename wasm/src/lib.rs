@@ -456,6 +456,10 @@ pub extern "C" fn sad_init(rate: u32) {
     HOST.with(|h| *h.borrow_mut() = Some(timbres::Registry::new(rate.clamp(8_000, 384_000))));
 }
 #[unsafe(no_mangle)]
+pub extern "C" fn sad_output_latency(rate: u32) -> u32 {
+    sad_pet::dsp::limiter::latency_frames(rate.clamp(8_000, 384_000))
+}
+#[unsafe(no_mangle)]
 pub extern "C" fn sad_input(length: usize) -> *mut u8 {
     host(|h| {
         if length > MAX_INPUT {

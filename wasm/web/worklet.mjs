@@ -4,6 +4,7 @@ class SadPetProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
     this.core = new Core(options.processorOptions.module, sampleRate);
+    this.outputLatency = this.core.wasm.sad_output_latency(sampleRate);
     this.telemetryFrames = 0;
     this.stateStamp = 0;
     this.recording = false;
@@ -31,7 +32,7 @@ class SadPetProcessor extends AudioWorkletProcessor {
         // [context seconds its beat sounds, status, data bytes]
         const [time, status, first = 0, second = 0] = data;
         this.core.wasm.sad_clock_event(
-          time * sampleRate - this.clockOffset,
+          time * sampleRate - this.clockOffset - this.outputLatency,
           status,
           first,
           second,
@@ -281,7 +282,7 @@ class SadPetProcessor extends AudioWorkletProcessor {
     this.port.postMessage({
       type: "clock",
       view,
-      time: (view[0] + this.clockOffset) / sampleRate,
+      time: (view[0] + this.clockOffset + this.outputLatency) / sampleRate,
     });
   }
   flushRecording() {
