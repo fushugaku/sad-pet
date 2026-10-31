@@ -34,8 +34,8 @@ jobs:
       - name: Set up Rust
         shell: bash
         run: |
-          rustup toolchain install stable --profile minimal --component llvm-tools
-          rustup default stable
+          rustup toolchain install 1.97.0 --profile minimal --component llvm-tools
+          rustup default 1.97.0
           rustc -vV
           # PGO gains differ between CPU models.
           if [ "$RUNNER_OS" = macOS ]; then sysctl -n machdep.cpu.brand_string; else grep -m1 'model name' /proc/cpuinfo || true; fi

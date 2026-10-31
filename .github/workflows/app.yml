@@ -3,9 +3,9 @@ name: Build standalone app
 on:
   push:
     branches: [main, 'codex/daw-plugins']
-    paths: ['plugin/**', 'rust/**', 'voice/**', 'vendor/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/app.yml']
+    paths: ['plugin/**', 'rust/**', 'voice/**', 'vendor/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.github/workflows/app.yml']
   pull_request:
-    paths: ['plugin/**', 'rust/**', 'voice/**', 'vendor/**', 'Cargo.toml', 'Cargo.lock', '.github/workflows/app.yml']
+    paths: ['plugin/**', 'rust/**', 'voice/**', 'vendor/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.github/workflows/app.yml']
   workflow_dispatch:
 
 permissions:
@@ -36,8 +36,8 @@ jobs:
         shell: bash
         run: |
           # llvm-tools: llvm-profdata from rustc's own LLVM, for build --pgo.
-          rustup toolchain install stable --profile minimal --component llvm-tools
-          rustup default stable
+          rustup toolchain install 1.97.0 --profile minimal --component llvm-tools
+          rustup default 1.97.0
       - name: Check the app's engine boundary
         shell: bash
         run: cargo test -p sad-pet-plugin --no-default-features --locked standalone

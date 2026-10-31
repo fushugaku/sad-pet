@@ -1,0 +1,5 @@
+[toolchain]
+# Audio/CPU release evidence is validated with this compiler. Upgrade explicitly.
+channel = "1.97.0"
+profile = "minimal"
+components = ["rustfmt", "clippy"]

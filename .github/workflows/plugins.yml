@@ -4,9 +4,9 @@ on:
   push:
     branches: [main, 'codex/daw-plugins']
     tags: ['plugins-v*']
-    paths: ['plugin/**', 'rust/**', 'voice/**', 'vendor/**', 'Cargo.toml', 'Cargo.lock', 'wasm/test-presets.mjs', 'wasm/test-parameters.mjs', 'wasm/test-sequencer-ui.mjs', 'wasm/test-controls-ui.mjs', 'wasm/test-midi-learn-ui.mjs', 'wasm/test-imported*.mjs', '.github/workflows/plugins.yml']
+    paths: ['plugin/**', 'rust/**', 'voice/**', 'vendor/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'wasm/test-presets.mjs', 'wasm/test-parameters.mjs', 'wasm/test-sequencer-ui.mjs', 'wasm/test-controls-ui.mjs', 'wasm/test-midi-learn-ui.mjs', 'wasm/test-imported*.mjs', '.github/workflows/plugins.yml']
   pull_request:
-    paths: ['plugin/**', 'rust/**', 'voice/**', 'vendor/**', 'Cargo.toml', 'Cargo.lock', 'wasm/test-presets.mjs', 'wasm/test-parameters.mjs', 'wasm/test-sequencer-ui.mjs', 'wasm/test-controls-ui.mjs', 'wasm/test-midi-learn-ui.mjs', 'wasm/test-imported*.mjs', '.github/workflows/plugins.yml']
+    paths: ['plugin/**', 'rust/**', 'voice/**', 'vendor/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'wasm/test-presets.mjs', 'wasm/test-parameters.mjs', 'wasm/test-sequencer-ui.mjs', 'wasm/test-controls-ui.mjs', 'wasm/test-midi-learn-ui.mjs', 'wasm/test-imported*.mjs', '.github/workflows/plugins.yml']
   workflow_dispatch:
 
 permissions:
@@ -39,8 +39,8 @@ jobs:
         shell: bash
         run: |
           # llvm-tools: llvm-profdata from rustc's own LLVM, for build --pgo.
-          rustup toolchain install stable --profile minimal --component rustfmt,clippy,llvm-tools
-          rustup default stable
+          rustup toolchain install 1.97.0 --profile minimal --component rustfmt,clippy,llvm-tools
+          rustup default 1.97.0
       - name: Check plugin engine
         shell: bash
         run: |
