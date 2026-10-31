@@ -32,6 +32,12 @@ pub struct RealtimeView {
     #[serde(default)]
     pub modulated_synth: crate::synth::Settings,
     #[serde(default)]
+    pub modulated_wavetable: [crate::wavetable::Controls; crate::wavetable::OSCILLATORS],
+    #[serde(default)]
+    pub modulated_wavetable_motion: crate::wavetable::motion::Motion,
+    #[serde(default)]
+    pub wavetable_positions: [super::wavetable::PositionView; crate::wavetable::OSCILLATORS],
+    #[serde(default)]
     pub modulated_lfos: [crate::preset::Lfo; crate::preset::MODULATORS],
     #[serde(default)]
     pub modulated_envs: [crate::preset::Env; crate::preset::MODULATORS],
@@ -104,6 +110,9 @@ impl Default for RealtimeView {
             envs: [0.0; crate::preset::MODULATORS],
             modulated_resynth: Default::default(),
             modulated_synth: Default::default(),
+            modulated_wavetable: crate::wavetable::default_controls(),
+            modulated_wavetable_motion: Default::default(),
+            wavetable_positions: Default::default(),
             modulated_lfos: [crate::preset::Lfo::default(); crate::preset::MODULATORS],
             modulated_envs: [crate::preset::Env::default(); crate::preset::MODULATORS],
             matrix: [0.0; crate::matrix::MAX_ROUTES],
@@ -233,6 +242,12 @@ impl Engine {
         view.params = self.modulated.params;
         view.modulated_resynth = self.modulated.resynth;
         view.modulated_synth = self.modulated.synth;
+        view.modulated_wavetable = self.modulated.wavetable;
+        view.modulated_wavetable_motion = self.modulated.wavetable_motion;
+        view.wavetable_positions = self
+            .wavetable
+            .as_ref()
+            .map_or_else(Default::default, |w| w.positions());
         view.modulated_lfos = self.modulated.lfos;
         view.modulated_envs = self.modulated.envs;
         view.modulated_rack_eqs = self.modulated.rack_eqs;
@@ -537,6 +552,7 @@ impl ControlFeedback<'_> {
                 || s.id.starts_with("env")
                 || (self.preset.drums.is_some() && s.id.starts_with("drum"))
                 || (self.preset.synth.is_some() && s.id.starts_with("synth_"))
+                || (self.preset.wavetable.is_some() && s.id.starts_with("wt_"))
                 || (self.preset.tb303.is_some() && s.id.starts_with("tb303_"))
                 || equalizers.iter().any(|prefix| s.id.starts_with(prefix))
         }) {
@@ -564,6 +580,8 @@ pub fn knob_states_from_view(
     m.pre_color_slots = view.pre_color;
     m.resynth = view.modulated_resynth;
     m.synth = view.modulated_synth;
+    m.wavetable = view.modulated_wavetable;
+    m.wavetable_motion = view.modulated_wavetable_motion;
     m.tb303 = view.modulated_tb303;
     m.tb303_radias = view.modulated_tb303_radias;
     m.lfos = view.modulated_lfos;

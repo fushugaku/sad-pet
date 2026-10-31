@@ -1,0 +1,508 @@
+{
+  "created_utc": "2026-10-31T12:18:37.245071+00:00",
+  "machine": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "processor": "Apple M5 Max",
+  "binaries": {
+    "before": {
+      "sha256": "f17b6eece30872caa11cc259508c6ee03b329e2fa905f7a45044c1f005468e0e"
+    },
+    "after": {
+      "sha256": "72f7602fe71fb48babd4779d5a5974f87893bb3f994fa9c6bdebe2b890d34c5a"
+    }
+  },
+  "method": "Sequential alternating AB/BA, no concurrent benchmark jobs. Median of each run's block percentiles, not a percentile over pooled blocks. Compilation and asset preparation excluded. Thread CPU excludes descheduling; wall includes other local work. Frequency/thermal contention is not isolated.",
+  "rounds": 2,
+  "audio_seconds_per_run": 1.0,
+  "sample_rate": 48000,
+  "block": 128,
+  "deadline_ms": 2.6666666666666665,
+  "scope": "Shared production Engine, four distinct complex tables, unison detune and Voice shift, no effects. Legacy modes compare identical patches; routed modes are new features and have no before equivalent. In-process timing does not establish device/DAW underrun guarantees.",
+  "summary": [
+    {
+      "mode": "fm",
+      "notes": 4,
+      "waves": 4,
+      "unison": 4,
+      "before": {
+        "thread_cpu": {
+          "max_ms": 4.885332999999992,
+          "p50_ms": 3.4624165000000096,
+          "p95_ms": 4.456604000000031,
+          "p99_deadline_fraction": 1.7449220625000186,
+          "p99_ms": 4.6531255000000495
+        },
+        "wall": {
+          "max_ms": 6.4138955,
+          "p50_ms": 3.527521,
+          "p95_ms": 4.621583,
+          "p99_deadline_fraction": 1.8239765625000002,
+          "p99_ms": 4.8639375000000005
+        }
+      },
+      "after": {
+        "thread_cpu": {
+          "max_ms": 1.9836249999999889,
+          "p50_ms": 1.4257500000000034,
+          "p95_ms": 1.8009789999999803,
+          "p99_deadline_fraction": 0.711476812499997,
+          "p99_ms": 1.8972714999999918
+        },
+        "wall": {
+          "max_ms": 2.347479,
+          "p50_ms": 1.4388334999999999,
+          "p95_ms": 1.8636249999999999,
+          "p99_deadline_fraction": 0.7725,
+          "p99_ms": 2.0599999999999996
+        }
+      },
+      "thread_cpu_p50_reduction_percent": 58.82211166680844,
+      "wall_p99_fits_deadline": true
+    },
+    {
+      "mode": "sync",
+      "notes": 4,
+      "waves": 4,
+      "unison": 4,
+      "before": {
+        "thread_cpu": {
+          "max_ms": 18.591125000000154,
+          "p50_ms": 11.491646000000078,
+          "p95_ms": 15.77985400000026,
+          "p99_deadline_fraction": 6.118367250000089,
+          "p99_ms": 16.31564600000024
+        },
+        "wall": {
+          "max_ms": 23.531104,
+          "p50_ms": 11.725042,
+          "p95_ms": 16.264417,
+          "p99_deadline_fraction": 7.006570312500001,
+          "p99_ms": 18.6841875
+        }
+      },
+      "after": {
+        "thread_cpu": {
+          "max_ms": 3.695916500000118,
+          "p50_ms": 3.1207709999999667,
+          "p95_ms": 3.559479500000018,
+          "p99_deadline_fraction": 1.3673124375000387,
+          "p99_ms": 3.646166500000103
+        },
+        "wall": {
+          "max_ms": 4.0060625,
+          "p50_ms": 3.1583959999999998,
+          "p95_ms": 3.6801874999999997,
+          "p99_deadline_fraction": 1.4522578125,
+          "p99_ms": 3.8726874999999996
+        }
+      },
+      "thread_cpu_p50_reduction_percent": 72.84313317691873,
+      "wall_p99_fits_deadline": false
+    },
+    {
+      "mode": "mixed",
+      "notes": 4,
+      "waves": 4,
+      "unison": 2,
+      "before": {
+        "thread_cpu": {
+          "max_ms": 9.54902099999999,
+          "p50_ms": 7.0469584999999775,
+          "p95_ms": 9.08810400000004,
+          "p99_deadline_fraction": 3.4971875625000592,
+          "p99_ms": 9.325833500000158
+        },
+        "wall": {
+          "max_ms": 10.9625625,
+          "p50_ms": 7.193542,
+          "p95_ms": 9.3353545,
+          "p99_deadline_fraction": 3.8801484375,
+          "p99_ms": 10.3470625
+        }
+      },
+      "after": {
+        "thread_cpu": {
+          "max_ms": 3.3761044999999212,
+          "p50_ms": 2.426625000000043,
+          "p95_ms": 3.1317499999999887,
+          "p99_deadline_fraction": 1.2247813124999958,
+          "p99_ms": 3.266083499999989
+        },
+        "wall": {
+          "max_ms": 3.5473334999999997,
+          "p50_ms": 2.4508545,
+          "p95_ms": 3.1864165,
+          "p99_deadline_fraction": 1.2695936250000002,
+          "p99_ms": 3.3855830000000005
+        }
+      },
+      "thread_cpu_p50_reduction_percent": 65.56493131043626,
+      "wall_p99_fits_deadline": false
+    }
+  ],
+  "runs": [
+    {
+      "audio_seconds": 1.0,
+      "block": 128,
+      "mode": "fm",
+      "notes": 4,
+      "peak": 0.024367855861783028,
+      "sample_rate": 48000,
+      "scope": "Shared production Engine, four different complex tables, detune and Voice shift, both FM pairs or all four synced. Compilation excluded; thread CPU excludes descheduling, wall time includes contention.",
+      "thread_cpu": {
+        "max_ms": 4.9456249999999535,
+        "p50_ms": 3.436792000000022,
+        "p95_ms": 4.391457999999959,
+        "p99_deadline_fraction": 1.7398751250000262,
+        "p99_ms": 4.6396670000000695
+      },
+      "unison": 4,
+      "wall": {
+        "max_ms": 7.701833,
+        "p50_ms": 3.502208,
+        "p95_ms": 4.592208,
+        "p99_deadline_fraction": 1.8170625,
+        "p99_ms": 4.8455
+      },
+      "warmup_audio_seconds": 0.248,
+      "waves": 4,
+      "version": "before",
+      "repeat": 0
+    },
+    {
+      "audio_seconds": 1.0,
+      "block": 128,
+      "mode": "fm",
+      "notes": 4,
+      "peak": 0.02436785027384758,
+      "sample_rate": 48000,
+      "scope": "Shared production Engine, four different complex tables, detune and Voice shift, both FM pairs or all four synced. Compilation excluded; thread CPU excludes descheduling, wall time includes contention.",
+      "thread_cpu": {
+        "max_ms": 2.2504580000000107,
+        "p50_ms": 1.4437090000000152,
+        "p95_ms": 2.0757499999999873,
+        "p99_deadline_fraction": 0.8168752500000015,
+        "p99_ms": 2.178334000000004
+      },
+      "unison": 4,
+      "wall": {
+        "max_ms": 2.435583,
+        "p50_ms": 1.4655,
+        "p95_ms": 2.12025,
+        "p99_deadline_fraction": 0.84976575,
+        "p99_ms": 2.2660419999999997
+      },
+      "warmup_audio_seconds": 0.248,
+      "waves": 4,
+      "version": "after",
+      "repeat": 0
+    },
+    {
+      "audio_seconds": 1.0,
+      "block": 128,
+      "mode": "fm",
+      "notes": 4,
+      "peak": 0.02436785027384758,
+      "sample_rate": 48000,
+      "scope": "Shared production Engine, four different complex tables, detune and Voice shift, both FM pairs or all four synced. Compilation excluded; thread CPU excludes descheduling, wall time includes contention.",
+      "thread_cpu": {
+        "max_ms": 1.716791999999967,
+        "p50_ms": 1.4077909999999916,
+        "p95_ms": 1.5262079999999734,
+        "p99_deadline_fraction": 0.6060783749999924,
+        "p99_ms": 1.6162089999999796
+      },
+      "unison": 4,
+      "wall": {
+        "max_ms": 2.259375,
+        "p50_ms": 1.412167,
+        "p95_ms": 1.607,
+        "p99_deadline_fraction": 0.69523425,
+        "p99_ms": 1.853958
+      },
+      "warmup_audio_seconds": 0.248,
+      "waves": 4,
+      "version": "after",
+      "repeat": 1
+    },
+    {
+      "audio_seconds": 1.0,
+      "block": 128,
+      "mode": "fm",
+      "notes": 4,
+      "peak": 0.024367855861783028,
+      "sample_rate": 48000,
+      "scope": "Shared production Engine, four different complex tables, detune and Voice shift, both FM pairs or all four synced. Compilation excluded; thread CPU excludes descheduling, wall time includes contention.",
+      "thread_cpu": {
+        "max_ms": 4.82504100000003,
+        "p50_ms": 3.4880409999999973,
+        "p95_ms": 4.521750000000102,
+        "p99_deadline_fraction": 1.749969000000011,
+        "p99_ms": 4.666584000000029
+      },
+      "unison": 4,
+      "wall": {
+        "max_ms": 5.125958,
+        "p50_ms": 3.552834,
+        "p95_ms": 4.650958,
+        "p99_deadline_fraction": 1.8308906250000003,
+        "p99_ms": 4.882375000000001
+      },
+      "warmup_audio_seconds": 0.248,
+      "waves": 4,
+      "version": "before",
+      "repeat": 1
+    },
+    {
+      "audio_seconds": 1.0,
+      "block": 128,
+      "mode": "sync",
+      "notes": 4,
+      "peak": 0.027306383475661278,
+      "sample_rate": 48000,
+      "scope": "Shared production Engine, four different complex tables, detune and Voice shift, both FM pairs or all four synced. Compilation excluded; thread CPU excludes descheduling, wall time includes contention.",
+      "thread_cpu": {
+        "max_ms": 4.300958000000188,
+        "p50_ms": 3.46566699999995,
+        "p95_ms": 4.153917000000007,
+        "p99_deadline_fraction": 1.5890156250000786,
+        "p99_ms": 4.23737500000021
+      },
+      "unison": 4,
+      "wall": {
+        "max_ms": 4.570417,
+        "p50_ms": 3.520667,
+        "p95_ms": 4.301709,
+        "p99_deadline_fraction": 1.697578125,
+        "p99_ms": 4.5268749999999995
+      },
+      "warmup_audio_seconds": 0.248,
+      "waves": 4,
+      "version": "after",
+      "repeat": 0
+    },
+    {
+      "audio_seconds": 1.0,
+      "block": 128,
+      "mode": "sync",
+      "notes": 4,
+      "peak": 0.02730637975037098,
+      "sample_rate": 48000,
+      "scope": "Shared production Engine, four different complex tables, detune and Voice shift, both FM pairs or all four synced. Compilation excluded; thread CPU excludes descheduling, wall time includes contention.",
+      "thread_cpu": {
+        "max_ms": 19.86216700000032,
+        "p50_ms": 11.206291999999785,
+        "p95_ms": 15.794625000000284,
+        "p99_deadline_fraction": 6.172797000000063,
+        "p99_ms": 16.46079200000017
+      },
+      "unison": 4,
+      "wall": {
+        "max_ms": 26.982125,
+        "p50_ms": 11.464209,
+        "p95_ms": 16.391709000000002,
+        "p99_deadline_fraction": 7.2968283750000005,
+        "p99_ms": 19.458209
+      },
+      "warmup_audio_seconds": 0.248,
+      "waves": 4,
+      "version": "before",
+      "repeat": 0
+    },
+    {
+      "audio_seconds": 1.0,
+      "block": 128,
+      "mode": "sync",
+      "notes": 4,
+      "peak": 0.02730637975037098,
+      "sample_rate": 48000,
+      "scope": "Shared production Engine, four different complex tables, detune and Voice shift, both FM pairs or all four synced. Compilation excluded; thread CPU excludes descheduling, wall time includes contention.",
+      "thread_cpu": {
+        "max_ms": 17.320082999999986,
+        "p50_ms": 11.77700000000037,
+        "p95_ms": 15.765083000000235,
+        "p99_deadline_fraction": 6.063937500000116,
+        "p99_ms": 16.17050000000031
+      },
+      "unison": 4,
+      "wall": {
+        "max_ms": 20.080083,
+        "p50_ms": 11.985875,
+        "p95_ms": 16.137124999999997,
+        "p99_deadline_fraction": 6.7163122500000005,
+        "p99_ms": 17.910166
+      },
+      "warmup_audio_seconds": 0.248,
+      "waves": 4,
+      "version": "before",
+      "repeat": 1
+    },
+    {
+      "audio_seconds": 1.0,
+      "block": 128,
+      "mode": "sync",
+      "notes": 4,
+      "peak": 0.027306383475661278,
+      "sample_rate": 48000,
+      "scope": "Shared production Engine, four different complex tables, detune and Voice shift, both FM pairs or all four synced. Compilation excluded; thread CPU excludes descheduling, wall time includes contention.",
+      "thread_cpu": {
+        "max_ms": 3.0908750000000484,
+        "p50_ms": 2.775874999999983,
+        "p95_ms": 2.965042000000029,
+        "p99_deadline_fraction": 1.1456092499999988,
+        "p99_ms": 3.0549579999999965
+      },
+      "unison": 4,
+      "wall": {
+        "max_ms": 3.4417079999999998,
+        "p50_ms": 2.796125,
+        "p95_ms": 3.0586659999999997,
+        "p99_deadline_fraction": 1.2069375,
+        "p99_ms": 3.2185
+      },
+      "warmup_audio_seconds": 0.248,
+      "waves": 4,
+      "version": "after",
+      "repeat": 1
+    },
+    {
+      "audio_seconds": 1.0,
+      "block": 128,
+      "mode": "mixed",
+      "notes": 4,
+      "peak": 0.02035430632531643,
+      "sample_rate": 48000,
+      "scope": "Shared production Engine, four different complex tables, detune and Voice shift, both FM pairs or all four synced. Compilation excluded; thread CPU excludes descheduling, wall time includes contention.",
+      "thread_cpu": {
+        "max_ms": 9.643249999999881,
+        "p50_ms": 7.1980839999999935,
+        "p95_ms": 9.234500000000034,
+        "p99_deadline_fraction": 3.5371406250001014,
+        "p99_ms": 9.43237500000027
+      },
+      "unison": 2,
+      "wall": {
+        "max_ms": 11.92875,
+        "p50_ms": 7.3890839999999995,
+        "p95_ms": 9.587209,
+        "p99_deadline_fraction": 4.162718625,
+        "p99_ms": 11.100583
+      },
+      "warmup_audio_seconds": 0.248,
+      "waves": 4,
+      "version": "before",
+      "repeat": 0
+    },
+    {
+      "audio_seconds": 1.0,
+      "block": 128,
+      "mode": "mixed",
+      "notes": 4,
+      "peak": 0.02035430632531643,
+      "sample_rate": 48000,
+      "scope": "Shared production Engine, four different complex tables, detune and Voice shift, both FM pairs or all four synced. Compilation excluded; thread CPU excludes descheduling, wall time includes contention.",
+      "thread_cpu": {
+        "max_ms": 3.178416999999989,
+        "p50_ms": 2.323000000000075,
+        "p95_ms": 2.887167000000024,
+        "p99_deadline_fraction": 1.1243594999999842,
+        "p99_ms": 2.998291999999958
+      },
+      "unison": 2,
+      "wall": {
+        "max_ms": 3.364959,
+        "p50_ms": 2.352625,
+        "p95_ms": 2.926583,
+        "p99_deadline_fraction": 1.16585925,
+        "p99_ms": 3.1089580000000003
+      },
+      "warmup_audio_seconds": 0.248,
+      "waves": 4,
+      "version": "after",
+      "repeat": 0
+    },
+    {
+      "audio_seconds": 1.0,
+      "block": 128,
+      "mode": "mixed",
+      "notes": 4,
+      "peak": 0.02035430632531643,
+      "sample_rate": 48000,
+      "scope": "Shared production Engine, four different complex tables, detune and Voice shift, both FM pairs or all four synced. Compilation excluded; thread CPU excludes descheduling, wall time includes contention.",
+      "thread_cpu": {
+        "max_ms": 3.5737919999998535,
+        "p50_ms": 2.5302500000000117,
+        "p95_ms": 3.3763329999999536,
+        "p99_deadline_fraction": 1.3252031250000074,
+        "p99_ms": 3.5338750000000196
+      },
+      "unison": 2,
+      "wall": {
+        "max_ms": 3.729708,
+        "p50_ms": 2.549084,
+        "p95_ms": 3.44625,
+        "p99_deadline_fraction": 1.373328,
+        "p99_ms": 3.662208
+      },
+      "warmup_audio_seconds": 0.248,
+      "waves": 4,
+      "version": "after",
+      "repeat": 1
+    },
+    {
+      "audio_seconds": 1.0,
+      "block": 128,
+      "mode": "mixed",
+      "notes": 4,
+      "peak": 0.02035430632531643,
+      "sample_rate": 48000,
+      "scope": "Shared production Engine, four different complex tables, detune and Voice shift, both FM pairs or all four synced. Compilation excluded; thread CPU excludes descheduling, wall time includes contention.",
+      "thread_cpu": {
+        "max_ms": 9.4547920000001,
+        "p50_ms": 6.895832999999962,
+        "p95_ms": 8.941708000000048,
+        "p99_deadline_fraction": 3.457234500000017,
+        "p99_ms": 9.219292000000046
+      },
+      "unison": 2,
+      "wall": {
+        "max_ms": 9.996375,
+        "p50_ms": 6.998,
+        "p95_ms": 9.083499999999999,
+        "p99_deadline_fraction": 3.59757825,
+        "p99_ms": 9.593542
+      },
+      "warmup_audio_seconds": 0.248,
+      "waves": 4,
+      "version": "before",
+      "repeat": 1
+    }
+  ],
+  "routed": [
+    {
+      "audio_seconds": 1.0,
+      "block": 128,
+      "mode": "routed-mixed",
+      "notes": 4,
+      "peak": 0.012289486825466156,
+      "sample_rate": 48000,
+      "scope": "Shared production Engine, four different complex tables, detune and Voice shift, both FM pairs or all four synced. Compilation excluded; thread CPU excludes descheduling, wall time includes contention.",
+      "thread_cpu": {
+        "max_ms": 2.5940420000000186,
+        "p50_ms": 2.0740419999999427,
+        "p95_ms": 2.220624999999976,
+        "p99_deadline_fraction": 0.876468749999984,
+        "p99_ms": 2.3372499999999574
+      },
+      "unison": 2,
+      "wall": {
+        "max_ms": 2.820875,
+        "p50_ms": 2.0869999999999997,
+        "p95_ms": 2.2905830000000003,
+        "p99_deadline_fraction": 0.9383752500000001,
+        "p99_ms": 2.5023340000000003
+      },
+      "warmup_audio_seconds": 0.248,
+      "waves": 4
+    }
+  ]
+}

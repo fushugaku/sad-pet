@@ -433,6 +433,8 @@ pub struct Lfo {
     /// depth. `lfo_seconds` maps them.
     pub delay: f32,
     pub fade: f32,
+    /// Per-note consumers use their own phase; common Rack controls remain mono.
+    pub poly: bool,
 }
 impl Default for Lfo {
     fn default() -> Self {
@@ -455,6 +457,7 @@ impl Default for Lfo {
             one_shot: false,
             delay: 0.0,
             fade: 0.0,
+            poly: false,
         }
     }
 }
@@ -553,6 +556,8 @@ pub struct Env {
     /// Route 3; routes 1 and 2 are `destination` and `extra_destination`.
     pub destination3: Destination,
     pub depth3: f32,
+    #[serde(skip_serializing_if = "crate::envelope::Wave::is_default")]
+    pub wave: crate::envelope::Wave,
 }
 impl Default for Env {
     fn default() -> Self {
@@ -573,6 +578,7 @@ impl Default for Env {
             curve: 1,
             destination3: Destination::None,
             depth3: 0.0,
+            wave: crate::envelope::Wave::default(),
         }
     }
 }
@@ -617,6 +623,7 @@ impl Env {
         finite_clamp(&mut self.decay2, 0.0, 1.0, fallback.decay2);
         finite_clamp(&mut self.sustain2, 0.0, 1.0, fallback.sustain2);
         self.curve = self.curve.min(7);
+        self.wave.sanitize();
     }
 }
 fn default_envs() -> [Env; crate::preset::MODULATORS] {
@@ -860,6 +867,14 @@ pub struct Preset {
     #[serde(skip)]
     pub synth_runtime: crate::dsp::synth::Prepared,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub wavetable: Option<Box<crate::wavetable::Settings>>,
+    #[serde(skip)]
+    pub wavetable_runtime: crate::dsp::wavetable::Prepared,
+    /// A control owner's canonical assets; portable host formats store their
+    /// deduplicated manifest separately from numeric preset settings.
+    #[serde(skip)]
+    pub wavetable_pool: crate::wavetable::assets::Pool,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tb303: Option<Box<crate::tb303::Settings>>,
     #[serde(skip)]
     pub tb303_runtime: crate::tb303::Prepared,
@@ -922,6 +937,9 @@ impl Default for Preset {
             drum_runtime: Default::default(),
             synth: None,
             synth_runtime: Default::default(),
+            wavetable: None,
+            wavetable_runtime: Default::default(),
+            wavetable_pool: Default::default(),
             tb303: None,
             tb303_runtime: Default::default(),
             bus: None,
@@ -965,6 +983,7 @@ impl<'de> Deserialize<'de> for Preset {
             grain_groups: crate::grain_groups::Settings,
             drums: Option<Box<crate::drums::Settings>>,
             synth: Option<Box<crate::synth::Settings>>,
+            wavetable: Option<Box<crate::wavetable::Settings>>,
             tb303: Option<Box<crate::tb303::Settings>>,
             bus: Option<Box<crate::bus::Settings>>,
             vocal: Option<Box<crate::vocal::Settings>>,
@@ -996,6 +1015,7 @@ impl<'de> Deserialize<'de> for Preset {
                     grain_groups: Default::default(),
                     drums: None,
                     synth: None,
+                    wavetable: None,
                     tb303: None,
                     bus: None,
                     vocal: None,
@@ -1141,6 +1161,9 @@ impl<'de> Deserialize<'de> for Preset {
             drum_runtime: Default::default(),
             synth: d.synth,
             synth_runtime: Default::default(),
+            wavetable: d.wavetable,
+            wavetable_runtime: Default::default(),
+            wavetable_pool: Default::default(),
             tb303: d.tb303,
             tb303_runtime: Default::default(),
             bus: d.bus,
@@ -1170,6 +1193,11 @@ impl Preset {
     pub fn prepared_clone_for(&self, rate: u32) -> Self {
         let mut preset = self.clone();
         preset.sanitize();
+        let _ = preset.wavetable_runtime.prepare(
+            preset.wavetable.as_deref(),
+            &preset.wavetable_pool,
+            rate,
+        );
         preset.tb303_runtime.prepare(preset.tb303.as_deref(), rate);
         preset.prepare_effects(rate);
         if preset.rack.is_some() {
@@ -1348,7 +1376,15 @@ impl Preset {
             } else {
                 self.synth = None;
             }
+            if rack.has(crate::rack::Module::Wavetable) {
+                self.wavetable
+                    .get_or_insert_with(Default::default)
+                    .sanitize();
+            } else {
+                self.wavetable = None;
+            }
         } else {
+            self.wavetable = None;
             self.sanitize_engine();
         }
         self.sequencer.sanitize();

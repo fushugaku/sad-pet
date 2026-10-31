@@ -82,7 +82,7 @@ const size = core.snapshot(packet);
 assert.ok(size > 0);
 const decoded = utility.json("sad_snapshot_import", packet.slice(0, size));
 assert.equal(decoded.state.preset.rack.modules.length, 4);
-assert.equal(decoded.state.rack_peaks.length, 6);
+assert.equal(decoded.state.rack_peaks.length, 7);
 assert.equal(decoded.state.sample_name, "Rack");
 
 // Scenes keep the Rack.
@@ -230,7 +230,7 @@ assert.deepEqual(steps.map((s) => s.mixed), [true, false, true, false]);
   core.request("/api/note", { kind: "note_on", channel: 0, note: 36, velocity: 127 });
   assert.ok(peak(0.2) > 0.05, "a note plays the Rack's pad");
   let state = core.request("/api/state");
-  assert.equal(state.rack_peaks.length, 6);
+  assert.equal(state.rack_peaks.length, 7);
   assert.ok(state.rack_peaks[3] > 0.05 && state.rack_peaks[1] < 1e-6, JSON.stringify(state.rack_peaks));
   core.request("/api/note", { kind: "note_off", channel: 0, note: 36, velocity: 0 });
   peak(0.5);

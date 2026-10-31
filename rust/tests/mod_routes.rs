@@ -240,7 +240,7 @@ fn new_host_parameters_append_after_every_released_id() {
     let specs = parameters::specs();
     let last_tap = specs
         .iter()
-        .rposition(|s| s.id.starts_with("tap_"))
+        .position(|s| s.id == "tap_post_fx_bus")
         .unwrap();
     assert_eq!(specs[last_tap + 1].id, "lfo1_depth2");
     assert_eq!(specs[last_tap + 2].id, "lfo1_depth3");

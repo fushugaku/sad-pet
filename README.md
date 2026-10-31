@@ -188,8 +188,8 @@ with different per-timbre BPM values use the first timbre's tempo on recall.
   modules in any order: **+ Timbre → Rack**. Sound runs from the top module down.
   Sources — **Sample** (the loaded file), **Synth** (up to four oscillators per
   note), **Drums** (the drum machine with its own pattern), **Sampler** (a kit
-  of pads, as a Sampler timbre has) and **Vocal** (a sung score, as a Vocal
-  timbre has) — each start a chain of their own, and the modules under a source
+  of pads, as a Sampler timbre has), **Vocal** (a sung score, as a Vocal
+  timbre has) and **Wavetable** — each start a chain of their own, and the modules under a source
   process its chain:
   **Grain engine**, **Filters**, **Resynth**, **Insert FX** (one effect) and the
   effect racks **FX A** and **FX B**. Chains meet in the **Mixer**, a strip per
@@ -203,7 +203,7 @@ with different per-timbre BPM values use the first timbre's tempo on recall.
   between two modules adds one there. A Grain engine right under the Sample
   granulates the file note by note, as a Granular timbre does; anywhere else it
   granulates a live history of its chain (**Buffer** up to 32 s). Filters right
-  under a Synth or Sample run per note before the notes' VCA, as in those
+  under a Synth, Wavetable or Sample run per note before the notes' VCA, as in those
   timbres; elsewhere they filter the chain. Notes play the Synth, the Sample and
   the Sampler's pads by key together, and so does the sustain pedal; a pad
   track plays only its pad. The Drums play their pattern, and the Vocal sings
@@ -222,6 +222,50 @@ with different per-timbre BPM values use the first timbre's tempo on recall.
   too, with the DAW's transport or the app's own. The Sampler module's kit
   plays there as well; the app plays the kits of its scenes but edits none
   (see Sampler timbres).
+- **Wavetable** adds 1–4 independent waves A–D to one Rack source.
+  **+ Timbre → Wavetable** starts with A; **+ Wave** adds B, C and D, each
+  with its own table, Position, transpose/fine, level/pan, phase and 1–8-voice
+  unison. Remove a wave with its × button; the last wave stays.
+  **Voice shift** sets the Position step between neighbouring unison voices,
+  centred around the main Position: three voices at 50% with Shift 20% read
+  30%, 50% and 70%. Negative values reverse the order; one voice stays unchanged.
+  Zero preserves the original sound. Each voice's Step scanning stays discrete.
+  Phones show one wave at a time with A–D tabs. The source ships with **96 original tables
+  in 13 packs** and **80 instrument presets** in Instruments → Wavetable.
+  Position ENV selects an existing envelope independently for each note;
+  the shared LFOs, matrix, macros, MIDI learn and Neuropolis work with
+  all four waves. Import prepared mono/stereo WAV tables (16 MiB, 1–256 frames)
+  with an explicit frame size and stereo channel when needed. Preview before
+  applying, export the table as WAV, or save the Rack as a portable `.sadinst`.
+  Scenes and DAW state embed referenced user tables; factory packs are built in.
+  **Surf** moves all four Positions with signed per-wave depths. **XY mix**
+  blends their levels at corners A/B/C/D. Each wave's **Motion** section adds
+  Smooth/Step frame scanning, Key → Waves, retrigger/free phase and a local
+  Position LFO; the shared LFO's **Voice phase → Poly** gives notes independent
+  motion. Shared **ENV → Wave · 6 points** supports curved segments, seconds
+  or beats, a held loop and release; Copy assigns fresh envelopes to chosen waves.
+  **FM / Sync** gives every A–D wave independent FM/PM and sync sources A–D,
+  including self-FM and reciprocal connections. Existing B→A / D→C patches
+  retain their original path. The WASM SIMD build batches U4 lanes, phases,
+  operator filters and table reads inside Rack. Prepared reads and SIMD filtering
+  reduce CPU while retaining 8× FM/PM and 32× sync; see the
+  [before/after measurements and sound checks](docs/WAVETABLE_OPTIMIZATION.md).
+  **Wave Maker** builds tables from a WAV or two seconds of the scene output.
+  Spectral snapshots create periodic textures; Pitch cycles extracts pitched
+  periods with optional root-note guidance. **Edit table** reorders, duplicates,
+  trims and aligns frames, changes each frame's phase/first 16 harmonics, and
+  applies offline bit/phase/spectral Character. Preview, Apply and Cancel keep
+  the current table until a result is committed. Edited tables have new identities.
+  **Filters → Tone** applies six recipes using the existing filter models.
+  Timbres' **MIDI range** sets key and velocity splits for incoming MIDI;
+  the on-screen keyboard auditions the active part. **Motion patterns** saves
+  Neuropolis programs with the instrument (up to 16); eight factory motions
+  provide Surf, XY and filter movement. MPE is outside this implementation.
+  [Requirements and release plan](docs/WAVETABLE_PRD.md),
+  [research](docs/WAVETABLE_RESEARCH.md),
+  [implementation and measured limits](docs/WAVETABLE_IMPLEMENTATION.md),
+  [3rd Wave feature study and complex packs](docs/WAVETABLE_THIRD_WAVE.md),
+  [Third Wave implementation, usage and release gates](docs/WAVETABLE_THIRD_WAVE_IMPLEMENTATION.md).
 - **Bus and Master** (browser and DAW plug-ins). Every scene has one **Master**
   tab that sums all timbres and buses into the output; add up to eight **Bus**
   timbres with **+ Timbre**. The tabs list the instruments on one row and the

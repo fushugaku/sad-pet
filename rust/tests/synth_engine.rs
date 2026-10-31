@@ -333,15 +333,16 @@ fn synth_controls_append_after_every_other_host_parameter() {
     // Then L/C/R Converge and Reverse of every FX, Pre FX and Source FX
     // slot, then each grain group's drive and waveshaper, then its stage
     // order.
-    assert_eq!(later.len(), colors + (2 * 12 + 1) * 2 + 4 * 3 + 4);
+    let released_end = colors + (2 * 12 + 1) * 2 + 4 * 3 + 4;
+    assert!(later.len() >= released_end);
     assert_eq!(
         later[colors..colors + 3],
         ["fx1_lcr_converge", "fx1_lcr_reverse", "fx2_lcr_converge"]
     );
     assert_eq!(later[colors + 12 * 2], "pre_fx1_lcr_converge");
-    assert_eq!(later[later.len() - 4 * 4 - 1], "source_fx1_lcr_reverse");
-    assert_eq!(later[later.len() - 4 * 4], "grain_group1_drive");
-    assert_eq!(later[later.len() - 4], "grain_group1_order");
+    assert_eq!(later[released_end - 4 * 4 - 1], "source_fx1_lcr_reverse");
+    assert_eq!(later[released_end - 4 * 4], "grain_group1_drive");
+    assert_eq!(later[released_end - 4], "grain_group1_order");
 }
 
 #[test]

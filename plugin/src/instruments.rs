@@ -36,6 +36,8 @@ struct Record {
     modified_at: u64,
     #[serde(default = "gzip")]
     codec: String,
+    #[serde(default)]
+    factory: bool,
 }
 fn gzip() -> String {
     "gzip".into()
@@ -130,6 +132,7 @@ fn check(state: &mut SavedState) -> Result<(Kind, SampleBuffer), String> {
         return Err(WRONG_FILE.into());
     }
     state.preset.sanitize();
+    state.bind_wavetables()?;
     let kind = Kind::of(&state.preset);
     if kind.routing() {
         return Err(WRONG_FILE.into());
@@ -159,11 +162,14 @@ impl Controller {
     }
     /// Every instrument, by category and then name.
     fn instruments(&self) -> Result<Vec<Record>, String> {
+        let mut records: Vec<Record> = sad_pet::wavetable::presets::INSTRUMENTS
+            .iter()
+            .map(|p| serde_json::from_value(p.record()).unwrap())
+            .collect();
         let root = self.instrument_root()?;
         if !root.exists() {
-            return Ok(Vec::new());
+            return Ok(records);
         }
-        let mut records = Vec::new();
         for entry in
             fs::read_dir(root).map_err(|e| format!("Cannot open the instrument library: {e}"))?
         {
@@ -188,6 +194,13 @@ impl Controller {
         Ok(records)
     }
     fn instrument_bytes(&self, id: &str) -> Result<Vec<u8>, String> {
+        if let Some(factory) = sad_pet::wavetable::presets::find(id) {
+            let record: Record =
+                serde_json::from_value(factory.record()).map_err(|e| e.to_string())?;
+            let state: SavedState =
+                serde_json::from_value(factory.document()?).map_err(|e| e.to_string())?;
+            return encode(&record, &state);
+        }
         let file = File::open(self.instrument_path(id)?)
             .map_err(|_| "This instrument is no longer in the library.")?;
         let mut bytes = Vec::new();
@@ -207,7 +220,10 @@ impl Controller {
     /// Names are unique within a category.
     fn check_free(records: &[Record], record: &Record) -> Result<(), String> {
         if records.iter().any(|r| {
-            r.id != record.id && same(&r.category, &record.category) && same(&r.name, &record.name)
+            !r.factory
+                && r.id != record.id
+                && same(&r.category, &record.category)
+                && same(&r.name, &record.name)
         }) {
             return Err(if record.category.is_empty() {
                 format!("An instrument named “{}” already exists.", record.name)
@@ -247,6 +263,10 @@ impl Controller {
             ..Meta::default()
         };
         state.timbres.clear();
+        state.wavetable_assets = state
+            .preset
+            .wavetable_pool
+            .manifest(state.preset.wavetable.as_deref())?;
         state.active_timbre = 0;
         state.source = Source::File;
         state.sync = true;
@@ -372,6 +392,17 @@ impl Controller {
                 .filter(|id| valid_id(id))
                 .ok_or("Choose an instrument preset.")
         };
+        if post
+            && matches!(
+                path,
+                "/api/instruments/edit" | "/api/instruments/delete" | "/api/instruments/save"
+            )
+            && data["id"]
+                .as_str()
+                .is_some_and(|id| sad_pet::wavetable::presets::find(id).is_some())
+        {
+            return Err("Save factory instruments as a new preset".into());
+        }
         match (path, post) {
             ("/api/instruments", false) => Ok(json!(self.instruments()?)),
             ("/api/instruments/save", true) => {
@@ -394,6 +425,7 @@ impl Controller {
                     created_at: existing.map_or_else(timestamp, |r| r.created_at),
                     modified_at: timestamp(),
                     codec: gzip(),
+                    factory: false,
                 };
                 Self::check_free(&records, &record)?;
                 self.write_instrument(&encode(&record, &state)?, &record.id)?;
@@ -428,7 +460,10 @@ impl Controller {
                 let from = data["from"].as_str().ok_or("Choose a category.")?;
                 let to = category(data["to"].as_str().unwrap_or(""))?;
                 let records = self.instruments()?;
-                let moving: Vec<&Record> = records.iter().filter(|r| r.category == from).collect();
+                let moving: Vec<&Record> = records
+                    .iter()
+                    .filter(|r| !r.factory && r.category == from)
+                    .collect();
                 let staying: Vec<Record> = records
                     .iter()
                     .filter(|r| r.category != from)
@@ -499,6 +534,7 @@ impl Controller {
                 let records = self.instruments()?;
                 // A copy of its own, under a name free in its category.
                 record.id = unique_id();
+                record.factory = false;
                 record.kind = kind;
                 record.created_at = timestamp();
                 record.modified_at = record.created_at;

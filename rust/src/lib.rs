@@ -2,12 +2,15 @@
 #[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
 pub mod audio;
 pub mod bus;
+pub mod capture;
 pub mod clock;
 pub mod color;
 pub mod drums;
 pub mod dsp;
 pub mod effect_presets;
+pub mod envelope;
 pub mod eq;
+pub mod filter_presets;
 pub mod firmware;
 pub mod grain_groups;
 pub mod imported_fx;
@@ -35,5 +38,6 @@ pub mod tb303;
 pub mod timbres;
 pub mod vocal;
 pub mod wav;
+pub mod wavetable;
 
 pub type Stereo = [f32; 2];

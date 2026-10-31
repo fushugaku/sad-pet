@@ -1,0 +1,72 @@
+{
+  "date": "2026-10-30T23:52:34.211669+00:00",
+  "git_head": "456c7c5d167128d7a7efb018d651c29082ea6acb",
+  "scope": "Local alpha, all 15 non-MPE Third Wave adaptations plus Unison Voice shift; no production publication",
+  "core_lib_tests": 174,
+  "wavetable_integration_tests": 16,
+  "native_plugin_tests": 60,
+  "cpp_host_tests": 2,
+  "clippy_wasm_warnings_as_errors": "passed (dependency warnings excluded by cargo dependency lint caps)",
+  "host_parameters": 4566,
+  "preserved_prefix": 4330,
+  "wasm_modules": {
+    "sad_pet.wasm": {
+      "bytes": 49161295,
+      "sha256": "b000d54d14dbf226b753a763991f70b683ab89c7b84adbcfcacca8af20d4c755"
+    },
+    "sad_pet.simd.wasm": {
+      "bytes": 49243343,
+      "sha256": "c5b669f5160816fb0a39d00ddc03958d5017a183b1d9af7feec73e0f9775188c"
+    }
+  },
+  "wasm_integration": "Real cache-only staging, 4 waves, new modulation/interactions, 32 KiB capture, Maker/editor, splits and portable motion/Voice shift recall passed",
+  "base_wasm_parity": {
+    "scope": "Four waves, shipping WASM scalar/SIMD, sample-timed notes/bend/controls; excludes native backend",
+    "comparisons": 24,
+    "passed": true,
+    "scalar_max_abs": 0,
+    "simd_max_abs": 0
+  },
+  "thirdwave_wasm_parity": {
+    "scope": "Four waves with Voice shift, Wave ENV, poly LFO, Surf/Step/Keys/XY, FM→PM→sync; shipping WASM scalar/SIMD and host blocks, excludes native backend",
+    "comparisons": 3,
+    "passed": true,
+    "scalar_max_abs": 0,
+    "simd_max_abs": 0
+  },
+  "ui_tests": [
+    "filters (LazySelect group contract / Tone apply)",
+    "Neuropolis including first motion save, update and Undo",
+    "LFO",
+    "MIDI learn",
+    "controls"
+  ],
+  "browser": {
+    "fresh_startup_label_exception": "fixed and verified",
+    "filters": "Silk applies serial routing and Ladder LP24",
+    "capture": "2 s output -> 16 frames -> Apply",
+    "frame_editor": "duplicate/move/phase/trim 17 to 6 frames, local harmonic and Character edits, Apply; Cancel preserves old asset",
+    "env_copy": "Wave ENV 2 beats/loop -> fresh ENV 4..7 for A..D",
+    "motion": "Factory apply, first user save survives state polling, Undo restores",
+    "unison": "3 voices, Voice shift +20% on A, negative shift and N=1 covered by Fourier/core tests",
+    "desktop_document_width": 1273,
+    "desktop_document_scroll_width": 1273,
+    "mobile_iframe_width": 390,
+    "mobile_document_width": 390,
+    "mobile_document_scroll_width": 390,
+    "mobile_editor_width": 365,
+    "mobile_editor_scroll_width": 365,
+    "proof": [
+      "startup-fixed.jpg",
+      "thirdwave-capture.jpg",
+      "thirdwave-editor-desktop.jpg",
+      "thirdwave-voice-shift-mobile.jpg",
+      "thirdwave-editor-mobile.jpg"
+    ]
+  },
+  "release_limits": [
+    "CPU profiles include other local workload; no isolated device/DAW capacity claim",
+    "FM/sync high polyphony/unison can miss audio deadlines",
+    "Total peak memory, dynamic oracle, native/WASM corpus, physical mobile/Windows/third-party DAW and long host stress remain beta/stable gates"
+  ]
+}

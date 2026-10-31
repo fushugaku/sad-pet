@@ -159,6 +159,13 @@ fn handle(
                     include_bytes!("../web/tb303.js").to_vec(),
                     "application/javascript",
                 )),
+                "/wavetable.js" => Ok((
+                    include_bytes!("../web/wavetable.js").to_vec(),
+                    "application/javascript",
+                )),
+                "/wavetable.css" => {
+                    Ok((include_bytes!("../web/wavetable.css").to_vec(), "text/css"))
+                }
                 "/rack.js" => Ok((
                     include_bytes!("../web/rack.js").to_vec(),
                     "application/javascript",

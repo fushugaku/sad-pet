@@ -1,0 +1,187 @@
+{
+  "scope": "Supplement: four notes \u00d7 four complex waves \u00d7 U2, both legacy FM pairs plus all sync. Sequential AB/BA, two runs of one audio second with 250 ms warmup; same CPU method as main report. Routed result is after only, all four operators with feedback and an independent sync ring.",
+  "sample_rate": 48000,
+  "block": 128,
+  "unison": 2,
+  "notes": 4,
+  "waves": 4,
+  "deadline_ms": 2.6666666666666665,
+  "summary": {
+    "before": {
+      "thread_cpu": {
+        "max_ms": 5.47418749999995,
+        "p50_ms": 3.9103544999999906,
+        "p95_ms": 4.701896000000039,
+        "p99_deadline_fraction": 1.9256874375000037,
+        "p99_ms": 5.13516650000001
+      },
+      "wall": {
+        "max_ms": 7.790417000000001,
+        "p50_ms": 3.988396,
+        "p95_ms": 4.8418125,
+        "p99_deadline_fraction": 2.0776719375,
+        "p99_ms": 5.5404585
+      }
+    },
+    "after": {
+      "thread_cpu": {
+        "max_ms": 2.478958000000031,
+        "p50_ms": 1.7873959999999967,
+        "p95_ms": 2.035979000000021,
+        "p99_deadline_fraction": 0.8080389375000052,
+        "p99_ms": 2.154770500000014
+      },
+      "wall": {
+        "max_ms": 2.8158955,
+        "p50_ms": 1.8485205,
+        "p95_ms": 2.198354,
+        "p99_deadline_fraction": 0.9410154374999999,
+        "p99_ms": 2.5093745
+      }
+    }
+  },
+  "runs": [
+    {
+      "audio_seconds": 1.0,
+      "block": 128,
+      "mode": "mixed",
+      "notes": 4,
+      "peak": 0.02035430632531643,
+      "sample_rate": 48000,
+      "scope": "Shared production Engine, four different complex tables, detune and Voice shift, both FM pairs or all four synced. Compilation excluded; thread CPU excludes descheduling, wall time includes contention.",
+      "thread_cpu": {
+        "max_ms": 5.5594170000001775,
+        "p50_ms": 3.898667000000078,
+        "p95_ms": 4.662959000000022,
+        "p99_deadline_fraction": 1.9537031250000114,
+        "p99_ms": 5.2098750000000305
+      },
+      "unison": 2,
+      "wall": {
+        "max_ms": 6.51825,
+        "p50_ms": 3.975333,
+        "p95_ms": 4.8515,
+        "p99_deadline_fraction": 2.171406375,
+        "p99_ms": 5.790417
+      },
+      "warmup_audio_seconds": 0.248,
+      "waves": 4,
+      "version": "before",
+      "repeat": 0
+    },
+    {
+      "audio_seconds": 1.0,
+      "block": 128,
+      "mode": "mixed",
+      "notes": 4,
+      "peak": 0.02035430632531643,
+      "sample_rate": 48000,
+      "scope": "Shared production Engine, four different complex tables, detune and Voice shift, both FM pairs or all four synced. Compilation excluded; thread CPU excludes descheduling, wall time includes contention.",
+      "thread_cpu": {
+        "max_ms": 2.160708000000011,
+        "p50_ms": 1.8644999999999912,
+        "p95_ms": 2.028083000000014,
+        "p99_deadline_fraction": 0.7832966250000128,
+        "p99_ms": 2.0887910000000343
+      },
+      "unison": 2,
+      "wall": {
+        "max_ms": 2.418375,
+        "p50_ms": 1.925333,
+        "p95_ms": 2.195375,
+        "p99_deadline_fraction": 0.883421625,
+        "p99_ms": 2.355791
+      },
+      "warmup_audio_seconds": 0.248,
+      "waves": 4,
+      "version": "after",
+      "repeat": 0
+    },
+    {
+      "audio_seconds": 1.0,
+      "block": 128,
+      "mode": "mixed",
+      "notes": 4,
+      "peak": 0.02035430632531643,
+      "sample_rate": 48000,
+      "scope": "Shared production Engine, four different complex tables, detune and Voice shift, both FM pairs or all four synced. Compilation excluded; thread CPU excludes descheduling, wall time includes contention.",
+      "thread_cpu": {
+        "max_ms": 2.797208000000051,
+        "p50_ms": 1.7102920000000021,
+        "p95_ms": 2.0438750000000283,
+        "p99_deadline_fraction": 0.8327812499999976,
+        "p99_ms": 2.2207499999999936
+      },
+      "unison": 2,
+      "wall": {
+        "max_ms": 3.213416,
+        "p50_ms": 1.771708,
+        "p95_ms": 2.201333,
+        "p99_deadline_fraction": 0.99860925,
+        "p99_ms": 2.662958
+      },
+      "warmup_audio_seconds": 0.248,
+      "waves": 4,
+      "version": "after",
+      "repeat": 1
+    },
+    {
+      "audio_seconds": 1.0,
+      "block": 128,
+      "mode": "mixed",
+      "notes": 4,
+      "peak": 0.02035430632531643,
+      "sample_rate": 48000,
+      "scope": "Shared production Engine, four different complex tables, detune and Voice shift, both FM pairs or all four synced. Compilation excluded; thread CPU excludes descheduling, wall time includes contention.",
+      "thread_cpu": {
+        "max_ms": 5.388957999999722,
+        "p50_ms": 3.9220419999999034,
+        "p95_ms": 4.740833000000055,
+        "p99_deadline_fraction": 1.8976717499999962,
+        "p99_ms": 5.06045799999999
+      },
+      "unison": 2,
+      "wall": {
+        "max_ms": 9.062584000000001,
+        "p50_ms": 4.001459,
+        "p95_ms": 4.832125,
+        "p99_deadline_fraction": 1.9839375000000001,
+        "p99_ms": 5.2905
+      },
+      "warmup_audio_seconds": 0.248,
+      "waves": 4,
+      "version": "before",
+      "repeat": 1
+    }
+  ],
+  "routed_after": {
+    "audio_seconds": 1.5,
+    "block": 128,
+    "mode": "routed-mixed",
+    "notes": 4,
+    "peak": 0.009946453385055065,
+    "sample_rate": 48000,
+    "scope": "Shared production Engine, four different complex tables, detune and Voice shift, both FM pairs or all four synced. Compilation excluded; thread CPU excludes descheduling, wall time includes contention.",
+    "thread_cpu": {
+      "max_ms": 2.2464589999999784,
+      "p50_ms": 1.4526669999999076,
+      "p95_ms": 1.8155829999999817,
+      "p99_deadline_fraction": 0.7472658750000138,
+      "p99_ms": 1.992709000000037
+    },
+    "unison": 2,
+    "wall": {
+      "max_ms": 2.246292,
+      "p50_ms": 1.4714159999999998,
+      "p95_ms": 1.8428330000000002,
+      "p99_deadline_fraction": 0.7641405,
+      "p99_ms": 2.037708
+    },
+    "warmup_audio_seconds": 0.248,
+    "waves": 4
+  },
+  "binaries": {
+    "before": "f17b6eece30872caa11cc259508c6ee03b329e2fa905f7a45044c1f005468e0e",
+    "after": "95d537f7fffc664d3856e5d8a719285e60e176da9a104cebdd009b7727d2f0a0"
+  }
+}

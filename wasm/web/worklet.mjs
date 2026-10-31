@@ -4,6 +4,7 @@ class SadPetProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
     this.core = new Core(options.processorOptions.module, sampleRate);
+    this.core.wasm.sad_wavetable_realtime_init();
     this.outputLatency = this.core.wasm.sad_output_latency(sampleRate);
     this.telemetryFrames = 0;
     this.stateStamp = 0;
@@ -46,6 +47,7 @@ class SadPetProcessor extends AudioWorkletProcessor {
       }
       if (type === "prepare-idle") {
         while (this.preparingTimbre) this.advanceTimbre();
+        while (this.wavetableTransfer) this.advanceWavetable();
         return;
       }
       if (type === "snapshot-now") {
@@ -72,6 +74,22 @@ class SadPetProcessor extends AudioWorkletProcessor {
       }
       try {
         let result;
+        if (type === "wavetable-prune") {
+          this.core.wasm.sad_wavetable_prune();
+          result = true;
+        } else if (type === "wavetable-commit") {
+          result = this.core.json("sad_wavetable_stage_finish");
+        } else if (type === "wavetable-stage") {
+          if (this.wavetableTransfer) throw new Error("A wavetable transfer is already pending.");
+          result = this.core.json("sad_wavetable_stage_begin", data.header);
+          if (result.cached) {
+            this.port.postMessage({ id, result });
+          } else {
+            this.wavetableTransfer = {id,bytes:new Uint8Array(data.prepared,data.offset),offset:0};
+            if (data.idle) while (this.wavetableTransfer) this.advanceWavetable();
+          }
+          return;
+        }
         if (type === "scene-load" || (type === "request" && message.path === "/api/timbres/reset"))
           this.cancelTimbre("Timbre preparation cancelled by a scene change.");
         if (type === "add-timbre") {
@@ -81,7 +99,8 @@ class SadPetProcessor extends AudioWorkletProcessor {
           if (data.idle) while (this.preparingTimbre) this.advanceTimbre();
           return;
         }
-        if (type === "scene-pack") result = this.core.call("sad_scene_pack");
+        if (type === "wavetable-prune" || type === "wavetable-commit") {}
+        else if (type === "scene-pack") result = this.core.call("sad_scene_pack");
         else if (type === "scene-load")
           result = this.core.json("sad_scene_load", data);
         else if (type === "instrument-load") {
@@ -150,6 +169,10 @@ class SadPetProcessor extends AudioWorkletProcessor {
         } else if (type === "sampler-sample") {
           // A prepared sample joins the pool of one Sampler timbre.
           result = this.core.prefixedJson("sad_sampler_sample", data.id, data.prepared, data.part);
+        } else if (type === "capture-chunk") {
+          const length=this.core.wasm.sad_capture_chunk(data.generation,data.offset);
+          if(length<0)throw new Error("Capture changed or is not ready.");
+          result=new Uint8Array(this.core.wasm.memory.buffer,this.core.wasm.sad_wavetable_upload(),length).slice().buffer;
         } else if (type === "capture-input")
           result = this.core.call("sad_input_wav");
         else if (type === "record-start") {
@@ -234,6 +257,22 @@ class SadPetProcessor extends AudioWorkletProcessor {
       this.port.postMessage({ id: pending.id, error: error.message });
     }
   }
+  advanceWavetable() {
+    const stage = this.wavetableTransfer;
+    if (!stage) return;
+    const count = Math.min(32768, stage.bytes.length - stage.offset);
+    const wasm = this.core.wasm;
+    new Uint8Array(wasm.memory.buffer, wasm.sad_wavetable_upload(), count)
+      .set(stage.bytes.subarray(stage.offset, stage.offset + count));
+    const status = wasm.sad_wavetable_stage_chunk(count);
+    stage.offset += count;
+    if (status !== 0) {
+      this.wavetableTransfer = null;
+      this.port.postMessage(status === 1
+        ? {id:stage.id,result:{cached:false}}
+        : {id:stage.id,error:"The wavetable transfer was rejected; the current sound was kept."});
+    }
+  }
   cancelTimbre(reason) {
     if (!this.preparingTimbre) return;
     const { id } = this.preparingTimbre;
@@ -306,6 +345,7 @@ class SadPetProcessor extends AudioWorkletProcessor {
       const channels = outputs[0];
       if (!channels?.length) return true;
       const count = channels[0].length;
+      this.advanceWavetable();
       if (this.sourceTransfer) {
         const stage = this.sourceTransfer;
         const previous =

@@ -1,0 +1,1046 @@
+{
+  "version": 1,
+  "frame_size": 2048,
+  "author": "SAD PET",
+  "provenance": "Original procedural waves; no third-party recordings or wavetable data",
+  "packs": [
+    {
+      "id": "analog",
+      "name": "Analog Motion",
+      "tables": [
+        {
+          "id": "factory:wt-basic-morph:v1",
+          "name": "Basic Morph",
+          "recipe": "morph",
+          "seed": 1465122816,
+          "frames": 64,
+          "content_hash": "9dfd397387827d60871f84c0717af42e9f572337a22d1f45109795c4ae6cbd72",
+          "file": "basic-morph.pcm.gz",
+          "packed_bytes": 192949
+        },
+        {
+          "id": "factory:wt-pulse-width:v1",
+          "name": "Pulse Width",
+          "recipe": "pulse",
+          "seed": 1465122817,
+          "frames": 64,
+          "content_hash": "60ebed7236c32cba8c7475448036f5366eb6a8a9c13942e0c963366da6dbbb80",
+          "file": "pulse-width.pcm.gz",
+          "packed_bytes": 59978
+        },
+        {
+          "id": "factory:wt-triangle-bloom:v1",
+          "name": "Triangle Bloom",
+          "recipe": "triangle",
+          "seed": 1465122818,
+          "frames": 64,
+          "content_hash": "9af64038e429017c67280684f8d1e400a7b549cfa9f6478efbd27fafa5ee736e",
+          "file": "triangle-bloom.pcm.gz",
+          "packed_bytes": 253927
+        },
+        {
+          "id": "factory:wt-saw-brass:v1",
+          "name": "Saw Brass",
+          "recipe": "brass",
+          "seed": 1465122819,
+          "frames": 64,
+          "content_hash": "4d97d8d1adafe3af88860f7e311782b1ea3ee9e302e3839dbfe82430b42cfe4a",
+          "file": "saw-brass.pcm.gz",
+          "packed_bytes": 243085
+        },
+        {
+          "id": "factory:wt-sync-contours:v1",
+          "name": "Sync Contours",
+          "recipe": "sync",
+          "seed": 1465122820,
+          "frames": 64,
+          "content_hash": "a4bb54ee6385838f54b9d1d7934e54f91ef1cdad82238391ac47367eb6caf28e",
+          "file": "sync-contours.pcm.gz",
+          "packed_bytes": 251376
+        },
+        {
+          "id": "factory:wt-organ-blend:v1",
+          "name": "Organ Blend",
+          "recipe": "organ",
+          "seed": 1465122821,
+          "frames": 64,
+          "content_hash": "280c6a20e7d771e0b090198eeddc0728f8797b865dec46048265e92b4212cac4",
+          "file": "organ-blend.pcm.gz",
+          "packed_bytes": 172907
+        },
+        {
+          "id": "factory:wt-hollow-pulse:v1",
+          "name": "Hollow Pulse",
+          "recipe": "hollow",
+          "seed": 1465122822,
+          "frames": 64,
+          "content_hash": "db9b6d64de51986bc1ac12adf3df9dd3ccedbb14839e795324df278088a525b2",
+          "file": "hollow-pulse.pcm.gz",
+          "packed_bytes": 64784
+        },
+        {
+          "id": "factory:wt-rounded-square:v1",
+          "name": "Rounded Square",
+          "recipe": "round",
+          "seed": 1465122823,
+          "frames": 64,
+          "content_hash": "f16586def6a0edcb4d5121c6af8393d01c389cd05c49442c0de01cb9c7eaf0e8",
+          "file": "rounded-square.pcm.gz",
+          "packed_bytes": 113238
+        }
+      ]
+    },
+    {
+      "id": "harmonic",
+      "name": "Harmonic Worlds",
+      "tables": [
+        {
+          "id": "factory:wt-odd-even:v1",
+          "name": "Odd / Even",
+          "recipe": "odd-even",
+          "seed": 1465122916,
+          "frames": 64,
+          "content_hash": "ade04d7b3cd0cb7a9432eb65c9b52313f0e880785d2741d6e89049f740aae940",
+          "file": "odd-even.pcm.gz",
+          "packed_bytes": 253967
+        },
+        {
+          "id": "factory:wt-harmonic-shift:v1",
+          "name": "Harmonic Shift",
+          "recipe": "shift",
+          "seed": 1465122917,
+          "frames": 64,
+          "content_hash": "6e34e7d1ec9ea721b3d9c7e6bccf211ff84b018ecd77dbabe397e96016d0e247",
+          "file": "harmonic-shift.pcm.gz",
+          "packed_bytes": 101044
+        },
+        {
+          "id": "factory:wt-spectral-peaks:v1",
+          "name": "Spectral Peaks",
+          "recipe": "peaks",
+          "seed": 1465122918,
+          "frames": 64,
+          "content_hash": "5ce1b278eef708f2bc512f59bebf0a1f332d63d2935690b78964b1a9636361eb",
+          "file": "spectral-peaks.pcm.gz",
+          "packed_bytes": 193727
+        },
+        {
+          "id": "factory:wt-additive-glass:v1",
+          "name": "Additive Glass",
+          "recipe": "glass",
+          "seed": 1465122919,
+          "frames": 64,
+          "content_hash": "1aad48f4c8f48e71b5e5ed06d48a64108f64eae96bd342ec422f8387af6deeed",
+          "file": "additive-glass.pcm.gz",
+          "packed_bytes": 251701
+        },
+        {
+          "id": "factory:wt-octave-stack:v1",
+          "name": "Octave Stack",
+          "recipe": "octaves",
+          "seed": 1465122920,
+          "frames": 64,
+          "content_hash": "49cdf5f6a4fe66b9c9eb7a6219d1d89289d9c1b09b30e65c0410168a49d46dc9",
+          "file": "octave-stack.pcm.gz",
+          "packed_bytes": 246390
+        },
+        {
+          "id": "factory:wt-bell-metals:v1",
+          "name": "Bell Metals",
+          "recipe": "bells",
+          "seed": 1465122921,
+          "frames": 64,
+          "content_hash": "ce1a4d9b14e928e1e10d78a96bf867b1566b1a06f1de1870e19100759e46523c",
+          "file": "bell-metals.pcm.gz",
+          "packed_bytes": 200043
+        },
+        {
+          "id": "factory:wt-comb-sweep:v1",
+          "name": "Comb Sweep",
+          "recipe": "comb",
+          "seed": 1465122922,
+          "frames": 64,
+          "content_hash": "dacb79d7844aea8dab57ed6c6d7f15c2c85444fab20fdfe5b1baf8687a332131",
+          "file": "comb-sweep.pcm.gz",
+          "packed_bytes": 213682
+        },
+        {
+          "id": "factory:wt-harmonic-steps:v1",
+          "name": "Harmonic Steps",
+          "recipe": "steps",
+          "seed": 1465122923,
+          "frames": 64,
+          "content_hash": "638abf04685214fc52c88d9272c13a3ecd2c41739d0e339ce27545e21e96018a",
+          "file": "harmonic-steps.pcm.gz",
+          "packed_bytes": 235696
+        }
+      ]
+    },
+    {
+      "id": "formant",
+      "name": "Vocal Matter",
+      "tables": [
+        {
+          "id": "factory:wt-vowel-sweep:v1",
+          "name": "Vowel Sweep",
+          "recipe": "vowel",
+          "seed": 1465123016,
+          "frames": 64,
+          "content_hash": "ef05784f9bde1ae1bebecd03bf3aa63eb488b1f2d70ddd7e2881c14b23e4acf8",
+          "file": "vowel-sweep.pcm.gz",
+          "packed_bytes": 202085
+        },
+        {
+          "id": "factory:wt-choir-colors:v1",
+          "name": "Choir Colors",
+          "recipe": "choir",
+          "seed": 1465123017,
+          "frames": 64,
+          "content_hash": "440e11c26009a6985e3b73e65a047bc08e8e22b248ae23569ae038036745e503",
+          "file": "choir-colors.pcm.gz",
+          "packed_bytes": 175895
+        },
+        {
+          "id": "factory:wt-nasal-reed:v1",
+          "name": "Nasal Reed",
+          "recipe": "nasal",
+          "seed": 1465123018,
+          "frames": 64,
+          "content_hash": "ba9f31b6d18656ac34b22884b8158eb4c31814afb4c7fff1fe9e979ee86e61ea",
+          "file": "nasal-reed.pcm.gz",
+          "packed_bytes": 160661
+        },
+        {
+          "id": "factory:wt-throat-bloom:v1",
+          "name": "Throat Bloom",
+          "recipe": "throat",
+          "seed": 1465123019,
+          "frames": 64,
+          "content_hash": "3c78c35fe026db23151a13e5ca24bd5a7ec76a3a031e4b6c7b212e01e2902b78",
+          "file": "throat-bloom.pcm.gz",
+          "packed_bytes": 157130
+        },
+        {
+          "id": "factory:wt-breath-formants:v1",
+          "name": "Breath Formants",
+          "recipe": "breath",
+          "seed": 1465123020,
+          "frames": 64,
+          "content_hash": "492189d8504fb60cc9b3ccfb5d7cb2a2539238d20e6c8c0e03b3b5135434b4af",
+          "file": "breath-formants.pcm.gz",
+          "packed_bytes": 156107
+        },
+        {
+          "id": "factory:wt-talking-bass:v1",
+          "name": "Talking Bass",
+          "recipe": "talk",
+          "seed": 1465123021,
+          "frames": 64,
+          "content_hash": "2045207b56e844c1a727257bff1892d6396634849cb0b0e1f7d8b735e7b6886f",
+          "file": "talking-bass.pcm.gz",
+          "packed_bytes": 151587
+        }
+      ]
+    },
+    {
+      "id": "digital",
+      "name": "Digital Geometry",
+      "tables": [
+        {
+          "id": "factory:wt-bit-shapes:v1",
+          "name": "Bit Shapes",
+          "recipe": "bits",
+          "seed": 1465123116,
+          "frames": 64,
+          "content_hash": "9ec265707363f41629028b120dd25fec5f28927be41db47aa4cb5645698b2ed9",
+          "file": "bit-shapes.pcm.gz",
+          "packed_bytes": 7441
+        },
+        {
+          "id": "factory:wt-phase-spiral:v1",
+          "name": "Phase Spiral",
+          "recipe": "spiral",
+          "seed": 1465123117,
+          "frames": 64,
+          "content_hash": "57452a6b4387365b086d83a75f49ea56ece3b4c7ba38bcf6717dbdb6999505b5",
+          "file": "phase-spiral.pcm.gz",
+          "packed_bytes": 256652
+        },
+        {
+          "id": "factory:wt-razor-stack:v1",
+          "name": "Razor Stack",
+          "recipe": "razor",
+          "seed": 1465123118,
+          "frames": 64,
+          "content_hash": "66fd633030a4cffc9509b6ea67bca84a9f5156b3f165db3cc8f5cfd6078e0b2b",
+          "file": "razor-stack.pcm.gz",
+          "packed_bytes": 166022
+        },
+        {
+          "id": "factory:wt-metallic-scan:v1",
+          "name": "Metallic Scan",
+          "recipe": "metal",
+          "seed": 1465123119,
+          "frames": 64,
+          "content_hash": "fd5a57f9024a3d02abfb2950fcbe5253c16d472c99a438377596cf944b9a3465",
+          "file": "metallic-scan.pcm.gz",
+          "packed_bytes": 258427
+        },
+        {
+          "id": "factory:wt-prism-fold:v1",
+          "name": "Prism Fold",
+          "recipe": "fold",
+          "seed": 1465123120,
+          "frames": 64,
+          "content_hash": "0c02e6fd8c288c5a169ea6eaf2c901cdfd64091b4fd9a01afe12d360debd31bb",
+          "file": "prism-fold.pcm.gz",
+          "packed_bytes": 232645
+        },
+        {
+          "id": "factory:wt-digital-reeds:v1",
+          "name": "Digital Reeds",
+          "recipe": "reeds",
+          "seed": 1465123121,
+          "frames": 64,
+          "content_hash": "7582db2e7ecb49cd6e1a9b7693ece23cc6e65ca0678428c0dfa82e976fde4892",
+          "file": "digital-reeds.pcm.gz",
+          "packed_bytes": 133532
+        }
+      ]
+    },
+    {
+      "id": "texture",
+      "name": "Living Texture",
+      "tables": [
+        {
+          "id": "factory:wt-dust-contours:v1",
+          "name": "Dust Contours",
+          "recipe": "dust",
+          "seed": 1465123216,
+          "frames": 64,
+          "content_hash": "a7e2ed33bb3097a3018418c79a770901d086fcd31fd6a930ddcb88b17c47a38c",
+          "file": "dust-contours.pcm.gz",
+          "packed_bytes": 252668
+        },
+        {
+          "id": "factory:wt-frozen-spark:v1",
+          "name": "Frozen Spark",
+          "recipe": "spark",
+          "seed": 1465123217,
+          "frames": 64,
+          "content_hash": "007268e45d944d4e26d9dbbf590e222efb9baa884a05a168b174368563889045",
+          "file": "frozen-spark.pcm.gz",
+          "packed_bytes": 253595
+        },
+        {
+          "id": "factory:wt-noise-cloud:v1",
+          "name": "Noise Cloud",
+          "recipe": "cloud",
+          "seed": 1465123218,
+          "frames": 64,
+          "content_hash": "dc3e021558923f4ad54b6520bc8c40773d3b80391a643b5487052cbac95e6420",
+          "file": "noise-cloud.pcm.gz",
+          "packed_bytes": 255918
+        },
+        {
+          "id": "factory:wt-fractured-air:v1",
+          "name": "Fractured Air",
+          "recipe": "air",
+          "seed": 1465123219,
+          "frames": 64,
+          "content_hash": "aa9f83177000106e2342e13205d4105280518ce3c8349e326e993afc8d1ce364",
+          "file": "fractured-air.pcm.gz",
+          "packed_bytes": 254106
+        }
+      ]
+    },
+    {
+      "id": "fm",
+      "name": "Complex FM",
+      "tables": [
+        {
+          "id": "factory:wt-cascade-steel:v1",
+          "name": "Cascade Steel",
+          "recipe": "complex:fm:0",
+          "seed": 1465123316,
+          "frames": 64,
+          "content_hash": "dd00c31245d24b8f48e5ed907c36881d3efcb36064ef0ba07913caca506ce006",
+          "file": "cascade-steel.pcm.gz",
+          "packed_bytes": 258533
+        },
+        {
+          "id": "factory:wt-ratio-bloom:v1",
+          "name": "Ratio Bloom",
+          "recipe": "complex:fm:1",
+          "seed": 1465123317,
+          "frames": 64,
+          "content_hash": "6e933640036215129f72e0821a40760f9b2be9a926c6e14841ddb99a32508aae",
+          "file": "ratio-bloom.pcm.gz",
+          "packed_bytes": 260187
+        },
+        {
+          "id": "factory:wt-glass-operators:v1",
+          "name": "Glass Operators",
+          "recipe": "complex:fm:2",
+          "seed": 1465123318,
+          "frames": 64,
+          "content_hash": "00b29f6e7f2b5992cf64e78b168e6df09fcca602eeb8fcf5749c4dd7b78d2362",
+          "file": "glass-operators.pcm.gz",
+          "packed_bytes": 261284
+        },
+        {
+          "id": "factory:wt-nested-bells:v1",
+          "name": "Nested Bells",
+          "recipe": "complex:fm:3",
+          "seed": 1465123319,
+          "frames": 64,
+          "content_hash": "890ec137d8401a159673d97fbb2dda741590d1eb0031f8fcab594b5c57449275",
+          "file": "nested-bells.pcm.gz",
+          "packed_bytes": 261468
+        },
+        {
+          "id": "factory:wt-folded-carrier:v1",
+          "name": "Folded Carrier",
+          "recipe": "complex:fm:4",
+          "seed": 1465123320,
+          "frames": 64,
+          "content_hash": "8dbaa3f40b89d9273b8f35884aecb35d528af2304ff27f3d5ee1d6fb836a93f3",
+          "file": "folded-carrier.pcm.gz",
+          "packed_bytes": 256897
+        },
+        {
+          "id": "factory:wt-electric-alloy:v1",
+          "name": "Electric Alloy",
+          "recipe": "complex:fm:5",
+          "seed": 1465123321,
+          "frames": 64,
+          "content_hash": "842b42d62ba507c7c7fc5ba565c31c6b894375ac99da2526fbb4dc7da62a83ff",
+          "file": "electric-alloy.pcm.gz",
+          "packed_bytes": 260926
+        },
+        {
+          "id": "factory:wt-reed-operators:v1",
+          "name": "Reed Operators",
+          "recipe": "complex:fm:6",
+          "seed": 1465123322,
+          "frames": 64,
+          "content_hash": "0d521c49331ab7540b2a86012cefc08d183b0439be9307fecfd28af19b6ad483",
+          "file": "reed-operators.pcm.gz",
+          "packed_bytes": 261623
+        },
+        {
+          "id": "factory:wt-crystal-feedback:v1",
+          "name": "Crystal Feedback",
+          "recipe": "complex:fm:7",
+          "seed": 1465123323,
+          "frames": 64,
+          "content_hash": "f13af569b9214826eca21b1fcca1b5af90241717b5b04e46104efa56a87c3121",
+          "file": "crystal-feedback.pcm.gz",
+          "packed_bytes": 257760
+        }
+      ]
+    },
+    {
+      "id": "formant_motion",
+      "name": "Formant Journeys",
+      "tables": [
+        {
+          "id": "factory:wt-vowel-labyrinth:v1",
+          "name": "Vowel Labyrinth",
+          "recipe": "complex:formant:0",
+          "seed": 1465123416,
+          "frames": 64,
+          "content_hash": "602b0c7960808703d1a6d45a7a4b085609ca3ca72f361b252e561c3f133a78bf",
+          "file": "vowel-labyrinth.pcm.gz",
+          "packed_bytes": 255462
+        },
+        {
+          "id": "factory:wt-choir-machine:v1",
+          "name": "Choir Machine",
+          "recipe": "complex:formant:1",
+          "seed": 1465123417,
+          "frames": 64,
+          "content_hash": "8b678d53ddd1feb31379e1f85a2617db8b06b1123688d4725d16cd873a233bff",
+          "file": "choir-machine.pcm.gz",
+          "packed_bytes": 254927
+        },
+        {
+          "id": "factory:wt-liquid-throat:v1",
+          "name": "Liquid Throat",
+          "recipe": "complex:formant:2",
+          "seed": 1465123418,
+          "frames": 64,
+          "content_hash": "981924b48780245938954a5e59dc63ef62f7d74409295baa86eceaad0fa89d6d",
+          "file": "liquid-throat.pcm.gz",
+          "packed_bytes": 254654
+        },
+        {
+          "id": "factory:wt-shifting-mouths:v1",
+          "name": "Shifting Mouths",
+          "recipe": "complex:formant:3",
+          "seed": 1465123419,
+          "frames": 64,
+          "content_hash": "0c61b0e9bfb7c13d3a7e5661945187e6a94293501063651a081c41070b629ee7",
+          "file": "shifting-mouths.pcm.gz",
+          "packed_bytes": 255327
+        },
+        {
+          "id": "factory:wt-nasal-orbit:v1",
+          "name": "Nasal Orbit",
+          "recipe": "complex:formant:4",
+          "seed": 1465123420,
+          "frames": 64,
+          "content_hash": "bc5da473b34b90deaf2cb88475bce0b8f0432f9fa5fb5692eff7ebd15ab31c94",
+          "file": "nasal-orbit.pcm.gz",
+          "packed_bytes": 255234
+        },
+        {
+          "id": "factory:wt-whisper-glass:v1",
+          "name": "Whisper Glass",
+          "recipe": "complex:formant:5",
+          "seed": 1465123421,
+          "frames": 64,
+          "content_hash": "ea5894e998446a638e3d907297ee72bb3a3059f3689c2dbc793af128c12c88a8",
+          "file": "whisper-glass.pcm.gz",
+          "packed_bytes": 256242
+        },
+        {
+          "id": "factory:wt-formant-weather:v1",
+          "name": "Formant Weather",
+          "recipe": "complex:formant:6",
+          "seed": 1465123422,
+          "frames": 64,
+          "content_hash": "8f964fc865dd625852cfbfbe40c27a234d3e6c8ae55373304e453c550d4bf431",
+          "file": "formant-weather.pcm.gz",
+          "packed_bytes": 256299
+        },
+        {
+          "id": "factory:wt-synthetic-syllables:v1",
+          "name": "Synthetic Syllables",
+          "recipe": "complex:formant:7",
+          "seed": 1465123423,
+          "frames": 64,
+          "content_hash": "970ade7e98a627d154dcfd10fe3f8ab96963d936a1a3c47cb81aaa7843023716",
+          "file": "synthetic-syllables.pcm.gz",
+          "packed_bytes": 256075
+        }
+      ]
+    },
+    {
+      "id": "resonant",
+      "name": "Resonant Objects",
+      "tables": [
+        {
+          "id": "factory:wt-modal-bronze:v1",
+          "name": "Modal Bronze",
+          "recipe": "complex:modal:0",
+          "seed": 1465123516,
+          "frames": 64,
+          "content_hash": "d31d7bfe02ac4163ce691c86f44087bd3d44207f6d94538d128a568ee70fa3d3",
+          "file": "modal-bronze.pcm.gz",
+          "packed_bytes": 257424
+        },
+        {
+          "id": "factory:wt-glass-vessel:v1",
+          "name": "Glass Vessel",
+          "recipe": "complex:modal:1",
+          "seed": 1465123517,
+          "frames": 64,
+          "content_hash": "a9a40a5de3293589f51520d6acc1bc166d67398d8f32c795457b6494b54b11e1",
+          "file": "glass-vessel.pcm.gz",
+          "packed_bytes": 257829
+        },
+        {
+          "id": "factory:wt-hollow-ceramic:v1",
+          "name": "Hollow Ceramic",
+          "recipe": "complex:modal:2",
+          "seed": 1465123518,
+          "frames": 64,
+          "content_hash": "b198338d1f2e421dc9b4d64e89f44c223db30f8af3f9de27a781a8b72be597ce",
+          "file": "hollow-ceramic.pcm.gz",
+          "packed_bytes": 256700
+        },
+        {
+          "id": "factory:wt-bowed-metal:v1",
+          "name": "Bowed Metal",
+          "recipe": "complex:modal:3",
+          "seed": 1465123519,
+          "frames": 64,
+          "content_hash": "c17c7f0e1bc6a957523231576743b99a246dbcdd0a4952f3695204c66e18abce",
+          "file": "bowed-metal.pcm.gz",
+          "packed_bytes": 256527
+        },
+        {
+          "id": "factory:wt-wire-chamber:v1",
+          "name": "Wire Chamber",
+          "recipe": "complex:modal:4",
+          "seed": 1465123520,
+          "frames": 64,
+          "content_hash": "b31a3112af09f32f0fdd1f2dd8089ef1063693a3b9656da38fd2727cddf08d97",
+          "file": "wire-chamber.pcm.gz",
+          "packed_bytes": 257680
+        },
+        {
+          "id": "factory:wt-tubular-flux:v1",
+          "name": "Tubular Flux",
+          "recipe": "complex:modal:5",
+          "seed": 1465123521,
+          "frames": 64,
+          "content_hash": "b5d2716f61cea3a8f1aa6a71bf1467ed302ab5ec8a882644f78ef2ca95c5b75d",
+          "file": "tubular-flux.pcm.gz",
+          "packed_bytes": 258297
+        },
+        {
+          "id": "factory:wt-prism-chimes:v1",
+          "name": "Prism Chimes",
+          "recipe": "complex:modal:6",
+          "seed": 1465123522,
+          "frames": 64,
+          "content_hash": "f71cc65b0798a55e1a9d4381fab38318c4cab7ace932c68572969dc8f81c9a1f",
+          "file": "prism-chimes.pcm.gz",
+          "packed_bytes": 257561
+        },
+        {
+          "id": "factory:wt-reed-cavity:v1",
+          "name": "Reed Cavity",
+          "recipe": "complex:modal:7",
+          "seed": 1465123523,
+          "frames": 64,
+          "content_hash": "fb88f9967f980eeb05f311751ce942ff86c18c80661ddf8fad88d92e44d54a56",
+          "file": "reed-cavity.pcm.gz",
+          "packed_bytes": 258117
+        }
+      ]
+    },
+    {
+      "id": "phase",
+      "name": "Phase Architectures",
+      "tables": [
+        {
+          "id": "factory:wt-phase-maze:v1",
+          "name": "Phase Maze",
+          "recipe": "complex:phase:0",
+          "seed": 1465123616,
+          "frames": 64,
+          "content_hash": "86a42b954acdc245c56ac58a05386e92c6031fb6ddbd93d433fd1bd14f90a98e",
+          "file": "phase-maze.pcm.gz",
+          "packed_bytes": 260457
+        },
+        {
+          "id": "factory:wt-bend-lattice:v1",
+          "name": "Bend Lattice",
+          "recipe": "complex:phase:1",
+          "seed": 1465123617,
+          "frames": 64,
+          "content_hash": "626f23c21042d61ee9080ea4b348bd34e786ad63b590301bbe666f4cb7b3eea3",
+          "file": "bend-lattice.pcm.gz",
+          "packed_bytes": 259861
+        },
+        {
+          "id": "factory:wt-windowed-sync:v1",
+          "name": "Windowed Sync",
+          "recipe": "complex:phase:2",
+          "seed": 1465123618,
+          "frames": 64,
+          "content_hash": "eddfcb5c4d53d982389088033045fd0e653c035cdd090510caed6b80ee9246fa",
+          "file": "windowed-sync.pcm.gz",
+          "packed_bytes": 259773
+        },
+        {
+          "id": "factory:wt-fold-cascade:v1",
+          "name": "Fold Cascade",
+          "recipe": "complex:phase:3",
+          "seed": 1465123619,
+          "frames": 64,
+          "content_hash": "fcbc8ea3f040f23d1f91353199d45ebbaab8febc1825ea48d291f66856dba1c7",
+          "file": "fold-cascade.pcm.gz",
+          "packed_bytes": 260106
+        },
+        {
+          "id": "factory:wt-mirrored-pulse:v1",
+          "name": "Mirrored Pulse",
+          "recipe": "complex:phase:4",
+          "seed": 1465123620,
+          "frames": 64,
+          "content_hash": "18a37866d982ba8c57f59777481ef00f2b8121d1a36eaf0d2afc4ff7a1c913be",
+          "file": "mirrored-pulse.pcm.gz",
+          "packed_bytes": 259645
+        },
+        {
+          "id": "factory:wt-helix-carrier:v1",
+          "name": "Helix Carrier",
+          "recipe": "complex:phase:5",
+          "seed": 1465123621,
+          "frames": 64,
+          "content_hash": "1840c20bf5811848c6c50b4f1a304ebc4cc75bb1344a33c81263d00453dd8a8d",
+          "file": "helix-carrier.pcm.gz",
+          "packed_bytes": 260994
+        },
+        {
+          "id": "factory:wt-phase-fracture:v1",
+          "name": "Phase Fracture",
+          "recipe": "complex:phase:6",
+          "seed": 1465123622,
+          "frames": 64,
+          "content_hash": "806e34d2b18cf15dab7085fe851be5b7728c007a02dec96a64fc5d7b654226c1",
+          "file": "phase-fracture.pcm.gz",
+          "packed_bytes": 259945
+        },
+        {
+          "id": "factory:wt-twisted-reed:v1",
+          "name": "Twisted Reed",
+          "recipe": "complex:phase:7",
+          "seed": 1465123623,
+          "frames": 64,
+          "content_hash": "efe7aef64031b3f859f9a3280aeb743ca93965280a28f24b28d6799e8cfb74e0",
+          "file": "twisted-reed.pcm.gz",
+          "packed_bytes": 261386
+        }
+      ]
+    },
+    {
+      "id": "spectral_morph",
+      "name": "Spectral Journeys",
+      "tables": [
+        {
+          "id": "factory:wt-spectral-weave:v1",
+          "name": "Spectral Weave",
+          "recipe": "complex:spectral:0",
+          "seed": 1465123716,
+          "frames": 64,
+          "content_hash": "d77fc6905083693c870d49ba0ff6e42a78dd28821019196588a6a843f851c7a0",
+          "file": "spectral-weave.pcm.gz",
+          "packed_bytes": 253242
+        },
+        {
+          "id": "factory:wt-peak-migration:v1",
+          "name": "Peak Migration",
+          "recipe": "complex:spectral:1",
+          "seed": 1465123717,
+          "frames": 64,
+          "content_hash": "9fbce4593f1dbb9834d821aff83d11970e7574e7a03c179b62592732b972db4f",
+          "file": "peak-migration.pcm.gz",
+          "packed_bytes": 250519
+        },
+        {
+          "id": "factory:wt-harmonic-eclipse:v1",
+          "name": "Harmonic Eclipse",
+          "recipe": "complex:spectral:2",
+          "seed": 1465123718,
+          "frames": 64,
+          "content_hash": "4119a22129cae8b877b2c4ef9b8317fec0eed5d5fbfac3f24ec2a6940073023b",
+          "file": "harmonic-eclipse.pcm.gz",
+          "packed_bytes": 247526
+        },
+        {
+          "id": "factory:wt-comb-constellation:v1",
+          "name": "Comb Constellation",
+          "recipe": "complex:spectral:3",
+          "seed": 1465123719,
+          "frames": 64,
+          "content_hash": "2a7307b6675adb341eba1fdc6d88d9598f196ac694745c8698087fe63155d8ad",
+          "file": "comb-constellation.pcm.gz",
+          "packed_bytes": 249052
+        },
+        {
+          "id": "factory:wt-oddity-layers:v1",
+          "name": "Oddity Layers",
+          "recipe": "complex:spectral:4",
+          "seed": 1465123720,
+          "frames": 64,
+          "content_hash": "2871ab0bb36a830e6fc28397e5909cb32b60dc95e8d20c2ec1e3607f03b1e7d4",
+          "file": "oddity-layers.pcm.gz",
+          "packed_bytes": 252038
+        },
+        {
+          "id": "factory:wt-spectral-inversion:v1",
+          "name": "Spectral Inversion",
+          "recipe": "complex:spectral:5",
+          "seed": 1465123721,
+          "frames": 64,
+          "content_hash": "03ad4ecbb18276ea16f59b7d11aff782f8b58dbbbb70317a372f2248a888587f",
+          "file": "spectral-inversion.pcm.gz",
+          "packed_bytes": 254120
+        },
+        {
+          "id": "factory:wt-moving-cavities:v1",
+          "name": "Moving Cavities",
+          "recipe": "complex:spectral:6",
+          "seed": 1465123722,
+          "frames": 64,
+          "content_hash": "9fb7706092188d2d1acb5b4f869c3e2e745eb81753fdc3a9f60879014b2c4c55",
+          "file": "moving-cavities.pcm.gz",
+          "packed_bytes": 253473
+        },
+        {
+          "id": "factory:wt-harmonic-origami:v1",
+          "name": "Harmonic Origami",
+          "recipe": "complex:spectral:7",
+          "seed": 1465123723,
+          "frames": 64,
+          "content_hash": "ae9e9d2a5846543387b3e00f9a8d81bd2fed5c413550fb4e6259ae1cd62111c7",
+          "file": "harmonic-origami.pcm.gz",
+          "packed_bytes": 252419
+        }
+      ]
+    },
+    {
+      "id": "vector",
+      "name": "Vector Worlds",
+      "tables": [
+        {
+          "id": "factory:wt-fourfold-motion:v1",
+          "name": "Fourfold Motion",
+          "recipe": "complex:vector:0",
+          "seed": 1465123816,
+          "frames": 64,
+          "content_hash": "0533a836700cac4041ec3952c4d0f3c0a04ee3bac883ab171ca90e1dfb096f93",
+          "file": "fourfold-motion.pcm.gz",
+          "packed_bytes": 254040
+        },
+        {
+          "id": "factory:wt-string-glass-choir:v1",
+          "name": "String Glass Choir",
+          "recipe": "complex:vector:1",
+          "seed": 1465123817,
+          "frames": 64,
+          "content_hash": "3bf6b2040b36bbcefb6d4b7400a8142875d6d34cb510c984ba54d7a2c9c29f7e",
+          "file": "string-glass-choir.pcm.gz",
+          "packed_bytes": 255190
+        },
+        {
+          "id": "factory:wt-alloy-garden:v1",
+          "name": "Alloy Garden",
+          "recipe": "complex:vector:2",
+          "seed": 1465123818,
+          "frames": 64,
+          "content_hash": "b4599a257a3cc7450befb503e2ca38a585217fbad9b7e4f013fe9318fb281072",
+          "file": "alloy-garden.pcm.gz",
+          "packed_bytes": 257431
+        },
+        {
+          "id": "factory:wt-reed-to-steel:v1",
+          "name": "Reed to Steel",
+          "recipe": "complex:vector:3",
+          "seed": 1465123819,
+          "frames": 64,
+          "content_hash": "ab488944512923345791e8ef4763415dc103740a0e1ad326264b3ee5df2fdbdd",
+          "file": "reed-to-steel.pcm.gz",
+          "packed_bytes": 254444
+        },
+        {
+          "id": "factory:wt-neon-orchestra:v1",
+          "name": "Neon Orchestra",
+          "recipe": "complex:vector:4",
+          "seed": 1465123820,
+          "frames": 64,
+          "content_hash": "2a2579a719c8d378352e07b0cbbd46be53bdd8b53e6d73ebee73dbbca245402f",
+          "file": "neon-orchestra.pcm.gz",
+          "packed_bytes": 255918
+        },
+        {
+          "id": "factory:wt-ember-prism:v1",
+          "name": "Ember Prism",
+          "recipe": "complex:vector:5",
+          "seed": 1465123821,
+          "frames": 64,
+          "content_hash": "dec36497906ca900b293f2e61dd5153a558b860228737ae3e3bf715146da0a40",
+          "file": "ember-prism.pcm.gz",
+          "packed_bytes": 254412
+        },
+        {
+          "id": "factory:wt-hybrid-tesseract:v1",
+          "name": "Hybrid Tesseract",
+          "recipe": "complex:vector:6",
+          "seed": 1465123822,
+          "frames": 64,
+          "content_hash": "5b3407d4947185e5611a1f67c8409d49357a4962f3b6127de548a537721ad372",
+          "file": "hybrid-tesseract.pcm.gz",
+          "packed_bytes": 253123
+        },
+        {
+          "id": "factory:wt-polar-currents:v1",
+          "name": "Polar Currents",
+          "recipe": "complex:vector:7",
+          "seed": 1465123823,
+          "frames": 64,
+          "content_hash": "336177b8086ec1bd4de9aa39d824aa6cc53ef8564c5fcf5fd9f295e352348fcb",
+          "file": "polar-currents.pcm.gz",
+          "packed_bytes": 255543
+        }
+      ]
+    },
+    {
+      "id": "fractal",
+      "name": "Fractal Matter",
+      "tables": [
+        {
+          "id": "factory:wt-fractal-bloom:v1",
+          "name": "Fractal Bloom",
+          "recipe": "complex:fractal:0",
+          "seed": 1465123916,
+          "frames": 64,
+          "content_hash": "eccd80f0ba5aa2a79fe041c041cf750712ff4638d65bc0733efad647cac18070",
+          "file": "fractal-bloom.pcm.gz",
+          "packed_bytes": 256731
+        },
+        {
+          "id": "factory:wt-dust-cathedral:v1",
+          "name": "Dust Cathedral",
+          "recipe": "complex:fractal:1",
+          "seed": 1465123917,
+          "frames": 64,
+          "content_hash": "9210dfdd9e2f28369f8d231cfc021c1227cd3c5aa05b1e816a03bb4ab0475e26",
+          "file": "dust-cathedral.pcm.gz",
+          "packed_bytes": 256871
+        },
+        {
+          "id": "factory:wt-frozen-current:v1",
+          "name": "Frozen Current",
+          "recipe": "complex:fractal:2",
+          "seed": 1465123918,
+          "frames": 64,
+          "content_hash": "774fcc6ef365d1c5382368bd0c55c8027794a7823d1722316e0cb675c80ddad5",
+          "file": "frozen-current.pcm.gz",
+          "packed_bytes": 255167
+        },
+        {
+          "id": "factory:wt-prismatic-noise:v1",
+          "name": "Prismatic Noise",
+          "recipe": "complex:fractal:3",
+          "seed": 1465123919,
+          "frames": 64,
+          "content_hash": "422edce02fd89f238c60e4990d436307b0ad91be347a8711e193e160651d86a1",
+          "file": "prismatic-noise.pcm.gz",
+          "packed_bytes": 256476
+        },
+        {
+          "id": "factory:wt-spectral-foam:v1",
+          "name": "Spectral Foam",
+          "recipe": "complex:fractal:4",
+          "seed": 1465123920,
+          "frames": 64,
+          "content_hash": "ea8dfa0eaecc6f1d58abf427945d4de934136a59fda822cde78a90dfce1dedf7",
+          "file": "spectral-foam.pcm.gz",
+          "packed_bytes": 255306
+        },
+        {
+          "id": "factory:wt-quantum-grain:v1",
+          "name": "Quantum Grain",
+          "recipe": "complex:fractal:5",
+          "seed": 1465123921,
+          "frames": 64,
+          "content_hash": "d57d50f05bdce9b89ff0654b214fd1013d540467b1d2b25b5db29642056d3d76",
+          "file": "quantum-grain.pcm.gz",
+          "packed_bytes": 256713
+        },
+        {
+          "id": "factory:wt-vapor-lattice:v1",
+          "name": "Vapor Lattice",
+          "recipe": "complex:fractal:6",
+          "seed": 1465123922,
+          "frames": 64,
+          "content_hash": "92c9adafcc9bda225d564ab923d2b8bcac55334495f1645fb8698d6b71aaf219",
+          "file": "vapor-lattice.pcm.gz",
+          "packed_bytes": 256077
+        },
+        {
+          "id": "factory:wt-particle-choir:v1",
+          "name": "Particle Choir",
+          "recipe": "complex:fractal:7",
+          "seed": 1465123923,
+          "frames": 64,
+          "content_hash": "01f3625f9a01c95b73336b46150d870be874358d3062cfec317cedac8694db2f",
+          "file": "particle-choir.pcm.gz",
+          "packed_bytes": 256561
+        }
+      ]
+    },
+    {
+      "id": "digital_motion",
+      "name": "Digital Evolution",
+      "tables": [
+        {
+          "id": "factory:wt-byte-labyrinth:v1",
+          "name": "Byte Labyrinth",
+          "recipe": "complex:digital:0",
+          "seed": 1465124016,
+          "frames": 64,
+          "content_hash": "613a9bd003604bf2b88cccbdb2847f870159d22130cb818aa8925b814a4aaed6",
+          "file": "byte-labyrinth.pcm.gz",
+          "packed_bytes": 252022
+        },
+        {
+          "id": "factory:wt-clockwork-formants:v1",
+          "name": "Clockwork Formants",
+          "recipe": "complex:digital:1",
+          "seed": 1465124017,
+          "frames": 64,
+          "content_hash": "a9fa840c9523434f4bd3c98ce4cea8b17187c60b16efb6f7da8304d056af9236",
+          "file": "clockwork-formants.pcm.gz",
+          "packed_bytes": 255717
+        },
+        {
+          "id": "factory:wt-folding-circuit:v1",
+          "name": "Folding Circuit",
+          "recipe": "complex:digital:2",
+          "seed": 1465124018,
+          "frames": 64,
+          "content_hash": "eefcf0c63ebbf8bd65fab45a4a0e3bbd17ad81a0b739631f2fd8c9e6826221da",
+          "file": "folding-circuit.pcm.gz",
+          "packed_bytes": 258101
+        },
+        {
+          "id": "factory:wt-spectral-gears:v1",
+          "name": "Spectral Gears",
+          "recipe": "complex:digital:3",
+          "seed": 1465124019,
+          "frames": 64,
+          "content_hash": "a6d01c07e68cf8534ffd3a6e32a02998a38d6c41176a44f7e02bff1f60fa6d32",
+          "file": "spectral-gears.pcm.gz",
+          "packed_bytes": 259928
+        },
+        {
+          "id": "factory:wt-segmented-glass:v1",
+          "name": "Segmented Glass",
+          "recipe": "complex:digital:4",
+          "seed": 1465124020,
+          "frames": 64,
+          "content_hash": "1880c3e1e9a2707c9b99d3c96664eeae3ee5296e1ff90cc31c97bd416e6d6e3d",
+          "file": "segmented-glass.pcm.gz",
+          "packed_bytes": 257834
+        },
+        {
+          "id": "factory:wt-logic-choir:v1",
+          "name": "Logic Choir",
+          "recipe": "complex:digital:5",
+          "seed": 1465124021,
+          "frames": 64,
+          "content_hash": "1f7249c18ee249ee5a2d711866af850399a029237cfb1d7d1d12649a3b84c855",
+          "file": "logic-choir.pcm.gz",
+          "packed_bytes": 259491
+        },
+        {
+          "id": "factory:wt-serrated-orbit:v1",
+          "name": "Serrated Orbit",
+          "recipe": "complex:digital:6",
+          "seed": 1465124022,
+          "frames": 64,
+          "content_hash": "3efbb3af30c855344a58ed8567ad1728e890ea104dd90dbdcdbb86d9034e6b22",
+          "file": "serrated-orbit.pcm.gz",
+          "packed_bytes": 260163
+        },
+        {
+          "id": "factory:wt-terminal-bloom:v1",
+          "name": "Terminal Bloom",
+          "recipe": "complex:digital:7",
+          "seed": 1465124023,
+          "frames": 64,
+          "content_hash": "613c654911052c01e76f67ebb7b29b81d3945fe2fb94597892d33f32cdad1aa4",
+          "file": "terminal-bloom.pcm.gz",
+          "packed_bytes": 260458
+        }
+      ]
+    }
+  ]
+}

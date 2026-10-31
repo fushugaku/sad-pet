@@ -389,7 +389,7 @@ fn grain_group_controls_append_after_the_macros() {
     // slot, then each group's drive and waveshaper, then each group's
     // stage order.
     let shapers = eqs + 8 * (4 * 8 + 1) + (2 * 12 + 1) * 2;
-    assert_eq!(ids.len(), shapers + 4 * 3 + 4);
+    assert!(ids.len() >= shapers + 4 * 3 + 4);
     assert_eq!(ids[shapers - 1], "source_fx1_lcr_reverse");
     assert_eq!(
         ids[shapers..shapers + 4],
@@ -402,7 +402,7 @@ fn grain_group_controls_append_after_the_macros() {
     );
     assert_eq!(ids[shapers + 4 * 3 - 1], "grain_group4_waveshaper_depth");
     assert_eq!(
-        ids[shapers + 4 * 3..],
+        ids[shapers + 4 * 3..shapers + 4 * 3 + 4],
         [
             "grain_group1_order",
             "grain_group2_order",

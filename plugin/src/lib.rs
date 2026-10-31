@@ -202,6 +202,7 @@ impl SentState {
 }
 
 pub struct Controller {
+    capture: Option<Arc<sad_pet::capture::Shared>>,
     preview_generation: u64,
     meta: sad_pet::timbres::Meta,
     parts: Vec<Controller>,
@@ -264,6 +265,7 @@ pub struct Controller {
 }
 
 pub struct Audio {
+    capture: Option<sad_pet::capture::Writer>,
     preview: Option<Box<preview::Preview>>,
     meta: sad_pet::timbres::Meta,
     parts: Option<Box<timbres::PartAudio>>,
@@ -414,6 +416,45 @@ struct SavedState {
     /// A kit's samples, as the browser saves them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     kit_samples: Vec<sampler::KitSample>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    wavetable_assets: Vec<Arc<sad_pet::wavetable::assets::Asset>>,
+}
+
+impl SavedState {
+    /// Scene-level content deduplication. Nested timbres carry identities;
+    /// their canonical user waves appear once in the root manifest.
+    fn hoist_wavetables(&mut self) {
+        let mut assets = std::collections::BTreeMap::new();
+        for asset in std::mem::take(&mut self.wavetable_assets) {
+            assets.insert(asset.id.clone(), asset);
+        }
+        for part in &mut self.timbres {
+            part.hoist_wavetables();
+            for asset in std::mem::take(&mut part.wavetable_assets) {
+                assets.entry(asset.id.clone()).or_insert(asset);
+            }
+        }
+        self.wavetable_assets = assets.into_values().collect();
+    }
+    fn bind_wavetables(&mut self) -> Result<(), String> {
+        self.hoist_wavetables();
+        let pool = sad_pet::wavetable::assets::Pool::from_manifest(&self.wavetable_assets)?;
+        fn bind(
+            state: &mut SavedState,
+            pool: &sad_pet::wavetable::assets::Pool,
+        ) -> Result<(), String> {
+            state.preset.wavetable_pool.merge(pool)?;
+            state
+                .preset
+                .wavetable_pool
+                .manifest(state.preset.wavetable.as_deref())?;
+            for part in &mut state.timbres {
+                bind(part, pool)?;
+            }
+            Ok(())
+        }
+        bind(self, &pool)
+    }
 }
 
 impl Controller {
@@ -451,6 +492,7 @@ impl Controller {
         let mut preset = Preset::default();
         preset.sanitize();
         Self {
+            capture: None,
             meta: sad_pet::timbres::Meta::default(),
             parts: Vec::new(),
             active: 0,
@@ -565,6 +607,14 @@ impl Controller {
     }
 
     fn enqueue(&mut self, command: Command) -> Result<(), String> {
+        let error = match &command {
+            Command::Preset(preset) => preset.wavetable_runtime.1.as_ref(),
+            Command::Restore(restore) => restore.preset.wavetable_runtime.1.as_ref(),
+            _ => None,
+        };
+        if let Some(error) = error {
+            return Err(error.clone());
+        }
         self.drain();
         let revision = self.revision.wrapping_add(1);
         self.commands
@@ -676,7 +726,15 @@ impl Controller {
         let source_renderer = source_fx::Renderer::new(&engine);
         let vocal = self.sync_vocal().map(VocalAudio::new);
         let (parts, chains) = timbres::prepare_audio(&mut self.parts, self.rate);
+        let capture = if self.meta.id == 0 {
+            let (shared, writer) = sad_pet::capture::Shared::prepare(self.rate);
+            self.capture = Some(shared);
+            Some(writer)
+        } else {
+            None
+        };
         Audio {
+            capture,
             preview: None,
             meta: self.meta.clone(),
             parts,
@@ -887,6 +945,8 @@ impl Controller {
         state["sequencer"] = json!(view.sequencer);
         state["drums"] = json!(view.drums);
         state["rack_peaks"] = json!(view.rack_peaks);
+        state["wavetable_positions"] = json!(view.wavetable_positions);
+        state["wavetable_motion"] = json!(view.modulated_wavetable_motion);
         // A Rack's Vocal module sings here and its Sampler plays. The app's
         // kits play, but their samples never cross its editor boundary.
         state["features"] = json!({"rack_vocal": true, "sampler": !self.standalone});
@@ -930,7 +990,7 @@ impl Controller {
     fn snapshot(&mut self) -> Result<SavedState, String> {
         self.drain();
         let sample_wav = BASE64.encode(wav::bytes(self.sample.sample_rate, self.sample.frames())?);
-        Ok(SavedState {
+        let mut state = SavedState {
             meta: self.meta.clone(),
             timbres: self
                 .parts
@@ -957,7 +1017,13 @@ impl Controller {
             } else {
                 Vec::new()
             },
-        })
+            wavetable_assets: self
+                .preset
+                .wavetable_pool
+                .manifest(self.preset.wavetable.as_deref())?,
+        };
+        state.hoist_wavetables();
+        Ok(state)
     }
 
     fn save(&mut self) -> Result<Vec<u8>, String> {
@@ -971,6 +1037,7 @@ impl Controller {
     }
 
     fn restore_saved(&mut self, mut saved: SavedState) -> Result<(), String> {
+        saved.bind_wavetables()?;
         if saved.version != 1 {
             return Err("Unsupported SAD PET plugin state version".into());
         }
@@ -1112,6 +1179,68 @@ impl Controller {
         if path.starts_with("/api/preset-library") {
             return self.preset_library_request(path, post, data);
         }
+        if path.starts_with("/api/wavetables") {
+            if let Ok(root) = self.library.root() {
+                self.preset
+                    .wavetable_pool
+                    .set_directory(root.join("Wavetables"));
+            }
+            if path == "/api/wavetables/export"
+                && let Some(path) = data["path"].as_str()
+            {
+                let asset = self
+                    .preset
+                    .wavetable_pool
+                    .resolve(data["id"].as_str().ok_or("Choose a wavetable")?)?;
+                audio_library::write_file(
+                    path.as_ref(),
+                    &sad_pet::wavetable::import::encode(&asset)?,
+                )?;
+                return Ok(json!({"ok":true}));
+            }
+            if matches!(path, "/api/wavetables/select" | "/api/wavetables/layers") {
+                if data["timbre"]
+                    .as_u64()
+                    .is_some_and(|id| id != self.meta.id as u64)
+                {
+                    return Err("The timbre changed while the wavetable was loading".into());
+                }
+                let mut preset = self.preset.clone();
+                let settings = preset
+                    .wavetable
+                    .as_mut()
+                    .ok_or("The Wavetable module was removed")?;
+                if path == "/api/wavetables/layers" {
+                    settings.edit_layers(
+                        data["action"].as_str().unwrap_or(""),
+                        data["index"].as_u64().map(|i| i as usize),
+                    )?;
+                } else {
+                    let index = data["oscillator"]
+                        .as_u64()
+                        .filter(|n| *n < settings.count as u64)
+                        .ok_or("Choose an existing wave A–D")?
+                        as usize;
+                    settings.oscillators[index].asset_id =
+                        data["id"].as_str().ok_or("Choose a wavetable")?.into();
+                }
+                preset
+                    .wavetable_pool
+                    .manifest(preset.wavetable.as_deref())?;
+                let prepared = self.prepared_preset(&preset);
+                if let Some(error) = &prepared.wavetable_runtime.1 {
+                    return Err(error.clone());
+                }
+                self.enqueue(Command::Preset(prepared))?;
+                self.preset = preset;
+                return Ok(json!({"timbre":self.meta.id,"wavetable":self.preset.wavetable}));
+            }
+            return sad_pet::wavetable::library::command(
+                path,
+                data,
+                &mut self.preset.wavetable_pool,
+            );
+        }
         let result = match (path, post) {
             ("/api/state", _) => Ok(self.state()),
             ("/api/clock", _) if self.standalone && self.meta.id == 0 => self.clock_request(data),
@@ -1152,6 +1281,10 @@ impl Controller {
                 if self.meta.id != 0 {
                     preset.params.bpm = self.preset.params.bpm;
                 }
+                preset.wavetable_pool = self.preset.wavetable_pool.clone();
+                preset
+                    .wavetable_pool
+                    .manifest(preset.wavetable.as_deref())?;
                 self.enqueue(Command::Preset(self.prepared_preset(&preset)))?;
                 // A loaded preset can change the timbre's engine type; a Pad
                 // FX timbre stays one.

@@ -2,6 +2,8 @@ import { Microphone } from "./microphone.mjs";
 import { MidiClock } from "./midi-clock.mjs";
 import { compileEngine } from "./compile.mjs";
 import { listVoices, saveVoice, removeVoice, voiceId, voiceInfo, unzip } from "./voices.mjs";
+import { wavetableIds, preparedWavetable } from "./wavetables.mjs";
+import { userWavetables, saveWavetable } from "./wavetable-store.mjs";
 
 /** A 32-bit float stereo WAV of interleaved chunks. */
 function wave(chunks, rate) {
@@ -96,6 +98,7 @@ export class BrowserBackend {
     this.midiClock = new MidiClock(this);
     this.status = "Loading WebAssembly…";
     this.ready = this.initialize();
+    this.wavetableTail = Promise.resolve();
   }
   async initialize() {
     this.sourceGeneration = 1;
@@ -147,6 +150,10 @@ export class BrowserBackend {
       this.vocal.call("vocal-init", { module, rate: this.rate }),
       this.context.audioWorklet.addModule(new URL("./worklet.mjs", import.meta.url)),
     ]);
+    try {
+      const assets=await userWavetables();
+      for(const asset of assets) await this.worker.call("request",[asset],[],"/api/wavetables/restore");
+    } catch(error) {this.wavetableStorageError=error.message;}
     const prepared = await this.worker.call("startup", {
       generation: this.sourceGeneration,
     });
@@ -193,6 +200,36 @@ export class BrowserBackend {
       : this.context?.state === "running"
         ? `${(this.rate / 1000).toFixed(1)} kHz · WebAssembly`
         : "Click Play or a key to enable audio";
+  }
+  async stageWavetables(ids, apply) {
+    if (!ids.length) return apply?.();
+    const task = this.wavetableTail.catch(() => {}).then(async () => {
+      await this.audio.call("wavetable-prune");
+      for (const id of new Set(ids)) {
+        const bytes = await this.worker.call("wavetable-prepare", {id});
+        const bank = preparedWavetable(bytes);
+        const staged = await this.audio.call("wavetable-stage",
+          {...bank,idle:this.context.state !== "running"},[bytes]);
+        if (!staged.cached) await this.audio.call("wavetable-commit");
+      }
+      return apply?.();
+    });
+    this.wavetableTail = task;
+    return task;
+  }
+  async wavetableLibrary(route,data) {
+    const result=await this.worker.call("request",data,[],route);
+    if((route === "/api/wavetables/import" && !data.inspect && !data.preview)||route === "/api/wavetables/commit") {
+      try {
+        const assets=await this.worker.call("request",{id:result.id},[],"/api/wavetables/assets");
+        await saveWavetable(assets[0]);
+      } catch(error) {
+        if(!result.already_present) await this.worker.call("request",{id:result.id},[],"/api/wavetables/discard");
+        throw new Error(`Cannot save the wavetable library: ${error.message}`);
+      }
+    }
+    if(route === "/api/wavetables" && this.wavetableStorageError) result.storage_error=this.wavetableStorageError;
+    return result;
   }
   resume() {
     if (this.context?.state === "suspended")
@@ -776,6 +813,7 @@ export class BrowserBackend {
                   generation: this.sourceGeneration + 1,
                 })
               : await this.worker.call("scene-prepare", data);
+          await this.stageWavetables(wavetableIds(data));
           result = await this.audio.call("scene-load", prepared, [prepared]);
           this.sourceRecipeKey = null;
           this.state = await this.audio.call("request", null, [], "/api/state");
@@ -801,6 +839,7 @@ export class BrowserBackend {
         await this.sourceLoadTail;
         const generation = this.sourceGeneration + 1;
         const prepared = await this.worker.call("instrument-prepare", { ...data, generation });
+        await this.stageWavetables(wavetableIds(data));
         result = await this.audio.call("instrument-load", { prepared, generation }, [prepared]);
         await this.worker.call("request", result, [], "/api/timbres/context");
         this.queuedSource = null;
@@ -810,6 +849,8 @@ export class BrowserBackend {
         this.viewStamp = this.audio.stamp || 0;
       } else if (route.startsWith("/api/timbres")) {
         await this.sourceLoadTail;
+        if (route === "/api/timbres/add" && data?.kind === "wavetable")
+          await this.stageWavetables(["factory:wt-basic-morph:v1"]);
         result = route === "/api/timbres/add"
           ? await this.audio.call("add-timbre", { ...data, idle: this.context.state !== "running" })
           : await this.audio.call("request", data, [], route);
@@ -824,6 +865,18 @@ export class BrowserBackend {
             this.state.source_generation ?? this.sourceGeneration;
         }
         this.viewStamp = this.audio.stamp || 0;
+      } else if (route === "/api/wavetables/select" || route === "/api/wavetables/layers") {
+        result = await this.stageWavetables(data.id?[data.id]:data.action==="add"?["factory:wt-basic-morph:v1"]:[],
+          () => this.audio.call("request",data,[],route));
+      } else if (route === "/api/wavetables/audition") {
+        this.resume();
+        result = await this.stageWavetables(data.id ? [data.id] : [],
+          () => this.audio.call("request",data,[],route));
+      } else if (route.startsWith("/api/wavetables")) {
+        result=await this.wavetableLibrary(route,data);
+      } else if (route === "/api/preset" && data) {
+        await this.stageWavetables(wavetableIds(data));
+        result = await this.audio.call("request",data,[],route);
       } else if (route.startsWith("/api/vocal/")) {
         result = await this.vocalRequest(route, data, options);
         if (result instanceof ArrayBuffer) mime = "application/octet-stream";
@@ -962,6 +1015,22 @@ export class BrowserBackend {
           url.searchParams.get("id"),
         );
         mime = route.endsWith(".mp3") ? "audio/mpeg" : "audio/wav";
+      } else if(route.startsWith("/api/capture/")) {
+        if(route==="/api/capture/wav") {
+          const view=await this.audio.call("request",null,[],"/api/capture/status");
+          if(!view.ready||!view.frames)throw new Error("Capture is not ready.");
+          const pcm=new Uint8Array(view.frames*8);
+          for(let offset=0;offset<pcm.length;offset+=32768) {
+            const chunk=await this.audio.call("capture-chunk",{generation:view.generation,offset});pcm.set(new Uint8Array(chunk),offset);
+          }
+          result=await this.worker.call("capture-wav",{pcm:pcm.buffer,rate:view.sample_rate},[pcm.buffer]);
+        }else {
+          if(route==="/api/capture/start") {
+            if(data?.source==="input"&&!this.microphone.active)throw new Error("Connect an audio input before capturing it.");
+            this.resume();
+          }
+          result=await this.audio.call("request",data,[],route);
+        }
       } else if (route === "/api/quit") {
         if (this.microphone.active || this.microphone.pending)
           await this.stopInput();

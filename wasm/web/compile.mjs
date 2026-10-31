@@ -1,7 +1,7 @@
 // Keep one compiled module for all workers; compile while its bytes arrive.
 // Variant engines built with extra WebAssembly features are preferred where
-// the browser validates them; their arithmetic is the same IEEE float math,
-// so every engine renders identical samples. The tail-call engine
+// the browser validates them. DSP quality is retained; scalar/SIMD numerical
+// parity is checked by the engine's render corpus. The tail-call engine
 // (sad_pet.tc.wasm) runs the translated firmware block to block without a
 // dispatch loop; the SIMD engine (sad_pet.simd.wasm) weighs grain reads four
 // taps at a time.

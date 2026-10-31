@@ -434,10 +434,52 @@ window.SadNeuropolis = class {
     root.querySelector(".neuro-restart").onclick = () =>
       this.edit(null, null, 1, 1);
     root.querySelector(".neuro-add").onclick = () => this.add();
+    this.buildMotions();
     root.querySelector(".neuro-prev").onclick = () =>
       this.setPage(this.page - 1);
     root.querySelector(".neuro-next").onclick = () =>
       this.setPage(this.page + 1);
+  }
+  buildMotions() {
+    const root=document.createElement("div");root.className="neuro-motions";root.innerHTML='<select aria-label="Motion pattern"></select><input aria-label="Motion name" maxlength="80" placeholder="Motion name"><button type="button" class="motion-save">Save motion</button><button type="button" class="motion-delete" disabled>Delete</button><button type="button" class="motion-undo" disabled>Undo</button><output role="status"></output>';
+    this.root.querySelector(".neuro-layout").before(root);this.motionRoot=root;
+    const select=root.querySelector("select"),name=root.querySelector("input"),status=root.querySelector("output");
+    const checkpoint=()=>{this.motionUndo={program:structuredClone(this.program()),xy:this.hooks.read().wavetable?.motion?.xy_on,context:this.hooks.context?.()};};
+    const changed=()=>{this.signature="";this.selected=null;this.visiblePage=0;this.hooks.structure();this.sync();};
+    select.onchange=()=>{
+      const pattern=[...(this.catalog.motion_patterns??[]),...(this.program().patterns??[])].find(p=>p.id===select.value);if(!pattern)return;
+      checkpoint();this.program().tracks=structuredClone(pattern.tracks);this.program().enabled=true;this.motionId=pattern.id;name.value=pattern.name;
+      if(pattern.xy&&this.hooks.read().wavetable){const s=this.hooks.read().wavetable;s.motion??={surf:0,x:.5,y:.5,xy_on:false};s.motion.xy_on=true;this.hooks.parameter?.("wt_xy_on",1);}
+      status.textContent="";changed();
+    };
+    root.querySelector(".motion-save").onclick=()=>{
+      const p=this.program(),text=name.value.trim();if(!text){status.textContent="Name the motion";return;}
+      if(!p.tracks.length||p.tracks.length>16){status.textContent="Save 1–16 tracks in a motion";return;}
+      const patterns=p.patterns??=[],existing=patterns.find(x=>x.id===this.motionId);
+      if(!existing&&patterns.length>=16){status.textContent="An instrument holds up to 16 motions";return;}
+      checkpoint();const uuid=globalThis.crypto?.randomUUID?.()??`${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;const record={id:existing?.id??`user:motion:${uuid}`,name:text,tracks:structuredClone(p.tracks),xy:!!this.hooks.read().wavetable?.motion?.xy_on};
+      if(existing)Object.assign(existing,record);else patterns.push(record);p.patterns=patterns;this.motionId=record.id;status.textContent="Saved with this instrument";changed();
+    };
+    root.querySelector(".motion-delete").onclick=()=>{const p=this.program();if(!p.patterns?.some(x=>x.id===this.motionId))return;checkpoint();p.patterns=p.patterns.filter(x=>x.id!==this.motionId);this.motionId="";name.value="";status.textContent="Motion removed";changed();};
+    root.querySelector(".motion-undo").onclick=()=>{
+      const previous=this.motionUndo;if(!previous||previous.context!==this.hooks.context?.())return;
+      const target=this.program();for(const key of Object.keys(target))delete target[key];Object.assign(target,previous.program);
+      if(previous.xy!==undefined&&this.hooks.read().wavetable){this.hooks.read().wavetable.motion.xy_on=previous.xy;this.hooks.parameter?.("wt_xy_on",Number(previous.xy));}
+      this.motionUndo=null;this.motionId="";name.value="";status.textContent="Restored";changed();
+    };
+  }
+  syncMotions() {
+    const context=this.hooks.context?.();
+    if(context!==this.motionContext){this.motionContext=context;this.motionUndo=null;this.motionId="";this.motionRoot.querySelector("input").value="";}
+    const patterns=this.program().patterns??[],select=this.motionRoot.querySelector("select"),wt=this.hooks.read().wavetable;
+    const available=p=>!p.tracks.some(t=>{const id=t.target?.parameter;if(!id?.startsWith("wt_"))return false;if(!wt)return true;const letter=/^wt_([abcd])_/.exec(id)?.[1];return letter&&"abcd".indexOf(letter)>=(wt.count??1);})&&(!p.xy||(wt?.count??0)>=2);
+    const signature=JSON.stringify([patterns.map(p=>[p.id,p.name]),wt?.count]);
+    if(signature!==this.motionSignature){this.motionSignature=signature;select.replaceChildren();const placeholder=document.createElement("option");placeholder.value="";placeholder.textContent="Motion patterns";select.append(placeholder);
+      for(const [label,records] of [["Factory",this.catalog.motion_patterns??[]],["My motions",patterns]]){const group=document.createElement("optgroup");group.label=label;for(const record of records){const option=document.createElement("option");option.value=record.id;option.textContent=record.name;option.disabled=!available(record);group.append(option);}if(group.children.length)select.append(group);}
+    }
+    if(document.activeElement!==select)select.value=this.motionId??"";
+    this.motionRoot.querySelector(".motion-delete").disabled=!patterns.some(p=>p.id===this.motionId);
+    this.motionRoot.querySelector(".motion-undo").disabled=!this.motionUndo;
   }
   program() {
     return this.hooks.read().sequencer;
@@ -580,7 +622,7 @@ window.SadNeuropolis = class {
   }
   // Resynth and Synth engine oscillator lanes edit a signed offset.
   relative(track) {
-    return ["oscillator", "synth_oscillator", "tb303_oscillator"].includes(track?.target.kind);
+    return ["oscillator", "synth_oscillator", "tb303_oscillator", "wavetable_oscillator"].includes(track?.target.kind);
   }
   pitchText(track, value) {
     return this.relative(track)
@@ -702,6 +744,8 @@ window.SadNeuropolis = class {
             ? `Synth OSC ${t.target.index + 1} offset`
           : t.target.kind === "tb303_oscillator"
             ? `303 RADIAS OSC ${t.target.index + 1} offset`
+          : t.target.kind === "wavetable_oscillator"
+            ? `Wavetable ${["A","B","C","D"][t.target.index]} pitch offset`
           : this.catalog.parameters.find((p) => p.id === t.target.parameter)
               ?.name ||
             t.target.parameter.replace(/^lfo(\d+)_reset$/, "LFO $1 reset");
@@ -724,6 +768,7 @@ window.SadNeuropolis = class {
   sync() {
     const p = this.program();
     if (!p) return;
+    this.syncMotions();
     for (const t of p.tracks) this.fillPages(t);
     if (!p.tracks.some((t) => t.id === this.selected))
       this.selected = p.tracks[0]?.id ?? null;
@@ -1167,7 +1212,7 @@ window.SadNeuropolis = class {
   // oscillators and drum voices each get a submenu inside their family.
   parameterGroups(prefix = "") {
     const preset = this.hooks.read(), families = new Map(), drums = new Map(),
-      order = ["Main", "303 Bass", "Grains", "Filters", "LFO", "Envelopes", "Arpeggiator", "Pre-filter FX", "Post-filter FX", "Resynth", "Synth engine", "Drums"],
+      order = ["Main", "Wavetable", "303 Bass", "Grains", "Filters", "LFO", "Envelopes", "Arpeggiator", "Pre-filter FX", "Post-filter FX", "Resynth", "Synth engine", "Drums"],
       voices = window.SadDrums?.controlSections,
       grainControls = new Set(["position", "grains", "min_grains", "grain_size", "pitch", "grain_shape",
         "cloud", "detune", "stereo_spread", "grain_feedback", "grain_advanced", "grain_attack"]);
@@ -1181,6 +1226,7 @@ window.SadNeuropolis = class {
       }
       if (id.startsWith("drum") && !preset.drums) continue;
       if (id.startsWith("tb303_") && !preset.tb303) continue;
+      if (id.startsWith("wt_") && !preset.wavetable) continue;
       const drum = /^drum(\d+)_(\d+|note_shift)$/.exec(id);
       if (drum && voices) {
         drums.set(id, spec.name);
@@ -1200,6 +1246,7 @@ window.SadNeuropolis = class {
         : id.startsWith("arp_") ? ["Arpeggiator"]
         : id.startsWith("synth_osc") ? ["Synth engine", `Synth OSC ${n}`]
         : id.startsWith("synth_") ? ["Synth engine"]
+        : id.startsWith("wt_") ? ["Wavetable",`Wavetable ${id[3].toUpperCase()}`]
         : id.startsWith("tb303_osc") ? ["303 Bass", `RADIAS OSC ${/^tb303_osc(\d+)/.exec(id)[1]}`, `303 RADIAS OSC ${/^tb303_osc(\d+)/.exec(id)[1]}`]
         : id.startsWith("tb303_") ? ["303 Bass"]
         : group ? ["Grains", `Group ${"ABCD"[group - 1]}`]
@@ -1335,6 +1382,7 @@ window.SadNeuropolis = class {
       const card = document.createElement("div");
       card.className = "neuro-stage";
       card.dataset.pick = n;
+      card.dataset.track = track.id;
       const pick = document.createElement("button");
       pick.type = "button";
       pick.className = "neuro-stage-pick";
@@ -1641,10 +1689,12 @@ window.SadNeuropolis = class {
     const pads = this.hooks.read().sampler?.pads || [],
       synth = !!this.hooks.read().synth,
       bass = !!this.hooks.read().tb303;
+    const wavetable = !!this.hooks.read().wavetable;
     window.SadLazySelect.configure(target,
       track.target.kind === "oscillator" ? `osc:${track.target.index}`
         : track.target.kind === "synth_oscillator" ? `synth-osc:${track.target.index}`
         : track.target.kind === "tb303_oscillator" ? `tb303-osc:${track.target.index}`
+        : track.target.kind === "wavetable_oscillator" ? `wt-osc:${track.target.index}`
         : track.target.kind === "pad" ? `pad:${track.target.pad}`
         : track.target.kind === "parameter" ? `param:${track.target.parameter}` : track.target.kind,
       [{ label: "Pitch & notes", choices: [
@@ -1652,6 +1702,7 @@ window.SadNeuropolis = class {
         // A Synth engine timbre plays its own oscillators; Resynth's follow.
         ...(synth ? [0, 1, 2, 3].map(i => [`synth-osc:${i}`, `Synth OSC ${i + 1} pitch offset`]) : []),
         ...(bass ? [0, 1, 2, 3].map(i => [`tb303-osc:${i}`, `303 RADIAS OSC ${i + 1} pitch offset`]) : []),
+        ...(wavetable ? Array.from({length:this.hooks.read().wavetable.count??2},(_,i)=>[`wt-osc:${i}`,`Wavetable ${["A","B","C","D"][i]} pitch offset`]) : []),
         ...[0, 1, 2, 3].map(i => [`osc:${i}`, `${synth || bass ? "Resynth " : ""}OSC ${i + 1} pitch offset`]),
       ] },
       // A kit's pads, each played by its own track whatever its keys.
@@ -1667,6 +1718,8 @@ window.SadNeuropolis = class {
           ? { kind: "synth_oscillator", index: Number(target.value.slice(10)) }
         : target.value.startsWith("tb303-osc:")
           ? { kind: "tb303_oscillator", index: Number(target.value.slice(10)) }
+        : target.value.startsWith("wt-osc:")
+          ? { kind: "wavetable_oscillator", index: Number(target.value.slice(7)) }
         : target.value.startsWith("pad:")
           ? { kind: "pad", pad: Number(target.value.slice(4)) }
           : target.value.startsWith("param:")
@@ -1898,8 +1951,8 @@ window.SadNeuropolis = class {
     if (out && selected)
       out.textContent = active
         ? this.relative(this.track())
-          ? `${selected.value >= 0 ? "+" : ""}${selected.value.toFixed(2)} st`
-          : `${this.note(selected.pitch)} · ${selected.value > 0 ? "+" : ""}${selected.value.toFixed(2)}${this.track()?.target.kind === "parameter" ? "" : " st"}`
+          ? `${value >= 0 ? "+" : ""}${value.toFixed(2)} st`
+          : `${this.note(selected.pitch)} · ${value > 0 ? "+" : ""}${value.toFixed(2)}${this.track()?.target.kind === "parameter" ? "" : " st"}`
         : "—";
   }
 };

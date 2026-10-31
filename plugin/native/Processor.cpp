@@ -110,6 +110,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout SadPetProcessor::makeLayout(
             const auto min = static_cast<float>(spec["min"]);
             const auto max = static_cast<float>(spec["max"]);
             auto range = juce::NormalisableRange<float>(min, max);
+            const auto id = spec["id"].toString();
+            if ((id.startsWith("wt_") && (id.endsWith("_enabled") || id.endsWith("_unison") || id.endsWith("_env") || id.endsWith("_lfo") || id.endsWith("_step") || id.endsWith("_free_phase") || id.endsWith("_fm_mode") || id.endsWith("_fm_source") || id.endsWith("_sync_source") || id.endsWith("_sync") || id == "wt_xy_on"))
+                || id == "rack_wavetable_mute" || id == "rack_wavetable_solo"
+                || (id.startsWith("env") && (id.endsWith("_wave_on") || id.endsWith("_wave_beats") || id.endsWith("_wave_loop") || id.endsWith("_wave_start") || id.endsWith("_wave_end")))
+                || (id.startsWith("lfo") && id.endsWith("_poly"))) range.interval = 1.0f;
             if (spec["id"].toString().endsWith("_rate")) range.setSkewForCentre(std::sqrt(min * max));
             layout.add(std::make_unique<juce::AudioParameterFloat>(
                 juce::ParameterID(spec["id"].toString(), 1), spec["name"].toString(), range, static_cast<float>(spec["default"])));

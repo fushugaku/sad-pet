@@ -1,0 +1,123 @@
+{
+  "desktop": {
+    "scroll": 1910,
+    "waves": [
+      {
+        "fields": [
+          {
+            "height": 43.994869232177734,
+            "label": "Wavetable A modulation mode",
+            "value": "1"
+          },
+          {
+            "height": 43.994869232177734,
+            "label": "Wavetable A FM source",
+            "value": "3"
+          },
+          {
+            "height": 43.994869232177734,
+            "label": "Wavetable A hard sync",
+            "value": "1"
+          },
+          {
+            "height": 43.994869232177734,
+            "label": "Wavetable A sync source",
+            "value": "2"
+          }
+        ],
+        "id": "wt-osc-0",
+        "unison": "4"
+      },
+      {
+        "fields": [
+          {
+            "height": 43.994869232177734,
+            "label": "Wavetable B modulation mode",
+            "value": "2"
+          },
+          {
+            "height": 43.994869232177734,
+            "label": "Wavetable B FM source",
+            "value": "2"
+          },
+          {
+            "height": 43.994869232177734,
+            "label": "Wavetable B hard sync",
+            "value": "0"
+          },
+          {
+            "height": 43.994869232177734,
+            "label": "Wavetable B sync source",
+            "value": "1"
+          }
+        ],
+        "id": "wt-osc-1",
+        "unison": "4"
+      },
+      {
+        "fields": [
+          {
+            "height": 43.994869232177734,
+            "label": "Wavetable C modulation mode",
+            "value": "1"
+          },
+          {
+            "height": 43.994869232177734,
+            "label": "Wavetable C FM source",
+            "value": "0"
+          },
+          {
+            "height": 43.994869232177734,
+            "label": "Wavetable C hard sync",
+            "value": "0"
+          },
+          {
+            "height": 43.994869232177734,
+            "label": "Wavetable C sync source",
+            "value": "2"
+          }
+        ],
+        "id": "wt-osc-2",
+        "unison": "4"
+      },
+      {
+        "fields": [
+          {
+            "height": 43.994869232177734,
+            "label": "Wavetable D modulation mode",
+            "value": "2"
+          },
+          {
+            "height": 43.994869232177734,
+            "label": "Wavetable D FM source",
+            "value": "1"
+          },
+          {
+            "height": 43.994869232177734,
+            "label": "Wavetable D hard sync",
+            "value": "0"
+          },
+          {
+            "height": 43.994869232177734,
+            "label": "Wavetable D sync source",
+            "value": "3"
+          }
+        ],
+        "id": "wt-osc-3",
+        "unison": "4"
+      }
+    ],
+    "width": 1910
+  },
+  "errors": [],
+  "mobile": {
+    "width": 390,
+    "scroll": 390,
+    "selector_height": 43.994869232177734,
+    "selector_width": 156.04010009765625,
+    "fm_source": "D",
+    "sync_source": "C",
+    "screenshot": "routing-mobile.png",
+    "scope": "Earlier check in the same final UI code using a 390 CSS pixel iframe; the DSP-only edits did not change these styles."
+  }
+}

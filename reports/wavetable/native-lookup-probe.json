@@ -1,0 +1,47 @@
+{
+  "block_frames": 128,
+  "profiles": [
+    {
+      "max_ms": 0.34525,
+      "notes": 32,
+      "oscillators": 2,
+      "p50_ms": 0.092458,
+      "p99_deadline_fraction": 0.061453125000000004,
+      "p99_ms": 0.16387500000000002,
+      "seconds": 2.0,
+      "unison": 1
+    },
+    {
+      "max_ms": 0.36770800000000003,
+      "notes": 16,
+      "oscillators": 2,
+      "p50_ms": 0.164542,
+      "p99_deadline_fraction": 0.075202875,
+      "p99_ms": 0.200541,
+      "seconds": 2.0,
+      "unison": 4
+    },
+    {
+      "max_ms": 0.099709,
+      "notes": 8,
+      "oscillators": 2,
+      "p50_ms": 0.048792,
+      "p99_deadline_fraction": 0.020562375,
+      "p99_ms": 0.054833,
+      "seconds": 2.0,
+      "unison": 2
+    },
+    {
+      "max_ms": 1.3547500000000001,
+      "notes": 32,
+      "oscillators": 2,
+      "p50_ms": 0.7256670000000001,
+      "p99_deadline_fraction": 0.40729687500000006,
+      "p99_ms": 1.086125,
+      "seconds": 2.0,
+      "unison": 8
+    }
+  ],
+  "sample_rate": 48000,
+  "scope": "Isolated production lookup, not full Rack/runtime or browser deadline"
+}

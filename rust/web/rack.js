@@ -33,6 +33,7 @@
       hint: "The loaded file, played by the notes" },
     { key: "synth", label: "Synth", group: "Sources",
       hint: "Up to four oscillators per note" },
+    { key: "wavetable", label: "Wavetable", group: "Sources", hint: "Up to four scanning waves per note" },
     { key: "drums", label: "Drums", group: "Sources",
       hint: "Drum machine that plays its own pattern" },
     { key: "sampler", label: "Sampler", group: "Sources",
@@ -58,10 +59,10 @@
   const INFO = Object.fromEntries(MODULES.map((m) => [m.key, m]));
   /** The sources in Mixer strip order (rack::STRIP_SOURCES), as the host's
    * meters list them. */
-  const SOURCES = ["sample", "synth", "drums", "sampler", "vocal", "tb303"];
+  const SOURCES = ["sample", "synth", "drums", "sampler", "vocal", "tb303", "wavetable"];
   /** Sources whose settings a removed module leaves for its undo. */
-  const KEPT = ["drums", "synth", "sampler", "vocal", "tb303"];
-  const CHAINS = { sample: "Sample", synth: "Synth", drums: "Drums", sampler: "Sampler", vocal: "Vocal", tb303: "303 Bass", mix: "Mix" };
+  const KEPT = ["drums", "synth", "sampler", "vocal", "tb303", "wavetable"];
+  const CHAINS = { sample: "Sample", synth: "Synth", drums: "Drums", sampler: "Sampler", vocal: "Vocal", tb303: "303 Bass", wavetable: "Wavetable", mix: "Mix" };
   /** The section tap (Output row) of each processor. */
   const STAGES = { source_fx: "source", grains: "grains", resynth: "resynth",
     pre_fx: "pre_fx", filters: "filters", post_fx: "post_fx" };
@@ -88,7 +89,7 @@
       if (SOURCES.includes(slot.module)) {
         chain = step.chain = slot.module;
         // Drums, kit and voice are streams with no notes of their own.
-        perNote = step.perNote = (slot.module === "sample" || slot.module === "synth") && enabled;
+        perNote = step.perNote = ["sample","synth","wavetable"].includes(slot.module) && enabled;
         step.mixed = mixer > i;
       } else if (slot.module === "mixer") {
         chain = step.chain = "mix";
@@ -158,6 +159,7 @@
       this.sections = {
         sample: this.sampleCard,
         synth: $("synth-engine"),
+        wavetable: $("wavetable-engine"),
         drums: $("drum-machine"),
         sampler: $("sampler-editor"),
         vocal: $("vocal-editor"),
@@ -323,6 +325,7 @@
         !!preset.drums,
         !!preset.synth,
         !!preset.tb303,
+        !!preset.wavetable,
       ]);
       if (layout !== this.layout) {
         this.layout = layout;
@@ -515,6 +518,7 @@
           const n = preset.synth?.count ?? 1;
           return `${n} ${n === 1 ? "oscillator" : "oscillators"}`;
         }
+        case "wavetable": return preset.wavetable?.oscillators.slice(0,preset.wavetable.count??2).map((o,i)=>o.enabled?`${["A","B","C","D"][i]} · ${o.unison}v`:null).filter(Boolean).join(" + ") || "Off";
         case "drums": {
           const tracks = preset.drums?.tracks ?? [];
           const set = tracks.filter((t) => t.steps?.some((s) => s.velocity > 0)).length;
@@ -756,6 +760,7 @@
       const preset = this.preset();
       const stash = this.stash.get(this.timbre());
       if (KEPT.includes(key) && stash?.[key]) preset[key] = stash[key];
+      if (key === "wavetable" && !preset.wavetable) preset.wavetable = window.SadWavetable.defaults();
       const source = SOURCES.includes(key) && key !== "sample";
       this.hideUndo();
       this.edit((list) => list.splice(index, 0, { module: key, enabled: true }), {

@@ -1252,6 +1252,7 @@
         records = (await this.store.read("settings"))
           .filter((item) => item.key.startsWith(INSTRUMENT_KEY))
           .map((item) => listed(item.value));
+        if(this.actions.factory) records.push(...await this.actions.factory());
       }
       // By category, those in none last, then by name.
       records.sort((a, b) => Number(!a.category) - Number(!b.category) ||
@@ -1346,7 +1347,7 @@
       name.textContent = record.name;
       const kind = document.createElement("span");
       kind.className = "instrument-kind";
-      kind.textContent = INSTRUMENT_KINDS[record.kind];
+      kind.textContent = record.factory ? "Wavetable · Factory" : INSTRUMENT_KINDS[record.kind];
       load.append(name, kind);
       load.title = holds ? `Load into ${part.name}` : "Use + to load it as a new timbre";
       load.disabled = this.busy || !holds;
@@ -1378,6 +1379,7 @@
       };
       for (const button of menu.querySelectorAll("button")) {
         button.disabled = this.busy;
+        if(record.factory && button.dataset.act !== "export") button.hidden=true;
         button.onclick = () => {
           menu.open = false;
           const act = button.dataset.act;
@@ -1396,7 +1398,7 @@
       this.nameInput.required = mode !== "category";
       if (mode === "save") {
         // The timbre's own preset, when it came from one, is the one to replace.
-        const own = this.records.find((r) => r.kind === part?.kind && sameName(r.name, part?.name || ""));
+        const own = this.records.find((r) => !r.factory && r.kind === part?.kind && sameName(r.name, part?.name || ""));
         this.nameInput.value = part?.name || "";
         this.categoryInput.value = own?.category ?? this.category ?? "";
       } else if (mode === "edit") {
@@ -1418,7 +1420,7 @@
       const { mode } = this.dialog || {};
       if (mode === "save") {
         const name = this.nameInput.value.trim(), category = this.categoryInput.value.trim();
-        this.submit.textContent = this.records.some((r) => sameName(r.name, name) && sameName(r.category, category))
+        this.submit.textContent = this.records.some((r) => !r.factory && sameName(r.name, name) && sameName(r.category, category))
           ? "Replace" : "Save";
       } else this.submit.textContent = mode === "edit" ? "Save" : "Rename";
     }
@@ -1441,7 +1443,7 @@
       if (!part || !INSTRUMENT_KINDS[part.kind])
         throw new Error("Choose an instrument timbre to save. Bus and Master hold no instrument.");
       await this.actions.flush();
-      const existing = this.records.find((r) => sameName(r.name, name) && sameName(r.category, category));
+      const existing = this.records.find((r) => !r.factory && sameName(r.name, name) && sameName(r.category, category));
       if (this.actions.native)
         await this.actions.request("/api/instruments/save", { name, category, id: existing?.id });
       else {
@@ -1467,9 +1469,13 @@
       await this.actions.change(async () => {
         if (this.actions.native)
           return this.actions.request("/api/instruments/load", { id: record.id, new: asNew });
-        const stored = await this.store.setting(INSTRUMENT_KEY + record.id);
-        if (!stored) throw new Error("This instrument is no longer in the library.");
-        const { state } = await decodeInstrument(stored.blob);
+        let state;
+        if(record.factory) state=await this.actions.factoryState(record.id);
+        else {
+          const stored = await this.store.setting(INSTRUMENT_KEY + record.id);
+          if (!stored) throw new Error("This instrument is no longer in the library.");
+          ({ state } = await decodeInstrument(stored.blob));
+        }
         const id = asNew
           ? (await this.actions.request("/api/timbres/add", { kind: record.kind })).active
           : this.part()?.id;
@@ -1530,7 +1536,9 @@
         if (!result.cancelled) this.actions.notify(`Exported “${record.name}”`);
         return;
       }
-      const blob = this.actions.native
+      const blob = record.factory && !this.actions.native
+        ? await encodeInstrument(record,await this.actions.factoryState(record.id))
+        : this.actions.native
         ? await (await this.actions.api("/api/instruments/export", { id: record.id })).blob()
         : (await this.store.setting(INSTRUMENT_KEY + record.id))?.blob;
       if (!blob) throw new Error("This instrument is no longer in the library.");

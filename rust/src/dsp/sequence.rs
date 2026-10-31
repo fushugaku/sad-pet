@@ -323,6 +323,7 @@ enum Binding {
     Oscillator(usize),
     SynthOscillator(usize),
     Tb303Oscillator(usize),
+    WavetableOscillator(usize),
     Parameter(usize),
     Notes,
     /// Each gate starts this LFO over.
@@ -445,6 +446,9 @@ impl Runtime {
                     Target::Oscillator { index } => Binding::Oscillator(*index as usize),
                     Target::SynthOscillator { index } => Binding::SynthOscillator(*index as usize),
                     Target::Tb303Oscillator { index } => Binding::Tb303Oscillator(*index as usize),
+                    Target::WavetableOscillator { index } => Binding::WavetableOscillator(
+                        (*index as usize).min(crate::wavetable::OSCILLATORS - 1),
+                    ),
                     Target::Notes | Target::Pad { .. } => Binding::Notes,
                     Target::Parameter { parameter } => crate::sequence::lfo_reset(parameter)
                         .map_or_else(
@@ -471,6 +475,10 @@ impl Runtime {
                     }
                     Binding::Tb303Oscillator(index) => {
                         let id = format!("tb303_osc{}_transpose", index + 1);
+                        parameters::specs().iter().position(|s| s.id == id)
+                    }
+                    Binding::WavetableOscillator(index) => {
+                        let id = format!("wt_{}_transpose", ["a", "b", "c", "d"][index]);
                         parameters::specs().iter().position(|s| s.id == id)
                     }
                     Binding::Parameter(index) => Some(index),
@@ -554,6 +562,7 @@ impl Runtime {
                     Binding::Oscillator(_)
                         | Binding::SynthOscillator(_)
                         | Binding::Tb303Oscillator(_)
+                        | Binding::WavetableOscillator(_)
                 )
             })
             .collect();
@@ -1066,6 +1075,7 @@ impl Runtime {
                         | Binding::Oscillator(_)
                         | Binding::SynthOscillator(_)
                         | Binding::Tb303Oscillator(_)
+                        | Binding::WavetableOscillator(_)
                 ) {
                     (l.pitch.value(now) - l.root as f32) * l.amount
                 } else {
@@ -1093,6 +1103,7 @@ impl Runtime {
                 match l.binding {
                     Binding::Oscillator(index) => m.resynth.oscillators[index].level = 0.0,
                     Binding::SynthOscillator(index) => m.synth.oscillators[index].level = 0.0,
+                    Binding::WavetableOscillator(index) => m.wavetable[index].level = 0.0,
                     Binding::Tb303Oscillator(index) => {
                         m.tb303_radias.oscillators[index].level = 0.0
                     }
@@ -1305,6 +1316,44 @@ mod tests {
             m.resynth.oscillators[1].level,
             p.resynth.oscillators[1].level
         );
+    }
+
+    #[test]
+    fn wavetable_pitch_lanes_only_offset_and_gate_their_own_oscillator() {
+        for index in 0..crate::wavetable::OSCILLATORS {
+            let mut osc = lane(1, Target::WavetableOscillator { index: index as u8 }, 67);
+            osc.gate_output = true;
+            let mut r = Runtime::new(&[osc]);
+            r.tick(8000, 120.0, true);
+            let mut p = crate::timbres::Kind::Wavetable.preset().unwrap();
+            p.wavetable.as_mut().unwrap().count = 4;
+            for oscillator in &mut p.wavetable.as_mut().unwrap().oscillators {
+                oscillator.controls.enabled = true;
+            }
+            p.wavetable.as_mut().unwrap().oscillators[index]
+                .controls
+                .transpose = -5.0;
+            p.wavetable.as_mut().unwrap().oscillators[index]
+                .controls
+                .level = 0.8;
+            let m = current(&r, &p);
+            for (i, oscillator) in m.wavetable.iter().enumerate() {
+                assert_eq!(oscillator.transpose, if i == index { 2.0 } else { 0.0 });
+            }
+            assert_eq!(m.wavetable[index].level, 0.8);
+            assert_eq!(m.params.sample_tune_semis, 0.0);
+            for _ in 0..8000 {
+                if !r.core.gate(0) {
+                    break;
+                }
+                r.tick(8000, 120.0, true);
+            }
+            assert!(!r.core.gate(0));
+            let m = current(&r, &p);
+            for (i, oscillator) in m.wavetable.iter().enumerate() {
+                assert_eq!(oscillator.level, if i == index { 0.0 } else { 1.0 });
+            }
+        }
     }
 
     #[test]

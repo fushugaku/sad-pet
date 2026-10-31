@@ -17,6 +17,7 @@
   window.sadPetAudio = {
     status: () => backend?.status || "Loading WebAssembly…",
   };
+  window.sadPetResume = () => backend?.resume();
   // Resume synchronously during the gesture, including keyboard note entry.
   for (const event of ["pointerdown", "keydown"])
     document.addEventListener(event, () => backend?.resume(), {

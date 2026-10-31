@@ -321,7 +321,19 @@ impl FilterBank {
             p.filter2_morph,
         );
     }
-    pub(crate) fn process(
+    /// Process a standalone bank without Rack taps or bus sends.
+    pub fn process(&mut self, frame: Stereo) -> Stereo {
+        let first = self.filters[0].process(frame);
+        match self.routing {
+            FilterRouting::Single => first,
+            FilterRouting::Serial => self.filters[1].process(first),
+            FilterRouting::Parallel => {
+                let second = self.filters[1].process(frame);
+                std::array::from_fn(|c| (first[c] + second[c]) * 0.5)
+            }
+        }
+    }
+    pub(crate) fn process_tapped(
         &mut self,
         frame: Stereo,
         taps: &mut super::taps::Runtime,

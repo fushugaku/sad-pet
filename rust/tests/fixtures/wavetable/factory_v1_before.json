@@ -1,0 +1,162 @@
+[
+  {
+    "id": "factory:wt-basic-morph:v1",
+    "content_hash": "9dfd397387827d60871f84c0717af42e9f572337a22d1f45109795c4ae6cbd72",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-pulse-width:v1",
+    "content_hash": "60ebed7236c32cba8c7475448036f5366eb6a8a9c13942e0c963366da6dbbb80",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-triangle-bloom:v1",
+    "content_hash": "9af64038e429017c67280684f8d1e400a7b549cfa9f6478efbd27fafa5ee736e",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-saw-brass:v1",
+    "content_hash": "4d97d8d1adafe3af88860f7e311782b1ea3ee9e302e3839dbfe82430b42cfe4a",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-sync-contours:v1",
+    "content_hash": "a4bb54ee6385838f54b9d1d7934e54f91ef1cdad82238391ac47367eb6caf28e",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-organ-blend:v1",
+    "content_hash": "280c6a20e7d771e0b090198eeddc0728f8797b865dec46048265e92b4212cac4",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-hollow-pulse:v1",
+    "content_hash": "db9b6d64de51986bc1ac12adf3df9dd3ccedbb14839e795324df278088a525b2",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-rounded-square:v1",
+    "content_hash": "f16586def6a0edcb4d5121c6af8393d01c389cd05c49442c0de01cb9c7eaf0e8",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-odd-even:v1",
+    "content_hash": "ade04d7b3cd0cb7a9432eb65c9b52313f0e880785d2741d6e89049f740aae940",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-harmonic-shift:v1",
+    "content_hash": "6e34e7d1ec9ea721b3d9c7e6bccf211ff84b018ecd77dbabe397e96016d0e247",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-spectral-peaks:v1",
+    "content_hash": "5ce1b278eef708f2bc512f59bebf0a1f332d63d2935690b78964b1a9636361eb",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-additive-glass:v1",
+    "content_hash": "1aad48f4c8f48e71b5e5ed06d48a64108f64eae96bd342ec422f8387af6deeed",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-octave-stack:v1",
+    "content_hash": "49cdf5f6a4fe66b9c9eb7a6219d1d89289d9c1b09b30e65c0410168a49d46dc9",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-bell-metals:v1",
+    "content_hash": "ce1a4d9b14e928e1e10d78a96bf867b1566b1a06f1de1870e19100759e46523c",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-comb-sweep:v1",
+    "content_hash": "dacb79d7844aea8dab57ed6c6d7f15c2c85444fab20fdfe5b1baf8687a332131",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-harmonic-steps:v1",
+    "content_hash": "638abf04685214fc52c88d9272c13a3ecd2c41739d0e339ce27545e21e96018a",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-vowel-sweep:v1",
+    "content_hash": "ef05784f9bde1ae1bebecd03bf3aa63eb488b1f2d70ddd7e2881c14b23e4acf8",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-choir-colors:v1",
+    "content_hash": "440e11c26009a6985e3b73e65a047bc08e8e22b248ae23569ae038036745e503",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-nasal-reed:v1",
+    "content_hash": "ba9f31b6d18656ac34b22884b8158eb4c31814afb4c7fff1fe9e979ee86e61ea",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-throat-bloom:v1",
+    "content_hash": "3c78c35fe026db23151a13e5ca24bd5a7ec76a3a031e4b6c7b212e01e2902b78",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-breath-formants:v1",
+    "content_hash": "492189d8504fb60cc9b3ccfb5d7cb2a2539238d20e6c8c0e03b3b5135434b4af",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-talking-bass:v1",
+    "content_hash": "2045207b56e844c1a727257bff1892d6396634849cb0b0e1f7d8b735e7b6886f",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-bit-shapes:v1",
+    "content_hash": "9ec265707363f41629028b120dd25fec5f28927be41db47aa4cb5645698b2ed9",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-phase-spiral:v1",
+    "content_hash": "57452a6b4387365b086d83a75f49ea56ece3b4c7ba38bcf6717dbdb6999505b5",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-razor-stack:v1",
+    "content_hash": "66fd633030a4cffc9509b6ea67bca84a9f5156b3f165db3cc8f5cfd6078e0b2b",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-metallic-scan:v1",
+    "content_hash": "fd5a57f9024a3d02abfb2950fcbe5253c16d472c99a438377596cf944b9a3465",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-prism-fold:v1",
+    "content_hash": "0c02e6fd8c288c5a169ea6eaf2c901cdfd64091b4fd9a01afe12d360debd31bb",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-digital-reeds:v1",
+    "content_hash": "7582db2e7ecb49cd6e1a9b7693ece23cc6e65ca0678428c0dfa82e976fde4892",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-dust-contours:v1",
+    "content_hash": "a7e2ed33bb3097a3018418c79a770901d086fcd31fd6a930ddcb88b17c47a38c",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-frozen-spark:v1",
+    "content_hash": "007268e45d944d4e26d9dbbf590e222efb9baa884a05a168b174368563889045",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-noise-cloud:v1",
+    "content_hash": "dc3e021558923f4ad54b6520bc8c40773d3b80391a643b5487052cbac95e6420",
+    "frames": 64
+  },
+  {
+    "id": "factory:wt-fractured-air:v1",
+    "content_hash": "aa9f83177000106e2342e13205d4105280518ce3c8349e326e993afc8d1ce364",
+    "frames": 64
+  }
+]

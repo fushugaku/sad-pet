@@ -114,8 +114,8 @@ fn a_send_without_its_bus_goes_nowhere_and_leaves_the_chain_alone() {
 
 #[test]
 fn every_section_of_a_bus_sends_what_it_hands_on() {
-    // Nothing switched on: every section passes the input, so each one sends
-    // it, and a passthrough bus starts processing to do so.
+    // Bypassed sections pass and send their input. Individual switched-off
+    // filters send nothing; the aggregate Filters stage still passes input.
     for stage in Stage::ALL {
         let mut e = bus(|p| {
             *p.taps.get_mut(stage) = Tap {
@@ -129,7 +129,12 @@ fn every_section_of_a_bus_sends_what_it_hands_on() {
             let x = input(n);
             let y = e.process_input_frame(x);
             if n > 2_000 {
-                for (sent, y) in send(&e, 2).into_iter().zip(y) {
+                let expected = if matches!(stage, Stage::Filter1 | Stage::Filter2) {
+                    [0.0; 2]
+                } else {
+                    y
+                };
+                for (sent, y) in send(&e, 2).into_iter().zip(expected) {
                     error = error.max((sent - y).abs());
                 }
             }

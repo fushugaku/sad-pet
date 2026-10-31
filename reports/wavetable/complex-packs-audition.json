@@ -1,0 +1,70 @@
+{
+  "cues": [
+    {
+      "end_seconds": 2.0,
+      "id": "factory:wt-cascade-steel:v1",
+      "name": "Cascade Steel",
+      "pack": "Complex FM",
+      "peak": 0.18801724910736084,
+      "start_seconds": 0.0
+    },
+    {
+      "end_seconds": 4.1,
+      "id": "factory:wt-vowel-labyrinth:v1",
+      "name": "Vowel Labyrinth",
+      "pack": "Formant Journeys",
+      "peak": 0.1568141132593155,
+      "start_seconds": 2.1
+    },
+    {
+      "end_seconds": 6.2,
+      "id": "factory:wt-modal-bronze:v1",
+      "name": "Modal Bronze",
+      "pack": "Resonant Objects",
+      "peak": 0.18073731660842896,
+      "start_seconds": 4.2
+    },
+    {
+      "end_seconds": 8.3,
+      "id": "factory:wt-phase-maze:v1",
+      "name": "Phase Maze",
+      "pack": "Phase Architectures",
+      "peak": 0.19502222537994385,
+      "start_seconds": 6.3
+    },
+    {
+      "end_seconds": 10.4,
+      "id": "factory:wt-spectral-weave:v1",
+      "name": "Spectral Weave",
+      "pack": "Spectral Journeys",
+      "peak": 0.1289714127779007,
+      "start_seconds": 8.4
+    },
+    {
+      "end_seconds": 12.5,
+      "id": "factory:wt-fourfold-motion:v1",
+      "name": "Fourfold Motion",
+      "pack": "Vector Worlds",
+      "peak": 0.1463865041732788,
+      "start_seconds": 10.5
+    },
+    {
+      "end_seconds": 14.6,
+      "id": "factory:wt-fractal-bloom:v1",
+      "name": "Fractal Bloom",
+      "pack": "Fractal Matter",
+      "peak": 0.09452839195728302,
+      "start_seconds": 12.6
+    },
+    {
+      "end_seconds": 16.7,
+      "id": "factory:wt-byte-labyrinth:v1",
+      "name": "Byte Labyrinth",
+      "pack": "Digital Evolution",
+      "peak": 0.20401844382286072,
+      "start_seconds": 14.7
+    }
+  ],
+  "sample_rate": 48000,
+  "scope": "Eight original complex packs; one dry C4 voice, U=1, Position 0..1, shared production Engine, no effects"
+}

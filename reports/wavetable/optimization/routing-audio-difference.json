@@ -1,0 +1,556 @@
+{
+  "scope": "WASM routed operators before/after shared phase-advance optimization, scalar and SIMD; four-node feedback with independent sync ring, 24 held-note cases at 44.1/48/96 kHz with live controls/unison/mode edits. Both engines start with 2048 clean frames, activate the routes, then settle entry and downstream filters for 0.5 audio seconds. Note restarts are tested separately because their entry changed intentionally to remove incorrect fallback operators. No time/gain fitting.",
+  "frames": 12288,
+  "warmup": {
+    "clean_frames": 2048,
+    "routed_audio_seconds": 0.5,
+    "scope": "Held voices only; intentional new-note entry change is excluded"
+  },
+  "binaries": [
+    {
+      "path": "/tmp/sadpet-fm-opt-before/routing-stage10.wasm",
+      "sha256": "4f823076505dcc13fbeddc36b049960cf491f9940e3bbe35a900b7dd57cb177a"
+    },
+    {
+      "path": "/tmp/sadpet-wt-web/sad_pet.wasm",
+      "sha256": "e1ef7c0a99642d5016a14f0eed58b17e03b95e7a56c65f2d6c43017ecf1b20bb"
+    },
+    {
+      "path": "/tmp/sadpet-wt-web/sad_pet.simd.wasm",
+      "sha256": "20e4dda0f0efc4ccbaf430e304ca06aebd592fe1593a725cd414575df9aaffda"
+    }
+  ],
+  "criterion_max_abs_error": 0.00001,
+  "criterion_error_dbr": -90,
+  "passed": true,
+  "results": [
+    {
+      "rate": 44100,
+      "mode": "fm",
+      "notes": 1,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "scalar",
+      "max_abs_error": 0,
+      "error_dbr": -590.7275626182886,
+      "passed": true
+    },
+    {
+      "rate": 44100,
+      "mode": "fm",
+      "notes": 1,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "simd",
+      "max_abs_error": 0,
+      "error_dbr": -590.7275626182886,
+      "passed": true
+    },
+    {
+      "rate": 44100,
+      "mode": "fm",
+      "notes": 8,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "scalar",
+      "max_abs_error": 0,
+      "error_dbr": -599.0582710508115,
+      "passed": true
+    },
+    {
+      "rate": 44100,
+      "mode": "fm",
+      "notes": 8,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "simd",
+      "max_abs_error": 0,
+      "error_dbr": -599.0582710508115,
+      "passed": true
+    },
+    {
+      "rate": 44100,
+      "mode": "pm",
+      "notes": 1,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "scalar",
+      "max_abs_error": 0,
+      "error_dbr": -587.2793892085756,
+      "passed": true
+    },
+    {
+      "rate": 44100,
+      "mode": "pm",
+      "notes": 1,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "simd",
+      "max_abs_error": 0,
+      "error_dbr": -587.2793892085756,
+      "passed": true
+    },
+    {
+      "rate": 44100,
+      "mode": "pm",
+      "notes": 8,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "scalar",
+      "max_abs_error": 0,
+      "error_dbr": -596.1691687928293,
+      "passed": true
+    },
+    {
+      "rate": 44100,
+      "mode": "pm",
+      "notes": 8,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "simd",
+      "max_abs_error": 0,
+      "error_dbr": -596.1691687928293,
+      "passed": true
+    },
+    {
+      "rate": 44100,
+      "mode": "sync",
+      "notes": 1,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "scalar",
+      "max_abs_error": 0,
+      "error_dbr": -593.5560565866145,
+      "passed": true
+    },
+    {
+      "rate": 44100,
+      "mode": "sync",
+      "notes": 1,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "simd",
+      "max_abs_error": 0,
+      "error_dbr": -593.5560565866145,
+      "passed": true
+    },
+    {
+      "rate": 44100,
+      "mode": "sync",
+      "notes": 8,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "scalar",
+      "max_abs_error": 0,
+      "error_dbr": -602.0773961578311,
+      "passed": true
+    },
+    {
+      "rate": 44100,
+      "mode": "sync",
+      "notes": 8,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "simd",
+      "max_abs_error": 0,
+      "error_dbr": -602.0773961578311,
+      "passed": true
+    },
+    {
+      "rate": 44100,
+      "mode": "mixed",
+      "notes": 1,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "scalar",
+      "max_abs_error": 0,
+      "error_dbr": -589.4471081635575,
+      "passed": true
+    },
+    {
+      "rate": 44100,
+      "mode": "mixed",
+      "notes": 1,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "simd",
+      "max_abs_error": 0,
+      "error_dbr": -589.4471081635575,
+      "passed": true
+    },
+    {
+      "rate": 44100,
+      "mode": "mixed",
+      "notes": 8,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "scalar",
+      "max_abs_error": 0,
+      "error_dbr": -599.6557130468187,
+      "passed": true
+    },
+    {
+      "rate": 44100,
+      "mode": "mixed",
+      "notes": 8,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "simd",
+      "max_abs_error": 0,
+      "error_dbr": -599.6557130468187,
+      "passed": true
+    },
+    {
+      "rate": 48000,
+      "mode": "fm",
+      "notes": 1,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "scalar",
+      "max_abs_error": 0,
+      "error_dbr": -590.876071337562,
+      "passed": true
+    },
+    {
+      "rate": 48000,
+      "mode": "fm",
+      "notes": 1,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "simd",
+      "max_abs_error": 0,
+      "error_dbr": -590.876071337562,
+      "passed": true
+    },
+    {
+      "rate": 48000,
+      "mode": "fm",
+      "notes": 8,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "scalar",
+      "max_abs_error": 0,
+      "error_dbr": -599.0399745757857,
+      "passed": true
+    },
+    {
+      "rate": 48000,
+      "mode": "fm",
+      "notes": 8,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "simd",
+      "max_abs_error": 0,
+      "error_dbr": -599.0399745757857,
+      "passed": true
+    },
+    {
+      "rate": 48000,
+      "mode": "pm",
+      "notes": 1,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "scalar",
+      "max_abs_error": 0,
+      "error_dbr": -587.4182602366328,
+      "passed": true
+    },
+    {
+      "rate": 48000,
+      "mode": "pm",
+      "notes": 1,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "simd",
+      "max_abs_error": 0,
+      "error_dbr": -587.4182602366328,
+      "passed": true
+    },
+    {
+      "rate": 48000,
+      "mode": "pm",
+      "notes": 8,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "scalar",
+      "max_abs_error": 0,
+      "error_dbr": -595.9633504616507,
+      "passed": true
+    },
+    {
+      "rate": 48000,
+      "mode": "pm",
+      "notes": 8,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "simd",
+      "max_abs_error": 0,
+      "error_dbr": -595.9633504616507,
+      "passed": true
+    },
+    {
+      "rate": 48000,
+      "mode": "sync",
+      "notes": 1,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "scalar",
+      "max_abs_error": 0,
+      "error_dbr": -593.4095372221129,
+      "passed": true
+    },
+    {
+      "rate": 48000,
+      "mode": "sync",
+      "notes": 1,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "simd",
+      "max_abs_error": 0,
+      "error_dbr": -593.4095372221129,
+      "passed": true
+    },
+    {
+      "rate": 48000,
+      "mode": "sync",
+      "notes": 8,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "scalar",
+      "max_abs_error": 0,
+      "error_dbr": -602.3733648953823,
+      "passed": true
+    },
+    {
+      "rate": 48000,
+      "mode": "sync",
+      "notes": 8,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "simd",
+      "max_abs_error": 0,
+      "error_dbr": -602.3733648953823,
+      "passed": true
+    },
+    {
+      "rate": 48000,
+      "mode": "mixed",
+      "notes": 1,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "scalar",
+      "max_abs_error": 0,
+      "error_dbr": -589.0005922965842,
+      "passed": true
+    },
+    {
+      "rate": 48000,
+      "mode": "mixed",
+      "notes": 1,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "simd",
+      "max_abs_error": 0,
+      "error_dbr": -589.0005922965842,
+      "passed": true
+    },
+    {
+      "rate": 48000,
+      "mode": "mixed",
+      "notes": 8,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "scalar",
+      "max_abs_error": 0,
+      "error_dbr": -599.681559604801,
+      "passed": true
+    },
+    {
+      "rate": 48000,
+      "mode": "mixed",
+      "notes": 8,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "simd",
+      "max_abs_error": 0,
+      "error_dbr": -599.681559604801,
+      "passed": true
+    },
+    {
+      "rate": 96000,
+      "mode": "fm",
+      "notes": 1,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "scalar",
+      "max_abs_error": 0,
+      "error_dbr": -590.4558974760462,
+      "passed": true
+    },
+    {
+      "rate": 96000,
+      "mode": "fm",
+      "notes": 1,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "simd",
+      "max_abs_error": 0,
+      "error_dbr": -590.4558974760462,
+      "passed": true
+    },
+    {
+      "rate": 96000,
+      "mode": "fm",
+      "notes": 8,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "scalar",
+      "max_abs_error": 0,
+      "error_dbr": -599.4384525910187,
+      "passed": true
+    },
+    {
+      "rate": 96000,
+      "mode": "fm",
+      "notes": 8,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "simd",
+      "max_abs_error": 0,
+      "error_dbr": -599.4384525910187,
+      "passed": true
+    },
+    {
+      "rate": 96000,
+      "mode": "pm",
+      "notes": 1,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "scalar",
+      "max_abs_error": 0,
+      "error_dbr": -586.850874342902,
+      "passed": true
+    },
+    {
+      "rate": 96000,
+      "mode": "pm",
+      "notes": 1,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "simd",
+      "max_abs_error": 0,
+      "error_dbr": -586.850874342902,
+      "passed": true
+    },
+    {
+      "rate": 96000,
+      "mode": "pm",
+      "notes": 8,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "scalar",
+      "max_abs_error": 0,
+      "error_dbr": -596.524402828051,
+      "passed": true
+    },
+    {
+      "rate": 96000,
+      "mode": "pm",
+      "notes": 8,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "simd",
+      "max_abs_error": 0,
+      "error_dbr": -596.524402828051,
+      "passed": true
+    },
+    {
+      "rate": 96000,
+      "mode": "sync",
+      "notes": 1,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "scalar",
+      "max_abs_error": 0,
+      "error_dbr": -594.7272597076933,
+      "passed": true
+    },
+    {
+      "rate": 96000,
+      "mode": "sync",
+      "notes": 1,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "simd",
+      "max_abs_error": 0,
+      "error_dbr": -594.7272597076933,
+      "passed": true
+    },
+    {
+      "rate": 96000,
+      "mode": "sync",
+      "notes": 8,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "scalar",
+      "max_abs_error": 0,
+      "error_dbr": -603.5907889661147,
+      "passed": true
+    },
+    {
+      "rate": 96000,
+      "mode": "sync",
+      "notes": 8,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "simd",
+      "max_abs_error": 0,
+      "error_dbr": -603.5907889661147,
+      "passed": true
+    },
+    {
+      "rate": 96000,
+      "mode": "mixed",
+      "notes": 1,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "scalar",
+      "max_abs_error": 0,
+      "error_dbr": -590.2165874487519,
+      "passed": true
+    },
+    {
+      "rate": 96000,
+      "mode": "mixed",
+      "notes": 1,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "simd",
+      "max_abs_error": 0,
+      "error_dbr": -590.2165874487519,
+      "passed": true
+    },
+    {
+      "rate": 96000,
+      "mode": "mixed",
+      "notes": 8,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "scalar",
+      "max_abs_error": 0,
+      "error_dbr": -601.0574415678059,
+      "passed": true
+    },
+    {
+      "rate": 96000,
+      "mode": "mixed",
+      "notes": 8,
+      "waves": 4,
+      "initial_unison": 4,
+      "variant": "simd",
+      "max_abs_error": 0,
+      "error_dbr": -601.0574415678059,
+      "passed": true
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "sad_pet.wasm": "e1ef7c0a99642d5016a14f0eed58b17e03b95e7a56c65f2d6c43017ecf1b20bb",
+  "sad_pet.simd.wasm": "20e4dda0f0efc4ccbaf430e304ca06aebd592fe1593a725cd414575df9aaffda",
+  "core.mjs": "78ecf06e7d012e2622dd93a6f43d0f818c530b21311645cb5064ae2d16106116"
+}

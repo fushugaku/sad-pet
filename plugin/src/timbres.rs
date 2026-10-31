@@ -550,8 +550,25 @@ impl Controller {
         self.drain();
         let path = request["path"].as_str().ok_or("Missing command")?;
         let data = &request["data"];
+        if path.starts_with("/api/capture/") {
+            return self
+                .capture
+                .as_ref()
+                .ok_or("Start audio before capturing")?
+                .command(path, data, self.rate, self.input_available());
+        }
+        if matches!(path, "/api/wavetables/select" | "/api/wavetables/layers")
+            && data["context_revision"]
+                .as_u64()
+                .is_some_and(|revision| revision != self.scene_revision)
+        {
+            return Err("The scene changed while the wavetable was loading".into());
+        }
         if path == "/api/sample-preview" && request["method"] == "POST" {
             return self.preview_request(data);
+        }
+        if path == "/api/wavetables/audition" && request["method"] == "POST" {
+            return self.wavetable_audition(data);
         }
         if self.standalone {
             let post = request["method"] == "POST";
@@ -680,7 +697,17 @@ impl Controller {
                     };
                     let mut value = serde_json::to_value(&meta).unwrap();
                     for key in [
-                        "name", "gain", "muted", "solo", "channel", "sends", "entries",
+                        "name",
+                        "gain",
+                        "muted",
+                        "solo",
+                        "channel",
+                        "key_low",
+                        "key_high",
+                        "velocity_low",
+                        "velocity_high",
+                        "sends",
+                        "entries",
                     ] {
                         if let Some(v) = data.get(key) {
                             value[key] = v.clone();
@@ -807,6 +834,9 @@ impl Controller {
             result["midi_controls"] = json!(self.controls.changes());
             self.sent.answer(&mut result, query);
         } else if request["method"] == "POST"
+            && !path.starts_with("/api/capture/")
+            && (!path.starts_with("/api/wavetables/")
+                || matches!(path, "/api/wavetables/select" | "/api/wavetables/layers"))
             && !matches!(
                 path,
                 "/api/note" | "/api/drums/trigger" | "/api/sequencer/view"
@@ -823,6 +853,8 @@ impl Audio {
         if self.meta.id == id {
             if self.meta.mix.channel != mix.channel && self.engine.preset.drums.is_none() {
                 self.engine.midi(Message::Reset);
+            } else if self.meta.mix.midi_changed(mix) {
+                self.engine.clear_hold();
             }
             self.meta.mix = mix;
         } else {
@@ -911,6 +943,11 @@ impl Audio {
     pub(super) fn process_block(&mut self, input: &[Stereo], output: &mut [Stereo]) {
         for (input, output) in input.chunks(CHUNK).zip(output.chunks_mut(CHUNK)) {
             self.process_chunk(input, output);
+        }
+        if let Some(capture) = &mut self.capture {
+            for (&input, &output) in input.iter().zip(output.iter()) {
+                capture.push(input, output);
+            }
         }
     }
     fn process_chunk(&mut self, input: &[Stereo], output: &mut [Stereo]) {

@@ -1,0 +1,10 @@
+{
+  "scope": "Same complete 3.2 second note-on, held four-note FM/sync chord, moving all four table positions, note-off/release. Numerical comparison on raw float output, no fitting. Listening WAVs have the same fixed gain of 16 (+24.08 dB), with no clipping.",
+  "rate": 48000,
+  "frames": 153600,
+  "gain": 16,
+  "peak": 0.01397341676056385,
+  "error_dbr": -129.11078002624626,
+  "max_abs_error": 3.725290298461914e-9,
+  "passed": true
+}

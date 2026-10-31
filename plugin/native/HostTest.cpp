@@ -171,6 +171,57 @@ int main() {
         restored.prepareToPlay(96000.0, 4096);
         require(restored.getLatencySamples() == 192, "Master latency did not follow the sample rate");
         require(static_cast<int>(command(restored, "/api/state")["sample_rate"]) == 96000, "Host sample rate change was ignored");
+        // Wavetable uses the same native editor/host boundary as the other
+        // Rack sources, including the appended C/D automation and DAW recall.
+        {
+            SadPetProcessor wt;
+            const auto instruments = command(wt, "/api/wavetables/presets");
+            require(instruments.getArray() != nullptr && instruments.getArray()->size() == 80,
+                "Wavetable factory instruments are missing from the native bundle");
+            auto* selection = new juce::DynamicObject;
+            selection->setProperty("id", instruments[0]["id"]);
+            const auto document = command(wt, "/api/wavetables/preset", juce::var(selection));
+            command(wt, "/api/preset", document["preset"]);
+            for (int count = 3; count <= 4; ++count) {
+                const auto added = command(wt, "/api/wavetables/layers", juce::JSON::parse(R"({"action":"add","timbre":0})"));
+                require(static_cast<int>(added["wavetable"]["count"]) == count, "Native Rack did not add a wave");
+            }
+            wt.setPlayConfigDetails(SAD_PET_EFFECT ? 2 : 0, 2, 48000.0, 4096);
+            wt.prepareToPlay(48000.0, 4096);
+            command(wt, "/api/transport", juce::JSON::parse(R"({"playing":true,"midi_gate":true})"));
+            juce::MidiBuffer notes;
+            notes.addEvent(juce::MidiMessage::noteOn(1, 60, static_cast<juce::uint8>(100)), 128);
+            buffer.clear(); render(wt, buffer, notes);
+            require(peak(buffer, 128) > 0.001f, "Native four-wave Rack is silent");
+            auto* cPosition = wt.parameters.getParameter("wt_c_position");
+            auto* dFine = wt.parameters.getParameter("wt_d_fine");
+            require(cPosition != nullptr && dFine != nullptr, "C/D host parameters are missing");
+            cPosition->setValueNotifyingHost(0.72f);
+            dFine->setValueNotifyingHost(0.455f); // -9 cents in the -100..100 range.
+            auto* aFmSource = wt.parameters.getParameter("wt_a_fm_source");
+            auto* dSyncSource = wt.parameters.getParameter("wt_d_sync_source");
+            auto* bFmMode = wt.parameters.getParameter("wt_b_fm_mode");
+            require(aFmSource != nullptr && dSyncSource != nullptr && bFmMode != nullptr,
+                "Arbitrary FM/sync host parameters are missing");
+            aFmSource->setValueNotifyingHost(1.0f); // D -> A.
+            dSyncSource->setValueNotifyingHost(1.0f / 3.0f); // B -> D.
+            bFmMode->setValueNotifyingHost(1.0f); // PM is available on B too.
+            notes.clear(); buffer.clear(); render(wt, buffer, notes);
+            auto current = command(wt, "/api/preset");
+            require(std::abs(static_cast<float>(current["wavetable"]["oscillators"][3]["fine"]) + 9.0f) < 0.001f,
+                "D automation did not reach the Rack");
+            juce::MemoryBlock wtSaved; wt.getStateInformation(wtSaved);
+            SadPetProcessor wtRecalled;
+            wtRecalled.setStateInformation(wtSaved.getData(), static_cast<int>(wtSaved.getSize()));
+            const auto recalled = command(wtRecalled, "/api/preset");
+            require(static_cast<int>(recalled["wavetable"]["count"]) == 4, "DAW recall lost a wavetable wave");
+            require(std::abs(static_cast<float>(recalled["wavetable"]["oscillators"][2]["position"]) - 0.72f) < 0.001f,
+                "DAW recall lost C automation");
+            require(static_cast<int>(recalled["wavetable"]["oscillators"][0]["fm_source"]) == 3
+                && static_cast<int>(recalled["wavetable"]["oscillators"][3]["sync_source"]) == 1
+                && static_cast<int>(recalled["wavetable"]["oscillators"][1]["fm_mode"]) == 2,
+                "DAW recall lost arbitrary FM/sync routing");
+        }
         std::cout << JucePlugin_Name << ": host audio, MIDI offsets, automation, embedded state, instance isolation and sample-rate checks passed\n";
         return 0;
     } catch (const std::exception& error) {

@@ -1,5 +1,6 @@
 //! Neuropolis programs: dynamic track count, stable track IDs and scalar edits.
 //! All clocks, play orders, gates and pulse decisions use the pinned Rust core.
+pub mod motion;
 use metropolix_core::sequencer::{TRACK_RANGES, field};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -29,6 +30,9 @@ pub enum Target {
     Tb303Oscillator {
         index: u8,
     },
+    WavetableOscillator {
+        index: u8,
+    },
     Parameter {
         parameter: String,
     },
@@ -53,7 +57,10 @@ impl Target {
     pub fn oscillator(&self) -> bool {
         matches!(
             self,
-            Self::Oscillator { .. } | Self::SynthOscillator { .. } | Self::Tb303Oscillator { .. }
+            Self::Oscillator { .. }
+                | Self::SynthOscillator { .. }
+                | Self::Tb303Oscillator { .. }
+                | Self::WavetableOscillator { .. }
         )
     }
 }
@@ -320,6 +327,11 @@ impl Track {
 pub struct Program {
     pub enabled: bool,
     pub tracks: Vec<Track>,
+    #[serde(
+        skip_serializing_if = "Vec::is_empty",
+        deserialize_with = "motion::patterns"
+    )]
+    pub patterns: Vec<motion::Pattern>,
     #[serde(skip)]
     pub(crate) runtime: Option<Box<crate::dsp::sequence::Runtime>>,
 }
@@ -328,6 +340,7 @@ impl Default for Program {
         Self {
             enabled: false,
             tracks: vec![Track::default()],
+            patterns: Vec::new(),
             runtime: None,
         }
     }
@@ -337,6 +350,7 @@ impl Clone for Program {
         Self {
             enabled: self.enabled,
             tracks: self.tracks.clone(),
+            patterns: self.patterns.clone(),
             runtime: None,
         }
     }
@@ -391,6 +405,7 @@ impl Program {
         Self {
             enabled: true,
             tracks,
+            patterns: Vec::new(),
             runtime: None,
         }
     }
@@ -415,60 +430,91 @@ impl Program {
         }
     }
     pub fn sanitize(&mut self) {
-        let mut ids = BTreeSet::new();
-        let mut next = self
-            .tracks
-            .iter()
-            .map(|t| t.id)
-            .max()
-            .unwrap_or(0)
-            .saturating_add(1)
-            .max(1);
-        for track in &mut self.tracks {
-            if track.id == 0 || !ids.insert(track.id) {
-                while ids.contains(&next) {
-                    next = next.wrapping_add(1).max(1);
-                }
-                track.id = next;
-                ids.insert(next);
-                next = next.wrapping_add(1).max(1);
+        sanitize_tracks(&mut self.tracks);
+        self.patterns.truncate(16);
+        let mut pattern_ids = BTreeSet::new();
+        for (n, pattern) in self.patterns.iter_mut().enumerate() {
+            pattern.name = pattern
+                .name
+                .trim()
+                .chars()
+                .filter(|c| !c.is_control())
+                .take(80)
+                .collect();
+            if pattern.name.is_empty() {
+                pattern.name = format!("Motion {}", n + 1);
             }
-            if !track.amount.is_finite() {
-                track.amount = 1.0;
+            pattern.id = pattern
+                .id
+                .chars()
+                .filter(|c| !c.is_control())
+                .take(128)
+                .collect();
+            if pattern.id.is_empty() || !pattern_ids.insert(pattern.id.clone()) {
+                pattern.id = format!("user:motion:{}", n + 1);
+                pattern_ids.insert(pattern.id.clone());
             }
-            track.amount = track.amount.clamp(-1.0, 1.0);
-            track.root_note = track.root_note.min(127);
-            track.pages = track.pages.clamp(1, PAGES as u8);
-            track.notes &= 0x0fff;
-            if let Target::Oscillator { index }
-            | Target::SynthOscillator { index }
-            | Target::Tb303Oscillator { index } = &mut track.target
-            {
-                *index = (*index).min(3);
-                // Keep older root-relative patterns at the same offset while
-                // giving every oscillator lane a consistent signed editor.
-                let shift = 60 - i16::from(track.root_note);
-                track.config[field::ROOT] =
-                    (track.config[field::ROOT] + i32::from(shift)).rem_euclid(12);
-                for step in &mut track.steps {
-                    step.pitch = (i16::from(step.pitch) + shift).clamp(36, 84) as u8;
-                    if step.pitch_override >= 0 {
-                        step.pitch_override = (step.pitch_override + shift).clamp(36, 84);
-                    }
-                }
-                track.root_note = 60;
-            }
-            for (value, (lo, hi)) in track.config.iter_mut().zip(TRACK_RANGES) {
-                *value = (*value).clamp(lo, hi);
-            }
-            for step in &mut track.steps {
-                for field in 0..STAGE_FIELDS {
-                    step.set(field, step.get(field));
-                }
-            }
+            pattern.tracks.truncate(16);
+            sanitize_tracks(&mut pattern.tracks);
         }
         if self.runtime.is_none() {
             self.runtime = Some(Box::new(crate::dsp::sequence::Runtime::new(&self.tracks)));
+        }
+    }
+}
+
+fn sanitize_tracks(tracks: &mut [Track]) {
+    let mut ids = BTreeSet::new();
+    let mut next = tracks
+        .iter()
+        .map(|t| t.id)
+        .max()
+        .unwrap_or(0)
+        .saturating_add(1)
+        .max(1);
+    for track in tracks.iter_mut() {
+        if track.id == 0 || !ids.insert(track.id) {
+            while ids.contains(&next) {
+                next = next.wrapping_add(1).max(1);
+            }
+            track.id = next;
+            ids.insert(next);
+            next = next.wrapping_add(1).max(1);
+        }
+        if !track.amount.is_finite() {
+            track.amount = 1.0;
+        }
+        track.amount = track.amount.clamp(-1.0, 1.0);
+        track.root_note = track.root_note.min(127);
+        track.pages = track.pages.clamp(1, PAGES as u8);
+        track.notes &= 0x0fff;
+        let max_oscillator = 3;
+        if let Target::Oscillator { index }
+        | Target::SynthOscillator { index }
+        | Target::WavetableOscillator { index }
+        | Target::Tb303Oscillator { index } = &mut track.target
+        {
+            *index = (*index).min(max_oscillator);
+            // Keep older root-relative patterns at the same offset while
+            // giving every oscillator lane a consistent signed editor.
+            let shift = 60 - i16::from(track.root_note);
+            track.config[field::ROOT] =
+                (track.config[field::ROOT] + i32::from(shift)).rem_euclid(12);
+            for step in &mut track.steps {
+                step.pitch = (i16::from(step.pitch) + shift).clamp(36, 84) as u8;
+                if step.pitch_override >= 0 {
+                    step.pitch_override = (step.pitch_override + shift).clamp(36, 84);
+                }
+            }
+            track.root_note = 60;
+        }
+        for (value, (lo, hi)) in track.config.iter_mut().zip(TRACK_RANGES) {
+            *value = (*value).clamp(lo, hi);
+        }
+        for step in &mut track.steps {
+            for field in 0..STAGE_FIELDS {
+                step.set(field, step.get(field));
+            }
         }
     }
 }
@@ -478,6 +524,8 @@ impl Program {
 pub fn catalog() -> serde_json::Value {
     serde_json::json!({
         "track":Track::default(),
+        "motion_patterns":motion::factory(),
+        "filter_presets":crate::filter_presets::factory(),
         "orders":["Linear","Ping Pong","Pendulum","Odd / Even","Jump by 2","Jump by 3","Jump by 4","Jump by 5","Hopscotch","Arp 3 − 1","Arp 4 − 2","Arp 4 − 1","Converge","Diverge","Growing","Shrinking","Pedal Point","Brownian","Shuffle","Quasi Random","Random"],
         "scales":metropolix_core::scale::FACTORY_SCALES.iter().map(|s|s.name).collect::<Vec<_>>(),
         "scale_masks":metropolix_core::scale::FACTORY_SCALES.iter().map(|s|s.mask.bits()).collect::<Vec<_>>(),

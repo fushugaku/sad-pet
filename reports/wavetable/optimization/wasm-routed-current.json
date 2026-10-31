@@ -1,0 +1,61 @@
+{
+  "scope": "Production shipping SIMD WASM in Node/V8, Core.process(128) including its JS boundary/output view. Preparation/compilation and signal validation excluded. Wall timing, median of two run percentiles; excludes the browser AudioWorklet/device scheduler. Separate from native thread CPU.",
+  "method": "After only; four-node feedback with independent sync ring",
+  "node": "v24.19.0",
+  "v8": "13.6.233.17-node.51",
+  "sample_rate": 48000,
+  "block": 128,
+  "deadline_ms": 2.6666666666666665,
+  "audio_seconds_per_run": 0.75,
+  "warmup_audio_seconds": 0.5,
+  "rounds": 2,
+  "binaries": [
+    {
+      "path": "/tmp/sadpet-wt-web/sad_pet.simd.wasm",
+      "sha256": "20e4dda0f0efc4ccbaf430e304ca06aebd592fe1593a725cd414575df9aaffda"
+    }
+  ],
+  "summary": [
+    {
+      "mode": "mixed",
+      "notes": 2,
+      "waves": 4,
+      "unison": 2,
+      "after": {
+        "p50_ms": 2.396895499999914,
+        "p95_ms": 2.9966665000000035,
+        "p99_ms": 3.1619994999998653,
+        "max_ms": 3.224645500000179
+      },
+      "after_p99_fits_deadline": false
+    }
+  ],
+  "runs": [
+    {
+      "version": "after",
+      "mode": "mixed",
+      "notes": 2,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 0,
+      "peak": 0.004911663010716438,
+      "p50_ms": 2.370541000000003,
+      "p95_ms": 2.968833000000018,
+      "p99_ms": 3.135041000000001,
+      "max_ms": 3.2265409999999974
+    },
+    {
+      "version": "after",
+      "mode": "mixed",
+      "notes": 2,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 1,
+      "peak": 0.004911663010716438,
+      "p50_ms": 2.4232499999998254,
+      "p95_ms": 3.024499999999989,
+      "p99_ms": 3.1889579999997295,
+      "max_ms": 3.22275000000036
+    }
+  ]
+}

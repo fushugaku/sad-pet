@@ -1,0 +1,58 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wavetable WASM · U4 realtime</title>
+<style>body{font:16px system-ui;margin:32px auto;padding:0 20px;max-width:900px;background:#17191c;color:#eee}button,select{font:inherit;padding:12px;background:#303740;color:inherit;border:1px solid #647080;border-radius:6px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.5}label{display:inline-block;margin:0 16px 12px 0}h1{font-size:24px}progress{width:100%}table{width:100%;border-collapse:collapse;margin:24px 0}th,td{text-align:left;padding:12px 8px;border-bottom:1px solid #46505b}#metrics{font-size:21px;margin:24px 0;color:#a6e8bf}.scroll{overflow-x:auto}details{margin-top:24px}</style>
+<h1>4 ноты · 4 волны · Unison 4 · FM + Sync</h1>
+<p>48 kHz / 128 frames · production AudioWorklet · обе обратные связи по кольцу</p>
+<label>Версия <select id="version"><option value="after">После</option><option value="before">До</option></select></label>
+<label>Режим <select id="mode"><option value="mixed">FM + Sync rings</option><option value="paired">Legacy pairs</option><option value="pm">PM + Sync rings</option></select></label>
+<label>Длительность <select id="duration"><option value="30">30 секунд</option><option value="120">120 секунд</option></select></label>
+<button id="run">Проверить</button><p id="status">Готов к проверке</p><progress id="progress" max="30" value="0"></progress><p id="metrics"></p>
+<div class="scroll"><table><thead><tr><th>Версия / режим</th><th>Audio, s</th><th>Underrun</th><th>Ошибки</th></tr></thead><tbody id="history"></tbody></table></div>
+<details><summary>Полный отчёт</summary><pre id="result"></pre></details>
+<script type="module">
+import {preparedWavetable,wavetableIds} from './wavetables.mjs';
+const $=id=>document.getElementById(id),sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function rpc(port){let id=0;const pending=new Map();port.onmessage=({data:m})=>{if(m.id!==undefined){const p=pending.get(m.id);pending.delete(m.id);m.error?p?.reject(Error(m.error)):p?.resolve(m.result);}};return(type,data,path,transfer=[])=>new Promise((resolve,reject)=>{const n=++id;pending.set(n,{resolve,reject});port.postMessage({id:n,type,data,path},transfer);});}
+function stats(context){const s=context.playbackStats||context.playoutStats;return s?JSON.parse(JSON.stringify(s.toJSON())):null;}
+$('run').onclick=async()=>{
+ $('run').disabled=true;$('result').textContent='';let context,node,utility;
+ try{
+ const version=$('version').value,mode=$('mode').value,seconds=Number($('duration').value),base=version==='before'?'./baseline/':'./';$('progress').max=seconds;$('progress').value=0;$('metrics').textContent='';
+ $('status').textContent='Подготовка волн…';
+ context=new AudioContext({sampleRate:48000,latencyHint:'interactive'});await context.suspend();
+ const bytes=await(await fetch(base+'sad_pet.simd.wasm')).arrayBuffer(),module=await WebAssembly.compile(bytes);
+ const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),x=>x.toString(16).padStart(2,'0')).join('');
+ utility=new Worker('./worker.mjs',{type:'module'});const worker=rpc(utility);
+ await worker('init',{module,rate:48000});
+ await context.audioWorklet.addModule(base+'worklet.mjs');
+ node=new AudioWorkletNode(context,'sad-pet',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[2],processorOptions:{module}});
+ const call=rpc(node.port);let processorErrors=0;node.onprocessorerror=()=>processorErrors++;
+ const preset=await(await fetch('./target-preset.json')).json();
+ if(mode==='paired')preset.wavetable.oscillators.forEach((o,i)=>{o.fm_source=i^1;o.fm_mode=i%2?0:1;o.sync_source=i;});
+ if(mode==='pm')preset.wavetable.oscillators.forEach(o=>o.fm_mode=2);
+ for(const id of wavetableIds(preset)){
+  const bytes=await worker('wavetable-prepare',{id});const bank=preparedWavetable(bytes);
+  const staged=await call('wavetable-stage',{...bank,idle:true},undefined,[bytes]);
+  if(!staged.cached)await call('wavetable-commit');
+ }
+ await call('request',preset,'/api/preset');
+ await call('request',{playing:true,midi_gate:true},'/api/transport');
+ for(const note of [48,51,55,58])await call('request',{kind:'note_on',channel:0,note,velocity:100},'/api/note');
+ const analyser=context.createAnalyser();analyser.fftSize=256;node.connect(analyser).connect(context.destination);
+ $('status').textContent='Прогрев AudioWorklet…';await context.resume();await sleep(5000);
+ const start=stats(context),started=performance.now(),audioStart=context.currentTime;
+ let peak=0;const data=new Float32Array(256);
+ $('status').textContent='Измерение…';
+ for(let s=1;s<=seconds;s++){await sleep(1000);analyser.getFloatTimeDomainData(data);for(const x of data)peak=Math.max(peak,Math.abs(x));$('progress').value=s;}
+ const end=stats(context),presetBack=await call('request',null,'/api/preset');
+ const result={version,mode,requested_seconds:seconds,module_sha256:hash,userAgent:navigator.userAgent,sample_rate:context.sampleRate,quantum:128,notes:[48,51,55,58],wavetable:presetBack.wavetable,wall_seconds:(performance.now()-started)/1000,audio_seconds:context.currentTime-audioStart,peak,processor_errors:processorErrors,stats_api:context.playbackStats?'playbackStats':context.playoutStats?'playoutStats':null,start,end,base_latency:context.baseLatency,output_latency:context.outputLatency};
+ if(start&&end)result.delta=Object.fromEntries(Object.keys(end).filter(k=>typeof end[k]==='number'&&typeof start[k]==='number').map(k=>[k,end[k]-start[k]]));
+ const underruns=result.delta?.underrunEvents??result.delta?.fallbackFramesEvents??null;
+ result.passed=underruns===0&&processorErrors===0&&peak>1e-4&&Math.abs(result.audio_seconds/result.wall_seconds-1)<.02;
+ $('metrics').textContent=`${result.passed?'PASS':'FAIL'} · ${underruns??'нет статистики'} underrun · ${processorErrors} ошибок · ${result.audio_seconds.toFixed(2)} s`;$('metrics').style.color=result.passed?'#a6e8bf':'#f2a9a9';
+ const row=document.createElement('tr');row.style.color=result.passed?'#a6e8bf':'#f2a9a9';for(const v of [version+' / '+mode,result.audio_seconds.toFixed(2),underruns??'—',processorErrors]){const c=document.createElement('td');c.textContent=v;row.append(c);}$('history').append(row);
+ $('result').textContent=JSON.stringify(result,null,2);$('status').textContent='Проверка завершена';
+ }catch(error){$('status').textContent='Ошибка';$('result').textContent=error.stack;}
+ finally{node?.disconnect();await context?.close();utility?.terminate();$('run').disabled=false;}
+};
+</script></html>

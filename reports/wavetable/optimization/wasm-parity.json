@@ -1,0 +1,26 @@
+{
+  "scope": "Four waves with Voice shift, Wave ENV, poly LFO, Surf/Step/Keys/XY, FM→PM→sync→arbitrary sources/feedback; shipping WASM scalar/SIMD and host blocks, excludes native backend",
+  "frames": 8192,
+  "events": 17,
+  "passed": true,
+  "results": [
+    {
+      "sample_rate": 48000,
+      "block": 16,
+      "scalar_max_abs": 0,
+      "simd_max_abs": 0
+    },
+    {
+      "sample_rate": 48000,
+      "block": 128,
+      "scalar_max_abs": 0,
+      "simd_max_abs": 0
+    },
+    {
+      "sample_rate": 48000,
+      "block": 2048,
+      "scalar_max_abs": 0,
+      "simd_max_abs": 0
+    }
+  ]
+}

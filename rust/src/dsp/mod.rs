@@ -31,6 +31,7 @@ pub mod synth;
 mod taps;
 pub mod tb303;
 pub mod telemetry;
+pub mod wavetable;
 
 use crate::grain_groups as grain_groups_settings;
 use crate::{
@@ -203,6 +204,8 @@ pub(crate) struct Modulated {
     /// Each drum track's pattern note shift, in steps.
     pub(crate) drum_shifts: [f32; crate::drums::TRACKS],
     pub(crate) synth: crate::synth::Settings,
+    pub(crate) wavetable: [crate::wavetable::Controls; crate::wavetable::OSCILLATORS],
+    pub(crate) wavetable_motion: crate::wavetable::motion::Motion,
     pub(crate) tb303: crate::tb303::Controls,
     pub(crate) tb303_radias: crate::synth::Settings,
     /// A modulation route wrote into a color slot of this frame. Clean frames
@@ -256,6 +259,14 @@ impl Modulated {
             }
         }
         self.synth = preset.synth.as_deref().copied().unwrap_or_default();
+        self.wavetable = preset.wavetable.as_deref().map_or_else(
+            crate::wavetable::default_controls,
+            crate::wavetable::Settings::controls,
+        );
+        self.wavetable_motion = preset
+            .wavetable
+            .as_ref()
+            .map_or_else(Default::default, |s| s.motion);
         self.tb303 = preset
             .tb303
             .as_ref()
@@ -565,6 +576,10 @@ pub struct Engine {
     /// The host's last playhead, adopted only when it moves.
     host_beat: Option<f64>,
     pub lfo_values: [f32; crate::preset::MODULATORS],
+    // Fixed reserve allows scope automation without allocations on note-on.
+    // Only enabled polyphonic slots are advanced for sounding voices.
+    voice_oscillators: Box<[[Oscillator; crate::preset::MODULATORS]; VOICES]>,
+    voice_lfo_values: [[f32; crate::preset::MODULATORS]; VOICES],
     pub env_values: [f32; crate::preset::MODULATORS],
     color_rack: Box<ColorRack>,
     pre_color_rack: Box<ColorRack>,
@@ -578,6 +593,7 @@ pub struct Engine {
     pad_return: Stereo,
     drums: Option<Box<crate::drums::Runtime>>,
     synth: Option<Box<synth::Runtime>>,
+    wavetable: Option<Box<wavetable::Runtime>>,
     tb303: Option<Box<tb303::Runtime>>,
     /// Present while the preset is a Sampler kit: its pads replace the input.
     sampler: Option<Box<sampler::Runtime>>,
@@ -686,6 +702,10 @@ impl Engine {
             song_beat: 0.0,
             host_beat: None,
             lfo_values: [0.0; crate::preset::MODULATORS],
+            voice_oscillators: Box::new(std::array::from_fn(|v| {
+                std::array::from_fn(|i| Oscillator::new(0x504f4c59 ^ (v as u64) << 16 ^ i as u64))
+            })),
+            voice_lfo_values: [[0.0; crate::preset::MODULATORS]; VOICES],
             env_values: [0.0; crate::preset::MODULATORS],
             color_rack: Box::new(ColorRack::new(sr)),
             pre_color_rack: Box::new(ColorRack::new(sr)),
@@ -696,6 +716,7 @@ impl Engine {
             pad_return: [0.0; 2],
             drums: None,
             synth: None,
+            wavetable: None,
             tb303: None,
             sampler: None,
             rack: None,
@@ -758,7 +779,11 @@ impl Engine {
         // configure envelopes whose values actually changed.
         for voice in engine.voices.iter_mut() {
             for (i, envelope) in voice.envelopes.iter_mut().enumerate() {
-                envelope.configure(sr as f32, &engine.modulated.envs[i]);
+                envelope.configure_tempo(
+                    sr as f32,
+                    &engine.modulated.envs[i],
+                    engine.modulated.params.bpm,
+                );
             }
         }
         engine
@@ -766,6 +791,21 @@ impl Engine {
 
     pub fn set_preset(&mut self, mut preset: Preset) {
         preset.sanitize();
+        if preset.wavetable_runtime.1.is_some() {
+            return;
+        }
+        if preset.wavetable_runtime.0.is_none()
+            && preset
+                .wavetable_runtime
+                .prepare(
+                    preset.wavetable.as_deref(),
+                    &preset.wavetable_pool,
+                    self.sample_rate,
+                )
+                .is_err()
+        {
+            return;
+        }
         preset
             .tb303_runtime
             .prepare(preset.tb303.as_deref(), self.sample_rate);
@@ -806,10 +846,24 @@ impl Engine {
         self.exchange_preset(&mut preset);
     }
 
+    pub fn wavetable_motion(&self) -> crate::wavetable::motion::Motion {
+        self.modulated.wavetable_motion
+    }
+    pub fn wavetable_positions(&self) -> [wavetable::PositionView; crate::wavetable::OSCILLATORS] {
+        self.wavetable
+            .as_ref()
+            .map_or_else(Default::default, |runtime| runtime.positions())
+    }
+
     /// Exchange a sanitized preset without allocating or destroying its buffers.
     /// Structural FX/drum edits must use `prepared_clone_for(sample_rate)`.
     /// The caller retires the previous preset away from the audio callback.
     pub fn exchange_preset(&mut self, preset: &mut Preset) {
+        // Fallible preparation happens off audio. A rejected bank cannot
+        // replace a playing scene, and its error/buffers retire with the update.
+        if preset.wavetable_runtime.1.is_some() {
+            return;
+        }
         // A live input stays while the next preset can play it: a Granular
         // timbre or a Rack whose Sample it stands in for.
         let plays_input = |p: &Preset| {
@@ -861,6 +915,10 @@ impl Engine {
             }
         }
         std::mem::swap(&mut self.synth, &mut preset.synth_runtime.0);
+        if let (Some(next), Some(old)) = (&mut preset.wavetable_runtime.0, &mut self.wavetable) {
+            next.inherit(old);
+        }
+        std::mem::swap(&mut self.wavetable, &mut preset.wavetable_runtime.0);
         if let (Some(next), Some(old)) = (&mut preset.tb303_runtime.0, &mut self.tb303) {
             next.inherit(old);
         }
@@ -1226,6 +1284,19 @@ impl Engine {
                 LfoReset::Free | LfoReset::Tempo if first && lfo.one_shot => oscillator.reset(),
                 LfoReset::Free | LfoReset::Tempo if first => oscillator.restart_fade(),
                 _ => {}
+            }
+        }
+        for (i, lfo) in self
+            .modulated
+            .lfos
+            .iter()
+            .enumerate()
+            .take(self.modulated.lfo_count)
+        {
+            if lfo.reset == LfoReset::Note {
+                self.voice_oscillators[index][i].reset();
+            } else {
+                self.voice_oscillators[index][i] = self.oscillators[i].clone();
             }
         }
         self.voices[index].on(self.preset.env_count as usize);
@@ -2398,6 +2469,10 @@ impl Engine {
         if let Some(synth) = &mut self.synth {
             synth.configure(&m.synth, tune, &self.sample, m.params.sample_root_note);
         }
+        if let Some(wavetable) = &mut self.wavetable {
+            wavetable.configure(m.wavetable, tune);
+            wavetable.configure_motion(m.wavetable_motion);
+        }
         for (i, env) in m.envs.iter().enumerate() {
             if i >= m.env_count {
                 if i < self.modulated.env_count {
@@ -2408,9 +2483,11 @@ impl Engine {
                 }
                 continue;
             }
-            if *env != self.modulated.envs[i] {
+            if *env != self.modulated.envs[i]
+                || (env.wave.enabled && m.params.bpm != self.modulated.params.bpm)
+            {
                 for voice in self.voices.iter_mut() {
-                    voice.envelopes[i].configure(self.sample_rate as f32, env);
+                    voice.envelopes[i].configure_tempo(self.sample_rate as f32, env, m.params.bpm);
                 }
             }
         }
@@ -2963,6 +3040,9 @@ impl Engine {
             {
                 if resets & 1 << i != 0 && lfo.reset == LfoReset::Sequencer {
                     oscillator.reset();
+                    for voice in self.voice_oscillators.iter_mut() {
+                        voice[i].reset();
+                    }
                 }
             }
             // Main pitch steps can gate the free voice's ENV like notes.
@@ -3623,7 +3703,7 @@ impl Engine {
             let voice = if bus.is_some_and(|b| !b.filters) {
                 voice
             } else {
-                self.filters[i].process(voice, &mut self.taps, self.voices[i].value)
+                self.filters[i].process_tapped(voice, &mut self.taps, self.voices[i].value)
             };
             let voice = filter_slots::route_chain(
                 &mut self.filter_banks,
@@ -3748,6 +3828,9 @@ impl Engine {
     fn advance_modulators(&mut self, sr: f32) -> (f32, f32) {
         self.lfo_values.fill(0.0);
         let bpm = self.modulated.params.bpm;
+        for index in bits(self.sounding) {
+            self.voice_lfo_values[index].fill(0.0);
+        }
         for i in 0..self.modulated.lfo_count {
             let lfo = &self.modulated.lfos[i];
             let position = (lfo.reset == LfoReset::Tempo).then(|| {
@@ -3759,6 +3842,19 @@ impl Engine {
             });
             self.lfo_values[i] =
                 self.oscillators[i].next_sample(lfo, sr, bpm, self.follower.min(1.0), position);
+            for index in bits(self.sounding) {
+                self.voice_lfo_values[index][i] = if lfo.poly {
+                    self.voice_oscillators[index][i].next_sample(
+                        lfo,
+                        sr,
+                        bpm,
+                        self.follower.min(1.0),
+                        position,
+                    )
+                } else {
+                    self.lfo_values[i]
+                };
+            }
         }
         self.song_beat += f64::from(bpm) / (60.0 * f64::from(sr));
         self.env_values = [0.0; crate::preset::MODULATORS];

@@ -50,6 +50,7 @@ jobs:
           cargo test -p sad-pet-voice --release --locked
           cargo test -p sad-pet --lib --no-default-features --features source-worker --locked
           cargo test -p sad-pet --no-default-features --test parameter_updates --locked
+          cargo test -p sad-pet --no-default-features --test wavetable --locked
           cargo test -p sad-pet --no-default-features --test neuropolis --locked
           cargo test -p sad-pet --no-default-features --test delays --test knob_feedback --test drums_processing --test drum_buffer --locked
           cargo test -p sad-pet --no-default-features --test modulators --locked

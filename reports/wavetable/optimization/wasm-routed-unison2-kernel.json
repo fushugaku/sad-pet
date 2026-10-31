@@ -1,0 +1,139 @@
+{
+  "scope": "Production shipping SIMD WASM in Node/V8, Core.process(128) including its JS boundary/output view. Preparation/compilation and signal validation excluded. Wall timing, median of two run percentiles; excludes the browser AudioWorklet/device scheduler. Separate from native thread CPU.",
+  "method": "After only; four-node feedback with independent sync ring",
+  "node": "v24.19.0",
+  "v8": "13.6.233.17-node.51",
+  "sample_rate": 48000,
+  "block": 128,
+  "deadline_ms": 2.6666666666666665,
+  "audio_seconds_per_run": 0.75,
+  "warmup_audio_seconds": 0.5,
+  "rounds": 2,
+  "binaries": [
+    {
+      "path": "/tmp/sadpet-wt-web/sad_pet.simd.wasm",
+      "sha256": "1f128cb17f6556dba6521b1317486361f35e51c570eb6c7dd41c48bacf207fbd"
+    }
+  ],
+  "summary": [
+    {
+      "mode": "mixed",
+      "notes": 2,
+      "waves": 4,
+      "unison": 2,
+      "after": {
+        "p50_ms": 1.334417000000002,
+        "p95_ms": 1.708979499999998,
+        "p99_ms": 1.9261869999999703,
+        "max_ms": 2.283999999999992
+      },
+      "after_p99_fits_deadline": true
+    },
+    {
+      "mode": "mixed",
+      "notes": 3,
+      "waves": 4,
+      "unison": 2,
+      "after": {
+        "p50_ms": 2.1236874999997326,
+        "p95_ms": 2.6050004999997327,
+        "p99_ms": 2.7699375000001965,
+        "max_ms": 2.8334585000002335
+      },
+      "after_p99_fits_deadline": false
+    },
+    {
+      "mode": "mixed",
+      "notes": 4,
+      "waves": 4,
+      "unison": 2,
+      "after": {
+        "p50_ms": 2.7477709999998297,
+        "p95_ms": 3.288082999999915,
+        "p99_ms": 3.702041999999892,
+        "max_ms": 4.441145499999493
+      },
+      "after_p99_fits_deadline": false
+    }
+  ],
+  "runs": [
+    {
+      "version": "after",
+      "mode": "mixed",
+      "notes": 2,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 0,
+      "peak": 0.004911663010716438,
+      "p50_ms": 1.323959000000002,
+      "p95_ms": 1.7217919999999367,
+      "p99_ms": 1.9510830000000396,
+      "max_ms": 2.2168750000000728
+    },
+    {
+      "version": "after",
+      "mode": "mixed",
+      "notes": 2,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 1,
+      "peak": 0.004911663010716438,
+      "p50_ms": 1.3448750000000018,
+      "p95_ms": 1.6961670000000595,
+      "p99_ms": 1.901290999999901,
+      "max_ms": 2.351124999999911
+    },
+    {
+      "version": "after",
+      "mode": "mixed",
+      "notes": 3,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 0,
+      "peak": 0.006442218087613583,
+      "p50_ms": 2.131999999999607,
+      "p95_ms": 2.634041999999681,
+      "p99_ms": 2.8128750000000764,
+      "max_ms": 2.8461670000001504
+    },
+    {
+      "version": "after",
+      "mode": "mixed",
+      "notes": 3,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 1,
+      "peak": 0.006442218087613583,
+      "p50_ms": 2.115374999999858,
+      "p95_ms": 2.5759589999997843,
+      "p99_ms": 2.7270000000003165,
+      "max_ms": 2.8207500000003165
+    },
+    {
+      "version": "after",
+      "mode": "mixed",
+      "notes": 4,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 0,
+      "peak": 0.008410259149968624,
+      "p50_ms": 2.77179199999955,
+      "p95_ms": 3.4062080000003334,
+      "p99_ms": 3.943916999999601,
+      "max_ms": 5.333665999999539
+    },
+    {
+      "version": "after",
+      "mode": "mixed",
+      "notes": 4,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 1,
+      "peak": 0.008410259149968624,
+      "p50_ms": 2.723750000000109,
+      "p95_ms": 3.1699579999994967,
+      "p99_ms": 3.460167000000183,
+      "max_ms": 3.548624999999447
+    }
+  ]
+}

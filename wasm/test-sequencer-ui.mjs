@@ -94,7 +94,7 @@ class Element {
       s = s.trim();
       const data = /^\[data-([a-z-]+)\]$/.exec(s);
       if (data) return data[1].replace(/-([a-z])/g, (_, c) => c.toUpperCase()) in this.dataset;
-      return s.startsWith(".") && this.classes.has(s.slice(1));
+      return s.startsWith(".") ? this.classes.has(s.slice(1)) : this.tagName.toLowerCase() === s;
     });
   }
   querySelectorAll(selector) {
@@ -127,6 +127,7 @@ const document = {
   removeEventListener: forget,
 };
 const context = vm.createContext({
+  structuredClone,
   window: { addEventListener: listen, removeEventListener: forget },
   document,
   setTimeout: (callback) => timers.push(callback),
@@ -184,7 +185,16 @@ const editor = new Element("div"),
 let structures = 0,
   refreshes = 0;
 const ui = Object.create(context.window.SadNeuropolis.prototype);
+function motionElements() {
+  const root = new Element("div");
+  root.append(new Element("select"), new Element("input"), new Element("output"));
+  for (const name of ["save", "delete", "undo"]) {
+    const button = new Element("button"); button.className = `motion-${name}`; root.append(button);
+  }
+  return root;
+}
 Object.assign(ui, {
+  motionRoot: motionElements(),
   root: {
     querySelector: (selector) => {
       assert.equal(selector, ".neuro-editor");
@@ -911,3 +921,43 @@ console.log("Sequencer stages: page count with copied pages, tabs, edits, picks 
   editor.className = "";
 }
 console.log("Sequencer notes: Scale and picked notes, octave range, sliders stepping through the notes played, Scale matching and oscillator offsets passed.");
+
+// Motion handlers work across replaced snapshots and without a secure-context
+// randomUUID API (the native editor can use a custom URL scheme).
+{
+  let current = { sequencer: { enabled: false, tracks: [structuredClone(track)] },
+    wavetable: { count: 4, motion: { xy_on: false } } }, contextId = "part-a";
+  const root = motionElements(), createElement = document.createElement;
+  const motion = Object.create(context.window.SadNeuropolis.prototype);
+  Object.assign(motion, {
+    root: { querySelector: () => ({ before() {} }) },
+    catalog: { motion_patterns: [{ id: "factory:orbit", name: "Orbit", xy: true,
+      tracks: [{ ...structuredClone(track), target: { kind: "parameter", parameter: "wt_x" } }] }] },
+    hooks: { read: () => current, context: () => contextId, structure() {}, parameter() {} },
+    sync() { this.syncMotions(); },
+  });
+  document.createElement = (tag) => tag === "div" ? root : createElement(tag);
+  motion.buildMotions();
+  document.createElement = createElement;
+  motion.sync();
+  const select = root.querySelector("select"), name = root.querySelector("input");
+  select.value = "factory:orbit"; select.onchange();
+  assert.equal(current.wavetable.motion.xy_on, true);
+  assert.equal(current.sequencer.enabled, true);
+  assert.equal(current.sequencer.tracks[0].target.parameter, "wt_x");
+  name.value = "My orbit"; root.querySelector(".motion-save").onclick();
+  assert.equal(current.sequencer.patterns.length, 1, "the first saved motion vanished");
+  const id = current.sequencer.patterns[0].id;
+  assert.ok(id.startsWith("user:motion:"));
+  current = structuredClone(current);
+  name.value = "Updated orbit"; root.querySelector(".motion-save").onclick();
+  assert.equal(current.sequencer.patterns.length, 1);
+  assert.equal(current.sequencer.patterns[0].name, "Updated orbit");
+  root.querySelector(".motion-delete").onclick();
+  assert.equal(current.sequencer.patterns.length, 0);
+  root.querySelector(".motion-undo").onclick();
+  assert.equal(current.sequencer.patterns[0].name, "Updated orbit");
+  contextId = "part-b"; motion.sync();
+  assert.equal(root.querySelector(".motion-undo").disabled, true);
+}
+console.log("Motion library: first save, update across snapshots, delete/Undo, part isolation and native UUID fallback passed.");

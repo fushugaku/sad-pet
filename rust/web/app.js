@@ -31,6 +31,7 @@ let timbreEditor = null,
   vocalEditor = null,
   samplerEditor = null,
   tb303Editor = null,
+  wavetableEditor = null,
   timbreBusy = false;
 const drumEdits = new Map();
 let sequenceCatalog = null;
@@ -1452,6 +1453,9 @@ function buildFilters() {
       );
     }
   }
+  const tones=document.createElement("button");tones.id="filter-pair-preset";tones.type="button";tones.textContent="Tone";tones.setAttribute("aria-label","Filter pair preset");
+  $("filter-routing").before(tones);
+  tones.onchange=()=>{const recipe=sequenceCatalog?.filter_presets?.find(r=>r.id===tones.value);if(!recipe)return;Object.assign(preset.params,recipe.params);syncFilters();schedulePreset();};
   $("filter-routing").onchange = (e) =>
     setParam("filter_routing", e.target.value);
   $("add-filter").onclick = addFilter;
@@ -1492,6 +1496,7 @@ async function drawFilterGraph(graph) {
 function syncFilters() {
   if (!preset) return;
   const p = preset.params;
+  window.SadLazySelect.configure($("filter-pair-preset"),"",[{choices:[["","Tone"],...(sequenceCatalog?.filter_presets??[]).map(p=>[p.id,p.name])]}]);
   $("filter-routing").value = p.filter_routing;
   $("filter-path").textContent = {
     single: "IN → F1 → OUT",
@@ -1992,6 +1997,7 @@ function syncTimbreRouting() {
   vocalEditor?.sync();
   samplerEditor?.sync();
   tb303Editor?.sync();
+  wavetableEditor?.sync();
   syncSynth();
   rackEditor?.sync();
 }
@@ -4193,6 +4199,7 @@ function modulationGroups() {
     }
     if (spec.id.startsWith("drum") && !preset.drums) continue;
     if (spec.id.startsWith("synth_") && !preset.synth) continue;
+    if (spec.id.startsWith("wt_") && !preset.wavetable) continue;
     if (spec.id.startsWith("tb303_") && !preset.tb303) continue;
     // Added filters have their own groups, addressed by slot id.
     if (
@@ -4234,6 +4241,7 @@ function modulationGroups() {
     const osc = /^resynth_osc(\d+)_/.exec(spec.id);
     const drum = /^drum(\d+)_/.exec(spec.id);
     const synthOsc = /^synth_osc(\d+)_/.exec(spec.id);
+    const wavetableOsc = /^wt_([ab])_/.exec(spec.id);
     const grainGroup = /^grain_group(\d)_/.exec(spec.id);
     if (grainGroup || ["grain_advanced", "grain_feedback", "grain_attack"].includes(spec.id)) {
       const label = grainGroup
@@ -4249,7 +4257,7 @@ function modulationGroups() {
       ]);
       continue;
     }
-    const group = drum
+    const group = wavetableOsc ? `Wavetable ${wavetableOsc[1].toUpperCase()}` : drum
       ? `Drum ${drum[1]}`
       : osc
         ? `OSC ${osc[1]}`
@@ -4524,6 +4532,8 @@ function buildLfos() {
     const card = document.createElement("div");
     card.className = "lfo-card";
     card.innerHTML = `<div class="lfo-title"><strong>LFO ${i + 1}</strong><canvas class="lfo-scope" width="144" height="40"></canvas></div><div class="lfo-row"><select aria-label="LFO ${i + 1} waveform" class="waveform"></select><label>RATE<input aria-label="LFO ${i + 1} rate" class="rate" type="number" min="0.01" max="40" step="0.01"></label></div><div class="lfo-row"><label class="check"><input type="checkbox" class="sync">Tempo sync</label><select class="division" aria-label="LFO ${i + 1} tempo division"></select></div><div class="lfo-modes"><label><span>RESET</span><select class="reset" aria-label="LFO ${i + 1} reset"></select></label><label><span>CYCLE</span><select class="one-shot" aria-label="LFO ${i + 1} cycle"><option value="false">Loop</option><option value="true">One shot</option></select></label><label><span>POLARITY</span><select class="unipolar" aria-label="LFO ${i + 1} polarity"><option value="false">Bipolar</option><option value="true">Unipolar</option></select></label></div><div class="lfo-controls"></div>`;
+    const scope=document.createElement("label");scope.innerHTML=`<span>VOICE PHASE</span><select class="poly" aria-label="LFO ${i+1} voice phase"><option value="false">Mono</option><option value="true">Poly</option></select>`;card.querySelector(".lfo-modes").append(scope);
+    scope.querySelector("select").onchange=e=>{preset.lfos[i].poly=e.target.value==="true";scheduleParameter(`lfo${i+1}_poly`,preset.lfos[i].poly?1:0);syncLfos();};
     for (const [value, label] of WAVEFORMS)
       card.querySelector(".waveform").append(option(value, label));
     for (const [value, label] of LFO_DIVISIONS)
@@ -4663,6 +4673,7 @@ function syncLfos() {
       ["reset", ".reset", l.reset ?? "free"],
       ["one_shot", ".one-shot", !!l.one_shot],
       ["unipolar", ".unipolar", !!l.unipolar],
+      ["poly", ".poly", !!l.poly],
     ]) {
       const input = card.querySelector(selector);
       if (document.activeElement !== input) input.value = String(value);
@@ -4809,6 +4820,45 @@ function unitDepth(unit, depth) {
   const target = String(format(Math.max(min, Math.min(max, get() + delta))));
   return /^[←→]/.test(target) ? target : `→ ${target}`;
 }
+const waveEnvDefaults = () => ({enabled:false,beats:false,times:[.08,.3,.5,.5,.3,.3],levels:[1,.35,.8,.25,.65,0],curves:[0,0,0,0,0,0],loop_on:false,loop_start:1,loop_end:3});
+function buildWaveEnv(card,i) {
+  const root=document.createElement("div"); root.className="wave-env";root.hidden=true;
+  root.innerHTML=`<div class="wave-env-options"><label>Time<select class="wave-unit" aria-label="ENV ${i+1} time unit"><option value="0">Seconds</option><option value="1">Beats</option></select></label><label class="wave-loop"><input type="checkbox">Loop</label><label>From<select class="wave-start" aria-label="ENV ${i+1} loop start"></select></label><label>Hold / end<select class="wave-end" aria-label="ENV ${i+1} loop end"></select></label></div><div class="wave-points"><div class="wave-point-head"><span></span><span>Time</span><span>Level</span><span>Curve</span></div></div><div class="wave-copy"><span>Copy to</span>${["A","B","C","D"].map((letter,n)=>`<label><input type="checkbox" data-wave="${n}" checked>${letter}</label>`).join("")}<button type="button">Copy</button><output role="status"></output></div>`;
+  card.querySelector(".env-controls").after(root);
+  const wave=()=>preset.envs[i].wave??=waveEnvDefaults();
+  const edit=(key,value,host=key)=>{wave()[key]=["beats","loop_on"].includes(key)?!!value:value;syncEnvs();scheduleParameter(`env${i+1}_wave_${host}`,value);};
+  const unit=root.querySelector(".wave-unit"),loop=root.querySelector(".wave-loop input"),start=root.querySelector(".wave-start"),end=root.querySelector(".wave-end");
+  for(let n=0;n<5;n++){start.append(option(String(n),String(n+1)));end.append(option(String(n),String(n+1)));}
+  unit.onchange=()=>edit("beats",Number(unit.value),"beats");loop.onchange=()=>edit("loop_on",loop.checked?1:0,"loop");
+  start.onchange=()=>edit("loop_start",Number(start.value),"start");end.onchange=()=>{wave().loop_start=Math.min(wave().loop_start,Number(end.value));scheduleParameter(`env${i+1}_wave_start`,wave().loop_start);edit("loop_end",Number(end.value),"end");};
+  const points=[];
+  for(let n=0;n<6;n++) {
+    const row=document.createElement("div");row.className="wave-point";
+    row.innerHTML=`<span>${n+1}</span><input type="number" min="0" max="32" step="0.01" aria-label="ENV ${i+1} point ${n+1} time"><input type="range" min="0" max="1" step=".001" aria-label="ENV ${i+1} point ${n+1} level"><input type="range" min="-1" max="1" step=".01" aria-label="ENV ${i+1} point ${n+1} curve">`;
+    for(const [j,key,suffix] of [[0,"times","time"],[1,"levels","level"],[2,"curves","curve"]]) {
+      const control=row.querySelectorAll("input,select")[j];control.oninput=()=>{const value=Number(control.value);if(!Number.isFinite(value)||value<Number(control.min||-1)||value>Number(control.max||32))return;wave()[key][n]=value;syncEnvs();scheduleParameter(`env${i+1}_wave_${n+1}${suffix}`,value);};
+      sliderMenu(control,`env${i+1}_wave_${n+1}${suffix}`,`ENV ${i+1} point ${n+1} ${suffix}`);
+    }
+    root.querySelector(".wave-points").append(row);points.push(row);
+  }
+  root.querySelector(".wave-copy button").onclick=()=>{
+    const output=root.querySelector(".wave-copy output"),selected=[...root.querySelectorAll("[data-wave]:checked")].map(input=>Number(input.dataset.wave)).filter(n=>n<(preset.wavetable?.count??0)),count=preset.env_count||3;
+    if(!selected.length){output.textContent="Choose a wave";return;}
+    if(count+selected.length>8){output.textContent=`Need ${selected.length} free ENV slots`;return;}
+    selected.forEach((n,j)=>{const slot=count+j;preset.envs[slot]={...preset.envs[slot],wave:structuredClone(wave()),destination:"none",depth:0,extra_destination:"none",extra_depth:0,destination3:"none",depth3:0};preset.wavetable.oscillators[n].position_env=slot+1;preset.wavetable.oscillators[n].position_env_depth=1;});
+    preset.env_count=count+selected.length;output.textContent=`Copied to ${selected.map(n=>"ABCD"[n]).join(", ")}`;syncEnvs();refreshColorDestinations();wavetableEditor?.sync();schedulePreset();
+  };
+  return {root,sync(env){const w={...waveEnvDefaults(),...env.wave};root.hidden=!w.enabled;if(root.hidden)return;unit.value=String(Number(w.beats));loop.checked=!!w.loop_on;start.value=String(w.loop_start);end.value=String(w.loop_end);[...start.options].forEach(o=>o.disabled=Number(o.value)>w.loop_end);
+    points.forEach((row,n)=>{row.classList.toggle("is-release",n>w.loop_end);row.querySelectorAll("input,select").forEach((input,j)=>{if(document.activeElement!==input)input.value=String(w[["times","levels","curves"][j]][n]);});});
+    root.querySelector(".wave-copy").hidden=!preset.wavetable;root.querySelectorAll("[data-wave]").forEach(input=>input.closest("label").hidden=Number(input.dataset.wave)>=(preset.wavetable?.count??0));
+  }};
+}
+function drawWaveEnv(c,env,w,top,bottom) {
+  const wave={...waveEnvDefaults(),...env.wave},total=wave.times.reduce((a,b)=>a+Math.max(.02,b),0),scale=(w-22)/total,y=v=>bottom-(bottom-top)*v;
+  let x=3,from=0;
+  for(let n=0;n<6;n++) {const width=Math.max(.02,wave.times[n])*scale;c.beginPath();c.moveTo(x,y(from));for(let k=1;k<=24;k++){const t=k/24,a=wave.curves[n],q=a>=0?t+(t*t-t)*a:t+((1-(1-t)**2)-t)*-a;c.lineTo(x+t*width,y(from+(wave.levels[n]-from)*q));}c.strokeStyle=n>wave.loop_end?"#80907b":"#b4d58e";c.lineWidth=1.5;c.stroke();x+=width;from=wave.levels[n];c.fillStyle="#b4d58e";c.fillRect(x-2,y(from)-2,4,4);}
+  if(wave.loop_on){const left=3+wave.times.slice(0,wave.loop_start).reduce((a,b)=>a+Math.max(.02,b),0)*scale,right=3+wave.times.slice(0,wave.loop_end+1).reduce((a,b)=>a+Math.max(.02,b),0)*scale;c.fillStyle="#b4d58e18";c.fillRect(left,top,right-left,bottom-top);}
+}
 function buildEnvs() {
   $("env-remove").onclick = () => removeModulator("env");
   $("env-add").onclick = () => {
@@ -4829,7 +4879,11 @@ function buildEnvs() {
     ENV_CURVES.forEach((label, value) =>
       curve.append(option(String(value), `Curve ${value} · ${label}`)),
     );
+    mode.append(option("wave","Wave · 6 points"));
     mode.onchange = () => {
+      const wave=preset.envs[i].wave??=waveEnvDefaults();wave.enabled=mode.value==="wave";
+      scheduleParameter(`env${i+1}_wave_on`,wave.enabled?1:0);
+      if(wave.enabled){syncEnvs();return;}
       preset.envs[i].mode = mode.value;
       syncEnvs();
       scheduleParameter(
@@ -4856,6 +4910,7 @@ function buildEnvs() {
       sliderMenu(input, `env${i + 1}_${field}`, `ENV ${i + 1} ${field.replace("_", " ")}`);
       card.querySelector(".env-controls").append(label);
     }
+    const waveEditor=buildWaveEnv(card,i);
     const routes = modulatorRoutes(card, "env", i, ENV_ROUTES, syncEnvs);
     $("envs").append(card);
     envCards.push({
@@ -4864,6 +4919,7 @@ function buildEnvs() {
       routes,
       mode,
       curve,
+      waveEditor,
       parameters: [...card.querySelectorAll(".env-parameter")],
     });
   }
@@ -4876,14 +4932,16 @@ function syncEnvs() {
   $("env-remove").hidden = count <= 3;
   $("env-remove").setAttribute("aria-label", `Remove ENV ${count}`);
   for (let i = 0; i < envCards.length; i++) {
-    const { card, routes, mode, curve, parameters } = envCards[i],
+    const { card, routes, mode, curve, parameters, waveEditor } = envCards[i],
       env = preset.envs[i];
     card.hidden = i >= count;
     if (!env) continue;
     const extended = envExtended(env);
-    if (document.activeElement !== mode) mode.value = envMode(env);
+    waveEditor.sync(env);
+    card.querySelector(".env-controls").hidden=!!env.wave?.enabled;
+    if (document.activeElement !== mode) mode.value = env.wave?.enabled?"wave":envMode(env);
     if (document.activeElement !== curve) curve.value = String(env.curve ?? 1);
-    curve.hidden = envMode(env) !== "radias";
+    curve.hidden = !!env.wave?.enabled || envMode(env) !== "radias";
     for (let j = 0; j < ENV_FIELDS.length; j++) {
       const field = ENV_FIELDS[j],
         label = parameters[j],
@@ -4906,13 +4964,14 @@ function drawEnvs() {
     const { canvas } = envCards[i];
     if (!visibleCanvas(canvas)) continue;
     const env = preset.envs[i], [c, w, h] = resizeCanvas(canvas);
-    const drawKey = [w, h, devicePixelRatio, ...ENV_FIELDS.map((field) => env[field]), envMode(env), env.curve, state?.envs?.[i] || 0].join(":");
+    const drawKey = [w, h, devicePixelRatio, ...ENV_FIELDS.map((field) => env[field]), envMode(env), env.curve, JSON.stringify(env.wave), state?.envs?.[i] || 0].join(":");
     if (envCards[i].drawKey === drawKey) continue;
     envCards[i].drawKey = drawKey;
     c.clearRect(0, 0, w, h);
     const top = 7,
       bottom = h - 7,
       level = bottom - (bottom - top) * env.sustain;
+    if (env.wave?.enabled) {drawWaveEnv(c,env,w,top,bottom);drawEnvMeter(c,w,top,bottom,state?.envs?.[i]||0);continue;}
     if (envMode(env) !== "legacy") {
       drawRustiasEnv(c, env, w, top, bottom);
       drawEnvMeter(c, w, top, bottom, state?.envs?.[i] || 0);
@@ -5064,6 +5123,8 @@ function parseNote(text) {
 }
 function buildSequence() {
   neuroEditor = new window.SadNeuropolis($("neuropolis"), sequenceCatalog, {
+    context: () => [state?.timbres?.active, state?.timbres?.revision, state?.source_generation].join(":"),
+    parameter: scheduleParameter,
     read: () => preset,
     edit: scheduleSequence,
     structure: schedulePreset,
@@ -6070,6 +6131,36 @@ async function init() {
     buildResynth();
     buildTaps();
     buildSynth();
+    wavetableEditor = new window.SadWavetable.Editor($("wavetable-engine"), {
+      read: () => preset, parameter: scheduleParameter, knob: createKnob, request, download,
+      select: async (oscillator, id) => {
+        const original=preset, wave=preset.wavetable?.oscillators[oscillator],previous=wave?.asset_id,timbre=state?.timbres?.active??0,context_revision=state?.timbres?.revision;
+        await flushEdits();
+        if(preset!==original||preset.wavetable?.oscillators[oscillator]!==wave)throw new Error("The wave changed while loading. Choose the table again.");
+        editing++;
+        try {
+          await enqueuePresetWrite("/api/wavetables/select", {oscillator,id,timbre,context_revision});
+          if (preset===original && preset.wavetable) preset.wavetable.oscillators[oscillator].asset_id=id;
+          editGeneration++; presetLibrary?.markDirty();
+          if(preset===original)rackEditor?.showUndo(`Wave ${["A","B","C","D"][oscillator]} table changed`,()=>{
+            if(preset===original&&preset.wavetable?.oscillators[oscillator]?.asset_id===id)wavetableEditor.choose(oscillator,previous);
+          });
+        } finally {editing=Math.max(0,editing-1);}
+      },
+      layers: async (action,index) => {
+        const original=preset,timbre=state?.timbres?.active??0,context_revision=state?.timbres?.revision;
+        await flushEdits();if(preset!==original)throw new Error("The timbre changed. Edit its waves again.");
+        editing++;
+        try {
+          const result=await enqueuePresetWrite("/api/wavetables/layers",{action,index,timbre,context_revision});
+          if(preset===original&&preset.wavetable) {
+            preset.wavetable=structuredClone(result.wavetable);
+            wavetableEditor.active=action==="add"?result.wavetable.count-1:Math.min(wavetableEditor.active,result.wavetable.count-1);
+          }
+          editGeneration++;presetLibrary?.markDirty();
+        } finally {editing=Math.max(0,editing-1);}
+      },
+    });
     tb303Editor = new window.Sad303($("tb303-engine"), {
       read: () => preset, parameter: scheduleParameter, knob: createKnob,
       oscillators: sync303Oscillators,
@@ -6261,6 +6352,8 @@ async function init() {
         timbreEditor.instruments,
         {
           native: Boolean(state.plugin),
+          factory: () => request("/api/wavetables/presets"),
+          factoryState: id => request("/api/wavetables/preset",{id}),
           request, api, notify, download,
           context: () => state?.timbres,
           flush: flushPreset,
@@ -6285,6 +6378,7 @@ async function init() {
     poll();
     draw();
   } catch (e) {
+    console.error("SAD PET startup:",e);
     notify(`Cannot connect to SAD PET: ${e.message}`, true);
   }
 }

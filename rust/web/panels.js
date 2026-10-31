@@ -35,7 +35,7 @@
     constructor(root, hooks) {
       this.root = root;
       this.hooks = hooks;
-      root.innerHTML = `<div class="timbre-top"><div class="timbre-lists"><div class="timbre-row"><span class="timbre-list-name">Instruments</span><div class="timbre-tabs" role="tablist" aria-label="Instruments"></div><span class="timbre-none" hidden>None yet: add one with + Timbre</span></div><div class="timbre-row"><span class="timbre-list-name">Buses</span><div class="timbre-tabs bus-tabs" role="tablist" aria-label="Buses"></div></div></div><div class="timbre-add"><select aria-label="New timbre type"><option value="granular">Granular</option><option value="drums">Drum machine</option><option value="synth">Synth</option><option value="tb303">303 Bass</option><option value="sampler" hidden>Sampler</option><option value="vocal">Vocal</option><option value="rack">Rack: drums + synth</option><option value="bus">Bus</option></select><button>+ Timbre</button></div></div><div class="timbre-mix"><input aria-label="Timbre name" maxlength="80"><div class="instrument-picker"><button aria-label="Instrument presets" aria-haspopup="dialog" aria-expanded="false">Instruments<span aria-hidden="true">⌄</span></button></div><button aria-pressed="false">Mute</button><button aria-pressed="false">Solo</button><label class="timbre-midi">MIDI<select aria-label="Timbre MIDI channel"><option value="0">All</option>${Array.from({ length: 16 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("")}</select></label><label><span class="timbre-level-name">MASTER</span><input aria-label="Timbre level" type="range" min="0" max="2" step=".01"></label><button aria-label="Remove timbre">×</button></div><div class="timbre-sends" aria-label="Bus sends"></div>`;
+      root.innerHTML = `<div class="timbre-top"><div class="timbre-lists"><div class="timbre-row"><span class="timbre-list-name">Instruments</span><div class="timbre-tabs" role="tablist" aria-label="Instruments"></div><span class="timbre-none" hidden>None yet: add one with + Timbre</span></div><div class="timbre-row"><span class="timbre-list-name">Buses</span><div class="timbre-tabs bus-tabs" role="tablist" aria-label="Buses"></div></div></div><div class="timbre-add"><select aria-label="New timbre type"><option value="granular">Granular</option><option value="drums">Drum machine</option><option value="synth">Synth</option><option value="wavetable">Wavetable</option><option value="tb303">303 Bass</option><option value="sampler" hidden>Sampler</option><option value="vocal">Vocal</option><option value="rack">Rack: drums + synth</option><option value="bus">Bus</option></select><button>+ Timbre</button></div></div><div class="timbre-mix"><input aria-label="Timbre name" maxlength="80"><div class="instrument-picker"><button aria-label="Instrument presets" aria-haspopup="dialog" aria-expanded="false">Instruments<span aria-hidden="true">⌄</span></button></div><button aria-pressed="false">Mute</button><button aria-pressed="false">Solo</button><label class="timbre-midi">MIDI<select aria-label="Timbre MIDI channel"><option value="0">All</option>${Array.from({ length: 16 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("")}</select></label><label><span class="timbre-level-name">MASTER</span><input aria-label="Timbre level" type="range" min="0" max="2" step=".01"></label><button aria-label="Remove timbre">×</button></div><div class="timbre-sends" aria-label="Bus sends"></div>`;
       // Instruments on one row, Buses and Master under them.
       [this.tabs, this.busTabs] = root.querySelectorAll(".timbre-tabs");
       this.none = root.querySelector(".timbre-none");
@@ -53,6 +53,14 @@
       this.channel = root.querySelector('[aria-label="Timbre MIDI channel"]');
       this.channel.onchange = () =>
         this.update({ channel: Number(this.channel.value) });
+      this.range=el("details","timbre-range");this.range.innerHTML='<summary>MIDI range</summary><div></div>';
+      for(const [field,label,notes] of [["key_low","Low key",true],["key_high","High key",true],["velocity_low","Low velocity",false],["velocity_high","High velocity",false]]) {
+        const holder=el("label","",label),input=el(notes?"select":"input");input.setAttribute("aria-label",`Timbre ${label.toLowerCase()}`);input.dataset.field=field;
+        if(notes){for(let note=0;note<128;note++){const option=el("option","",["C","C♯","D","D♯","E","F","F♯","G","G♯","A","A♯","B"][note%12]+(Math.floor(note/12)-1));option.value=String(note);input.append(option);}}
+        else {input.type="number";input.min="1";input.max="127";input.step="1";}
+        input.onchange=()=>{const value=Number(input.value);if(Number.isFinite(value))this.update({[field]:Math.max(notes?0:1,Math.min(127,Math.round(value)))});};holder.append(input);this.range.querySelector("div").append(holder);
+      }
+      root.querySelector(".timbre-mix").after(this.range);
       this.level = root.querySelector('[aria-label="Timbre level"]');
       this.level.oninput = () =>
         this.update({ gain: Number(this.level.value) });
@@ -135,6 +143,8 @@
       const routing = part.kind === "bus" || part.kind === "master" || part.kind === "pad_fx";
       this.solo.hidden = routing;
       this.midi.hidden = routing;
+      this.range.hidden=routing;
+      for(const input of this.range.querySelectorAll("input,select"))if(document.activeElement!==input)input.value=String(part[input.dataset.field]??(input.dataset.field==="key_low"?0:input.dataset.field==="velocity_low"?1:127));
       this.levelName.textContent =
         part.kind === "master" ? "OUTPUT" : part.kind === "bus" ? "TO MASTER"
           : part.kind === "pad_fx" ? "TO SAMPLER" : "MASTER";

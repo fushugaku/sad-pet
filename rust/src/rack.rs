@@ -48,9 +48,11 @@ pub enum Module {
     /// A parametric equalizer. A rack may hold up to `MAX_EQS`, each with
     /// its number in its slot and its settings in `Settings::equalizers`.
     Eq,
+    /// Two multiframe, bandlimited wavetable oscillators per engine note.
+    Wavetable,
 }
 impl Module {
-    pub const ALL: [Module; 14] = [
+    pub const ALL: [Module; 15] = [
         Module::Sample,
         Module::Synth,
         Module::Drums,
@@ -65,6 +67,7 @@ impl Module {
         Module::PostFx,
         Module::Mixer,
         Module::Eq,
+        Module::Wavetable,
     ];
     pub fn source(self) -> bool {
         matches!(
@@ -75,6 +78,7 @@ impl Module {
                 | Module::Sampler
                 | Module::Vocal
                 | Module::Tb303
+                | Module::Wavetable
         )
     }
     /// The section tap (Output row) this module ends in, if any.
@@ -105,6 +109,7 @@ impl Module {
             Module::PostFx => "FX B",
             Module::Mixer => "Mixer",
             Module::Eq => "EQ",
+            Module::Wavetable => "Wavetable",
         }
     }
 }
@@ -205,8 +210,9 @@ pub const STRIP_SOURCES: [Module; STRIPS] = [
     Module::Sampler,
     Module::Vocal,
     Module::Tb303,
+    Module::Wavetable,
 ];
-pub const STRIPS: usize = 6;
+pub const STRIPS: usize = 7;
 /// A strip's numeric controls, in host order.
 pub const STRIP_FIELDS: [(&str, &str, f32, f32, f32); 4] = [
     ("level", "level", 0.0, 2.0, 1.0),
@@ -225,6 +231,7 @@ pub struct Strips {
     pub sampler: Strip,
     pub vocal: Strip,
     pub tb303: Strip,
+    pub wavetable: Strip,
 }
 impl Strips {
     pub fn get(&self, source: Module) -> Strip {
@@ -235,6 +242,7 @@ impl Strips {
             Module::Sampler => self.sampler,
             Module::Vocal => self.vocal,
             Module::Tb303 => self.tb303,
+            Module::Wavetable => self.wavetable,
             _ => Strip::default(),
         }
     }
@@ -249,7 +257,8 @@ impl Strips {
             2 => &mut self.drums,
             3 => &mut self.sampler,
             4 => &mut self.vocal,
-            _ => &mut self.tb303,
+            5 => &mut self.tb303,
+            _ => &mut self.wavetable,
         }
     }
     pub fn get_mut(&mut self, source: Module) -> Option<&mut Strip> {
@@ -260,6 +269,7 @@ impl Strips {
             Module::Sampler => Some(&mut self.sampler),
             Module::Vocal => Some(&mut self.vocal),
             Module::Tb303 => Some(&mut self.tb303),
+            Module::Wavetable => Some(&mut self.wavetable),
             _ => None,
         }
     }
@@ -474,13 +484,16 @@ impl Plan {
                 | Module::Drums
                 | Module::Sampler
                 | Module::Vocal
-                | Module::Tb303 => {
+                | Module::Tb303
+                | Module::Wavetable => {
                     chain = Chain::Source(slot.module);
                     step.chain = chain;
                     // Off, a voiced source has no notes for the modules under it;
                     // the stream sources have none of the notes' own.
-                    per_note =
-                        matches!(slot.module, Module::Sample | Module::Synth) && slot.enabled;
+                    per_note = matches!(
+                        slot.module,
+                        Module::Sample | Module::Synth | Module::Wavetable
+                    ) && slot.enabled;
                     step.per_note = per_note;
                     step.mixed = mixer.is_some_and(|m| m > i);
                 }

@@ -29,6 +29,8 @@ pub enum Kind {
     /// sounds nothing, takes no MIDI and does not show; the next instrument
     /// added fills it.
     Empty,
+    /// Creation shortcut; its saved sound is a Rack with a Wavetable source.
+    Wavetable,
 }
 impl Kind {
     pub fn label(self) -> &'static str {
@@ -44,6 +46,7 @@ impl Kind {
             Kind::Bus => "Bus",
             Kind::Master => "Master",
             Kind::Empty => "Empty",
+            Kind::Wavetable => "Wavetable",
         }
     }
     /// Bus, Master and Pad FX take their input from other timbres, not MIDI
@@ -58,7 +61,10 @@ impl Kind {
     /// A new instrument waits for notes rather than playing its voice 0 with
     /// the transport (a Granular one keeps its host's choice).
     pub fn waits_for_notes(self) -> bool {
-        matches!(self, Kind::Synth | Kind::Rack | Kind::Tb303)
+        matches!(
+            self,
+            Kind::Synth | Kind::Rack | Kind::Tb303 | Kind::Wavetable
+        )
     }
     /// A new instrument of this kind, built as a Rack that plays as a timbre
     /// of the kind does: the modules its engine runs, in their order. None
@@ -78,6 +84,12 @@ impl Kind {
             Kind::Sampler => &[Module::Sampler],
             Kind::Vocal => &[Module::Vocal],
             Kind::Tb303 => &[Module::Tb303],
+            Kind::Wavetable => &[
+                Module::Wavetable,
+                Module::Filters,
+                Module::Mixer,
+                Module::PostFx,
+            ],
             _ => return None,
         };
         let mut preset = crate::preset::Preset {
@@ -98,12 +110,20 @@ impl Kind {
         if self == Kind::Tb303 {
             preset.sequencer.enabled = false;
         }
+        if self == Kind::Wavetable {
+            preset.color_chain.clear();
+            preset.params.filter = 1.0;
+            preset.params.filter2 = 1.0;
+            preset.params.filter_env_depth = 0.0;
+            preset.params.filter2_env_depth = 0.0;
+            preset.sequencer.enabled = false;
+        }
         preset.rack = Some(Box::new(crate::rack::Settings {
             modules: modules
                 .iter()
                 .map(|&module| Slot {
                     module,
-                    enabled: true,
+                    enabled: self != Kind::Wavetable || module != Module::Filters,
                     id: 0,
                 })
                 .collect(),
@@ -149,7 +169,7 @@ impl Kind {
             Kind::Granular => return None,
             Kind::Drums => preset.drums = Some(Box::default()),
             Kind::Synth => preset.synth = Some(Box::default()),
-            Kind::Tb303 => {
+            Kind::Tb303 | Kind::Wavetable => {
                 return self.rack_instrument();
             }
             Kind::Rack => {
@@ -210,6 +230,14 @@ pub struct Mix {
     pub solo: bool,
     /// 0 = any channel, 1–16 = a specific incoming MIDI channel.
     pub channel: u8,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub key_low: u8,
+    #[serde(skip_serializing_if = "midi_max")]
+    pub key_high: u8,
+    #[serde(skip_serializing_if = "velocity_min")]
+    pub velocity_low: u8,
+    #[serde(skip_serializing_if = "midi_max")]
+    pub velocity_high: u8,
     /// Send levels to Bus 1–8; a Bus sends to other buses, Master and Pad
     /// FX do not send.
     pub sends: [f32; MAX_BUSES],
@@ -225,6 +253,10 @@ impl Default for Mix {
             muted: false,
             solo: false,
             channel: 0,
+            key_low: 0,
+            key_high: 127,
+            velocity_low: 1,
+            velocity_high: 127,
             sends: [0.; MAX_BUSES],
             entries: [INPUT; DESTINATIONS],
         }
@@ -238,6 +270,10 @@ impl Mix {
             1.
         };
         self.channel = self.channel.min(16);
+        self.key_low = self.key_low.min(127);
+        self.key_high = self.key_high.clamp(self.key_low, 127);
+        self.velocity_low = self.velocity_low.clamp(1, 127);
+        self.velocity_high = self.velocity_high.clamp(self.velocity_low, 127);
         for send in &mut self.sends {
             *send = if send.is_finite() {
                 send.clamp(0., 2.)
@@ -262,6 +298,21 @@ impl Mix {
         self.entries[bus] = INPUT;
         changed
     }
+    pub fn midi_changed(self, other: Self) -> bool {
+        (
+            self.channel,
+            self.key_low,
+            self.key_high,
+            self.velocity_low,
+            self.velocity_high,
+        ) != (
+            other.channel,
+            other.key_low,
+            other.key_high,
+            other.velocity_low,
+            other.velocity_high,
+        )
+    }
     pub fn accepts(self, message: crate::midi::Message) -> bool {
         use crate::midi::Message::*;
         let channel = match message {
@@ -274,9 +325,26 @@ impl Mix {
             | Program { channel, .. } => Some(channel),
             _ => None,
         };
-        self.channel == 0 || channel.is_none_or(|c| c + 1 == self.channel)
+        let channel_ok = self.channel == 0 || channel.is_none_or(|c| c + 1 == self.channel);
+        // Note-off (including velocity-zero NoteOn) always reaches previously
+        // accepted notes. CC/sustain/clock are never lost at a split boundary.
+        channel_ok
+            && match message {
+                NoteOn { note, velocity, .. } if velocity > 0 => {
+                    (self.key_low..=self.key_high).contains(&note)
+                        && (self.velocity_low..=self.velocity_high).contains(&velocity)
+                }
+                _ => true,
+            }
     }
 }
+fn midi_max(value: &u8) -> bool {
+    *value == 127
+}
+fn velocity_min(value: &u8) -> bool {
+    *value == 1
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Meta {

@@ -1,0 +1,313 @@
+{
+  "scope": "Production shipping SIMD WASM in Node/V8, Core.process(128) including its JS boundary/output view. Sequential alternating AB/BA, preparation/compilation and signal validation excluded. Wall timing, median of two run percentiles; excludes the browser AudioWorklet/device scheduler. Separate from native thread CPU.",
+  "node": "v24.19.0",
+  "v8": "13.6.233.17-node.51",
+  "sample_rate": 48000,
+  "block": 128,
+  "deadline_ms": 2.6666666666666665,
+  "audio_seconds_per_run": 0.75,
+  "warmup_audio_seconds": 0.5,
+  "rounds": 2,
+  "binaries": [
+    {
+      "path": "/tmp/sadpet-fm-opt-before/sad_pet.simd.wasm",
+      "sha256": "c5b669f5160816fb0a39d00ddc03958d5017a183b1d9af7feec73e0f9775188c"
+    },
+    {
+      "path": "/tmp/sadpet-wt-web/sad_pet.simd.wasm",
+      "sha256": "1f128cb17f6556dba6521b1317486361f35e51c570eb6c7dd41c48bacf207fbd"
+    }
+  ],
+  "summary": [
+    {
+      "mode": "fm",
+      "notes": 4,
+      "waves": 4,
+      "unison": 2,
+      "before": {
+        "p50_ms": 1.599896499999943,
+        "p95_ms": 1.998728999999912,
+        "p99_ms": 2.3261040000000435,
+        "max_ms": 2.851604000000009
+      },
+      "after": {
+        "p50_ms": 1.1299380000000383,
+        "p95_ms": 1.4212085000000343,
+        "p99_ms": 1.7462504999999737,
+        "max_ms": 2.877958000000035
+      },
+      "p50_reduction_percent": 29.374306400440364,
+      "after_p99_fits_deadline": true
+    },
+    {
+      "mode": "sync",
+      "notes": 4,
+      "waves": 4,
+      "unison": 2,
+      "before": {
+        "p50_ms": 5.3538540000004105,
+        "p95_ms": 5.9740829999996095,
+        "p99_ms": 6.339062500000182,
+        "max_ms": 7.11416650000001
+      },
+      "after": {
+        "p50_ms": 2.047291500000483,
+        "p95_ms": 2.439729499999885,
+        "p99_ms": 2.7777499999997417,
+        "max_ms": 3.4485625000002074
+      },
+      "p50_reduction_percent": 61.76041595455673,
+      "after_p99_fits_deadline": false
+    },
+    {
+      "mode": "mixed",
+      "notes": 4,
+      "waves": 4,
+      "unison": 2,
+      "before": {
+        "p50_ms": 5.463729500001136,
+        "p95_ms": 6.13300000000072,
+        "p99_ms": 6.501999999999498,
+        "max_ms": 8.545333500001107
+      },
+      "after": {
+        "p50_ms": 2.391145499999766,
+        "p95_ms": 2.8175625000003492,
+        "p99_ms": 3.096396000000823,
+        "max_ms": 3.259146000000328
+      },
+      "p50_reduction_percent": 56.23601973708126,
+      "after_p99_fits_deadline": false
+    },
+    {
+      "mode": "mixed",
+      "notes": 3,
+      "waves": 4,
+      "unison": 2,
+      "before": {
+        "p50_ms": 4.0637915000006615,
+        "p95_ms": 4.661583499999324,
+        "p99_ms": 5.338792000000467,
+        "max_ms": 6.666166500001054
+      },
+      "after": {
+        "p50_ms": 1.752791500002786,
+        "p95_ms": 2.099479500002417,
+        "p99_ms": 2.4133755000002566,
+        "max_ms": 2.591458499999135
+      },
+      "p50_reduction_percent": 56.86807504758793,
+      "after_p99_fits_deadline": true
+    }
+  ],
+  "runs": [
+    {
+      "version": "before",
+      "mode": "fm",
+      "notes": 4,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 0,
+      "peak": 0.02926628850400448,
+      "p50_ms": 1.5940839999999525,
+      "p95_ms": 2.107250000000022,
+      "p99_ms": 2.6111250000000155,
+      "max_ms": 3.490374999999972
+    },
+    {
+      "version": "after",
+      "mode": "fm",
+      "notes": 4,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 0,
+      "peak": 0.029266277328133583,
+      "p50_ms": 1.1868340000000899,
+      "p95_ms": 1.5076670000000831,
+      "p99_ms": 1.795708999999988,
+      "max_ms": 3.3353750000001128
+    },
+    {
+      "version": "after",
+      "mode": "fm",
+      "notes": 4,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 1,
+      "peak": 0.029266277328133583,
+      "p50_ms": 1.0730419999999867,
+      "p95_ms": 1.3347499999999854,
+      "p99_ms": 1.6967919999999594,
+      "max_ms": 2.4205409999999574
+    },
+    {
+      "version": "before",
+      "mode": "fm",
+      "notes": 4,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 1,
+      "peak": 0.02926628850400448,
+      "p50_ms": 1.6057089999999334,
+      "p95_ms": 1.8902079999998023,
+      "p99_ms": 2.0410830000000715,
+      "max_ms": 2.212833000000046
+    },
+    {
+      "version": "before",
+      "mode": "sync",
+      "notes": 4,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 0,
+      "peak": 0.03401746228337288,
+      "p50_ms": 5.421291999999994,
+      "p95_ms": 6.075874999999542,
+      "p99_ms": 6.323667000000569,
+      "max_ms": 7.078375000000051
+    },
+    {
+      "version": "after",
+      "mode": "sync",
+      "notes": 4,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 0,
+      "peak": 0.034017473459243774,
+      "p50_ms": 2.014958000000661,
+      "p95_ms": 2.3076670000000377,
+      "p99_ms": 2.5307919999995647,
+      "max_ms": 2.8237920000001395
+    },
+    {
+      "version": "after",
+      "mode": "sync",
+      "notes": 4,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 1,
+      "peak": 0.034017473459243774,
+      "p50_ms": 2.0796250000003056,
+      "p95_ms": 2.571791999999732,
+      "p99_ms": 3.0247079999999187,
+      "max_ms": 4.073333000000275
+    },
+    {
+      "version": "before",
+      "mode": "sync",
+      "notes": 4,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 1,
+      "peak": 0.03401746228337288,
+      "p50_ms": 5.286416000000827,
+      "p95_ms": 5.872290999999677,
+      "p99_ms": 6.354457999999795,
+      "max_ms": 7.14995799999997
+    },
+    {
+      "version": "before",
+      "mode": "mixed",
+      "notes": 4,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 0,
+      "peak": 0.020354310050606728,
+      "p50_ms": 5.390542000001005,
+      "p95_ms": 6.025250000000597,
+      "p99_ms": 6.2682499999991705,
+      "max_ms": 7.529708000000028
+    },
+    {
+      "version": "after",
+      "mode": "mixed",
+      "notes": 4,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 0,
+      "peak": 0.02035430632531643,
+      "p50_ms": 2.333082999999533,
+      "p95_ms": 2.7641250000015134,
+      "p99_ms": 3.0593750000007276,
+      "max_ms": 3.2667920000003505
+    },
+    {
+      "version": "after",
+      "mode": "mixed",
+      "notes": 4,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 1,
+      "peak": 0.02035430632531643,
+      "p50_ms": 2.4492079999999987,
+      "p95_ms": 2.870999999999185,
+      "p99_ms": 3.133417000000918,
+      "max_ms": 3.2515000000003056
+    },
+    {
+      "version": "before",
+      "mode": "mixed",
+      "notes": 4,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 1,
+      "peak": 0.020354310050606728,
+      "p50_ms": 5.536917000001267,
+      "p95_ms": 6.240750000000844,
+      "p99_ms": 6.735749999999825,
+      "max_ms": 9.560959000002185
+    },
+    {
+      "version": "before",
+      "mode": "mixed",
+      "notes": 3,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 0,
+      "peak": 0.01739492453634739,
+      "p50_ms": 4.022250000001804,
+      "p95_ms": 4.68212499999936,
+      "p99_ms": 5.4777089999988675,
+      "max_ms": 7.709042000002228
+    },
+    {
+      "version": "after",
+      "mode": "mixed",
+      "notes": 3,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 0,
+      "peak": 0.01739492267370224,
+      "p50_ms": 1.7477080000026035,
+      "p95_ms": 2.070000000003347,
+      "p99_ms": 2.2918339999996533,
+      "max_ms": 2.5000419999996666
+    },
+    {
+      "version": "after",
+      "mode": "mixed",
+      "notes": 3,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 1,
+      "peak": 0.01739492267370224,
+      "p50_ms": 1.7578750000029686,
+      "p95_ms": 2.128959000001487,
+      "p99_ms": 2.53491700000086,
+      "max_ms": 2.682874999998603
+    },
+    {
+      "version": "before",
+      "mode": "mixed",
+      "notes": 3,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 1,
+      "peak": 0.01739492453634739,
+      "p50_ms": 4.1053329999995185,
+      "p95_ms": 4.641041999999288,
+      "p99_ms": 5.199875000002066,
+      "max_ms": 5.623290999999881
+    }
+  ]
+}

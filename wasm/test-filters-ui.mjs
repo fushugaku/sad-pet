@@ -25,6 +25,7 @@ function element() {
     querySelector: () => label,
   };
   const node = {
+    before(other) { elements.set(other.id, other); },
     classList: box.classList,
     children: [],
     dataset: {},
@@ -86,7 +87,12 @@ const context = {
   sendTargets: () => ({ sends: true, buses: [{ bus: 1, name: "Bus 1" }] }),
   fillBusMenu: (select, value) => { select.value = String(value); },
   $: get,
-  window: {},
+  sequenceCatalog: { filter_presets: [{id:"silk",name:"Silk",params:{filter_routing:"serial",filter2_model:"ladder_lp24"}}] },
+  window: { SadLazySelect: { configure(node, value, groups) {
+    assert.ok(groups.every(group => Array.isArray(group.choices)), "LazySelect expects choice groups");
+    for (const group of groups) for (const choice of group.choices) assert.equal(choice.length, 2);
+    node.groups=groups;
+  } } },
   requestAnimationFrame: () => 1,
   percent: (v) => `${v * 100}%`,
   signedPercent: (v) => `${v * 100}%`,
@@ -276,6 +282,11 @@ preset.params.filter_env = "env2";
 context.syncFilters();
 assert.ok(!get("filter-env").children.some(o => o.value === "tb303"));
 assert.ok(get("filter2-env").children.find(o => o.value === "tb303").disabled);
+const pairMenu=get("filter-pair-preset");
+assert.equal(pairMenu.groups[0].choices[1][0],"silk");
+pairMenu.value="silk";pairMenu.onchange();
+assert.equal(preset.params.filter_routing,"serial");
+assert.equal(preset.params.filter2_model,"ladder_lp24");
 console.log(
   "Filter editor: initialization, 12 controls, model/Comb selection, conditional Morph, scalar transport and added filters (position, model, host IDs, order, removal, limit) passed.",
 );

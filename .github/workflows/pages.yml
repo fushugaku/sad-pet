@@ -32,6 +32,8 @@ jobs:
           cargo test -p sad-pet --no-default-features --lib dsp::tb303 --locked
           cargo test -p sad-pet --no-default-features --lib dsp::synth --locked
           cargo test -p sad-pet --no-default-features --lib dsp::sequence --locked
+          cargo test -p sad-pet --no-default-features --lib wavetable --locked
+          cargo test -p sad-pet --no-default-features --test wavetable --locked
           cargo test -p sad-pet --no-default-features --test bus --test grain_continuity --locked
           cargo test -p sad-pet --no-default-features --test rack_instruments --test rack --test rack_sources --locked
           cargo test -p sad-pet-alphaverb --release --lib --locked
@@ -64,6 +66,11 @@ jobs:
           node wasm/test-mixer-ui.mjs
           node wasm/test-taps-ui.mjs
           node wasm/test-rack.mjs
+          node wasm/test-wavetable.mjs
+          node wasm/test-thirdwave.mjs
+          node wasm/test-wavetable-parity.mjs
+          node wasm/test-wavetable-parity.mjs dist/web /tmp/thirdwave-parity.json thirdwave
+          node wasm/test-wavetable-parity.mjs dist/web /tmp/unison4-parity.json unison4
           node wasm/test-eq.mjs
           node wasm/test-grain-groups-ui.mjs
           node wasm/test-synth.mjs

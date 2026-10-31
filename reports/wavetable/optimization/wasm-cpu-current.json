@@ -1,0 +1,170 @@
+{
+  "scope": "Production shipping SIMD WASM in Node/V8, Core.process(128) including its JS boundary/output view. Preparation/compilation and signal validation excluded. Wall timing, median of two run percentiles; excludes the browser AudioWorklet/device scheduler. Separate from native thread CPU.",
+  "method": "Sequential alternating AB/BA",
+  "node": "v24.19.0",
+  "v8": "13.6.233.17-node.51",
+  "sample_rate": 48000,
+  "block": 128,
+  "deadline_ms": 2.6666666666666665,
+  "audio_seconds_per_run": 0.75,
+  "warmup_audio_seconds": 0.5,
+  "rounds": 2,
+  "binaries": [
+    {
+      "path": "/tmp/sadpet-fm-opt-before/sad_pet.simd.wasm",
+      "sha256": "c5b669f5160816fb0a39d00ddc03958d5017a183b1d9af7feec73e0f9775188c"
+    },
+    {
+      "path": "/tmp/sadpet-wt-web/sad_pet.simd.wasm",
+      "sha256": "20e4dda0f0efc4ccbaf430e304ca06aebd592fe1593a725cd414575df9aaffda"
+    }
+  ],
+  "summary": [
+    {
+      "mode": "fm",
+      "notes": 4,
+      "waves": 4,
+      "unison": 2,
+      "before": {
+        "p50_ms": 2.763562499999921,
+        "p95_ms": 3.34156250000035,
+        "p99_ms": 3.578395999999657,
+        "max_ms": 4.533625499999744
+      },
+      "after": {
+        "p50_ms": 2.2131039999999302,
+        "p95_ms": 2.77187449999974,
+        "p99_ms": 3.3214165000001685,
+        "max_ms": 3.4463130000001456
+      },
+      "p50_reduction_percent": 19.918438609584776,
+      "after_p99_fits_deadline": false
+    },
+    {
+      "mode": "mixed",
+      "notes": 3,
+      "waves": 4,
+      "unison": 2,
+      "before": {
+        "p50_ms": 7.295583499999793,
+        "p95_ms": 9.352750000000015,
+        "p99_ms": 9.741791499999636,
+        "max_ms": 10.067708500000208
+      },
+      "after": {
+        "p50_ms": 3.083146000000852,
+        "p95_ms": 3.6436665000001085,
+        "p99_ms": 3.8695834999998624,
+        "max_ms": 3.97400000000016
+      },
+      "p50_reduction_percent": 57.73955571886829,
+      "after_p99_fits_deadline": false
+    }
+  ],
+  "runs": [
+    {
+      "version": "before",
+      "mode": "fm",
+      "notes": 4,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 0,
+      "peak": 0.02926628850400448,
+      "p50_ms": 3.1726670000000468,
+      "p95_ms": 4.0782080000001315,
+      "p99_ms": 4.332750000000033,
+      "max_ms": 6.123833999999988
+    },
+    {
+      "version": "after",
+      "mode": "fm",
+      "notes": 4,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 0,
+      "peak": 0.029266277328133583,
+      "p50_ms": 2.1584579999998823,
+      "p95_ms": 2.76104099999975,
+      "p99_ms": 3.04825000000028,
+      "max_ms": 3.0700839999999516
+    },
+    {
+      "version": "after",
+      "mode": "fm",
+      "notes": 4,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 1,
+      "peak": 0.029266277328133583,
+      "p50_ms": 2.267749999999978,
+      "p95_ms": 2.7827079999997295,
+      "p99_ms": 3.594583000000057,
+      "max_ms": 3.8225420000003396
+    },
+    {
+      "version": "before",
+      "mode": "fm",
+      "notes": 4,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 1,
+      "peak": 0.02926628850400448,
+      "p50_ms": 2.354457999999795,
+      "p95_ms": 2.604917000000569,
+      "p99_ms": 2.824041999999281,
+      "max_ms": 2.9434169999994992
+    },
+    {
+      "version": "before",
+      "mode": "mixed",
+      "notes": 3,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 0,
+      "peak": 0.01739492453634739,
+      "p50_ms": 7.516875000000255,
+      "p95_ms": 9.48041700000067,
+      "p99_ms": 9.790082999999868,
+      "max_ms": 9.896750000000793
+    },
+    {
+      "version": "after",
+      "mode": "mixed",
+      "notes": 3,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 0,
+      "peak": 0.01739492267370224,
+      "p50_ms": 2.687292000000525,
+      "p95_ms": 2.9582080000000133,
+      "p99_ms": 3.182875000000422,
+      "max_ms": 3.2752500000005966
+    },
+    {
+      "version": "after",
+      "mode": "mixed",
+      "notes": 3,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 1,
+      "peak": 0.01739492267370224,
+      "p50_ms": 3.4790000000011787,
+      "p95_ms": 4.329125000000204,
+      "p99_ms": 4.556291999999303,
+      "max_ms": 4.6727499999997235
+    },
+    {
+      "version": "before",
+      "mode": "mixed",
+      "notes": 3,
+      "waves": 4,
+      "unison": 2,
+      "repeat": 1,
+      "peak": 0.01739492453634739,
+      "p50_ms": 7.074291999999332,
+      "p95_ms": 9.225082999999358,
+      "p99_ms": 9.693499999999403,
+      "max_ms": 10.238666999999623
+    }
+  ]
+}

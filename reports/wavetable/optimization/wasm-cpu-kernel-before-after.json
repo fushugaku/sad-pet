@@ -1,0 +1,385 @@
+{
+  "scope": "Production shipping SIMD WASM in Node/V8, Core.process(128) including its JS boundary/output view. Sequential alternating AB/BA, preparation/compilation and signal validation excluded. Wall timing, median of two run percentiles; excludes the browser AudioWorklet/device scheduler. Separate from native thread CPU.",
+  "node": "v24.19.0",
+  "v8": "13.6.233.17-node.51",
+  "sample_rate": 48000,
+  "block": 128,
+  "deadline_ms": 2.6666666666666665,
+  "audio_seconds_per_run": 0.75,
+  "warmup_audio_seconds": 0.5,
+  "rounds": 2,
+  "binaries": [
+    {
+      "path": "/tmp/sadpet-fm-opt-before/sad_pet.simd.wasm",
+      "sha256": "c5b669f5160816fb0a39d00ddc03958d5017a183b1d9af7feec73e0f9775188c"
+    },
+    {
+      "path": "/tmp/sadpet-wt-web/sad_pet.simd.wasm",
+      "sha256": "1f128cb17f6556dba6521b1317486361f35e51c570eb6c7dd41c48bacf207fbd"
+    }
+  ],
+  "summary": [
+    {
+      "mode": "off",
+      "notes": 8,
+      "waves": 4,
+      "unison": 4,
+      "before": {
+        "p50_ms": 0.48968800000005785,
+        "p95_ms": 0.6745834999999261,
+        "p99_ms": 0.780374500000022,
+        "max_ms": 0.8293754999999692
+      },
+      "after": {
+        "p50_ms": 0.5047504999999433,
+        "p95_ms": 0.7149380000000178,
+        "p99_ms": 0.8171250000000327,
+        "max_ms": 0.9535629999999742
+      },
+      "p50_reduction_percent": -3.075938148348256,
+      "after_p99_fits_deadline": true
+    },
+    {
+      "mode": "fm",
+      "notes": 4,
+      "waves": 4,
+      "unison": 4,
+      "before": {
+        "p50_ms": 2.9326454999998077,
+        "p95_ms": 3.5442295000004833,
+        "p99_ms": 3.782166500000585,
+        "max_ms": 4.285417000000052
+      },
+      "after": {
+        "p50_ms": 1.6202295000000504,
+        "p95_ms": 2.022645999999895,
+        "p99_ms": 3.0669159999997646,
+        "max_ms": 4.069103999999697
+      },
+      "p50_reduction_percent": 44.751948368796825,
+      "after_p99_fits_deadline": false
+    },
+    {
+      "mode": "fm",
+      "notes": 8,
+      "waves": 4,
+      "unison": 4,
+      "before": {
+        "p50_ms": 5.771916500000771,
+        "p95_ms": 6.643207999999504,
+        "p99_ms": 7.0866665000003195,
+        "max_ms": 7.268958499999826
+      },
+      "after": {
+        "p50_ms": 3.1124585000006846,
+        "p95_ms": 3.739145999998982,
+        "p99_ms": 4.114729500000067,
+        "max_ms": 4.198083000000224
+      },
+      "p50_reduction_percent": 46.075822475944186,
+      "after_p99_fits_deadline": false
+    },
+    {
+      "mode": "sync",
+      "notes": 4,
+      "waves": 4,
+      "unison": 4,
+      "before": {
+        "p50_ms": 9.619520500000363,
+        "p95_ms": 10.692333499999222,
+        "p99_ms": 11.296104000000923,
+        "max_ms": 11.819312000001446
+      },
+      "after": {
+        "p50_ms": 3.103833499999382,
+        "p95_ms": 3.6521464999987074,
+        "p99_ms": 3.93835399999989,
+        "max_ms": 4.091104500001165
+      },
+      "p50_reduction_percent": 67.73401023471737,
+      "after_p99_fits_deadline": false
+    },
+    {
+      "mode": "mixed",
+      "notes": 4,
+      "waves": 4,
+      "unison": 4,
+      "before": {
+        "p50_ms": 9.79785449999872,
+        "p95_ms": 11.061187499997686,
+        "p99_ms": 11.922624499999074,
+        "max_ms": 13.70533350000187
+      },
+      "after": {
+        "p50_ms": 3.57325050000145,
+        "p95_ms": 4.216520499998296,
+        "p99_ms": 4.5878540000012435,
+        "max_ms": 5.172083000001294
+      },
+      "p50_reduction_percent": 63.530275939473114,
+      "after_p99_fits_deadline": false
+    }
+  ],
+  "runs": [
+    {
+      "version": "before",
+      "mode": "off",
+      "notes": 8,
+      "waves": 4,
+      "unison": 4,
+      "repeat": 0,
+      "peak": 0.041326187551021576,
+      "p50_ms": 0.48620900000003076,
+      "p95_ms": 0.6722919999999704,
+      "p99_ms": 0.7480830000000083,
+      "max_ms": 0.7769590000000335
+    },
+    {
+      "version": "after",
+      "mode": "off",
+      "notes": 8,
+      "waves": 4,
+      "unison": 4,
+      "repeat": 0,
+      "peak": 0.041326187551021576,
+      "p50_ms": 0.5195840000000089,
+      "p95_ms": 0.7217920000000504,
+      "p99_ms": 0.8460000000000036,
+      "max_ms": 1.0409590000000435
+    },
+    {
+      "version": "after",
+      "mode": "off",
+      "notes": 8,
+      "waves": 4,
+      "unison": 4,
+      "repeat": 1,
+      "peak": 0.041326187551021576,
+      "p50_ms": 0.4899169999998776,
+      "p95_ms": 0.7080839999999853,
+      "p99_ms": 0.7882500000000618,
+      "max_ms": 0.8661669999999049
+    },
+    {
+      "version": "before",
+      "mode": "off",
+      "notes": 8,
+      "waves": 4,
+      "unison": 4,
+      "repeat": 1,
+      "peak": 0.041326187551021576,
+      "p50_ms": 0.49316700000008495,
+      "p95_ms": 0.6768749999998818,
+      "p99_ms": 0.8126660000000356,
+      "max_ms": 0.8817919999999049
+    },
+    {
+      "version": "before",
+      "mode": "fm",
+      "notes": 4,
+      "waves": 4,
+      "unison": 4,
+      "repeat": 0,
+      "peak": 0.02436785213649273,
+      "p50_ms": 2.8904999999999745,
+      "p95_ms": 3.4912920000001577,
+      "p99_ms": 3.803458000000319,
+      "max_ms": 4.471083999999792
+    },
+    {
+      "version": "after",
+      "mode": "fm",
+      "notes": 4,
+      "waves": 4,
+      "unison": 4,
+      "repeat": 0,
+      "peak": 0.02436785027384758,
+      "p50_ms": 1.578584000000319,
+      "p95_ms": 2.0137500000000728,
+      "p99_ms": 3.9534159999998337,
+      "max_ms": 5.90625
+    },
+    {
+      "version": "after",
+      "mode": "fm",
+      "notes": 4,
+      "waves": 4,
+      "unison": 4,
+      "repeat": 1,
+      "peak": 0.02436785027384758,
+      "p50_ms": 1.6618749999997817,
+      "p95_ms": 2.0315419999997175,
+      "p99_ms": 2.1804159999996955,
+      "max_ms": 2.231957999999395
+    },
+    {
+      "version": "before",
+      "mode": "fm",
+      "notes": 4,
+      "waves": 4,
+      "unison": 4,
+      "repeat": 1,
+      "peak": 0.02436785213649273,
+      "p50_ms": 2.974790999999641,
+      "p95_ms": 3.597167000000809,
+      "p99_ms": 3.7608750000008513,
+      "max_ms": 4.099750000000313
+    },
+    {
+      "version": "before",
+      "mode": "fm",
+      "notes": 8,
+      "waves": 4,
+      "unison": 4,
+      "repeat": 0,
+      "peak": 0.03314286470413208,
+      "p50_ms": 5.953041000000667,
+      "p95_ms": 6.9227499999997235,
+      "p99_ms": 7.320832999999766,
+      "max_ms": 7.3605420000003505
+    },
+    {
+      "version": "after",
+      "mode": "fm",
+      "notes": 8,
+      "waves": 4,
+      "unison": 4,
+      "repeat": 0,
+      "peak": 0.033142875880002975,
+      "p50_ms": 3.0338750000009895,
+      "p95_ms": 3.671082999999271,
+      "p99_ms": 4.085791999999856,
+      "max_ms": 4.131457999999839
+    },
+    {
+      "version": "after",
+      "mode": "fm",
+      "notes": 8,
+      "waves": 4,
+      "unison": 4,
+      "repeat": 1,
+      "peak": 0.033142875880002975,
+      "p50_ms": 3.1910420000003796,
+      "p95_ms": 3.807208999998693,
+      "p99_ms": 4.143667000000278,
+      "max_ms": 4.26470800000061
+    },
+    {
+      "version": "before",
+      "mode": "fm",
+      "notes": 8,
+      "waves": 4,
+      "unison": 4,
+      "repeat": 1,
+      "peak": 0.03314286470413208,
+      "p50_ms": 5.590792000000874,
+      "p95_ms": 6.363665999999284,
+      "p99_ms": 6.852500000000873,
+      "max_ms": 7.1773749999993015
+    },
+    {
+      "version": "before",
+      "mode": "sync",
+      "notes": 4,
+      "waves": 4,
+      "unison": 4,
+      "repeat": 0,
+      "peak": 0.027306372299790382,
+      "p50_ms": 9.584374999998545,
+      "p95_ms": 10.689416999997775,
+      "p99_ms": 11.412000000000262,
+      "max_ms": 11.62933300000077
+    },
+    {
+      "version": "after",
+      "mode": "sync",
+      "notes": 4,
+      "waves": 4,
+      "unison": 4,
+      "repeat": 0,
+      "peak": 0.027306387200951576,
+      "p50_ms": 3.0233749999970314,
+      "p95_ms": 3.558333999997558,
+      "p99_ms": 3.7945829999989655,
+      "max_ms": 3.9674590000031458
+    },
+    {
+      "version": "after",
+      "mode": "sync",
+      "notes": 4,
+      "waves": 4,
+      "unison": 4,
+      "repeat": 1,
+      "peak": 0.027306387200951576,
+      "p50_ms": 3.184292000001733,
+      "p95_ms": 3.745958999999857,
+      "p99_ms": 4.082125000000815,
+      "max_ms": 4.214749999999185
+    },
+    {
+      "version": "before",
+      "mode": "sync",
+      "notes": 4,
+      "waves": 4,
+      "unison": 4,
+      "repeat": 1,
+      "peak": 0.027306372299790382,
+      "p50_ms": 9.65466600000218,
+      "p95_ms": 10.69525000000067,
+      "p99_ms": 11.180208000001585,
+      "max_ms": 12.009291000002122
+    },
+    {
+      "version": "before",
+      "mode": "mixed",
+      "notes": 4,
+      "waves": 4,
+      "unison": 4,
+      "repeat": 0,
+      "peak": 0.015437300316989422,
+      "p50_ms": 9.777500000000146,
+      "p95_ms": 11.044499999999971,
+      "p99_ms": 11.832457999997132,
+      "max_ms": 12.01154200000019
+    },
+    {
+      "version": "after",
+      "mode": "mixed",
+      "notes": 4,
+      "waves": 4,
+      "unison": 4,
+      "repeat": 0,
+      "peak": 0.015437309630215168,
+      "p50_ms": 3.5535840000011376,
+      "p95_ms": 4.182625000001281,
+      "p99_ms": 4.64600000000064,
+      "max_ms": 5.512915999999677
+    },
+    {
+      "version": "after",
+      "mode": "mixed",
+      "notes": 4,
+      "waves": 4,
+      "unison": 4,
+      "repeat": 1,
+      "peak": 0.015437309630215168,
+      "p50_ms": 3.592917000001762,
+      "p95_ms": 4.250415999995312,
+      "p99_ms": 4.529708000001847,
+      "max_ms": 4.83125000000291
+    },
+    {
+      "version": "before",
+      "mode": "mixed",
+      "notes": 4,
+      "waves": 4,
+      "unison": 4,
+      "repeat": 1,
+      "peak": 0.015437300316989422,
+      "p50_ms": 9.818208999997296,
+      "p95_ms": 11.077874999995402,
+      "p99_ms": 12.012791000001016,
+      "max_ms": 15.39912500000355
+    }
+  ]
+}

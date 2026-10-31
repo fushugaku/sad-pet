@@ -1,0 +1,124 @@
+{
+  "created_utc": "2026-10-31T12:20:39.559729+00:00",
+  "git_head": "456c7c5d167128d7a7efb018d651c29082ea6acb",
+  "scope": "Working-tree implementation inside existing Rack. Local alpha; performance limits are published rather than assumed to pass for every profile.",
+  "engine_revision": 3,
+  "schema_version": 2,
+  "compiler_layout_revision": 2,
+  "host_parameters": 4578,
+  "released_prefix_unchanged": 4566,
+  "tests": {
+    "core_unit": {
+      "passed": true,
+      "log": "/tmp/wt-opt-core-final7.log"
+    },
+    "wavetable_integration": {
+      "passed": true,
+      "log": "/tmp/wt-opt-core-final7.log"
+    },
+    "native_rust": {
+      "passed": true,
+      "log": "/tmp/wt-opt-plugin-final7.log"
+    },
+    "native_cpp_hosts": {
+      "passed": true,
+      "log": "/tmp/wt-opt-host-final7.log"
+    },
+    "wasm_tools_routes_recall": {
+      "passed": true,
+      "log": "/tmp/wt-opt-thirdwave-final7.log"
+    },
+    "wasm_clippy": {
+      "passed": true,
+      "log": "/tmp/wt-opt-clippy-final7.log"
+    }
+  },
+  "audio": {
+    "audio-difference.json": {
+      "passed": true,
+      "comparisons": 30
+    },
+    "wasm-audio-difference.json": {
+      "passed": true,
+      "comparisons": 60
+    },
+    "routing-audio-difference.json": {
+      "passed": true,
+      "comparisons": 48
+    },
+    "wasm-parity.json": {
+      "passed": true,
+      "comparisons": 3
+    },
+    "after-interactions.json": {
+      "passed": true,
+      "comparisons": 162
+    },
+    "routed-interactions.json": {
+      "passed": true,
+      "comparisons": 162
+    }
+  },
+  "routing_entry_change": {
+    "intentional": true,
+    "diagnostic": "routing-note-entry-diagnostic.json",
+    "reason": "The old in-session prototype used incorrect paired sources during new-note entry; current code honors the chosen source. Held routed arithmetic uses a documented priming protocol; legacy patches retain the original note/retrigger corpus."
+  },
+  "current_cpu_reports": [
+    "cpu-before-after.json",
+    "wasm-cpu-current.json",
+    "wasm-routed-current.json"
+  ],
+  "historical_extended_cpu_reports": [
+    "cpu-kernel-before-after.json",
+    "wasm-cpu-kernel-before-after.json",
+    "wasm-unison2-kernel-before-after.json",
+    "wasm-routed-unison2-kernel.json"
+  ],
+  "binaries": {
+    "/Users/georgy/Projects/SadPetRust/target/release/examples/wavetable_opt": {
+      "bytes": 39102400,
+      "sha256": "72f7602fe71fb48babd4779d5a5974f87893bb3f994fa9c6bdebe2b890d34c5a"
+    },
+    "/tmp/sadpet-wt-web/sad_pet.wasm": {
+      "bytes": 49233260,
+      "sha256": "e1ef7c0a99642d5016a14f0eed58b17e03b95e7a56c65f2d6c43017ecf1b20bb"
+    },
+    "/tmp/sadpet-wt-web/sad_pet.simd.wasm": {
+      "bytes": 49317957,
+      "sha256": "20e4dda0f0efc4ccbaf430e304ca06aebd592fe1593a725cd414575df9aaffda"
+    },
+    "/Users/georgy/Projects/SadPetRust/target/plugins/SadPetHostTest": {
+      "bytes": 359096384,
+      "sha256": "9342c629fdd621d8fb36c0b0b3ee9fa252f96ad892cec3f851c7d6270eedced3"
+    },
+    "/Users/georgy/Projects/SadPetRust/target/plugins/SadPetFXHostTest": {
+      "bytes": 359096384,
+      "sha256": "8be188810670856900bf6d6d43a6a35c023fde94447db35502af36e933aca647"
+    }
+  },
+  "source_sha256": {
+    "rust/src/dsp/wavetable.rs": "467c5832c4bfa6fb163b4b452c25d8554fbee953be795d4fa43e6f418a4dfcfd",
+    "rust/src/dsp/wavetable/interaction.rs": "51eae24905e8e4c7659395d58b2047e1623f534ef2e59af5aee47195e33dfa8e",
+    "rust/src/dsp/wavetable/interaction/routing.rs": "b61ca96af6ecc1e2880af371141ea82bd9a2f7beed19d762d4c2e17877c50352",
+    "rust/src/dsp/wavetable/lookup.rs": "adf7bba8f64ff3b41ab2a142c7fb27e9af63eff5ffe1b64b19458a11ab305cab",
+    "rust/src/dsp/wavetable/polynomial.rs": "674c3720d9d7977bf493719a6083e23e7b10f8716fc2d032afe8c42d4f748ea6",
+    "rust/src/wavetable.rs": "93fe57854b4b503c8e2e6f34d0a5d5942d7e519b5eaec419213a14bb60de1dea",
+    "rust/web/wavetable.js": "4fee7c17a8d0f7d88d2c3db9097e841de48683f656dac19e33fd8338a8ed5880"
+  },
+  "ui": {
+    "desktop_overflow": false,
+    "mobile_css_width": 390,
+    "mobile_overflow": false,
+    "selector_heights_equal": true,
+    "startup_errors": [],
+    "details": "ui-verification.json",
+    "screenshot": "routing-detail.png"
+  },
+  "open_release_gates": [
+    "Physical device and DAW underrun matrix",
+    "High browser polyphony with simultaneous four-operator FM and sync",
+    "Total 128 MiB peak-memory preflight",
+    "Independent dynamic alias oracle and cross-backend voice-generation/phase corpus"
+  ]
+}

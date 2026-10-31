@@ -34,6 +34,308 @@ unsafe impl GlobalAlloc for Allocator {
 static ALLOCATOR: Allocator = Allocator;
 
 #[test]
+fn shared_capture_builds_an_edited_table_that_recalls_with_motion_and_wave_env() {
+    let folder = PresetDirectory::new();
+    let mut control = Controller::new_plugin(false);
+    control.library = preset_library::Library::at(folder.0.clone());
+    let context = call(
+        &mut control,
+        "/api/timbres/add",
+        json!({"kind":"wavetable"}),
+    );
+    let id = context["active"].as_u64().unwrap();
+    call(
+        &mut control,
+        "/api/timbres/update",
+        json!({"id":0,"muted":true}),
+    );
+    let mut audio = control.prepare(48000);
+    let values = control.values();
+    call(
+        &mut control,
+        "/api/transport",
+        json!({"playing":true,"midi_gate":true}),
+    );
+    call(
+        &mut control,
+        "/api/note",
+        json!({"kind":"note_on","channel":0,"note":60,"velocity":100}),
+    );
+    call(
+        &mut control,
+        "/api/capture/start",
+        json!({"seconds":0.1,"source":"output"}),
+    );
+    no_heap(|| {
+        for _ in 0..19 {
+            audio.begin(&values, 120.0, None, true, 256);
+            render(&mut audio, 256, [0.0; 2]);
+        }
+    });
+    let status = call(&mut control, "/api/capture/status", Value::Null);
+    assert_eq!(status["ready"], true);
+    assert_eq!(status["frames"], 4800);
+    let take = call(&mut control, "/api/capture/wav", Value::Null);
+    let made = call(
+        &mut control,
+        "/api/wavetables/make",
+        json!({
+            "wav":take["wav"],"name":"Native captured spectrum","generation":10,
+            "settings":{"method":"spectral","frames":8,"channel":"mix"}
+        }),
+    );
+    assert_eq!(made["frames"], 8);
+    call(
+        &mut control,
+        "/api/wavetables/commit",
+        json!({"id":made["id"],"generation":10}),
+    );
+    let edited = call(
+        &mut control,
+        "/api/wavetables/edit",
+        json!({
+            "id":made["id"],"name":"Native vintage order","generation":11,
+            "settings":{"order":[7,0,3],"bits":10,"phase_steps":256,
+                "locals":[{"frame":1,"phase":0.25,"gains":[{"harmonic":1,"gain":0.75}]}]}
+        }),
+    );
+    assert_eq!(edited["frames"], 3);
+    call(
+        &mut control,
+        "/api/wavetables/commit",
+        json!({"id":edited["id"],"generation":11}),
+    );
+    call(
+        &mut control,
+        "/api/wavetables/select",
+        json!({"id":edited["id"],"oscillator":0,"timbre":id}),
+    );
+    call(
+        &mut control,
+        "/api/parameters",
+        json!({
+            "wt_surf":0.2,"wt_a_step":1,"wt_a_key_waves":-0.25,"wt_a_voice_shift":0.2,
+            "env2_wave_on":1,"env2_wave_beats":1,"env2_wave_loop":1,
+            "lfo1_poly":1,"wt_a_lfo":1,"wt_a_lfo_depth":0.2
+        }),
+    );
+    let mut preset = call(&mut control, "/api/preset", Value::Null);
+    let catalog = call(&mut control, "/api/sequencer/catalog", Value::Null);
+    preset["sequencer"]["patterns"] = json!([catalog["motion_patterns"][0]]);
+    call(&mut control, "/api/preset", preset);
+    no_heap(|| {
+        audio.begin(&values, 120.0, None, true, 256);
+        render(&mut audio, 256, [0.0; 2]);
+    });
+    let saved = control.save().unwrap();
+    let mut recalled = Controller::new_plugin(false);
+    recalled.restore(&saved).unwrap();
+    let preset = call(&mut recalled, "/api/preset", Value::Null);
+    assert_eq!(
+        preset["wavetable"]["oscillators"][0]["asset_id"],
+        edited["id"]
+    );
+    assert_eq!(preset["wavetable"]["oscillators"][0]["step"], true);
+    assert!(
+        (preset["wavetable"]["oscillators"][0]["voice_shift"]
+            .as_f64()
+            .unwrap()
+            - 0.2)
+            .abs()
+            < 1e-6
+    );
+    assert_eq!(preset["envs"][1]["wave"]["enabled"], true);
+    assert_eq!(preset["lfos"][0]["poly"], true);
+    assert_eq!(preset["sequencer"]["patterns"][0]["name"], "Slow Surf");
+    call(
+        &mut recalled,
+        "/api/transport",
+        json!({"playing":true,"midi_gate":true}),
+    );
+    let mut recalled_audio = recalled.prepare(48000);
+    let recalled_values = recalled.values();
+    call(
+        &mut recalled,
+        "/api/note",
+        json!({"kind":"note_on","channel":0,"note":64,"velocity":100}),
+    );
+    let mut peak = 0.0_f32;
+    no_heap(|| {
+        for _ in 0..20 {
+            recalled_audio.begin(&recalled_values, 120.0, None, true, 256);
+            peak = peak.max(render(&mut recalled_audio, 256, [0.0; 2]));
+        }
+    });
+    assert!(peak > 1e-5);
+}
+
+#[test]
+fn wavetable_four_waves_are_host_addressed_and_edit_without_audio_heap_work() {
+    let mut control = Controller::new_plugin(false);
+    let context = call(
+        &mut control,
+        "/api/timbres/add",
+        json!({"kind":"wavetable"}),
+    );
+    let id = context["active"].as_u64().unwrap();
+    let mut audio = control.prepare(48000);
+    let values = control.values();
+    call(
+        &mut control,
+        "/api/transport",
+        json!({"playing":true,"midi_gate":true}),
+    );
+    call(
+        &mut control,
+        "/api/note",
+        json!({"kind":"note_on","channel":0,"note":60,"velocity":100}),
+    );
+    for count in 2..=4 {
+        let result = call(
+            &mut control,
+            "/api/wavetables/layers",
+            json!({"action":"add","timbre":id}),
+        );
+        assert_eq!(result["wavetable"]["count"], count);
+        no_heap(|| {
+            audio.begin(&values, 120.0, None, true, 256);
+            render(&mut audio, 256, [0.0; 2]);
+        });
+    }
+    assert!(control.request(&json!({"path":"/api/wavetables/layers","method":"POST","data":{"action":"add","timbre":id}})).is_err());
+    call(
+        &mut control,
+        "/api/parameters",
+        json!({"wt_c_transpose":7,"wt_d_fine":-9,
+            "wt_a_fm_mode":1,"wt_a_fm_index":0.6,"wt_a_fm_source":3,
+            "wt_b_fm_mode":2,"wt_b_fm_index":0.5,"wt_b_fm_source":0,
+            "wt_c_fm_mode":1,"wt_c_fm_index":0.4,"wt_c_fm_source":1,
+            "wt_d_fm_mode":2,"wt_d_fm_index":0.3,"wt_d_fm_source":2,
+            "wt_a_sync":1,"wt_a_sync_source":2,"wt_d_sync":1,"wt_d_sync_source":1}),
+    );
+    no_heap(|| {
+        audio.begin(&values, 120.0, None, true, 256);
+        render(&mut audio, 256, [0.0; 2]);
+    });
+    let saved = control.save().unwrap();
+    let mut recalled = Controller::new_plugin(false);
+    recalled.restore(&saved).unwrap();
+    let p = call(&mut recalled, "/api/preset", Value::Null);
+    assert_eq!(p["wavetable"]["count"], 4);
+    assert_eq!(p["wavetable"]["engine_revision"], 3);
+    for i in 0..4 {
+        assert_eq!(p["wavetable"]["oscillators"][i]["fm_source"], (i + 3) % 4);
+        assert_eq!(p["wavetable"]["oscillators"][i]["fm_mode"], i % 2 + 1);
+    }
+    assert_eq!(p["wavetable"]["oscillators"][0]["sync_source"], 2);
+    assert_eq!(p["wavetable"]["oscillators"][3]["sync_source"], 1);
+    assert_eq!(
+        p["wavetable"]["oscillators"][3]["fine"].as_f64(),
+        Some(-9.0)
+    );
+    let removed = call(
+        &mut control,
+        "/api/wavetables/layers",
+        json!({"action":"remove","index":1,"timbre":id}),
+    );
+    assert_eq!(removed["wavetable"]["count"], 3);
+    assert_eq!(
+        removed["wavetable"]["oscillators"][1]["transpose"].as_f64(),
+        Some(7.0)
+    );
+    no_heap(|| {
+        audio.begin(&values, 120.0, None, true, 256);
+        render(&mut audio, 256, [0.0; 2]);
+    });
+}
+
+#[test]
+fn wavetable_scenes_deduplicate_user_audio_and_restore_without_external_files() {
+    let folder = PresetDirectory::new();
+    let mut control = Controller::new_plugin(false);
+    control.library = preset_library::Library::at(folder.0.clone());
+    let factory = call(&mut control, "/api/wavetables", Value::Null);
+    assert_eq!(factory["tables"].as_array().unwrap().len(), 96);
+    let wave: Vec<_> = (0..sad_pet::wavetable::FRAME_SIZE * 2)
+        .map(|i| {
+            (i as f64 * std::f64::consts::TAU / sad_pet::wavetable::FRAME_SIZE as f64).sin() as f32
+                * 0.6
+        })
+        .collect();
+    let asset =
+        sad_pet::wavetable::assets::Asset::from_cycles("Portable original".into(), 2048, &wave)
+            .unwrap();
+    for _ in 0..2 {
+        call(
+            &mut control,
+            "/api/timbres/add",
+            json!({"kind":"wavetable"}),
+        );
+        call(&mut control, "/api/wavetables/restore", json!([asset]));
+        let mut preset = call(&mut control, "/api/preset", Value::Null);
+        for oscillator in preset["wavetable"]["oscillators"].as_array_mut().unwrap() {
+            oscillator["asset_id"] = json!(asset.id);
+        }
+        call(&mut control, "/api/preset", preset);
+    }
+    let bytes = control.save().unwrap();
+    let value: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(value["wavetable_assets"].as_array().unwrap().len(), 1);
+    assert!(
+        value["timbres"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|p| p.get("wavetable_assets").is_none())
+    );
+    let mut recalled = Controller::new_plugin(false);
+    recalled.restore(&bytes).unwrap();
+    let active = call(&mut recalled, "/api/preset", Value::Null);
+    assert_eq!(active["wavetable"]["oscillators"][0]["asset_id"], asset.id);
+    call(
+        &mut recalled,
+        "/api/transport",
+        json!({"playing":true,"midi_gate":true}),
+    );
+    let mut audio = recalled.prepare(48_000);
+    call(
+        &mut recalled,
+        "/api/note",
+        json!({"kind":"note_on","channel":0,"note":60,"velocity":100}),
+    );
+    let values = recalled.values();
+    no_heap(|| {
+        audio.begin(&values, 120.0, None, true, 256);
+        render(&mut audio, 256, [0.0; 2]);
+    });
+    let mut part = audio.parts.as_deref();
+    let mut peak = 0.0_f32;
+    while let Some(p) = part {
+        if let Some(meters) = p.audio.engine.rack_peaks() {
+            peak = peak.max(meters[6]);
+        }
+        part = p.next.as_deref();
+    }
+    assert!(peak > 0.001, "restored table remained silent: {peak}");
+    let mut missing = value.clone();
+    missing.as_object_mut().unwrap().remove("wavetable_assets");
+    let mut empty = Controller::new_plugin(false);
+    assert!(
+        empty
+            .restore(&serde_json::to_vec(&missing).unwrap())
+            .is_err()
+    );
+    assert!(empty.preset.wavetable.is_none());
+    let mut corrupt = value;
+    corrupt["wavetable_assets"][0]["content_hash"] = json!("0".repeat(64));
+    assert!(
+        empty
+            .restore(&serde_json::to_vec(&corrupt).unwrap())
+            .is_err()
+    );
+}
+
+#[test]
 fn master_limits_the_final_mix_and_preview_without_audio_allocations() {
     let mut control = Controller::new_plugin(true);
     for i in 0..8 {
@@ -2775,6 +3077,7 @@ fn instrument_presets_file_one_timbre_in_categories_and_load_it_in_place() {
         .as_array()
         .unwrap()
         .iter()
+        .filter(|r| r["factory"] != true)
         .map(|r| {
             format!(
                 "{}/{}",
@@ -2785,7 +3088,7 @@ fn instrument_presets_file_one_timbre_in_categories_and_load_it_in_place() {
         .collect();
     assert_eq!(names, ["/Glass", "Leads/Wide Lead", "Pads/Wide Lead"]);
     assert!(
-        list.to_string().len() < 2000,
+        list.to_string().len() < 32_000 && !list.to_string().contains("sample_wav"),
         "the list holds no sample data"
     );
 
@@ -2990,7 +3293,9 @@ fn instrument_presets_file_one_timbre_in_categories_and_load_it_in_place() {
         call(&mut control, "/api/instruments", Value::Null)
             .as_array()
             .unwrap()
-            .len(),
+            .iter()
+            .filter(|r| r["factory"] != true)
+            .count(),
         3
     );
     assert!(

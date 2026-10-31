@@ -96,7 +96,8 @@ def main():
     parser.add_argument("--simd", action="store_true",
                         help="Also build sad_pet.simd.wasm (+simd128), which browsers that validate "
                              "SIMD load instead of the baseline: grain reads weigh four taps at a "
-                             "time. Identical samples, dense grain scenes 12-30%% faster in V8")
+                             "time, and batches U4 wavetable interactions. Dense grain scenes "
+                             "12-30%% faster in V8; wavetable numerical parity is regression-tested")
     parser.add_argument("--tail-call", action="store_true",
                         help="Also build sad_pet.tc.wasm (+tail-call), which browsers that validate "
                              "tail calls load instead of the baseline: the translated firmware "
@@ -135,7 +136,7 @@ def main():
         (output / "sad_pet.simd.wasm").unlink(missing_ok=True)
     if not args.tail_call:
         (output / "sad_pet.tc.wasm").unlink(missing_ok=True)
-    for name in ("index.html", "app.js", "library.js", "selection.js", "presets.js", "sequence.js", "panels.js", "tb303.js", "eq.js", "rack.js", "vocal.js", "sampler-library.js", "sampler.js", "midi.js", "clock.js", "modulation.js", "style.css", "vocal.css", "sampler.css"):
+    for name in ("index.html", "app.js", "library.js", "selection.js", "presets.js", "sequence.js", "panels.js", "tb303.js", "wavetable.js", "wavetable-tools.js", "wavetable.css", "eq.js", "rack.js", "vocal.js", "sampler-library.js", "sampler.js", "midi.js", "clock.js", "modulation.js", "style.css", "vocal.css", "sampler.css"):
         shutil.copy2(ROOT / "rust" / "web" / name, output / name)
     index = (output / "index.html").read_text()
     index = index.replace('<script src="./library.js"', '<script src="./browser.js" defer></script>\n    <script src="./library.js"')

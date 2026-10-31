@@ -49,6 +49,13 @@ struct Preparing {
     live: Option<sad_pet::dsp::sample::LiveInputPreparation>,
 }
 pub(super) struct Registry {
+    pub wavetable_assets: sad_pet::wavetable::assets::Pool,
+    pub wavetable_banks: Vec<Arc<sad_pet::dsp::wavetable::Bank>>,
+    pub wavetable_stage: Option<sad_pet::dsp::wavetable::BankStage>,
+    pub wavetable_upload: Box<[u8; 32768]>,
+    pub(crate) capture: sad_pet::capture::Writer,
+    pub wavetable_preview: Option<Box<sad_pet::dsp::wavetable::Audition>>,
+    pub wavetable_preview_generation: u64,
     preparing: Option<Preparing>,
     pub parts: Vec<Part>,
     pub selected: usize,
@@ -69,6 +76,13 @@ pub(super) struct Registry {
 impl Registry {
     pub fn new(rate: u32) -> Self {
         let mut r = Self {
+            wavetable_assets: Default::default(),
+            capture: sad_pet::capture::Shared::prepare(rate).1,
+            wavetable_banks: Vec::with_capacity(128),
+            wavetable_stage: None,
+            wavetable_upload: Box::new([0; 32768]),
+            wavetable_preview: None,
+            wavetable_preview_generation: 0,
             preparing: None,
             parts: vec![Part {
                 meta: Meta::default(),
@@ -295,6 +309,11 @@ impl Registry {
             }
             2 if pending.kind != Kind::Granular => {
                 let preset = pending.preset.as_mut().unwrap();
+                preset.wavetable_runtime.prepare(
+                    preset.wavetable.as_deref(),
+                    &preset.wavetable_pool,
+                    rate,
+                )?;
                 preset.tb303_runtime.prepare(preset.tb303.as_deref(), rate);
                 preset
                     .drum_runtime
@@ -456,6 +475,92 @@ impl Registry {
     pub fn command(&mut self, request: Value) -> Result<Value, String> {
         let path = request["path"].as_str().ok_or("Missing command")?;
         let data = &request["data"];
+        if path.starts_with("/api/capture/") {
+            if path == "/api/capture/wav" {
+                return Err("Read capture through bounded chunks".into());
+            }
+            return self
+                .capture
+                .shared()
+                .command(path, data, self.parts[0].host.rate, true);
+        }
+        if path.starts_with("/api/wavetables") {
+            if path == "/api/wavetables/audition" {
+                let generation = data["generation"]
+                    .as_u64()
+                    .ok_or("Missing audition generation")?;
+                if generation <= self.wavetable_preview_generation {
+                    return Ok(json!({"seconds":0}));
+                }
+                self.wavetable_preview_generation = generation;
+                if let Some(id) = data["id"].as_str() {
+                    self.wavetable_preview =
+                        Some(Box::new(sad_pet::dsp::wavetable::Audition::new(
+                            id,
+                            &self.wavetable_assets,
+                            self.parts[0].host.rate,
+                        )?));
+                } else if let Some(preview) = &mut self.wavetable_preview {
+                    preview.stop();
+                }
+                return Ok(json!({"seconds":if data["id"].is_string(){0.75}else{0.0}}));
+            }
+            if matches!(path, "/api/wavetables/select" | "/api/wavetables/layers") {
+                if data["context_revision"]
+                    .as_u64()
+                    .is_some_and(|revision| revision != self.revision)
+                {
+                    return Err("The scene changed while the wavetable was loading".into());
+                }
+                let index = self.index();
+                if data["timbre"]
+                    .as_u64()
+                    .is_some_and(|id| id != self.parts[index].meta.id as u64)
+                {
+                    return Err("The timbre changed while the wavetable was loading".into());
+                }
+                let timbre = self.parts[index].meta.id;
+                let host = &mut self.parts[index].host;
+                let mut preset = host.engine.preset.clone();
+                let settings = preset
+                    .wavetable
+                    .as_mut()
+                    .ok_or("The Wavetable module was removed")?;
+                if path == "/api/wavetables/layers" {
+                    settings.edit_layers(
+                        data["action"].as_str().unwrap_or(""),
+                        data["index"].as_u64().map(|i| i as usize),
+                    )?;
+                } else {
+                    let osc = data["oscillator"]
+                        .as_u64()
+                        .filter(|n| *n < settings.count as u64)
+                        .ok_or("Choose an existing wave A–D")?
+                        as usize;
+                    settings.oscillators[osc].asset_id =
+                        data["id"].as_str().ok_or("Choose a wavetable")?.into();
+                }
+                preset.wavetable_runtime.prepare(
+                    preset.wavetable.as_deref(),
+                    &preset.wavetable_pool,
+                    host.rate,
+                )?;
+                host.engine.set_preset(preset);
+                host.config_revision = host.config_revision.wrapping_add(1);
+                host.resize_snapshot();
+                return Ok(json!({"timbre":timbre,"wavetable":host.engine.preset.wavetable}));
+            }
+            let value =
+                sad_pet::wavetable::library::command(path, data, &mut self.wavetable_assets)?;
+            for part in &mut self.parts {
+                part.host
+                    .engine
+                    .preset
+                    .wavetable_pool
+                    .merge(&self.wavetable_assets)?;
+            }
+            return Ok(value);
+        }
         if path.starts_with("/api/timbres") {
             match path {
                 "/api/timbres" => {}
@@ -510,7 +615,17 @@ impl Registry {
                         .ok_or("Unknown timbre")?;
                     let mut value = json!(part.meta);
                     for key in [
-                        "name", "gain", "muted", "solo", "channel", "sends", "entries",
+                        "name",
+                        "gain",
+                        "muted",
+                        "solo",
+                        "channel",
+                        "key_low",
+                        "key_high",
+                        "velocity_low",
+                        "velocity_high",
+                        "sends",
+                        "entries",
                     ] {
                         if let Some(v) = data.get(key) {
                             value[key] = v.clone();
@@ -531,6 +646,8 @@ impl Registry {
                         && part.host.engine.preset.drums.is_none()
                     {
                         part.host.engine.midi(Message::Reset);
+                    } else if meta.mix.midi_changed(part.meta.mix) {
+                        part.host.engine.clear_hold();
                     }
                     part.meta = meta;
                 }
@@ -725,6 +842,7 @@ impl Registry {
                 None => {}
             }
         }
+
         let mut result = self.parts[index].host.command(request)?;
         if preset_changed {
             // A loaded preset can change the part's engine type; a Pad FX
@@ -917,6 +1035,10 @@ impl Registry {
                     }
                 }
             }
+            if let Some(preview) = &mut self.wavetable_preview {
+                let cue = preview.process_frame();
+                frame = [frame[0] + cue[0], frame[1] + cue[1]];
+            }
             if let Some(m) = master {
                 let part = &mut self.parts[m];
                 let level = gain(part, !part.meta.mix.muted);
@@ -930,6 +1052,7 @@ impl Registry {
                     .map(|v| v * level);
                 frame = part.host.engine.protect_master(frame);
             }
+            self.capture.push(input, frame);
             self.parts[0].host.frames[i] = frame;
         }
         self.midi_clock.advance(count);
@@ -1037,9 +1160,19 @@ impl Part {
             put_sample(bytes, sample);
         }
     }
-    fn unpack(state: PartState, tail: &mut &[u8], rate: u32) -> Result<Self, String> {
+    fn unpack(
+        mut state: PartState,
+        tail: &mut &[u8],
+        rate: u32,
+        assets: &sad_pet::wavetable::assets::Pool,
+    ) -> Result<Self, String> {
         let sample = take_sample(tail, "Incomplete scene audio")?;
         let mut host = Host::new(rate);
+        state.preset.wavetable_pool = assets.clone();
+        state
+            .preset
+            .wavetable_runtime
+            .prepare(state.preset.wavetable.as_deref(), assets, rate)?;
         host.engine.set_sample(Arc::new(sample));
         host.engine.set_preset(state.preset);
         if host.engine.preset.history().is_none() {
@@ -1112,7 +1245,12 @@ impl Registry {
             if !ids.insert(state.meta.id) {
                 return Err("Duplicate timbre identity".into());
             }
-            parts.push(Part::unpack(state, &mut tail, rate)?);
+            parts.push(Part::unpack(
+                state,
+                &mut tail,
+                rate,
+                &self.wavetable_assets,
+            )?);
         }
         if !tail.is_empty() || parts[0].meta.id != 0 {
             return Err("Invalid scene layout".into());
@@ -1194,12 +1332,17 @@ impl Part {
             })
             .collect::<Result<_, String>>()?;
         Ok(
-            json!({"version":1,"meta":self.meta,"kit_samples":kit,"preset":e.preset,"sample_name":e.sample.name,"sample_id":e.sample.library_id,"sample_wav":base64::engine::general_purpose::STANDARD.encode(wav::bytes(e.sample.sample_rate,e.sample.frames())?),"source":if e.preset.history().is_some() || e.live_input.is_none() {"file"} else if e.live_input.as_ref().is_some_and(|i|i.effects_only) {"effects"} else {"grains"},"region":e.region,"fades":e.fades,"sync":true,"frozen":false,"bypass":e.bypass,"midi_gate":e.midi_gate,"playing":false,"timbres":[],"active_timbre":0}),
+            json!({"version":1,"meta":self.meta,"kit_samples":kit,"wavetable_assets":e.preset.wavetable_pool.manifest(e.preset.wavetable.as_deref())?,"preset":e.preset,"sample_name":e.sample.name,"sample_id":e.sample.library_id,"sample_wav":base64::engine::general_purpose::STANDARD.encode(wav::bytes(e.sample.sample_rate,e.sample.frames())?),"source":if e.preset.history().is_some() || e.live_input.is_none() {"file"} else if e.live_input.as_ref().is_some_and(|i|i.effects_only) {"effects"} else {"grains"},"region":e.region,"fades":e.fades,"sync":true,"frozen":false,"bypass":e.bypass,"midi_gate":e.midi_gate,"playing":false,"timbres":[],"active_timbre":0}),
         )
     }
     /// A part from one timbre's saved state, as `meta` (its engine type
     /// follows the preset). It starts stopped.
-    fn from_document(state: &Value, mut meta: Meta, rate: u32) -> Result<Self, String> {
+    fn from_document(
+        state: &Value,
+        mut meta: Meta,
+        rate: u32,
+        assets: &sad_pet::wavetable::assets::Pool,
+    ) -> Result<Self, String> {
         use base64::Engine as _;
         let legacy_303 = meta.kind == Kind::Tb303;
         if state["version"] != 1 || state["timbres"].as_array().is_some_and(|a| !a.is_empty()) {
@@ -1216,8 +1359,12 @@ impl Part {
             state["sample_name"].as_str().unwrap_or("Sample.wav").into(),
         )?;
         sample.library_id = state["sample_id"].as_str().map(str::to_string);
-        let preset: Preset =
+        let mut preset: Preset =
             serde_json::from_value(state["preset"].clone()).map_err(|e| e.to_string())?;
+        preset.wavetable_pool = assets.clone();
+        preset
+            .wavetable_pool
+            .manifest(preset.wavetable.as_deref())?;
         if (meta.kind != Kind::PadFx || meta.owner.is_none()) && meta.kind != Kind::Empty {
             meta.kind = Kind::of(&preset);
         }
@@ -1274,12 +1421,15 @@ impl Registry {
         let mut root = states.remove(0);
         root["timbres"] = json!(states);
         root["active_timbre"] = json!(self.parts[self.selected].meta.id);
+        super::wavetable::hoist_document_assets(&mut root);
         Ok(root)
     }
     fn prepare_document(&mut self, mut value: Value) -> Result<(), String> {
         if value["version"] != 1 {
             return Err("Unsupported scene version".into());
         }
+        let mut assets = self.wavetable_assets.clone();
+        assets.merge(&super::wavetable::document_assets(&value)?)?;
         let others = value["timbres"].as_array().cloned().unwrap_or_default();
         let active = value["active_timbre"].as_u64().unwrap_or(0) as u32;
         value["timbres"] = json!([]);
@@ -1301,7 +1451,7 @@ impl Registry {
                 return Err("Invalid timbre identities".into());
             }
             meta.sanitize();
-            parts.push(Part::from_document(&state, meta, rate)?);
+            parts.push(Part::from_document(&state, meta, rate, &assets)?);
         }
         self.next_id = self.next_id.max(
             parts
@@ -1312,6 +1462,7 @@ impl Registry {
                 .saturating_add(1),
         );
         self.parts = parts;
+        self.wavetable_assets = assets;
         self.selected = self
             .parts
             .iter()
@@ -1342,7 +1493,14 @@ impl Registry {
             return Err("Choose an instrument timbre".into());
         }
         let rate = self.parts[index].host.rate;
-        let mut part = Part::from_document(&data["state"], self.parts[index].meta.clone(), rate)?;
+        let mut assets = self.wavetable_assets.clone();
+        assets.merge(&super::wavetable::document_assets(&data["state"])?)?;
+        let mut part = Part::from_document(
+            &data["state"],
+            self.parts[index].meta.clone(),
+            rate,
+            &assets,
+        )?;
         if part.meta.kind.routing() {
             return Err("Use an instrument preset".into());
         }
@@ -1355,6 +1513,7 @@ impl Registry {
         part.pack_audio(&mut bytes);
         // Source FX for this timbre now read its new sample here.
         self.parts[index] = part;
+        self.wavetable_assets = assets;
         Ok(bytes)
     }
     /// Swaps in a part from `prepare_instrument`. The timbre keeps its place, mix
@@ -1370,7 +1529,7 @@ impl Registry {
             return Err("Choose an instrument timbre".into());
         }
         let rate = self.parts[index].host.rate;
-        let mut part = Part::unpack(state, &mut tail, rate)?;
+        let mut part = Part::unpack(state, &mut tail, rate, &self.wavetable_assets)?;
         if !tail.is_empty() {
             return Err("Invalid timbre layout".into());
         }

@@ -1,0 +1,117 @@
+{
+  "date": "2026-10-31",
+  "scope": "Reference WASM SIMD: 4 held notes \u00d7 4 complex waves \u00d7 unison 4, all FM and hard sync. Existing Rack, unchanged 8x/32x oversampling and antialias filters. Local Apple M5 Max / Chrome 156 acceptance; not a cross-device or maximum-settings guarantee.",
+  "target_reference_browser_passed": true,
+  "after_module_sha256": "732c35f4a39afe10159f63b3ab4e1d34cdf63eddb6d4da477ca1afff6aa0e0fd",
+  "scalar_module_sha256": "b6b3254c94afa4c1c7929d2480292957021df321378cdeb6afa709cc5dfd7290",
+  "source_sha256": {
+    "rust/src/dsp/wavetable/lookup.rs": "3fb79e841c1a7f39123d0599cf588aae473ece2caa33c3588fbb56493a0016f1",
+    "rust/src/dsp/wavetable/lookup/simd.rs": "7a28154b42e8f52c63350770c5c3fc0191f204c41f2285baa2d16f42f5572d91",
+    "rust/src/dsp/wavetable/interaction.rs": "a5729b74add9dcbe8d8773d8117a936822df721457a27f4d904dffda0d192b20",
+    "rust/src/dsp/wavetable/interaction/routing.rs": "44afee4c31cbb7755fca1a8beb1db21ce02469118589a09cb97a086a8a8a60f8",
+    "rust/src/dsp/wavetable/interaction/routing/simd.rs": "d4ab96ec121774eb453e0756f31efcc7823e135146ddcfb87cdefcfcb55b811f",
+    "rust/src/dsp/wavetable/interaction/pair_simd.rs": "a3635b3824e45257e5a8a4f03aa57175e43c9d9cd2a4e05c6affe9c0abbd6585"
+  },
+  "quality": {
+    "passed": true,
+    "cases": 21,
+    "sample_rates": [
+      44100,
+      48000,
+      96000
+    ],
+    "worst_error_dbr": -124.33877550754126,
+    "max_abs_error": 9.778887033462524e-09,
+    "listening_error_dbr": -129.11078002624626,
+    "report": "after/audio.json"
+  },
+  "cpu": {
+    "report": "cpu/comparison.json",
+    "main_reduction_percent": 40.129691981543836,
+    "node_wall_p99_fits_quantum": false,
+    "limitation": "Node 24 caller thread wall p99 remains above 2.667 ms; browser playback acceptance is measured separately, not inferred from those percentiles."
+  },
+  "browser": {
+    "before_underrun_events": 5637,
+    "before_wall_seconds": 30.068200000047685,
+    "after_underrun_events": 0,
+    "after_wall_seconds": 120.27729999995232,
+    "paired_after_underrun_events": 0,
+    "paired_after_wall_seconds": 30.069700000047682,
+    "screenshot": "realtime.png",
+    "ui": {
+      "url": "http://127.0.0.1:8812/index.html",
+      "fresh_bundle_loaded": true,
+      "factory": "Steel Cascade",
+      "waves": 4,
+      "unison": [
+        4,
+        4,
+        4,
+        4
+      ],
+      "connection_error": false,
+      "console_errors": 0,
+      "horizontal_overflow": false,
+      "screenshot": "rack-ui.png"
+    }
+  },
+  "tests": [
+    {
+      "command": "cargo test -p sad-pet --lib",
+      "passed": true,
+      "count": 176
+    },
+    {
+      "command": "cargo test -p sad-pet --test wavetable",
+      "passed": true,
+      "count": 19
+    },
+    {
+      "command": "RUSTFLAGS='-C target-feature=+simd128' rustup run stable cargo clippy -p sad-pet-wasm --target wasm32-unknown-unknown -- -D warnings",
+      "passed": true
+    },
+    {
+      "command": "node wasm/test-wavetable.mjs (shipping SIMD mapped as module)",
+      "passed": true
+    },
+    {
+      "command": "node wasm/test-thirdwave.mjs (shipping SIMD mapped as module)",
+      "passed": true
+    },
+    {
+      "command": "node wasm/test-wavetable-parity.mjs /tmp/sadpet-wt-web ... thirdwave",
+      "passed": true,
+      "comparisons": 3
+    },
+    {
+      "command": "node wasm/test-wavetable-unison4.mjs BEFORE AFTER CORE OUT",
+      "passed": true,
+      "comparisons": 21
+    }
+  ],
+  "unchanged": {
+    "fm_oversample": 8,
+    "sync_oversample": 32,
+    "phase_bits": 64,
+    "sinc_taps": 16,
+    "polynomial_degree": 7,
+    "pre_fir_taps": 63,
+    "output_fir_taps": 641,
+    "fractional_blep_blamp": true,
+    "dc_blocker": true,
+    "engine_revision": 3,
+    "schema_version": 2,
+    "bank_compiler_layout_kernel": [
+      2,
+      2,
+      1
+    ]
+  },
+  "remaining_release_gates": [
+    "Cross-device/mobile/Windows/DAW matrix",
+    "30-minute host/device runs",
+    "Global peak memory preflight",
+    "Independent dynamic alias oracle"
+  ]
+}

@@ -1,0 +1,307 @@
+{
+  "scope": "Before optimization, native production Engine dynamic four-complex-wave corpus; modes, 4\u21922/8 unison, Voice shift, pitch and note lifecycle, control edits and interaction transitions",
+  "cases": [
+    {
+      "file": "44100-off-1.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "off",
+      "notes": 1,
+      "rate": 44100,
+      "waves": 4
+    },
+    {
+      "file": "44100-off-8.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "off",
+      "notes": 8,
+      "rate": 44100,
+      "waves": 4
+    },
+    {
+      "file": "44100-fm-1.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "fm",
+      "notes": 1,
+      "rate": 44100,
+      "waves": 4
+    },
+    {
+      "file": "44100-fm-8.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "fm",
+      "notes": 8,
+      "rate": 44100,
+      "waves": 4
+    },
+    {
+      "file": "44100-pm-1.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "pm",
+      "notes": 1,
+      "rate": 44100,
+      "waves": 4
+    },
+    {
+      "file": "44100-pm-8.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "pm",
+      "notes": 8,
+      "rate": 44100,
+      "waves": 4
+    },
+    {
+      "file": "44100-sync-1.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "sync",
+      "notes": 1,
+      "rate": 44100,
+      "waves": 4
+    },
+    {
+      "file": "44100-sync-8.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "sync",
+      "notes": 8,
+      "rate": 44100,
+      "waves": 4
+    },
+    {
+      "file": "44100-mixed-1.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "mixed",
+      "notes": 1,
+      "rate": 44100,
+      "waves": 4
+    },
+    {
+      "file": "44100-mixed-8.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "mixed",
+      "notes": 8,
+      "rate": 44100,
+      "waves": 4
+    },
+    {
+      "file": "48000-off-1.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "off",
+      "notes": 1,
+      "rate": 48000,
+      "waves": 4
+    },
+    {
+      "file": "48000-off-8.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "off",
+      "notes": 8,
+      "rate": 48000,
+      "waves": 4
+    },
+    {
+      "file": "48000-fm-1.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "fm",
+      "notes": 1,
+      "rate": 48000,
+      "waves": 4
+    },
+    {
+      "file": "48000-fm-8.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "fm",
+      "notes": 8,
+      "rate": 48000,
+      "waves": 4
+    },
+    {
+      "file": "48000-pm-1.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "pm",
+      "notes": 1,
+      "rate": 48000,
+      "waves": 4
+    },
+    {
+      "file": "48000-pm-8.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "pm",
+      "notes": 8,
+      "rate": 48000,
+      "waves": 4
+    },
+    {
+      "file": "48000-sync-1.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "sync",
+      "notes": 1,
+      "rate": 48000,
+      "waves": 4
+    },
+    {
+      "file": "48000-sync-8.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "sync",
+      "notes": 8,
+      "rate": 48000,
+      "waves": 4
+    },
+    {
+      "file": "48000-mixed-1.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "mixed",
+      "notes": 1,
+      "rate": 48000,
+      "waves": 4
+    },
+    {
+      "file": "48000-mixed-8.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "mixed",
+      "notes": 8,
+      "rate": 48000,
+      "waves": 4
+    },
+    {
+      "file": "96000-off-1.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "off",
+      "notes": 1,
+      "rate": 96000,
+      "waves": 4
+    },
+    {
+      "file": "96000-off-8.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "off",
+      "notes": 8,
+      "rate": 96000,
+      "waves": 4
+    },
+    {
+      "file": "96000-fm-1.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "fm",
+      "notes": 1,
+      "rate": 96000,
+      "waves": 4
+    },
+    {
+      "file": "96000-fm-8.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "fm",
+      "notes": 8,
+      "rate": 96000,
+      "waves": 4
+    },
+    {
+      "file": "96000-pm-1.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "pm",
+      "notes": 1,
+      "rate": 96000,
+      "waves": 4
+    },
+    {
+      "file": "96000-pm-8.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "pm",
+      "notes": 8,
+      "rate": 96000,
+      "waves": 4
+    },
+    {
+      "file": "96000-sync-1.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "sync",
+      "notes": 1,
+      "rate": 96000,
+      "waves": 4
+    },
+    {
+      "file": "96000-sync-8.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "sync",
+      "notes": 8,
+      "rate": 96000,
+      "waves": 4
+    },
+    {
+      "file": "96000-mixed-1.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "mixed",
+      "notes": 1,
+      "rate": 96000,
+      "waves": 4
+    },
+    {
+      "file": "96000-mixed-8.f32",
+      "frames": 12288,
+      "initial_unison": 4,
+      "mode": "mixed",
+      "notes": 8,
+      "rate": 96000,
+      "waves": 4
+    }
+  ],
+  "files": {
+    "44100-fm-1.f32": "acaa6c653148a28dd544262824e4c7e2c53d9db2e144f010ecfa97e15c6d796d",
+    "44100-fm-8.f32": "73fc393e906c07b5bada18fe6b92bb32591ad68b79c85c7a830b6a2f393b1834",
+    "44100-mixed-1.f32": "8d8a24ff718ebb5a326706a0c7d0ee26f20486bbf854a2b0f03e740f097071d3",
+    "44100-mixed-8.f32": "ac1ba0710cef2d966d6ffc414d0302948ff5c3c4f1a4de89b6e7f0db3ef93728",
+    "44100-off-1.f32": "1faf3791ff07f5638edd846aa74f9356e54e9fa060b76be107d2107821a4fe5b",
+    "44100-off-8.f32": "104b778a031914c338ca0ddebf23bc5f4c441e3b76c93c5d57878a9dff04cce7",
+    "44100-pm-1.f32": "c9f213e81894d0c87ab0ae08fe563646fe28dcec1c69b56882b9b233f7658c00",
+    "44100-pm-8.f32": "45af5fc3ce6aa207cdc86b3d7b41ebf7640a5efe0c0bb927ba65cba7cbdf6289",
+    "44100-sync-1.f32": "3b07900f15a8a98a999259f5da6a5e586379e35415341ee67e7be751c253179c",
+    "44100-sync-8.f32": "b7e6ec4a1cd8c8c5f4177ce1a476810cfd327a7a0a576d7f73b44ad9c350aa45",
+    "48000-fm-1.f32": "6d2de947d00336e87ebffb792edbd1b193e4b725bd040931fe78394634e431fb",
+    "48000-fm-8.f32": "824be26a3eaee4a9949b60237b065d2ec4e0a9697242c82ae69fc7740842f443",
+    "48000-mixed-1.f32": "b0454ce1d5889d6044f8f8cb714ddcf5c644d5c42b8b8dc77cb63579705be095",
+    "48000-mixed-8.f32": "fdff43c30e03c6836e0d7f8111e6cb5e59f750abe98b4af58140d1c9cc0e4d64",
+    "48000-off-1.f32": "9b988c008fde70620ec3d21e32c1f48f398833540333009042c823302eb83d22",
+    "48000-off-8.f32": "b7f8d690ac78bdad8e86fd5031625ba8af71f3e0db805bbc565ef80fea1c4930",
+    "48000-pm-1.f32": "9a4d009314fbf53aac35d69c654c9e46df980d26bfe4555ff295a53d4d84a29d",
+    "48000-pm-8.f32": "3180265da9c6ebd434ecd59a81fa20a1fee1309c2456b243213a68720611a819",
+    "48000-sync-1.f32": "5a13716e17d2a055d6e828bdfd4497d80e8b54cafdca53e9ea06b1f8eaf94b45",
+    "48000-sync-8.f32": "e8bf00f299e0f03a7c8b40b87b13d6cbf6aeb031ad25e321aaa2679bb99ebaf9",
+    "96000-fm-1.f32": "6098ebb941f1f04e70333f9c2684dc151a4584757dacafb28ce5d804761883bd",
+    "96000-fm-8.f32": "02ce098eb784f4d6f7d639428840839a5dc530e7ab9cd0264ef8cb17a8ce74d1",
+    "96000-mixed-1.f32": "776ff5b3b2be15c15fae0218995237b3c9a7725992954019eaf690816aff4bf4",
+    "96000-mixed-8.f32": "e7b18a62330352fee1702fe0e443b53d7415de582851d4d6fffb9ea47e36e103",
+    "96000-off-1.f32": "777c1c05789fea0a725f834a82b9079ff4757e846891299c197efe0db8fe4943",
+    "96000-off-8.f32": "6cde854f60c90c308fe450ecbe4a59118a804a841a68e2fe4567cc9ebaa4ce9d",
+    "96000-pm-1.f32": "6539048e12dad40de17301ef2704f5fc03ea16ef79fcaebe193251e4163a8e91",
+    "96000-pm-8.f32": "0d048fa27df9fd8d9985e30bdce2ecb5ed9f5e10e3b82a5e6ef098b84c469969",
+    "96000-sync-1.f32": "3f58a9a56fd94ad26436a36898c8796ef37ee4dff942a515d368f974a4475c62",
+    "96000-sync-8.f32": "542299e300b781dbbd23b0bed1c158b7767b3dc0e91c5b66f82ec0d93adf88e9"
+  }
+}

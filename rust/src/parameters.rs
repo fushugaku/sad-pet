@@ -149,6 +149,7 @@ enum Target {
         frame_set: fn(&mut crate::dsp::Modulated, f32),
     },
     Lfo(usize, usize),
+    LfoPoly(usize),
     Env(usize, usize),
     Fx(bool, usize, ColorParameter),
     SourceFx(ColorParameter),
@@ -160,6 +161,8 @@ enum Target {
     /// A drum track's pattern note shift, in steps.
     DrumShift(usize),
     SynthOsc(usize, usize),
+    Wavetable(usize, crate::wavetable::Field),
+    WavetableMotion(usize),
     SynthGrain,
     SynthBuffer,
     Tb303(usize),
@@ -237,6 +240,18 @@ pub struct Spec {
 
 impl Spec {
     pub(crate) fn can_sequence(&self) -> bool {
+        if let Target::Wavetable(_, field) = self.target {
+            use crate::wavetable::Field;
+            return !matches!(
+                field,
+                Field::Phase
+                    | Field::PhaseRandom
+                    | Field::Unison
+                    | Field::Env
+                    | Field::FreePhase
+                    | Field::Lfo
+            );
+        }
         !matches!(
             self.target,
             Target::DrumGrain
@@ -275,12 +290,15 @@ impl Spec {
             Target::RackEq(i, control) => m.rack_eqs[i].control(control),
             Target::ResynthOsc(i, field) => oscillator_get(m.resynth.oscillators[i], field),
             Target::SynthOsc(i, field) => oscillator_get(m.synth.oscillators[i], field),
+            Target::Wavetable(i, field) => m.wavetable[i].get(field),
+            Target::WavetableMotion(field) => m.wavetable_motion.get(field),
             Target::Tb303(field) => m.tb303.get(field),
             Target::Tb303Osc(i, field) => oscillator_get(m.tb303_radias.oscillators[i], field),
             Target::FilterSlot(i, field) => {
                 filter_slot_get(m.filter_slots[..m.filter_len].get(i)?, field)
             }
             Target::Lfo(i, field) => lfo_get(&m.lfos[i], field),
+            Target::LfoPoly(i) => f32::from(m.lfos[i].poly),
             Target::Env(i, field) => env_get(&m.envs[i], field),
             Target::GrainGroup(i, field) => grain_groups::get(&m.grain_groups.groups[i], field),
             Target::Fx(pre, i, field) => {
@@ -324,7 +342,14 @@ impl Spec {
         if !value.is_finite() {
             return;
         }
-        let value = value.clamp(self.min, self.max);
+        let value = if matches!(
+            self.target,
+            Target::Wavetable(_, crate::wavetable::Field::Position)
+        ) {
+            value
+        } else {
+            value.clamp(self.min, self.max)
+        };
         match self.target {
             Target::Core { frame_set, .. } => frame_set(m, value),
             Target::Drum(i, field) => {
@@ -347,6 +372,8 @@ impl Spec {
                 oscillator_set(&mut m.resynth.oscillators[i], field, value)
             }
             Target::SynthOsc(i, field) => oscillator_set(&mut m.synth.oscillators[i], field, value),
+            Target::Wavetable(i, field) => m.wavetable[i].set(field, value),
+            Target::WavetableMotion(field) => m.wavetable_motion.set(field, value),
             Target::Tb303(field) => m.tb303.set(field, value),
             Target::Tb303Osc(i, field) => {
                 oscillator_set(&mut m.tb303_radias.oscillators[i], field, value)
@@ -357,6 +384,7 @@ impl Spec {
                 }
             }
             Target::Lfo(i, field) => *lfo_field(&mut m.lfos[i], field) = value,
+            Target::LfoPoly(i) => m.lfos[i].poly = value >= 0.5,
             Target::Env(i, field) => env_set(&mut m.envs[i], field, value),
             Target::GrainGroup(i, field) => {
                 grain_groups::set(&mut m.grain_groups.groups[i], field, value)
@@ -386,6 +414,14 @@ impl Spec {
     }
     pub fn get(&self, preset: &Preset) -> f32 {
         match self.target {
+            Target::WavetableMotion(field) => preset
+                .wavetable
+                .as_ref()
+                .map_or(self.default, |s| s.motion.get(field)),
+            Target::Wavetable(i, field) => preset
+                .wavetable
+                .as_ref()
+                .map_or(self.default, |s| s.oscillators[i].controls.get(field)),
             Target::DrumGrain => f32::from(preset.drums.as_ref().is_some_and(|d| d.granular)),
             Target::DrumBuffer => preset.drums.as_ref().map_or(8., |d| d.buffer_seconds),
             Target::RackStrip(i, field) => preset
@@ -470,6 +506,7 @@ impl Spec {
             Target::Core { get, .. } => get(preset),
             Target::Tap(stage, field) => tap_get(preset.taps.get(stage), field),
             Target::Lfo(i, field) => lfo_get(&preset.lfos[i], field),
+            Target::LfoPoly(i) => f32::from(preset.lfos[i].poly),
             Target::Env(i, field) => env_get(&preset.envs[i], field),
             Target::GrainGroup(i, field) => {
                 grain_groups::get(&preset.grain_groups.groups[i], field)
@@ -504,6 +541,16 @@ impl Spec {
             self.default
         };
         match self.target {
+            Target::WavetableMotion(field) => {
+                if let Some(s) = &mut preset.wavetable {
+                    s.motion.set(field, value);
+                }
+            }
+            Target::Wavetable(i, field) => {
+                if let Some(settings) = &mut preset.wavetable {
+                    settings.oscillators[i].controls.set(field, value);
+                }
+            }
             Target::DrumBuffer => {
                 if let Some(d) = &mut preset.drums {
                     d.buffer_seconds = value;
@@ -623,6 +670,7 @@ impl Spec {
             Target::Core { set, .. } => set(preset, value),
             Target::Tap(stage, field) => tap_set(preset.taps.get_mut(stage), field, value),
             Target::Lfo(i, field) => *lfo_field(&mut preset.lfos[i], field) = value,
+            Target::LfoPoly(i) => preset.lfos[i].poly = value >= 0.5,
             Target::Env(i, field) => env_set(&mut preset.envs[i], field, value),
             Target::GrainGroup(i, field) => {
                 grain_groups::set(&mut preset.grain_groups.groups[i], field, value)
@@ -748,7 +796,8 @@ fn env_get(e: &crate::preset::Env, field: usize) -> f32 {
         8 => e.decay2,
         9 => e.sustain2,
         10 => f32::from(e.curve),
-        _ => e.depth3,
+        11 => e.depth3,
+        _ => e.wave.get(field - 12),
     }
 }
 fn env_set(e: &mut crate::preset::Env, field: usize, value: f32) {
@@ -764,7 +813,8 @@ fn env_set(e: &mut crate::preset::Env, field: usize, value: f32) {
         8 => e.decay2 = value,
         9 => e.sustain2 = value,
         10 => e.curve = value.round() as u8,
-        _ => e.depth3 = value,
+        11 => e.depth3 = value,
+        _ => e.wave.set(field - 12, value),
     }
 }
 
@@ -1780,7 +1830,7 @@ pub fn specs() -> &'static [Spec] {
             }
         }
         // The new source strip appends without shifting released host indices.
-        rack_strips(&mut result, 5..crate::rack::STRIPS);
+        rack_strips(&mut result, 5..6);
         // Modded controls append after every released 303 and Mixer index.
         for (field, key) in crate::tb303::FIELDS
             .iter()
@@ -1816,6 +1866,159 @@ pub fn specs() -> &'static [Spec] {
                     max,
                     default,
                     target: Target::FilterSlot(i, field),
+                });
+            }
+        }
+        // Wavetable source and its strip append after the entire released
+        // registry. Extending an earlier strip range would shift host IDs.
+        let wavetable_controls = |result: &mut Vec<Spec>, range: std::ops::Range<usize>| {
+            for i in range {
+                for (field, key, name, min, max) in crate::wavetable::FIELDS {
+                    result.push(Spec {
+                        id: format!("wt_{}_{key}", ["a", "b", "c", "d"][i]),
+                        name: format!("Wavetable {} {name}", ["A", "B", "C", "D"][i]),
+                        min,
+                        max,
+                        default: crate::wavetable::default_controls()[i].get(field),
+                        target: Target::Wavetable(i, field),
+                    });
+                }
+            }
+        };
+        wavetable_controls(&mut result, 0..2);
+        rack_strips(&mut result, 6..7);
+        // The A/B and Mixer controls retain their indices when C/D arrive.
+        wavetable_controls(&mut result, 2..crate::wavetable::OSCILLATORS);
+        // Never expand the original EnvMode range: normalized host automation
+        // depends on it. Wave mode and every point have new, appended IDs.
+        for i in 0..crate::preset::MODULATORS {
+            let wave = crate::envelope::Wave::default();
+            let mut append = |field: usize, key: String, min, max| {
+                result.push(Spec {
+                    id: format!("env{}_wave_{key}", i + 1),
+                    name: format!("ENV {} Wave {key}", i + 1),
+                    min,
+                    max,
+                    default: wave.get(field),
+                    target: Target::Env(i, 12 + field),
+                })
+            };
+            for (field, (key, min, max)) in [
+                ("on", 0.0, 1.0),
+                ("beats", 0.0, 1.0),
+                ("loop", 0.0, 1.0),
+                ("start", 0.0, 4.0),
+                ("end", 0.0, 4.0),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                append(field, key.into(), min, max);
+            }
+            for point in 0..crate::envelope::POINTS {
+                for (n, (key, min, max)) in [
+                    ("time", 0.0, 32.0),
+                    ("level", 0.0, 1.0),
+                    ("curve", -1.0, 1.0),
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    append(5 + point * 3 + n, format!("{}{key}", point + 1), min, max);
+                }
+            }
+        }
+        for i in 0..crate::wavetable::OSCILLATORS {
+            for (field, key, name, min, max) in crate::wavetable::MOTION_FIELDS {
+                result.push(Spec {
+                    id: format!("wt_{}_{key}", ["a", "b", "c", "d"][i]),
+                    name: format!("Wavetable {} {name}", ["A", "B", "C", "D"][i]),
+                    min,
+                    max,
+                    default: crate::wavetable::Controls::default().get(field),
+                    target: Target::Wavetable(i, field),
+                });
+            }
+        }
+        for (field, (key, min, max)) in crate::wavetable::motion::FIELDS.into_iter().enumerate() {
+            result.push(Spec {
+                id: format!("wt_{key}"),
+                name: format!("Wavetable {key}"),
+                min,
+                max,
+                default: crate::wavetable::motion::Motion::default().get(field),
+                target: Target::WavetableMotion(field),
+            });
+        }
+        for i in 0..crate::preset::MODULATORS {
+            result.push(Spec {
+                id: format!("lfo{}_poly", i + 1),
+                name: format!("LFO {} polyphonic", i + 1),
+                min: 0.0,
+                max: 1.0,
+                default: 0.0,
+                target: Target::LfoPoly(i),
+            });
+        }
+        for i in 0..crate::wavetable::OSCILLATORS {
+            for (field, key, name, min, max) in crate::wavetable::SYNC_FIELDS.into_iter().chain(
+                if i % 2 == 0 {
+                    crate::wavetable::FM_FIELDS.as_slice()
+                } else {
+                    &[]
+                }
+                .iter()
+                .copied(),
+            ) {
+                result.push(Spec {
+                    id: format!("wt_{}_{key}", ["a", "b", "c", "d"][i]),
+                    name: format!("Wavetable {} {name}", ["A", "B", "C", "D"][i]),
+                    min,
+                    max,
+                    default: crate::wavetable::Controls::default().get(field),
+                    target: Target::Wavetable(i, field),
+                });
+            }
+        }
+        // Voice shift follows all previously published Third Wave controls.
+        for i in 0..crate::wavetable::OSCILLATORS {
+            result.push(Spec {
+                id: format!("wt_{}_voice_shift", ["a", "b", "c", "d"][i]),
+                name: format!("Wavetable {} unison voice shift", ["A", "B", "C", "D"][i]),
+                min: -1.0,
+                max: 1.0,
+                default: 0.0,
+                target: Target::Wavetable(i, crate::wavetable::Field::VoiceShift),
+            });
+        }
+        for i in 0..crate::wavetable::OSCILLATORS {
+            for (field, key, name) in [
+                (crate::wavetable::Field::FmSource, "fm_source", "FM source"),
+                (
+                    crate::wavetable::Field::SyncSource,
+                    "sync_source",
+                    "sync source",
+                ),
+            ] {
+                result.push(Spec {
+                    id: format!("wt_{}_{key}", ["a", "b", "c", "d"][i]),
+                    name: format!("Wavetable {} {name}", ["A", "B", "C", "D"][i]),
+                    min: 0.0,
+                    max: 3.0,
+                    default: crate::wavetable::default_controls()[i].get(field),
+                    target: Target::Wavetable(i, field),
+                });
+            }
+        }
+        for i in [1, 3] {
+            for (field, key, name, min, max) in crate::wavetable::FM_FIELDS {
+                result.push(Spec {
+                    id: format!("wt_{}_{key}", ["a", "b", "c", "d"][i]),
+                    name: format!("Wavetable {} {name}", ["A", "B", "C", "D"][i]),
+                    min,
+                    max,
+                    default: crate::wavetable::Controls::default().get(field),
+                    target: Target::Wavetable(i, field),
                 });
             }
         }

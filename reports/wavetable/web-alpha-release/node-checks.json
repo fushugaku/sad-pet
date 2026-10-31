@@ -1,0 +1,247 @@
+[
+  {
+    "command": "node wasm/test-instrument-presets.mjs",
+    "exit_code": 0,
+    "seconds": 0.07
+  },
+  {
+    "command": "node wasm/test-parameters.mjs",
+    "exit_code": 0,
+    "seconds": 0.06
+  },
+  {
+    "command": "node wasm/test-sequencer-ui.mjs",
+    "exit_code": 0,
+    "seconds": 0.13
+  },
+  {
+    "command": "node wasm/test-controls-ui.mjs",
+    "exit_code": 0,
+    "seconds": 0.05
+  },
+  {
+    "command": "node wasm/test-midi-learn-ui.mjs",
+    "exit_code": 0,
+    "seconds": 0.04
+  },
+  {
+    "command": "node wasm/test-imported-ui.mjs",
+    "exit_code": 0,
+    "seconds": 0.1
+  },
+  {
+    "command": "node wasm/test-filters-ui.mjs",
+    "exit_code": 0,
+    "seconds": 0.04
+  },
+  {
+    "command": "node wasm/test-bus-ui.mjs",
+    "exit_code": 0,
+    "seconds": 0.03
+  },
+  {
+    "command": "node wasm/test-mixer-ui.mjs",
+    "exit_code": 0,
+    "seconds": 0.03
+  },
+  {
+    "command": "node wasm/test-taps-ui.mjs",
+    "exit_code": 0,
+    "seconds": 0.04
+  },
+  {
+    "command": "node wasm/test-grain-groups-ui.mjs",
+    "exit_code": 0,
+    "seconds": 0.04
+  },
+  {
+    "command": "node wasm/test-clock-ui.mjs",
+    "exit_code": 0,
+    "seconds": 0.03
+  },
+  {
+    "command": "node wasm/test-modulation-ui.mjs",
+    "exit_code": 0,
+    "seconds": 0.03
+  },
+  {
+    "command": "node wasm/test-lfo-ui.mjs",
+    "exit_code": 0,
+    "seconds": 0.03
+  },
+  {
+    "command": "node wasm/test-vocal-ui.mjs",
+    "exit_code": 0,
+    "seconds": 0.03
+  },
+  {
+    "command": "node wasm/test.mjs",
+    "exit_code": 0,
+    "seconds": null
+  },
+  {
+    "command": "node wasm/test-realtime.mjs",
+    "exit_code": 0,
+    "seconds": 1.13
+  },
+  {
+    "command": "node wasm/test-telemetry.mjs",
+    "exit_code": 0,
+    "seconds": 0.97
+  },
+  {
+    "command": "node wasm/test-loader.mjs",
+    "exit_code": 0,
+    "seconds": 0.05
+  },
+  {
+    "command": "node wasm/test-tailcall.mjs",
+    "exit_code": 0,
+    "seconds": 0.03
+  },
+  {
+    "command": "node wasm/test-simd.mjs",
+    "exit_code": 0,
+    "seconds": 0.66
+  },
+  {
+    "command": "node wasm/test-grain-quality.mjs",
+    "exit_code": 0,
+    "seconds": 0.87
+  },
+  {
+    "command": "node wasm/test-resynth.mjs",
+    "exit_code": 0,
+    "seconds": 1.81
+  },
+  {
+    "command": "node wasm/test-filters.mjs",
+    "exit_code": 0,
+    "seconds": 2.54
+  },
+  {
+    "command": "node wasm/test-imported.mjs",
+    "exit_code": 0,
+    "seconds": 0.72
+  },
+  {
+    "command": "node wasm/test-neuropolis.mjs",
+    "exit_code": 0,
+    "seconds": 0.46
+  },
+  {
+    "command": "node wasm/test-timbres.mjs",
+    "exit_code": 0,
+    "seconds": 1.29
+  },
+  {
+    "command": "node wasm/test-tempo.mjs",
+    "exit_code": 0,
+    "seconds": 0.31
+  },
+  {
+    "command": "node wasm/test-buses.mjs",
+    "exit_code": 0,
+    "seconds": 2.61
+  },
+  {
+    "command": "node wasm/test-master.mjs",
+    "exit_code": 0,
+    "seconds": 2.46
+  },
+  {
+    "command": "node wasm/test-tb303.mjs",
+    "exit_code": 0,
+    "seconds": 8.71
+  },
+  {
+    "command": "node wasm/test-rack.mjs",
+    "exit_code": 0,
+    "seconds": 0.81
+  },
+  {
+    "command": "node wasm/test-wavetable.mjs",
+    "exit_code": 0,
+    "seconds": 0.55
+  },
+  {
+    "command": "node wasm/test-thirdwave.mjs",
+    "exit_code": 0,
+    "seconds": 0.76
+  },
+  {
+    "command": "node wasm/test-wavetable-parity.mjs",
+    "exit_code": 0,
+    "seconds": 3.87
+  },
+  {
+    "command": "node wasm/test-wavetable-parity.mjs dist/web /tmp/thirdwave-parity.json thirdwave",
+    "exit_code": 0,
+    "seconds": 1.26
+  },
+  {
+    "command": "node wasm/test-eq.mjs",
+    "exit_code": 0,
+    "seconds": 0.31
+  },
+  {
+    "command": "node wasm/test-synth.mjs",
+    "exit_code": 0,
+    "seconds": 0.48
+  },
+  {
+    "command": "node wasm/test-microphone.mjs",
+    "exit_code": 0,
+    "seconds": 0.04
+  },
+  {
+    "command": "node wasm/test-library.mjs",
+    "exit_code": 0,
+    "seconds": 0.03
+  },
+  {
+    "command": "node wasm/test-presets.mjs",
+    "exit_code": 0,
+    "seconds": 0.05
+  },
+  {
+    "command": "node wasm/test-startup.mjs",
+    "exit_code": 0,
+    "seconds": 1.23
+  },
+  {
+    "command": "node wasm/test-midi-clock.mjs",
+    "exit_code": 0,
+    "seconds": 0.47
+  },
+  {
+    "command": "node wasm/test-effect-presets.mjs",
+    "exit_code": 0,
+    "seconds": 0.06
+  },
+  {
+    "command": "node wasm/test-instruments.mjs",
+    "exit_code": 0,
+    "seconds": 1.28
+  },
+  {
+    "command": "node wasm/test-vocal.mjs",
+    "exit_code": 0,
+    "seconds": 0.91
+  },
+  {
+    "command": "node wasm/test-sampler.mjs",
+    "exit_code": 0,
+    "seconds": 0.47
+  },
+  {
+    "command": "node rust/scripts/check_sampler_packs.mjs",
+    "exit_code": 0,
+    "seconds": 0.68
+  },
+  {
+    "command": "node wasm/test-wavetable-parity.mjs dist/web /tmp/unison4-parity.json unison4",
+    "exit_code": 0,
+    "seconds": null
+  }
+]

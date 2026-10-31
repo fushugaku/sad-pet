@@ -1,0 +1,63 @@
+{
+  "scope": "Shipping WASM Core.process(128), four notes × four complex waves × U4; four FM operators and four hard-sync clocks in independent reciprocal rings. Includes JS ABI boundary; excludes preparation, control requests and validation. Node/V8 thread CPU + wall timing, separate from physical AudioWorklet acceptance.",
+  "sample_rate": 48000,
+  "block": 128,
+  "deadline_ms": 2.6666666666666665,
+  "notes": 4,
+  "waves": 4,
+  "unison": 4,
+  "oversampling": {
+    "fm": 8,
+    "sync": 32
+  },
+  "node": "v24.19.0",
+  "v8": "13.6.233.17-node.51",
+  "module_sha256": "20e4dda0f0efc4ccbaf430e304ca06aebd592fe1593a725cd414575df9aaffda",
+  "profiled": false,
+  "warmup_audio_seconds": 1,
+  "audio_seconds_per_round": 2,
+  "rounds": 1,
+  "peak": 0.02102307230234146,
+  "summary": {
+    "blocks": 750,
+    "p50_ms": 4.15612499999952,
+    "p95_ms": 4.712500000000091,
+    "p99_ms": 5.101792000000387,
+    "max_ms": 6.1290829999998095,
+    "over_budget": 750
+  },
+  "runs": [
+    {
+      "blocks": 750,
+      "p50_ms": 4.15612499999952,
+      "p95_ms": 4.712500000000091,
+      "p99_ms": 5.101792000000387,
+      "max_ms": 6.1290829999998095,
+      "over_budget": 750,
+      "thread_cpu": {
+        "blocks": 750,
+        "p50_ms": 4.119,
+        "p95_ms": 4.623,
+        "p99_ms": 5.035,
+        "max_ms": 5.896,
+        "over_budget": 750
+      }
+    }
+  ],
+  "mode": "mixed",
+  "moving_positions": true,
+  "note_numbers": [
+    48,
+    51,
+    55,
+    58
+  ],
+  "thread_cpu": {
+    "blocks": 750,
+    "p50_ms": 4.119,
+    "p95_ms": 4.623,
+    "p99_ms": 5.035,
+    "max_ms": 5.896,
+    "over_budget": 750
+  }
+}

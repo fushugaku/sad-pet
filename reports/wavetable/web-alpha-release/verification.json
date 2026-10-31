@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-31T16:35:50.092777+00:00",
+  "scope": "Isolated GitHub Pages web alpha: complete Wavetable Rack engine and WASM U4 optimization. Pending Control/MIDI feature changes remain outside this release. Stable 1.0 device/DAW gates are not claimed.",
+  "base_commit": "456c7c5d167128d7a7efb018d651c29082ea6acb",
+  "build_command": "python3 wasm/build.py --simd",
+  "bundle_sha256": {
+    "sad_pet.wasm": "b893dcf1989a47ae7139a3e846bc52fbc9781c52dc7bbf32b9f80f755726eb5a",
+    "sad_pet.simd.wasm": "429b0c9b5eb77b1719b96df07de6e7469d60822ceed317be99d291650371c4a4",
+    "core.mjs": "78ecf06e7d012e2622dd93a6f43d0f818c530b21311645cb5064ae2d16106116",
+    "worklet.mjs": "a8cd3cc1ef83c5583aa9bee2c7ea5345765ccdd6607c2ff5e2fa307692e65021"
+  },
+  "optimized_dsp_matches_measured_snapshot": true,
+  "quality": {
+    "passed": true,
+    "cases": 21,
+    "all_bit_identical_to_measured_optimized_module": true,
+    "report": "audio-equivalence.json",
+    "scalar_simd_host_block_cases": 3,
+    "scalar_simd_max_abs_error": 1.3969838619232178e-09,
+    "parity_report": "unison4-parity.json"
+  },
+  "checks": {
+    "local_rust_commands_passed": 24,
+    "core_unit_tests": 172,
+    "plugin_unit_tests": 59,
+    "wavetable_integration_tests": 19,
+    "wasm_unit_tests": 9,
+    "rust_report": "rust-checks.json",
+    "pages_node_commands_passed": 49,
+    "node_report": "node-checks.json",
+    "pages_ci_required_before_publication": true
+  },
+  "memory": {
+    "scope": "Utility WASM high-water memory after one full 414-source sample-bank pass, not live allocations or total multi-context application RAM. Fixed embedded library/engine footprint is separated from scratch growth.",
+    "startup_bytes": 44630016,
+    "after_bank_bytes": 140771328,
+    "growth_bytes": 96141312,
+    "startup_budget_bytes": 50331648,
+    "growth_budget_bytes": 100663296,
+    "old_absolute_128_mib_budget_met": false,
+    "mobile_acceptance_complete": false,
+    "note": "The legacy 128 MiB absolute assertion did not allow for the larger fixed WT library/runtime. This alpha explicitly records 134.25 MiB total; the revised regression bounds startup and export growth separately. It does not close the original mobile acceptance gate."
+  },
+  "cpu_provenance": "CPU and browser-120-second results are in ../wasm-unison4/verification.json and refer to the measured optimized module. Same six DSP source hashes; this release separately verifies bit-identical dynamic PCM. No new CPU measurement is inferred from the packaging comparison.",
+  "deploy": {
+    "workflow": ".github/workflows/pages.yml",
+    "site": "https://fushugaku.github.io/sad-pet/",
+    "publishes_only_after_checks": true
+  }
+}

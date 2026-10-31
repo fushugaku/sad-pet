@@ -435,6 +435,8 @@ fn decode_snapshot(
     state["source_generation"] = json!(packet.source_generation);
     state["drums"] = json!(v.drums);
     state["rack_peaks"] = json!(v.rack_peaks);
+    state["wavetable_positions"] = json!(v.wavetable_positions);
+    state["wavetable_motion"] = json!(v.modulated_wavetable_motion);
     if let Some(history) = preset
         .rack
         .as_ref()

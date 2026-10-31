@@ -381,6 +381,37 @@ impl Engine {
                         }
                     }
                 }
+                Module::Wavetable => {
+                    flow.source = [0.0; 2];
+                    let Some(wavetable) = &mut self.wavetable else {
+                        continue;
+                    };
+                    wavetable.begin_frame(on);
+                    if !wavetable.active() {
+                        continue;
+                    }
+                    flow.per_note = true;
+                    for i in bits(self.sounding) {
+                        let voice = &self.voices[i];
+                        if voice.value <= 0.0 {
+                            continue;
+                        }
+                        let note = voice.note as f32
+                            + self.bend[voice.channel as usize]
+                                * self.modulated.params.midi_pitchbend_range;
+                        let frame = wavetable.render_modulated(
+                            i,
+                            voice.generation,
+                            note,
+                            &voice.env_values,
+                            &self.voice_lfo_values[i],
+                        );
+                        flow.notes[i] = frame.map(|x| x * input_gain);
+                        for c in 0..2 {
+                            flow.source[c] += flow.notes[i][c] * voice.value;
+                        }
+                    }
+                }
                 Module::Drums | Module::Sampler | Module::Vocal | Module::Tb303 => {
                     let stream = match step.module {
                         Module::Drums => drums,
@@ -419,7 +450,8 @@ impl Engine {
                                 Instance::Voice(i),
                                 Some((&mut self.taps, value)),
                             );
-                            let voice = self.filters[i].process(voice, &mut self.taps, value);
+                            let voice =
+                                self.filters[i].process_tapped(voice, &mut self.taps, value);
                             let voice = filter_slots::route_chain(
                                 &mut self.filter_banks,
                                 masks[FilterPosition::AfterFilters as usize],
@@ -446,7 +478,7 @@ impl Engine {
                             Instance::Shared,
                             Some((&mut self.taps, 1.0)),
                         );
-                        let output = self.filters[0].process(output, &mut self.taps, 1.0);
+                        let output = self.filters[0].process_tapped(output, &mut self.taps, 1.0);
                         let output = filter_slots::route_chain(
                             &mut self.filter_banks,
                             masks[FilterPosition::AfterFilters as usize],

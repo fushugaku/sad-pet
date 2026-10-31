@@ -203,7 +203,7 @@ select {
   border-top: 1px solid var(--line);
 }
 .is-drill .sad-menu-item {
-  height: 38px;
+  height: 44px;
   font-size: 13px;
 }
 .sad-menu .sad-menu-preview {
@@ -227,8 +227,8 @@ select {
   background: #263723;
 }
 .is-drill .sad-menu .sad-menu-preview {
-  width: 36px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
 }
 header {
   display: flex;
@@ -6676,3 +6676,15 @@ input[type="range"] {
   .tb303-radias .resynth-knobs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tb303-mod-knobs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+/* Shared multi-point ENV */
+.wave-env[hidden],.env-controls[hidden]{display:none}
+.wave-env-options{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}.wave-env-options label{display:flex;flex-direction:column;gap:5px;font-size:10px;color:var(--muted)}.wave-env-options .wave-loop{flex-direction:row;align-items:center;min-height:44px}
+.wave-env select,.wave-env input[type=number]{min-width:0;width:100%;min-height:44px;box-sizing:border-box}.wave-env input[type=range]{min-width:0;width:100%;min-height:44px;margin:0}.wave-env input[type=checkbox]{width:20px;height:20px;accent-color:var(--accent)}
+.wave-point,.wave-point-head{display:grid;grid-template-columns:16px minmax(50px,.8fr) minmax(60px,1fr) minmax(70px,1fr);gap:6px;align-items:center}.wave-point>span,.wave-point-head{font-size:10px;color:var(--muted)}.wave-point-head{margin:8px 0 4px}.wave-point.is-release>span{color:var(--accent)}
+.wave-copy{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;border-top:1px solid var(--line);margin-top:10px;padding-top:8px}.wave-copy[hidden],.wave-copy label[hidden]{display:none}.wave-copy label{display:flex;align-items:center;min-height:44px;gap:4px}.wave-copy button{min-height:44px}.wave-copy output{flex-basis:100%;color:var(--muted)}
+
+.lfo-modes{grid-template-columns:repeat(2,minmax(0,1fr))}.lfo-modes select{min-height:44px}
+
+.timbre-range{border-top:1px solid var(--line);margin-top:8px}.timbre-range[hidden]{display:none}.timbre-range summary{min-height:44px;display:flex;align-items:center;font-size:11px;color:var(--muted);cursor:pointer}.timbre-range>div{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding-bottom:10px}.timbre-range label{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--muted)}.timbre-range select,.timbre-range input{width:100%;min-height:44px;min-width:0;box-sizing:border-box}@media(max-width:560px){.timbre-range>div{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+.neuro-motions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0 12px}.neuro-motions select{flex:1;min-width:160px;min-height:44px}.neuro-motions input{flex:1;min-width:140px;min-height:44px;box-sizing:border-box}.neuro-motions button,#filter-pair-preset{min-height:44px}.neuro-motions output{font-size:11px;color:var(--muted)}@media(max-width:560px){.neuro-motions select,.neuro-motions input{flex-basis:calc(50% - 4px);min-width:0;width:calc(50% - 4px)}.neuro-motions button{flex:1}.neuro-motions output{flex-basis:100%}}

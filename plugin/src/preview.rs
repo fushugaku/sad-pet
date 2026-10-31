@@ -2,6 +2,7 @@
 use super::*;
 
 pub(super) struct Preview {
+    wavetable: Option<Box<sad_pet::dsp::wavetable::Audition>>,
     sample: Arc<SampleBuffer>,
     position: f64,
     step: f64,
@@ -11,6 +12,7 @@ impl Preview {
     fn new(sample: Arc<SampleBuffer>, rate: u32) -> Self {
         let end = (sample.sample_rate as f64 * 8.0).min(sample.len() as f64);
         Self {
+            wavetable: None,
             step: sample.sample_rate as f64 / rate as f64,
             sample,
             position: 0.0,
@@ -18,11 +20,18 @@ impl Preview {
         }
     }
     pub(super) fn stop(&mut self) {
+        if let Some(wavetable) = &mut self.wavetable {
+            wavetable.stop();
+            return;
+        }
         self.end = self
             .end
             .min(self.position + self.sample.sample_rate as f64 * 0.015);
     }
     pub(super) fn next(&mut self) -> Stereo {
+        if let Some(wavetable) = &mut self.wavetable {
+            return wavetable.process_frame();
+        }
         if self.position >= self.end {
             return [0.0; 2];
         }
@@ -40,6 +49,33 @@ impl Preview {
 }
 
 impl Controller {
+    pub(super) fn wavetable_audition(&mut self, data: &Value) -> Result<Value, String> {
+        let generation = data["generation"]
+            .as_u64()
+            .ok_or("Missing audition generation")?;
+        if generation <= self.preview_generation {
+            return Ok(json!({"seconds":0}));
+        }
+        self.preview_generation = generation;
+        let Some(id) = data["id"].as_str() else {
+            self.enqueue(Command::PreviewStop)?;
+            return Ok(json!({"seconds":0}));
+        };
+        let current = if self.active == 0 {
+            &*self
+        } else {
+            self.parts
+                .iter()
+                .find(|p| p.meta.id == self.active)
+                .ok_or("Unknown timbre")?
+        };
+        let audition =
+            sad_pet::dsp::wavetable::Audition::new(id, &current.preset.wavetable_pool, self.rate)?;
+        let mut preview = Preview::new(self.sample.clone(), self.rate);
+        preview.wavetable = Some(Box::new(audition));
+        self.enqueue(Command::Preview(Some(Box::new(preview))))?;
+        Ok(json!({"seconds":0.75}))
+    }
     pub(super) fn preview_request(&mut self, data: &Value) -> Result<Value, String> {
         if self.standalone && data.get("base64").is_some() {
             return Err("The app previews audio natively.".into());

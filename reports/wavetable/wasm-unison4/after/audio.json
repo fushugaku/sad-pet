@@ -1,0 +1,354 @@
+{
+  "scope": "Full shipping WASM before/after; four notes, four complex waves, U4. FM/sync ring, PM/sync ring, FM ring and compatibility pairs. Includes note entry/release/retrigger, live Position, Voice shift, index, sync ratio, U3/U8/U4 and routing/mode edits at exact frames. No time/gain fitting or discarded transients.",
+  "binaries": [
+    {
+      "path": "/tmp/sadpet-wasm-u4-before/sad_pet.simd.wasm",
+      "sha256": "20e4dda0f0efc4ccbaf430e304ca06aebd592fe1593a725cd414575df9aaffda"
+    },
+    {
+      "path": "/tmp/sadpet-wt-web/sad_pet.simd.wasm",
+      "sha256": "732c35f4a39afe10159f63b3ab4e1d34cdf63eddb6d4da477ca1afff6aa0e0fd"
+    }
+  ],
+  "criterion_error_dbr": -100,
+  "criterion_max_abs_error": 0.000001,
+  "passed": true,
+  "results": [
+    {
+      "rate": 44100,
+      "kind": "mixed",
+      "frames": 16384,
+      "notes": 4,
+      "waves": 4,
+      "initial_unison": 4,
+      "bit_identical": false,
+      "error_dbr": -129.05948837284757,
+      "max_abs_error": 5.587935447692871e-9,
+      "sha256": [
+        "966522249a8af00b1dc14448987c3baa793635328120b9300e807895232a2629",
+        "62f66c2c709b704c24a52ff7b36857683b1455148c64684caa28c8fab9126001"
+      ],
+      "passed": true
+    },
+    {
+      "rate": 44100,
+      "kind": "pm",
+      "frames": 16384,
+      "notes": 4,
+      "waves": 4,
+      "initial_unison": 4,
+      "bit_identical": false,
+      "error_dbr": -134.49261656541162,
+      "max_abs_error": 4.889443516731262e-9,
+      "sha256": [
+        "1ff88efd770d184131539b15d82b8f8b697477c6bc3bed4354befa9b3ee8ee46",
+        "03d9b8a73e85485ff76ca6f8f1971f6b1e21f4f31963c0b2aefa2d69bc0ab720"
+      ],
+      "passed": true
+    },
+    {
+      "rate": 44100,
+      "kind": "fm",
+      "frames": 16384,
+      "notes": 4,
+      "waves": 4,
+      "initial_unison": 4,
+      "bit_identical": false,
+      "error_dbr": -130.8991660309117,
+      "max_abs_error": 5.587935447692871e-9,
+      "sha256": [
+        "c8f7fa7f4231e888ca9d624e4afa13bf68dcc7b04e09c0417c421fb202f999bb",
+        "5470fd76b64e6cec6936cdff1b32f1628d48100bb85ea346a3f724d2d388ac5c"
+      ],
+      "passed": true
+    },
+    {
+      "rate": 44100,
+      "kind": "paired",
+      "frames": 16384,
+      "notes": 4,
+      "waves": 4,
+      "initial_unison": 4,
+      "bit_identical": false,
+      "error_dbr": -124.33877550754126,
+      "max_abs_error": 9.778887033462524e-9,
+      "sha256": [
+        "ce8ae5ae58f6ec0c54d4c51f1a3c8ae03a52a67ec0e8a84c094111b5bdf5d29e",
+        "48c264bf90e0c011dd5065e7e83c53d33f3077a5ea8e5aede30ff82afd9bf190"
+      ],
+      "passed": true
+    },
+    {
+      "rate": 44100,
+      "kind": "self",
+      "frames": 16384,
+      "notes": 4,
+      "waves": 4,
+      "initial_unison": 4,
+      "bit_identical": false,
+      "error_dbr": -130.9314544026189,
+      "max_abs_error": 5.587935447692871e-9,
+      "sha256": [
+        "25661f3eb76acd484f6ea01bae7cddaa19e1c55ed1aa1ae710b65e59b0f8a5b1",
+        "53da3e7ff14a5bc5d4271b1aed54d1c72f5f4e3c039bb958c31f200a8887ea69"
+      ],
+      "passed": true
+    },
+    {
+      "rate": 44100,
+      "kind": "sync",
+      "frames": 16384,
+      "notes": 4,
+      "waves": 4,
+      "initial_unison": 4,
+      "bit_identical": false,
+      "error_dbr": -132.5780391411937,
+      "max_abs_error": 9.546056389808655e-9,
+      "sha256": [
+        "d0c0cb38cdbdaf77cafe0fd8dd9bdd4f6b18375c3be0746dc2377fcf586c62b5",
+        "e72d87a38830d82f9cfa389bdbd96fe44ad0d35dbbeeab50e2406aaaf38ab344"
+      ],
+      "passed": true
+    },
+    {
+      "rate": 44100,
+      "kind": "fanout",
+      "frames": 16384,
+      "notes": 4,
+      "waves": 4,
+      "initial_unison": 4,
+      "bit_identical": false,
+      "error_dbr": -128.90477503748963,
+      "max_abs_error": 5.587935447692871e-9,
+      "sha256": [
+        "5a308ad26f702e06269e3631875523d4faa02bfb87e56b2656d839b55a838868",
+        "7a625825019f1f58327fb6ccc45bb8bf066520ddfd0baed71ac43bee362d0754"
+      ],
+      "passed": true
+    },
+    {
+      "rate": 48000,
+      "kind": "mixed",
+      "frames": 16384,
+      "notes": 4,
+      "waves": 4,
+      "initial_unison": 4,
+      "bit_identical": false,
+      "error_dbr": -128.44314725484662,
+      "max_abs_error": 8.847564458847046e-9,
+      "sha256": [
+        "f5357405d7a782ed5c5c0d4a3eb1e815d821ebfbc02da2cbaad522c38ea4fcce",
+        "f2749dc4cf2bc3d3e5e004357a70517b30d79a91f72ad8ea350b3f9192376868"
+      ],
+      "passed": true
+    },
+    {
+      "rate": 48000,
+      "kind": "pm",
+      "frames": 16384,
+      "notes": 4,
+      "waves": 4,
+      "initial_unison": 4,
+      "bit_identical": false,
+      "error_dbr": -132.88617399642632,
+      "max_abs_error": 6.28642737865448e-9,
+      "sha256": [
+        "c5a140a0a6a7e59406d1e396c74ff4478a4f72e11ab81acdba5797af8f863578",
+        "0e97bbebd8777ff69daae066044a73321b527ffb609e8d174a6080af0ea3ea66"
+      ],
+      "passed": true
+    },
+    {
+      "rate": 48000,
+      "kind": "fm",
+      "frames": 16384,
+      "notes": 4,
+      "waves": 4,
+      "initial_unison": 4,
+      "bit_identical": false,
+      "error_dbr": -132.09913117309694,
+      "max_abs_error": 5.587935447692871e-9,
+      "sha256": [
+        "767cb06938818968ba2e23013eb3e1657a634bf2b9ab1e6722bd9c4e487319c0",
+        "aa1b4e4a64e06f379ba5577af59dbd11e7d52cdd485a976d6e294ed63c755bd6"
+      ],
+      "passed": true
+    },
+    {
+      "rate": 48000,
+      "kind": "paired",
+      "frames": 16384,
+      "notes": 4,
+      "waves": 4,
+      "initial_unison": 4,
+      "bit_identical": false,
+      "error_dbr": -126.93070274665295,
+      "max_abs_error": 7.916241884231567e-9,
+      "sha256": [
+        "5eb8ff9ebc2b1629633e36f7244ad4865364f9ad773140ce4183ce93289a514c",
+        "ea4ba484c2f05838fc4d37e9d0eebe811bbca74ef0fab5ec8f1a90444a182745"
+      ],
+      "passed": true
+    },
+    {
+      "rate": 48000,
+      "kind": "self",
+      "frames": 16384,
+      "notes": 4,
+      "waves": 4,
+      "initial_unison": 4,
+      "bit_identical": false,
+      "error_dbr": -127.8020027980638,
+      "max_abs_error": 6.984919309616089e-9,
+      "sha256": [
+        "17a96ff36c0e1347501c4a37ca39cd7e2ed078c375e41fb6891b5642c880c727",
+        "0c39c19a92b3c753c040478874353576688477255750ce634ad457a46951126c"
+      ],
+      "passed": true
+    },
+    {
+      "rate": 48000,
+      "kind": "sync",
+      "frames": 16384,
+      "notes": 4,
+      "waves": 4,
+      "initial_unison": 4,
+      "bit_identical": false,
+      "error_dbr": -134.5816542304779,
+      "max_abs_error": 6.51925802230835e-9,
+      "sha256": [
+        "0f246be918f7abde6d15b645f8203261babdeb4632f0f65ac300154ec9b81a85",
+        "4127247b011be6ac54330b1bfbd6c4d34a44cf8967ab6218300ff568dbf34059"
+      ],
+      "passed": true
+    },
+    {
+      "rate": 48000,
+      "kind": "fanout",
+      "frames": 16384,
+      "notes": 4,
+      "waves": 4,
+      "initial_unison": 4,
+      "bit_identical": false,
+      "error_dbr": -130.23831957251983,
+      "max_abs_error": 6.28642737865448e-9,
+      "sha256": [
+        "37a201f31b7aeb198c1e16db15c0d3e29faf2fb30f5f522e3aa3732be7da332c",
+        "a3163a5b726db12611deb0e90c85743a13e75eac8ad65707bde34f6736aff7d1"
+      ],
+      "passed": true
+    },
+    {
+      "rate": 96000,
+      "kind": "mixed",
+      "frames": 16384,
+      "notes": 4,
+      "waves": 4,
+      "initial_unison": 4,
+      "bit_identical": false,
+      "error_dbr": -128.1279575571149,
+      "max_abs_error": 6.984919309616089e-9,
+      "sha256": [
+        "1cbe07db4f109426a7ce358d74305c79e6a9d6bef9729a1bd354d74e4bc1363f",
+        "59a04b2a772748239e5d22499bd5763d0ff0060d87ef368b5845d8d7f178dee5"
+      ],
+      "passed": true
+    },
+    {
+      "rate": 96000,
+      "kind": "pm",
+      "frames": 16384,
+      "notes": 4,
+      "waves": 4,
+      "initial_unison": 4,
+      "bit_identical": false,
+      "error_dbr": -140.24697663693107,
+      "max_abs_error": 3.259629011154175e-9,
+      "sha256": [
+        "3197461a4542415d10fa2773b7c48fce0e5ad78188afd09ca3008ade8a894702",
+        "d6f1948d1c1e4f2ff1ce334fcf89610f5487f04beb43856789c8007a22d6adb4"
+      ],
+      "passed": true
+    },
+    {
+      "rate": 96000,
+      "kind": "fm",
+      "frames": 16384,
+      "notes": 4,
+      "waves": 4,
+      "initial_unison": 4,
+      "bit_identical": false,
+      "error_dbr": -126.56048763045894,
+      "max_abs_error": 7.450580596923828e-9,
+      "sha256": [
+        "058f3b81cb0df0ccd29316fea79c032dd7c171def60494e2acd729dfecb850c6",
+        "f5abb0a1ad29f95d5d048cac2e424e68a31ef043ce4e68fffd87056ea4bce9a4"
+      ],
+      "passed": true
+    },
+    {
+      "rate": 96000,
+      "kind": "paired",
+      "frames": 16384,
+      "notes": 4,
+      "waves": 4,
+      "initial_unison": 4,
+      "bit_identical": false,
+      "error_dbr": -128.93678823692693,
+      "max_abs_error": 6.51925802230835e-9,
+      "sha256": [
+        "38a64cc6fc01ae45b87c9f6956ac7a156ed3403cd2835b15117598605339c3cc",
+        "9eff3afa11ff6eb4c1cfeab50692355d3f3fa1982087fde3c6ee9cedee620b75"
+      ],
+      "passed": true
+    },
+    {
+      "rate": 96000,
+      "kind": "self",
+      "frames": 16384,
+      "notes": 4,
+      "waves": 4,
+      "initial_unison": 4,
+      "bit_identical": false,
+      "error_dbr": -127.13024377052218,
+      "max_abs_error": 8.381903171539307e-9,
+      "sha256": [
+        "e41131da9538b78ccd1164686a80915a7ef18bfb916361453b316ed01c4e8dc6",
+        "50bf199d993874c0a31ade77e5371b95a80c03dd612d8f1d9080f039cf94b917"
+      ],
+      "passed": true
+    },
+    {
+      "rate": 96000,
+      "kind": "sync",
+      "frames": 16384,
+      "notes": 4,
+      "waves": 4,
+      "initial_unison": 4,
+      "bit_identical": false,
+      "error_dbr": -135.26308602023857,
+      "max_abs_error": 7.450580596923828e-9,
+      "sha256": [
+        "081e66a3c370983a0addf3af347286ee0ea561b602c984e7ffc09e8940d8d0df",
+        "9ab47126057bbad90da2f0949b510e5b3fc0f73286845048667a57f8cdc27909"
+      ],
+      "passed": true
+    },
+    {
+      "rate": 96000,
+      "kind": "fanout",
+      "frames": 16384,
+      "notes": 4,
+      "waves": 4,
+      "initial_unison": 4,
+      "bit_identical": false,
+      "error_dbr": -129.62107732955639,
+      "max_abs_error": 6.51925802230835e-9,
+      "sha256": [
+        "9f82d64fecd7ccd04f315f972c4bf02da195100d43de96f38c96c06e90d4fea4",
+        "502abe40ef575f10a63449faac8ae7678f3fec54d0d7d933bcd918d74e5a9a06"
+      ],
+      "passed": true
+    }
+  ]
+}

@@ -178,6 +178,9 @@ async function handle(message) {
       case "scene-prepare":
         result = core.call("sad_scene_prepare", data);
         break;
+      case "wavetable-prepare":
+        result = core.call("sad_wavetable_prepare", data);
+        break;
       // Instrument presets: the active timbre's state, and a timbre's new
       // sound prepared here, where Source FX will read its sample.
       case "part-document":
@@ -328,6 +331,11 @@ async function handle(message) {
       case "render":
         result = core.call("sad_render", data);
         break;
+      case "capture-wav": {
+        const pcm=new Float32Array(data.pcm),bytes=new Uint8Array(wave([pcm],data.rate,pcm.length/2));let text="";
+        for(let offset=0;offset<bytes.length;offset+=16384)text+=String.fromCharCode(...bytes.subarray(offset,offset+16384));
+        result={wav:btoa(text),sample_rate:data.rate,frames:pcm.length/2};break;
+      }
       case "record-start":
         take = {
           id: data.id,

@@ -1,0 +1,114 @@
+{
+  "block_frames": 128,
+  "cpu": "Apple M5 Max",
+  "os": "macos",
+  "profiles": [
+    {
+      "audio_seconds": 60.0,
+      "full_engine_rack": {
+        "max_ms": 0.821542,
+        "p50_ms": 0.184042,
+        "p99_deadline_fraction": 0.12929700000000002,
+        "p99_ms": 0.344792
+      },
+      "matched_neutral_rack": {
+        "max_ms": 0.843708,
+        "p50_ms": 0.017666,
+        "p99_deadline_fraction": 0.01246875,
+        "p99_ms": 0.03325
+      },
+      "notes": 32,
+      "oscillators": 2,
+      "paired_added_wt_path": {
+        "max_ms": 0.8031670000000001,
+        "p50_ms": 0.166291,
+        "p99_deadline_fraction": 0.11846887500000002,
+        "p99_ms": 0.31591700000000006
+      },
+      "peak": 1.0,
+      "unison": 1,
+      "warmup_audio_seconds": 5
+    },
+    {
+      "audio_seconds": 60.0,
+      "full_engine_rack": {
+        "max_ms": 1.473833,
+        "p50_ms": 0.240333,
+        "p99_deadline_fraction": 0.170515875,
+        "p99_ms": 0.45470900000000003
+      },
+      "matched_neutral_rack": {
+        "max_ms": 0.31187499999999996,
+        "p50_ms": 0.012374999999999999,
+        "p99_deadline_fraction": 0.009297,
+        "p99_ms": 0.024791999999999998
+      },
+      "notes": 16,
+      "oscillators": 2,
+      "paired_added_wt_path": {
+        "max_ms": 1.4608329999999998,
+        "p50_ms": 0.22779200000000002,
+        "p99_deadline_fraction": 0.164328375,
+        "p99_ms": 0.438209
+      },
+      "peak": 0.7170119881629944,
+      "unison": 4,
+      "warmup_audio_seconds": 5
+    },
+    {
+      "audio_seconds": 60.0,
+      "full_engine_rack": {
+        "max_ms": 0.478833,
+        "p50_ms": 0.077417,
+        "p99_deadline_fraction": 0.055249875000000004,
+        "p99_ms": 0.14733300000000002
+      },
+      "matched_neutral_rack": {
+        "max_ms": 0.07166700000000001,
+        "p50_ms": 0.00925,
+        "p99_deadline_fraction": 0.00593775,
+        "p99_ms": 0.015834
+      },
+      "notes": 8,
+      "oscillators": 2,
+      "paired_added_wt_path": {
+        "max_ms": 0.463542,
+        "p50_ms": 0.068166,
+        "p99_deadline_fraction": 0.050078250000000005,
+        "p99_ms": 0.133542
+      },
+      "peak": 0.5561956763267517,
+      "unison": 2,
+      "warmup_audio_seconds": 5
+    },
+    {
+      "audio_seconds": 60.0,
+      "full_engine_rack": {
+        "max_ms": 3.466541,
+        "p50_ms": 0.845959,
+        "p99_deadline_fraction": 0.51518775,
+        "p99_ms": 1.373834
+      },
+      "matched_neutral_rack": {
+        "max_ms": 0.271708,
+        "p50_ms": 0.017875000000000002,
+        "p99_deadline_fraction": 0.012140625,
+        "p99_ms": 0.032375
+      },
+      "notes": 32,
+      "oscillators": 2,
+      "paired_added_wt_path": {
+        "max_ms": 3.448707,
+        "p50_ms": 0.827793,
+        "p99_deadline_fraction": 0.506031,
+        "p99_ms": 1.349416
+      },
+      "peak": 0.8221055865287781,
+      "unison": 8,
+      "warmup_audio_seconds": 5
+    }
+  ],
+  "rust": "rustc 1.97.1 (8bab26f4f 2026-07-14) (Homebrew)",
+  "sample_rate": 48000,
+  "scope": "Full shared Engine / neutral Rack comparison, in-process native CPU measurement; excludes DAW scheduling and device underruns"
+}

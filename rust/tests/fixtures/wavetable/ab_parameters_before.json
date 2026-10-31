@@ -1,0 +1,212 @@
+[
+  {
+    "id": "wt_a_enabled",
+    "name": "Wavetable A enabled",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 1.0
+  },
+  {
+    "id": "wt_a_position",
+    "name": "Wavetable A position",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.0
+  },
+  {
+    "id": "wt_a_transpose",
+    "name": "Wavetable A transpose",
+    "min": -48.0,
+    "max": 48.0,
+    "default": 0.0
+  },
+  {
+    "id": "wt_a_fine",
+    "name": "Wavetable A fine tune",
+    "min": -100.0,
+    "max": 100.0,
+    "default": 0.0
+  },
+  {
+    "id": "wt_a_level",
+    "name": "Wavetable A level",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 1.0
+  },
+  {
+    "id": "wt_a_pan",
+    "name": "Wavetable A pan",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.5
+  },
+  {
+    "id": "wt_a_phase",
+    "name": "Wavetable A start phase",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.0
+  },
+  {
+    "id": "wt_a_phase_random",
+    "name": "Wavetable A random phase",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.0
+  },
+  {
+    "id": "wt_a_unison",
+    "name": "Wavetable A unison voices",
+    "min": 1.0,
+    "max": 8.0,
+    "default": 1.0
+  },
+  {
+    "id": "wt_a_detune",
+    "name": "Wavetable A unison detune",
+    "min": 0.0,
+    "max": 100.0,
+    "default": 10.0
+  },
+  {
+    "id": "wt_a_spread",
+    "name": "Wavetable A stereo spread",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 1.0
+  },
+  {
+    "id": "wt_a_env",
+    "name": "Wavetable A position envelope",
+    "min": 0.0,
+    "max": 8.0,
+    "default": 0.0
+  },
+  {
+    "id": "wt_a_env_depth",
+    "name": "Wavetable A position envelope depth",
+    "min": -1.0,
+    "max": 1.0,
+    "default": 0.0
+  },
+  {
+    "id": "wt_b_enabled",
+    "name": "Wavetable B enabled",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.0
+  },
+  {
+    "id": "wt_b_position",
+    "name": "Wavetable B position",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.0
+  },
+  {
+    "id": "wt_b_transpose",
+    "name": "Wavetable B transpose",
+    "min": -48.0,
+    "max": 48.0,
+    "default": 0.0
+  },
+  {
+    "id": "wt_b_fine",
+    "name": "Wavetable B fine tune",
+    "min": -100.0,
+    "max": 100.0,
+    "default": 0.0
+  },
+  {
+    "id": "wt_b_level",
+    "name": "Wavetable B level",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 1.0
+  },
+  {
+    "id": "wt_b_pan",
+    "name": "Wavetable B pan",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.5
+  },
+  {
+    "id": "wt_b_phase",
+    "name": "Wavetable B start phase",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.0
+  },
+  {
+    "id": "wt_b_phase_random",
+    "name": "Wavetable B random phase",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.0
+  },
+  {
+    "id": "wt_b_unison",
+    "name": "Wavetable B unison voices",
+    "min": 1.0,
+    "max": 8.0,
+    "default": 1.0
+  },
+  {
+    "id": "wt_b_detune",
+    "name": "Wavetable B unison detune",
+    "min": 0.0,
+    "max": 100.0,
+    "default": 10.0
+  },
+  {
+    "id": "wt_b_spread",
+    "name": "Wavetable B stereo spread",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 1.0
+  },
+  {
+    "id": "wt_b_env",
+    "name": "Wavetable B position envelope",
+    "min": 0.0,
+    "max": 8.0,
+    "default": 0.0
+  },
+  {
+    "id": "wt_b_env_depth",
+    "name": "Wavetable B position envelope depth",
+    "min": -1.0,
+    "max": 1.0,
+    "default": 0.0
+  },
+  {
+    "id": "rack_wavetable_level",
+    "name": "Rack Wavetable level",
+    "min": 0.0,
+    "max": 2.0,
+    "default": 1.0
+  },
+  {
+    "id": "rack_wavetable_pan",
+    "name": "Rack Wavetable pan",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.5
+  },
+  {
+    "id": "rack_wavetable_mute",
+    "name": "Rack Wavetable mute",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.0
+  },
+  {
+    "id": "rack_wavetable_solo",
+    "name": "Rack Wavetable solo",
+    "min": 0.0,
+    "max": 1.0,
+    "default": 0.0
+  }
+]

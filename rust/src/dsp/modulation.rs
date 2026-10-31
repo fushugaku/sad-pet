@@ -1,3 +1,4 @@
+mod wave_envelope;
 use crate::{
     preset::{Env, EnvMode, Lfo, LfoReset, Waveform},
     tables::{self, Random},
@@ -286,9 +287,50 @@ pub struct Envelope {
     configured: Option<(f32, [f32; 4])>,
     /// Rustias EG types; unused while the type is `EnvMode::Legacy`.
     rustias: Rustias,
+    wave: wave_envelope::Runtime,
 }
 impl Envelope {
     pub fn configure(&mut self, sample_rate: f32, p: &Env) {
+        self.configure_tempo(sample_rate, p, 120.0);
+    }
+    pub fn configure_tempo(&mut self, sample_rate: f32, p: &Env, bpm: f32) {
+        let was_wave = self.wave.enabled;
+        let (active, held, level) = (self.active(), self.held(), self.level());
+        self.wave.configure(p.wave, sample_rate, bpm);
+        if p.wave.enabled {
+            if !was_wave {
+                self.stage = Stage::Idle;
+                self.value = 0.0;
+                self.rustias.kill();
+                if active {
+                    self.wave.adopt(level, held);
+                }
+            }
+            return;
+        }
+        self.configure_legacy(sample_rate, p);
+        if was_wave && active {
+            if p.mode == EnvMode::Legacy {
+                self.value = level;
+                self.stage = if held { Stage::Attack } else { Stage::Release };
+            } else {
+                self.rustias.adopt(level, held);
+            }
+        }
+        if was_wave {
+            self.wave.kill();
+        }
+    }
+    fn held(&self) -> bool {
+        if self.wave.enabled {
+            self.wave.held
+        } else if self.rustias.mode != EnvMode::Legacy {
+            self.rustias.held
+        } else {
+            matches!(self.stage, Stage::Attack | Stage::Decay | Stage::Sustain)
+        }
+    }
+    fn configure_legacy(&mut self, sample_rate: f32, p: &Env) {
         if p.mode != self.rustias.mode {
             let (active, held, level) = if self.rustias.mode == EnvMode::Legacy {
                 (
@@ -324,6 +366,9 @@ impl Envelope {
         self.sustain = p.sustain;
     }
     pub fn on(&mut self) {
+        if self.wave.enabled {
+            return self.wave.on();
+        }
         if self.rustias.mode != EnvMode::Legacy {
             return self.rustias.on();
         }
@@ -332,6 +377,9 @@ impl Envelope {
         self.stage = Stage::Attack;
     }
     pub fn off(&mut self) {
+        if self.wave.enabled {
+            return self.wave.off();
+        }
         if self.rustias.mode != EnvMode::Legacy {
             return self.rustias.off();
         }
@@ -340,11 +388,15 @@ impl Envelope {
         }
     }
     pub fn kill(&mut self) {
+        self.wave.kill();
         self.rustias.kill();
         self.stage = Stage::Idle;
         self.value = 0.0;
     }
     pub fn active(&self) -> bool {
+        if self.wave.enabled {
+            return self.wave.active;
+        }
         if self.rustias.mode != EnvMode::Legacy {
             return self.rustias.running() || self.rustias.level != 0.0;
         }
@@ -352,6 +404,9 @@ impl Envelope {
     }
     /// The level last sounded, which `on` attacks from.
     pub fn level(&self) -> f32 {
+        if self.wave.enabled {
+            return self.wave.level;
+        }
         if self.rustias.mode != EnvMode::Legacy {
             return self.rustias.level;
         }
@@ -361,6 +416,9 @@ impl Envelope {
     /// few instructions, while the Rustias types run out of line.
     #[inline]
     pub fn next_sample(&mut self) -> f32 {
+        if self.wave.enabled {
+            return self.wave.next();
+        }
         if self.rustias.mode != EnvMode::Legacy {
             return self.rustias.next_sample();
         }
