@@ -175,9 +175,15 @@ impl Bank {
             .and_then(Weak::upgrade))
     }
     pub fn compile(asset: &Asset) -> Result<Self, String> {
+        Self::compile_reusing(asset, Vec::new())
+    }
+    /// Worker-side exports reuse their scratch allocation between banks so
+    /// unrelated metadata cannot fragment a freed bank-sized heap block.
+    pub fn compile_reusing(asset: &Asset, mut data: Vec<f32>) -> Result<Self, String> {
         asset.validate()?;
         let (levels, offset) = bank_layout(asset.frame_count);
-        let mut data = vec![0.0; offset];
+        data.resize(offset, 0.0);
+        data.fill(0.0);
         let mut planner = FftPlanner::<f32>::new();
         let forward = planner.plan_fft_forward(FRAME_SIZE);
         let inverses: Vec<_> = levels
@@ -222,6 +228,14 @@ impl Bank {
             data: Storage::Owned(data.into_boxed_slice()),
             kernel: Kernel::shared(),
         })
+    }
+    /// Only an unpublished, owned worker bank is recycled. Audio banks keep
+    /// their arena pages until their last voice releases them.
+    pub fn into_compile_buffer(self) -> Vec<f32> {
+        match self.data {
+            Storage::Owned(data) => data.into_vec(),
+            Storage::Arena(_) => Vec::new(),
+        }
     }
     pub fn bytes(&self) -> usize {
         self.data.len() * size_of::<f32>()
@@ -680,6 +694,13 @@ impl Runtime {
             }
             layer.configure(controls, self.rate as f32);
         }
+    }
+    /// No old voice is audible. The next note starts with the selected bank,
+    /// rather than paying for a crossfade from an unplayed previous table.
+    /// Handles remain available for normal control-side retirement.
+    pub fn finish_silent_crossfades(&mut self) {
+        self.fade_left.fill(0);
+        self.fade_blend.fill(1.0);
     }
     pub fn configure_motion(&mut self, mut motion: crate::wavetable::motion::Motion) {
         motion.sanitize();

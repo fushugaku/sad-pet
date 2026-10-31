@@ -19,6 +19,9 @@ jobs:
       CARGO_TARGET_DIR: target/browser
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24.19.0
       - name: Install Rust with the WebAssembly target
         run: |
           rustup toolchain install 1.97.0 --profile minimal --component rustfmt,clippy --target wasm32-unknown-unknown
@@ -67,6 +70,8 @@ jobs:
           node wasm/test-taps-ui.mjs
           node wasm/test-rack.mjs
           node wasm/test-wavetable.mjs
+          node wasm/test-wavetable-memory.mjs
+          node wasm/test-wavetable-cache.mjs
           node wasm/test-thirdwave.mjs
           node wasm/test-wavetable-parity.mjs
           node wasm/test-wavetable-parity.mjs dist/web /tmp/thirdwave-parity.json thirdwave

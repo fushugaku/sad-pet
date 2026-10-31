@@ -1,0 +1,42 @@
+{
+  "scope": "Eight repeated full-preset edits on the same four-wave U4 FM+sync patch, each followed by a real 128-frame render. Shipping backend method + worklet handler + WASM; browser ports driven in-process. Total control/preparation/render thread CPU, not AudioWorklet callback timing. Initial bank load excluded.",
+  "method": "AB/BA, no concurrent builds or audio benchmarks from this task; unchanged bank compilation and transfer counts measured directly.",
+  "runs": [
+    {
+      "version": "before",
+      "repeats": 8,
+      "preparations": 32,
+      "transferred_bytes": 144970784,
+      "thread_cpu_ms": 315.712,
+      "wall_ms": 319.522542,
+      "peak": 0.012769670225679874
+    },
+    {
+      "version": "after",
+      "repeats": 8,
+      "preparations": 0,
+      "transferred_bytes": 0,
+      "thread_cpu_ms": 35.398,
+      "wall_ms": 35.801624999999945,
+      "peak": 0.012769670225679874
+    },
+    {
+      "version": "after",
+      "repeats": 8,
+      "preparations": 0,
+      "transferred_bytes": 0,
+      "thread_cpu_ms": 36.395,
+      "wall_ms": 36.925457999999935,
+      "peak": 0.012769670225679874
+    },
+    {
+      "version": "before",
+      "repeats": 8,
+      "preparations": 32,
+      "transferred_bytes": 144970784,
+      "thread_cpu_ms": 320.563,
+      "wall_ms": 324.3900000000001,
+      "peak": 0.012769670225679874
+    }
+  ]
+}

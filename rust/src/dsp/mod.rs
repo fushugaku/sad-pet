@@ -855,6 +855,17 @@ impl Engine {
             .map_or_else(Default::default, |runtime| runtime.positions())
     }
 
+    /// Move completed table crossfades into a control-side retirement slot.
+    /// The caller releases these handles between render calls.
+    pub fn retire_wavetable_banks(
+        &mut self,
+        retired: &mut [Option<Arc<wavetable::Bank>>; crate::wavetable::OSCILLATORS],
+    ) {
+        if let Some(runtime) = &mut self.wavetable {
+            runtime.retire_into(retired);
+        }
+    }
+
     /// Exchange a sanitized preset without allocating or destroying its buffers.
     /// Structural FX/drum edits must use `prepared_clone_for(sample_rate)`.
     /// The caller retires the previous preset away from the audio callback.
@@ -917,6 +928,9 @@ impl Engine {
         std::mem::swap(&mut self.synth, &mut preset.synth_runtime.0);
         if let (Some(next), Some(old)) = (&mut preset.wavetable_runtime.0, &mut self.wavetable) {
             next.inherit(old);
+            if self.sounding == 0 {
+                next.finish_silent_crossfades();
+            }
         }
         std::mem::swap(&mut self.wavetable, &mut preset.wavetable_runtime.0);
         if let (Some(next), Some(old)) = (&mut preset.tb303_runtime.0, &mut self.tb303) {

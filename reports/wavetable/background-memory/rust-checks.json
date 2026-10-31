@@ -1,0 +1,102 @@
+[
+  {
+    "command": "cargo fmt --all -- --check",
+    "exit_code": 0,
+    "seconds": 1.77
+  },
+  {
+    "command": "cargo clippy -p sad-pet-wasm --target wasm32-unknown-unknown --locked -- -D warnings",
+    "exit_code": 0,
+    "seconds": 3.42
+  },
+  {
+    "command": "cargo test -p sad-pet-wasm --lib --locked",
+    "exit_code": 0,
+    "seconds": 11.01
+  },
+  {
+    "command": "cargo test -p sad-pet --no-default-features --lib dsp::limiter --locked",
+    "exit_code": 0,
+    "seconds": 5.37
+  },
+  {
+    "command": "cargo test -p sad-pet --no-default-features --lib dsp::tb303 --locked",
+    "exit_code": 0,
+    "seconds": 4.36
+  },
+  {
+    "command": "cargo test -p sad-pet --no-default-features --lib dsp::synth --locked",
+    "exit_code": 0,
+    "seconds": 0.16
+  },
+  {
+    "command": "cargo test -p sad-pet --no-default-features --lib dsp::sequence --locked",
+    "exit_code": 0,
+    "seconds": 1.39
+  },
+  {
+    "command": "cargo test -p sad-pet --no-default-features --lib wavetable --locked",
+    "exit_code": 0,
+    "seconds": 5.66
+  },
+  {
+    "command": "cargo test -p sad-pet --no-default-features --test wavetable --locked",
+    "exit_code": 0,
+    "seconds": 15.0
+  },
+  {
+    "command": "cargo test -p sad-pet --no-default-features --test bus --test grain_continuity --locked",
+    "exit_code": 0,
+    "seconds": 11.3
+  },
+  {
+    "command": "cargo test -p sad-pet --no-default-features --test rack_instruments --test rack --test rack_sources --locked",
+    "exit_code": 0,
+    "seconds": 38.54
+  },
+  {
+    "command": "cargo test -p sad-pet-alphaverb --release --lib --locked",
+    "exit_code": 0,
+    "seconds": 0.77
+  },
+  {
+    "command": "cargo test -p sad-pet-superecho --release --lib --locked",
+    "exit_code": 0,
+    "seconds": 0.42
+  },
+  {
+    "command": "cargo test -p sad-pet-voice --release --locked",
+    "exit_code": 0,
+    "seconds": 0.48
+  },
+  {
+    "command": "cargo clippy -p sad-pet-voice --all-targets --features cli --locked -- -D warnings",
+    "exit_code": 0,
+    "seconds": 0.11
+  },
+  {
+    "command": "cargo clippy -p sad-pet-plugin --no-default-features --all-targets --locked -- -D warnings",
+    "exit_code": 0,
+    "seconds": 3.74
+  },
+  {
+    "command": "cargo test -p sad-pet-plugin --no-default-features --locked",
+    "exit_code": 0,
+    "seconds": 34.83
+  },
+  {
+    "command": "cargo test -p sad-pet --lib --no-default-features --features source-worker --locked",
+    "exit_code": 0,
+    "seconds": 16.2
+  },
+  {
+    "command": "cargo test -p sad-pet --no-default-features --test parameter_updates --test neuropolis --test delays --test knob_feedback --test drums_processing --test drum_buffer --test modulators --test rustias_filters --test imported_fx --locked",
+    "exit_code": 0,
+    "seconds": 34.05
+  },
+  {
+    "command": "python3 -m unittest discover -s plugin/scripts -p test_*.py",
+    "exit_code": 0,
+    "seconds": 0.13
+  }
+]

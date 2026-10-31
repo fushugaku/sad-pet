@@ -46,27 +46,68 @@ pub(super) fn hoist_document_assets(document: &mut Value) {
     }
 }
 
+/// Metadata-only startup: a Wavetable Rack does not need a sample/FX scene.
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_wavetable_default_preset() -> u32 {
+    registry(|r| {
+        let i = r.index();
+        let preset = sad_pet::timbres::Kind::Wavetable.rack_instrument().unwrap();
+        let result = serde_json::to_vec(&preset).map_err(|e| e.to_string());
+        r.parts[i].host.finish(result)
+    })
+}
 #[unsafe(no_mangle)]
 pub extern "C" fn sad_wavetable_realtime_init() {
     sad_pet::dsp::wavetable::enter_realtime();
+}
+fn compile_bank(r: &mut timbres::Registry) -> Result<Bank, String> {
+    let data: Value =
+        serde_json::from_slice(&r.parts[r.index()].host.input).map_err(|e| e.to_string())?;
+    let asset = r
+        .wavetable_assets
+        .resolve(data["id"].as_str().ok_or("Choose a wavetable")?)?;
+    Bank::compile_reusing(&asset, std::mem::take(&mut r.wavetable_compile_buffer))
+}
+/// The worker copies the bank straight into its transferable JS packet.
+/// A second bank-sized Rust serialization buffer is unnecessary.
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_wavetable_prepare_view() -> u32 {
+    registry(|r| {
+        let i = r.index();
+        let result = (|| {
+            let bank = compile_bank(r)?;
+            let header = serde_json::to_vec(&bank.transport_header()).map_err(|e| e.to_string())?;
+            r.wavetable_compile_buffer = bank.into_compile_buffer();
+            Ok(header)
+        })();
+        r.parts[i].host.finish(result)
+    })
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_wavetable_prepared_pointer() -> *const f32 {
+    registry(|r| r.wavetable_compile_buffer.as_ptr())
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_wavetable_prepared_len() -> usize {
+    registry(|r| r.wavetable_compile_buffer.len() * size_of::<f32>())
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn sad_wavetable_prepare() -> u32 {
     registry(|r| {
         let i = r.index();
+        // Reuse the previous export allocation before compiling the next bank.
+        // No duplicate bank-sized transport Vec or retained previous output.
+        let mut output = std::mem::take(&mut r.parts[i].host.output);
+        output.clear();
         let result = (|| {
-            let data: Value =
-                serde_json::from_slice(&r.parts[i].host.input).map_err(|e| e.to_string())?;
-            let bank = Bank::resolve(
-                data["id"].as_str().ok_or("Choose a wavetable")?,
-                &r.wavetable_assets,
-            )?;
+            let bank = compile_bank(r)?;
             let header = serde_json::to_vec(&bank.transport_header()).map_err(|e| e.to_string())?;
-            let mut bytes = Vec::with_capacity(4 + header.len() + bank.bytes());
-            bytes.extend_from_slice(&(header.len() as u32).to_le_bytes());
-            bytes.extend_from_slice(&header);
-            bytes.extend_from_slice(&bank.transport_bytes());
-            Ok(bytes)
+            output.reserve(4 + header.len() + bank.bytes());
+            output.extend_from_slice(&(header.len() as u32).to_le_bytes());
+            output.extend_from_slice(&header);
+            bank.append_transport_bytes(&mut output);
+            r.wavetable_compile_buffer = bank.into_compile_buffer();
+            Ok(output)
         })();
         r.parts[i].host.finish(result)
     })
@@ -75,8 +116,29 @@ pub extern "C" fn sad_wavetable_prepare() -> u32 {
 pub extern "C" fn sad_wavetable_prune() {
     registry(|r| {
         r.wavetable_stage = None;
+        for part in &mut r.parts {
+            let mut retired = [const { None }; sad_pet::wavetable::OSCILLATORS];
+            part.host.engine.retire_wavetable_banks(&mut retired);
+        }
         r.wavetable_banks.retain(|bank| Arc::strong_count(bank) > 1);
     });
+}
+/// A control-side cache probe avoids re-compiling and exporting unchanged
+/// banks for repeated preset edits. It never creates a staging allocation.
+#[unsafe(no_mangle)]
+pub extern "C" fn sad_wavetable_cached() -> u32 {
+    registry(|r| {
+        let i = r.index();
+        let result = (|| {
+            let header: BankHeader =
+                serde_json::from_slice(&r.parts[i].host.input).map_err(|e| e.to_string())?;
+            header.bytes()?;
+            let cached = Bank::cached(&header.content_hash)?
+                .is_some_and(|bank| bank.frames == header.frames);
+            serde_json::to_vec(&json!({"cached":cached})).map_err(|e| e.to_string())
+        })();
+        r.parts[i].host.finish(result)
+    })
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn sad_wavetable_stage_begin() -> u32 {

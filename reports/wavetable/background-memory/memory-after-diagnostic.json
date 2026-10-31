@@ -1,0 +1,69 @@
+{
+  "scope": "Production startup and staging; 4 notes / 4 different 64-frame complex waves / U4 / all FM+sync. Absolute WASM linear memories of audio, utility, telemetry and Vocal roles, shared lossless table ROM counted once, largest transfer and worklet snapshot/record pools. Browser DOM, compiled-code cache, JS object overhead and process RSS are outside this audio-data budget.",
+  "budget_bytes": 134217728,
+  "points": [
+    {
+      "stage": "created",
+      "utility": 22020096,
+      "audio": 22020096,
+      "telemetry": 4325376,
+      "vocal": 0
+    },
+    {
+      "stage": "production-startup",
+      "utility": 131006464,
+      "audio": 150339584,
+      "telemetry": 4325376,
+      "vocal": 0
+    },
+    {
+      "stage": "factory:wt-cascade-steel:v1",
+      "bank_bytes": 4530337,
+      "utility": 131006464,
+      "audio": 150339584,
+      "telemetry": 4325376,
+      "vocal": 0
+    },
+    {
+      "stage": "factory:wt-choir-machine:v1",
+      "bank_bytes": 4530337,
+      "utility": 131006464,
+      "audio": 150339584,
+      "telemetry": 4325376,
+      "vocal": 0
+    },
+    {
+      "stage": "factory:wt-wire-chamber:v1",
+      "bank_bytes": 4530337,
+      "utility": 131006464,
+      "audio": 150339584,
+      "telemetry": 4325376,
+      "vocal": 0
+    },
+    {
+      "stage": "factory:wt-peak-migration:v1",
+      "bank_bytes": 4530337,
+      "utility": 131006464,
+      "audio": 150339584,
+      "telemetry": 4325376,
+      "vocal": 0
+    },
+    {
+      "stage": "playing",
+      "utility": 131006464,
+      "audio": 150339584,
+      "telemetry": 4325376,
+      "vocal": 0
+    }
+  ],
+  "peak_linear_bytes": 285671424,
+  "shared_rom_bytes": 22554271,
+  "max_transfer_bytes": 4530337,
+  "worklet_pool_bytes": 917504,
+  "accounted_audio_data_bytes": 313673536,
+  "accounted_audio_data_mib": 299.14239501953125,
+  "realtime_factory_reads": 0,
+  "stable_playback_memory": true,
+  "peak": 0.01397341676056385,
+  "passed": false
+}

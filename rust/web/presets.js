@@ -231,7 +231,7 @@
         };
       }
       await this.refresh();
-      if (!this.native) {
+      if (!this.native && state.startup_mode !== "wavetable") {
         const last = await this.files.store.setting("preset-selection");
         if (
           !this.actions.edited?.() &&

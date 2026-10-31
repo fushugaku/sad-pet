@@ -58,6 +58,36 @@ def strip_debug_names(data):
     return output
 
 
+def with_wavetable_payloads(data, variant=""):
+    """Lossless ROM outside linear memory; one copy per compiled module."""
+    def leb(value):
+        out = bytearray()
+        while value >= 128:
+            out.append((value & 127) | 128)
+            value >>= 7
+        out.append(value)
+        return out
+    catalog = json.loads((ROOT / "rust/assets/wavetables/manifest.json").read_text())
+    tables = [table for pack in catalog["packs"] for table in pack["tables"]]
+    result = bytearray(data)
+    total = 0
+    for index, table in enumerate(tables):
+        name = f"sadpet.wt.{index}".encode()
+        payload = (ROOT / "rust/assets/wavetables" / table["file"]).read_bytes()
+        total += len(payload)
+        section = leb(len(name)) + name + payload
+        result.append(0)
+        result.extend(leb(len(section)))
+        result.extend(section)
+    name = b"sadpet.wt.info"
+    metadata = json.dumps({"payload_bytes": total, "tables": len(tables), "variant": variant}, separators=(",", ":")).encode()
+    section = leb(len(name)) + name + metadata
+    result.append(0)
+    result.extend(leb(len(section)))
+    result.extend(section)
+    return result
+
+
 def cargo_build(env, target, features):
     """Compile the engine; each target-feature variant keeps its own target directory."""
     env = env.copy()
@@ -132,6 +162,8 @@ def main():
         if not args.keep_debug_names:
             wasm = output / name
             wasm.write_bytes(strip_debug_names(wasm.read_bytes()))
+        wasm = output / name
+        wasm.write_bytes(with_wavetable_payloads(wasm.read_bytes(), name))
     if not args.simd:
         (output / "sad_pet.simd.wasm").unlink(missing_ok=True)
     if not args.tail_call:
@@ -147,6 +179,9 @@ def main():
     # The Sampler's starter packs: CC0 kits the editor loads into IndexedDB on first use.
     shutil.copytree(ROOT / "rust/assets/sampler-packs", output / "sampler-packs", dirs_exist_ok=True)
     copy_voice_packs(output / "voices")
+    for name in ("verify-wavetable-realtime.html", "verify-wavetable-app.html"):
+        shutil.copy2(ROOT / "wasm" / name, output / name)
+    shutil.copy2(ROOT / "reports/wavetable/wasm-unison4/target-preset.json", output / "target-preset.json")
     # Without a variant the loader must not spend a request on it.
     backend = output / "browser-backend.mjs"
     source = backend.read_text()
@@ -162,10 +197,10 @@ def main():
         shutil.copy2(ROOT / "vendor" / name / "NOTICE.md", output / "licenses" / f"{name}-NOTICE.md")
     # A cached worklet/bridge from another build can otherwise run alongside
     # the new HTML. Give every runtime dependency one consistent build version.
-    runtime = sorted(p for p in output.rglob("*") if p.is_file() and p.suffix in (".js", ".mjs", ".css", ".wasm"))
+    runtime = sorted(p for p in output.rglob("*") if p.is_file() and "baseline" not in p.relative_to(output).parts and p.suffix in (".js", ".mjs", ".css", ".wasm"))
     version = hashlib.sha256(b"".join(p.read_bytes() for p in runtime)).hexdigest()[:12]
-    for path in [output / "index.html", *[p for p in runtime if p.suffix in (".js", ".mjs") and "vendor" not in p.relative_to(output).parts]]:
-        source = path.read_text()
+    for path in [output / "index.html", output / "verify-wavetable-realtime.html", output / "verify-wavetable-app.html", *[p for p in runtime if p.suffix in (".js", ".mjs") and "vendor" not in p.relative_to(output).parts]]:
+        source = path.read_text().replace("__BUILD_VERSION__", version)
         source = re.sub(r'([\"\'])(\./[^\"\'\s?]+\.(?:mjs|js|css|wasm))\1',
                         lambda match: f'{match[1]}{match[2]}?v={version}{match[1]}', source)
         path.write_text(source)

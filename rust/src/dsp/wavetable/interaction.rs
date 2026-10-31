@@ -14,6 +14,8 @@ const TAPS: usize = 641;
 pub(super) struct Kernel {
     weights: [f32; TAPS],
     pre: [f32; 63],
+    symmetric: bool,
+    pre_symmetric: bool,
 }
 impl Kernel {
     pub fn shared() -> &'static Self {
@@ -62,7 +64,17 @@ impl Kernel {
             for x in &mut pre {
                 *x /= sum;
             }
-            Kernel { weights, pre }
+            let symmetric = weights
+                .iter()
+                .zip(weights.iter().rev())
+                .all(|(a, b)| a == b);
+            let pre_symmetric = pre.iter().zip(pre.iter().rev()).all(|(a, b)| a == b);
+            Kernel {
+                weights,
+                pre,
+                symmetric,
+                pre_symmetric,
+            }
         })
     }
 }
@@ -188,6 +200,52 @@ fn dot(weights: &[f32], frames: &[Stereo]) -> Stereo {
         sum
     }
 }
+// Fold an exactly symmetric FIR without changing taps, cutoff or precision.
+// Only the final audio reduction is reassociated; feedback operator taps keep
+// their original arithmetic. The generic dot remains the fallback.
+#[inline]
+fn fir(weights: &[f32], frames: &[Stereo], symmetric: bool) -> Stereo {
+    #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+    if symmetric {
+        use core::arch::wasm32::*;
+        let half = weights.len() / 2;
+        let full = half / 4 * 4;
+        let mut a = f32x4_splat(0.0);
+        let mut b = a;
+        // Every load covers two complete stereo frames; the reversed views
+        // end before the centre tap. Both histories contain the full FIR.
+        unsafe {
+            for i in (0..full).step_by(4) {
+                let w = v128_load(weights.as_ptr().add(i).cast());
+                let x = v128_load(frames.as_ptr().add(i).cast());
+                let y = v128_load(frames.as_ptr().add(i + 2).cast());
+                let rx = v128_load(frames.as_ptr().add(weights.len() - i - 2).cast());
+                let ry = v128_load(frames.as_ptr().add(weights.len() - i - 4).cast());
+                let x = f32x4_add(x, i32x4_shuffle::<2, 3, 0, 1>(rx, rx));
+                let y = f32x4_add(y, i32x4_shuffle::<2, 3, 0, 1>(ry, ry));
+                a = f32x4_add(a, f32x4_mul(x, i32x4_shuffle::<0, 0, 1, 1>(w, w)));
+                b = f32x4_add(b, f32x4_mul(y, i32x4_shuffle::<2, 2, 3, 3>(w, w)));
+            }
+        }
+        let mut sum = [
+            (f32x4_extract_lane::<0>(a) + f32x4_extract_lane::<2>(a))
+                + (f32x4_extract_lane::<0>(b) + f32x4_extract_lane::<2>(b)),
+            (f32x4_extract_lane::<1>(a) + f32x4_extract_lane::<3>(a))
+                + (f32x4_extract_lane::<1>(b) + f32x4_extract_lane::<3>(b)),
+        ];
+        for i in full..half {
+            for c in 0..2 {
+                sum[c] += weights[i] * (frames[i][c] + frames[weights.len() - 1 - i][c]);
+            }
+        }
+        for c in 0..2 {
+            sum[c] += weights[half] * frames[half][c];
+        }
+        return sum;
+    }
+    let _ = symmetric;
+    dot(weights, frames)
+}
 impl Filter {
     fn push(&mut self, x: Stereo) {
         self.history[self.head] = x;
@@ -199,16 +257,21 @@ impl Filter {
         self.pre_history[self.pre_head + 63] = frame;
         self.pre_head = (self.pre_head + 1) % 63;
         if read {
-            dot(
+            fir(
                 &kernel.pre,
                 &self.pre_history[self.pre_head..self.pre_head + 63],
+                kernel.pre_symmetric,
             )
         } else {
             [0.0; 2]
         }
     }
     fn next(&mut self, kernel: &Kernel, dc: f32) -> Stereo {
-        let mut sum = dot(&kernel.weights, &self.history[self.head..self.head + TAPS]);
+        let mut sum = fir(
+            &kernel.weights,
+            &self.history[self.head..self.head + TAPS],
+            kernel.symmetric,
+        );
         for (c, value) in sum.iter_mut().enumerate() {
             let filtered = *value - self.input[c] + dc * self.output[c];
             self.input[c] = *value;

@@ -1,0 +1,167 @@
+{
+  "scope": "Diagnostic: warmed compiled graph, Basic Morph startup then target, no rendered samples before the first four notes. First 32 quanta, including the initial bank transition; separate from steady-state AB/BA.",
+  "binary": "dist/web/sad_pet.simd.wasm",
+  "module_sha256": "39623603e9c4034d7540e36902161709a75c1255ed2c89b968082a54b3543e30",
+  "times": [
+    {
+      "block": 0,
+      "wall_ms": 2.938959000000068,
+      "cpu_ms": 3.011
+    },
+    {
+      "block": 1,
+      "wall_ms": 3.1295420000001286,
+      "cpu_ms": 3.009
+    },
+    {
+      "block": 2,
+      "wall_ms": 2.7829579999997804,
+      "cpu_ms": 2.721
+    },
+    {
+      "block": 3,
+      "wall_ms": 2.5639580000001843,
+      "cpu_ms": 2.56
+    },
+    {
+      "block": 4,
+      "wall_ms": 2.8513340000004064,
+      "cpu_ms": 2.797
+    },
+    {
+      "block": 5,
+      "wall_ms": 2.566084000000046,
+      "cpu_ms": 2.555
+    },
+    {
+      "block": 6,
+      "wall_ms": 2.5849160000002485,
+      "cpu_ms": 2.571
+    },
+    {
+      "block": 7,
+      "wall_ms": 3.3357499999997344,
+      "cpu_ms": 3.103
+    },
+    {
+      "block": 8,
+      "wall_ms": 2.338249999999789,
+      "cpu_ms": 2.338
+    },
+    {
+      "block": 9,
+      "wall_ms": 2.365124999999807,
+      "cpu_ms": 2.354
+    },
+    {
+      "block": 10,
+      "wall_ms": 2.9746250000002874,
+      "cpu_ms": 2.833
+    },
+    {
+      "block": 11,
+      "wall_ms": 2.3437089999997625,
+      "cpu_ms": 2.343
+    },
+    {
+      "block": 12,
+      "wall_ms": 2.4624579999999696,
+      "cpu_ms": 2.414
+    },
+    {
+      "block": 13,
+      "wall_ms": 2.35550000000012,
+      "cpu_ms": 2.354
+    },
+    {
+      "block": 14,
+      "wall_ms": 2.3326250000000073,
+      "cpu_ms": 2.333
+    },
+    {
+      "block": 15,
+      "wall_ms": 2.3775829999999587,
+      "cpu_ms": 2.364
+    },
+    {
+      "block": 16,
+      "wall_ms": 2.5757079999998496,
+      "cpu_ms": 2.515
+    },
+    {
+      "block": 17,
+      "wall_ms": 3.1028339999998025,
+      "cpu_ms": 2.847
+    },
+    {
+      "block": 18,
+      "wall_ms": 2.3562919999999394,
+      "cpu_ms": 2.354
+    },
+    {
+      "block": 19,
+      "wall_ms": 2.3739160000000084,
+      "cpu_ms": 2.364
+    },
+    {
+      "block": 20,
+      "wall_ms": 3.0859999999997854,
+      "cpu_ms": 2.927
+    },
+    {
+      "block": 21,
+      "wall_ms": 2.3270000000002256,
+      "cpu_ms": 2.327
+    },
+    {
+      "block": 22,
+      "wall_ms": 2.323667000000114,
+      "cpu_ms": 2.318
+    },
+    {
+      "block": 23,
+      "wall_ms": 3.1816249999997126,
+      "cpu_ms": 2.946
+    },
+    {
+      "block": 24,
+      "wall_ms": 2.3929159999997864,
+      "cpu_ms": 2.376
+    },
+    {
+      "block": 25,
+      "wall_ms": 2.381167000000005,
+      "cpu_ms": 2.369
+    },
+    {
+      "block": 26,
+      "wall_ms": 2.3627910000000156,
+      "cpu_ms": 2.354
+    },
+    {
+      "block": 27,
+      "wall_ms": 2.4756250000000364,
+      "cpu_ms": 2.425
+    },
+    {
+      "block": 28,
+      "wall_ms": 2.327291999999943,
+      "cpu_ms": 2.32
+    },
+    {
+      "block": 29,
+      "wall_ms": 2.3572079999999005,
+      "cpu_ms": 2.346
+    },
+    {
+      "block": 30,
+      "wall_ms": 2.668250000000171,
+      "cpu_ms": 2.577
+    },
+    {
+      "block": 31,
+      "wall_ms": 2.515291000000161,
+      "cpu_ms": 2.462
+    }
+  ]
+}

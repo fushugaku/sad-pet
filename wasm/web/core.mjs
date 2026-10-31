@@ -44,7 +44,31 @@ function decode(bytes) {
 const NO_INPUT = [];
 class Abi {
   constructor(module, rate, prefix) {
-    this.wasm = new WebAssembly.Instance(module, {}).exports;
+    let wasm, pending = null, pendingIndex = -1;
+    this.factoryReads = { calls: 0, bytes: 0 };
+    const imports = { sadpet_wavetables: {
+      length: (index) => {
+        const sections = WebAssembly.Module.customSections(module, `sadpet.wt.${index}`);
+        if (sections.length !== 1) {
+          pending = null;
+          pendingIndex = -1;
+          return 0; // Let Rust return an error and release its registry borrow.
+        }
+        pending = new Uint8Array(sections[0]);
+        pendingIndex = index;
+        this.factoryReads.calls++;
+        this.factoryReads.bytes += pending.byteLength;
+        return pending.byteLength;
+      },
+      copy: (index, pointer, length) => {
+        if (index !== pendingIndex || !pending || length !== pending.byteLength)
+          throw new Error("Invalid packaged wavetable transfer.");
+        new Uint8Array(wasm.memory.buffer, pointer, length).set(pending);
+        pending = null;
+        pendingIndex = -1;
+      },
+    } };
+    this.wasm = wasm = new WebAssembly.Instance(module, imports).exports;
     this.allocateInput = this.wasm[`${prefix}_input`];
     this.outputPointer = this.wasm[`${prefix}_output`];
     this.outputLength = this.wasm[`${prefix}_output_len`];
@@ -144,6 +168,18 @@ export class Core extends Abi {
   }
   request(path, data = null) {
     return this.json("sad_command", { path, data });
+  }
+  prepareWavetable(data) {
+    if (!this.wasm.sad_wavetable_prepare_view)
+      return this.call("sad_wavetable_prepare", data);
+    const header = new Uint8Array(this.call("sad_wavetable_prepare_view", data));
+    const length = this.wasm.sad_wavetable_prepared_len();
+    const packet = new Uint8Array(4 + header.length + length);
+    new DataView(packet.buffer).setUint32(0, header.length, true);
+    packet.set(header, 4);
+    packet.set(new Uint8Array(this.wasm.memory.buffer,
+      this.wasm.sad_wavetable_prepared_pointer(), length), 4 + header.length);
+    return packet.buffer;
   }
   snapshot(target) {
     const length = this.wasm.sad_snapshot();

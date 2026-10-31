@@ -341,7 +341,7 @@ def main():
             total += len(encoded)
             id_ = f'factory:wt-{key}:v1'
             record['tables'].append({"id": id_, "name": name, "recipe": recipe, "seed": seed, "frames": FRAMES, "content_hash": digest, "file": filename, "packed_bytes": len(encoded)})
-            rust.append('    Factory { id: '+json.dumps(id_)+', name: '+json.dumps(name)+', pack: '+json.dumps(pack)+', pack_name: '+json.dumps(title)+', frames: '+str(FRAMES)+', content_hash: '+json.dumps(digest)+', bytes: include_bytes!("../../assets/wavetables/'+filename+'") },')
+            rust.append('    Factory { id: '+json.dumps(id_)+', name: '+json.dumps(name)+', pack: '+json.dumps(pack)+', pack_name: '+json.dumps(title)+', frames: '+str(FRAMES)+', content_hash: '+json.dumps(digest)+', bytes: factory_bytes!("../../assets/wavetables/'+filename+'") },')
         manifest['packs'].append(record)
     rust.append('];\n')
     (DEST / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')

@@ -1,0 +1,95 @@
+{
+  "scope": "Shipping WASM Core.process(128), four notes × four complex waves × U4; four FM operators and four hard-sync clocks in independent reciprocal rings. Includes JS ABI boundary; excludes preparation, control requests and validation. Node/V8 thread CPU + wall timing, separate from browser AudioWorklet acceptance.",
+  "sample_rate": 48000,
+  "block": 128,
+  "deadline_ms": 2.6666666666666665,
+  "notes": 4,
+  "waves": 4,
+  "unison": 4,
+  "oversampling": {
+    "fm": 8,
+    "sync": 32
+  },
+  "node": "v24.19.0",
+  "v8": "13.6.233.17-node.51",
+  "module_sha256": "3d873bcc21ecdf5f7475bab87623ad0519cb233d4c6537f54c63ebc55dcbe8be",
+  "profiled": false,
+  "warmup_audio_seconds": 1,
+  "audio_seconds_per_round": 2,
+  "rounds": 3,
+  "peak": 0.007297211326658726,
+  "summary": {
+    "blocks": 2250,
+    "p50_ms": 2.5529579999997623,
+    "p95_ms": 3.05662499999994,
+    "p99_ms": 3.3551250000000437,
+    "max_ms": 6.5926250000002256,
+    "over_budget": 757
+  },
+  "runs": [
+    {
+      "blocks": 750,
+      "p50_ms": 2.577540999999883,
+      "p95_ms": 3.061707999999726,
+      "p99_ms": 3.446416999999883,
+      "max_ms": 5.310874999999896,
+      "over_budget": 285,
+      "thread_cpu": {
+        "blocks": 750,
+        "p50_ms": 2.536,
+        "p95_ms": 2.93,
+        "p99_ms": 3.239,
+        "max_ms": 3.939,
+        "over_budget": 205
+      }
+    },
+    {
+      "blocks": 750,
+      "p50_ms": 2.5197919999995975,
+      "p95_ms": 3.090957999999773,
+      "p99_ms": 3.2918339999996533,
+      "max_ms": 3.699333000000479,
+      "over_budget": 224,
+      "thread_cpu": {
+        "blocks": 750,
+        "p50_ms": 2.49,
+        "p95_ms": 2.901,
+        "p99_ms": 3.16,
+        "max_ms": 3.518,
+        "over_budget": 144
+      }
+    },
+    {
+      "blocks": 750,
+      "p50_ms": 2.557082999999693,
+      "p95_ms": 3.031958000000486,
+      "p99_ms": 3.237250000000131,
+      "max_ms": 6.5926250000002256,
+      "over_budget": 248,
+      "thread_cpu": {
+        "blocks": 750,
+        "p50_ms": 2.522,
+        "p95_ms": 2.883,
+        "p99_ms": 3.104,
+        "max_ms": 3.818,
+        "over_budget": 170
+      }
+    }
+  ],
+  "mode": "mixed",
+  "moving_positions": false,
+  "note_numbers": [
+    48,
+    51,
+    55,
+    58
+  ],
+  "thread_cpu": {
+    "blocks": 2250,
+    "p50_ms": 2.516,
+    "p95_ms": 2.902,
+    "p99_ms": 3.159,
+    "max_ms": 3.939,
+    "over_budget": 519
+  }
+}

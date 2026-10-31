@@ -5,6 +5,45 @@ let core,
   take = null;
 let queue = Promise.resolve();
 let sourceGeneration = 0;
+let vocalSetup;
+const memoryGrowth = [];
+let wavetableWarmup;
+async function warmWavetable(rate) {
+  // V8 shares compiled WASM code across instances of this module. Exercise
+  // the heavy graph before creating the live worklet, then reset all state.
+  const preset = core.json("sad_wavetable_default_preset");
+  preset.wavetable.count = 4;
+  preset.wavetable.oscillators.forEach((o, i) => Object.assign(o, {
+    enabled: true, unison: 4, position: .27 + i * .13, voice_shift: .06,
+    fm_mode: 1, fm_index: 2, fm_source: (i + 3) % 4,
+    sync: true, sync_ratio: 2.7 + i * .2, sync_source: (i + 1) % 4,
+  }));
+  core.request("/api/preset", preset);
+  core.request("/api/transport", { playing: true, midi_gate: true });
+  for (const note of [48, 51, 55, 58])
+    core.request("/api/note", { kind: "note_on", channel: 0, note, velocity: 100 });
+  const started = performance.now(), blocks = 768;
+  const snapshot = new Uint8Array(core.wasm.sad_snapshot_capacity());
+  let peak = 0, snapshots = 0;
+  for (let i = 0; i < blocks; i++) {
+    for (const x of core.process(128)) peak = Math.max(peak, Math.abs(x));
+    if (i % 19 === 0) {
+      if (core.snapshot(snapshot)) {
+        core.wasm.sad_snapshot_ack(core.wasm.sad_snapshot_sequence(), 1);
+        snapshots++;
+      }
+      core.wasm.sad_clock_view();
+    }
+    if (i % 64 === 63) await new Promise(resolve => setTimeout(resolve, 0));
+  }
+  core.json("sad_vocal_jobs");
+  wavetableWarmup = { frames: blocks * 128, snapshots, peak, elapsed_ms: performance.now() - started,
+    linear_bytes: core.wasm.memory.buffer.byteLength };
+  core.wasm.sad_init(rate);
+}
+function ensureVocal() {
+  if (!core) core = new VocalCore(vocalSetup.module, vocalSetup.rate);
+}
 
 function wave(chunks, rate, frames) {
   const buffer = new ArrayBuffer(44 + frames * 8),
@@ -128,17 +167,25 @@ async function handle(message) {
         );
         return;
       }
+      case "memory":
+        result = { linear_bytes: core?.wasm.memory.buffer.byteLength || 0,
+          factory_reads: core?.factoryReads || { calls: 0, bytes: 0 }, growth: memoryGrowth,
+          warmup: wavetableWarmup };
+        break;
       case "vocal-init":
-        core = new VocalCore(data.module, data.rate);
+        vocalSetup = data;
         result = true;
         break;
       case "vocal-jobs":
+        if (!data.length) { result = true; break; }
+        ensureVocal();
         for (const job of data) core.command(job);
         postVocalUpdates();
         pumpVocal();
         result = true;
         break;
       case "vocal":
+        ensureVocal();
         result = core.command(data);
         if (data.type === "voice-remove") {
           postVocalUpdates();
@@ -147,15 +194,17 @@ async function handle(message) {
         break;
       case "vocal-near":
         vocalNear = Number(data) || 0;
-        pumpVocal();
+        if (core) pumpVocal();
         result = true;
         break;
       case "vocal-voice":
+        ensureVocal();
         result = core.addVoice(data.id, data.bytes);
         postVocalUpdates();
         pumpVocal();
         break;
       case "vocal-import": {
+        ensureVocal();
         core.command({
           type: "import-begin",
           language: data.language || null,
@@ -169,6 +218,7 @@ async function handle(message) {
         core = data.telemetry
           ? new TelemetryCore(data.module, data.rate)
           : new Core(data.module, data.rate);
+        if (data.wavetableWarmup) await warmWavetable(data.rate);
         result = true;
         break;
       case "scene-document":
@@ -179,7 +229,7 @@ async function handle(message) {
         result = core.call("sad_scene_prepare", data);
         break;
       case "wavetable-prepare":
-        result = core.call("sad_wavetable_prepare", data);
+        result = core.prepareWavetable(data);
         break;
       // Instrument presets: the active timbre's state, and a timbre's new
       // sound prepared here, where Source FX will read its sample.
@@ -217,6 +267,9 @@ async function handle(message) {
         self.postMessage({ id, result: songs }, transfer);
         return;
       }
+      case "wavetable-startup":
+        result = core.json("sad_wavetable_default_preset");
+        break;
       case "startup": {
         const scene = core.request("/api/startup");
         core.request("/api/timbres/reset", {});
@@ -401,5 +454,14 @@ async function handle(message) {
   }
 }
 self.onmessage = ({ data }) => {
-  queue = queue.then(() => handle(data));
+  queue = queue.then(async () => {
+    const before = core?.wasm.memory.buffer.byteLength || 0;
+    await handle(data);
+    const after = core?.wasm.memory.buffer.byteLength || 0;
+    if (after > before) {
+      memoryGrowth.push({ type: data.type, path: data.path, table: data.data?.id,
+        before, after });
+      if (memoryGrowth.length > 32) memoryGrowth.shift();
+    }
+  });
 };

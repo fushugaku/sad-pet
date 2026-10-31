@@ -1,0 +1,91 @@
+{
+  "scope": "Wavetable Rack and production worker roles, including initial single-wave Rack, table-browser metadata and target staging; 4 notes / 4 different 64-frame complex waves / U4 / all FM+sync. Absolute WASM linear memories of audio, utility, telemetry and Vocal roles, shared lossless table ROM counted once, largest transfer and worklet snapshot/record pools. Unrelated legacy sample-preset startup, browser DOM, compiled-code cache, JS object overhead and process RSS are outside this WT audio-data budget; --legacy-startup records that separate whole-app high-water diagnostic.",
+  "budget_bytes": 134217728,
+  "points": [
+    {
+      "stage": "created",
+      "utility": 22020096,
+      "audio": 22020096,
+      "telemetry": 4325376,
+      "vocal": 0
+    },
+    {
+      "stage": "wavetable-rack-ready",
+      "utility": 22020096,
+      "audio": 59834368,
+      "telemetry": 4325376,
+      "vocal": 0
+    },
+    {
+      "stage": "factory:wt-basic-morph:v1",
+      "bank_bytes": 4530337,
+      "utility": 34406400,
+      "audio": 59834368,
+      "telemetry": 4325376,
+      "vocal": 0
+    },
+    {
+      "stage": "factory:wt-cascade-steel:v1",
+      "bank_bytes": 4530337,
+      "utility": 34996224,
+      "audio": 61472768,
+      "telemetry": 4325376,
+      "vocal": 0
+    },
+    {
+      "stage": "factory:wt-choir-machine:v1",
+      "bank_bytes": 4530337,
+      "utility": 34996224,
+      "audio": 61472768,
+      "telemetry": 4325376,
+      "vocal": 0
+    },
+    {
+      "stage": "factory:wt-wire-chamber:v1",
+      "bank_bytes": 4530337,
+      "utility": 34996224,
+      "audio": 61472768,
+      "telemetry": 4325376,
+      "vocal": 0
+    },
+    {
+      "stage": "factory:wt-peak-migration:v1",
+      "bank_bytes": 4530337,
+      "utility": 34996224,
+      "audio": 61472768,
+      "telemetry": 4325376,
+      "vocal": 0
+    },
+    {
+      "stage": "playing",
+      "utility": 34996224,
+      "audio": 63111168,
+      "telemetry": 6553600,
+      "vocal": 0
+    },
+    {
+      "stage": "moving-positions",
+      "utility": 34996224,
+      "audio": 63111168,
+      "telemetry": 6553600,
+      "vocal": 0
+    },
+    {
+      "stage": "reused-compile-buffer",
+      "utility": 34996224,
+      "audio": 63111168,
+      "telemetry": 6553600,
+      "vocal": 0
+    }
+  ],
+  "peak_linear_bytes": 104660992,
+  "shared_rom_bytes": 22554339,
+  "max_transfer_bytes": 4530337,
+  "worklet_pool_bytes": 954293,
+  "accounted_audio_data_bytes": 132699961,
+  "accounted_audio_data_mib": 126.55254459381104,
+  "realtime_factory_reads": 0,
+  "stable_playback_memory": true,
+  "peak": 0.014973300509154797,
+  "passed": true
+}

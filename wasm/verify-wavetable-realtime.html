@@ -5,54 +5,86 @@
 <p>48 kHz / 128 frames · production AudioWorklet · обе обратные связи по кольцу</p>
 <label>Версия <select id="version"><option value="after">После</option><option value="before">До</option></select></label>
 <label>Режим <select id="mode"><option value="mixed">FM + Sync rings</option><option value="paired">Legacy pairs</option><option value="pm">PM + Sync rings</option></select></label>
-<label>Длительность <select id="duration"><option value="30">30 секунд</option><option value="120">120 секунд</option></select></label>
+<label>Длительность <select id="duration"><option value="30">30 секунд</option><option value="120">120 секунд</option><option value="300">5 минут</option></select></label>
+<label>Буфер <select id="latency"><option value="interactive">Interactive</option><option value="0.01" selected>10 ms</option></select></label>
+<label><input type="checkbox" id="editing"> Изменять позицию</label>
 <button id="run">Проверить</button><p id="status">Готов к проверке</p><progress id="progress" max="30" value="0"></progress><p id="metrics"></p>
 <div class="scroll"><table><thead><tr><th>Версия / режим</th><th>Audio, s</th><th>Underrun</th><th>Ошибки</th></tr></thead><tbody id="history"></tbody></table></div>
 <details><summary>Полный отчёт</summary><pre id="result"></pre></details>
 <script type="module">
 import {preparedWavetable,wavetableIds} from './wavetables.mjs';
+import {BrowserBackend} from './browser-backend.mjs';
+const BUILD='__BUILD_VERSION__';
 const $=id=>document.getElementById(id),sleep=ms=>new Promise(r=>setTimeout(r,ms));
-function rpc(port){let id=0;const pending=new Map();port.onmessage=({data:m})=>{if(m.id!==undefined){const p=pending.get(m.id);pending.delete(m.id);m.error?p?.reject(Error(m.error)):p?.resolve(m.result);}};return(type,data,path,transfer=[])=>new Promise((resolve,reject)=>{const n=++id;pending.set(n,{resolve,reject});port.postMessage({id:n,type,data,path},transfer);});}
+function rpc(port,onEvent=()=>{}){let id=0;const pending=new Map();port.onmessage=({data:m})=>{if(m.id!==undefined){const p=pending.get(m.id);pending.delete(m.id);m.error?p?.reject(Error(m.error)):p?.resolve(m.result);}else onEvent(m);};return(type,data,path,transfer=[])=>new Promise((resolve,reject)=>{const n=++id;pending.set(n,{resolve,reject});port.postMessage({id:n,type,data,path},transfer);});}
 function stats(context){const s=context.playbackStats||context.playoutStats;return s?JSON.parse(JSON.stringify(s.toJSON())):null;}
 $('run').onclick=async()=>{
- $('run').disabled=true;$('result').textContent='';let context,node,utility;
+ $('run').disabled=true;$('result').textContent='';let context,node,utility,telemetry,vocal;
  try{
- const version=$('version').value,mode=$('mode').value,seconds=Number($('duration').value),base=version==='before'?'./baseline/':'./';$('progress').max=seconds;$('progress').value=0;$('metrics').textContent='';
+ const version=$('version').value,mode=$('mode').value,seconds=Number($('duration').value),base=version==='before'?'./baseline/':'./';const asset=name=>base+name+(BUILD.startsWith('__')?'':'?v='+BUILD);$('progress').max=seconds;$('progress').value=0;$('metrics').textContent='';
  $('status').textContent='Подготовка волн…';
- context=new AudioContext({sampleRate:48000,latencyHint:'interactive'});await context.suspend();
- const bytes=await(await fetch(base+'sad_pet.simd.wasm')).arrayBuffer(),module=await WebAssembly.compile(bytes);
- const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),x=>x.toString(16).padStart(2,'0')).join('');
- utility=new Worker('./worker.mjs',{type:'module'});const worker=rpc(utility);
- await worker('init',{module,rate:48000});
- await context.audioWorklet.addModule(base+'worklet.mjs');
+ const latencyHint=$('latency').value==='interactive'?'interactive':Number($('latency').value);
+ context=new AudioContext({sampleRate:48000,latencyHint});await context.suspend();
+ let bytes=await(await fetch(asset('sad_pet.simd.wasm'))).arrayBuffer();const module=await WebAssembly.compile(bytes);
+ const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),x=>x.toString(16).padStart(2,'0')).join('');bytes=null;
+ utility=new Worker(asset('worker.mjs'),{type:'module'});const worker=rpc(utility);
+ telemetry=new Worker(asset('worker.mjs'),{type:'module'});vocal=new Worker(asset('worker.mjs'),{type:'module'});
+ const telemetryRpc=rpc(telemetry,m=>{if(m.type==='snapshot')node.port.postMessage({type:'snapshot-return',data:m.buffer,sequence:m.sequence,success:!m.error},[m.buffer]);});
+ const vocalRpc=rpc(vocal);
+ await Promise.all([worker('init',{module,rate:48000}),telemetryRpc('init',{module,rate:48000,telemetry:true}),vocalRpc('vocal-init',{module,rate:48000})]);
+ await context.audioWorklet.addModule(asset('worklet.mjs'));
  node=new AudioWorkletNode(context,'sad-pet',{numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[2],processorOptions:{module}});
- const call=rpc(node.port);let processorErrors=0;node.onprocessorerror=()=>processorErrors++;
+ const call=rpc(node.port,m=>{if(m.type==='snapshot')telemetry.postMessage(m,[m.buffer]);if(m.type==='fatal')processorErrors++;});let processorErrors=0;node.onprocessorerror=()=>processorErrors++;
  const preset=await(await fetch('./target-preset.json')).json();
  if(mode==='paired')preset.wavetable.oscillators.forEach((o,i)=>{o.fm_source=i^1;o.fm_mode=i%2?0:1;o.sync_source=i;});
  if(mode==='pm')preset.wavetable.oscillators.forEach(o=>o.fm_mode=2);
- for(const id of wavetableIds(preset)){
-  const bytes=await worker('wavetable-prepare',{id});const bank=preparedWavetable(bytes);
+ let maxTransfer=0;
+ const measuredWorker=async(type,data,path,transfer=[])=>{
+  const result=await worker(type,data,path,transfer);
+  if(type==='wavetable-prepare')maxTransfer=Math.max(maxTransfer,result.byteLength);
+  return result;
+ };
+ const backend=Object.create(BrowserBackend.prototype);
+ Object.assign(backend,{context,wavetableTail:Promise.resolve(),
+  audio:{call:(type,data,transfer=[],path)=>call(type,data,path,transfer)},
+  worker:{call:(type,data,transfer=[],path)=>measuredWorker(type,data,path,transfer)}});
+ if(version==='after')await backend.stageWavetables(wavetableIds(preset));
+ else for(const id of wavetableIds(preset)){
+  const bytes=await measuredWorker('wavetable-prepare',{id});const bank=preparedWavetable(bytes);
   const staged=await call('wavetable-stage',{...bank,idle:true},undefined,[bytes]);
   if(!staged.cached)await call('wavetable-commit');
  }
+ const editing=$('editing').checked&&version==='after';
  await call('request',preset,'/api/preset');
  await call('request',{playing:true,midi_gate:true},'/api/transport');
  for(const note of [48,51,55,58])await call('request',{kind:'note_on',channel:0,note,velocity:100},'/api/note');
  const analyser=context.createAnalyser();analyser.fftSize=256;node.connect(analyser).connect(context.destination);
- $('status').textContent='Прогрев AudioWorklet…';await context.resume();await sleep(5000);
+ const memory=async()=>({audio:await call('memory'),utility:await worker('memory'),telemetry:await telemetryRpc('memory'),vocal:await vocalRpc('memory')});
+ const memoryStart=await memory(),visibility=[{at:0,state:document.visibilityState}],visibleAt=performance.now();
+ const visibilityChanged=()=>visibility.push({at:(performance.now()-visibleAt)/1000,state:document.visibilityState});
+ document.addEventListener('visibilitychange',visibilityChanged);
+ $('status').textContent='Прогрев AudioWorklet…';await context.resume();const initialStats=stats(context);await sleep(5000);
  const start=stats(context),started=performance.now(),audioStart=context.currentTime;
  let peak=0;const data=new Float32Array(256);
  $('status').textContent='Измерение…';
- for(let s=1;s<=seconds;s++){await sleep(1000);analyser.getFloatTimeDomainData(data);for(const x of data)peak=Math.max(peak,Math.abs(x));$('progress').value=s;}
- const end=stats(context),presetBack=await call('request',null,'/api/preset');
- const result={version,mode,requested_seconds:seconds,module_sha256:hash,userAgent:navigator.userAgent,sample_rate:context.sampleRate,quantum:128,notes:[48,51,55,58],wavetable:presetBack.wavetable,wall_seconds:(performance.now()-started)/1000,audio_seconds:context.currentTime-audioStart,peak,processor_errors:processorErrors,stats_api:context.playbackStats?'playbackStats':context.playoutStats?'playoutStats':null,start,end,base_latency:context.baseLatency,output_latency:context.outputLatency};
+ for(let s=1;s<=seconds;s++){await sleep(1000);if(editing){preset.wavetable.oscillators[0].position=.1+(s%24)/30;await backend.stageWavetables(wavetableIds(preset),()=>call('request',preset,'/api/preset'));}analyser.getFloatTimeDomainData(data);for(const x of data)peak=Math.max(peak,Math.abs(x));$('progress').value=s;}
+ const end=stats(context),memoryEnd=await memory();document.removeEventListener('visibilitychange',visibilityChanged);const presetBack=await call('request',null,'/api/preset');
+ const result={version,mode,editing,latency_hint:latencyHint,memory_start:memoryStart,memory_end:memoryEnd,max_transfer_bytes:maxTransfer,visibility,initial_stats:initialStats,requested_seconds:seconds,module_sha256:hash,userAgent:navigator.userAgent,sample_rate:context.sampleRate,quantum:128,notes:[48,51,55,58],wavetable:presetBack.wavetable,wall_seconds:(performance.now()-started)/1000,audio_seconds:context.currentTime-audioStart,peak,processor_errors:processorErrors,stats_api:context.playbackStats?'playbackStats':context.playoutStats?'playoutStats':null,start,end,base_latency:context.baseLatency,output_latency:context.outputLatency};
  if(start&&end)result.delta=Object.fromEntries(Object.keys(end).filter(k=>typeof end[k]==='number'&&typeof start[k]==='number').map(k=>[k,end[k]-start[k]]));
  const underruns=result.delta?.underrunEvents??result.delta?.fallbackFramesEvents??null;
- result.passed=underruns===0&&processorErrors===0&&peak>1e-4&&Math.abs(result.audio_seconds/result.wall_seconds-1)<.02;
- $('metrics').textContent=`${result.passed?'PASS':'FAIL'} · ${underruns??'нет статистики'} underrun · ${processorErrors} ошибок · ${result.audio_seconds.toFixed(2)} s`;$('metrics').style.color=result.passed?'#a6e8bf':'#f2a9a9';
+ const overallUnderruns=end&&initialStats?(end.underrunEvents??end.fallbackFramesEvents)-(initialStats.underrunEvents??initialStats.fallbackFramesEvents):null;
+ result.overall_underruns=overallUnderruns;
+ result.linear_bytes=Math.max(...[memoryStart,memoryEnd].map(m=>Object.values(m).reduce((n,x)=>n+x.linear_bytes,0)));
+ const romInfo=WebAssembly.Module.customSections(module,'sadpet.wt.info')[0];
+ result.shared_rom_bytes=romInfo?JSON.parse(new TextDecoder().decode(romInfo)).payload_bytes+romInfo.byteLength:0;
+ result.accounted_audio_data_bytes=result.linear_bytes+result.shared_rom_bytes+maxTransfer+memoryEnd.audio.buffer_bytes;
+ result.memory_mib=result.accounted_audio_data_bytes/1048576;
+ result.audio_passed=overallUnderruns===0&&underruns===0&&processorErrors===0&&peak>1e-4&&Math.abs(result.audio_seconds/result.wall_seconds-1)<.02;
+ result.passed=result.memory_mib<=128&&result.audio_passed;
+ $('metrics').textContent=`${result.passed?'PASS':'FAIL'} · ${underruns??'нет статистики'} underrun · ${processorErrors} ошибок · ${result.audio_seconds.toFixed(2)} s · ${result.memory_mib.toFixed(2)} MiB`;$('metrics').style.color=result.passed?'#a6e8bf':'#f2a9a9';
  const row=document.createElement('tr');row.style.color=result.passed?'#a6e8bf':'#f2a9a9';for(const v of [version+' / '+mode,result.audio_seconds.toFixed(2),underruns??'—',processorErrors]){const c=document.createElement('td');c.textContent=v;row.append(c);}$('history').append(row);
  $('result').textContent=JSON.stringify(result,null,2);$('status').textContent='Проверка завершена';
  }catch(error){$('status').textContent='Ошибка';$('result').textContent=error.stack;}
- finally{node?.disconnect();await context?.close();utility?.terminate();$('run').disabled=false;}
+ finally{node?.disconnect();await context?.close();utility?.terminate();telemetry?.terminate();vocal?.terminate();$('run').disabled=false;}
 };
 </script></html>

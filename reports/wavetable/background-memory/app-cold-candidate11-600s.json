@@ -1,0 +1,4355 @@
+{
+  "scope": "Actual SAD PET index.html?engine=wavetable, production BrowserBackend, Rack, AudioWorklet and all real workers. The complete app loads and applies the target through its public API; includes UI state/telemetry and optional repeated preset edits.",
+  "requested_seconds": 600,
+  "editing": true,
+  "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+  "initial": {
+    "roles": {
+      "audio": {
+        "linear_bytes": 63111168,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "buffer_bytes": 954293
+      },
+      "worker": {
+        "linear_bytes": 33816576,
+        "factory_reads": {
+          "calls": 10,
+          "bytes": 2429216
+        },
+        "growth": [
+          {
+            "type": "init",
+            "before": 0,
+            "after": 22020096
+          },
+          {
+            "type": "wavetable-prepare",
+            "table": "factory:wt-basic-morph:v1",
+            "before": 22020096,
+            "after": 29818880
+          },
+          {
+            "type": "wavetable-prepare",
+            "table": "factory:wt-cascade-steel:v1",
+            "before": 29818880,
+            "after": 30998528
+          },
+          {
+            "type": "request",
+            "path": "/api/sequencer/catalog",
+            "before": 30998528,
+            "after": 33816576
+          }
+        ]
+      },
+      "telemetry": {
+        "linear_bytes": 6553600,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "growth": [
+          {
+            "type": "init",
+            "before": 0,
+            "after": 4325376
+          },
+          {
+            "type": "snapshot",
+            "before": 4325376,
+            "after": 6422528
+          },
+          {
+            "type": "snapshot",
+            "before": 6422528,
+            "after": 6553600
+          }
+        ]
+      },
+      "vocal": {
+        "linear_bytes": 0,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "growth": []
+      },
+      "recorder": {
+        "linear_bytes": 0,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "growth": []
+      }
+    },
+    "shared_rom_bytes": 22554339,
+    "max_transfer_bytes": 4530337,
+    "accounted_audio_data_bytes": 131520313,
+    "sample_rate": 48000,
+    "current_time": 0,
+    "context_state": "suspended",
+    "base_latency": 0.010666666666666666,
+    "output_latency": 0,
+    "playback_stats": {
+      "underrunDuration": 0,
+      "underrunEvents": 0,
+      "totalDuration": 0,
+      "averageLatency": 0,
+      "minimumLatency": 0,
+      "maximumLatency": 0
+    },
+    "fatal": null,
+    "peak": [
+      0,
+      0
+    ],
+    "notes": [],
+    "wavetable": {
+      "count": 4,
+      "engine_revision": 3,
+      "motion": {
+        "surf": 0,
+        "x": 0.5,
+        "xy_on": false,
+        "y": 0.5
+      },
+      "oscillators": [
+        {
+          "asset_id": "factory:wt-cascade-steel:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 3,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.27000001072883606,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 2.75,
+          "sync_source": 1,
+          "transpose": 0,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        },
+        {
+          "asset_id": "factory:wt-choir-machine:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 0,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.4000000059604645,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 3.25,
+          "sync_source": 2,
+          "transpose": 12,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        },
+        {
+          "asset_id": "factory:wt-wire-chamber:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 1,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.5299999713897705,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 3.75,
+          "sync_source": 3,
+          "transpose": 7,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        },
+        {
+          "asset_id": "factory:wt-peak-migration:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 2,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.6599999666213989,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 4.25,
+          "sync_source": 0,
+          "transpose": 19,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        }
+      ],
+      "schema_version": 2,
+      "seed": "6292746119127516500"
+    }
+  },
+  "start": {
+    "roles": {
+      "audio": {
+        "linear_bytes": 63111168,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "buffer_bytes": 954293
+      },
+      "worker": {
+        "linear_bytes": 33816576,
+        "factory_reads": {
+          "calls": 10,
+          "bytes": 2429216
+        },
+        "growth": [
+          {
+            "type": "init",
+            "before": 0,
+            "after": 22020096
+          },
+          {
+            "type": "wavetable-prepare",
+            "table": "factory:wt-basic-morph:v1",
+            "before": 22020096,
+            "after": 29818880
+          },
+          {
+            "type": "wavetable-prepare",
+            "table": "factory:wt-cascade-steel:v1",
+            "before": 29818880,
+            "after": 30998528
+          },
+          {
+            "type": "request",
+            "path": "/api/sequencer/catalog",
+            "before": 30998528,
+            "after": 33816576
+          }
+        ]
+      },
+      "telemetry": {
+        "linear_bytes": 6553600,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "growth": [
+          {
+            "type": "init",
+            "before": 0,
+            "after": 4325376
+          },
+          {
+            "type": "snapshot",
+            "before": 4325376,
+            "after": 6422528
+          },
+          {
+            "type": "snapshot",
+            "before": 6422528,
+            "after": 6553600
+          }
+        ]
+      },
+      "vocal": {
+        "linear_bytes": 0,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "growth": []
+      },
+      "recorder": {
+        "linear_bytes": 0,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "growth": []
+      }
+    },
+    "shared_rom_bytes": 22554339,
+    "max_transfer_bytes": 4530337,
+    "accounted_audio_data_bytes": 131520313,
+    "sample_rate": 48000,
+    "current_time": 4.938666666666666,
+    "context_state": "running",
+    "base_latency": 0.010666666666666666,
+    "output_latency": 0.024,
+    "playback_stats": {
+      "underrunDuration": 0.064,
+      "underrunEvents": 6,
+      "totalDuration": 4.0016,
+      "averageLatency": 0.023899999999999998,
+      "minimumLatency": 0,
+      "maximumLatency": 0.024
+    },
+    "fatal": null,
+    "peak": [
+      0.005307692103087902,
+      0.005113513208925724
+    ],
+    "notes": [
+      48,
+      51,
+      55,
+      58
+    ],
+    "wavetable": {
+      "count": 4,
+      "engine_revision": 3,
+      "motion": {
+        "surf": 0,
+        "x": 0.5,
+        "xy_on": false,
+        "y": 0.5
+      },
+      "oscillators": [
+        {
+          "asset_id": "factory:wt-cascade-steel:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 3,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.27000001072883606,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 2.75,
+          "sync_source": 1,
+          "transpose": 0,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        },
+        {
+          "asset_id": "factory:wt-choir-machine:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 0,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.4000000059604645,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 3.25,
+          "sync_source": 2,
+          "transpose": 12,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        },
+        {
+          "asset_id": "factory:wt-wire-chamber:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 1,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.5299999713897705,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 3.75,
+          "sync_source": 3,
+          "transpose": 7,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        },
+        {
+          "asset_id": "factory:wt-peak-migration:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 2,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.6599999666213989,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 4.25,
+          "sync_source": 0,
+          "transpose": 19,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        }
+      ],
+      "schema_version": 2,
+      "seed": "6292746119127516500"
+    }
+  },
+  "end": {
+    "roles": {
+      "audio": {
+        "linear_bytes": 64749568,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "buffer_bytes": 954293
+      },
+      "worker": {
+        "linear_bytes": 33816576,
+        "factory_reads": {
+          "calls": 10,
+          "bytes": 2429216
+        },
+        "growth": [
+          {
+            "type": "init",
+            "before": 0,
+            "after": 22020096
+          },
+          {
+            "type": "wavetable-prepare",
+            "table": "factory:wt-basic-morph:v1",
+            "before": 22020096,
+            "after": 29818880
+          },
+          {
+            "type": "wavetable-prepare",
+            "table": "factory:wt-cascade-steel:v1",
+            "before": 29818880,
+            "after": 30998528
+          },
+          {
+            "type": "request",
+            "path": "/api/sequencer/catalog",
+            "before": 30998528,
+            "after": 33816576
+          }
+        ]
+      },
+      "telemetry": {
+        "linear_bytes": 6553600,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "growth": [
+          {
+            "type": "init",
+            "before": 0,
+            "after": 4325376
+          },
+          {
+            "type": "snapshot",
+            "before": 4325376,
+            "after": 6422528
+          },
+          {
+            "type": "snapshot",
+            "before": 6422528,
+            "after": 6553600
+          }
+        ]
+      },
+      "vocal": {
+        "linear_bytes": 0,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "growth": []
+      },
+      "recorder": {
+        "linear_bytes": 0,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "growth": []
+      }
+    },
+    "shared_rom_bytes": 22554339,
+    "max_transfer_bytes": 4530337,
+    "accounted_audio_data_bytes": 133158713,
+    "sample_rate": 48000,
+    "current_time": 612.0533333333333,
+    "context_state": "running",
+    "base_latency": 0.010666666666666666,
+    "output_latency": 0.024,
+    "playback_stats": {
+      "underrunDuration": 0.064,
+      "underrunEvents": 6,
+      "totalDuration": 611.3910999999999,
+      "averageLatency": 0.024,
+      "minimumLatency": 0,
+      "maximumLatency": 0.024
+    },
+    "fatal": null,
+    "peak": [
+      0.019880838692188263,
+      0.02048189379274845
+    ],
+    "notes": [
+      48,
+      51,
+      55,
+      58
+    ],
+    "wavetable": {
+      "count": 4,
+      "engine_revision": 3,
+      "motion": {
+        "surf": 0,
+        "x": 0.5,
+        "xy_on": false,
+        "y": 0.5
+      },
+      "oscillators": [
+        {
+          "asset_id": "factory:wt-cascade-steel:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 3,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.10000000149011612,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 2.75,
+          "sync_source": 1,
+          "transpose": 0,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        },
+        {
+          "asset_id": "factory:wt-choir-machine:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 0,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.4000000059604645,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 3.25,
+          "sync_source": 2,
+          "transpose": 12,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        },
+        {
+          "asset_id": "factory:wt-wire-chamber:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 1,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.5299999713897705,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 3.75,
+          "sync_source": 3,
+          "transpose": 7,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        },
+        {
+          "asset_id": "factory:wt-peak-migration:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 2,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.6599999666213989,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 4.25,
+          "sync_source": 0,
+          "transpose": 19,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        }
+      ],
+      "schema_version": 2,
+      "seed": "6292746119127516500"
+    }
+  },
+  "points": [
+    {
+      "wall_s": 1.0130999999046326,
+      "audio_s": 1.0133333333333336,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 2.026799999952316,
+      "audio_s": 2.0266666666666673,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 3.04,
+      "audio_s": 3.04,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 4.052599999904633,
+      "audio_s": 4.053333333333335,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 5.087399999856949,
+      "audio_s": 5.088000000000001,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 6.091599999904632,
+      "audio_s": 6.090666666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 7.103699999809265,
+      "audio_s": 7.104000000000001,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 8.107599999904632,
+      "audio_s": 8.106666666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 9.120699999809265,
+      "audio_s": 9.120000000000001,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 10.133199999809266,
+      "audio_s": 10.133333333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 11.146699999809265,
+      "audio_s": 11.146666666666668,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 12.179699999809266,
+      "audio_s": 12.170666666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 13.185,
+      "audio_s": 13.184000000000001,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 14.208599999904633,
+      "audio_s": 14.208000000000002,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 15.222199999809265,
+      "audio_s": 15.221333333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 16.234699999809266,
+      "audio_s": 16.234666666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 17.256199999809265,
+      "audio_s": 17.248,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 18.271799999952318,
+      "audio_s": 18.272000000000002,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 19.2845,
+      "audio_s": 19.285333333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 20.289199999809266,
+      "audio_s": 20.288,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 21.302199999809265,
+      "audio_s": 21.301333333333332,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 22.314199999809265,
+      "audio_s": 22.314666666666668,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 23.330399999856947,
+      "audio_s": 23.328,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 24.343299999952315,
+      "audio_s": 24.341333333333335,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 25.365399999856947,
+      "audio_s": 25.365333333333332,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 26.378,
+      "audio_s": 26.378666666666668,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 27.391299999952317,
+      "audio_s": 27.392,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 28.396,
+      "audio_s": 28.39466666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 29.408799999952315,
+      "audio_s": 29.407999999999998,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 30.421,
+      "audio_s": 30.421333333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 31.433699999809264,
+      "audio_s": 31.43466666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 32.438299999952314,
+      "audio_s": 32.43733333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 33.451399999856946,
+      "audio_s": 33.45066666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 34.46479999995232,
+      "audio_s": 34.464,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 35.47789999985695,
+      "audio_s": 35.477333333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 36.49159999990463,
+      "audio_s": 36.49066666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 37.514,
+      "audio_s": 37.51466666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 38.52719999980926,
+      "audio_s": 38.528000000000006,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 39.54939999985695,
+      "audio_s": 39.54133333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 40.55569999980926,
+      "audio_s": 40.55466666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 41.58309999990463,
+      "audio_s": 41.57866666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 42.60239999985695,
+      "audio_s": 42.602666666666664,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 43.624799999952316,
+      "audio_s": 43.616,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 44.63009999990463,
+      "audio_s": 44.629333333333335,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 45.64569999980927,
+      "audio_s": 45.64266666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 46.667799999952315,
+      "audio_s": 46.66666666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 47.68059999990463,
+      "audio_s": 47.68000000000001,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 48.694299999952314,
+      "audio_s": 48.69333333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 49.70639999985695,
+      "audio_s": 49.70666666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 50.71939999985695,
+      "audio_s": 50.72,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 51.72379999995232,
+      "audio_s": 51.72266666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 52.735099999904634,
+      "audio_s": 52.736000000000004,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 53.74869999980927,
+      "audio_s": 53.74933333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 54.75289999985695,
+      "audio_s": 54.751999999999995,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 55.76629999995232,
+      "audio_s": 55.76533333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 56.7795,
+      "audio_s": 56.778666666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 57.792099999904636,
+      "audio_s": 57.792,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 58.805099999904634,
+      "audio_s": 58.80533333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 59.817699999809264,
+      "audio_s": 59.81866666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 60.8225,
+      "audio_s": 60.82133333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 61.83529999995232,
+      "audio_s": 61.834666666666664,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 62.838699999809265,
+      "audio_s": 62.83733333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 63.851599999904636,
+      "audio_s": 63.85066666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 64.86519999980926,
+      "audio_s": 64.864,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 65.88789999985696,
+      "audio_s": 65.888,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 66.90209999990464,
+      "audio_s": 66.90133333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 67.91709999990464,
+      "audio_s": 67.91466666666668,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 68.92909999990464,
+      "audio_s": 68.928,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 69.94159999990464,
+      "audio_s": 69.94133333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 70.95419999980926,
+      "audio_s": 70.95466666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 71.97659999990464,
+      "audio_s": 71.968,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 72.98219999980927,
+      "audio_s": 72.98133333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 73.99559999990463,
+      "audio_s": 73.99466666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 75.0185,
+      "audio_s": 75.01866666666668,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 76.02219999980926,
+      "audio_s": 76.02133333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 77.02489999985696,
+      "audio_s": 77.024,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 78.04159999990463,
+      "audio_s": 78.04,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 79.0515,
+      "audio_s": 79.05066666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 80.06459999990463,
+      "audio_s": 80.06400000000001,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 81.07679999995231,
+      "audio_s": 81.07733333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 82.08979999995232,
+      "audio_s": 82.09066666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 83.09429999995231,
+      "audio_s": 83.09333333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 84.11529999995231,
+      "audio_s": 84.11466666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 85.12109999990463,
+      "audio_s": 85.12,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 86.134,
+      "audio_s": 86.13333333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 87.1465,
+      "audio_s": 87.14666666666668,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 88.15059999990463,
+      "audio_s": 88.14933333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 89.15329999995231,
+      "audio_s": 89.152,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 90.17609999990464,
+      "audio_s": 90.176,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 91.17969999980926,
+      "audio_s": 91.17866666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 92.19109999990464,
+      "audio_s": 92.19200000000001,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 93.20639999985696,
+      "audio_s": 93.20533333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 94.21969999980927,
+      "audio_s": 94.21866666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 95.23159999990463,
+      "audio_s": 95.232,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 96.23609999990464,
+      "audio_s": 96.23466666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 97.2485,
+      "audio_s": 97.248,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 98.26279999995232,
+      "audio_s": 98.26133333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 99.2755,
+      "audio_s": 99.27466666666668,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 100.28789999985695,
+      "audio_s": 100.28800000000001,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 101.30179999995232,
+      "audio_s": 101.30133333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 102.31479999995231,
+      "audio_s": 102.31466666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 103.32729999995232,
+      "audio_s": 103.328,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 104.3415,
+      "audio_s": 104.34133333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 105.35539999985694,
+      "audio_s": 105.35466666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 106.36729999995232,
+      "audio_s": 106.36800000000001,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 107.38209999990464,
+      "audio_s": 107.38133333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 108.395,
+      "audio_s": 108.39466666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 109.39819999980926,
+      "audio_s": 109.39733333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 110.421,
+      "audio_s": 110.42133333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 111.4255,
+      "audio_s": 111.424,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 112.43769999980927,
+      "audio_s": 112.43733333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 113.4625,
+      "audio_s": 113.46133333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 114.48409999990463,
+      "audio_s": 114.47466666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 115.48909999990464,
+      "audio_s": 115.488,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 116.50089999985695,
+      "audio_s": 116.50133333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 117.52519999980926,
+      "audio_s": 117.52533333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 118.5295,
+      "audio_s": 118.528,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 119.55189999985694,
+      "audio_s": 119.552,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 120.56559999990463,
+      "audio_s": 120.56533333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 121.57879999995231,
+      "audio_s": 121.57866666666668,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 122.59209999990463,
+      "audio_s": 122.592,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 123.61679999995232,
+      "audio_s": 123.616,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 124.61969999980927,
+      "audio_s": 124.61866666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 125.63169999980927,
+      "audio_s": 125.63199999999999,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 126.6455,
+      "audio_s": 126.64533333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 127.65859999990464,
+      "audio_s": 127.65866666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 128.67189999985695,
+      "audio_s": 128.672,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 129.68569999980926,
+      "audio_s": 129.68533333333332,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 130.69109999990462,
+      "audio_s": 130.688,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 131.70219999980927,
+      "audio_s": 131.7013333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 132.7155,
+      "audio_s": 132.71466666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 133.7275,
+      "audio_s": 133.72799999999998,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 134.73209999990462,
+      "audio_s": 134.73066666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 135.74389999985695,
+      "audio_s": 135.744,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 136.74779999995232,
+      "audio_s": 136.74666666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 137.761,
+      "audio_s": 137.76,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 138.77309999990464,
+      "audio_s": 138.7733333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 139.7775,
+      "audio_s": 139.77599999999998,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 140.78009999990462,
+      "audio_s": 140.77866666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 141.79269999980926,
+      "audio_s": 141.792,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 142.80569999980926,
+      "audio_s": 142.80533333333332,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 143.82019999980926,
+      "audio_s": 143.81866666666664,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 144.83309999990462,
+      "audio_s": 144.832,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 145.84619999980927,
+      "audio_s": 145.84533333333331,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 146.85859999990464,
+      "audio_s": 146.85866666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 147.87169999980927,
+      "audio_s": 147.87199999999999,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 148.88479999995232,
+      "audio_s": 148.88533333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 149.8985,
+      "audio_s": 149.89866666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 150.91169999980926,
+      "audio_s": 150.91199999999998,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 151.91619999980927,
+      "audio_s": 151.91466666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 152.9295,
+      "audio_s": 152.928,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 153.94269999980926,
+      "audio_s": 153.94133333333332,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 154.95579999995232,
+      "audio_s": 154.95466666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 155.99019999980928,
+      "audio_s": 155.98933333333332,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 157.003,
+      "audio_s": 157.00266666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 158.00659999990464,
+      "audio_s": 158.0053333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 159.0197999999523,
+      "audio_s": 159.01866666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 160.04289999985696,
+      "audio_s": 160.04266666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 161.04679999995233,
+      "audio_s": 161.04533333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 162.05939999985694,
+      "audio_s": 162.05866666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 163.07269999980926,
+      "audio_s": 163.072,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 164.0855,
+      "audio_s": 164.08533333333332,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 165.09889999985694,
+      "audio_s": 165.09866666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 166.11269999980925,
+      "audio_s": 166.112,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 167.1162999999523,
+      "audio_s": 167.11466666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 168.12859999990462,
+      "audio_s": 168.128,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 169.14219999980926,
+      "audio_s": 169.14133333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 170.155,
+      "audio_s": 170.15466666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 171.16909999990463,
+      "audio_s": 171.16799999999998,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 172.18139999985695,
+      "audio_s": 172.18133333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 173.18569999980926,
+      "audio_s": 173.184,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 174.1987999999523,
+      "audio_s": 174.19733333333332,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 175.212,
+      "audio_s": 175.21066666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 176.22339999985695,
+      "audio_s": 176.224,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 177.23779999995233,
+      "audio_s": 177.2373333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 178.2515,
+      "audio_s": 178.25066666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 179.26409999990463,
+      "audio_s": 179.26399999999998,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 180.28819999980925,
+      "audio_s": 180.28799999999998,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 181.30109999990464,
+      "audio_s": 181.30133333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 182.30559999990464,
+      "audio_s": 182.304,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 183.32819999980927,
+      "audio_s": 183.328,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 184.34069999980926,
+      "audio_s": 184.34133333333332,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 185.34509999990462,
+      "audio_s": 185.344,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 186.358,
+      "audio_s": 186.35733333333332,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 187.37019999980927,
+      "audio_s": 187.37066666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 188.37459999990463,
+      "audio_s": 188.37333333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 189.3877999999523,
+      "audio_s": 189.38666666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 190.39989999985696,
+      "audio_s": 190.39999999999998,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 191.40569999980926,
+      "audio_s": 191.40266666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 192.41689999985695,
+      "audio_s": 192.416,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 193.43069999980926,
+      "audio_s": 193.42933333333332,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 194.44329999995233,
+      "audio_s": 194.44266666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 195.44709999990462,
+      "audio_s": 195.4453333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 196.47109999990462,
+      "audio_s": 196.4693333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 197.48359999990464,
+      "audio_s": 197.48266666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 198.4957999999523,
+      "audio_s": 198.49599999999998,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 199.5092999999523,
+      "audio_s": 199.50933333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 200.5222999999523,
+      "audio_s": 200.52266666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 201.52719999980926,
+      "audio_s": 201.52533333333332,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 202.53959999990462,
+      "audio_s": 202.53866666666664,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 203.54309999990463,
+      "audio_s": 203.5413333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 204.56629999995232,
+      "audio_s": 204.5653333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 205.59009999990462,
+      "audio_s": 205.58933333333331,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 206.60289999985696,
+      "audio_s": 206.60266666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 207.63729999995232,
+      "audio_s": 207.63733333333332,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 208.6415,
+      "audio_s": 208.64,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 209.65319999980926,
+      "audio_s": 209.65333333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 210.66809999990463,
+      "audio_s": 210.66666666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 211.68009999990463,
+      "audio_s": 211.67999999999998,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 212.68389999985695,
+      "audio_s": 212.68266666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 213.71759999990462,
+      "audio_s": 213.71733333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 214.731,
+      "audio_s": 214.73066666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 215.7345,
+      "audio_s": 215.73333333333332,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 216.7472999999523,
+      "audio_s": 216.74666666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 217.751,
+      "audio_s": 217.7493333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 218.76409999990463,
+      "audio_s": 218.76266666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 219.776,
+      "audio_s": 219.77599999999998,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 220.78039999985694,
+      "audio_s": 220.77866666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 221.79319999980927,
+      "audio_s": 221.792,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 222.80679999995232,
+      "audio_s": 222.80533333333332,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 223.82909999990463,
+      "audio_s": 223.82933333333332,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 224.83329999995232,
+      "audio_s": 224.832,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 225.84729999995233,
+      "audio_s": 225.84533333333331,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 226.85969999980927,
+      "audio_s": 226.85866666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 227.87279999995232,
+      "audio_s": 227.87199999999999,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 228.8865,
+      "audio_s": 228.88533333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 229.91119999980927,
+      "audio_s": 229.90933333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 230.92419999980928,
+      "audio_s": 230.92266666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 231.93819999980926,
+      "audio_s": 231.93599999999998,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 232.96019999980928,
+      "audio_s": 232.95999999999998,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 233.964,
+      "audio_s": 233.96266666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 234.9765,
+      "audio_s": 234.976,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 235.99019999980928,
+      "audio_s": 235.98933333333332,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 237.00379999995232,
+      "audio_s": 237.00266666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 238.01789999985695,
+      "audio_s": 238.016,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 239.04059999990463,
+      "audio_s": 239.04,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 240.04419999980925,
+      "audio_s": 240.04266666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 241.06669999980926,
+      "audio_s": 241.06666666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 242.07969999980926,
+      "audio_s": 242.07999999999998,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 243.08409999990462,
+      "audio_s": 243.08266666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 244.0975,
+      "audio_s": 244.096,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 245.10959999990465,
+      "audio_s": 245.10933333333332,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 246.11369999980926,
+      "audio_s": 246.112,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 247.13729999995232,
+      "audio_s": 247.136,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 248.1505,
+      "audio_s": 248.14933333333332,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 249.16339999985695,
+      "audio_s": 249.16266666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 250.17689999985694,
+      "audio_s": 250.176,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 251.1907999999523,
+      "audio_s": 251.1893333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 252.204,
+      "audio_s": 252.20266666666663,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 253.22659999990464,
+      "audio_s": 253.22666666666663,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 254.23079999995232,
+      "audio_s": 254.22933333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 255.24369999980925,
+      "audio_s": 255.24266666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 256.25709999990465,
+      "audio_s": 256.256,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 257.2795,
+      "audio_s": 257.26933333333335,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 258.28409999990464,
+      "audio_s": 258.28266666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 259.2957999999523,
+      "audio_s": 259.296,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 260.30069999980924,
+      "audio_s": 260.29866666666663,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 261.3135,
+      "audio_s": 261.312,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 262.3255,
+      "audio_s": 262.32533333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 263.3387999999523,
+      "audio_s": 263.33866666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 264.3516999998093,
+      "audio_s": 264.352,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 265.3652999999523,
+      "audio_s": 265.3653333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 266.37829999995233,
+      "audio_s": 266.3786666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 267.38289999985693,
+      "audio_s": 267.3813333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 268.39619999980926,
+      "audio_s": 268.39466666666664,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 269.409,
+      "audio_s": 269.408,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 270.42219999980927,
+      "audio_s": 270.42133333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 271.43509999990465,
+      "audio_s": 271.43466666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 272.4392999999523,
+      "audio_s": 272.4373333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 273.4505,
+      "audio_s": 273.4506666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 274.4551999998093,
+      "audio_s": 274.4533333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 275.4666999998093,
+      "audio_s": 275.46666666666664,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 276.4707999999523,
+      "audio_s": 276.46933333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 277.4845,
+      "audio_s": 277.48266666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 278.4975,
+      "audio_s": 278.496,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 279.50039999985694,
+      "audio_s": 279.4986666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 280.51389999985696,
+      "audio_s": 280.512,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 281.52609999990466,
+      "audio_s": 281.5253333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 282.5470999999046,
+      "audio_s": 282.53866666666664,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 283.5627999999523,
+      "audio_s": 283.56266666666664,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 284.56689999985696,
+      "audio_s": 284.56533333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 285.58009999990463,
+      "audio_s": 285.57866666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 286.59319999980926,
+      "audio_s": 286.592,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 287.60569999980925,
+      "audio_s": 287.6053333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 288.6097999999523,
+      "audio_s": 288.608,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 289.62309999990464,
+      "audio_s": 289.6213333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 290.63619999980926,
+      "audio_s": 290.63466666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 291.6485999999046,
+      "audio_s": 291.64799999999997,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 292.6618999998569,
+      "audio_s": 292.66133333333335,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 293.6742999999523,
+      "audio_s": 293.67466666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 294.67879999995233,
+      "audio_s": 294.6773333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 295.6906999998093,
+      "audio_s": 295.69066666666663,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 296.6951999998093,
+      "audio_s": 296.6933333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 297.6976999998093,
+      "audio_s": 297.69599999999997,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 298.7007999999523,
+      "audio_s": 298.69866666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 299.71359999990466,
+      "audio_s": 299.712,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 300.7262999999523,
+      "audio_s": 300.7253333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 301.73939999985697,
+      "audio_s": 301.73866666666663,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 302.7517999999523,
+      "audio_s": 302.752,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 303.75619999980927,
+      "audio_s": 303.75466666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 304.769,
+      "audio_s": 304.768,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 305.7721999998093,
+      "audio_s": 305.77066666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 306.7855,
+      "audio_s": 306.784,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 307.7988999998569,
+      "audio_s": 307.7973333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 308.8115999999046,
+      "audio_s": 308.81066666666663,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 309.81509999990465,
+      "audio_s": 309.81333333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 310.83369999980926,
+      "audio_s": 310.832,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 311.8415,
+      "audio_s": 311.84,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 312.8445,
+      "audio_s": 312.8426666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 313.85789999985695,
+      "audio_s": 313.856,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 314.8712999999523,
+      "audio_s": 314.8693333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 315.88419999980925,
+      "audio_s": 315.88266666666664,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 316.9017999999523,
+      "audio_s": 316.89866666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 317.91089999985695,
+      "audio_s": 317.90933333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 318.9143999998569,
+      "audio_s": 318.912,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 319.9275,
+      "audio_s": 319.9253333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 320.93959999990466,
+      "audio_s": 320.9386666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 321.9526999998093,
+      "audio_s": 321.952,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 322.9567999999523,
+      "audio_s": 322.95466666666664,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 323.96839999985696,
+      "audio_s": 323.968,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 324.9721999998093,
+      "audio_s": 324.97066666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 325.98519999980925,
+      "audio_s": 325.984,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 326.98839999985694,
+      "audio_s": 326.9866666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 328.0015999999046,
+      "audio_s": 328,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 329.0147999999523,
+      "audio_s": 329.0133333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 330.02819999980926,
+      "audio_s": 330.02666666666664,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 331.031,
+      "audio_s": 331.02933333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 332.04339999985694,
+      "audio_s": 332.04266666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 333.0475,
+      "audio_s": 333.0453333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 334.05919999980927,
+      "audio_s": 334.0586666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 335.073,
+      "audio_s": 335.072,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 336.0855999999046,
+      "audio_s": 336.0853333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 337.0997999999523,
+      "audio_s": 337.09866666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 338.11319999980924,
+      "audio_s": 338.11199999999997,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 339.1261999998093,
+      "audio_s": 339.12533333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 340.1297999999523,
+      "audio_s": 340.128,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 341.15429999995234,
+      "audio_s": 341.152,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 342.17629999995233,
+      "audio_s": 342.176,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 343.181,
+      "audio_s": 343.17866666666663,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 344.1940999999046,
+      "audio_s": 344.192,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 345.2065,
+      "audio_s": 345.20533333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 346.21929999995234,
+      "audio_s": 346.21866666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 347.2325,
+      "audio_s": 347.23199999999997,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 348.2671999998093,
+      "audio_s": 348.26666666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 349.28039999985697,
+      "audio_s": 349.28,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 350.2943999998569,
+      "audio_s": 350.29333333333335,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 351.30759999990465,
+      "audio_s": 351.3066666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 352.3110999999046,
+      "audio_s": 352.3093333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 353.3235999999046,
+      "audio_s": 353.32266666666663,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 354.33589999985696,
+      "audio_s": 354.336,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 355.3405,
+      "audio_s": 355.33866666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 356.35359999990465,
+      "audio_s": 356.352,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 357.3568999998569,
+      "audio_s": 357.3546666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 358.3695,
+      "audio_s": 358.368,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 359.38209999990465,
+      "audio_s": 359.3813333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 360.3965,
+      "audio_s": 360.39466666666664,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 361.4097999999523,
+      "audio_s": 361.408,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 362.423,
+      "audio_s": 362.42133333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 363.4360999999046,
+      "audio_s": 363.43466666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 364.448399999857,
+      "audio_s": 364.448,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 365.4525,
+      "audio_s": 365.4506666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 366.46409999990465,
+      "audio_s": 366.464,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 367.4775,
+      "audio_s": 367.4773333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 368.48179999995233,
+      "audio_s": 368.47999999999996,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 369.4945999999046,
+      "audio_s": 369.49333333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 370.49809999990464,
+      "audio_s": 370.496,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 371.5110999999046,
+      "audio_s": 371.5093333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 372.52369999980925,
+      "audio_s": 372.5226666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 373.5377999999523,
+      "audio_s": 373.536,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 374.5622999999523,
+      "audio_s": 374.56,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 375.57529999995234,
+      "audio_s": 375.5733333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 376.5778999998569,
+      "audio_s": 376.57599999999996,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 377.5805999999046,
+      "audio_s": 377.57866666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 378.594,
+      "audio_s": 378.592,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 379.6066999998093,
+      "audio_s": 379.6053333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 380.62329999995234,
+      "audio_s": 380.6213333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 381.63419999980925,
+      "audio_s": 381.632,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 382.64729999995234,
+      "audio_s": 382.6453333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 383.66,
+      "audio_s": 383.65866666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 384.6736999998093,
+      "audio_s": 384.67199999999997,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 385.68739999985695,
+      "audio_s": 385.68533333333335,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 386.70009999990464,
+      "audio_s": 386.69866666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 387.7035999999046,
+      "audio_s": 387.7013333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 388.7157999999523,
+      "audio_s": 388.71466666666663,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 389.7297999999523,
+      "audio_s": 389.728,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 390.74309999990464,
+      "audio_s": 390.74133333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 391.75559999990463,
+      "audio_s": 391.75466666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 392.77,
+      "audio_s": 392.768,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 393.78229999995233,
+      "audio_s": 393.78133333333335,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 394.78589999985695,
+      "audio_s": 394.784,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 395.7887999999523,
+      "audio_s": 395.78666666666663,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 396.8022999999523,
+      "audio_s": 396.8,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 397.81489999985695,
+      "audio_s": 397.81333333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 398.838,
+      "audio_s": 398.83733333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 399.84229999995233,
+      "audio_s": 399.84,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 400.85659999990463,
+      "audio_s": 400.8533333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 401.86759999990466,
+      "audio_s": 401.8666666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 402.881,
+      "audio_s": 402.88,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 403.89889999985695,
+      "audio_s": 403.896,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 404.9087999999523,
+      "audio_s": 404.90666666666664,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 405.9216999998093,
+      "audio_s": 405.92,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 406.9342999999523,
+      "audio_s": 406.93333333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 407.947,
+      "audio_s": 407.94666666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 408.9515,
+      "audio_s": 408.9493333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 409.9646999998093,
+      "audio_s": 409.9626666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 410.97809999990466,
+      "audio_s": 410.976,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 411.9913999998569,
+      "audio_s": 411.9893333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 413.00419999980926,
+      "audio_s": 413.00266666666664,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 414.01639999985696,
+      "audio_s": 414.01599999999996,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 415.02069999980927,
+      "audio_s": 415.01866666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 416.04159999990463,
+      "audio_s": 416.03999999999996,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 417.0472999999523,
+      "audio_s": 417.0453333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 418.0597999999523,
+      "audio_s": 418.0586666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 419.0730999999046,
+      "audio_s": 419.072,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 420.0772999999523,
+      "audio_s": 420.07466666666664,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 421.0993999998569,
+      "audio_s": 421.09866666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 422.1185,
+      "audio_s": 422.11466666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 423.1272999999523,
+      "audio_s": 423.12533333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 424.14,
+      "audio_s": 424.13866666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 425.1535,
+      "audio_s": 425.152,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 426.166,
+      "audio_s": 426.1653333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 427.189,
+      "audio_s": 427.17866666666663,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 428.19419999980926,
+      "audio_s": 428.192,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 429.2067999999523,
+      "audio_s": 429.20533333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 430.21929999995234,
+      "audio_s": 430.21866666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 431.2332999999523,
+      "audio_s": 431.23199999999997,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 432.2365999999046,
+      "audio_s": 432.23466666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 433.24829999995234,
+      "audio_s": 433.248,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 434.253,
+      "audio_s": 434.25066666666663,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 435.25559999990463,
+      "audio_s": 435.25333333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 436.26869999980926,
+      "audio_s": 436.26666666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 437.2717999999523,
+      "audio_s": 437.26933333333335,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 438.2847999999523,
+      "audio_s": 438.28266666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 439.29809999990465,
+      "audio_s": 439.296,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 440.3007999999523,
+      "audio_s": 440.29866666666663,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 441.32289999985693,
+      "audio_s": 441.32266666666663,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 442.3275,
+      "audio_s": 442.32533333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 443.33889999985695,
+      "audio_s": 443.33866666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 444.34319999980926,
+      "audio_s": 444.3413333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 445.3462999999523,
+      "audio_s": 445.344,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 446.3591999998093,
+      "audio_s": 446.3573333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 447.3715,
+      "audio_s": 447.37066666666664,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 448.3847999999523,
+      "audio_s": 448.384,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 449.3982999999523,
+      "audio_s": 449.39733333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 450.4112999999523,
+      "audio_s": 450.41066666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 451.4155,
+      "audio_s": 451.4133333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 452.4288999998569,
+      "audio_s": 452.4266666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 453.442,
+      "audio_s": 453.44,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 454.45489999985693,
+      "audio_s": 454.4533333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 455.46789999985697,
+      "audio_s": 455.46666666666664,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 456.482,
+      "audio_s": 456.47999999999996,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 457.49579999995234,
+      "audio_s": 457.49333333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 458.50739999985694,
+      "audio_s": 458.50666666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 459.5210999999046,
+      "audio_s": 459.52,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 460.534899999857,
+      "audio_s": 460.5333333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 461.5475,
+      "audio_s": 461.5466666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 462.56079999995234,
+      "audio_s": 462.56,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 463.57409999990466,
+      "audio_s": 463.5733333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 464.5785,
+      "audio_s": 464.57599999999996,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 465.603,
+      "audio_s": 465.59999999999997,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 466.6147999999523,
+      "audio_s": 466.61333333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 467.6275,
+      "audio_s": 467.62666666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 468.6410999999046,
+      "audio_s": 468.64,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 469.65459999990463,
+      "audio_s": 469.6533333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 470.6585,
+      "audio_s": 470.656,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 471.68219999980926,
+      "audio_s": 471.68,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 472.6947999999523,
+      "audio_s": 472.6933333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 473.69869999980926,
+      "audio_s": 473.69599999999997,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 474.72089999985695,
+      "audio_s": 474.71999999999997,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 475.73409999990463,
+      "audio_s": 475.73333333333335,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 476.748899999857,
+      "audio_s": 476.74666666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 477.76169999980925,
+      "audio_s": 477.76,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 478.7745,
+      "audio_s": 478.7733333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 479.787399999857,
+      "audio_s": 479.78666666666663,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 480.792,
+      "audio_s": 480.78933333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 481.80469999980926,
+      "audio_s": 481.80266666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 482.80759999990465,
+      "audio_s": 482.80533333333335,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 483.82979999995234,
+      "audio_s": 483.8293333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 484.83439999985694,
+      "audio_s": 484.832,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 485.847,
+      "audio_s": 485.8453333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 486.86059999990465,
+      "audio_s": 486.85866666666664,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 487.87419999980926,
+      "audio_s": 487.872,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 488.88719999980924,
+      "audio_s": 488.88533333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 489.89069999980927,
+      "audio_s": 489.888,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 490.902,
+      "audio_s": 490.9013333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 491.90639999985694,
+      "audio_s": 491.904,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 492.9193999998569,
+      "audio_s": 492.9173333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 493.933,
+      "audio_s": 493.93066666666664,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 494.9456999998093,
+      "audio_s": 494.944,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 495.95889999985695,
+      "audio_s": 495.95733333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 496.9626999998093,
+      "audio_s": 496.96,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 497.97569999980925,
+      "audio_s": 497.9733333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 498.9892999999523,
+      "audio_s": 498.9866666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 500.00259999990465,
+      "audio_s": 500,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 501.01469999980924,
+      "audio_s": 501.0133333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 502.0185,
+      "audio_s": 502.01599999999996,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 503.0307999999523,
+      "audio_s": 503.02933333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 504.0435,
+      "audio_s": 504.04266666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 505.04769999980925,
+      "audio_s": 505.0453333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 506.06009999990465,
+      "audio_s": 506.0586666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 507.0725,
+      "audio_s": 507.072,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 508.0857999999523,
+      "audio_s": 508.0853333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 509.0991999998093,
+      "audio_s": 509.09866666666665,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 510.104,
+      "audio_s": 510.1013333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 511.11579999995234,
+      "audio_s": 511.1146666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 512.12,
+      "audio_s": 512.1173333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 513.1327999999523,
+      "audio_s": 513.1306666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 514.1455,
+      "audio_s": 514.144,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 515.1581999998093,
+      "audio_s": 515.1573333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 516.1712999999523,
+      "audio_s": 516.1706666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 517.1755999999046,
+      "audio_s": 517.1733333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 518.1885,
+      "audio_s": 518.1866666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 519.2017999999523,
+      "audio_s": 519.2,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 520.2153999998569,
+      "audio_s": 520.2133333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 521.228,
+      "audio_s": 521.2266666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 522.2315999999047,
+      "audio_s": 522.2293333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 523.2448999998569,
+      "audio_s": 523.2426666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 524.2580999999046,
+      "audio_s": 524.256,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 525.271399999857,
+      "audio_s": 525.2693333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 526.284,
+      "audio_s": 526.2826666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 527.2877999999523,
+      "audio_s": 527.2853333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 528.3006999998092,
+      "audio_s": 528.2986666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 529.3205999999046,
+      "audio_s": 529.3173333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 530.3275999999046,
+      "audio_s": 530.3253333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 531.331,
+      "audio_s": 531.328,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 532.3421999998093,
+      "audio_s": 532.3413333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 533.3465999999046,
+      "audio_s": 533.3439999999999,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 534.3592999999523,
+      "audio_s": 534.3573333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 535.3728999998569,
+      "audio_s": 535.3706666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 536.3861999998093,
+      "audio_s": 536.384,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 537.3981999998093,
+      "audio_s": 537.3973333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 538.4118999998569,
+      "audio_s": 538.4106666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 539.4246999998093,
+      "audio_s": 539.424,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 540.428899999857,
+      "audio_s": 540.4266666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 541.4417999999523,
+      "audio_s": 541.4399999999999,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 542.4546999998092,
+      "audio_s": 542.4533333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 543.4682999999524,
+      "audio_s": 543.4666666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 544.4810999999046,
+      "audio_s": 544.48,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 545.4855,
+      "audio_s": 545.4826666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 546.4981999998092,
+      "audio_s": 546.496,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 547.511,
+      "audio_s": 547.5093333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 548.5280999999046,
+      "audio_s": 548.5253333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 549.5383999998569,
+      "audio_s": 549.536,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 550.550399999857,
+      "audio_s": 550.5493333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 551.5542999999523,
+      "audio_s": 551.552,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 552.5663999998569,
+      "audio_s": 552.5653333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 553.5797999999523,
+      "audio_s": 553.5786666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 554.583899999857,
+      "audio_s": 554.5813333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 555.597,
+      "audio_s": 555.5946666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 556.6,
+      "audio_s": 556.5973333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 557.6125999999047,
+      "audio_s": 557.6106666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 558.6250999999046,
+      "audio_s": 558.624,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 559.6382999999523,
+      "audio_s": 559.6373333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 560.6425,
+      "audio_s": 560.64,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 561.655899999857,
+      "audio_s": 561.6533333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 562.6775999999046,
+      "audio_s": 562.6666666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 563.6825,
+      "audio_s": 563.68,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 564.6952999999523,
+      "audio_s": 564.6933333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 565.7072999999523,
+      "audio_s": 565.7066666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 566.7121999998093,
+      "audio_s": 566.7093333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 567.715,
+      "audio_s": 567.712,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 568.7271999998093,
+      "audio_s": 568.7253333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 569.730899999857,
+      "audio_s": 569.728,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 570.7525999999046,
+      "audio_s": 570.752,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 571.7570999999047,
+      "audio_s": 571.7546666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 572.7696999998093,
+      "audio_s": 572.768,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 573.7732999999523,
+      "audio_s": 573.7706666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 574.776,
+      "audio_s": 574.7733333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 575.7885999999046,
+      "audio_s": 575.7866666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 576.8016999998092,
+      "audio_s": 576.8,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 577.8242999999524,
+      "audio_s": 577.8213333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 578.8290999999047,
+      "audio_s": 578.8266666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 579.8411999998093,
+      "audio_s": 579.84,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 580.8456999998093,
+      "audio_s": 580.8426666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 581.8575999999047,
+      "audio_s": 581.856,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 582.870899999857,
+      "audio_s": 582.8693333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 583.884,
+      "audio_s": 583.8826666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 584.8882999999523,
+      "audio_s": 584.8853333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 585.8905999999047,
+      "audio_s": 585.888,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 586.9026999998092,
+      "audio_s": 586.9013333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 587.9068999998569,
+      "audio_s": 587.904,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 588.9201999998093,
+      "audio_s": 588.9173333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 589.9335999999047,
+      "audio_s": 589.9306666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 590.9465999999046,
+      "audio_s": 590.944,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 591.9495,
+      "audio_s": 591.9466666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 592.962399999857,
+      "audio_s": 592.96,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 593.9805999999046,
+      "audio_s": 593.976,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 594.9892999999523,
+      "audio_s": 594.9866666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 596.0015,
+      "audio_s": 596,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 597.0140999999046,
+      "audio_s": 597.0133333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 598.0185,
+      "audio_s": 598.016,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 599.031,
+      "audio_s": 599.0293333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 600.0515999999046,
+      "audio_s": 600.048,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 601.0587999999523,
+      "audio_s": 601.056,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 602.0712999999523,
+      "audio_s": 602.0693333333334,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 603.0843999998569,
+      "audio_s": 603.0826666666667,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 604.0975999999047,
+      "audio_s": 604.096,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 605.1011999998093,
+      "audio_s": 605.0986666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 606.1040999999046,
+      "audio_s": 606.1013333333333,
+      "bytes": 133158713,
+      "underruns": 6
+    },
+    {
+      "wall_s": 607.116,
+      "audio_s": 607.1146666666666,
+      "bytes": 133158713,
+      "underruns": 6
+    }
+  ],
+  "visibility": [
+    {
+      "at": 0,
+      "state": "visible",
+      "app": "visible"
+    }
+  ],
+  "delta": {
+    "underrunDuration": 0,
+    "underrunEvents": 0,
+    "totalDuration": 607.3894999999999,
+    "averageLatency": 0.00010000000000000286,
+    "minimumLatency": 0,
+    "maximumLatency": 0
+  },
+  "overall_delta": {
+    "underrunDuration": 0.064,
+    "underrunEvents": 6,
+    "totalDuration": 611.3910999999999,
+    "averageLatency": 0.024,
+    "minimumLatency": 0,
+    "maximumLatency": 0.024
+  },
+  "wall_seconds": 607.116899999857,
+  "audio_seconds": 607.1146666666666,
+  "peak": 0.020228173583745956,
+  "max_audio_data_bytes": 133158713,
+  "max_audio_data_mib": 126.99004459381104,
+  "passed": false
+}

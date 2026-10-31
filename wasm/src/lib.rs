@@ -466,7 +466,13 @@ fn host<T>(f: impl FnOnce(&mut Host) -> T) -> T {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn sad_init(rate: u32) {
-    HOST.with(|h| *h.borrow_mut() = Some(timbres::Registry::new(rate.clamp(8_000, 384_000))));
+    HOST.with(|h| {
+        let mut host = h.borrow_mut();
+        // Reinitialization follows worker warm-up. Retire its state before
+        // constructing fresh hosts, avoiding two complete registries at once.
+        *host = None;
+        *host = Some(timbres::Registry::new(rate.clamp(8_000, 384_000)));
+    });
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn sad_output_latency(rate: u32) -> u32 {

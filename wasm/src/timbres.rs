@@ -51,6 +51,7 @@ struct Preparing {
 pub(super) struct Registry {
     pub wavetable_assets: sad_pet::wavetable::assets::Pool,
     pub wavetable_banks: Vec<Arc<sad_pet::dsp::wavetable::Bank>>,
+    pub wavetable_compile_buffer: Vec<f32>,
     pub wavetable_stage: Option<sad_pet::dsp::wavetable::BankStage>,
     pub wavetable_upload: Box<[u8; 32768]>,
     pub(crate) capture: sad_pet::capture::Writer,
@@ -79,6 +80,7 @@ impl Registry {
             wavetable_assets: Default::default(),
             capture: sad_pet::capture::Shared::prepare(rate).1,
             wavetable_banks: Vec::with_capacity(128),
+            wavetable_compile_buffer: Vec::new(),
             wavetable_stage: None,
             wavetable_upload: Box::new([0; 32768]),
             wavetable_preview: None,

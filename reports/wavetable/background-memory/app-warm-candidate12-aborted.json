@@ -1,0 +1,7 @@
+{
+  "passed": false,
+  "aborted": true,
+  "module_sha256": "6755d17e984f8a46760b121d5a04f1bff55dbc556b6f907bd92dbd36afb71f14",
+  "visible_metrics": "206 / 600 s · 2 underrun · 127.12 MiB",
+  "reason": "Stopped after the UI reported two startup underruns; this is an incomplete run and no full playbackStats report was collected."
+}

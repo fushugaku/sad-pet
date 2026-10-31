@@ -1,0 +1,61 @@
+{
+  "scope": "Four notes / four 64-frame complex waves / U4 / FM and sync. Absolute committed WASM linear memories for production audio, utility, telemetry and vocal roles; code/native V8 heap and JS buffers excluded and recorded separately where available.",
+  "points": [
+    {
+      "stage": "created",
+      "utility": 44630016,
+      "audio": 44630016,
+      "telemetry": 26935296,
+      "vocal": 26935296
+    },
+    {
+      "stage": "realtime-arena",
+      "utility": 44630016,
+      "audio": 111804416,
+      "telemetry": 26935296,
+      "vocal": 26935296
+    },
+    {
+      "stage": "factory:wt-cascade-steel:v1",
+      "bank_bytes": 4530337,
+      "utility": 61276160,
+      "audio": 111804416,
+      "telemetry": 26935296,
+      "vocal": 26935296
+    },
+    {
+      "stage": "factory:wt-choir-machine:v1",
+      "bank_bytes": 4530337,
+      "utility": 65863680,
+      "audio": 111804416,
+      "telemetry": 26935296,
+      "vocal": 26935296
+    },
+    {
+      "stage": "factory:wt-wire-chamber:v1",
+      "bank_bytes": 4530337,
+      "utility": 65863680,
+      "audio": 111804416,
+      "telemetry": 26935296,
+      "vocal": 26935296
+    },
+    {
+      "stage": "factory:wt-peak-migration:v1",
+      "bank_bytes": 4530337,
+      "utility": 65863680,
+      "audio": 111804416,
+      "telemetry": 26935296,
+      "vocal": 26935296
+    },
+    {
+      "stage": "playing",
+      "utility": 65863680,
+      "audio": 113442816,
+      "telemetry": 26935296,
+      "vocal": 26935296
+    }
+  ],
+  "max_transfer_bytes": 4530337,
+  "final_total_wasm_bytes": 233177088,
+  "final_total_wasm_mib": 222.375
+}

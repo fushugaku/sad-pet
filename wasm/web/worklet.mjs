@@ -12,6 +12,7 @@ class SadPetProcessor extends AudioWorkletProcessor {
     this.recordedFrames = 0;
     this.recordBuffer = null;
     this.recordLength = 0;
+    this.snapshotMaxBytes = 131072;
     this.snapshotPool = Array.from({ length: 3 }, () => new Uint8Array(131072));
     this.recordPool = Array.from(
       { length: 4 },
@@ -60,6 +61,7 @@ class SadPetProcessor extends AudioWorkletProcessor {
           message.success ? 1 : 0,
         );
         const capacity = this.core.wasm.sad_snapshot_capacity();
+        this.snapshotMaxBytes = Math.max(this.snapshotMaxBytes, capacity, data.byteLength);
         this.snapshotPool.push(
           data.byteLength >= capacity
             ? new Uint8Array(data)
@@ -73,7 +75,21 @@ class SadPetProcessor extends AudioWorkletProcessor {
         return;
       }
       try {
+        if (type === "memory") {
+          this.port.postMessage({ id, result: {
+            linear_bytes: this.core.wasm.memory.buffer.byteLength,
+            factory_reads: this.core.factoryReads,
+            buffer_bytes: 3 * this.snapshotMaxBytes
+              + this.recordPool.reduce((n, b) => n + b.byteLength, 0)
+              + (this.recordBuffer?.byteLength || 0),
+          } });
+          return;
+        }
         let result;
+        if (type === "wavetable-cached") {
+          this.port.postMessage({ id, result: this.core.json("sad_wavetable_cached", data) });
+          return;
+        }
         if (type === "wavetable-prune") {
           this.core.wasm.sad_wavetable_prune();
           result = true;
@@ -192,6 +208,7 @@ class SadPetProcessor extends AudioWorkletProcessor {
         if (type !== "capture-input" && (type !== "request" || data != null))
           this.stateStamp++;
         const capacity = this.core.wasm.sad_snapshot_capacity();
+        this.snapshotMaxBytes = Math.max(this.snapshotMaxBytes, capacity);
         this.snapshotPool = this.snapshotPool.map((buffer) =>
           buffer.length >= capacity ? buffer : new Uint8Array(capacity),
         );
@@ -247,6 +264,7 @@ class SadPetProcessor extends AudioWorkletProcessor {
       this.preparingTimbre = null;
       this.stateStamp++;
       const capacity = this.core.wasm.sad_snapshot_capacity();
+      this.snapshotMaxBytes = Math.max(this.snapshotMaxBytes, capacity);
       this.snapshotPool = this.snapshotPool.map(buffer => buffer.length >= capacity ? buffer : new Uint8Array(capacity));
       this.port.postMessage({ id: pending.id, result: result.context, stamp: this.stateStamp });
       this.vocalJobs();

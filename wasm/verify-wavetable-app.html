@@ -1,0 +1,58 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SAD PET · Wavetable background verification</title>
+<style>*{box-sizing:border-box}body{font:16px system-ui;background:#17191c;color:#eee;max-width:1240px;margin:24px auto;padding:0 16px}h1{font-size:22px;margin:0 0 12px}.controls{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:16px 0}label{display:flex;gap:8px;align-items:center}button,select{min-height:42px;font:inherit;background:#303740;color:inherit;border:1px solid #647080;border-radius:6px;padding:8px 12px}button:disabled{opacity:.5}iframe{width:100%;height:620px;border:1px solid #46505b;border-radius:8px;background:#111}progress{width:100%}#metrics{font-size:20px;margin:12px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}details{margin:16px 0}</style>
+<h1>Рабочий интерфейс · 4 ноты · 4 волны · U4 · FM + Sync</h1>
+<div class="controls"><label>Длительность <select id="duration"><option value="120">2 минуты</option><option value="300" selected>5 минут</option><option value="600">10 минут</option></select></label><label><input id="editing" type="checkbox"> Изменять Position</label><button id="run" disabled>Проверить</button><button id="stop" disabled>Остановить</button></div>
+<p id="status">Загрузка Wavetable Rack…</p><progress id="progress" value="0" max="300"></progress><p id="metrics"></p>
+<details id="interface"><summary>SAD PET</summary><iframe id="app" title="SAD PET Wavetable Rack" allow="autoplay" src="./index.html?engine=wavetable&amp;v=__BUILD_VERSION__"></iframe></details>
+<details><summary>Полный отчёт</summary><pre id="result"></pre></details>
+<script type="module">
+const $=id=>document.getElementById(id),sleep=ms=>new Promise(r=>setTimeout(r,ms)),frame=$('app');
+let win,preset,ready,stopRequested=false;
+$('stop').onclick=()=>{stopRequested=true;$('stop').disabled=true;};
+const api=async(path,data)=>{const response=await win.sadPetFetch(path,data===undefined?{}:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});const result=await response.json();if(!response.ok)throw Error(result.error||path);return result;};
+const diagnostic=()=>api('/api/diagnostics/memory');
+frame.onload=()=>{ready=(async()=>{
+ win=frame.contentWindow;await win.sadPetState();
+ preset=await(await fetch('./target-preset.json?v=__BUILD_VERSION__')).json();
+ await api('/api/preset',preset);
+ const d=await diagnostic();$('result').textContent=JSON.stringify({startup:d},null,2);$('status').textContent=`Готов · ${(d.accounted_audio_data_bytes/1048576).toFixed(2)} MiB · base latency ${(d.base_latency*1000).toFixed(2)} ms`; $('run').disabled=false;
+ })().catch(error=>{$('status').textContent='Ошибка';$('result').textContent=error.stack;});};
+$('run').onclick=async()=>{
+ $('run').disabled=true;$('stop').disabled=false;stopRequested=false;$('result').textContent='';$('metrics').textContent='';
+ let result;
+ try{
+ const cold=await diagnostic();
+ await win.sadPetResume();
+ const initial=await diagnostic();
+ await api('/api/transport',{playing:true,midi_gate:true});
+ for(const note of [48,51,55,58])await api('/api/note',{kind:'note_on',channel:0,note,velocity:100});
+ $('status').textContent='Прогрев AudioWorklet…';await sleep(5000);
+ const start=await diagnostic(),seconds=Number($('duration').value),editing=$('editing').checked,at=performance.now(),points=[];
+ let peak=0,maxMemory=start.accounted_audio_data_bytes;
+ const visibility=[{at:0,state:document.visibilityState,app:win.document.visibilityState}];
+ const changed=()=>visibility.push({at:(performance.now()-at)/1000,state:document.visibilityState,app:win.document.visibilityState});document.addEventListener('visibilitychange',changed);
+ $('progress').max=seconds;$('progress').value=0;$('status').textContent='Измерение…';
+ for(let i=1;i<=seconds&&!stopRequested;i++){
+  await sleep(1000);
+  if(editing){preset.wavetable.oscillators[0].position=.1+(i%24)/30;await api('/api/preset',preset);}
+  const d=await diagnostic();maxMemory=Math.max(maxMemory,d.accounted_audio_data_bytes);peak=Math.max(peak,...(d.peak||[0]));
+  points.push({wall_s:(performance.now()-at)/1000,audio_s:d.current_time-start.current_time,bytes:d.accounted_audio_data_bytes,underruns:d.playback_stats?.underrunEvents});$('progress').value=i;
+  $('metrics').textContent=`${i} / ${seconds} s · ${(d.playback_stats?.underrunEvents??0)-(cold.playback_stats?.underrunEvents??0)} underrun · ${(maxMemory/1048576).toFixed(2)} MiB`;
+ }
+ const end=await diagnostic();document.removeEventListener('visibilitychange',changed);
+ const delta=(a,b)=>a&&b?Object.fromEntries(Object.keys(b).filter(k=>typeof a[k]==='number'&&typeof b[k]==='number').map(k=>[k,b[k]-a[k]])):null;
+ const stats=delta(start.playback_stats,end.playback_stats),overall=delta(cold.playback_stats,end.playback_stats);
+ result={scope:'Actual SAD PET index.html?engine=wavetable, production BrowserBackend, Rack, AudioWorklet and all real workers. The complete app loads and applies the target through its public API; includes UI state/telemetry and optional repeated preset edits. Overall playbackStats start before AudioContext.resume, including the first live audio block.',requested_seconds:seconds,editing,user_agent:navigator.userAgent,cold,initial,start,end,points,visibility,delta:stats,overall_delta:overall,wall_seconds:(performance.now()-at)/1000,audio_seconds:end.current_time-start.current_time,peak,max_audio_data_bytes:maxMemory,max_audio_data_mib:maxMemory/1048576};
+ result.aborted=stopRequested;result.completed_seconds=points.length;
+ result.passed=!stopRequested&&overall?.underrunEvents===0&&end.context_state==='running'&&!end.fatal&&peak>1e-4&&maxMemory<=128*1048576&&end.wavetable?.count===4&&end.wavetable.oscillators.every(o=>o.unison===4&&o.fm_mode===1&&o.sync)&&end.notes?.length===4&&Math.abs(result.audio_seconds/result.wall_seconds-1)<.02;
+ $('metrics').textContent=`${result.passed?'PASS':'FAIL'} · ${overall?.underrunEvents??'—'} underrun · ${result.max_audio_data_mib.toFixed(2)} MiB · ${result.audio_seconds.toFixed(2)} s`;
+ $('metrics').style.color=result.passed?'#a6e8bf':'#f2a9a9';$('status').textContent='Проверка завершена';
+ }catch(error){$('status').textContent='Ошибка';result={passed:false,error:error.stack};}
+ finally{
+  for(const note of [48,51,55,58])await api('/api/note',{kind:'note_off',channel:0,note,velocity:0}).catch(()=>{});
+  await api('/api/transport',{playing:false}).catch(()=>{});await api('/api/quit',{}).catch(()=>{});
+  $('result').textContent=JSON.stringify(result,null,2);$('run').disabled=false;$('stop').disabled=true;
+ }
+};
+</script></html>

@@ -8,9 +8,10 @@ const module = await WebAssembly.compile(
   await readFile(new URL("../dist/web/sad_pet.wasm", import.meta.url)),
 );
 assert.deepEqual(
-  WebAssembly.Module.imports(module),
-  [],
-  "WASM must not need a server, WASI or native imports",
+  WebAssembly.Module.imports(module).sort((a,b)=>a.name.localeCompare(b.name)),
+  [{ module: "sadpet_wavetables", name: "copy", kind: "function" },
+   { module: "sadpet_wavetables", name: "length", kind: "function" }],
+  "Only immutable packaged wavetable reads are imported; no server, WASI or native imports",
 );
 const utility = new Core(module);
 const utilityInitialMemory = utility.wasm.memory.buffer.byteLength;
@@ -373,15 +374,11 @@ for (const [index, track] of catalog.entries()) {
     audible = bankPlayer.process(4096).some((v) => Math.abs(v) > 0.001);
   assert.ok(audible, `${track.id} must load and play`);
 }
-// The embedded wavetable library and fixed engine state are part of startup
-// memory. Bound that separately from scratch growth while exporting samples.
+// Absolute linear-memory high-water gate, including all sample export scratch.
 const firstBankMemory = utility.wasm.memory.buffer.byteLength;
 assert.ok(utilityInitialMemory < 48 * 1024 * 1024, "engine startup memory exceeds its budget");
-assert.ok(firstBankMemory - utilityInitialMemory < 96 * 1024 * 1024,
-  "sample export scratch exceeds its bounded heap-growth budget");
-// Linear memory is an allocator high-water mark, not live retained bytes.
-// Keep a fixed 48 MiB startup + 96 MiB scratch ceiling; this does not claim
-// that the complete app fits the old 128 MiB mobile acceptance budget.
+assert.ok(firstBankMemory <= 128 * 1024 * 1024,
+  "sample sweep exceeds the absolute 128 MiB linear-memory budget");
 console.log("sample-bank memory", {startup: utilityInitialMemory, afterSweep: firstBankMemory});
 for (const id of ["matrix-pov", "harvest-dawn-loop"]) {
   const index = catalog.findIndex((track) => track.id === id);

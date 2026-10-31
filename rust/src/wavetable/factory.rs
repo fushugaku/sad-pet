@@ -17,7 +17,31 @@ pub struct Factory {
     pub frames: usize,
     pub content_hash: &'static str,
     #[serde(skip)]
-    bytes: &'static [u8],
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    bytes: Option<&'static [u8]>,
+}
+// Native libraries embed PCM in read-only data. Browser packages keep the same
+// gzip bytes in module custom sections shared by all instances, not copied into
+// every linear memory. Only worker/control-side loading calls these imports.
+#[cfg(not(target_arch = "wasm32"))]
+macro_rules! factory_bytes {
+    ($path:literal) => {
+        Some(include_bytes!($path))
+    };
+}
+#[cfg(target_arch = "wasm32")]
+macro_rules! factory_bytes {
+    ($path:literal) => {
+        None
+    };
+}
+#[cfg(target_arch = "wasm32")]
+#[link(wasm_import_module = "sadpet_wavetables")]
+unsafe extern "C" {
+    #[link_name = "length"]
+    fn payload_length(index: u32) -> usize;
+    #[link_name = "copy"]
+    fn payload_copy(index: u32, pointer: *mut u8, length: usize);
 }
 include!("factory_data.rs");
 
@@ -37,9 +61,29 @@ impl Factory {
         {
             return Ok(asset);
         }
+        #[cfg(target_arch = "wasm32")]
+        let payload = {
+            let index = FACTORY
+                .iter()
+                .position(|entry| entry.id == self.id)
+                .unwrap() as u32;
+            let length = unsafe { payload_length(index) };
+            if length == 0 || length > 2 * super::FRAME_SIZE * super::MAX_FRAMES + 4096 {
+                return Err("Missing or invalid packaged wavetable payload".into());
+            }
+            let mut bytes = vec![0; length];
+            unsafe {
+                payload_copy(index, bytes.as_mut_ptr(), length);
+            }
+            bytes
+        };
+        #[cfg(target_arch = "wasm32")]
+        let compressed = payload.as_slice();
+        #[cfg(not(target_arch = "wasm32"))]
+        let compressed = self.bytes.unwrap();
         let length = self.frames * super::FRAME_SIZE * 2;
         let mut bytes = Vec::with_capacity(length);
-        GzDecoder::new(self.bytes)
+        GzDecoder::new(compressed)
             .take(length as u64 + 1)
             .read_to_end(&mut bytes)
             .map_err(|e| format!("Factory wavetable: {e}"))?;

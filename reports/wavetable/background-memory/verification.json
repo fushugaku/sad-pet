@@ -1,0 +1,64 @@
+{
+  "date": "2026-11-01",
+  "baseline_commit": "39e65e65385dd96285e750d052c36b07c80d912c",
+  "candidate_files": {
+    "sad_pet.wasm": {
+      "sha256": "6f7abe6f5e424a78bd558feb280195503745c22b6c3e2380d2142a2d95cd54fb",
+      "bytes": 49133707
+    },
+    "sad_pet.simd.wasm": {
+      "sha256": "39623603e9c4034d7540e36902161709a75c1255ed2c89b968082a54b3543e30",
+      "bytes": 49290136
+    },
+    "core.mjs": {
+      "sha256": "f27bf29cdcc804b0542f633e3bbb542d8c6412f43022eec29487fe131561fe0d",
+      "bytes": 8259
+    },
+    "worker.mjs": {
+      "sha256": "b0abc8dbb7fe1300d2c3d65452fe431d87e681e829e21770dd491659bb954d99",
+      "bytes": 15617
+    },
+    "worklet.mjs": {
+      "sha256": "afc92e57bf931ddb9d29d52a2211664fd03e356281dc985d6d19ec269ddb9339",
+      "bytes": 17206
+    },
+    "browser-backend.mjs": {
+      "sha256": "d0a0079796086d259fa29aa9d39ed6b8f5866af24ba45dadc4700788b16832d0",
+      "bytes": 46709
+    },
+    "browser.js": {
+      "sha256": "029e45f36ea676b0032b7b70dc262d6a6db76c2474a16c6e404f652cb1d6e8d5",
+      "bytes": 1173
+    },
+    "index.html": {
+      "sha256": "8867826b099f38867f3c6d7fda2d46a924e6f1aa28d8ba54c1915ed7b5e726bf",
+      "bytes": 35756
+    },
+    "presets.js": {
+      "sha256": "f83e9f906d9e801b427b8e129b535615c8b4772eec4a645edbcb01237db21370",
+      "bytes": 69941
+    },
+    "verify-wavetable-app.html": {
+      "sha256": "75143dd7deeeb5a5b39551d0971daeadca006ad4e720981917b7f1ecad2608b4",
+      "bytes": 6835
+    }
+  },
+  "local_browser_passed": true,
+  "audio_seconds": 605.2693333333333,
+  "memory_max_bytes": 133289785,
+  "overall_underruns": 0,
+  "pcm_cases": 21,
+  "pcm_passed": true,
+  "node_commands": 51,
+  "node_passed": true,
+  "additional_final_rust_checks": {
+    "wasm_lib": 9,
+    "wavetable_lib": 18,
+    "rack_integrations": "wavetable, rack, rack_sources, rack_instruments",
+    "simd_clippy": "-D warnings"
+  },
+  "scope": "WT audio-data budget including all real WASM roles, shared lossless ROM, maximum transfer and worklet pools; browser RSS is outside this budget. IAB hidden, Page Visibility visible. See README for full method and limits.",
+  "deployment": "Pending Pages workflow and published-artifact verification.",
+  "base_latency_seconds": 0.010666666666666666,
+  "output_latency_seconds": 0.024
+}

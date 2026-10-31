@@ -50,6 +50,30 @@ fn sum(initial: f32, x: v128) -> f32 {
 fn wrapped(p: v128) -> v128 {
     f64x2_sub(p, f64x2_floor(p))
 }
+// Externally clocked sync never reads these base clocks inside the substep
+// loop. Advance afterwards, preserving every f64 addition (including routing
+// changes on the next sample), without keeping eight extra vectors live.
+#[inline(always)]
+fn advance_master(mut phase: v128, step: v128, factor: usize) -> v128 {
+    let end = f64x2_add(phase, f64x2_mul(step, f64x2_splat((factor + 1) as f64)));
+    let safe = v128_and(
+        f64x2_ge(phase, f64x2_splat(0.0)),
+        v128_and(
+            f64x2_ge(step, f64x2_splat(0.0)),
+            f64x2_lt(end, f64x2_splat(1.0)),
+        ),
+    );
+    if i64x2_bitmask(safe) == 3 {
+        for _ in 0..factor {
+            phase = f64x2_add(phase, step);
+        }
+    } else {
+        for _ in 0..factor {
+            phase = wrapped(f64x2_add(phase, step));
+        }
+    }
+    phase
+}
 #[cold]
 #[inline(never)]
 fn boundaries(phase: v128, step: v128) -> v128 {
@@ -383,10 +407,22 @@ fn render_inner<const FULL: bool>(
                 } else {
                     phases[i].map(|p| f64x2_add(p, f64x2_splat(pm)))
                 };
-                let read_floor = read_phase.map(|v| f64x2_floor(v));
+                // FM phases have already been wrapped by the previous step.
+                // Keep the rounded-to-one boundary and signed-zero behavior.
+                let read_floor = read_phase.map(|v| {
+                    if FULL {
+                        v128_and(f64x2_ge(v, f64x2_splat(1.0)), f64x2_splat(1.0))
+                    } else {
+                        f64x2_floor(v)
+                    }
+                });
                 let normalized = std::array::from_fn(|j| {
                     let q = f64x2_sub(read_phase[j], read_floor[j]);
-                    v128_bitselect(f64x2_splat(0.0), q, f64x2_ge(q, f64x2_splat(1.0)))
+                    if FULL {
+                        f64x2_add(q, f64x2_splat(0.0))
+                    } else {
+                        v128_bitselect(f64x2_splat(0.0), q, f64x2_ge(q, f64x2_splat(1.0)))
+                    }
                 });
                 let step = steps[i].map(|s| f64x2_add(s, f64x2_splat(fm_step)));
                 let values = Batch4::pair(
@@ -432,10 +468,14 @@ fn render_inner<const FULL: bool>(
                 } else {
                     [edges(read_phase[0], step[0]), edges(read_phase[1], step[1])]
                 };
-                let master_next = [
-                    f64x2_add(master[i][0], masters[i][0]),
-                    f64x2_add(master[i][1], masters[i][1]),
-                ];
+                let master_next = if FULL {
+                    [f64x2_splat(0.0); 2]
+                } else {
+                    [
+                        f64x2_add(master[i][0], masters[i][0]),
+                        f64x2_add(master[i][1], masters[i][1]),
+                    ]
+                };
                 if FULL || sync[i] {
                     let event = if !FULL && clock == i {
                         std::array::from_fn(|j| {
@@ -467,7 +507,9 @@ fn render_inner<const FULL: bool>(
                     }
                 }
                 phases[i] = next;
-                master[i] = master_next.map(wrapped);
+                if !FULL {
+                    master[i] = master_next.map(wrapped);
+                }
                 if FULL || needed[i] {
                     new_taps[i] = sum(0.0, f32x4_mul(t, tg[i]));
                 }
@@ -498,6 +540,13 @@ fn render_inner<const FULL: bool>(
             }
         } else {
             state.filter.push(frame);
+        }
+    }
+    if FULL {
+        for i in 0..OSCILLATORS {
+            for j in 0..2 {
+                master[i][j] = advance_master(master[i][j], masters[i][j], factor);
+            }
         }
     }
     for (p, pole) in poles.into_iter().enumerate() {

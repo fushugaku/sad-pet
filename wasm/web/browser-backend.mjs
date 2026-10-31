@@ -101,12 +101,15 @@ export class BrowserBackend {
     this.wavetableTail = Promise.resolve();
   }
   async initialize() {
-    this.sourceGeneration = 1;
+    this.startupMode = new URL(location.href).searchParams.get("engine") === "wavetable" ? "wavetable" : null;
+    this.sourceGeneration = this.startupMode ? 0 : 1;
     if (!window.AudioContext || !window.AudioWorkletNode)
       throw new Error(
         "This browser needs Web Audio with AudioWorklet support.",
       );
-    this.context = new AudioContext({ latencyHint: "interactive" });
+    // A short hardware queue absorbs background scheduling jitter without
+    // changing the 128-frame DSP quantum or the synthesis quality.
+    this.context = new AudioContext({ latencyHint: 0.01 });
     this.rate = this.context.sampleRate;
     this.context.onstatechange = () => {
       this.updateStatus();
@@ -144,8 +147,12 @@ export class BrowserBackend {
       new URL("./sad_pet.simd.wasm", import.meta.url),
       new URL("./sad_pet.tc.wasm", import.meta.url),
     );
+    const rom = WebAssembly.Module.customSections(module, "sadpet.wt.info")[0];
+    const moduleInfo = rom ? JSON.parse(new TextDecoder().decode(rom)) : null;
+    this.engineVariant = moduleInfo?.variant || null;
+    this.wavetableRomBytes = rom ? moduleInfo.payload_bytes + rom.byteLength : 0;
     await Promise.all([
-      this.worker.call("init", { module, rate: this.rate }),
+      this.worker.call("init", { module, rate: this.rate, wavetableWarmup: !!this.startupMode }),
       this.telemetry.call("init", { module, rate: this.rate, telemetry: true }),
       this.vocal.call("vocal-init", { module, rate: this.rate }),
       this.context.audioWorklet.addModule(new URL("./worklet.mjs", import.meta.url)),
@@ -154,7 +161,8 @@ export class BrowserBackend {
       const assets=await userWavetables();
       for(const asset of assets) await this.worker.call("request",[asset],[],"/api/wavetables/restore");
     } catch(error) {this.wavetableStorageError=error.message;}
-    const prepared = await this.worker.call("startup", {
+    const initialPreset = this.startupMode ? await this.worker.call("wavetable-startup") : null;
+    const prepared = initialPreset ? null : await this.worker.call("startup", {
       generation: this.sourceGeneration,
     });
     this.node = new AudioWorkletNode(this.context, "sad-pet", {
@@ -180,8 +188,16 @@ export class BrowserBackend {
     };
     this.monitor = this.context.createGain();
     this.node.connect(this.monitor).connect(this.context.destination);
-    await this.loadVoices();
-    await this.audio.call("scene-load", prepared, [prepared]);
+    if (initialPreset) {
+      await this.stageWavetables(wavetableIds(initialPreset),
+        () => this.audio.call("request", initialPreset, [], "/api/preset"));
+      const context = await this.audio.call("request", null, [], "/api/timbres");
+      const part = context.timbres.find((t) => t.id === context.active);
+      part.kind = "rack";
+      part.name = initialPreset.name;
+      await this.audio.call("request", context, [], "/api/timbres/context");
+      await this.worker.call("request", context, [], "/api/timbres/context");
+    } else await this.audio.call("scene-load", prepared, [prepared]);
     this.state = await this.audio.call("request", null, [], "/api/state");
     this.viewStamp = this.audio.stamp || 0;
     const quit = document.getElementById("quit");
@@ -205,9 +221,16 @@ export class BrowserBackend {
     if (!ids.length) return apply?.();
     const task = this.wavetableTail.catch(() => {}).then(async () => {
       await this.audio.call("wavetable-prune");
+      this.wavetableHeaders ??= new Map();
       for (const id of new Set(ids)) {
+        const header = this.wavetableHeaders.get(id);
+        if (header && (await this.audio.call("wavetable-cached", header)).cached) continue;
         const bytes = await this.worker.call("wavetable-prepare", {id});
+        this.wavetableMaxTransferBytes = Math.max(this.wavetableMaxTransferBytes || 0, bytes.byteLength);
         const bank = preparedWavetable(bytes);
+        if (this.wavetableHeaders.size >= 128 && !this.wavetableHeaders.has(id))
+          this.wavetableHeaders.delete(this.wavetableHeaders.keys().next().value);
+        this.wavetableHeaders.set(id, bank.header);
         const staged = await this.audio.call("wavetable-stage",
           {...bank,idle:this.context.state !== "running"},[bytes]);
         if (!staged.cached) await this.audio.call("wavetable-commit");
@@ -232,10 +255,13 @@ export class BrowserBackend {
     return result;
   }
   resume() {
-    if (this.context?.state === "suspended")
-      this.context.resume().catch((error) => {
+    if (this.resuming) return this.resuming;
+    if (this.context?.state !== "suspended") return Promise.resolve();
+    return this.resuming = this.context.resume()
+      .catch((error) => {
         this.fatal = error.message;
-      });
+      })
+      .finally(() => { this.resuming = null; });
   }
   updateMonitor() {
     this.monitor?.gain.setTargetAtTime(
@@ -294,6 +320,9 @@ export class BrowserBackend {
       }),
     );
   }
+  ensureVoices() {
+    return this.voicesReady ??= this.loadVoices();
+  }
   async loadVoices() {
     try {
       for (const voice of await listVoices())
@@ -312,6 +341,7 @@ export class BrowserBackend {
     } else if (message.type === "vocal-error") this.vocalError = message.error;
   }
   async vocalRequest(route, data, options) {
+    await this.ensureVoices();
     if (route === "/api/vocal/voices") {
       const [packs, voices] = await Promise.all([
         this.packs(),
@@ -434,7 +464,7 @@ export class BrowserBackend {
     if (!data) return status();
     if (data.active) {
       if (take?.active) throw new Error("The Sampler is already recording.");
-      this.resume();
+      await this.resume();
       this.captureModule ??= this.context.audioWorklet.addModule(new URL("./capture.mjs", import.meta.url));
       await this.captureModule;
       const threshold = data.threshold == null ? 0 : 10 ** (Math.min(0, Number(data.threshold)) / 20);
@@ -507,6 +537,7 @@ export class BrowserBackend {
       // A score sung by a pack waits for the pack, in order with other jobs.
       const voices = message.jobs.map((job) => job.settings?.score?.voice).filter(Boolean);
       this.vocalJobs = (this.vocalJobs ?? Promise.resolve())
+        .then(() => this.ensureVoices())
         .then(() => this.loadPacks(voices))
         .then(() => this.vocal.call("vocal-jobs", message.jobs))
         .catch((error) => {
@@ -700,6 +731,7 @@ export class BrowserBackend {
   snapshot() {
     return {
       ...this.state,
+      startup_mode: this.startupMode,
       // It plays kits, and sings a Rack's Vocal module as well.
       features: { sampler: true, rack_vocal: true },
       instance_id: this.instanceId,
@@ -765,9 +797,9 @@ export class BrowserBackend {
           if (this.midiClock.input(event)) return;
           // MIDI learn sees controllers here, without waiting for a state poll.
           window.SadMidiLearn?.bytes(event.data);
-          this.resume();
-          this.audio
-            .call("request", [...event.data], [], "/api/midi-bytes")
+          const bytes = [...event.data];
+          this.resume()
+            .then(() => this.audio.call("request", bytes, [], "/api/midi-bytes"))
             .catch(() => {});
         };
       }
@@ -799,9 +831,24 @@ export class BrowserBackend {
         || ["/api/sampler/upload", "/api/sampler/process", "/api/sampler/analyze"].includes(route);
       const data =
         options.body === undefined || binary ? null : JSON.parse(options.body);
+      if ((route === "/api/note" && (data?.kind === "note_on" || this.resuming)) || route === "/api/midi-bytes"
+        || (route === "/api/transport" && data?.playing)) await this.resume();
       let result,
         mime = "application/json";
-      if (route === "/api/state") {
+      if (route === "/api/diagnostics/memory") {
+        const roles = Object.fromEntries(await Promise.all(["audio", "worker", "telemetry", "vocal", "recorder"]
+          .map(async (name) => [name, await this[name].call("memory")] )));
+        const stats = this.context.playbackStats || this.context.playoutStats;
+        const linear = Object.values(roles).reduce((sum, role) => sum + role.linear_bytes, 0);
+        const transfer = this.wavetableMaxTransferBytes || 0;
+        result = { roles, engine_variant: this.engineVariant, startup_mode: this.startupMode,
+          shared_rom_bytes: this.wavetableRomBytes, max_transfer_bytes: transfer,
+          accounted_audio_data_bytes: linear + this.wavetableRomBytes + transfer + roles.audio.buffer_bytes,
+          sample_rate: this.rate, current_time: this.context.currentTime, context_state: this.context.state,
+          base_latency: this.context.baseLatency, output_latency: this.context.outputLatency,
+          playback_stats: stats?.toJSON(), fatal: this.fatal || null,
+          peak: this.state?.peak, notes: this.state?.notes, wavetable: this.state?.preset?.wavetable };
+      } else if (route === "/api/state") {
         await this.freshState();
         result = this.snapshot();
       } else if (route === "/api/scene" || (route === "/api/startup" && data)) {
@@ -869,7 +916,7 @@ export class BrowserBackend {
         result = await this.stageWavetables(data.id?[data.id]:data.action==="add"?["factory:wt-basic-morph:v1"]:[],
           () => this.audio.call("request",data,[],route));
       } else if (route === "/api/wavetables/audition") {
-        this.resume();
+        await this.resume();
         result = await this.stageWavetables(data.id ? [data.id] : [],
           () => this.audio.call("request",data,[],route));
       } else if (route.startsWith("/api/wavetables")) {
@@ -1027,7 +1074,7 @@ export class BrowserBackend {
         }else {
           if(route==="/api/capture/start") {
             if(data?.source==="input"&&!this.microphone.active)throw new Error("Connect an audio input before capturing it.");
-            this.resume();
+            await this.resume();
           }
           result=await this.audio.call("request",data,[],route);
         }

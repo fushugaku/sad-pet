@@ -10,8 +10,11 @@ use std::{
 };
 
 pub const ARENA_BYTES: usize = 64 * 1024 * 1024;
+#[cfg(target_arch = "wasm32")]
+const INITIAL_BYTES: usize = 36 * 1024 * 1024;
+#[cfg(not(target_arch = "wasm32"))]
+const INITIAL_BYTES: usize = ARENA_BYTES;
 const PAGE_SAMPLES: usize = 16_384;
-const PAGES: usize = ARENA_BYTES / (PAGE_SAMPLES * 4);
 pub const CHUNK_BYTES: usize = 32_768;
 thread_local! { static REALTIME: Cell<bool> = const { Cell::new(false) }; }
 pub(super) fn is_realtime() -> bool {
@@ -23,35 +26,59 @@ pub fn enter_realtime() {
 }
 
 struct Arena {
-    pointer: usize,
-    pages: Mutex<[bool; PAGES]>,
+    primary: Region,
+    overflow: OnceLock<Region>,
 }
-// The backing allocation is leaked for the engine process's lifetime. A live
-// Segment owns disjoint pages. Only its unpublished BankStage may write them;
-// after finish, Arc<Bank> gives shared immutable reads until Segment::drop.
-// Allocation metadata is locked only by staging/retirement, never by lookup.
+struct Region {
+    pointer: usize,
+    pages: Mutex<Box<[bool]>>,
+}
+// Allocations live for the process. A Segment owns disjoint pages of one
+// contiguous region. Only its unpublished BankStage can write those pages.
 impl Arena {
     fn shared() -> &'static Self {
         static ARENA: OnceLock<Arena> = OnceLock::new();
-        ARENA.get_or_init(|| {
-            let samples = Box::leak(vec![0.0_f32; ARENA_BYTES / 4].into_boxed_slice());
-            Arena {
-                pointer: samples.as_mut_ptr() as usize,
-                pages: Mutex::new([false; PAGES]),
-            }
+        ARENA.get_or_init(|| Self {
+            primary: Region::new(INITIAL_BYTES),
+            overflow: OnceLock::new(),
         })
     }
     fn allocate(&'static self, length: usize) -> Result<Segment, String> {
-        let count = length.div_ceil(PAGE_SAMPLES);
-        if count == 0 || count > PAGES {
-            return Err("The wavetable bank exceeds the audio arena".into());
+        if let Ok(segment) = self.primary.allocate(length) {
+            return Ok(segment);
         }
+        // Preserve capacity for four maximum-size user tables. This optional
+        // region is only prepared by BankStage, never by the render loop.
+        // The 4x64-frame / U4 / FM+sync acceptance patch uses the primary only,
+        // including eight banks during a four-wave crossfade.
+        if INITIAL_BYTES < ARENA_BYTES {
+            return self
+                .overflow
+                .get_or_init(|| Region::new(ARENA_BYTES - INITIAL_BYTES))
+                .allocate(length);
+        }
+        Err("Wavetable audio memory is full; the current sound was kept".into())
+    }
+}
+impl Region {
+    fn new(bytes: usize) -> Self {
+        let samples = Box::leak(vec![0.0_f32; bytes / 4].into_boxed_slice());
+        Self {
+            pointer: samples.as_mut_ptr() as usize,
+            pages: Mutex::new(vec![false; bytes / (PAGE_SAMPLES * 4)].into_boxed_slice()),
+        }
+    }
+    fn allocate(&'static self, length: usize) -> Result<Segment, String> {
+        let count = length.div_ceil(PAGE_SAMPLES);
         let mut pages = self
             .pages
             .lock()
             .map_err(|_| "Wavetable arena unavailable")?;
+        if count == 0 || count > pages.len() {
+            return Err("The wavetable bank exceeds the audio arena".into());
+        }
         let mut run = 0;
-        for i in 0..PAGES {
+        for i in 0..pages.len() {
             run = if pages[i] { 0 } else { run + 1 };
             if run == count {
                 let start = i + 1 - count;
@@ -68,7 +95,7 @@ impl Arena {
     }
 }
 pub struct Segment {
-    arena: &'static Arena,
+    arena: &'static Region,
     start: usize,
     count: usize,
     length: usize,
@@ -143,6 +170,9 @@ impl Bank {
         }
     }
     /// Worker/control only. Receivers do not deserialize these floats as JSON.
+    pub fn append_transport_bytes(&self, output: &mut Vec<u8>) {
+        output.extend(self.data.iter().flat_map(|sample| sample.to_le_bytes()));
+    }
     pub fn transport_bytes(&self) -> Vec<u8> {
         self.data
             .iter()

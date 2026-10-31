@@ -11,7 +11,7 @@ const module=await WebAssembly.compile(await readFile(resolve(folder,"sad_pet.wa
 const utility=new Core(module,48000),audio=new Core(module,48000);
 audio.wasm.sad_wavetable_realtime_init();
 const stage=(id,target=audio,source=utility)=>{
-  const prepared=source.call("sad_wavetable_prepare",{id}),bank=preparedWavetable(prepared);
+  const prepared=source.prepareWavetable({id}),bank=preparedWavetable(prepared);
   const state=target.json("sad_wavetable_stage_begin",bank.header);
   if(state.cached)return;
   const bytes=new Uint8Array(prepared,bank.offset),memory=target.wasm.memory.buffer;

@@ -12,12 +12,24 @@ const seconds=Number(process.env.WT_SECONDS||2),rounds=Number(process.env.WT_ROU
 await mkdir(out,{recursive:true});
 const bytes=await readFile(modulePath),module=await WebAssembly.compile(bytes);
 const {Core}=await import(pathToFileURL(resolve(folder,"core.mjs")));
+const {preparedWavetable,wavetableIds}=await import(pathToFileURL(resolve(folder,"wavetables.mjs")));
 const preset=JSON.parse(await readFile("reports/wavetable/wasm-unison4/target-preset.json","utf8"));
 const mode=process.env.WT_MODE||"mixed",motion=process.env.WT_MOTION==="1";
 if(mode==="paired")preset.wavetable.oscillators.forEach((o,i)=>{o.fm_source=i^1;o.fm_mode=i%2?0:1;o.sync_source=i;});
 if(mode==="pm")preset.wavetable.oscillators.forEach(o=>o.fm_mode=2);
 const notes=(process.env.WT_NOTES||"48,51,55,58").split(",").map(Number);
 const core=new Core(module,48000);
+const preparedBanks=process.env.WT_PREPARED==="1";
+if(preparedBanks){
+ const utility=new Core(module,48000);core.wasm.sad_wavetable_realtime_init();
+ for(const id of wavetableIds(preset)){
+  const raw=utility.prepareWavetable({id}),bank=preparedWavetable(raw);
+  if(core.json("sad_wavetable_stage_begin",bank.header).cached)continue;
+  const bytes=new Uint8Array(raw,bank.offset);let status=0;
+  for(let at=0;at<bytes.length;at+=32768){const part=bytes.subarray(at,at+32768);new Uint8Array(core.wasm.memory.buffer,core.wasm.sad_wavetable_upload(),part.length).set(part);status=core.wasm.sad_wavetable_stage_chunk(part.length);}
+  assert.equal(status,1);core.json("sad_wavetable_stage_finish");
+ }
+}
 core.request("/api/preset",preset);core.request("/api/transport",{playing:true,midi_gate:true});
 for(const note of notes)core.request("/api/note",{kind:"note_on",channel:0,note,velocity:100});
 for(let i=0;i<375;i++)core.process(128);
@@ -38,5 +50,5 @@ if(profile){const {profile:p}=await post("Profiler.stop");await writeFile(resolv
 assert.ok(peak>1e-4&&energy>1e-3,"the target was silent");
 function stats(a){a.sort((a,b)=>a-b);return{blocks:a.length,p50_ms:a[Math.floor(a.length*.5)],p95_ms:a[Math.floor(a.length*.95)],p99_ms:a[Math.floor(a.length*.99)],max_ms:a.at(-1),over_budget:a.filter(t=>t>128/48).length};}
 const result={scope:"Shipping WASM Core.process(128), 4 held notes × 4 complex waves × U4; all four linear FM operators and hard sync, reciprocal rings; includes JS ABI boundary, excludes preparation and validation; Node/V8 wall timing, separate from AudioWorklet/device acceptance.",sample_rate:48000,block:128,deadline_ms:128/48,notes:4,waves:4,unison:4,oversampling:{fm:8,sync:32},node:process.version,v8:process.versions.v8,module_sha256:createHash("sha256").update(bytes).digest("hex"),profiled:profile,warmup_audio_seconds:1,audio_seconds_per_round:seconds,rounds,peak,summary:stats(all),runs};
-Object.assign(result,{scope:`Shipping WASM Core.process(128), four notes × four complex waves × U4; ${mode==="paired"?"compatibility pairs B→A / D→C with four self-sync clocks":"four FM operators and four hard-sync clocks in independent reciprocal rings"}. Includes JS ABI boundary; excludes preparation, control requests and validation. Node/V8 thread CPU + wall timing, separate from browser AudioWorklet acceptance.`,mode,moving_positions:motion,note_numbers:notes,thread_cpu:stats(cpus)});
+Object.assign(result,{scope:`Shipping WASM Core.process(128), four notes × four complex waves × U4; ${mode==="paired"?"compatibility pairs B→A / D→C with four self-sync clocks":"four FM operators and four hard-sync clocks in independent reciprocal rings"}. Includes JS ABI boundary; excludes preparation, control requests and validation. Node/V8 thread CPU + wall timing, separate from browser AudioWorklet acceptance.`,mode,moving_positions:motion,note_numbers:notes,prepared_banks:preparedBanks,realtime_factory_reads:core.factoryReads?.calls,thread_cpu:stats(cpus)});
 await writeFile(resolve(out,"cpu.json"),JSON.stringify(result,null,2)+"\n");console.log(JSON.stringify(result));
