@@ -1934,6 +1934,7 @@ window.SadNeuropolis = class {
     const tracks = view.tracks.slice(0, view.count),
       active = this.program().enabled && playing;
     const selected = tracks.find((t) => t.id === this.selected),
+      value = selected?.value,
       offset = this.offset(this.track()),
       playingPage = active && selected ? Math.floor(selected.step / 16) : -1;
     for (const row of this.root.querySelectorAll(".neuro-track")) {

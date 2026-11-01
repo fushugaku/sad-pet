@@ -776,20 +776,30 @@ console.log(
   ui.edit(1, null, 54, 2);
   assert.equal(ui.offset(paged()), 16);
   ui.buildEditor();
-  const root = ui.root;
+  const root = ui.root, live = new Element("output");
   ui.root = {
-    querySelector: () => null,
+    querySelector: (selector) => selector === ".neuro-live" ? live : null,
     querySelectorAll: (selector) => editor.all().filter((e) => e.classes.has(selector.slice(1))),
   };
-  ui.update({ count: 1, tracks: [{ id: 1, step: 20 }] }, true);
+  ui.update({ count: 1, tracks: [{ id: 1, step: 20, pitch: 60, value: 1.25 }] }, true);
+  assert.equal(live.textContent, "C4 · +1.25 st", "Live output must not interrupt state polling and the recording timer");
   const cards = editor.all().filter((e) => e.classes.has("neuro-stage"));
   assert.ok(cards[4].classes.has("is-current"), "step 21 is the fifth of the second page");
   assert.deepEqual(
     editor.all().filter((e) => e.classes.has("neuro-stage-page")).map((t) => t.classes.has("is-playing")),
     [false, true],
   );
-  ui.update({ count: 1, tracks: [{ id: 1, step: 3 }] }, true);
+  ui.update({ count: 1, tracks: [{ id: 1, step: 3, pitch: 61, value: -0.25 }] }, true);
   assert.ok(!cards.some((c) => c.classes.has("is-current")), "a step of another page lit up");
+  assert.equal(live.textContent, "C♯4 · -0.25 st");
+  paged().target = { kind: "oscillator", index: 0 };
+  ui.update({ count: 1, tracks: [{ id: 1, step: 3, pitch: 61, value: -0.25 }] }, true);
+  assert.equal(live.textContent, "-0.25 st");
+  paged().target = { kind: "parameter", parameter: "filter" };
+  ui.update({ count: 1, tracks: [{ id: 1, step: 3, pitch: 61, value: 0.5 }] }, true);
+  assert.equal(live.textContent, "C♯4 · +0.50");
+  ui.update({ count: 1, tracks: [{ id: 1, step: 3 }] }, false);
+  assert.equal(live.textContent, "—");
   ui.root = root;
 }
 console.log("Sequencer stages: page count with copied pages, tabs, edits, picks and pastes on the page shown, playing page passed.");

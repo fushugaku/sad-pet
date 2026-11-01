@@ -2192,6 +2192,7 @@ h2 {
     gap: 6px;
   }
   .filter-routing {
+    flex-wrap: wrap;
     gap: 8px;
   }
   .filter-routing output {
