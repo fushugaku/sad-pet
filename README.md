@@ -250,7 +250,7 @@ with different per-timbre BPM values use the first timbre's tempo on recall.
   operator filters and table reads inside Rack. Prepared reads and SIMD filtering
   reduce CPU while retaining 8× FM/PM and 32× sync; see the
   [before/after measurements and sound checks](docs/WAVETABLE_OPTIMIZATION.md).
-  **Wave Maker** builds tables from a WAV or two seconds of the scene output.
+  **Wave Maker** builds tables from WAV, MP3 or two seconds of the scene output.
   Spectral snapshots create periodic textures; Pitch cycles extracts pitched
   periods with optional root-note guidance. **Edit table** reorders, duplicates,
   trims and aligns frames, changes each frame's phase/first 16 harmonics, and
@@ -586,6 +586,7 @@ node wasm/test-neuropolis.mjs
 node wasm/test-sequencer-ui.mjs
 node wasm/test-microphone.mjs
 node wasm/test-library.mjs
+node wasm/test-audio-import.mjs
 node wasm/test-presets.mjs
 node wasm/test-parameters.mjs
 python3 -m http.server 8080 --directory dist/web --bind 127.0.0.1
@@ -677,8 +678,13 @@ The SuperEcho benchmark also covers Tape/BBD, two simultaneous instances and a
 SuperEcho + AlphaVerb chain, including shimmer, dynamics, freeze and tempo sync.
 Both imported effects retain the original firmware arithmetic and audio rate.
 
-Use **Load WAV** or drop a mono/stereo WAV onto the waveform to import your own
-audio. Drag across the waveform to choose a loop, adjust its **IN / OUT** handles,
+Use **Load audio** or drop a mono/stereo WAV or MP3 onto the waveform to import your
+own audio. MP3 is decoded to float WAV before it is stored or loaded; its original
+sample rate and channels are preserved. Wavetable **Import audio** and **Wave Maker**
+also accept MP3. MP3 recordings without complete periodic frames open in
+Wave Maker. The decoded WAV must fit the existing limits: 128 MiB for samples,
+16 MiB for wavetable sources.
+Drag across the waveform to choose a loop, adjust its **IN / OUT** handles,
 or enter exact boundaries in seconds. The selection immediately limits playback,
 including reverse grains and cloud spread. **Full** restores the whole file.
 **Fade In / Fade Out** set smooth fades in milliseconds at the selection boundaries.

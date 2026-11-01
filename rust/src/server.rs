@@ -370,6 +370,18 @@ fn handle(
                     .map_err(|e| format!("Recording: {e}"))??;
                 json(&view)
             }
+            "/api/audio/decode" => {
+                let max_bytes = request
+                    .headers()
+                    .iter()
+                    .find(|h| h.field.equiv("X-Max-Bytes"))
+                    .and_then(|h| h.value.as_str().parse().ok())
+                    .unwrap_or(crate::audio_import::MAX_BYTES);
+                Ok((
+                    crate::audio_import::to_wav(&bytes, max_bytes)?.into_owned(),
+                    "audio/wav",
+                ))
+            }
             "/api/wav" => {
                 let name = request
                     .headers()

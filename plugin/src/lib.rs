@@ -1461,6 +1461,20 @@ impl Controller {
                 self.fades = fades;
                 Ok(json!(fades))
             }
+            ("/api/audio/decode", true) => {
+                let text = data["base64"].as_str().ok_or("Missing audio file")?;
+                if text.len() > MAX_BYTES.div_ceil(3) * 4 {
+                    return Err("File exceeds 128 MB".into());
+                }
+                let bytes = BASE64.decode(text).map_err(|e| e.to_string())?;
+                let max_bytes = data["max_bytes"]
+                    .as_u64()
+                    .unwrap_or(MAX_BYTES as u64)
+                    .min(MAX_BYTES as u64) as usize;
+                Ok(binary(
+                    sad_pet::audio_import::to_wav(&bytes, max_bytes)?.into_owned(),
+                ))
+            }
             ("/api/wav", true) => {
                 let bytes = BASE64
                     .decode(data["base64"].as_str().ok_or("Missing audio file")?)

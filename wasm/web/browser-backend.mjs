@@ -827,7 +827,7 @@ export class BrowserBackend {
       if (this.fatal) throw new Error(this.fatal);
       const url = new URL(path, location.href),
         route = url.pathname;
-      const binary = route === "/api/wav" || route === "/api/vocal/import"
+      const binary = route === "/api/wav" || route === "/api/audio/decode" || route === "/api/vocal/import"
         || ["/api/sampler/upload", "/api/sampler/process", "/api/sampler/analyze"].includes(route);
       const data =
         options.body === undefined || binary ? null : JSON.parse(options.body);
@@ -941,7 +941,12 @@ export class BrowserBackend {
         mime = "audio/wav";
       } else if (route === "/api/midi") result = await this.midi(url, data);
       else if (route === "/api/clock") result = await this.midiClock.request(data);
-      else if (route === "/api/wav") {
+      else if (route === "/api/audio/decode") {
+        const audio = await bytesOf(options.body);
+        const maxBytes = Number(new Headers(options.headers).get("X-Max-Bytes") ?? 128 * 1024 * 1024);
+        result = await this.worker.call("audio-decode", { audio, maxBytes }, [audio]);
+        mime = "audio/wav";
+      } else if (route === "/api/wav") {
         // Keep utility sample state, worklet state and the generation in one
         // order, including two file selections made before either load returns.
         const previousLoad = this.sourceLoadTail;

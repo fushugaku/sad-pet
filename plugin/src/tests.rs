@@ -2727,6 +2727,57 @@ fn standalone_library_imports_loads_trims_exports_and_trashes_files_on_disk() {
 }
 
 #[test]
+fn mp3_import_is_stored_as_wav_and_failed_decode_keeps_the_current_sample() {
+    let folder = PresetDirectory::new();
+    std::fs::create_dir_all(&folder.0).unwrap();
+    let source = folder.0.join("Stereo take.MP3");
+    let mp3 = include_bytes!("../../rust/tests/fixtures/stereo-32000.mp3");
+    std::fs::write(&source, mp3).unwrap();
+    let mut control = folder.standalone();
+    let _audio = control.prepare(48000);
+    let imported = call(&mut control, "/api/library/import", json!({"path":source}));
+    assert_eq!(imported["errors"], json!([]));
+    let entry = &imported["files"][0];
+    assert_eq!(entry["name"], "Stereo take.wav");
+    assert_eq!(entry["displayName"], "Stereo take");
+    assert_eq!(entry["seconds"], 0.25);
+    let id = entry["id"].as_str().unwrap();
+    let again = call(&mut control, "/api/library/import", json!({"path":source}));
+    assert_eq!(again["files"][0]["id"], id);
+    call(&mut control, "/api/library/load", json!({"id":id}));
+    assert_eq!(control.sample.sample_rate, 32000);
+    assert_eq!(control.sample.len(), 8000);
+
+    let destination = folder.0.join("Export.wav");
+    call(
+        &mut control,
+        "/api/library/export",
+        json!({"id":id,"path":destination}),
+    );
+    let wav = std::fs::read(&destination).unwrap();
+    let (rate, pcm) = wav::frames(Cursor::new(&wav)).unwrap();
+    assert_eq!((rate, pcm.len()), (32000, 8000));
+    assert_eq!(u16::from_le_bytes(wav[22..24].try_into().unwrap()), 2);
+    // The plugin/browser conversion endpoint produces the same canonical WAV.
+    let decoded = call(
+        &mut control,
+        "/api/audio/decode",
+        json!({"base64":BASE64.encode(mp3)}),
+    );
+    assert_eq!(
+        BASE64.decode(decoded["binary"].as_str().unwrap()).unwrap(),
+        wav
+    );
+    assert!(control.request(&json!({"path":"/api/audio/decode","method":"POST","data":{"base64":BASE64.encode(mp3),"max_bytes":8192}})).is_err());
+    let damaged = folder.0.join("Broken.mp3");
+    std::fs::write(&damaged, b"ID3damaged MP3").unwrap();
+    let failed = call(&mut control, "/api/library/import", json!({"path":damaged}));
+    assert_eq!(failed["files"], json!([]));
+    assert_eq!(failed["errors"].as_array().unwrap().len(), 1);
+    assert_eq!(control.sample.library_id.as_deref(), Some(id));
+}
+
+#[test]
 fn standalone_renders_the_scene_and_keeps_recordings_in_the_library() {
     let folder = PresetDirectory::new();
     std::fs::create_dir_all(&folder.0).unwrap();

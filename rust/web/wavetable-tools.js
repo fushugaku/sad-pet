@@ -191,10 +191,10 @@
       } catch (error) { if (ed.settings(i) === original) ed.error(i, error); }
     }
 
-    maker(i) {
+    maker(i, source = null) {
       const ed = this.editor, dialog = this.dialog(i, "Wave Maker", "wt-maker");
       const body = dialog.querySelector(".wt-tool-body");
-      body.innerHTML = `<div class="wt-maker-source"><button type="button" class="wt-maker-file">Choose WAV</button><button type="button" class="wt-capture">Capture output · 2 s</button><input type="file" accept=".wav,audio/wav" hidden></div><p class="wt-maker-hint">Capture hears the scene output. Solo a Rack to isolate it; use MIDI or a running sequence while capturing.</p><label class="wt-tool-name">Name<input aria-label="Made table name" maxlength="80" value="Captured Wavetable"></label><div class="wt-maker-fields"><label>Method<select aria-label="Wave Maker method"><option value="spectral">Spectral snapshots</option><option value="cycles">Pitch cycles</option></select></label><label>Frames<input aria-label="Wave Maker frames" type="number" min="1" max="256" value="64"></label><label>Channel<select aria-label="Wave Maker channel"><option value="mix">Mix</option><option value="left">Left</option><option value="right">Right</option></select></label><label class="wt-maker-root">Root note<select aria-label="Wave Maker root note"><option value="">Detect pitch</option></select></label><label>Start · s<input aria-label="Wave Maker start" type="number" min="0" step=".01" value="0"></label><label>End · s<input aria-label="Wave Maker end" type="number" min="0" step=".01"></label></div>`;
+      body.innerHTML = `<div class="wt-maker-source"><button type="button" class="wt-maker-file">Choose audio</button><button type="button" class="wt-capture">Capture output · 2 s</button><input type="file" accept=".wav,.mp3,audio/wav,audio/mpeg" hidden></div><p class="wt-maker-hint">Capture hears the scene output. Solo a Rack to isolate it; use MIDI or a running sequence while capturing.</p><label class="wt-tool-name">Name<input aria-label="Made table name" maxlength="80" value="Captured Wavetable"></label><div class="wt-maker-fields"><label>Method<select aria-label="Wave Maker method"><option value="spectral">Spectral snapshots</option><option value="cycles">Pitch cycles</option></select></label><label>Frames<input aria-label="Wave Maker frames" type="number" min="1" max="256" value="64"></label><label>Channel<select aria-label="Wave Maker channel"><option value="mix">Mix</option><option value="left">Left</option><option value="right">Right</option></select></label><label class="wt-maker-root">Root note<select aria-label="Wave Maker root note"><option value="">Detect pitch</option></select></label><label>Start · s<input aria-label="Wave Maker start" type="number" min="0" step=".01" value="0"></label><label>End · s<input aria-label="Wave Maker end" type="number" min="0" step=".01"></label></div>`;
       let wav = null, duration = 0;
       const file = body.querySelector('input[type="file"]'), name = body.querySelector('[aria-label="Made table name"]'), method = body.querySelector('[aria-label="Wave Maker method"]'), frames = body.querySelector('[aria-label="Wave Maker frames"]'), channel = body.querySelector('[aria-label="Wave Maker channel"]'), root = body.querySelector('[aria-label="Wave Maker root note"]'), start = body.querySelector('[aria-label="Wave Maker start"]'), end = body.querySelector('[aria-label="Wave Maker end"]'), capture = body.querySelector(".wt-capture");
       for (let note = 0; note < 128; note++) { const option = node("option", "", ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"][note % 12] + (Math.floor(note / 12) - 1)); option.value = note; root.append(option); }
@@ -212,7 +212,7 @@
       };
       body.querySelector(".wt-maker-file").onclick = () => file.click();
       file.onchange = async () => {
-        try { if (!file.files[0]) return; dialog.captureGeneration=(dialog.captureGeneration??0)+1;clearTimeout(dialog.captureTimer);if(dialog.capturing){await ed.hooks.request("/api/capture/stop",{});dialog.capturing=false;capture.textContent="Capture output · 2 s";} if (file.files[0].size > 16 * 1024 * 1024) throw new Error("The WAV exceeds 16 MiB"); const source = file.files[0]; await use(await encode(source), source.name.replace(/\.wav$/i, "")); }
+        try { if (!file.files[0]) return; dialog.captureGeneration=(dialog.captureGeneration??0)+1;clearTimeout(dialog.captureTimer);if(dialog.capturing){await ed.hooks.request("/api/capture/stop",{});dialog.capturing=false;capture.textContent="Capture output · 2 s";} const source = file.files[0], wav = await window.SadAudioImport.wavFile(source, 16 * 1024 * 1024); if (dialog.valid()) await use(await encode(wav), source.name.replace(/\.(wav|mp3)$/i, "")); }
         catch (error) { dialog.error(error); }
         file.value = "";
       };
@@ -240,7 +240,8 @@
         } catch (error) { dialog.capturing = false; capture.textContent = "Capture output · 2 s"; dialog.error(error); }
       };
       for (const input of [name, method, frames, channel, root, start, end]) input.onchange = prepare;
-      prepare();
+      if (source) use(source.wav, source.name).catch(error => dialog.error(error));
+      else prepare();
     }
   }
   window.SadWavetableTools = Tools;

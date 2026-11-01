@@ -585,6 +585,13 @@ pub extern "C" fn sad_factory(index: usize) -> u32 {
     })
 }
 #[unsafe(no_mangle)]
+pub extern "C" fn sad_audio_decode(max_bytes: usize) -> u32 {
+    host(|h| {
+        let result = sad_pet::audio_import::to_wav(&h.input, max_bytes).map(|wav| wav.into_owned());
+        h.finish(result)
+    })
+}
+#[unsafe(no_mangle)]
 pub extern "C" fn sad_prepare() -> u32 {
     host(|h| {
         let result = wav::decode(Cursor::new(&h.input), "Sample.wav".into()).map(|sample| {

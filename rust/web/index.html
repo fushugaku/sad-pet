@@ -140,7 +140,7 @@
             /><span>BPM</span></label
           >
           <button id="load-wav" class="light" disabled>
-            Load WAV <span>↗</span>
+            Load audio <span>↗</span>
           </button>
         </div>
       </header>
@@ -438,7 +438,7 @@
           >
             OUT
           </button>
-          <div class="drop-hint">Drop a WAV file</div>
+          <div class="drop-hint">Drop a WAV or MP3 file</div>
         </div>
         <div class="sample-bottom">
           <span id="position-info">00:00.00</span
@@ -926,7 +926,7 @@
       <input
         id="wav-file"
         type="file"
-        accept=".wav,audio/wav,audio/x-wav,audio/wave"
+        accept=".wav,.mp3,audio/wav,audio/x-wav,audio/wave,audio/mpeg"
         hidden
       /><input
         id="preset-file"
@@ -937,7 +937,7 @@
       <input
         id="library-files"
         type="file"
-        accept=".wav,audio/wav,.sadpet,.json,.sad.json,.evil.json"
+        accept=".wav,.mp3,audio/wav,audio/mpeg,.sadpet,.json,.sad.json,.evil.json"
         multiple
         hidden
       />

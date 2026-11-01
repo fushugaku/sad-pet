@@ -116,8 +116,8 @@
     async importDialog(audioOnly = false) {
       const result = await window.sadPetNative.dialog("/api/library/import", {}, {
         mode: "open",
-        title: audioOnly ? "Open WAV" : "Import audio or presets",
-        patterns: audioOnly ? "*.wav" : "*.wav;*.sadpet;*.json",
+        title: audioOnly ? "Open audio" : "Import audio or presets",
+        patterns: audioOnly ? "*.wav;*.mp3" : "*.wav;*.mp3;*.sadpet;*.json",
         multiple: !audioOnly,
       });
       if (!result.cancelled) await this.imported(result);
@@ -131,7 +131,7 @@
       if (result.errors?.length) throw new Error(result.errors.join("\n"));
     }
     async importFiles() {
-      throw new Error("Use Open WAV or + Import files: the SAD PET app opens audio files itself.");
+      throw new Error("Use Open audio or + Import files: the SAD PET app opens audio files itself.");
     }
     storeBlob() {
       throw new Error("The SAD PET app stores audio natively.");

@@ -97,7 +97,7 @@ fn label(path: &Path) -> String {
 
 fn stem(name: &str) -> String {
     let lower = name.to_lowercase();
-    if lower.ends_with(".wav") {
+    if lower.ends_with(".wav") || lower.ends_with(".mp3") {
         name[..name.len() - 4].into()
     } else {
         name.into()
@@ -291,10 +291,14 @@ impl Files {
     }
     pub fn import(&self, path: &Path, mut entry: Entry) -> Result<Entry, String> {
         let bytes = read_file(path)?;
+        let wav = sad_pet::audio_import::to_wav(&bytes, MAX_BYTES)?;
         if entry.name.is_empty() {
             entry.name = label(path);
         }
-        self.add(&bytes, entry)
+        if matches!(wav, std::borrow::Cow::Owned(_)) {
+            entry.name = format!("{}.wav", stem(&entry.name));
+        }
+        self.add(&wav, entry)
     }
     fn entry(&self, id: &str) -> Result<Entry, String> {
         self.index()?

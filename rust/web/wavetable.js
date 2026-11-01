@@ -62,7 +62,7 @@
     card(i) {
       const name=LETTERS[i],card=node("div","wt-oscillator");card.id=`wt-osc-${i}`;
       card.setAttribute("aria-label",`Wavetable ${name}`);
-      card.innerHTML=`<div class="wt-osc-heading"><strong>${name}</strong><span class="wt-pack"></span><button type="button" class="power wt-power" aria-label="Wavetable ${name} enabled"><svg aria-hidden="true"><use href="#power-glyph" /></svg></button><button type="button" class="wt-remove" aria-label="Remove wave ${name}">×</button></div><div class="wt-picker"><button type="button" class="wt-previous" aria-label="Previous wavetable for ${name}">‹</button><button type="button" class="wt-table" aria-label="Wavetable ${name} table"></button><button type="button" class="wt-next" aria-label="Next wavetable for ${name}">›</button></div><div class="wt-wave"><canvas role="img" aria-label="Wavetable ${name} frames and current position"></canvas><output class="wt-frame"></output></div><div class="knob-grid wt-knobs"></div><div class="wt-selectors"><label>Unison<select class="wt-unison" aria-label="Wavetable ${name} unison voices">${Array.from({length:8},(_,n)=>`<option value="${n+1}">${n+1} ${n?"voices":"voice"}</option>`).join("")}</select></label><label>Position ENV<select class="wt-env" aria-label="Wavetable ${name} position envelope"><option value="0">Off</option>${Array.from({length:8},(_,n)=>`<option value="${n+1}">ENV ${n+1}${n===0?" · Amp":""}</option>`).join("")}</select></label></div><div class="knob-grid wt-unison-knobs"></div><details class="wt-phase"><summary>Phase</summary><div class="knob-grid wt-phase-knobs"></div></details><div class="wt-file-actions"><button type="button" class="wt-import">Import WAV</button><button type="button" class="wt-export">Export WAV</button><input type="file" accept=".wav,audio/wav" hidden></div><p class="wt-status" role="status" hidden></p><p class="wt-error" role="alert" hidden></p>`;
+      card.innerHTML=`<div class="wt-osc-heading"><strong>${name}</strong><span class="wt-pack"></span><button type="button" class="power wt-power" aria-label="Wavetable ${name} enabled"><svg aria-hidden="true"><use href="#power-glyph" /></svg></button><button type="button" class="wt-remove" aria-label="Remove wave ${name}">×</button></div><div class="wt-picker"><button type="button" class="wt-previous" aria-label="Previous wavetable for ${name}">‹</button><button type="button" class="wt-table" aria-label="Wavetable ${name} table"></button><button type="button" class="wt-next" aria-label="Next wavetable for ${name}">›</button></div><div class="wt-wave"><canvas role="img" aria-label="Wavetable ${name} frames and current position"></canvas><output class="wt-frame"></output></div><div class="knob-grid wt-knobs"></div><div class="wt-selectors"><label>Unison<select class="wt-unison" aria-label="Wavetable ${name} unison voices">${Array.from({length:8},(_,n)=>`<option value="${n+1}">${n+1} ${n?"voices":"voice"}</option>`).join("")}</select></label><label>Position ENV<select class="wt-env" aria-label="Wavetable ${name} position envelope"><option value="0">Off</option>${Array.from({length:8},(_,n)=>`<option value="${n+1}">ENV ${n+1}${n===0?" · Amp":""}</option>`).join("")}</select></label></div><div class="knob-grid wt-unison-knobs"></div><details class="wt-phase"><summary>Phase</summary><div class="knob-grid wt-phase-knobs"></div></details><div class="wt-file-actions"><button type="button" class="wt-import">Import audio</button><button type="button" class="wt-export">Export WAV</button><input type="file" accept=".wav,.mp3,audio/wav,audio/mpeg" hidden></div><p class="wt-status" role="status" hidden></p><p class="wt-error" role="alert" hidden></p>`;
       this.root.querySelector(".wt-oscillators").append(card);
       const result={root:card,canvas:card.querySelector("canvas"),picker:card.querySelector(".wt-table"),loading:false,request:0};
       const knob=(field,label,format,min,max,bank,hostField=field,step)=>this.hooks.knob(
@@ -222,11 +222,15 @@
       const original=this.settings(i);
       this.error(i,null);
       try {
-        if(file.size>16*1024*1024)throw new Error("The wavetable WAV exceeds 16 MiB.");
-        const wav=await base64(file),info=await this.hooks.request("/api/wavetables/import",{wav,inspect:true});
+        const source=await window.SadAudioImport.wavFile(file,16*1024*1024);
         if(this.settings(i)!==original)return;
-        const input={wav,name:file.name.replace(/\.wav$/i,"")};
+        const wav=await base64(source),info=await this.hooks.request("/api/wavetables/import",{wav,inspect:true});
+        if(this.settings(i)!==original)return;
+        const input={wav,name:file.name.replace(/\.(wav|mp3)$/i,"")};
         if(info.channels===1&&info.frame_size) return await this.applyImport(i,{...input,frame_size:info.frame_size});
+        if(source!==file&&![128,256,512,1024,2048,4096].some(size=>info.samples_per_channel%size===0&&info.samples_per_channel/size>=1&&info.samples_per_channel/size<=256)) {
+          this.tools.maker(i,input);return;
+        }
         this.importDialog(i,input,info);
       }catch(error){if(this.settings(i)===original)this.error(i,error);}
     }

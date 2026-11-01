@@ -302,6 +302,9 @@ async function handle(message) {
       case "factory":
         result = core.call("sad_factory", undefined, data);
         break;
+      case "audio-decode":
+        result = core.call("sad_audio_decode", data.audio, data.maxBytes);
+        break;
       case "prepare":
         core.call("sad_prepare", data.wav);
         core.call("sad_sample_name", { name: data.name, id: data.libraryId });

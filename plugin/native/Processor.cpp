@@ -88,7 +88,7 @@ public:
    #if SAD_PET_STANDALONE
     bool isInterestedInFileDrag(const juce::StringArray& files) override {
         for (const auto& file : files)
-            if (juce::File(file).hasFileExtension(".wav;.sadpet;.json")) return true;
+            if (juce::File(file).hasFileExtension(".wav;.mp3;.sadpet;.json")) return true;
         return false;
     }
     void filesDropped(const juce::StringArray& files, int, int) override {

@@ -7,7 +7,29 @@
     bytes >= 1024 * 1024
       ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
       : `${Math.max(1, Math.round(bytes / 1024))} KB`;
-  const stem = (name) => name.replace(/\.((?:sad|evil)\.json|wav|json)$/i, "");
+  const stem = (name) => name.replace(/\.((?:sad|evil)\.json|wav|mp3|json)$/i, "");
+
+  async function wavFile(file, maxBytes = 128 * 1024 * 1024) {
+    if (file.size > maxBytes)
+      throw new Error(`${file.name}: audio exceeds ${maxBytes / (1024 * 1024)} MiB.`);
+    const header = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+    const word = offset => String.fromCharCode(...header.slice(offset, offset + 4));
+    // Keep existing WAVs byte-for-byte, including wavetable frame metadata.
+    if (word(0) === "RIFF" && word(8) === "WAVE") return file;
+    if (!/\.mp3$/i.test(file.name) && !/^audio\/(?:mpeg|mp3|x-mp3)$/i.test(file.type))
+      throw new Error(`${file.name}: use a WAV or MP3 audio file.`);
+    const response = await fetch("/api/audio/decode", {
+      method: "POST", body: file,
+      headers: { "Content-Type": "audio/mpeg", "X-Max-Bytes": String(maxBytes) },
+    });
+    if (!response.ok)
+      throw new Error(`${file.name}: ${(await response.json()).error || "Cannot decode MP3."}`);
+    const wav = await response.blob();
+    if (wav.size > maxBytes)
+      throw new Error(`${file.name}: decoded WAV exceeds ${maxBytes / (1024 * 1024)} MiB.`);
+    return new File([wav], `${stem(file.name)}.wav`, { type: "audio/wav" });
+  }
+  window.SadAudioImport = { wavFile };
 
   class Store {
     async open() {
@@ -636,16 +658,10 @@
               displayName: value.name || stem(file.name),
             });
           } else {
-            const header = new Uint8Array(
-              await file.slice(0, 12).arrayBuffer(),
-            );
-            const word = (offset) =>
-              String.fromCharCode(...header.slice(offset, offset + 4));
-            if (word(0) !== "RIFF" || word(8) !== "WAVE")
-              throw new Error(`${file.name}: use a WAV audio file.`);
-            last = await this.storeBlob(file, {
+            const wav = await wavFile(file);
+            last = await this.storeBlob(wav, {
               kind: "audio",
-              name: file.name,
+              name: wav.name,
               displayName: stem(file.name),
             });
           }

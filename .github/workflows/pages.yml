@@ -35,6 +35,7 @@ jobs:
           cargo test -p sad-pet --no-default-features --lib dsp::tb303 --locked
           cargo test -p sad-pet --no-default-features --lib dsp::synth --locked
           cargo test -p sad-pet --no-default-features --lib dsp::sequence --locked
+          cargo test -p sad-pet --no-default-features --lib audio_import --locked
           cargo test -p sad-pet --no-default-features --lib wavetable --locked
           cargo test -p sad-pet --no-default-features --test wavetable --locked
           cargo test -p sad-pet --no-default-features --test bus --test grain_continuity --locked
@@ -82,6 +83,7 @@ jobs:
           node wasm/test-sequencer-ui.mjs
           node wasm/test-microphone.mjs
           node wasm/test-library.mjs
+          node wasm/test-audio-import.mjs
           node wasm/test-presets.mjs
           node wasm/test-startup.mjs
           node wasm/test-controls-ui.mjs
