@@ -2195,6 +2195,10 @@ h2 {
     flex-wrap: wrap;
     gap: 8px;
   }
+  .filter-routing button,
+  .filter-routing select {
+    height: 44px;
+  }
   .filter-routing output {
     font-size: 9px;
   }
