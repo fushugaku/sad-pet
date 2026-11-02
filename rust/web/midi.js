@@ -13,13 +13,14 @@ window.SadMidiLearn = (() => {
     Number.isInteger(channel) && channel >= 0 && channel < 16 &&
     Number.isInteger(controller) && controller >= 0 && controller < 120;
   const validPage = value => Number.isInteger(value) && value >= 0 && value < PAGE_COUNT;
-  /** Each page: knob key → [channel, controller]. */
+  /** Each page: knob key → [channel, controller, optional format]. */
   const pages = Array.from({ length: PAGE_COUNT }, () => new Map());
   let page = 0;
   const load = (target, value) => {
     if (!value || typeof value !== "object" || Array.isArray(value)) return;
     for (const [key, cc] of Object.entries(value))
-      if (Array.isArray(cc) && valid(cc[0], cc[1])) target.set(key, [cc[0], cc[1]]);
+      if (Array.isArray(cc) && valid(cc[0], cc[1])) target.set(key,
+        [cc[0], cc[1], ...(["relative", "14bit"].includes(cc[2]) ? [cc[2]] : [])]);
   };
   try {
     const saved = JSON.parse(localStorage.getItem(PAGE_STORAGE) || "null");
@@ -39,7 +40,7 @@ window.SadMidiLearn = (() => {
     for (const [key, [channel, controller]] of map) keys.set(`${channel}:${controller}`, key);
   };
   index();
-  /** knob key → the knobs showing it: { dial, label, apply(unit) } */
+  /** knob key → the knobs showing it: { dial, label, apply(unit), increment(delta) } */
   const knobs = new Map();
   let hooks = { notify() {}, hint: () => "", menu: () => null, changed() {} },
     learning = null,
@@ -97,8 +98,8 @@ window.SadMidiLearn = (() => {
   }
   /** createKnob registers every knob, and sliders register themselves;
    * apply(unit) sets it from 0–1. */
-  function attach(dial, key, text, apply) {
-    const knob = { dial, label: text, apply };
+  function attach(dial, key, text, apply, increment) {
+    const knob = { dial, label: text, apply, increment };
     const set = knobs.get(key) || new Set();
     for (const old of set) if (!old.dial.isConnected) set.delete(old);
     set.add(knob);
@@ -136,12 +137,12 @@ window.SadMidiLearn = (() => {
     stop();
     hooks.notify("MIDI learn cancelled");
   }
-  function selectPage(next) {
+  function selectPage(next, { preserveLearning = false } = {}) {
     if (!validPage(next)) throw new Error("Choose a MIDI mapping page from 1 to 16");
     if (next === page) return page;
     // Neither an open menu nor an armed Learn may act on a different page.
     window.SadLazySelect?.close();
-    if (learning !== null) cancel();
+    if (learning !== null && !preserveLearning) cancel();
     const repaint = new Set([...map.keys(), ...pages[next].keys()]);
     page = next;
     map = pages[page];
@@ -162,8 +163,12 @@ window.SadMidiLearn = (() => {
     hooks.notify(`Forgot ${mapped.length} MIDI mapping${mapped.length === 1 ? "" : "s"} on Page ${page + 1}`);
   }
   /** A controller moved: learn it, then turn the knob it is mapped to. */
-  function input(channel, controller, value) {
-    if (!valid(channel, controller) || !Number.isInteger(value) || value < 0 || value > 127) return false;
+  function input(channel, controller, value, format = "absolute") {
+    const maximum = format === "14bit" ? 16383 : 127;
+    if (!valid(channel, controller) || !["absolute", "relative", "14bit"].includes(format) ||
+        !Number.isInteger(value) || value < 0 || value > maximum) return false;
+    // Novation relative encoders use offset binary: 63 = −1, 65 = +1.
+    if (format === "relative" && value === 64) return true;
     let key = keys.get(`${channel}:${controller}`);
     if (learning !== null) {
       const target = learning;
@@ -173,15 +178,47 @@ window.SadMidiLearn = (() => {
         map.delete(key);
         paint(key);
       }
-      map.set(target, [channel, controller]);
+      map.set(target, [channel, controller, ...(format === "absolute" ? [] : [format])]);
       save();
       paint(target);
       hooks.notify(`${name([channel, controller])} → ${label(target)}`);
       key = target;
     }
     if (key === undefined) return false;
-    for (const knob of knobs.get(key) || []) if (knob.dial.isConnected) knob.apply(value / 127);
+    const shown = [...(knobs.get(key) || [])].filter(knob => knob.dial.isConnected);
+    if (format === "relative") {
+      // Linked views may show one parameter more than once. Increment once.
+      shown.findLast(knob => knob.increment)?.increment(value - 64);
+    } else for (const knob of shown) knob.apply(value / maximum);
     return true;
+  }
+
+  // The supplied XL3 modes retain the CC numbers of its factory controls.
+  // Move existing assignments to each mode's channel and keep a local backup.
+  function configureXL3() {
+    let changed = false;
+    const before = JSON.stringify({ version: 1, active: page, pages: pages.map(p => Object.fromEntries(p)) });
+    pages.forEach((p, channel) => {
+      if (channel === 15) return;
+      for (const [key, [oldChannel, cc]] of p) {
+        if (oldChannel !== 15) continue;
+        if (cc >= 5 && cc <= 36) {
+          p.set(key, [channel, cc, cc < 13 ? "14bit" : "relative"]);
+          changed = true;
+        } else if (cc >= 37 && cc <= 52) {
+          p.set(key, [channel, cc + 27]);
+          changed = true;
+        }
+      }
+    });
+    if (changed) {
+      try {
+        if (!localStorage.getItem("sad-pet-midi-pages-before-xl3-native"))
+          localStorage.setItem("sad-pet-midi-pages-before-xl3-native", before);
+      } catch { /* Optional storage. */ }
+      save();
+      map.forEach((_, key) => paint(key));
+    }
   }
   /** One Web MIDI message. */
   function bytes(data) {
@@ -240,6 +277,7 @@ window.SadMidiLearn = (() => {
     cancel,
     forget,
     selectPage,
+    configureXL3,
     page: () => page,
     pages: () => pages.map((p, id) => ({ id, count: p.size })),
     setup: (next) => (hooks = { ...hooks, ...next }),

@@ -323,6 +323,8 @@
           get: () => api.run(item, saved.binding.get),
           set: value => api.run(item, () => saved.binding.set(value)),
           reset: () => api.run(item, saved.binding.reset),
+          midiIncrement: (value, delta) => api.run(item, () => saved.binding.midiIncrement(value, delta)),
+          midiQuantize: (value, origin) => api.run(item, () => saved.binding.midiQuantize(value, origin)),
           feedback: () => api.read().state?.knobs?.[key],
           gesture: active => api.gesture(active),
         };

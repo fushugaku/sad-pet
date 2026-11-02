@@ -768,6 +768,29 @@ Previous single-page assignments are preserved on Page 1. All pages and the
 selected page survive reloads, along with device selection, Off and mapping mode;
 control-surface button notes never play the synth.
 
+For the XL3's own hardware modes, choose **XL3 · 16 modes**. Import the
+[SAD PET templates](wasm/web/midi-presets/launch-control-xl3/) into
+[Novation Components](https://components.novationmusic.com/launch-control-xl-3/)
+and send file 01 to slot 1, through file 15 to slot 15. Each mode transmits on
+its corresponding MIDI channel; SAD PET selects that mapping page when a
+control moves. All sixteen channel buttons remain assignable. Side buttons
+using the global channel do not change the page. When Learn is armed, the first
+native-mode movement chooses its page and completes the assignment there.
+
+The templates use relative offset-binary encoders (CC13–36, 64 is neutral),
+14-bit absolute faders (CC5–12 plus LSB CC37–44), and momentary buttons CC64–79.
+Relative Pitch moves in **0.1 semitone** increments at any pitch range; other
+continuous knobs use 1/1024 of their range per tick, and stepped parameters
+keep their physical steps. Fader MSB/LSB pairs are combined before updating a
+parameter, including either byte order and LSB-only movement. Mode 16 is
+Novation's uneditable factory mode on channel 16, so it retains 7-bit absolute
+resolution. Use modes 1–15 for fine control.
+
+Selecting this mode migrates existing channel-16 factory assignments to the
+matching page's channel and updated CC numbers. Unrelated mappings stay as
+they are; the previous map is backed up in this browser under
+`sad-pet-midi-pages-before-xl3-native`.
+
 `node wasm/test-launch-control.mjs` checks both hardware layouts, pickup,
 coalescing, MIDI Learn priority, LED traffic, independent keyboard input,
 permission errors, device settings, page navigation and USB reconnection.

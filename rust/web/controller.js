@@ -43,12 +43,15 @@ window.SadController = (() => {
       : data.device === null ? "Disconnected"
       : !data.access ? "Connect USB, then allow MIDI access"
       : !connected ? "Waiting for Launch Control XL"
-      : data.mode === "learn" ? `${data.connected} · right-click a knob → MIDI learn`
+      : data.mode !== "mixer" ? `${data.connected} · right-click a knob → MIDI learn`
       : data.pickup || `${data.connected} · Bank ${data.bank + 1}/${data.banks}`));
     text("controller-template", `${data.template}. Faders and knobs take over when they reach the value in the project.`);
     $("controller-map").hidden = data.mode !== "mixer";
-    $("controller-pages").hidden = data.mode !== "learn";
-    $("controller-learn-hint").hidden = data.mode !== "learn";
+    $("controller-pages").hidden = data.mode === "mixer";
+    $("controller-learn-hint").hidden = data.mode === "mixer";
+    text("controller-learn-hint", data.mode === "native"
+      ? "XL3 Mode 1–16 → Page 1–16 · SAD PET templates: relative knobs, 14-bit faders. Mode 16: factory resolution."
+      : "Upper buttons: pages 1–8 · lower: 9–16 · ← / → changes page.");
     syncPages();
     text("controller-send-names", data.sends.length ? data.sends.join(" · ") : "Add a Bus timbre to use sends");
     const trackKey = JSON.stringify([data.bank, data.tracks]);

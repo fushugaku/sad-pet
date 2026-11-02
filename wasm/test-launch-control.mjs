@@ -276,5 +276,56 @@ await assert.rejects(denied.request(ask), /MIDI access was denied/);
 assert.match(denied.status().error, /MIDI access was denied/);
 assert.equal(denied.accessPending, null, "denial blocked the retry");
 denied.dispose();
+
+// Prepared XL3 modes route by channel. Both halves of a 14-bit fader must
+// arrive before any value is applied; buttons remain available for Learn.
+const nativeValues = [], nativePages = [], nativePort = port("native", "LCXL3 1 MIDI Out");
+let nativePage = 0, migration = 0, armed = "pitch";
+const nativeLearner = { page: () => nativePage,
+  selectPage: (page, options) => { nativePage = page; nativePages.push([page, options]); if (!options?.preserveLearning) armed = null; },
+  input: (...args) => { nativeValues.push(args); armed = null; },
+  configureXL3: () => migration++,
+};
+const native = new MidiInputs(backend, { ...dependencies, learn: () => nativeLearner });
+await native.request(url, { mode: "native" });
+native.controller = nativePort;
+native.surface.configure({ model: "xl3", mode: "native" });
+const sendNative = (channel, number, value) => native.message(nativePort, { data: [0xb0 | channel, number, value] });
+sendNative(2, 13, 65);
+assert.equal(nativePage, 2);
+assert.deepEqual(nativePages.at(-1), [2, { preserveLearning: true }]);
+assert.deepEqual(nativeValues.at(-1), [2, 13, 65, "relative"]);
+assert.equal(migration, 1);
+assert.equal(armed, null);
+const beforePair = nativeValues.length;
+sendNative(2, 5, 63);
+assert.equal(nativeValues.length, beforePair, "a fader emitted its coarse MSB before its LSB");
+sendNative(2, 37, 127);
+assert.deepEqual(nativeValues.at(-1), [2, 5, 8191, "14bit"]);
+sendNative(2, 5, 64);
+assert.equal(nativeValues.length, beforePair + 1, "an MSB crossing emitted an intermediate jump");
+sendNative(2, 37, 0);
+assert.deepEqual(nativeValues.at(-1), [2, 5, 8192, "14bit"]);
+sendNative(2, 37, 1);
+await new Promise(resolve => setTimeout(resolve, 8));
+assert.deepEqual(nativeValues.at(-1), [2, 5, 8193, "14bit"], "LSB-only motion was lost");
+sendNative(2, 38, 127); sendNative(2, 6, 127);
+assert.deepEqual(nativeValues.at(-1), [2, 6, 16383, "14bit"], "reversed byte order was not supported");
+sendNative(2, 64, 127);
+assert.deepEqual(nativeValues.at(-1), [2, 64, 127]);
+sendNative(15, 13, 64);
+assert.equal(nativePage, 15);
+assert.deepEqual(nativeValues.at(-1), [15, 13, 64], "immutable Mode 16 was interpreted as relative");
+sendNative(0, 106, 127);
+assert.equal(nativePage, 15, "a global side button selected an unrelated native mode");
+sendNative(2, 5, 65); sendNative(2, 37, 0);
+sendNative(2, 37, 1);
+native.dispose();
+const disposedCount = nativeValues.length;
+await new Promise(resolve => setTimeout(resolve, 8));
+assert.equal(nativeValues.length, disposedCount, "a disposed fader retained its pending write");
+const nativeRestored = new MidiInputs(backend, dependencies);
+assert.equal(nativeRestored.settings.mode, "native");
+nativeRestored.dispose();
 assert.deepEqual(errors, []);
 console.log("Launch Control passed: Mk1/Mk2 + XL3, pickup, mixer, banks, coalescing, LEDs, Learn priority, independent keyboard, USB reconnect, permission and saved settings.");

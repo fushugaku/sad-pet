@@ -1358,13 +1358,26 @@ function createKnob(
     },
     { passive: false },
   );
-  // A learned MIDI controller turns the knob across its whole range.
+  // Relative encoders use fine parameter steps instead of 128 positions over
+  // the whole range. Pitch is expressed in 0.1 semitones at any pitch range.
+  const midiStep = () => key === "pitch" ? 0.1 / (2 * Math.max(0.1, preset.params.pitch_range)) : binding?.step;
+  const midiQuantize = binding?.midiQuantize || ((v, origin) => {
+    if (binding?.quantize) return binding.quantize(v, origin);
+    const step = midiStep();
+    return step ? min + Math.round((v - min) / step) * step : v;
+  });
+  const midiIncrement = binding?.midiIncrement || ((v, delta) => {
+    if (binding?.increment) return binding.increment(v, delta);
+    const step = midiStep();
+    return step ? v + delta * step : fromUnit(toUnit(v) + delta / 1024);
+  });
   globalThis.SadMidiLearn?.attach(dial, key, aria, (unit) => {
     if (!preset) return;
-    let v = clamp(fromUnit(unit));
-    if (binding?.quantize) v = binding.quantize(v, get());
-    else if (binding?.step) v = min + Math.round((v - min) / binding.step) * binding.step;
-    v = clamp(v);
+    const v = clamp(midiQuantize(clamp(fromUnit(unit)), get()));
+    if (v !== get()) set(v);
+  }, (delta) => {
+    if (!preset) return;
+    const v = clamp(midiQuantize(clamp(midiIncrement(get(), delta)), get()));
     if (v !== get()) set(v);
   });
   if (binding?.register !== false) {
@@ -1374,7 +1387,7 @@ function createKnob(
   knobUnits.set(key, { format, min, max, get });
   dial.controlBinding = {
     schema: [key, label, format, min, max, aria],
-    binding: { ...binding, get, set,
+    binding: { ...binding, get, set, midiIncrement, midiQuantize,
       reset: () => binding ? binding.reset() : presets[0].params[key],
       feedback: () => state?.knobs?.[key] },
   };
@@ -3102,6 +3115,7 @@ function moozBinding(kind, parameter) {
   return {
     quantize: (v) => snap(v),
     increment: (v, direction) => snap(v + (direction * step) / param.max),
+    midiIncrement: (v, delta) => snap(v + delta / param.max),
     reset: () => param.default / param.max,
   };
 }
@@ -4673,7 +4687,7 @@ function syncModulatorRoutes(routes, holder) {
 // A slider's right-click menu: MIDI learn and modulation, like a knob's.
 function sliderMenu(input, key, label) {
   input.dataset.controlKey = key;
-  window.SadMidiLearn?.attach(input, key, label, (unit) => {
+  const apply = (unit) => {
     if (!preset || input.disabled) return;
     const min = Number(input.min),
       max = Number(input.max),
@@ -4683,6 +4697,10 @@ function sliderMenu(input, key, label) {
     input.value = String(Math.max(min, Math.min(max, value)));
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+  window.SadMidiLearn?.attach(input, key, label, apply, delta => {
+    const min = Number(input.min), max = Number(input.max), step = Number(input.step) || (max - min) / 1024;
+    apply((Number(input.value) + delta * step - min) / (max - min));
   });
 }
 function syncLfos() {

@@ -315,6 +315,62 @@ stored.set("sad-pet-midi-map", goodLegacy);
 console.log("MIDI learn UI tests passed");
 console.log("MIDI pages: 16 × 32 assignments, independent routing, migration, persistence, badges, cancellation and page-local clearing passed.");
 
+// Real grain Pitch: 0.1 st per relative tick, regardless of range, even when
+// starting from an old 7-bit value; high-resolution faders land on that grid.
+const fine = editor(), fineBank = new Element("div");
+document.body.append(fineBank);
+fine.preset = { params: { pitch: 0.5, pitch_range: 48 } };
+fine.presets = [{ params: { pitch: 0.5 } }];
+fine.setParam = (key, value) => { fine.preset.params[key] = value; };
+fine.createKnob(["pitch", "Pitch", v => `${((v * 2 - 1) * fine.preset.params.pitch_range).toFixed(1)} st`], fineBank);
+const fineLearn = fine.SadMidiLearn;
+fineLearn.learn("pitch");
+fineLearn.input(0, 13, 65, "relative");
+const semitones = () => (fine.preset.params.pitch * 2 - 1) * fine.preset.params.pitch_range;
+assert.ok(Math.abs(semitones() - 0.1) < 1e-10);
+for (let i = 0; i < 100; i++) fineLearn.input(0, 13, 65, "relative");
+assert.ok(Math.abs(semitones() - 10.1) < 1e-10, "relative Pitch accumulated rounding drift");
+fineLearn.input(0, 13, 63, "relative");
+assert.ok(Math.abs(semitones() - 10) < 1e-10);
+fineLearn.input(0, 13, 68, "relative");
+assert.ok(Math.abs(semitones() - 10.4) < 1e-10, "relative acceleration lost its tick count");
+fine.preset.params.pitch_range = 12;
+fine.preset.params.pitch = 0.5;
+fineLearn.input(0, 13, 65, "relative");
+assert.ok(Math.abs(semitones() - 0.1) < 1e-10, "Pitch precision depended on its range");
+fineLearn.learn("pitch");
+fineLearn.input(0, 5, 8260, "14bit");
+assert.ok(Math.abs(semitones() - 0.1) < 1e-10);
+assert.deepEqual(plain(fineLearn.mappings()).pitch, [0, 5, "14bit"]);
+assert.deepEqual(plain(editor().SadMidiLearn.mappings()).pitch, [0, 5, "14bit"], "14-bit format was lost on reload");
+fineLearn.learn("pitch");
+fineLearn.selectPage(3, { preserveLearning: true });
+assert.equal(fineLearn.learning(), "pitch", "the first native mode message cancelled Learn");
+fineLearn.input(3, 13, 65, "relative");
+assert.deepEqual(plain(fineLearn.mappings()).pitch, [3, 13, "relative"]);
+fine.preset.params.pitch = 1;
+fineLearn.input(3, 13, 65, "relative");
+assert.equal(fine.preset.params.pitch, 1, "relative input exceeded the parameter range");
+const beforeInvalid = fine.preset.params.pitch;
+for (const invalid of [-1, 16384, 1.5]) fineLearn.input(3, 5, invalid, "14bit");
+assert.equal(fine.preset.params.pitch, beforeInvalid);
+
+// Switching to the supplied hardware modes preserves existing assignments,
+// changes only the factory XL3 controls and keeps a recoverable local copy.
+fineLearn.selectPage(0);
+fineLearn.learn("old_pitch"); fineLearn.input(15, 14, 64);
+fineLearn.learn("old_button"); fineLearn.input(15, 37, 127);
+fineLearn.learn("keyboard"); fineLearn.input(2, 74, 127);
+fineLearn.configureXL3();
+assert.deepEqual(plain(fineLearn.mappings()).old_pitch, [0, 14, "relative"]);
+assert.deepEqual(plain(fineLearn.mappings()).old_button, [0, 64]);
+assert.deepEqual(plain(fineLearn.mappings()).keyboard, [2, 74]);
+assert.ok(stored.get("sad-pet-midi-pages-before-xl3-native"));
+const migrated = plain(fineLearn.mappings());
+fineLearn.configureXL3();
+assert.deepEqual(plain(fineLearn.mappings()), migrated, "native migration was not idempotent");
+console.log("XL3 precision: relative Pitch in 0.1 st, range changes, 14-bit faders, native Learn, bounds, persistence and existing-map migration passed.");
+
 // A Control surface may show hundreds of linked knobs. Unchanged telemetry
 // must not rewrite text/styles on each poll; real base/feedback edits still paint.
 const painted = new Element("div");

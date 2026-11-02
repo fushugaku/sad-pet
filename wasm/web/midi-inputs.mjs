@@ -18,7 +18,7 @@ export class MidiInputs {
     try {
       const saved = JSON.parse(storage?.getItem(STORAGE) || "null");
       if (saved) this.settings = {
-        enabled: saved.enabled !== false, mode: saved.mode === "learn" ? "learn" : "mixer",
+        enabled: saved.enabled !== false, mode: ["learn", "native"].includes(saved.mode) ? saved.mode : "mixer",
         id: typeof saved.id === "string" ? saved.id : null,
         name: typeof saved.name === "string" ? saved.name : null,
       };
@@ -32,9 +32,14 @@ export class MidiInputs {
       },
       error: message => { this.error = message; this.ui()?.notify(message); },
     });
+    this.highResolution = new Map();
   }
   save() {
     try { this.storage?.setItem(STORAGE, JSON.stringify(this.settings)); } catch { /* Optional. */ }
+  }
+  clearHighResolution() {
+    for (const pair of this.highResolution.values()) clearTimeout(pair.timer);
+    this.highResolution.clear();
   }
   async access() {
     if (!this.navigator?.requestMIDIAccess)
@@ -77,6 +82,7 @@ export class MidiInputs {
       this.save();
     }
     if (previous !== this.controller) {
+      this.clearHighResolution();
       this.surface.resetPickup();
       this.surface.buttonsDown.clear();
       this.surface.lights.clear();
@@ -111,6 +117,10 @@ export class MidiInputs {
   message(port, event) {
     if (port === this.controller) {
       const learner = this.learn();
+      if (this.settings.mode === "native") {
+        if (this.surface.model === "xl3") this.nativeInput(event.data, learner);
+        return;
+      }
       this.surface.mappingPage = learner?.page?.() ?? 0;
       const page = this.surface.pageInput(event.data);
       if (page !== null) {
@@ -134,6 +144,45 @@ export class MidiInputs {
     this.backend.resume().then(() => this.backend.audio.call("request", bytes, [], "/api/midi-bytes"))
       .catch(() => {});
   }
+  // SAD PET XL3 Custom Modes 1–15: relative encoders, 14-bit faders,
+  // freely assignable buttons. Factory Mode 16 keeps its fixed 7-bit format.
+  nativeInput(data, learner) {
+    if (data?.length !== 3 || (data[0] & 0xf0) !== 0xb0 ||
+        data.some(value => !Number.isInteger(value) || value < 0 || value > 255) ||
+        data[1] > 119 || data[2] > 127) return;
+    const channel = data[0] & 15, cc = data[1], value = data[2];
+    const encoder = cc >= 13 && cc <= 36, fader = cc >= 5 && cc <= 12;
+    const lsb = channel < 15 && cc >= 37 && cc <= 44;
+    const button = channel < 15 ? cc >= 64 && cc <= 79 : cc >= 37 && cc <= 52;
+    // Side/transport buttons use the global channel, not the custom mode's
+    // channel. They must never choose an unrelated mapping page.
+    if (!encoder && !fader && !lsb && !button) return;
+    if (button && value === 0 && learner?.page?.() !== channel) return;
+    if (learner?.page?.() !== channel) {
+      learner?.selectPage?.(channel, { preserveLearning: true });
+      this.changed();
+    }
+    if (channel === 15) { learner?.input(channel, cc, value); return; }
+    if (encoder) { learner?.input(channel, cc, value, "relative"); return; }
+    if (button) { learner?.input(channel, cc, value); return; }
+    const controller = lsb ? cc - 32 : cc, key = `${channel}:${controller}`;
+    const pair = this.highResolution.get(key) || { msb: null, lsb: null, dirty: 0, timer: null };
+    this.highResolution.set(key, pair);
+    pair[lsb ? "lsb" : "msb"] = value;
+    pair.dirty |= lsb ? 2 : 1;
+    if (pair.msb === null || pair.lsb === null) return;
+    const apply = () => {
+      clearTimeout(pair.timer);
+      pair.timer = null;
+      pair.dirty = 0;
+      if (this.settings.mode === "native" && learner?.page?.() === channel)
+        learner?.input(channel, controller, pair.msb * 128 + pair.lsb, "14bit");
+    };
+    // Accept either byte order and LSB-only changes. Wait briefly when only
+    // one half changes, so an MSB crossing cannot emit a coarse intermediate.
+    if (pair.dirty === 3) apply();
+    else if (!pair.timer) pair.timer = setTimeout(apply, 4);
+  }
   async keyboard(path, data) {
     if (path.searchParams.has("request")) await this.access();
     else this.refresh();
@@ -153,7 +202,7 @@ export class MidiInputs {
   async request(path, data) {
     if (path.searchParams.has("request")) await this.access();
     if (data) {
-      if ("mode" in data && !["mixer", "learn"].includes(data.mode)) throw new Error("Unknown controller mode");
+      if ("mode" in data && !["mixer", "learn", "native"].includes(data.mode)) throw new Error("Unknown controller mode");
       if ("page" in data && (!Number.isInteger(data.page) || data.page < 0 || data.page >= 16))
         throw new Error("Choose a MIDI mapping page from 1 to 16");
       if ("device" in data && data.device !== "auto" && data.device !== null &&
@@ -165,8 +214,15 @@ export class MidiInputs {
         this.settings.id = selected?.id || null;
         this.settings.name = selected?.name || null;
       }
-      if ("mode" in data) this.settings.mode = data.mode;
-      if ("page" in data) this.learn()?.selectPage?.(data.page);
+      if ("mode" in data) {
+        if (this.settings.mode !== data.mode) this.clearHighResolution();
+        this.settings.mode = data.mode;
+        if (data.mode === "native") this.learn()?.configureXL3?.();
+      }
+      if ("page" in data) {
+        this.clearHighResolution();
+        this.learn()?.selectPage?.(data.page);
+      }
       this.error = null;
       this.save();
     }
@@ -187,6 +243,7 @@ export class MidiInputs {
     };
   }
   dispose() {
+    this.clearHighResolution();
     this.surface.dispose();
     for (const port of this.bound) { port.onmidimessage = null; port.close?.().catch(() => {}); }
     this.bound.clear();

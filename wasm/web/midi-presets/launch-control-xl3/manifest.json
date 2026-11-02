@@ -1,0 +1,119 @@
+{
+  "encoders": {
+    "cc": [
+      13,
+      36
+    ],
+    "format": "relative-offset-64"
+  },
+  "faders": {
+    "msb_cc": [
+      5,
+      12
+    ],
+    "lsb_cc": [
+      37,
+      44
+    ],
+    "bits": 14
+  },
+  "buttons": {
+    "cc": [
+      64,
+      79
+    ],
+    "type": "momentary"
+  },
+  "modes": [
+    {
+      "mode": 1,
+      "channel": 1,
+      "file": "sadpet-mode-01.syx",
+      "sha256": "611cd389d901900c1d5ad39172e10c8576ded724571659c6e55e0424970e6f94"
+    },
+    {
+      "mode": 2,
+      "channel": 2,
+      "file": "sadpet-mode-02.syx",
+      "sha256": "51465cc150036403819b6a9517e0d2263465ebc1b3188c73b072be19a6e997dc"
+    },
+    {
+      "mode": 3,
+      "channel": 3,
+      "file": "sadpet-mode-03.syx",
+      "sha256": "18bbaab61cfe599531b2c10dfe495faa6c4cb1f51980ab7cf2f0ba48b6dcdbd5"
+    },
+    {
+      "mode": 4,
+      "channel": 4,
+      "file": "sadpet-mode-04.syx",
+      "sha256": "bb4035f5041468b0b2df2943b22532ce8801b232761caf6ed9255024cac47228"
+    },
+    {
+      "mode": 5,
+      "channel": 5,
+      "file": "sadpet-mode-05.syx",
+      "sha256": "d59d6cdce34cca0ba5c63a31b77df28640eb6887388711158595c2898e154b95"
+    },
+    {
+      "mode": 6,
+      "channel": 6,
+      "file": "sadpet-mode-06.syx",
+      "sha256": "1f701b27763824e3b96f8f9eb66e55ee82c6fcd5999dca8fa2a767fb8c73f14c"
+    },
+    {
+      "mode": 7,
+      "channel": 7,
+      "file": "sadpet-mode-07.syx",
+      "sha256": "96333a6eca7a224c0810eeb1d97f7c284b005845df5780f54975b765bb7ed333"
+    },
+    {
+      "mode": 8,
+      "channel": 8,
+      "file": "sadpet-mode-08.syx",
+      "sha256": "5d396a405c229347f14691b46436eb08b4a57a511ca4aed445dcb71652c10a7f"
+    },
+    {
+      "mode": 9,
+      "channel": 9,
+      "file": "sadpet-mode-09.syx",
+      "sha256": "e2246abf60f1fd859623df09ac77f7fb624cc0fb14c5b9d053158bf20f58f670"
+    },
+    {
+      "mode": 10,
+      "channel": 10,
+      "file": "sadpet-mode-10.syx",
+      "sha256": "0fb85f4da7d09c1f5aa0ca648c01755aa57b2d8480a725455cc3a56bd9b48d08"
+    },
+    {
+      "mode": 11,
+      "channel": 11,
+      "file": "sadpet-mode-11.syx",
+      "sha256": "07ff3b5e164fa4c169fbe989d21b3569fbefda2475a5a7e3b789d3d77d437cb9"
+    },
+    {
+      "mode": 12,
+      "channel": 12,
+      "file": "sadpet-mode-12.syx",
+      "sha256": "ee131cc929d9a51764c6d9961937ba5d3d33e9b175bdae108af0e4156500ba2e"
+    },
+    {
+      "mode": 13,
+      "channel": 13,
+      "file": "sadpet-mode-13.syx",
+      "sha256": "3ea3e271f3059cb7462896dc85b91df4a734f4def99b2a154ddffd60d63fad44"
+    },
+    {
+      "mode": 14,
+      "channel": 14,
+      "file": "sadpet-mode-14.syx",
+      "sha256": "b963b4f98c69168b113e38fb9946bd95cf6ceb4d6684842673ec07a413e00e86"
+    },
+    {
+      "mode": 15,
+      "channel": 15,
+      "file": "sadpet-mode-15.syx",
+      "sha256": "3b055bf85c968aa86049f857cad14842e81493b372c193ee71cc32134f5cd650"
+    }
+  ]
+}
