@@ -16,6 +16,13 @@ window.SadController = (() => {
     selectValue("controller-page", String(current));
     $("controller-page-prev").disabled = current === 0;
     $("controller-page-next").disabled = current === pages.length - 1;
+    const tracks = window.SadMidiLearn.tracks(), track = window.SadMidiLearn.track();
+    const trackSelect = $("controller-mapping-track");
+    if (trackSelect.options.length !== tracks.length)
+      trackSelect.replaceChildren(...tracks.map(t => option(String(t.id), `Track ${t.id + 1}`)));
+    selectValue("controller-mapping-track", String(track));
+    $("controller-track-prev").disabled = track === 0;
+    $("controller-track-next").disabled = track === tracks.length - 1;
     const count = pages[current].count;
     text("controller-page-count", count ? `${count} assignment${count === 1 ? "" : "s"}` : "No assignments");
   }
@@ -52,7 +59,7 @@ window.SadController = (() => {
     $("controller-pages").hidden = data.mode === "mixer";
     $("controller-learn-hint").hidden = data.mode === "mixer";
     text("controller-learn-hint", data.mode === "daw"
-      ? "Mode + 1–16: page · Shift + turn: ×10 · Play: start/stop · Record: record/save."
+      ? "Mode + 1–16: page · Track ◀/▶: 1–6 · Shift + turn: ×10 · Play: start/stop · Record: record/save."
       : data.mode === "native"
       ? "Custom Modes: relative knobs, 14-bit faders; fixed colours. For live lights and OLED, choose 16 pages + RGB."
       : "Upper buttons: pages 1–8 · lower: 9–16 · ← / → changes page.");
@@ -95,6 +102,9 @@ window.SadController = (() => {
       $("controller-page").onchange = e => perform("/api/controller", { page: Number(e.target.value) });
       $("controller-page-prev").onclick = () => perform("/api/controller", { page: window.SadMidiLearn.page() - 1 });
       $("controller-page-next").onclick = () => perform("/api/controller", { page: window.SadMidiLearn.page() + 1 });
+      $("controller-mapping-track").onchange = e => perform("/api/controller", { mappingTrack: Number(e.target.value) });
+      $("controller-track-prev").onclick = () => perform("/api/controller", { mappingTrack: window.SadMidiLearn.track() - 1 });
+      $("controller-track-next").onclick = () => perform("/api/controller", { mappingTrack: window.SadMidiLearn.track() + 1 });
       window.addEventListener("sad-midi-change", () => perform("/api/controller"));
       perform("/api/controller");
     },

@@ -2262,11 +2262,12 @@ h2 {
   font-size: 11px;
 }
 #controller-device { max-width: min(310px, calc(100% - 24px)); }
-.controller-pages { display: flex; align-items: center; gap: 8px; margin: 10px 0 0 20px; }
+.controller-pages { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 10px 0 0 20px; }
+.controller-bank { display: grid; grid-template-columns: 32px minmax(0, 135px) 32px; gap: 8px; }
 .controller-pages[hidden], .controller-learn-hint[hidden] { display: none; }
 .controller-pages button, .controller-pages select { height: 32px; font-size: 11px; }
 .controller-pages button { width: 32px; padding: 0; }
-#controller-page { min-width: 135px; }
+#controller-page, #controller-mapping-track { min-width: 0; width: 100%; }
 #controller-page-count { color: var(--muted); }
 .controller-learn-hint { margin: 8px 0 0 20px; color: var(--muted); }
 #controller-status {
@@ -2286,7 +2287,8 @@ h2 {
   #controller-device { grid-column: 2 / -1; max-width: none; width: 100%; }
   #controller-mode { grid-column: 2; width: 100%; }
   .controller-head select, .controller-head button { height: 44px; }
-  .controller-pages { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; }
+  .controller-pages { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .controller-bank { grid-template-columns: 44px minmax(0, 1fr) 44px; }
   .controller-pages button, .controller-pages select { height: 44px; width: 100%; min-width: 0; }
   #controller-page-count { grid-column: 1 / -1; }
   #controller-map dl { grid-template-columns: 1fr; gap: 0; }

@@ -887,9 +887,16 @@
             <button id="controller-connect">Connect</button>
           </div>
           <div id="controller-pages" class="controller-pages" hidden>
-            <button id="controller-page-prev" aria-label="Previous mapping page">←</button>
-            <select id="controller-page" aria-label="MIDI mapping page"></select>
-            <button id="controller-page-next" aria-label="Next mapping page">→</button>
+            <div class="controller-bank">
+              <button id="controller-page-prev" aria-label="Previous mapping page">←</button>
+              <select id="controller-page" aria-label="MIDI mapping page"></select>
+              <button id="controller-page-next" aria-label="Next mapping page">→</button>
+            </div>
+            <div class="controller-bank">
+              <button id="controller-track-prev" aria-label="Previous mapping track">←</button>
+              <select id="controller-mapping-track" aria-label="MIDI mapping track"></select>
+              <button id="controller-track-next" aria-label="Next mapping track">→</button>
+            </div>
             <output id="controller-page-count" aria-live="polite"></output>
           </div>
           <p id="controller-learn-hint" class="controller-learn-hint" hidden>

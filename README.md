@@ -807,9 +807,17 @@ after another MIDI client disabled it. This profile uses the actual **DAW Contro
 Custom Modes retain their template colours and do not display DAW LED updates.
 Controls use the paired DAW USB interface, with three relative encoder rows.
 
-The same sixteen saved mapping pages remain available. **Mode + 1–16** selects
-a page and immediately returns the hardware to DAW Control; **Page ▲/▼** or
-**Track ◀/▶** steps between pages. The screen shows the current page. DAW CCs
+Each of the sixteen modes has **six independent mapping tracks** (96 banks).
+**Mode + 1–16** selects a mode and immediately returns the hardware to DAW
+Control; **Page ▲/▼** steps between modes. **Track ◀/▶** selects one of that
+mode's six tracks. Every mode remembers its selected track, including after a
+reload. The page and track selectors in the browser do the same. Existing
+assignments move into Track 1 of their original mode; their previous store is
+backed up under `sad-pet-midi-pages-before-tracks`.
+
+The screen shows the current mode and track. Changing tracks updates colours,
+parameter names and fader pickup; unassigned controls lose the previous bank's
+names. Clearing mappings affects the selected track. DAW CCs
 are translated to the existing per-page logical channels and control numbers,
 so switching profiles preserves assignments. All sixteen channel buttons remain
 assignable. Hold the controller's **Shift** while turning an encoder for ten
@@ -840,7 +848,7 @@ page isolation, badge changes, cancellation, persistence and clearing one page.
 sampler pad identity and compact feedback reads. `node wasm/test-xl3-feedback.mjs`
 checks DAW port pairing, DAW Control selection, relative rows, all sixteen
 logical channels, mode gestures, page buttons, Shift acceleration and release,
-transport press/release handling, button lights, RGB brightness, display names
+six tracks per mode, bank feedback, transport press/release handling, button lights, RGB brightness, display names
 and MIDI cleanup.
 
 Protocol references: [Novation Mk1/Mk2 programmer's reference](https://fael-downloads-prod.focusrite.com/customer/prod/downloads/launch_control_xl_programmer_s_reference_guide.pdf),

@@ -212,6 +212,12 @@ export class MidiInputs {
       if (!value) { this.pageButtons.delete(cc); return; }
       if (this.pageButtons.has(cc)) return;
       this.pageButtons.add(cc);
+      if (cc === 103 || cc === 102) {
+        const next = Math.max(0, Math.min(5, (learner?.track?.() ?? 0) + (cc === 103 ? -1 : 1)));
+        learner?.selectTrack?.(next, { preserveLearning: true });
+        this.feedback.sync(); this.changed();
+        return;
+      }
       const next = Math.max(0, Math.min(15, page + ([106, 103].includes(cc) ? -1 : 1)));
       learner?.selectPage?.(next, { preserveLearning: true });
       this.feedback.selectPage(next); this.changed();
@@ -310,6 +316,8 @@ export class MidiInputs {
       if ("mode" in data && !["mixer", "learn", "native", "daw"].includes(data.mode)) throw new Error("Unknown controller mode");
       if ("page" in data && (!Number.isInteger(data.page) || data.page < 0 || data.page >= 16))
         throw new Error("Choose a MIDI mapping page from 1 to 16");
+      if ("mappingTrack" in data && (!Number.isInteger(data.mappingTrack) || data.mappingTrack < 0 || data.mappingTrack >= 6))
+        throw new Error("Choose a mapping track from 1 to 6");
       if ("device" in data && data.device !== "auto" && data.device !== null &&
           !this.candidates().some(p => p.id === data.device)) throw new Error("That controller is no longer connected");
       await this.surface.flush();
@@ -330,6 +338,10 @@ export class MidiInputs {
         this.clearHighResolution();
         this.learn()?.selectPage?.(data.page);
       }
+      if ("mappingTrack" in data) {
+        this.clearHighResolution();
+        this.learn()?.selectTrack?.(data.mappingTrack);
+      }
       this.error = null;
       this.save();
     }
@@ -347,6 +359,7 @@ export class MidiInputs {
       xl3Available: this.candidates().some(p => launchControlModel(p.name) === "xl3"),
       connected: this.controller?.name || null, mode: this.settings.mode,
       page: this.surface.mappingPage, pages: learner?.pages?.() || [],
+      mappingTrack: learner?.track?.() ?? 0, mappingTracks: learner?.tracks?.() || [],
       feedback: this.feedback.active || (!!this.surface.output && this.surface.model === "xl"),
       feedbackPermission: !!this.backend.midiAccess?.sysexEnabled,
       feedbackAvailable: this.surface.model === "xl3" && this.settings.mode === "daw" && !!this.feedbackInput && !!this.feedbackOutput,

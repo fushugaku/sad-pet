@@ -81,6 +81,7 @@ export class Xl3Feedback {
     if (!Number.isInteger(page) || page < 0 || page > 15) return;
     if (this.page !== page) {
       this.page = page; this.colors.clear(); this.positions.clear(); this.names.clear(); this.lastControl = null;
+      if (this.active) this.sysex(4, 54, 0);
     }
     if (this.active && this.hardwareMode !== 2) {
       this.hardwareMode = 2;
@@ -117,25 +118,33 @@ export class Xl3Feedback {
   async sync() {
     if (!this.active || this.syncing) return;
     this.syncing = true;
-    const page = this.page, output = this.output;
+    const page = this.page, output = this.output, track = this.learn()?.track?.() ?? 0;
+    if (this.track !== track) {
+      this.track = track; this.colors.clear(); this.positions.clear(); this.names.clear();
+      this.lastControl = null; this.header = null; this.displaySignature = null;
+      this.sysex(4, 54, 0);
+    }
     try {
       const learner = this.learn();
       const transport = this.transport();
+      const trackCount = learner?.tracks?.().length || 1;
       for (const [control, rgb] of [[116, [0, transport?.playing ? 127 : 12, 0]],
-        [118, [transport?.recording ? 127 : 12, 0, 0]]]) {
+        [118, [transport?.recording ? 127 : 12, 0, 0]],
+        [103, track > 0 ? [0, 80, 100] : [0, 0, 0]],
+        [102, track < trackCount - 1 ? [0, 80, 100] : [0, 0, 0]]]) {
         const signature = rgb.join();
         if (this.colors.get(control) !== signature) {
           this.sysex(1, 83, control, ...rgb); this.colors.set(control, signature);
         }
       }
       await learner?.refreshFeedback?.();
-      if (!this.active || this.page !== page || this.output !== output) return;
+      if (!this.active || this.page !== page || this.output !== output || (learner?.track?.() ?? 0) !== track) return;
       const controls = new Map((learner?.feedback?.() || []).filter(m => m.channel === page).map(m => [m.controller, m]));
-      const header = `${page}:${controls.size}`;
+      const header = `${page}:${track}:${controls.size}`;
       if (this.header !== header) {
         this.sysex(4, 53, 2);
         this.sysex(6, 53, 0, ...ascii("SAD PET"));
-        this.sysex(6, 53, 1, ...ascii(`Page ${page + 1}`));
+        this.sysex(6, 53, 1, ...ascii(`Page ${page + 1} / Track ${track + 1}`));
         this.sysex(6, 53, 2, ...ascii(`${controls.size} assignments`));
         this.sysex(4, 53, 127);
         this.header = header;
@@ -149,9 +158,15 @@ export class Xl3Feedback {
           this.sysex(1, 83, control, ...rgb); this.colors.set(control, signature);
         }
       }
-      for (const binding of controls.values()) {
-        const control = binding.controller;
-        if (!binding.available || control < 5 || control > 36) continue;
+      for (let control = 5; control <= 36; control++) {
+        const binding = controls.get(control);
+        if (!binding?.available) {
+          if (this.names.get(control) !== null) {
+            this.sysex(4, control, 0); this.names.set(control, null);
+          }
+          this.positions.delete(control);
+          continue;
+        }
         const value = Math.round(unit(binding.unit) * 127);
         if (this.positions.get(control) !== value) {
           this.send([0xbf, control, value]);

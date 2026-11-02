@@ -16,7 +16,9 @@ let bindings = [{ key: "control:0:pitch", parameter: "pitch", label: "Pitch", in
   channel: 0, available: true, unit: .5, text: "0.0 st", format: "relative" },
 { key: "control:0:filter", parameter: "filter", label: "Filter 1 cutoff", controller: 5,
   channel: 0, available: true, unit: 8193 / 16383, text: "50%", format: "14bit" }];
-const feedback = new Xl3Feedback({ learn: () => ({ feedback: () => bindings, async refreshFeedback() {} }),
+let feedbackTrack = 0;
+const feedback = new Xl3Feedback({ learn: () => ({ feedback: () => bindings, async refreshFeedback() {},
+  track: () => feedbackTrack, tracks: () => Array.from({ length: 6 }, (_, id) => ({ id })) }),
   page: p => pages.push(p), error: m => errors.push(m) });
 feedback.configure({ enabled: false, output: { send: bytes => messages.push([...bytes]) }, page: 0 });
 assert.equal(messages.length, 0, "feedback ran without permission");
@@ -51,6 +53,18 @@ assert.ok(messages.length > count);
 bindings[0].unit = 1; bindings[0].text = "36.0 st";
 await feedback.sync();
 assert.deepEqual(messages.filter(b => b[6] === 1 && b[8] === 13).at(-1).slice(9, 12), [127, 0, 0]);
+const originalBindings = structuredClone(bindings);
+feedbackTrack = 1;
+bindings[0] = { ...bindings[0], parameter: "filter", label: "Cutoff", unit: .25, text: "25%" };
+bindings[1] = { ...bindings[1], unit: .25 };
+await feedback.sync();
+assert.deepEqual(messages.filter(b => b[6] === 1 && b[8] === 13).at(-1).slice(9, 12), feedbackRgb("filter", "Cutoff", .25),
+  "switching Track kept the previous parameter's colour");
+assert.ok(messages.some(b => b.join() === "191,5,32"), "switching Track did not update fader pickup");
+feedback.touch(13); await feedback.sync();
+assert.equal(String.fromCharCode(...messages.filter(b => b[6] === 6 && b[7] === 54 && b[8] === 1).at(-1).slice(9, -1)), "Cutoff");
+feedbackTrack = 0; bindings = originalBindings;
+await feedback.sync();
 for (let page = 0; page < 16; page++) {
   feedback.input([0xb6, 30, page < 4 ? page + 6 : page + 14]);
   await new Promise(resolve => setTimeout(resolve, 0));
@@ -62,7 +76,7 @@ feedback.input([0xb6, 30, 2]);
 assert.equal(deviceRows.get(69), 127, "a device mode report did not restore the relative format");
 feedback.selectPage(2);
 assert.equal(feedback.hardwareMode, 2, "page selection left the RGB-capable DAW surface");
-assert.ok(messages.some(b => b[6] === 6 && b[7] === 53 && String.fromCharCode(...b.slice(9, -1)) === "Page 3"));
+assert.ok(messages.some(b => b[6] === 6 && b[7] === 53 && String.fromCharCode(...b.slice(9, -1)) === "Page 3 / Track 1"));
 feedback.dispose();
 assert.ok(messages.some(b => b.join() === "159,12,0"), "disconnect left DAW mode enabled");
 const stopped = messages.length;
@@ -82,6 +96,7 @@ const midiAccess = { sysexEnabled: false,
 const requests = [], received = [], notes = [], actions = [];
 const transportState = { playing: false, recording: false };
 let activePage = 0, deny = false, learningTarget = null, learnedBindings = [];
+const activeTracks = Array(16).fill(0);
 const inputs = new MidiInputs({ audio: { async call(...args) { notes.push(args); } },
   midiClock: { input: () => false }, async resume() {} }, {
   navigator: { async requestMIDIAccess(options) {
@@ -92,6 +107,8 @@ const inputs = new MidiInputs({ audio: { async call(...args) { notes.push(args);
   } },
   storage: { getItem() { return JSON.stringify({ mode: "daw" }); }, setItem() {} },
   learn: () => ({ page: () => activePage, selectPage: p => { activePage = p; },
+    track: () => activeTracks[activePage], tracks: () => Array.from({ length: 6 }, (_, id) => ({ id, count: 0 })),
+    selectTrack: t => { activeTracks[activePage] = t; },
     learning: () => learningTarget,
     input: (...args) => {
       received.push(args);
@@ -146,6 +163,29 @@ assert.equal(activePage, 14, "held page navigation repeated");
 auxiliaryIn.onmidimessage({ data: [0xb0, 106, 0] });
 auxiliaryIn.onmidimessage({ data: [0xb0, 106, 127] });
 assert.equal(activePage, 13);
+for (let track = 1; track < 6; track++) {
+  auxiliaryIn.onmidimessage({ data: [0xb0, 102, 127] });
+  auxiliaryIn.onmidimessage({ data: [0xb0, 102, 127] });
+  assert.equal(activeTracks[13], track, "held Track repeated or skipped a bank");
+  auxiliaryIn.onmidimessage({ data: [0xb0, 102, 0] });
+}
+auxiliaryIn.onmidimessage({ data: [0xb0, 102, 127] });
+auxiliaryIn.onmidimessage({ data: [0xb0, 102, 0] });
+assert.equal(activeTracks[13], 5);
+assert.equal(activePage, 13, "Track navigation changed Mode");
+auxiliaryIn.onmidimessage({ data: [0xb0, 103, 127] });
+auxiliaryIn.onmidimessage({ data: [0xb0, 103, 0] });
+assert.equal(activeTracks[13], 4);
+await inputs.request(new URL("http://localhost/api/controller"), { mappingTrack: 2 });
+await inputs.feedback.sync();
+assert.equal(inputs.status().mappingTrack, 2);
+assert.equal(inputs.status().mappingTracks.length, 6);
+assert.ok(messages.some(b => b[6] === 6 && b[7] === 53 && String.fromCharCode(...b.slice(9, -1)) === "Page 14 / Track 3"));
+auxiliaryIn.onmidimessage({ data: [0xb6, 30, 7] });
+assert.equal(activeTracks[activePage], 0);
+auxiliaryIn.onmidimessage({ data: [0xb6, 30, 27] });
+assert.equal(activePage, 13);
+assert.equal(activeTracks[13], 2, "Mode did not restore its selected Track");
 const beforeTouch = received.length;
 auxiliaryIn.onmidimessage({ data: [0xbe, 13, 127] });
 auxiliaryIn.onmidimessage({ data: [0xbf, 13, 100] });

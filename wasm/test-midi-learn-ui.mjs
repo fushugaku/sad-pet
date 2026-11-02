@@ -187,7 +187,7 @@ disabled = false;
 
 // Stepped knobs land on their steps; learning a controller again moves it.
 dial(pitch).dispatch("contextmenu", {});
-assert.deepEqual(items(), ["MIDI learn", "Forget all mappings on Page 1 (1)"]);
+assert.deepEqual(items(), ["MIDI learn", "Forget all mappings on Page 1 · Track 1 (1)"]);
 choose("MIDI learn");
 learn.input(0, 74, 33);
 assert.deepEqual(plain(learn.mappings()), { drum1_9: [0, 74] });
@@ -206,7 +206,7 @@ assert.equal(listeners.size, 0, "learning left its Esc listener behind");
 dial(cutoff).dispatch("contextmenu", {});
 choose("MIDI learn");
 dial(cutoff).dispatch("contextmenu", {});
-assert.deepEqual(items(), ["Cancel MIDI learn", "Forget all mappings on Page 1 (1)"]);
+assert.deepEqual(items(), ["Cancel MIDI learn", "Forget all mappings on Page 1 · Track 1 (1)"]);
 const layer = menu();
 layer.onkeydown({ key: "ArrowDown", preventDefault() {}, stopPropagation() {} });
 assert.ok(layer.children[0].children[1].classList.contains("is-active"));
@@ -299,7 +299,7 @@ for (let p = 0; p < 16; p++) {
 assert.deepEqual(JSON.parse(stored.get("sad-pet-midi-map")), expectedPages[0], "legacy storage stopped representing Page 1");
 paging.selectPage(15);
 dial(pageKnobs[0]).dispatch("contextmenu", {});
-choose("Forget all mappings on Page 16 (32)");
+choose("Forget all mappings on Page 16 · Track 1 (32)");
 assert.deepEqual(plain(paging.mappings()), {});
 assert.equal(dial(pageKnobs[0]).querySelector(".knob-midi"), null);
 paging.selectPage(0);
@@ -453,7 +453,7 @@ const scopedRestored = editor();
 scopedRestored.SadMidiTargets = scoped.SadMidiTargets;
 scopedRestored.SadMidiLearn.input(0, 14, 65, "relative");
 assert.equal(routed.at(-1).target.timbre, 1, "source identity was lost on reload");
-assert.equal(JSON.parse(stored.get("sad-pet-midi-pages")).version, 2);
+assert.equal(JSON.parse(stored.get("sad-pet-midi-pages")).version, 3);
 assert.equal(Object.keys(scopedRestored.SadMidiLearn.targets()).length, 2);
 assert.equal(scopedLearn.feedback()[0].label, "Pitch");
 
@@ -479,3 +479,71 @@ assert.equal(preparations, 1, "the Learn menu did not prepare live controller fe
 legacyScoped.SadMidiLearn.learnTarget({ id: "control:0:pitch", timbre: 0, parameter: "pitch", label: "Pitch" });
 assert.equal(preparations, 2, "linked Control views bypassed automatic feedback preparation");
 assert.equal(legacyScoped.SadMidiLearn.learning(), "control:0:pitch");
+
+// Existing modes migrate into Track 1. All 16 × 6 banks can then reuse
+// the same encoder without redirecting or erasing an inactive bank.
+stored.clear();
+const oldModes = { version: 2, active: 3,
+  pages: Array.from({ length: 16 }, (_, p) => ({ [`old_${p}`]: [p, 74] })) };
+stored.set("sad-pet-midi-pages", JSON.stringify(oldModes));
+const multi = editor().SadMidiLearn;
+assert.equal(multi.page(), 3);
+assert.deepEqual(JSON.parse(stored.get("sad-pet-midi-pages-before-tracks")), oldModes);
+for (let p = 0; p < 16; p++) {
+  multi.selectPage(p);
+  assert.equal(multi.track(), 0);
+  assert.deepEqual(plain(multi.mappings()), oldModes.pages[p]);
+  for (let t = 1; t < 6; t++) {
+    multi.selectTrack(t);
+    assert.deepEqual(plain(multi.mappings()), {});
+  }
+}
+const trackValues = Array(96).fill(0), trackDials = [];
+for (let p = 0; p < 16; p++) for (let t = 0; t < 6; t++) {
+  const i = p * 6 + t, dial = new Element("div"), key = `mode_${p}_track_${t}`;
+  document.body.append(dial); trackDials.push(dial);
+  multi.attach(dial, key, key, v => { trackValues[i] = v; }, delta => { trackValues[i] += delta; });
+  multi.selectPage(p); multi.selectTrack(t);
+  multi.learn(key); multi.input(p, 13, 65, "relative");
+  assert.equal(trackValues[i], 1);
+}
+multi.selectPage(0); multi.selectTrack(0);
+multi.input(0, 13, 65, "relative");
+multi.selectTrack(1); multi.input(0, 13, 65, "relative");
+assert.deepEqual(trackValues.slice(0, 6), [2, 2, 1, 1, 1, 1]);
+assert.equal(trackDials[0].querySelector(".knob-midi"), null, "inactive Track kept its MIDI badge");
+multi.selectPage(1);
+assert.equal(multi.track(), 5, "Mode did not remember its Track");
+multi.selectPage(0);
+assert.equal(multi.track(), 1);
+multi.forgetAll();
+assert.deepEqual(plain(multi.mappings()), {});
+multi.selectTrack(0);
+assert.ok(multi.mappings().mode_0_track_0, "clearing one Track erased another");
+multi.learn("mode_0_track_0"); multi.selectTrack(2);
+assert.equal(multi.learning(), null, "manual Track change kept Learn armed");
+multi.learn("mode_0_track_0"); multi.selectTrack(3, { preserveLearning: true });
+assert.equal(multi.learning(), "mode_0_track_0");
+multi.cancel();
+const remembered = editor().SadMidiLearn;
+assert.equal(remembered.page(), 0); assert.equal(remembered.track(), 3);
+for (let p = 0; p < 16; p++) for (let t = 0; t < 6; t++) {
+  remembered.selectPage(p); remembered.selectTrack(t);
+  const mapping = plain(remembered.mappings());
+  if (p === 0 && t === 1) assert.deepEqual(mapping, {});
+  else assert.deepEqual(mapping[`mode_${p}_track_${t}`], [p, 13, "relative"]);
+  if (t === 0) assert.deepEqual(mapping[`old_${p}`], [p, 74]);
+}
+for (const t of [-1, 6, .5]) assert.throws(() => remembered.selectTrack(t), /1 to 6/);
+remembered.selectPage(3);
+for (let t = 0; t < 6; t++) {
+  remembered.selectTrack(t); remembered.learn(`native_${t}`); remembered.input(15, 14, 65);
+}
+remembered.configureXL3();
+const nativeBackup = JSON.parse(stored.get("sad-pet-midi-pages-before-xl3-native"));
+for (let t = 0; t < 6; t++) {
+  remembered.selectTrack(t);
+  assert.deepEqual(plain(remembered.mappings())[`native_${t}`], [3, 14, "relative"]);
+  assert.deepEqual(nativeBackup.banks[3][t][`native_${t}`], [15, 14]);
+}
+console.log("Mapping tracks passed: legacy migration, 16 × 6 independent banks, offscreen isolation, badges, per-Mode recall, Track-local clearing, Learn, reload and native migration.");

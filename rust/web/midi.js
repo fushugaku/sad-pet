@@ -6,14 +6,17 @@
 // same menu holds the knob's modulation (hooks.menu).
 window.SadMidiLearn = (() => {
   const STORAGE = "sad-pet-midi-map";
-  const PAGE_STORAGE = "sad-pet-midi-pages", PAGE_COUNT = 16;
+  const PAGE_STORAGE = "sad-pet-midi-pages", PAGE_COUNT = 16, TRACK_COUNT = 6;
   // CC 120–127 are channel mode messages (all notes off, reset…).
   const valid = (channel, controller) =>
     Number.isInteger(channel) && channel >= 0 && channel < 16 &&
     Number.isInteger(controller) && controller >= 0 && controller < 120;
   const validPage = value => Number.isInteger(value) && value >= 0 && value < PAGE_COUNT;
-  /** Each page: knob key → [channel, controller, optional format]. */
-  const pages = Array.from({ length: PAGE_COUNT }, () => new Map());
+  const validTrack = value => Number.isInteger(value) && value >= 0 && value < TRACK_COUNT;
+  /** Six independent mapping tracks in each of sixteen modes. */
+  const banks = Array.from({ length: PAGE_COUNT }, () => Array.from({ length: TRACK_COUNT }, () => new Map()));
+  const activeTracks = Array(PAGE_COUNT).fill(0);
+  const pages = banks.map(tracks => tracks[0]);
   const targets = new Map();
   let page = 0;
   const load = (target, value) => {
@@ -24,8 +27,20 @@ window.SadMidiLearn = (() => {
   };
   try {
     const saved = JSON.parse(localStorage.getItem(PAGE_STORAGE) || "null");
-    if ([1, 2].includes(saved?.version) && Array.isArray(saved.pages)) {
-      pages.forEach((target, i) => load(target, saved.pages[i]));
+    if ([1, 2, 3].includes(saved?.version) && Array.isArray(saved.pages)) {
+      if (saved.version === 3 && Array.isArray(saved.banks)) {
+        banks.forEach((tracks, p) => {
+          tracks.forEach((target, t) => load(target, saved.banks[p]?.[t] ?? (t === 0 ? saved.pages[p] : null)));
+          if (validTrack(saved.activeTracks?.[p])) activeTracks[p] = saved.activeTracks[p];
+          pages[p] = tracks[activeTracks[p]];
+        });
+      } else {
+        pages.forEach((target, i) => load(target, saved.pages[i]));
+        try {
+          if (!localStorage.getItem("sad-pet-midi-pages-before-tracks"))
+            localStorage.setItem("sad-pet-midi-pages-before-tracks", JSON.stringify(saved));
+        } catch { /* Backup storage must not interrupt migration. */ }
+      }
       for (const [id, target] of Object.entries(saved.targets || {}))
         if (target && Number.isInteger(target.timbre) && target.timbre >= 0 &&
             typeof target.parameter === "string" && typeof target.key === "string" &&
@@ -52,13 +67,17 @@ window.SadMidiLearn = (() => {
     learning = null,
     attached = 0;
   const name = ([channel, controller]) => `CC ${controller} · ch ${channel + 1}`;
+  const location = () => `Page ${page + 1} · Track ${(shared ? shared.track() : activeTracks[page]) + 1}`;
+  const snapshot = () => ({ version: 3, active: page, activeTracks,
+    pages: banks.map(tracks => Object.fromEntries(tracks[0])),
+    banks: banks.map(tracks => tracks.map(p => Object.fromEntries(p))),
+    ...(targets.size ? { targets: Object.fromEntries(targets) } : {}) });
   function save() {
     index();
     try {
-      localStorage.setItem(PAGE_STORAGE, JSON.stringify({ version: targets.size ? 2 : 1, active: page,
-        pages: pages.map(p => Object.fromEntries(p)), ...(targets.size ? { targets: Object.fromEntries(targets) } : {}) }));
-      // Retain Page 1 in the previous format for older builds.
-      localStorage.setItem(STORAGE, JSON.stringify(Object.fromEntries(pages[0])));
+      localStorage.setItem(PAGE_STORAGE, JSON.stringify(snapshot()));
+      // Retain Mode 1 / Track 1 in the previous single-page format.
+      localStorage.setItem(STORAGE, JSON.stringify(Object.fromEntries(banks[0][0])));
     } catch {
       // Storage may be full or blocked; the mapping still works now.
     }
@@ -152,7 +171,7 @@ window.SadMidiLearn = (() => {
     paint(key);
     document.addEventListener("keydown", escape, true);
     const hint = hooks.hint();
-    hooks.notify(`MIDI learn: move a controller to turn ${label(learning)} · Page ${page + 1} · Esc cancels${hint ? ` · ${hint}` : ""}`, true);
+    hooks.notify(`MIDI learn: move a controller to turn ${label(learning)} · ${location()} · Esc cancels${hint ? ` · ${hint}` : ""}`, true);
     prepare();
   }
   function stop() {
@@ -168,6 +187,7 @@ window.SadMidiLearn = (() => {
     hooks.notify("MIDI learn cancelled");
   }
   function selectPage(next, { preserveLearning = false } = {}) {
+    if (shared) return shared.selectPage(next, { preserveLearning });
     if (!validPage(next)) throw new Error("Choose a MIDI mapping page from 1 to 16");
     if (next === page) return page;
     // Neither an open menu nor an armed Learn may act on a different page.
@@ -178,6 +198,17 @@ window.SadMidiLearn = (() => {
     save();
     paint();
     return page;
+  }
+  function selectTrack(next, { preserveLearning = false } = {}) {
+    if (shared) return shared.selectTrack(next, { preserveLearning });
+    if (!validTrack(next)) throw new Error("Choose a mapping track from 1 to 6");
+    if (next === activeTracks[page]) return next;
+    window.SadLazySelect?.close();
+    if (learning !== null && !preserveLearning) cancel();
+    activeTracks[page] = next;
+    map = pages[page] = banks[page][next];
+    save(); paint();
+    return next;
   }
   function forget(key) {
     if (shared) { shared.forget(key); return; }
@@ -191,7 +222,7 @@ window.SadMidiLearn = (() => {
     map.clear();
     save();
     mapped.forEach(paint);
-    hooks.notify(`Forgot ${mapped.length} MIDI mapping${mapped.length === 1 ? "" : "s"} on Page ${page + 1}`);
+    hooks.notify(`Forgot ${mapped.length} MIDI mapping${mapped.length === 1 ? "" : "s"} on ${location()}`);
   }
   /** A controller moved: learn it, then turn the knob it is mapped to. */
   function input(channel, controller, value, format = "absolute", multiplier = 1) {
@@ -232,9 +263,9 @@ window.SadMidiLearn = (() => {
   // Move existing assignments to each mode's channel and keep a local backup.
   function configureXL3() {
     let changed = false;
-    const before = JSON.stringify({ version: 1, active: page, pages: pages.map(p => Object.fromEntries(p)) });
-    pages.forEach((p, channel) => {
-      if (channel === 15) return;
+    const before = JSON.stringify(snapshot());
+    banks.forEach((tracks, channel) => { for (const p of tracks) {
+      if (channel === 15) continue;
       for (const [key, [oldChannel, cc]] of p) {
         if (oldChannel !== 15) continue;
         if (cc >= 5 && cc <= 36) {
@@ -245,7 +276,7 @@ window.SadMidiLearn = (() => {
           changed = true;
         }
       }
-    });
+    } });
     if (changed) {
       try {
         if (!localStorage.getItem("sad-pet-midi-pages-before-xl3-native"))
@@ -283,7 +314,7 @@ window.SadMidiLearn = (() => {
     ];
     if (cc) choices.push(item(`Forget ${name(cc)}`, () => forget(key)));
     if (map.size > (cc ? 1 : 0))
-      choices.push(item(`Forget all mappings on Page ${page + 1} (${map.size})`, forgetAll));
+      choices.push(item(`Forget all mappings on ${location()} (${map.size})`, forgetAll));
     const more = hooks.menu(local, label(key)),
       surface = window.SadControl?.menu(dial, local, label(key)),
       // A keyboard context menu has no pointer position: open by the knob.
@@ -304,9 +335,9 @@ window.SadMidiLearn = (() => {
   function migrateTargets() {
     if (!window.SadMidiTargets?.enabled) return;
     let changed = false;
-    let before = JSON.stringify({ version: 1, active: page, pages: pages.map(p => Object.fromEntries(p)) });
+    let before = JSON.stringify(snapshot());
     try { before = localStorage.getItem(PAGE_STORAGE) || before; } catch { /* Optional storage. */ }
-    for (const p of pages) for (const [key, cc] of [...p]) {
+    for (const p of banks.flat()) for (const [key, cc] of [...p]) {
       if (targets.has(key)) continue;
       const knob = [...(knobs.get(key) || [])].findLast(k => k.dial.isConnected && k.details?.describe);
       const target = knob?.details.describe();
@@ -354,22 +385,32 @@ window.SadMidiLearn = (() => {
       targets.set(target.id, target);
       learning = target.id; paint();
       document.addEventListener("keydown", escape, true);
-      hooks.notify(`MIDI learn: move a controller to turn ${target.label} · Page ${page + 1} · Esc cancels`, true);
+      hooks.notify(`MIDI learn: move a controller to turn ${target.label} · ${location()} · Esc cancels`, true);
       prepare();
     },
     cancel,
     forget,
     forgetAll,
     selectPage,
+    selectTrack,
     configureXL3,
-    page: () => page,
+    page: () => shared ? shared.page() : page,
+    track: () => shared ? shared.track() : activeTracks[page],
+    tracks: () => shared ? shared.tracks() : banks[page].map((p, id) => ({ id, count: p.size })),
     pages: () => pages.map((p, id) => ({ id, count: p.size })),
     setup(next) { hooks = { ...hooks, ...next }; migrateTargets(); },
     learning: () => learning,
     mappings: () => Object.fromEntries(map),
     feedback,
     refreshFeedback: () => window.SadMidiTargets?.refresh([...map.keys()].map(key => targets.get(key)).filter(Boolean)),
-    refresh() { migrateTargets(); paint(); },
+    refresh() {
+      if (shared) {
+        page = shared.page(); map = new Map(Object.entries(shared.mappings()));
+        learning = shared.learning();
+        for (const [id, target] of Object.entries(shared.targets())) targets.set(id, target);
+      }
+      migrateTargets(); paint();
+    },
     targets: () => Object.fromEntries(targets),
   };
 })();
