@@ -175,9 +175,10 @@ assert.equal(values.cutoff, 0);
 learn.input(1, 74, 90);
 learn.input(0, 75, 90);
 assert.equal(values.cutoff, 0, "another channel or controller turned the knob");
-learn.bytes(new Uint8Array([0xb0, 74, 64]));
+assert.equal(learn.bytes(new Uint8Array([0xb0, 74, 64])), true, "a learned CC was not consumed");
 assert.equal(values.cutoff, 64 / 127);
-learn.bytes(new Uint8Array([0x90, 74, 100]));
+assert.equal(learn.bytes(new Uint8Array([0x90, 74, 100])), false);
+assert.equal(learn.bytes(new Uint8Array([0xb0, 75, 100])), false, "an unmapped CC was consumed");
 assert.equal(values.cutoff, 64 / 127, "a note turned the knob");
 disabled = true;
 learn.input(0, 74, 127);
@@ -186,7 +187,7 @@ disabled = false;
 
 // Stepped knobs land on their steps; learning a controller again moves it.
 dial(pitch).dispatch("contextmenu", {});
-assert.deepEqual(items(), ["MIDI learn", "Forget all MIDI mappings (1)"]);
+assert.deepEqual(items(), ["MIDI learn", "Forget all mappings on Page 1 (1)"]);
 choose("MIDI learn");
 learn.input(0, 74, 33);
 assert.deepEqual(plain(learn.mappings()), { drum1_9: [0, 74] });
@@ -205,7 +206,7 @@ assert.equal(listeners.size, 0, "learning left its Esc listener behind");
 dial(cutoff).dispatch("contextmenu", {});
 choose("MIDI learn");
 dial(cutoff).dispatch("contextmenu", {});
-assert.deepEqual(items(), ["Cancel MIDI learn", "Forget all MIDI mappings (1)"]);
+assert.deepEqual(items(), ["Cancel MIDI learn", "Forget all mappings on Page 1 (1)"]);
 const layer = menu();
 layer.onkeydown({ key: "ArrowDown", preventDefault() {}, stopPropagation() {} });
 assert.ok(layer.children[0].children[1].classList.contains("is-active"));
@@ -229,6 +230,7 @@ assert.deepEqual(JSON.parse(stored.get("sad-pet-midi-map")), { drum1_9: [0, 74] 
 context = editor();
 assert.deepEqual(plain(context.SadMidiLearn.mappings()), { drum1_9: [0, 74] });
 stored.set("sad-pet-midi-map", JSON.stringify({ a: [0, 7], b: [16, 1], c: [0, 127], d: "x" }));
+stored.delete("sad-pet-midi-pages");
 assert.deepEqual(plain(editor().SadMidiLearn.mappings()), { a: [0, 7] }, "invalid saved mappings loaded");
 dial(rebuilt).dispatch("contextmenu", {});
 assert.deepEqual(items(), ["MIDI learn", "Forget CC 74 · ch 1"]);
@@ -237,7 +239,81 @@ assert.deepEqual(plain(learn.mappings()), {});
 assert.equal(dial(rebuilt).querySelector(".knob-midi"), null);
 learn.input(0, 74, 127);
 assert.equal(values.pitch, 1, "a forgotten controller still turned the knob");
+
+// Existing mappings migrate into Page 1, while another page reuses the same
+// physical CC for a different knob. Switching removes old badges and Learn.
+const paging = context.SadMidiLearn;
+paging.setup({ notify: text => notices.push(text) });
+assert.equal(paging.page(), 0);
+assert.equal(paging.pages().length, 16);
+assert.deepEqual(plain(paging.mappings()), { drum1_9: [0, 74] });
+paging.selectPage(1);
+assert.deepEqual(plain(paging.mappings()), {});
+const pageValues = Array(32).fill(0);
+const pageKnobs = pageValues.map((_, i) => knob(`page_control_${i}`, `Page control ${i + 1}`, {
+  get: () => pageValues[i], set: v => { pageValues[i] = v; }, reset: () => 0,
+}));
+paging.learn("page_control_0");
+paging.input(0, 74, 64);
+assert.equal(pageValues[0], 64 / 127);
+assert.equal(dial(pageKnobs[0]).dataset.midi, "CC 74 · ch 1");
+paging.learn("page_control_1");
+paging.selectPage(0);
+assert.equal(paging.learning(), null, "changing pages retained an armed Learn");
+assert.equal(notices.at(-1), "MIDI learn cancelled", "the previous page's Learn prompt stayed active");
+assert.equal(dial(pageKnobs[0]).querySelector(".knob-midi"), null);
+assert.deepEqual(plain(paging.mappings()), { drum1_9: [0, 74] });
+assert.equal(paging.input(0, 74, 0), true);
+assert.equal(pageValues[0], 64 / 127, "the inactive page responded to its CC");
+paging.forget("drum1_9");
+paging.selectPage(1);
+paging.forget("page_control_0");
+
+// All 32 physical knobs/faders can have a different destination on every
+// one of the 16 pages: 512 saved assignments, with no cross-page collisions.
+const hardware = [13, 29, 49, 77].flatMap(start => Array.from({ length: 8 }, (_, i) => start + i));
+const expectedPages = [];
+for (let p = 0; p < 16; p++) {
+  paging.selectPage(p);
+  for (let i = 0; i < hardware.length; i++) {
+    paging.learn(`page_control_${(i + p) % 32}`);
+    paging.input(8, hardware[i], 64);
+  }
+  assert.equal(paging.pages()[p].count, 32);
+  expectedPages.push(plain(paging.mappings()));
+}
+paging.selectPage(0);
+paging.input(8, 13, 127);
+assert.equal(pageValues[0], 1);
+paging.selectPage(1);
+paging.input(8, 13, 0);
+assert.equal(pageValues[1], 0);
+assert.equal(pageValues[0], 1);
+assert.equal(dial(pageKnobs[0]).querySelector(".knob-midi").textContent, "84");
+const restoredPages = editor().SadMidiLearn;
+assert.equal(restoredPages.page(), 1, "the active page was not restored");
+for (let p = 0; p < 16; p++) {
+  restoredPages.selectPage(p);
+  assert.deepEqual(plain(restoredPages.mappings()), expectedPages[p]);
+}
+assert.deepEqual(JSON.parse(stored.get("sad-pet-midi-map")), expectedPages[0], "legacy storage stopped representing Page 1");
+paging.selectPage(15);
+dial(pageKnobs[0]).dispatch("contextmenu", {});
+choose("Forget all mappings on Page 16 (32)");
+assert.deepEqual(plain(paging.mappings()), {});
+assert.equal(dial(pageKnobs[0]).querySelector(".knob-midi"), null);
+paging.selectPage(0);
+assert.deepEqual(plain(paging.mappings()), expectedPages[0], "clearing one page erased another");
+for (const invalid of [-1, 16, .5, "1", null]) assert.throws(() => paging.selectPage(invalid), /page from 1 to 16/);
+assert.equal(paging.page(), 0);
+const goodPages = stored.get("sad-pet-midi-pages"), goodLegacy = stored.get("sad-pet-midi-map");
+stored.set("sad-pet-midi-pages", "broken JSON");
+stored.set("sad-pet-midi-map", JSON.stringify({ migrated: [0, 7] }));
+assert.deepEqual(plain(editor().SadMidiLearn.mappings()), { migrated: [0, 7] }, "corrupt pages discarded the legacy map");
+stored.set("sad-pet-midi-pages", goodPages);
+stored.set("sad-pet-midi-map", goodLegacy);
 console.log("MIDI learn UI tests passed");
+console.log("MIDI pages: 16 × 32 assignments, independent routing, migration, persistence, badges, cancellation and page-local clearing passed.");
 
 // A Control surface may show hundreds of linked knobs. Unchanged telemetry
 // must not rewrite text/styles on each poll; real base/feedback edits still paint.

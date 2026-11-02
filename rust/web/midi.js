@@ -3,21 +3,35 @@
 // controller; from then on that controller turns the knob. A mapping names the
 // knob, not a timbre, so the controller turns that knob on whichever timbre the
 // editor shows. Mappings stay in this browser (or app) for every scene and
-// preset. The same menu holds the knob's modulation (hooks.menu).
+// preset. Sixteen independent pages reuse the same physical controls. The
+// same menu holds the knob's modulation (hooks.menu).
 window.SadMidiLearn = (() => {
   const STORAGE = "sad-pet-midi-map";
+  const PAGE_STORAGE = "sad-pet-midi-pages", PAGE_COUNT = 16;
   // CC 120–127 are channel mode messages (all notes off, reset…).
   const valid = (channel, controller) =>
     Number.isInteger(channel) && channel >= 0 && channel < 16 &&
     Number.isInteger(controller) && controller >= 0 && controller < 120;
-  /** knob key → [channel, controller] */
-  const map = new Map();
+  const validPage = value => Number.isInteger(value) && value >= 0 && value < PAGE_COUNT;
+  /** Each page: knob key → [channel, controller]. */
+  const pages = Array.from({ length: PAGE_COUNT }, () => new Map());
+  let page = 0;
+  const load = (target, value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return;
+    for (const [key, cc] of Object.entries(value))
+      if (Array.isArray(cc) && valid(cc[0], cc[1])) target.set(key, [cc[0], cc[1]]);
+  };
   try {
-    for (const [key, cc] of Object.entries(JSON.parse(localStorage.getItem(STORAGE) || "{}")))
-      if (Array.isArray(cc) && valid(cc[0], cc[1])) map.set(key, [cc[0], cc[1]]);
+    const saved = JSON.parse(localStorage.getItem(PAGE_STORAGE) || "null");
+    if (saved?.version === 1 && Array.isArray(saved.pages)) {
+      pages.forEach((target, i) => load(target, saved.pages[i]));
+      if (validPage(saved.active)) page = saved.active;
+    } else load(pages[0], JSON.parse(localStorage.getItem(STORAGE) || "{}"));
   } catch {
-    // Without storage the mappings last until the editor closes.
+    // An unreadable page store must not discard the previous single-page map.
+    try { load(pages[0], JSON.parse(localStorage.getItem(STORAGE) || "{}")); } catch { /* Optional storage. */ }
   }
+  let map = pages[page];
   /** "channel:controller" → knob key */
   const keys = new Map();
   const index = () => {
@@ -27,17 +41,21 @@ window.SadMidiLearn = (() => {
   index();
   /** knob key → the knobs showing it: { dial, label, apply(unit) } */
   const knobs = new Map();
-  let hooks = { notify() {}, hint: () => "", menu: () => null },
+  let hooks = { notify() {}, hint: () => "", menu: () => null, changed() {} },
     learning = null,
     attached = 0;
   const name = ([channel, controller]) => `CC ${controller} · ch ${channel + 1}`;
   function save() {
     index();
     try {
-      localStorage.setItem(STORAGE, JSON.stringify(Object.fromEntries(map)));
+      localStorage.setItem(PAGE_STORAGE, JSON.stringify({ version: 1, active: page,
+        pages: pages.map(p => Object.fromEntries(p)) }));
+      // Retain Page 1 in the previous format for older builds.
+      localStorage.setItem(STORAGE, JSON.stringify(Object.fromEntries(pages[0])));
     } catch {
       // Storage may be full or blocked; the mapping still works now.
     }
+    hooks.changed();
   }
   function paint(key) {
     const cc = map.get(key);
@@ -105,7 +123,7 @@ window.SadMidiLearn = (() => {
     paint(key);
     document.addEventListener("keydown", escape, true);
     const hint = hooks.hint();
-    hooks.notify(`MIDI learn: move a controller to turn ${label(key)} · Esc cancels${hint ? ` · ${hint}` : ""}`, true);
+    hooks.notify(`MIDI learn: move a controller to turn ${label(key)} · Page ${page + 1} · Esc cancels${hint ? ` · ${hint}` : ""}`, true);
   }
   function stop() {
     const key = learning;
@@ -118,6 +136,19 @@ window.SadMidiLearn = (() => {
     stop();
     hooks.notify("MIDI learn cancelled");
   }
+  function selectPage(next) {
+    if (!validPage(next)) throw new Error("Choose a MIDI mapping page from 1 to 16");
+    if (next === page) return page;
+    // Neither an open menu nor an armed Learn may act on a different page.
+    window.SadLazySelect?.close();
+    if (learning !== null) cancel();
+    const repaint = new Set([...map.keys(), ...pages[next].keys()]);
+    page = next;
+    map = pages[page];
+    save();
+    repaint.forEach(paint);
+    return page;
+  }
   function forget(key) {
     if (!map.delete(key)) return;
     save();
@@ -128,11 +159,11 @@ window.SadMidiLearn = (() => {
     map.clear();
     save();
     mapped.forEach(paint);
-    hooks.notify(`Forgot ${mapped.length} MIDI mapping${mapped.length === 1 ? "" : "s"}`);
+    hooks.notify(`Forgot ${mapped.length} MIDI mapping${mapped.length === 1 ? "" : "s"} on Page ${page + 1}`);
   }
   /** A controller moved: learn it, then turn the knob it is mapped to. */
   function input(channel, controller, value) {
-    if (!valid(channel, controller) || !Number.isInteger(value) || value < 0 || value > 127) return;
+    if (!valid(channel, controller) || !Number.isInteger(value) || value < 0 || value > 127) return false;
     let key = keys.get(`${channel}:${controller}`);
     if (learning !== null) {
       const target = learning;
@@ -148,12 +179,14 @@ window.SadMidiLearn = (() => {
       hooks.notify(`${name([channel, controller])} → ${label(target)}`);
       key = target;
     }
-    if (key === undefined) return;
+    if (key === undefined) return false;
     for (const knob of knobs.get(key) || []) if (knob.dial.isConnected) knob.apply(value / 127);
+    return true;
   }
   /** One Web MIDI message. */
   function bytes(data) {
-    if (data?.length >= 3 && (data[0] & 0xf0) === 0xb0) input(data[0] & 15, data[1], data[2]);
+    return data?.length >= 3 && (data[0] & 0xf0) === 0xb0
+      ? input(data[0] & 15, data[1], data[2]) : false;
   }
 
   // The knob's menu: MIDI learn, then its modulation. Rows are values the
@@ -171,7 +204,7 @@ window.SadMidiLearn = (() => {
     ];
     if (cc) choices.push(item(`Forget ${name(cc)}`, () => forget(key)));
     if (map.size > (cc ? 1 : 0))
-      choices.push(item(`Forget all MIDI mappings (${map.size})`, forgetAll));
+      choices.push(item(`Forget all mappings on Page ${page + 1} (${map.size})`, forgetAll));
     const more = hooks.menu(key, label(key)),
       surface = window.SadControl?.menu(dial, key, label(key)),
       // A keyboard context menu has no pointer position: open by the knob.
@@ -206,6 +239,9 @@ window.SadMidiLearn = (() => {
     learn,
     cancel,
     forget,
+    selectPage,
+    page: () => page,
+    pages: () => pages.map((p, id) => ({ id, count: p.size })),
     setup: (next) => (hooks = { ...hooks, ...next }),
     learning: () => learning,
     mappings: () => Object.fromEntries(map),

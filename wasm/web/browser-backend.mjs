@@ -1,5 +1,6 @@
 import { Microphone } from "./microphone.mjs";
 import { MidiClock } from "./midi-clock.mjs";
+import { MidiInputs } from "./midi-inputs.mjs";
 import { compileEngine } from "./compile.mjs";
 import { listVoices, saveVoice, removeVoice, voiceId, voiceInfo, unzip } from "./voices.mjs";
 import { wavetableIds, preparedWavetable } from "./wavetables.mjs";
@@ -96,6 +97,7 @@ export class BrowserBackend {
     };
     this.midiPorts = [];
     this.midiClock = new MidiClock(this);
+    this.midiInputs = new MidiInputs(this);
     this.status = "Loading WebAssembly…";
     this.ready = this.initialize();
     this.wavetableTail = Promise.resolve();
@@ -177,8 +179,12 @@ export class BrowserBackend {
     this.audio.onmessage = (message) => this.audioMessage(message);
     this.microphone = new Microphone(this);
     window.addEventListener("pagehide", () => {
+      this.midiInputs.dispose();
       this.microphone.release();
       this.stopInput().catch(() => {});
+    });
+    window.addEventListener("pageshow", event => {
+      if (event.persisted) this.midiInputs.restore();
     });
     this.node.onprocessorerror = () => {
       this.microphone.release();
@@ -208,6 +214,7 @@ export class BrowserBackend {
     document.getElementById("browser-input").hidden = false;
     if (!navigator.requestMIDIAccess)
       document.getElementById("midi-refresh").disabled = true;
+    this.midiInputs.restore();
     this.updateStatus();
   }
   updateStatus() {
@@ -736,6 +743,7 @@ export class BrowserBackend {
       features: { sampler: true, rack_vocal: true },
       instance_id: this.instanceId,
       clock: this.midiClock?.status(),
+      controller: this.midiInputs?.status(),
       audio_enabled: this.context.state === "running" && !this.fatal,
       audio_error: this.fatal || null,
       recording: { ...this.recording },
@@ -773,53 +781,7 @@ export class BrowserBackend {
     }
   }
   async midi(path, data) {
-    if (
-      path.searchParams.has("request") &&
-      navigator.requestMIDIAccess &&
-      !this.midiAccess
-    ) {
-      this.midiAccess = await navigator.requestMIDIAccess({ sysex: false });
-      this.midiAccess.onstatechange = () => {
-        if (this.selectedMidi?.state === "disconnected") {
-          this.selectedMidi.onmidimessage = null;
-          this.selectedMidi = null;
-          this.audio
-            .call("request", { midi_gate: false }, [], "/api/transport")
-            .catch(() => {});
-        }
-      };
-    }
-    if (data) {
-      if (this.selectedMidi) this.selectedMidi.onmidimessage = null;
-      this.selectedMidi = data.port === null ? null : this.midiPorts[data.port];
-      if (this.selectedMidi) {
-        this.selectedMidi.onmidimessage = (event) => {
-          if (this.midiClock.input(event)) return;
-          // MIDI learn sees controllers here, without waiting for a state poll.
-          window.SadMidiLearn?.bytes(event.data);
-          const bytes = [...event.data];
-          this.resume()
-            .then(() => this.audio.call("request", bytes, [], "/api/midi-bytes"))
-            .catch(() => {});
-        };
-      }
-      await this.audio.call(
-        "request",
-        { midi_gate: !!this.selectedMidi },
-        [],
-        "/api/transport",
-      );
-    } else
-      this.midiPorts = [...(this.midiAccess?.inputs.values() || [])].filter(
-        (p) => p.state === "connected",
-      );
-    return {
-      ports: this.midiPorts.map((p, id) => ({
-        id,
-        name: p.name || "MIDI input",
-      })),
-      connected: this.selectedMidi?.name || null,
-    };
+    return this.midiInputs.keyboard(path, data);
   }
   async fetch(path, options = {}) {
     try {
@@ -949,6 +911,7 @@ export class BrowserBackend {
         result = await this.audio.call("capture-input");
         mime = "audio/wav";
       } else if (route === "/api/midi") result = await this.midi(url, data);
+      else if (route === "/api/controller") result = await this.midiInputs.request(url, data);
       else if (route === "/api/clock") result = await this.midiClock.request(data);
       else if (route === "/api/audio/decode") {
         const audio = await bytesOf(options.body);

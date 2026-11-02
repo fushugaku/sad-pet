@@ -168,10 +168,11 @@ def main():
         (output / "sad_pet.simd.wasm").unlink(missing_ok=True)
     if not args.tail_call:
         (output / "sad_pet.tc.wasm").unlink(missing_ok=True)
-    for name in ("index.html", "app.js", "control.js", "library.js", "selection.js", "presets.js", "sequence.js", "panels.js", "tb303.js", "wavetable.js", "wavetable-tools.js", "wavetable.css", "oscillators.js", "oscillators.css", "eq.js", "rack.js", "vocal.js", "sampler-library.js", "sampler.js", "midi.js", "clock.js", "modulation.js", "style.css", "vocal.css", "sampler.css"):
+    for name in ("index.html", "app.js", "control.js", "library.js", "selection.js", "presets.js", "sequence.js", "panels.js", "tb303.js", "wavetable.js", "wavetable-tools.js", "wavetable.css", "oscillators.js", "oscillators.css", "eq.js", "rack.js", "vocal.js", "sampler-library.js", "sampler.js", "midi.js", "controller.js", "clock.js", "modulation.js", "style.css", "vocal.css", "sampler.css"):
         shutil.copy2(ROOT / "rust" / "web" / name, output / name)
     index = (output / "index.html").read_text()
     index = index.replace('<script src="./library.js"', '<script src="./browser.js" defer></script>\n    <script src="./library.js"')
+    index = index.replace('<script src="./clock.js"', '<script src="./controller.js" defer></script>\n    <script src="./clock.js"')
     index = index.replace("RUST EDITION", "WEBASSEMBLY")
     (output / "index.html").write_text(index)
     shutil.copytree(ROOT / "wasm" / "web", output, dirs_exist_ok=True)

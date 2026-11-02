@@ -721,6 +721,64 @@ the microphone. Capture permission is requested only when selecting Microphone;
 audio and saved files stay in the browser. The packaged desktop edition continues
 to use file input; live microphone capture is available in the hosted web edition.
 
+### Novation Launch Control XL in the browser
+
+Connect the controller by USB, open SAD PET in Chrome or Edge on HTTPS (or
+localhost), and use **Connect** in the Launch Control XL row below Keyboard.
+Allow the browser's MIDI permission. The controller has its own input, so the
+Keyboard input remains available for a separate MIDI keyboard. HUI/DAW ports are
+excluded from controller detection. A previously granted MIDI permission lets
+the controller reconnect on reload; USB unplug/replug also reconnects it.
+
+For Mk1/Mk2, hold **Factory** and press the first bottom-row button to select
+**Factory 1** (MIDI channel 9). For Launch Control XL 3, select **Custom Mode 16**
+(channel 16). No template upload, driver bridge or SysEx permission is required.
+
+| Hardware | Mixer mapping |
+| --- | --- |
+| Eight faders | Eight instrument timbres' levels into Master, 0–200% |
+| Three knob rows | Sends to three existing buses, ordered by bus number, 0–200% |
+| Upper button row | Select the timbre for editing |
+| Lower button row | Toggle Mute or Solo, chosen with the side buttons |
+| Left / right arrows | Previous / next bank of eight instrument timbres |
+| Up / down arrows (Mk1/Mk2) | Previous / next group of three buses |
+
+The expandable **Mapping** shows the current timbres, buses and hardware
+template. Buses, Master, Control and pad FX do not occupy instrument columns.
+Absolute faders and knobs use pickup: move to or across the project's current
+value before taking control. Changing a bank, editing a value with the mouse or
+recalling a different value re-arms pickup. Mk1/Mk2 button LEDs reflect the
+selected timbre, Mute/Solo state and available banks when its MIDI output is
+available. XL3 retains its custom-mode colours.
+
+For custom assignments, right-click an on-screen knob or slider, choose
+**MIDI learn**, then move a hardware control. These assignments take precedence
+over Mixer and persist in this browser. Choose **MIDI Learn** in the controller
+row to use only your assignments. This mode has **16 independent mapping pages**:
+the same 24 knobs and 8 faders can address a different set of controls on each
+page, for 512 assignments. Select a page in the browser or use the controller:
+upper channel buttons select pages 1–8, lower buttons select pages 9–16, and
+left/right arrows step between pages. Keep Factory 1 (Mk1/Mk2) or Custom Mode 16
+(XL3) selected on the hardware; these are software pages, requiring no template
+uploads. Mk1/Mk2 button LEDs show the selected page.
+
+Each page keeps its own assignments and knob badges. Changing pages cancels
+pending MIDI Learn. **Forget all mappings on Page …** clears only that page.
+Previous single-page assignments are preserved on Page 1. All pages and the
+selected page survive reloads, along with device selection, Off and mapping mode;
+control-surface button notes never play the synth.
+
+`node wasm/test-launch-control.mjs` checks both hardware layouts, pickup,
+coalescing, MIDI Learn priority, LED traffic, independent keyboard input,
+permission errors, device settings, page navigation and USB reconnection.
+`node wasm/test-midi-learn-ui.mjs` also verifies 16 × 32 assignments, migration,
+page isolation, badge changes, cancellation, persistence and clearing one page.
+
+Protocol references: [Novation Mk1/Mk2 programmer's reference](https://fael-downloads-prod.focusrite.com/customer/prod/downloads/launch_control_xl_programmer_s_reference_guide.pdf),
+[Ardour's legacy control-number map](https://github.com/Ardour/ardour/blob/master/share/midi_maps/Novation_LaunchControl_XL.map),
+[Novation XL3 Mode 16](https://userguides.novationmusic.com/hc/en-gb/articles/26260540230162-Launch-Control-XL-3-appendix),
+and [Web MIDI access requirements](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/requestMIDIAccess).
+
 ## Check and package
 
 ```sh

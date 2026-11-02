@@ -2242,6 +2242,56 @@ h2 {
 .midi-controls {
   gap: 8px !important;
 }
+.controller-controls {
+  margin: 0 0 16px;
+  padding: 12px 0;
+  border-block: 1px solid var(--line);
+  font: 11px/1.6 ui-monospace, monospace;
+}
+.controller-controls[hidden] { display: none; }
+.controller-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.controller-head select,
+.controller-head button {
+  height: 32px;
+  min-width: 0;
+  font-size: 11px;
+}
+#controller-device { max-width: min(310px, calc(100% - 24px)); }
+.controller-pages { display: flex; align-items: center; gap: 8px; margin: 10px 0 0 20px; }
+.controller-pages[hidden], .controller-learn-hint[hidden] { display: none; }
+.controller-pages button, .controller-pages select { height: 32px; font-size: 11px; }
+.controller-pages button { width: 32px; padding: 0; }
+#controller-page { min-width: 135px; }
+#controller-page-count { color: var(--muted); }
+.controller-learn-hint { margin: 8px 0 0 20px; color: var(--muted); }
+#controller-status {
+  display: block;
+  margin: 7px 0 0 20px;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}
+#controller-map { margin: 5px 0 0 20px; color: var(--muted); }
+#controller-map summary { width: fit-content; cursor: pointer; color: var(--text); }
+#controller-map p { margin: 8px 0; }
+#controller-map dl { display: grid; grid-template-columns: max-content 1fr; gap: 3px 18px; margin: 8px 0; }
+#controller-map dd { margin: 0; }
+.controller-tracks { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--text); }
+@media (max-width: 600px) {
+  .controller-head { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; }
+  #controller-device { grid-column: 2 / -1; max-width: none; width: 100%; }
+  #controller-mode { grid-column: 2; width: 100%; }
+  .controller-head select, .controller-head button { height: 44px; }
+  .controller-pages { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; }
+  .controller-pages button, .controller-pages select { height: 44px; width: 100%; min-width: 0; }
+  #controller-page-count { grid-column: 1 / -1; }
+  #controller-map dl { grid-template-columns: 1fr; gap: 0; }
+  #controller-map dt { margin-top: 6px; color: var(--text); }
+}
 .clock-controls {
   display: flex;
   align-items: center;

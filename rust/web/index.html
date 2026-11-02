@@ -870,6 +870,44 @@
             </button>
           </div>
         </div>
+        <div class="controller-controls" id="controller-controls" hidden>
+          <div class="controller-head">
+            <span class="led off" id="controller-led"></span>
+            <select id="controller-device" aria-label="Control surface">
+              <option value="auto">Launch Control XL · Auto</option>
+              <option value="">Off</option>
+            </select>
+            <select id="controller-mode" aria-label="Controller mapping">
+              <option value="mixer">Mixer</option>
+              <option value="learn">MIDI Learn</option>
+            </select>
+            <button id="controller-connect">Connect</button>
+          </div>
+          <div id="controller-pages" class="controller-pages" hidden>
+            <button id="controller-page-prev" aria-label="Previous mapping page">←</button>
+            <select id="controller-page" aria-label="MIDI mapping page"></select>
+            <button id="controller-page-next" aria-label="Next mapping page">→</button>
+            <output id="controller-page-count" aria-live="polite"></output>
+          </div>
+          <p id="controller-learn-hint" class="controller-learn-hint" hidden>
+            Upper buttons: pages 1–8 · lower: 9–16 · ← / → changes page.
+          </p>
+          <output id="controller-status" aria-live="polite"></output>
+          <details id="controller-map">
+            <summary>Mapping</summary>
+            <p id="controller-template"></p>
+            <dl>
+              <dt>Faders</dt><dd>Timbre levels into Master</dd>
+              <dt>Knobs, top to bottom</dt><dd id="controller-send-names"></dd>
+              <dt>Upper buttons</dt><dd>Select timbre</dd>
+              <dt>Lower buttons</dt><dd>Mute or Solo · choose with the side buttons</dd>
+              <dt>← / →</dt><dd>Previous / next 8 timbres</dd>
+              <dt>↑ / ↓ · Mk1/Mk2</dt><dd>Previous / next 3 buses</dd>
+            </dl>
+            <div id="controller-tracks" class="controller-tracks"></div>
+            <p>To assign a control yourself, right-click a knob → MIDI learn, then move the control. Assignments stay in this browser.</p>
+          </details>
+        </div>
         <div class="clock-controls" id="clock-controls" hidden>
           <span class="led off" id="clock-led"></span>
           <span class="clock-title">MIDI CLOCK</span>

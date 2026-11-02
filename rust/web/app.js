@@ -5662,6 +5662,8 @@ function bind() {
       .catch((error) => notify(error.message, true));
   });
   $("midi-refresh").onclick = () => refreshMidi(true);
+  if (window.sadPetAudio && !window.sadPetControlSource)
+    window.addEventListener("sad-midi-change", () => refreshMidi());
   $("midi").onchange = async (e) => {
     try {
       await request("/api/midi", {
@@ -6093,6 +6095,7 @@ async function poll() {
     setText($("grain-count"), next.active_grains);
     setText($("drum-grain-count"), `${next.active_grains} grains`);
     window.SadMidiClock?.sync(next);
+    window.SadController?.sync(next.controller);
     setAttr($("play"), "aria-pressed", next.playing);
     setText($("play-icon"), next.playing ? "Ⅱ" : "▶");
     setText($("play-label"), next.playing ? "Pause" : "Play");
@@ -6330,11 +6333,13 @@ async function init() {
         syncAll();
       },
     });
+    window.SadController?.setup({ request, notify, context: () => state?.timbres, change: changeTimbre });
     window.SadMidiLearn?.setup({
       notify,
+      changed: () => window.SadController?.syncPages(),
       // The browser and desktop builds play the MIDI input chosen by Keyboard.
       hint: () =>
-        getComputedStyle($("midi")).display !== "none" && !$("midi").value
+        getComputedStyle($("midi")).display !== "none" && !$("midi").value && !window.SadController?.connected
           ? "choose a MIDI input next to Keyboard"
           : "",
       menu: (key, label) => window.SadModulation?.menu(key, label) ?? null,

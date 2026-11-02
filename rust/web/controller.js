@@ -1,0 +1,101 @@
+"use strict";
+// Browser-only control surface row. The instrument's normal edit queue owns
+// all changes, including selecting a timbre while it has unsent preset edits.
+window.SadController = (() => {
+  let hooks, busy = false, connected = false, ports = "", rows = "";
+  const $ = id => document.getElementById(id);
+  const option = (value, text) => new Option(text, value);
+  const text = (id, value) => { const node = $(id); if (node.textContent !== value) node.textContent = value; };
+  const selectValue = (id, value) => { const node = $(id); if (node.value !== value) node.value = value; };
+  function syncPages() {
+    if (!hooks || !window.SadMidiLearn?.pages) return;
+    const pages = window.SadMidiLearn.pages(), current = window.SadMidiLearn.page();
+    const select = $("controller-page");
+    if (select.options.length !== pages.length)
+      select.replaceChildren(...pages.map(p => option(String(p.id), `Page ${p.id + 1}`)));
+    selectValue("controller-page", String(current));
+    $("controller-page-prev").disabled = current === 0;
+    $("controller-page-next").disabled = current === pages.length - 1;
+    const count = pages[current].count;
+    text("controller-page-count", count ? `${count} assignment${count === 1 ? "" : "s"}` : "No assignments");
+  }
+  function sync(data) {
+    if (!hooks || !data) return;
+    connected = !!data.connected;
+    $("controller-led").classList.toggle("off", !connected);
+    const signature = JSON.stringify([data.ports, data.device]);
+    if (signature !== ports) {
+      ports = signature;
+      const select = $("controller-device");
+      select.replaceChildren(option("auto", "Launch Control XL · Auto"), option("", "Off"));
+      for (const p of data.ports) select.append(option(p.id, p.name));
+      if (data.device && data.device !== "auto" && !data.ports.some(p => p.id === data.device))
+        select.append(option(data.device, "Saved controller · offline"));
+    }
+    if (!busy) {
+      selectValue("controller-device", data.device ?? "");
+      selectValue("controller-mode", data.mode);
+      $("controller-connect").disabled = !data.supported;
+      text("controller-connect", data.access ? "Refresh" : "Connect");
+    }
+    text("controller-status", data.error || (!data.supported
+      ? "Web MIDI needs Chrome or Edge on HTTPS or localhost"
+      : data.device === null ? "Disconnected"
+      : !data.access ? "Connect USB, then allow MIDI access"
+      : !connected ? "Waiting for Launch Control XL"
+      : data.mode === "learn" ? `${data.connected} · right-click a knob → MIDI learn`
+      : data.pickup || `${data.connected} · Bank ${data.bank + 1}/${data.banks}`));
+    text("controller-template", `${data.template}. Faders and knobs take over when they reach the value in the project.`);
+    $("controller-map").hidden = data.mode !== "mixer";
+    $("controller-pages").hidden = data.mode !== "learn";
+    $("controller-learn-hint").hidden = data.mode !== "learn";
+    syncPages();
+    text("controller-send-names", data.sends.length ? data.sends.join(" · ") : "Add a Bus timbre to use sends");
+    const trackKey = JSON.stringify([data.bank, data.tracks]);
+    if (trackKey !== rows) {
+      rows = trackKey;
+      $("controller-tracks").replaceChildren(...data.tracks.map((p, i) => {
+        const node = document.createElement("span");
+        node.textContent = `${i + 1} · ${p.name}`;
+        return node;
+      }));
+    }
+  }
+  async function perform(path, data) {
+    if (busy) return;
+    busy = true;
+    $("controller-connect").disabled = true;
+    try {
+      const result = await hooks.request(path, data);
+      busy = false;
+      sync(result);
+    } catch (error) {
+      $("controller-status").textContent = error.message;
+      hooks.notify(error.message, true);
+    } finally {
+      busy = false;
+      $("controller-connect").disabled = !navigator.requestMIDIAccess;
+    }
+  }
+  return {
+    setup(next) {
+      if (!window.sadPetAudio || window.sadPetControlSource) return;
+      hooks = next;
+      $("controller-controls").hidden = false;
+      $("controller-connect").onclick = () => perform("/api/controller?request=1");
+      $("controller-device").onchange = e => perform("/api/controller", { device: e.target.value || null });
+      $("controller-mode").onchange = e => perform("/api/controller", { mode: e.target.value });
+      $("controller-page").onchange = e => perform("/api/controller", { page: Number(e.target.value) });
+      $("controller-page-prev").onclick = () => perform("/api/controller", { page: window.SadMidiLearn.page() - 1 });
+      $("controller-page-next").onclick = () => perform("/api/controller", { page: window.SadMidiLearn.page() + 1 });
+      window.addEventListener("sad-midi-change", () => perform("/api/controller"));
+      perform("/api/controller");
+    },
+    sync,
+    syncPages,
+    context: () => hooks?.context(),
+    change: (...args) => hooks.change(...args),
+    notify: (...args) => hooks?.notify(...args),
+    get connected() { return connected; },
+  };
+})();
