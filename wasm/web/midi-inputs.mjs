@@ -256,6 +256,7 @@ export class MidiInputs {
   }
   async request(path, data) {
     const prepareLearn = path.searchParams.has("learn");
+    let reassertFeedback = false;
     if (path.searchParams.has("request") || prepareLearn) await this.access({ sysex: true });
     if (prepareLearn) {
       const xl3 = [this.controller, ...this.candidates()].find(p => p && launchControlModel(p.name) === "xl3");
@@ -263,7 +264,7 @@ export class MidiInputs {
         await this.surface.flush();
         // Learn is the user's request for live parameter feedback. Reassert
         // DAW mode even if another client previously disabled the hardware.
-        this.feedback.stop();
+        reassertFeedback = !!this.feedback.active;
         this.clearHighResolution(); this.pageButtons.clear();
         Object.assign(this.settings, { enabled: true, mode: "daw", id: xl3.id, name: xl3.name });
         this.learn()?.configureXL3?.();
@@ -296,6 +297,7 @@ export class MidiInputs {
       this.save();
     }
     this.refresh();
+    if (reassertFeedback) this.feedback.reassert();
     return this.status();
   }
   status() {

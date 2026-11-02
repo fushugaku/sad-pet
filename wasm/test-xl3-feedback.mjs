@@ -20,12 +20,19 @@ const feedback = new Xl3Feedback({ learn: () => ({ feedback: () => bindings, asy
   page: p => pages.push(p), error: m => errors.push(m) });
 feedback.configure({ enabled: false, output: { send: bytes => messages.push([...bytes]) }, page: 0 });
 assert.equal(messages.length, 0, "feedback ran without permission");
-const daw = { send: bytes => messages.push([...bytes]) }, midi = { send: bytes => positions.push([...bytes]) };
+const deviceRows = new Map([[69, 0], [72, 0], [73, 0]]);
+const daw = { send: bytes => {
+  messages.push([...bytes]);
+  // Observed on the real XL3: mode 2 resets row 1, position feedback does not.
+  if (bytes.join() === "182,30,2") deviceRows.set(69, 0);
+  if (bytes[0] === 182 && deviceRows.has(bytes[1])) deviceRows.set(bytes[1], bytes[2]);
+} }, midi = { send: bytes => positions.push([...bytes]) };
 feedback.configure({ enabled: true, output: daw, midiOutput: midi, page: 0 });
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.ok(messages.some(b => b.join() === "159,12,127"));
 assert.ok(messages.some(b => b.join() === "182,30,2"), "live feedback did not select DAW Control");
 for (const row of [69, 72, 73]) assert.ok(messages.some(b => b.join() === `182,${row},127`));
+assert.deepEqual([...deviceRows.values()], [127, 127, 127], "mode selection reset a configured encoder row");
 const rgb = messages.find(b => b[6] === 1 && b[7] === 83 && b[8] === 13);
 assert.deepEqual(rgb.slice(9, 12), feedbackRgb("pitch", "Pitch", .5));
 assert.deepEqual(positions, [], "DAW feedback wrote into the Custom Mode's main MIDI interface");
@@ -48,7 +55,11 @@ for (let page = 0; page < 16; page++) {
   feedback.input([0xb6, 30, page < 4 ? page + 6 : page + 14]);
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(pages.at(-1), page);
+  assert.equal(deviceRows.get(69), 127, "hardware page change left row 1 absolute");
 }
+deviceRows.set(69, 0);
+feedback.input([0xb6, 30, 2]);
+assert.equal(deviceRows.get(69), 127, "a device mode report did not restore the relative format");
 feedback.selectPage(2);
 assert.equal(feedback.hardwareMode, 2, "page selection left the RGB-capable DAW surface");
 assert.ok(messages.some(b => b[6] === 6 && b[7] === 53 && String.fromCharCode(...b.slice(9, -1)) === "Page 3"));
@@ -160,9 +171,12 @@ assert.equal(learningTarget, null);
 assert.deepEqual(messages.filter(b => b[6] === 1 && b[8] === 13).at(-1).slice(9, 12), [0, 69, 6]);
 const enables = () => messages.filter(b => b.join() === "159,12,127").length;
 const beforeRelearn = enables();
+const beforeRelearnMessages = messages.length;
 learningTarget = "control:0:pitch";
 await inputs.request(learnRequest);
 assert.equal(enables(), beforeRelearn + 1, "Learn did not reassert the real hardware configuration");
+assert.ok(!messages.slice(beforeRelearnMessages).some(b => b.join() === "159,12,0"),
+  "Learn temporarily returned to a stale Custom Mode instead of preserving its page");
 auxiliaryIn.onmidimessage({ data: [0xbf, 77, 65] });
 await inputs.feedback.sync();
 assert.deepEqual(messages.filter(b => b[6] === 1 && b[8] === 13).at(-1).slice(9, 12), [69, 0, 0]);

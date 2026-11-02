@@ -57,14 +57,24 @@ export class Xl3Feedback {
       if (active) {
         this.send([0x9f, 12, 127]);
         this.send([0x9f, 11, 127]);
-        for (const row of [69, 72, 73]) this.send([0xb6, row, 127]);
-        this.send([0xb6, 70, 127]); // fader pickup follows feedback positions
-        this.send([0xb6, 71, 127]); // Shift + turn can preview a parameter
         this.hardwareMode = null;
         this.interval = setInterval(() => this.sync(), 50);
       }
     }
     this.selectPage(page);
+  }
+  configureControls() {
+    // Selecting DAW Control resets row 1 to absolute on the device. Set the
+    // relative format AFTER that command, including every hardware page change.
+    for (const row of [69, 72, 73]) this.send([0xb6, row, 127]);
+    this.send([0xb6, 70, 127]);
+    this.send([0xb6, 71, 127]);
+  }
+  reassert() {
+    if (!this.active) return;
+    this.send([0x9f, 12, 127]); this.send([0x9f, 11, 127]);
+    this.hardwareMode = null;
+    this.selectPage(this.page);
   }
   selectPage(page) {
     if (!Number.isInteger(page) || page < 0 || page > 15) return;
@@ -74,7 +84,9 @@ export class Xl3Feedback {
     if (this.active && this.hardwareMode !== 2) {
       this.hardwareMode = 2;
       this.send([0xb6, 30, 2]);
+      this.configureControls();
       this.colors.clear(); this.positions.clear(); this.names.clear();
+      this.header = null; this.displaySignature = null; this.lastControl = null;
     }
     if (this.active) this.sync();
   }
@@ -83,6 +95,11 @@ export class Xl3Feedback {
     const page = modePage(data[2]);
     if (page === null && ![1, 2].includes(data[2])) return;
     this.hardwareMode = data[2];
+    if (this.active && data[2] === 2) {
+      this.configureControls();
+      this.colors.clear(); this.positions.clear(); this.names.clear();
+      this.header = null; this.displaySignature = null;
+    }
     // Mode + 1–16 selects the software page, then returns to the DAW surface.
     // This preserves the familiar hardware gesture and every saved mapping.
     if (page !== null) this.pageChanged(page);
