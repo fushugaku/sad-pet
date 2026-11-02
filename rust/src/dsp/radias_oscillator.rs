@@ -39,6 +39,7 @@ pub(crate) struct Controller {
     /// (configuration epoch, LFO) at the last full input comparison. Inputs
     /// change only with one of these, so an equal key means equal inputs.
     seen: Option<(u64, i16)>,
+    reset_correction: f64,
 }
 // The plan owns immutable tables. A new plan/table identity invalidates the
 // cache; oscillator history, feedback and four-frame slew never live here.
@@ -62,13 +63,76 @@ impl Default for Controller {
             target: 0,
             parameters: None,
             seen: None,
+            reset_correction: 0.0,
         }
     }
 }
 impl Controller {
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     #[inline(always)]
     pub fn next_with_sync(
+        &mut self,
+        oscillator: &mut PrimaryOscillator,
+        program: PrimaryProgram,
+        increment: PhaseIncrement,
+        code: PitchCode,
+        lfo: i16,
+        modulation: [i16; 2],
+        modulator: Sample,
+        tables: &Tables,
+        waveform: &WaveformTable,
+        frame: u64,
+        id: usize,
+        sync: bool,
+        epoch: u64,
+    ) -> Sample {
+        self.next_with_phase_reset(
+            oscillator, program, increment, code, lfo, modulation, modulator, tables, waveform,
+            frame, id, sync, epoch, 0,
+        )
+    }
+    #[cfg(test)]
+    #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
+    pub fn next_with_phase_reset(
+        &mut self,
+        oscillator: &mut PrimaryOscillator,
+        program: PrimaryProgram,
+        increment: PhaseIncrement,
+        code: PitchCode,
+        lfo: i16,
+        modulation: [i16; 2],
+        modulator: Sample,
+        tables: &Tables,
+        waveform: &WaveformTable,
+        frame: u64,
+        id: usize,
+        sync: bool,
+        epoch: u64,
+        reset_phase: u32,
+    ) -> Sample {
+        self.next_with_fractional_reset(
+            oscillator,
+            program,
+            increment,
+            code,
+            lfo,
+            modulation,
+            modulator,
+            tables,
+            waveform,
+            frame,
+            id,
+            sync,
+            epoch,
+            reset_phase,
+            None,
+        )
+    }
+    #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
+    pub fn next_with_fractional_reset(
         &mut self,
         oscillator: &mut PrimaryOscillator,
         mut program: PrimaryProgram,
@@ -83,6 +147,8 @@ impl Controller {
         id: usize,
         sync: bool,
         epoch: u64,
+        reset_phase: u32,
+        fraction: Option<f64>,
     ) -> Sample {
         let fresh = self.selection != program.selection;
         if fresh {
@@ -136,7 +202,7 @@ impl Controller {
                 noise.advance(weights);
             }
             if sync {
-                oscillator.phase = radias_synth_domain::Phase(0);
+                oscillator.phase = radias_synth_domain::Phase(reset_phase);
             }
             return oscillator.next_with_modulator_and_bias(
                 waveform,
@@ -205,21 +271,104 @@ impl Controller {
                 self.phase_code = Some(code);
             }
         }
+        let before = *oscillator;
         if sync {
             // Shift the whole Unison bank together; preserve its phase spread.
+            let reset_phase = reset_phase
+                .wrapping_add(fraction.map_or(0, |f| (increment.0 as f64 * f).round() as u32));
             let base = oscillator.unison.phases[0].0;
             for phase in &mut oscillator.unison.phases {
-                phase.0 = phase.0.wrapping_sub(base);
+                phase.0 = phase.0.wrapping_sub(base).wrapping_add(reset_phase);
             }
-            oscillator.phase = radias_synth_domain::Phase(0);
-            oscillator.modulated_phase = radias_synth_domain::Phase(if program.selection == 3 {
-                0xc000_0000
-            } else {
-                0
-            });
+            oscillator.phase = radias_synth_domain::Phase(reset_phase);
+            oscillator.modulated_phase =
+                radias_synth_domain::Phase(reset_phase.wrapping_add(if program.selection == 3 {
+                    0xc000_0000
+                } else {
+                    0
+                }));
             oscillator.control_feedback = 0;
         }
-        oscillator.next_with_modulator(waveform, *parameters, modulator)
+        let sample = oscillator.next_with_modulator(waveform, *parameters, modulator);
+        if let Some(at) = fraction.filter(|_| sync) {
+            let mut old = before;
+            let old = old.next_with_modulator(waveform, *parameters, modulator).0 as f64;
+            let jump = sample.0 as f64 - old;
+            let left = 1.0 - at;
+            let value = old + self.reset_correction + jump * 0.5 * left * left;
+            self.reset_correction = -jump * 0.5 * at * at;
+            Sample(value.round().clamp(i32::MIN as f64, i32::MAX as f64) as i32)
+        } else if self.reset_correction != 0.0 {
+            let value = sample.0 as f64 + self.reset_correction;
+            self.reset_correction = 0.0;
+            Sample(value.round().clamp(i32::MIN as f64, i32::MAX as f64) as i32)
+        } else {
+            sample
+        }
+    }
+}
+
+/// The fixed-point kernels count down. The interaction graph uses forward
+/// cycles for every backend, with phase zero at the same reset anchor.
+pub(crate) fn phase(oscillator: &PrimaryOscillator) -> f64 {
+    (-((oscillator.phase.0 as f64) / 4294967296.0)).rem_euclid(1.0)
+}
+pub(crate) fn phase_word(phase: f64) -> u32 {
+    (phase.rem_euclid(1.0) * 4294967296.0).round() as u32
+}
+pub(crate) fn reset_word(phase: f64) -> u32 {
+    phase_word(phase).wrapping_neg()
+}
+
+#[cfg(test)]
+mod phase_tests {
+    use super::*;
+    #[test]
+    fn fractional_reset_keeps_the_remainder_in_forward_phase_coordinates() {
+        let mut controller = Controller::default();
+        let mut oscillator = PrimaryOscillator::default();
+        let tables = Tables::new();
+        let wave = waveform_table();
+        let increment = PhaseIncrement(0x01000000);
+        let program = PrimaryProgram {
+            selection: 0,
+            ..Default::default()
+        };
+        let code = PitchCode::new(60 * 256).unwrap();
+        controller.next_with_sync(
+            &mut oscillator,
+            program,
+            increment,
+            code,
+            0,
+            [0; 2],
+            Sample(0),
+            &tables,
+            &wave,
+            0,
+            1,
+            false,
+            0,
+        );
+        controller.next_with_fractional_reset(
+            &mut oscillator,
+            program,
+            increment,
+            code,
+            0,
+            [0; 2],
+            Sample(0),
+            &tables,
+            &wave,
+            1,
+            1,
+            true,
+            0,
+            reset_word(0.25),
+            Some(0.75),
+        );
+        let expected = 0.25 + (increment.0 as f64 / 4294967296.0) * 0.25;
+        assert!((phase(&oscillator) - expected).abs() < 1e-8);
     }
 }
 

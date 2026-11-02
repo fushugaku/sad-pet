@@ -40,6 +40,9 @@ jobs:
           cargo test -p sad-pet --no-default-features --test wavetable --locked
           cargo test -p sad-pet --no-default-features --test bus --test grain_continuity --locked
           cargo test -p sad-pet --no-default-features --test rack_instruments --test rack --test rack_sources --locked
+          cargo test -p sad-pet --no-default-features --lib interaction --locked
+          cargo test -p sad-pet --no-default-features --lib grain_group_tests --locked
+          cargo test -p sad-pet --no-default-features --test oscillator_engine --locked
           cargo test -p sad-pet-alphaverb --release --lib --locked
           cargo test -p sad-pet-superecho --release --lib --locked
           cargo test -p sad-pet-voice --release --locked
@@ -71,6 +74,9 @@ jobs:
           node wasm/test-taps-ui.mjs
           node wasm/test-rack.mjs
           node wasm/test-wavetable.mjs
+          node wasm/test-oscillators.mjs
+          node wasm/test-oscillators.mjs dist/web sad_pet.simd.wasm
+          node wasm/test-control.mjs
           node wasm/test-wavetable-memory.mjs
           node wasm/test-wavetable-cache.mjs
           node wasm/test-thirdwave.mjs

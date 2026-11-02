@@ -46,7 +46,7 @@ audio.request("/api/note",{kind:"note_on",channel:0,note:60,velocity:100});
 let peak=0;
 for(let i=0;i<40;i++)for(const sample of audio.process(128)){assert.ok(Number.isFinite(sample));peak=Math.max(peak,Math.abs(sample));}
 assert.ok(peak>0.01,`Wavetable is silent: ${peak}`);
-assert.equal(audio.request("/api/state").rack_peaks.length,7);
+assert.equal(audio.request("/api/state").rack_peaks.length,8);
 for(let count=2;count<=4;count++) {
   const added=audio.request("/api/wavetables/layers",{action:"add",timbre:id});
   assert.equal(added.wavetable.count,count);
@@ -103,7 +103,7 @@ assert.ok(recalled.process(128).every(Number.isFinite));
 const packet=new Uint8Array(audio.wasm.sad_snapshot_capacity());
 const size=audio.snapshot(packet),decoded=utility.json("sad_snapshot_import",packet.slice(0,size));
 assert.equal(decoded.state.wavetable_positions.length,4);
-assert.equal(decoded.state.rack_peaks.length,7);
+assert.equal(decoded.state.rack_peaks.length,8);
 const removed=audio.request("/api/wavetables/layers",{action:"remove",index:1,timbre:id});
 assert.equal(removed.wavetable.count,3);assert.equal(removed.wavetable.oscillators[2].fine,-7);
 assert.ok(audio.process(128).every(Number.isFinite));

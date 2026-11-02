@@ -331,6 +331,25 @@ impl Runtime {
         frame: Stereo,
         settings: &Settings,
     ) -> Option<(usize, Stereo)> {
+        self.process_gain(slot, age, frame, settings, true)
+    }
+    pub(crate) fn process_unleveled(
+        &mut self,
+        slot: usize,
+        age: u32,
+        frame: Stereo,
+        settings: &Settings,
+    ) -> Option<(usize, Stereo)> {
+        self.process_gain(slot, age, frame, settings, false)
+    }
+    fn process_gain(
+        &mut self,
+        slot: usize,
+        age: u32,
+        frame: Stereo,
+        settings: &Settings,
+        include_level: bool,
+    ) -> Option<(usize, Stereo)> {
         let grain = &mut self.grains[slot];
         if !grain.grouped {
             return None;
@@ -338,7 +357,9 @@ impl Runtime {
         let index = grain.group as usize;
         let group = &settings.groups[index];
         let age_f = age as f32;
-        let gain = grain.amp.shaped(age_f, grain.shape) * group.level * grain.level;
+        let gain = grain.amp.shaped(age_f, grain.shape)
+            * if include_level { group.level } else { 1.0 }
+            * grain.level;
         // The drive and waveshaper take each grain whole, as a voice's
         // oscillators are, wherever the group's order puts them.
         let refresh = age.is_multiple_of(REFRESH);

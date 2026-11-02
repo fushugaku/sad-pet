@@ -1615,14 +1615,14 @@
     }
     /** The starter packs that come with SAD PET, from the site's own files. */
     bundled() {
-      this.bundledList ??= fetch(new URL("./sampler-packs/packs.json", location.href))
+      this.bundledList ??= fetch(new URL("./sampler-packs/packs.json", document.baseURI))
         .then((r) => (r.ok ? r.json() : []))
         .catch(() => []);
       return this.bundledList;
     }
     /** Copies a starter pack's samples into the library once, then loads its kit. */
     async loadBundled(entry) {
-      const base = new URL(`./sampler-packs/${entry.id}/`, location.href);
+      const base = new URL(`./sampler-packs/${entry.id}/`, document.baseURI);
       try {
         const response = await fetch(new URL(`pack.json?v=${entry.version}`, base));
         if (!response.ok) throw new Error(`${entry.name}: ${response.status}`);
@@ -1854,7 +1854,7 @@
     }
     loop() {
       const tick = async () => {
-        if (!this.root.hidden && this.part() !== null && !document.hidden && !this.polling) {
+        if (!window.sadPetControlSource?.pool && !this.root.hidden && this.part() !== null && !document.hidden && !this.polling) {
           this.polling = true;
           try {
             const state = await this.hooks.request("/api/sampler/state");

@@ -51,6 +51,20 @@ impl Serialize for DrumEdits<'_> {
     }
 }
 #[derive(Serialize)]
+struct FileSource<'a> {
+    sample_name: &'a str,
+    sample_id: &'a Option<String>,
+    sample_seconds: f64,
+    sample_frames: usize,
+}
+#[derive(Serialize, Deserialize)]
+struct OwnedFileSource {
+    sample_name: String,
+    sample_id: Option<String>,
+    sample_seconds: f64,
+    sample_frames: usize,
+}
+#[derive(Serialize)]
 struct Configuration<'a> {
     preset: &'a Preset,
     name: &'a str,
@@ -60,6 +74,7 @@ struct Configuration<'a> {
     region: sad_pet::dsp::Region,
     fades: sad_pet::dsp::Fades,
     live: bool,
+    file_source: FileSource<'a>,
 }
 #[derive(Deserialize)]
 struct OwnedConfiguration {
@@ -71,6 +86,8 @@ struct OwnedConfiguration {
     region: sad_pet::dsp::Region,
     fades: sad_pet::dsp::Fades,
     live: bool,
+    #[serde(default)]
+    file_source: Option<OwnedFileSource>,
 }
 #[derive(Serialize)]
 struct Packet<'a> {
@@ -256,6 +273,12 @@ impl Host {
             },
             configuration: changed.then_some(Configuration {
                 preset: &self.engine.preset,
+                file_source: FileSource {
+                    sample_name: &self.engine.sample.name,
+                    sample_id: &self.engine.sample.library_id,
+                    sample_seconds: self.engine.sample.duration(),
+                    sample_frames: self.engine.sample.len(),
+                },
                 // A Rack shows the file, or the history its Grain engine reads.
                 name: if self.engine.preset.rack.is_some() {
                     &sample.name
@@ -344,6 +367,7 @@ fn decode_snapshot(
             "startup_preset_index":sad_pet::startup::INDEX,
             "sample_rate":rate,"audio_device":"Web Audio","audio_error":null,"audio_enabled":false,
             "sample_name":config.name,"sample_id":config.id,"sample_seconds":config.seconds,"sample_frames":config.frames,
+            "file_source":config.file_source,
             "region":config.region,"fades":config.fades,"input":{"active":config.live},
             "recording":{"active":false,"id":null,"seconds":0,"available":false,"error":null},
             "cpu_percent":0,"underruns":0,
@@ -436,6 +460,9 @@ fn decode_snapshot(
     state["drums"] = json!(v.drums);
     state["rack_peaks"] = json!(v.rack_peaks);
     state["wavetable_positions"] = json!(v.wavetable_positions);
+    state["oscillator_positions"] = json!(v.oscillator_positions);
+    state["oscillator_motion"] = json!(v.modulated_oscillator_motion);
+    state["dropped_grain_births"] = json!(v.dropped_grain_births);
     state["wavetable_motion"] = json!(v.modulated_wavetable_motion);
     if let Some(history) = preset
         .rack

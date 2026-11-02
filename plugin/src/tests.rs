@@ -1,37 +1,4 @@
 use super::*;
-use std::{
-    alloc::{GlobalAlloc, Layout, System},
-    cell::Cell,
-};
-
-struct Allocator;
-thread_local! {
-    static TRACK: Cell<bool> = const { Cell::new(false) };
-    static HEAP_OPERATIONS: Cell<usize> = const { Cell::new(0) };
-}
-fn count() {
-    let _ = TRACK.try_with(|track| {
-        if track.get() {
-            let _ = HEAP_OPERATIONS.try_with(|n| n.set(n.get() + 1));
-        }
-    });
-}
-unsafe impl GlobalAlloc for Allocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        count();
-        unsafe { System.alloc(layout) }
-    }
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        count();
-        unsafe { System.dealloc(ptr, layout) }
-    }
-    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, size: usize) -> *mut u8 {
-        count();
-        unsafe { System.realloc(ptr, layout, size) }
-    }
-}
-#[global_allocator]
-static ALLOCATOR: Allocator = Allocator;
 
 #[test]
 fn shared_capture_builds_an_edited_table_that_recalls_with_motion_and_wave_env() {
@@ -334,6 +301,118 @@ fn wavetable_scenes_deduplicate_user_audio_and_restore_without_external_files() 
             .is_err()
     );
 }
+
+#[test]
+fn control_surface_routes_survive_prepare_and_update_without_audio_allocations() {
+    let mut controller = Controller::new_plugin(false);
+    let mut preset = Preset::default();
+    preset.params.filter = 0.2;
+    preset.params.filter_env_depth = 0.0;
+    for lfo in &mut preset.lfos {
+        lfo.depth = 0.0;
+        lfo.depth2 = 0.0;
+        lfo.depth3 = 0.0;
+    }
+    for env in &mut preset.envs {
+        env.extra_depth = 0.0;
+        env.depth3 = 0.0;
+    }
+    preset.sequencer.enabled = false;
+    call(&mut controller, "/api/preset", json!(preset));
+    let context = call(
+        &mut controller,
+        "/api/timbres/add",
+        json!({"kind":"control"}),
+    );
+    let id = context["active"].as_u64().unwrap();
+    let mut surface = call(&mut controller, "/api/preset", Value::Null);
+    let mut lane = sad_pet::sequence::Track {
+        target: sad_pet::sequence::Target::Parameter {
+            parameter: "control:0:filter".into(),
+        },
+        ..Default::default()
+    };
+    for step in &mut lane.steps {
+        step.cv = 1000;
+    }
+    surface["sequencer"] = json!({"enabled":true,"tracks":[lane]});
+    call(&mut controller, "/api/preset", surface);
+    call(
+        &mut controller,
+        "/api/transport",
+        json!({"playing":true,"midi_gate":false}),
+    );
+    let mut audio = controller.prepare(8000);
+    let values = controller.values();
+    no_heap(|| {
+        audio.begin(&values, 120., None, true, 256);
+        render(&mut audio, 256, [0.; 2]);
+    });
+    assert!(
+        (audio.engine.modulated_params().filter - 0.4).abs() < 0.003,
+        "{}",
+        audio.engine.modulated_params().filter
+    );
+    call(
+        &mut controller,
+        "/api/control/request",
+        json!({"timbre":id,"path":"/api/sequencer/edit",
+        "data":[{"track":1,"stage":0,"field":12,"value":500}]}),
+    );
+    no_heap(|| {
+        audio.begin(&values, 120., None, true, 256);
+        render(&mut audio, 256, [0.; 2]);
+    });
+    assert!(
+        (audio.engine.modulated_params().filter - 0.3).abs() < 0.003,
+        "{}",
+        audio.engine.modulated_params().filter
+    );
+    assert_eq!(controller.active, id as u32);
+    let saved = controller.snapshot().unwrap();
+    let mut restored = Controller::new_plugin(false);
+    restored.restore_saved(saved).unwrap();
+    let mut restored_audio = restored.prepare(8000);
+    let restored_values = restored.values();
+    no_heap(|| {
+        restored_audio.begin(&restored_values, 120., None, true, 256);
+        render(&mut restored_audio, 256, [0.; 2]);
+    });
+    assert!((restored_audio.engine.modulated_params().filter - 0.3).abs() < 0.003);
+}
+use std::{
+    alloc::{GlobalAlloc, Layout, System},
+    cell::Cell,
+};
+
+struct Allocator;
+thread_local! {
+    static TRACK: Cell<bool> = const { Cell::new(false) };
+    static HEAP_OPERATIONS: Cell<usize> = const { Cell::new(0) };
+}
+fn count() {
+    let _ = TRACK.try_with(|track| {
+        if track.get() {
+            let _ = HEAP_OPERATIONS.try_with(|n| n.set(n.get() + 1));
+        }
+    });
+}
+unsafe impl GlobalAlloc for Allocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        count();
+        unsafe { System.alloc(layout) }
+    }
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        count();
+        unsafe { System.dealloc(ptr, layout) }
+    }
+    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, size: usize) -> *mut u8 {
+        count();
+        unsafe { System.realloc(ptr, layout, size) }
+    }
+}
+#[global_allocator]
+static ALLOCATOR: Allocator = Allocator;
 
 #[test]
 fn master_limits_the_final_mix_and_preview_without_audio_allocations() {

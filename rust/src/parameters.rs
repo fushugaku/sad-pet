@@ -163,6 +163,11 @@ enum Target {
     SynthOsc(usize, usize),
     Wavetable(usize, crate::wavetable::Field),
     WavetableMotion(usize),
+    Mixed(usize, usize),
+    MixedNative(usize, usize),
+    MixedWavetable(usize, crate::wavetable::Field),
+    MixedMotion(usize),
+    Interaction(usize, usize),
     SynthGrain,
     SynthBuffer,
     Tb303(usize),
@@ -240,7 +245,7 @@ pub struct Spec {
 
 impl Spec {
     pub(crate) fn can_sequence(&self) -> bool {
-        if let Target::Wavetable(_, field) = self.target {
+        if let Target::Wavetable(_, field) | Target::MixedWavetable(_, field) = self.target {
             use crate::wavetable::Field;
             return !matches!(
                 field,
@@ -274,6 +279,11 @@ impl Spec {
     }
     pub(crate) fn frame_get(&self, m: &crate::dsp::Modulated) -> Option<f32> {
         Some(match self.target {
+            Target::Mixed(i, f) => mixed_get(m.oscillator_controls[i], f),
+            Target::MixedNative(i, f) => oscillator_get(m.oscillator_controls[i].native, f),
+            Target::MixedWavetable(i, f) => m.oscillator_controls[i].wavetable.get(f),
+            Target::MixedMotion(f) => m.oscillator_motion.get(f),
+            Target::Interaction(i, f) => interaction_get(*m.interaction_controls.routes.get(i)?, f),
             Target::Core { frame_get, .. } => frame_get(m),
             Target::Drum(i, field) => m.drums.0[i][field],
             Target::DrumShift(i) => m.drum_shifts[i],
@@ -351,6 +361,21 @@ impl Spec {
             value.clamp(self.min, self.max)
         };
         match self.target {
+            Target::Mixed(i, f) => mixed_set(&mut m.oscillator_controls[i], f, value),
+            Target::MixedNative(i, f) => {
+                oscillator_set(&mut m.oscillator_controls[i].native, f, value)
+            }
+            Target::MixedWavetable(i, f) => m.oscillator_controls[i].wavetable.set_mixed(f, value),
+            Target::MixedMotion(f) => m.oscillator_motion.set(f, value),
+            Target::Interaction(i, f) => {
+                if i < m.interaction_controls.count {
+                    interaction_set(&mut m.interaction_controls.routes[i], f, value);
+                    crate::interaction::replace_masters(
+                        &mut m.interaction_controls.routes[..m.interaction_controls.count],
+                        i,
+                    );
+                }
+            }
             Target::Core { frame_set, .. } => frame_set(m, value),
             Target::Drum(i, field) => {
                 m.drums.0[i][field] =
@@ -414,6 +439,26 @@ impl Spec {
     }
     pub fn get(&self, preset: &Preset) -> f32 {
         match self.target {
+            Target::Mixed(i, f) => preset
+                .oscillators
+                .as_ref()
+                .map_or(self.default, |s| mixed_get(s.slots[i].controls, f)),
+            Target::MixedNative(i, f) => preset.oscillators.as_ref().map_or(self.default, |s| {
+                oscillator_get(s.slots[i].controls.native, f)
+            }),
+            Target::MixedWavetable(i, f) => preset
+                .oscillators
+                .as_ref()
+                .map_or(self.default, |s| s.slots[i].controls.wavetable.get(f)),
+            Target::MixedMotion(f) => preset
+                .oscillators
+                .as_ref()
+                .map_or(self.default, |s| s.motion.get(f)),
+            Target::Interaction(i, f) => preset
+                .interactions
+                .routes
+                .get(i)
+                .map_or(self.default, |r| interaction_get(*r, f)),
             Target::WavetableMotion(field) => preset
                 .wavetable
                 .as_ref()
@@ -541,6 +586,40 @@ impl Spec {
             self.default
         };
         match self.target {
+            Target::Mixed(i, f) => {
+                if let Some(s) = &mut preset.oscillators {
+                    mixed_set(&mut s.slots[i].controls, f, value);
+                }
+            }
+            Target::MixedNative(i, f) => {
+                if let Some(s) = &mut preset.oscillators {
+                    oscillator_set(&mut s.slots[i].controls.native, f, value);
+                }
+            }
+            Target::MixedWavetable(i, f) => {
+                if let Some(s) = &mut preset.oscillators {
+                    s.slots[i].controls.wavetable.set_mixed(f, value);
+                }
+            }
+            Target::MixedMotion(f) => {
+                if let Some(s) = &mut preset.oscillators {
+                    s.motion.set(f, value);
+                }
+            }
+            Target::Interaction(i, f) => {
+                if let Some(r) = preset.interactions.routes.get_mut(i) {
+                    interaction_set(r, f, value);
+                }
+                crate::interaction::replace_masters(&mut preset.interactions.routes, i);
+                if preset
+                    .interactions
+                    .routes
+                    .iter()
+                    .any(|r| r.needs_group_clock())
+                {
+                    preset.grain_scheduler = crate::interaction::Scheduler::Independent;
+                }
+            }
             Target::WavetableMotion(field) => {
                 if let Some(s) = &mut preset.wavetable {
                     s.motion.set(field, value);
@@ -708,6 +787,188 @@ impl Spec {
                 }
             }
         }
+    }
+}
+
+fn mixed_get(c: crate::oscillators::Controls, field: usize) -> f32 {
+    match field {
+        0 => f32::from(c.enabled),
+        1 => c.level,
+        2 => c.pan,
+        3 => c.transpose,
+        _ => c.fine,
+    }
+}
+fn mixed_set(c: &mut crate::oscillators::Controls, field: usize, value: f32) {
+    match field {
+        0 => c.enabled = value >= 0.5,
+        1 => c.level = value,
+        2 => c.pan = value,
+        3 => c.transpose = value,
+        _ => c.fine = value,
+    }
+}
+fn interaction_get(r: crate::interaction::Route, field: usize) -> f32 {
+    match field {
+        0 => r.ring,
+        1 => r.sync as u8 as f32,
+        2 => r.strength,
+        3 => r.response,
+        4 => r.reset_phase,
+        5 => r.divide as f32,
+        6 => r.scope as u8 as f32,
+        7 => r.event as u8 as f32,
+        8 => r.tap as u8 as f32,
+        _ => f32::from(r.enabled),
+    }
+}
+fn interaction_set(r: &mut crate::interaction::Route, field: usize, value: f32) {
+    use crate::interaction::*;
+    match field {
+        0 => r.ring = value,
+        1 => {
+            r.sync = [SyncMode::Off, SyncMode::Soft, SyncMode::Hard]
+                [value.round().clamp(0.0, 2.0) as usize]
+        }
+        2 => r.strength = value,
+        3 => r.response = value,
+        4 => r.reset_phase = value,
+        5 => r.divide = value.round().clamp(1.0, 32.0) as u8,
+        6 => {
+            r.scope =
+                [Scope::Playback, Scope::Clock, Scope::Both][value.round().clamp(0.0, 2.0) as usize]
+        }
+        7 => {
+            r.event = [
+                Event::NaturalWrap,
+                Event::AudioZeroCross,
+                Event::GroupClockWrap,
+                Event::GrainLaunch,
+                Event::Auto,
+            ][value.round().clamp(0.0, 4.0) as usize]
+        }
+        8 => {
+            r.tap = if value < 0.5 {
+                Tap::Generation
+            } else {
+                Tap::Output
+            }
+        }
+        _ => r.enabled = value >= 0.5 && r.source != Node::None && r.target != Node::None,
+    }
+}
+
+fn append_oscillator_parameters(result: &mut Vec<Spec>) {
+    let default = crate::oscillators::Controls::default();
+    for i in 0..crate::oscillators::SLOTS {
+        for (f, key, min, max) in [
+            (0, "enabled", 0.0, 1.0),
+            (1, "level", 0.0, 1.0),
+            (2, "pan", 0.0, 1.0),
+            (3, "transpose", -48.0, 48.0),
+            (4, "fine", -100.0, 100.0),
+        ] {
+            result.push(Spec {
+                id: format!("osc{}_{key}", i + 1),
+                name: format!("OSC {} {}", i + 1, key.replace('_', " ")),
+                min,
+                max,
+                default: mixed_get(default, f),
+                target: Target::Mixed(i, f),
+            });
+        }
+        for (f, key, min, max) in [
+            (1, "waveform", 0.0, 6.0),
+            (2, "mode", 0.0, 3.0),
+            (3, "control1", 0.0, 1.0),
+            (4, "control2", 0.0, 1.0),
+            (9, "cross_source", 0.0, 8.0),
+            (11, "fold_shape", 0.0, 4.0),
+        ] {
+            result.push(Spec {
+                id: format!("osc{}_native_{key}", i + 1),
+                name: format!("OSC {} {}", i + 1, key.replace('_', " ")),
+                min,
+                max,
+                default: oscillator_get(default.native, f),
+                target: Target::MixedNative(i, f),
+            });
+        }
+        use crate::wavetable::Field as W;
+        let extra = [
+            (
+                W::VoiceShift,
+                "voice_shift",
+                "unison voice shift",
+                -1.0,
+                1.0,
+            ),
+            (W::FmSource, "fm_source", "FM source", 0.0, 7.0),
+            (W::SyncSource, "sync_source", "sync source", 0.0, 7.0),
+        ];
+        for (f, key, name, min, max) in crate::wavetable::FIELDS
+            .into_iter()
+            .chain(crate::wavetable::MOTION_FIELDS)
+            .chain(crate::wavetable::FM_FIELDS)
+            .chain(crate::wavetable::SYNC_FIELDS)
+            .chain(extra)
+        {
+            if matches!(f, W::Enabled | W::Level | W::Pan | W::Transpose | W::Fine) {
+                continue;
+            }
+            result.push(Spec {
+                id: format!("osc{}_wt_{key}", i + 1),
+                name: format!("OSC {} {name}", i + 1),
+                min,
+                max,
+                default: default.wavetable.get(f),
+                target: Target::MixedWavetable(i, f),
+            });
+        }
+    }
+    for i in 0..crate::interaction::MAX_ROUTES {
+        let r = crate::interaction::Route::default();
+        for (f, key, min, max) in [
+            (0, "ring", 0.0, 1.0),
+            (1, "sync", 0.0, 2.0),
+            (2, "strength", 0.0, 1.0),
+            (3, "response", 0.1, 1000.0),
+            (4, "phase", 0.0, 1.0),
+            (5, "divide", 1.0, 32.0),
+            (6, "scope", 0.0, 2.0),
+            (7, "event", 0.0, 4.0),
+            (8, "tap", 0.0, 1.0),
+            (9, "enabled", 0.0, 1.0),
+        ] {
+            result.push(Spec {
+                id: format!("interaction{}_{key}", i + 1),
+                name: format!("Interaction {} {key}", i + 1),
+                min,
+                max,
+                default: interaction_get(r, f),
+                target: Target::Interaction(i, f),
+            });
+        }
+    }
+    for (field, (key, _, min, max, _)) in crate::rack::STRIP_FIELDS.into_iter().enumerate() {
+        result.push(Spec {
+            id: format!("rack_oscillators_{key}"),
+            name: format!("Oscillators {key}"),
+            min,
+            max,
+            default: crate::rack::Strip::default().field(field),
+            target: Target::RackStrip(7, field),
+        });
+    }
+    for (field, (key, min, max)) in crate::wavetable::motion::FIELDS.into_iter().enumerate() {
+        result.push(Spec {
+            id: format!("osc_{key}"),
+            name: format!("Oscillator {key}"),
+            min,
+            max,
+            default: crate::wavetable::motion::Motion::default().get(field),
+            target: Target::MixedMotion(field),
+        });
     }
 }
 
@@ -2022,6 +2283,7 @@ pub fn specs() -> &'static [Spec] {
                 });
             }
         }
+        append_oscillator_parameters(&mut result);
         result
     })
 }

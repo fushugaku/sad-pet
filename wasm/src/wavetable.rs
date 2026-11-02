@@ -119,6 +119,8 @@ pub extern "C" fn sad_wavetable_prune() {
         for part in &mut r.parts {
             let mut retired = [const { None }; sad_pet::wavetable::OSCILLATORS];
             part.host.engine.retire_wavetable_banks(&mut retired);
+            let mut retired_mixed = [const { None }; sad_pet::oscillators::SLOTS];
+            part.host.engine.retire_oscillator_banks(&mut retired_mixed);
         }
         r.wavetable_banks.retain(|bank| Arc::strong_count(bank) > 1);
     });

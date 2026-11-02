@@ -127,6 +127,10 @@ fn handle(
                     include_bytes!("../web/style.css").to_vec(),
                     "text/css; charset=utf-8",
                 )),
+                "/control.js" => Ok((
+                    include_bytes!("../web/control.js").to_vec(),
+                    "application/javascript",
+                )),
                 "/app.js" => Ok((
                     include_bytes!("../web/app.js").to_vec(),
                     "text/javascript; charset=utf-8",
@@ -166,6 +170,14 @@ fn handle(
                 "/wavetable.css" => {
                     Ok((include_bytes!("../web/wavetable.css").to_vec(), "text/css"))
                 }
+                "/oscillators.js" => Ok((
+                    include_bytes!("../web/oscillators.js").to_vec(),
+                    "application/javascript",
+                )),
+                "/oscillators.css" => Ok((
+                    include_bytes!("../web/oscillators.css").to_vec(),
+                    "text/css",
+                )),
                 "/rack.js" => Ok((
                     include_bytes!("../web/rack.js").to_vec(),
                     "application/javascript",
@@ -342,11 +354,24 @@ fn handle(
                 preset.vocal = None;
                 preset.sanitize();
                 let rate = state.lock().map_err(|e| e.to_string())?.sample_rate;
+                preset.wavetable_pool = state
+                    .lock()
+                    .map_err(|e| e.to_string())?
+                    .preset
+                    .wavetable_pool
+                    .clone();
+                let prepared = preset.prepared_clone_for(rate);
+                if let Some(error) = prepared
+                    .wavetable_runtime
+                    .1
+                    .as_ref()
+                    .or(prepared.oscillator_runtime.1.as_ref())
+                    .or(prepared.phase_runtime.1.as_ref())
+                {
+                    return Err(error.clone());
+                }
                 let (reply, result) = std::sync::mpsc::sync_channel(1);
-                send(
-                    &commands,
-                    Command::preset(preset.prepared_clone_for(rate), reply),
-                )?;
+                send(&commands, Command::preset(prepared, reply))?;
                 result
                     .recv_timeout(Duration::from_secs(5))
                     .map_err(|e| format!("Preset: {e}"))?;

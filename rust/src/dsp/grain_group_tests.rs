@@ -40,6 +40,74 @@ fn semitones(e: &Engine, rate: f64) -> f64 {
 }
 
 #[test]
+fn all_groups_off_stop_legacy_independent_and_forced_clock_births() {
+    use crate::interaction::{Node, Route, Scheduler, Scope, SyncMode};
+    for (scheduler, forced) in [
+        (Scheduler::Legacy, false),
+        (Scheduler::Independent, false),
+        (Scheduler::Independent, true),
+    ] {
+        let mut e = engine(|p| {
+            p.params.mix = 1.0;
+            for group in &mut p.grain_groups.groups {
+                group.share = 0.0;
+            }
+            p.grain_scheduler = scheduler;
+            if forced {
+                p.synth = Some(Box::default());
+                p.interactions.routes.push(Route {
+                    source: Node::Synth { index: 0 },
+                    target: Node::Group { index: 0 },
+                    sync: SyncMode::Hard,
+                    scope: Scope::Both,
+                    ..Route::default()
+                });
+            }
+        });
+        // A note's prefill and a forced direct birth must obey Off too.
+        e.midi(Message::NoteOn {
+            channel: 0,
+            note: 60,
+            velocity: 100,
+        });
+        e.spawn_grain_group(0, false, 0, Some(0), true, 0.0);
+        assert_eq!(e.live_grains, 0);
+        for _ in 0..24_000 {
+            e.process_frame();
+            assert_eq!(e.live_grains, 0, "{scheduler:?}, forced={forced}");
+        }
+    }
+}
+
+#[test]
+fn switching_advanced_on_with_all_groups_off_only_finishes_existing_grains() {
+    let mut e = engine(|p| {
+        p.grain_groups.advanced = false;
+        p.params.grain_size = 0.6;
+        p.params.mix = 1.0;
+        for group in &mut p.grain_groups.groups {
+            group.share = 0.0;
+        }
+    });
+    grains(&mut e, 8_000);
+    let before = e.live_grains;
+    assert_ne!(before, 0);
+    let longest_tail = e
+        .live_grain_slots()
+        .map(|i| e.grains[i].duration - e.grains[i].age)
+        .max()
+        .unwrap();
+    e.apply_parameters(
+        &crate::parameters::parse(&serde_json::json!({"grain_advanced":1})).unwrap(),
+    );
+    for _ in 0..longest_tail + 128 {
+        e.process_frame();
+        assert_eq!(e.live_grains & !before, 0, "Off creates no replacements");
+    }
+    assert_eq!(e.live_grains, 0);
+}
+
+#[test]
 fn a_groups_size_and_reverse_shape_its_grains() {
     let mut plain = engine(|_| {});
     let base = grains(&mut plain, 24_000);

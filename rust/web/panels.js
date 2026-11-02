@@ -35,7 +35,7 @@
     constructor(root, hooks) {
       this.root = root;
       this.hooks = hooks;
-      root.innerHTML = `<div class="timbre-top"><div class="timbre-lists"><div class="timbre-row"><span class="timbre-list-name">Instruments</span><div class="timbre-tabs" role="tablist" aria-label="Instruments"></div><span class="timbre-none" hidden>None yet: add one with + Timbre</span></div><div class="timbre-row"><span class="timbre-list-name">Buses</span><div class="timbre-tabs bus-tabs" role="tablist" aria-label="Buses"></div></div></div><div class="timbre-add"><select aria-label="New timbre type"><option value="granular">Granular</option><option value="drums">Drum machine</option><option value="synth">Synth</option><option value="wavetable">Wavetable</option><option value="tb303">303 Bass</option><option value="sampler" hidden>Sampler</option><option value="vocal">Vocal</option><option value="rack">Rack: drums + synth</option><option value="bus">Bus</option></select><button>+ Timbre</button></div></div><div class="timbre-mix"><input aria-label="Timbre name" maxlength="80"><div class="instrument-picker"><button aria-label="Instrument presets" aria-haspopup="dialog" aria-expanded="false">Instruments<span aria-hidden="true">⌄</span></button></div><button aria-pressed="false">Mute</button><button aria-pressed="false">Solo</button><label class="timbre-midi">MIDI<select aria-label="Timbre MIDI channel"><option value="0">All</option>${Array.from({ length: 16 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("")}</select></label><label><span class="timbre-level-name">MASTER</span><input aria-label="Timbre level" type="range" min="0" max="2" step=".01"></label><button aria-label="Remove timbre">×</button></div><div class="timbre-sends" aria-label="Bus sends"></div>`;
+      root.innerHTML = `<div class="timbre-top"><div class="timbre-lists"><div class="timbre-row"><span class="timbre-list-name">Instruments</span><div class="timbre-tabs" role="tablist" aria-label="Instruments"></div><span class="timbre-none" hidden>None yet: add one with + Timbre</span></div><div class="timbre-row"><span class="timbre-list-name">Buses</span><div class="timbre-tabs bus-tabs" role="tablist" aria-label="Buses"></div></div></div><div class="timbre-add"><select aria-label="New timbre type"><option value="granular">Granular</option><option value="drums">Drum machine</option><option value="oscillators">Oscillators</option><option value="tb303">303 Bass</option><option value="sampler" hidden>Sampler</option><option value="vocal">Vocal</option><option value="rack">Rack: drums + synth</option><option value="bus">Bus</option><option value="control">Control</option></select><button>+ Timbre</button></div></div><div class="timbre-mix"><input aria-label="Timbre name" maxlength="80"><div class="instrument-picker"><button aria-label="Instrument presets" aria-haspopup="dialog" aria-expanded="false">Instruments<span aria-hidden="true">⌄</span></button></div><button aria-pressed="false">Mute</button><button aria-pressed="false">Solo</button><label class="timbre-midi">MIDI<select aria-label="Timbre MIDI channel"><option value="0">All</option>${Array.from({ length: 16 }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("")}</select></label><label><span class="timbre-level-name">MASTER</span><input aria-label="Timbre level" type="range" min="0" max="2" step=".01"></label><button aria-label="Remove timbre">×</button></div><div class="timbre-sends" aria-label="Bus sends"></div>`;
       // Instruments on one row, Buses and Master under them.
       [this.tabs, this.busTabs] = root.querySelectorAll(".timbre-tabs");
       this.none = root.querySelector(".timbre-none");
@@ -141,10 +141,12 @@
         this.channel.value = part.channel;
       if (document.activeElement !== this.level) this.level.value = part.gain;
       const routing = part.kind === "bus" || part.kind === "master" || part.kind === "pad_fx";
-      this.solo.hidden = routing;
-      this.midi.hidden = routing;
-      this.range.hidden=routing;
+      this.solo.hidden = routing || part.kind === "control";
+      this.midi.hidden = routing || part.kind === "control";
+      this.range.hidden=routing||part.kind==="control";
       for(const input of this.range.querySelectorAll("input,select"))if(document.activeElement!==input)input.value=String(part[input.dataset.field]??(input.dataset.field==="key_low"?0:input.dataset.field==="velocity_low"?1:127));
+      this.instruments.hidden = part.kind === "control";
+      this.level.parentElement.hidden = part.kind === "control";
       this.levelName.textContent =
         part.kind === "master" ? "OUTPUT" : part.kind === "bus" ? "TO MASTER"
           : part.kind === "pad_fx" ? "TO SAMPLER" : "MASTER";
@@ -154,7 +156,7 @@
       );
       // Any timbre but Master can go, the first one too.
       this.remove.disabled = part.kind === "master";
-      this.syncSends(part, routing);
+      this.syncSends(part, routing || part.kind === "control");
     }
     /** One send per Bus; a timbre's output reaches the bus at this level. A
      * Bus sends to the other buses, but not to one that already feeds it. */

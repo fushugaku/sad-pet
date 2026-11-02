@@ -33,6 +33,10 @@ pub enum Target {
     WavetableOscillator {
         index: u8,
     },
+    /// A stable physical automation slot in the eight-slot mixed bank.
+    MixedOscillator {
+        index: u8,
+    },
     Parameter {
         parameter: String,
     },
@@ -61,6 +65,7 @@ impl Target {
                 | Self::SynthOscillator { .. }
                 | Self::Tb303Oscillator { .. }
                 | Self::WavetableOscillator { .. }
+                | Self::MixedOscillator { .. }
         )
     }
 }
@@ -488,11 +493,16 @@ fn sanitize_tracks(tracks: &mut [Track]) {
         track.root_note = track.root_note.min(127);
         track.pages = track.pages.clamp(1, PAGES as u8);
         track.notes &= 0x0fff;
-        let max_oscillator = 3;
+        let max_oscillator = if matches!(track.target, Target::MixedOscillator { .. }) {
+            7
+        } else {
+            3
+        };
         if let Target::Oscillator { index }
         | Target::SynthOscillator { index }
         | Target::WavetableOscillator { index }
-        | Target::Tb303Oscillator { index } = &mut track.target
+        | Target::Tb303Oscillator { index }
+        | Target::MixedOscillator { index } = &mut track.target
         {
             *index = (*index).min(max_oscillator);
             // Keep older root-relative patterns at the same offset while

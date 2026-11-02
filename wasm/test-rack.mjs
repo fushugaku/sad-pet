@@ -82,7 +82,7 @@ const size = core.snapshot(packet);
 assert.ok(size > 0);
 const decoded = utility.json("sad_snapshot_import", packet.slice(0, size));
 assert.equal(decoded.state.preset.rack.modules.length, 4);
-assert.equal(decoded.state.rack_peaks.length, 7);
+assert.equal(decoded.state.rack_peaks.length, 8);
 assert.equal(decoded.state.sample_name, "Rack");
 
 // Scenes keep the Rack.
@@ -106,6 +106,15 @@ steps = plan(["sample", "filters", "grains"]);
 assert.ok(steps[1].perNote && !steps[2].readsFile && !steps[2].perNote);
 steps = plan([{ module: "sample", enabled: false }, "grains"]);
 assert.ok(!steps[1].readsFile);
+
+// A Connections panel never interrupts file granulation or per-note filters.
+for (const modules of [["sample", "grains", "filters", "mixer"], ["synth", "filters", "mixer"]]) {
+  const expected = plan(modules);
+  for (let at = 0; at <= modules.length; at++) {
+    const withPanel = [...modules];withPanel.splice(at, 0, "connections");
+    assert.deepEqual(plan(withPanel).filter(s => s.module !== "connections"), expected);
+  }
+}
 
 steps = plan(["sampler", "filters", "vocal", "mixer"]);
 assert.deepEqual(steps.map((s) => s.chain), ["sampler", "sampler", "vocal", "mix"]);
@@ -230,7 +239,7 @@ assert.deepEqual(steps.map((s) => s.mixed), [true, false, true, false]);
   core.request("/api/note", { kind: "note_on", channel: 0, note: 36, velocity: 127 });
   assert.ok(peak(0.2) > 0.05, "a note plays the Rack's pad");
   let state = core.request("/api/state");
-  assert.equal(state.rack_peaks.length, 7);
+  assert.equal(state.rack_peaks.length, 8);
   assert.ok(state.rack_peaks[3] > 0.05 && state.rack_peaks[1] < 1e-6, JSON.stringify(state.rack_peaks));
   core.request("/api/note", { kind: "note_off", channel: 0, note: 36, velocity: 0 });
   peak(0.5);

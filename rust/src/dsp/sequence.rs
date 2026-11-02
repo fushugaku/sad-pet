@@ -324,6 +324,7 @@ enum Binding {
     SynthOscillator(usize),
     Tb303Oscillator(usize),
     WavetableOscillator(usize),
+    MixedOscillator(usize),
     Parameter(usize),
     Notes,
     /// Each gate starts this LFO over.
@@ -449,6 +450,9 @@ impl Runtime {
                     Target::WavetableOscillator { index } => Binding::WavetableOscillator(
                         (*index as usize).min(crate::wavetable::OSCILLATORS - 1),
                     ),
+                    Target::MixedOscillator { index } => {
+                        Binding::MixedOscillator((*index as usize).min(7))
+                    }
                     Target::Notes | Target::Pad { .. } => Binding::Notes,
                     Target::Parameter { parameter } => crate::sequence::lfo_reset(parameter)
                         .map_or_else(
@@ -479,6 +483,10 @@ impl Runtime {
                     }
                     Binding::WavetableOscillator(index) => {
                         let id = format!("wt_{}_transpose", ["a", "b", "c", "d"][index]);
+                        parameters::specs().iter().position(|s| s.id == id)
+                    }
+                    Binding::MixedOscillator(index) => {
+                        let id = format!("osc{}_transpose", index + 1);
                         parameters::specs().iter().position(|s| s.id == id)
                     }
                     Binding::Parameter(index) => Some(index),
@@ -563,6 +571,7 @@ impl Runtime {
                         | Binding::SynthOscillator(_)
                         | Binding::Tb303Oscillator(_)
                         | Binding::WavetableOscillator(_)
+                        | Binding::MixedOscillator(_)
                 )
             })
             .collect();
@@ -1028,11 +1037,7 @@ impl Runtime {
         }
         mask
     }
-    pub fn apply(&self, m: &mut Modulated) {
-        if !self.enabled || !self.started {
-            return;
-        }
-        let now = self.core.ticks.saturating_sub(1) as f64 + self.phase.min(1.0);
+    fn oscillator_pitch(&self, now: f64) -> [f32; 4] {
         let mut oscillator_pitch = [0.0; 4];
         for &i in &self.main_pitch_routes {
             let lane = &self.lanes[i];
@@ -1045,56 +1050,98 @@ impl Runtime {
                 }
             }
         }
-        // Group compiled destinations once, off-thread. Sum contributions before
-        // clamping so opposite lanes cancel, independent of their list order.
+        oscillator_pitch
+    }
+    fn parameter_delta(
+        &self,
+        m: &Modulated,
+        cursor: &mut usize,
+        now: f64,
+        oscillator_pitch: [f32; 4],
+    ) -> (usize, Option<f32>, f32) {
+        let id = self.routes[*cursor].parameter;
+        let spec = &parameters::specs()[id];
+        let base = spec.frame_get(m);
+        let mut delta = self.routes[*cursor]
+            .oscillator
+            .map_or(0.0, |index| oscillator_pitch[index]);
+        while *cursor < self.routes.len() && self.routes[*cursor].parameter == id {
+            let route = self.routes[*cursor];
+            *cursor += 1;
+            let Some(i) = route.lane else {
+                continue;
+            };
+            let l = &self.lanes[i];
+            if !self.sounding(i) {
+                continue;
+            }
+            delta += if let Some(destination) = route.destination {
+                self.core.stage(i).map_or(0.0, |stage| {
+                    l.stage(stage).get(16 + destination as u8) * (spec.max - spec.min)
+                })
+            } else if matches!(
+                l.binding,
+                Binding::MainPitch
+                    | Binding::Oscillator(_)
+                    | Binding::SynthOscillator(_)
+                    | Binding::Tb303Oscillator(_)
+                    | Binding::WavetableOscillator(_)
+                    | Binding::MixedOscillator(_)
+            ) {
+                (l.pitch.value(now) - l.root as f32) * l.amount
+            } else {
+                let cv = self.core.cv(i) as f32 / 5000.0;
+                if l.absolute {
+                    let unit = if self.core.tracks[i].config[field::CV_TYPE] == 0 {
+                        (cv + 1.0) * 0.5
+                    } else {
+                        cv
+                    };
+                    (spec.min + unit * (spec.max - spec.min) - base.unwrap_or(0.0)) * l.amount
+                } else {
+                    cv * l.amount * (spec.max - spec.min)
+                }
+            };
+        }
+        (id, base, delta)
+    }
+    pub fn accumulate(&self, m: &Modulated, sums: &mut Vec<(usize, f32)>) {
+        if !self.enabled || !self.started {
+            return;
+        }
+        let now = self.core.ticks.saturating_sub(1) as f64 + self.phase.min(1.0);
+        let pitch = self.oscillator_pitch(now);
         let mut cursor = 0;
         while cursor < self.routes.len() {
-            let id = self.routes[cursor].parameter;
-            let spec = &parameters::specs()[id];
-            let base = spec.frame_get(m);
-            let mut delta = self.routes[cursor]
-                .oscillator
-                .map_or(0.0, |index| oscillator_pitch[index]);
-            while cursor < self.routes.len() && self.routes[cursor].parameter == id {
-                let route = self.routes[cursor];
-                cursor += 1;
-                let Some(i) = route.lane else {
-                    continue;
-                };
-                let l = &self.lanes[i];
-                if !self.sounding(i) {
-                    continue;
-                }
-                delta += if let Some(destination) = route.destination {
-                    self.core.stage(i).map_or(0.0, |stage| {
-                        l.stage(stage).get(16 + destination as u8) * (spec.max - spec.min)
-                    })
-                } else if matches!(
-                    l.binding,
-                    Binding::MainPitch
-                        | Binding::Oscillator(_)
-                        | Binding::SynthOscillator(_)
-                        | Binding::Tb303Oscillator(_)
-                        | Binding::WavetableOscillator(_)
-                ) {
-                    (l.pitch.value(now) - l.root as f32) * l.amount
-                } else {
-                    let cv = self.core.cv(i) as f32 / 5000.0;
-                    if l.absolute {
-                        let unit = if self.core.tracks[i].config[field::CV_TYPE] == 0 {
-                            (cv + 1.0) * 0.5
-                        } else {
-                            cv
-                        };
-                        (spec.min + unit * (spec.max - spec.min) - base.unwrap_or(0.0)) * l.amount
-                    } else {
-                        cv * l.amount * (spec.max - spec.min)
-                    }
-                };
+            let (id, base, delta) = self.parameter_delta(m, &mut cursor, now, pitch);
+            if base.is_none() {
+                continue;
             }
+            if let Some((_, value)) = sums.iter_mut().find(|(index, _)| *index == id) {
+                *value += delta;
+            } else {
+                sums.push((id, delta));
+            }
+        }
+    }
+    pub fn apply(&self, m: &mut Modulated) {
+        if !self.enabled || !self.started {
+            return;
+        }
+        let now = self.core.ticks.saturating_sub(1) as f64 + self.phase.min(1.0);
+        let pitch = self.oscillator_pitch(now);
+        let mut cursor = 0;
+        while cursor < self.routes.len() {
+            let (id, base, delta) = self.parameter_delta(m, &mut cursor, now, pitch);
             if let Some(base) = base {
-                spec.frame_set(m, base + delta);
+                parameters::specs()[id].frame_set(m, base + delta);
             }
+        }
+        self.apply_gates(m);
+    }
+    pub fn apply_gates(&self, m: &mut Modulated) {
+        if !self.enabled || !self.started {
+            return;
         }
         for &i in &self.oscillator_routes {
             let l = &self.lanes[i];
@@ -1104,6 +1151,7 @@ impl Runtime {
                     Binding::Oscillator(index) => m.resynth.oscillators[index].level = 0.0,
                     Binding::SynthOscillator(index) => m.synth.oscillators[index].level = 0.0,
                     Binding::WavetableOscillator(index) => m.wavetable[index].level = 0.0,
+                    Binding::MixedOscillator(index) => m.oscillator_controls[index].level = 0.0,
                     Binding::Tb303Oscillator(index) => {
                         m.tb303_radias.oscillators[index].level = 0.0
                     }

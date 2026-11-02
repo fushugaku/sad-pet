@@ -1,0 +1,425 @@
+{
+  "environment": {
+    "cpu": "Apple M5 Max",
+    "node": "v24.19.0",
+    "sample_rate": 48000,
+    "block_frames": 128,
+    "method": "AB/BA serial processes; no concurrent builds/tests from this task; 256 warmup + 512 measured blocks; initial Granular timbre removed"
+  },
+  "runs": {
+    "before-a": {
+      "variant": "/tmp/sadpet-oscillator-pre-performance.simd.wasm",
+      "rate": 48000,
+      "frames": 128,
+      "results": [
+        {
+          "case": "1 RADIAS / 1 voice",
+          "p50_ms": 0.221,
+          "p95_ms": 0.278,
+          "p99_ms": 0.405,
+          "worst_ms": 1.649,
+          "deadline_ms": 2.667,
+          "linear_memory_MiB": 41.4375,
+          "live_grains": 0
+        },
+        {
+          "case": "4 mixed / 1 voice",
+          "p50_ms": 0.482,
+          "p95_ms": 0.611,
+          "p99_ms": 0.731,
+          "worst_ms": 0.921,
+          "deadline_ms": 2.667,
+          "linear_memory_MiB": 48.5625,
+          "live_grains": 0
+        },
+        {
+          "case": "8 mixed / 1 voice",
+          "p50_ms": 0.769,
+          "p95_ms": 0.932,
+          "p99_ms": 1.029,
+          "worst_ms": 1.17,
+          "deadline_ms": 2.667,
+          "linear_memory_MiB": 48.5625,
+          "live_grains": 0
+        },
+        {
+          "case": "8 mixed / 4 voices",
+          "p50_ms": 2.821,
+          "p95_ms": 3.075,
+          "p99_ms": 3.191,
+          "worst_ms": 3.354,
+          "deadline_ms": 2.667,
+          "linear_memory_MiB": 48.5625,
+          "live_grains": 0
+        },
+        {
+          "case": "8 mixed + group Playback/Ring / 4 voices",
+          "p50_ms": 3.573,
+          "p95_ms": 3.967,
+          "p99_ms": 4.136,
+          "worst_ms": 4.705,
+          "deadline_ms": 2.667,
+          "linear_memory_MiB": 69.125,
+          "live_grains": 4
+        },
+        {
+          "case": "8 mixed + group cycle / 4 voices (audio-rate births)",
+          "p50_ms": 9.364,
+          "p95_ms": 9.857,
+          "p99_ms": 10.047,
+          "worst_ms": 10.715,
+          "deadline_ms": 2.667,
+          "linear_memory_MiB": 69.125,
+          "live_grains": 128
+        }
+      ]
+    },
+    "after-a": {
+      "variant": "sad_pet.simd.wasm",
+      "rate": 48000,
+      "frames": 128,
+      "results": [
+        {
+          "case": "1 RADIAS / 1 voice",
+          "p50_ms": 0.209,
+          "p95_ms": 0.262,
+          "p99_ms": 0.321,
+          "worst_ms": 1.528,
+          "deadline_ms": 2.667,
+          "linear_memory_MiB": 41.4375,
+          "live_grains": 0
+        },
+        {
+          "case": "4 mixed / 1 voice",
+          "p50_ms": 0.469,
+          "p95_ms": 0.587,
+          "p99_ms": 0.649,
+          "worst_ms": 0.766,
+          "deadline_ms": 2.667,
+          "linear_memory_MiB": 48.5625,
+          "live_grains": 0
+        },
+        {
+          "case": "8 mixed / 1 voice",
+          "p50_ms": 0.688,
+          "p95_ms": 0.899,
+          "p99_ms": 1.088,
+          "worst_ms": 1.265,
+          "deadline_ms": 2.667,
+          "linear_memory_MiB": 48.5625,
+          "live_grains": 0
+        },
+        {
+          "case": "8 mixed / 4 voices",
+          "p50_ms": 2.439,
+          "p95_ms": 2.721,
+          "p99_ms": 2.884,
+          "worst_ms": 3.031,
+          "deadline_ms": 2.667,
+          "linear_memory_MiB": 48.5625,
+          "live_grains": 0
+        },
+        {
+          "case": "8 mixed + group Playback/Ring / 4 voices",
+          "p50_ms": 2.982,
+          "p95_ms": 3.502,
+          "p99_ms": 3.645,
+          "worst_ms": 7.455,
+          "deadline_ms": 2.667,
+          "linear_memory_MiB": 69.125,
+          "live_grains": 4
+        },
+        {
+          "case": "8 mixed + group cycle / 4 voices (audio-rate births)",
+          "p50_ms": 7.306,
+          "p95_ms": 9.552,
+          "p99_ms": 10.826,
+          "worst_ms": 11.986,
+          "deadline_ms": 2.667,
+          "linear_memory_MiB": 69.125,
+          "live_grains": 128
+        }
+      ]
+    },
+    "after-b": {
+      "variant": "sad_pet.simd.wasm",
+      "rate": 48000,
+      "frames": 128,
+      "results": [
+        {
+          "case": "1 RADIAS / 1 voice",
+          "p50_ms": 0.23,
+          "p95_ms": 0.304,
+          "p99_ms": 0.39,
+          "worst_ms": 1.688,
+          "deadline_ms": 2.667,
+          "linear_memory_MiB": 41.4375,
+          "live_grains": 0
+        },
+        {
+          "case": "4 mixed / 1 voice",
+          "p50_ms": 0.424,
+          "p95_ms": 0.553,
+          "p99_ms": 0.66,
+          "worst_ms": 0.835,
+          "deadline_ms": 2.667,
+          "linear_memory_MiB": 48.5625,
+          "live_grains": 0
+        },
+        {
+          "case": "8 mixed / 1 voice",
+          "p50_ms": 0.668,
+          "p95_ms": 0.83,
+          "p99_ms": 0.959,
+          "worst_ms": 1.009,
+          "deadline_ms": 2.667,
+          "linear_memory_MiB": 48.5625,
+          "live_grains": 0
+        },
+        {
+          "case": "8 mixed / 4 voices",
+          "p50_ms": 2.449,
+          "p95_ms": 2.711,
+          "p99_ms": 2.863,
+          "worst_ms": 5.274,
+          "deadline_ms": 2.667,
+          "linear_memory_MiB": 48.5625,
+          "live_grains": 0
+        },
+        {
+          "case": "8 mixed + group Playback/Ring / 4 voices",
+          "p50_ms": 3.019,
+          "p95_ms": 3.915,
+          "p99_ms": 4.168,
+          "worst_ms": 4.579,
+          "deadline_ms": 2.667,
+          "linear_memory_MiB": 69.125,
+          "live_grains": 4
+        },
+        {
+          "case": "8 mixed + group cycle / 4 voices (audio-rate births)",
+          "p50_ms": 7.104,
+          "p95_ms": 7.617,
+          "p99_ms": 8.15,
+          "worst_ms": 8.595,
+          "deadline_ms": 2.667,
+          "linear_memory_MiB": 69.125,
+          "live_grains": 128
+        }
+      ]
+    },
+    "before-b": {
+      "variant": "/tmp/sadpet-oscillator-pre-performance.simd.wasm",
+      "rate": 48000,
+      "frames": 128,
+      "results": [
+        {
+          "case": "1 RADIAS / 1 voice",
+          "p50_ms": 0.284,
+          "p95_ms": 0.383,
+          "p99_ms": 0.46,
+          "worst_ms": 2.194,
+          "deadline_ms": 2.667,
+          "linear_memory_MiB": 41.4375,
+          "live_grains": 0
+        },
+        {
+          "case": "4 mixed / 1 voice",
+          "p50_ms": 0.55,
+          "p95_ms": 0.71,
+          "p99_ms": 0.783,
+          "worst_ms": 0.871,
+          "deadline_ms": 2.667,
+          "linear_memory_MiB": 48.5625,
+          "live_grains": 0
+        },
+        {
+          "case": "8 mixed / 1 voice",
+          "p50_ms": 0.771,
+          "p95_ms": 0.962,
+          "p99_ms": 1.077,
+          "worst_ms": 1.163,
+          "deadline_ms": 2.667,
+          "linear_memory_MiB": 48.5625,
+          "live_grains": 0
+        },
+        {
+          "case": "8 mixed / 4 voices",
+          "p50_ms": 2.878,
+          "p95_ms": 3.15,
+          "p99_ms": 3.32,
+          "worst_ms": 3.544,
+          "deadline_ms": 2.667,
+          "linear_memory_MiB": 48.5625,
+          "live_grains": 0
+        },
+        {
+          "case": "8 mixed + group Playback/Ring / 4 voices",
+          "p50_ms": 3.55,
+          "p95_ms": 3.954,
+          "p99_ms": 4.164,
+          "worst_ms": 4.653,
+          "deadline_ms": 2.667,
+          "linear_memory_MiB": 69.125,
+          "live_grains": 4
+        },
+        {
+          "case": "8 mixed + group cycle / 4 voices (audio-rate births)",
+          "p50_ms": 9.397,
+          "p95_ms": 11.181,
+          "p99_ms": 14.187,
+          "worst_ms": 14.776,
+          "deadline_ms": 2.667,
+          "linear_memory_MiB": 69.125,
+          "live_grains": 128
+        }
+      ]
+    }
+  },
+  "final_simd": {
+    "variant": "sad_pet.simd.wasm",
+    "rate": 48000,
+    "frames": 128,
+    "results": [
+      {
+        "case": "1 RADIAS / 1 voice",
+        "p50_ms": 0.233,
+        "p95_ms": 0.325,
+        "p99_ms": 0.418,
+        "worst_ms": 1.69,
+        "deadline_ms": 2.667,
+        "linear_memory_MiB": 41.4375,
+        "live_grains": 0,
+        "dropped_births": 0
+      },
+      {
+        "case": "4 mixed / 1 voice",
+        "p50_ms": 0.532,
+        "p95_ms": 0.707,
+        "p99_ms": 0.795,
+        "worst_ms": 0.866,
+        "deadline_ms": 2.667,
+        "linear_memory_MiB": 48.5625,
+        "live_grains": 0,
+        "dropped_births": 0
+      },
+      {
+        "case": "8 mixed / 1 voice",
+        "p50_ms": 1.019,
+        "p95_ms": 1.22,
+        "p99_ms": 1.345,
+        "worst_ms": 1.618,
+        "deadline_ms": 2.667,
+        "linear_memory_MiB": 48.5625,
+        "live_grains": 0,
+        "dropped_births": 0
+      },
+      {
+        "case": "8 mixed / 4 voices",
+        "p50_ms": 3.652,
+        "p95_ms": 4.996,
+        "p99_ms": 6.235,
+        "worst_ms": 8.179,
+        "deadline_ms": 2.667,
+        "linear_memory_MiB": 48.5625,
+        "live_grains": 0,
+        "dropped_births": 0
+      },
+      {
+        "case": "8 mixed + group Playback/Ring / 4 voices",
+        "p50_ms": 4.405,
+        "p95_ms": 5.293,
+        "p99_ms": 6.29,
+        "worst_ms": 7.088,
+        "deadline_ms": 2.667,
+        "linear_memory_MiB": 69.125,
+        "live_grains": 4,
+        "dropped_births": 0
+      },
+      {
+        "case": "8 mixed + group cycle / 4 voices (audio-rate births)",
+        "p50_ms": 10.934,
+        "p95_ms": 15.86,
+        "p99_ms": 19.234,
+        "worst_ms": 25.864,
+        "deadline_ms": 2.667,
+        "linear_memory_MiB": 69.125,
+        "live_grains": 128,
+        "dropped_births": 339
+      }
+    ]
+  },
+  "final_scalar": {
+    "variant": "sad_pet.wasm",
+    "rate": 48000,
+    "frames": 128,
+    "results": [
+      {
+        "case": "1 RADIAS / 1 voice",
+        "p50_ms": 0.333,
+        "p95_ms": 0.394,
+        "p99_ms": 0.459,
+        "worst_ms": 1.832,
+        "deadline_ms": 2.667,
+        "linear_memory_MiB": 41.5,
+        "live_grains": 0,
+        "dropped_births": 0
+      },
+      {
+        "case": "4 mixed / 1 voice",
+        "p50_ms": 0.676,
+        "p95_ms": 0.831,
+        "p99_ms": 1.012,
+        "worst_ms": 1.191,
+        "deadline_ms": 2.667,
+        "linear_memory_MiB": 48.625,
+        "live_grains": 0,
+        "dropped_births": 0
+      },
+      {
+        "case": "8 mixed / 1 voice",
+        "p50_ms": 1.036,
+        "p95_ms": 1.284,
+        "p99_ms": 1.419,
+        "worst_ms": 1.711,
+        "deadline_ms": 2.667,
+        "linear_memory_MiB": 48.625,
+        "live_grains": 0,
+        "dropped_births": 0
+      },
+      {
+        "case": "8 mixed / 4 voices",
+        "p50_ms": 3.729,
+        "p95_ms": 7.157,
+        "p99_ms": 9.116,
+        "worst_ms": 16.857,
+        "deadline_ms": 2.667,
+        "linear_memory_MiB": 48.625,
+        "live_grains": 0,
+        "dropped_births": 0
+      },
+      {
+        "case": "8 mixed + group Playback/Ring / 4 voices",
+        "p50_ms": 4.682,
+        "p95_ms": 6.011,
+        "p99_ms": 6.882,
+        "worst_ms": 7.681,
+        "deadline_ms": 2.667,
+        "linear_memory_MiB": 69.1875,
+        "live_grains": 4,
+        "dropped_births": 0
+      },
+      {
+        "case": "8 mixed + group cycle / 4 voices (audio-rate births)",
+        "p50_ms": 12.476,
+        "p95_ms": 17.815,
+        "p99_ms": 20.468,
+        "worst_ms": 31.818,
+        "deadline_ms": 2.667,
+        "linear_memory_MiB": 69.1875,
+        "live_grains": 128,
+        "dropped_births": 339
+      }
+    ]
+  }
+}

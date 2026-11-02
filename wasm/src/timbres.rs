@@ -75,6 +75,24 @@ pub(super) struct Registry {
     pub midi_clock: super::clock::MidiClock,
 }
 impl Registry {
+    fn sync_controls(&mut self) {
+        let prepared: Vec<_> = self
+            .parts
+            .iter()
+            .map(|part| {
+                if matches!(part.meta.kind, Kind::Control | Kind::Empty) {
+                    return Vec::new();
+                }
+                sad_pet::control::inputs(
+                    part.meta.id,
+                    self.parts.iter().map(|p| (&p.meta, &p.host.engine.preset)),
+                )
+            })
+            .collect();
+        for (part, mut inputs) in self.parts.iter_mut().zip(prepared) {
+            part.host.engine.exchange_control_inputs(&mut inputs);
+        }
+    }
     pub fn new(rate: u32) -> Self {
         let mut r = Self {
             wavetable_assets: Default::default(),
@@ -316,6 +334,13 @@ impl Registry {
                     &preset.wavetable_pool,
                     rate,
                 )?;
+                preset.oscillator_runtime.prepare(
+                    preset.oscillators.as_deref(),
+                    &preset.wavetable_pool,
+                    rate,
+                )?;
+                preset.prepare_phase_transports(rate)?;
+                preset.prepare_wavetable_interactions();
                 preset.tb303_runtime.prepare(preset.tb303.as_deref(), rate);
                 preset
                     .drum_runtime
@@ -563,6 +588,45 @@ impl Registry {
             }
             return Ok(value);
         }
+        if path == "/api/control/request" {
+            let id = data["timbre"].as_u64().ok_or("Choose a timbre")? as u32;
+            let target = self
+                .parts
+                .iter()
+                .position(|p| p.meta.id == id && p.meta.kind != Kind::Empty)
+                .ok_or("The source timbre was removed")?;
+            let nested = data["path"].as_str().ok_or("Missing control command")?;
+            if !nested.starts_with("/api/") || nested.starts_with("/api/control/") {
+                return Err("Invalid control command".into());
+            }
+            let previous = self.target;
+            let selected = self.parts[self.selected].meta.id;
+            self.target = Some(target);
+            let result = self.command(
+                json!({"path":nested,"data":data.get("data").cloned().unwrap_or(Value::Null)}),
+            );
+            self.target = previous;
+            self.selected = self
+                .parts
+                .iter()
+                .position(|p| p.meta.id == selected)
+                .unwrap_or_else(|| self.shown());
+            if nested.starts_with("/api/timbres") {
+                self.refresh_context();
+            }
+            return result.map(|mut value| {
+                if nested == "/api/state" {
+                    value["timbres"]["active"] = json!(id);
+                }
+                if matches!(
+                    nested,
+                    "/api/timbres" | "/api/timbres/update" | "/api/timbres/select"
+                ) {
+                    value["active"] = json!(id);
+                }
+                value
+            });
+        }
         if path.starts_with("/api/timbres") {
             match path {
                 "/api/timbres" => {}
@@ -687,6 +751,7 @@ impl Registry {
             self.target = None;
             self.revision = self.revision.wrapping_add(1);
             self.refresh_context();
+            self.sync_controls();
             self.sync_vocal();
             return Ok(json!(self.context()));
         }
@@ -782,6 +847,21 @@ impl Registry {
         }
         let state = path == "/api/state";
         let preset_changed = path == "/api/preset" && !data.is_null();
+        let controls_changed = (self.parts[index].meta.kind == Kind::Control
+            || (path == "/api/preset" && data.get("control").is_some_and(|v| !v.is_null())))
+            && !data.is_null()
+            && matches!(
+                path,
+                "/api/preset" | "/api/sequencer/edit" | "/api/parameters"
+            );
+        let control_edits = if controls_changed && path == "/api/sequencer/edit" {
+            Some((
+                self.parts[index].meta.id,
+                sad_pet::sequence::parse_edits(data)?,
+            ))
+        } else {
+            None
+        };
         let mut request = request;
         if preset_changed && let Some(data) = request["data"].as_object_mut() {
             if index != 0 {
@@ -792,6 +872,7 @@ impl Registry {
             let engine = &self.parts[index].host.engine;
             let kind = self.parts[index].meta.kind;
             if kind.keeps_role() {
+                data.remove("control");
                 data.remove("tb303");
                 data.remove("rack");
             }
@@ -858,6 +939,15 @@ impl Registry {
         }
         if state {
             result["timbres"] = json!(self.context());
+        }
+        if let Some((source, edits)) = control_edits {
+            for part in &mut self.parts {
+                part.host
+                    .engine
+                    .apply_control_sequence_edits(source, &edits);
+            }
+        } else if controls_changed {
+            self.sync_controls();
         }
         self.sync_vocal();
         Ok(result)
@@ -1282,6 +1372,7 @@ impl Registry {
         self.ensure_master();
         self.prune_chains();
         self.refresh_context();
+        self.sync_controls();
         self.sync_vocal();
         Ok(())
     }
@@ -1334,7 +1425,7 @@ impl Part {
             })
             .collect::<Result<_, String>>()?;
         Ok(
-            json!({"version":1,"meta":self.meta,"kit_samples":kit,"wavetable_assets":e.preset.wavetable_pool.manifest(e.preset.wavetable.as_deref())?,"preset":e.preset,"sample_name":e.sample.name,"sample_id":e.sample.library_id,"sample_wav":base64::engine::general_purpose::STANDARD.encode(wav::bytes(e.sample.sample_rate,e.sample.frames())?),"source":if e.preset.history().is_some() || e.live_input.is_none() {"file"} else if e.live_input.as_ref().is_some_and(|i|i.effects_only) {"effects"} else {"grains"},"region":e.region,"fades":e.fades,"sync":true,"frozen":false,"bypass":e.bypass,"midi_gate":e.midi_gate,"playing":false,"timbres":[],"active_timbre":0}),
+            json!({"version":1,"meta":self.meta,"kit_samples":kit,"wavetable_assets":e.preset.wavetable_assets()?,"preset":e.preset,"sample_name":e.sample.name,"sample_id":e.sample.library_id,"sample_wav":base64::engine::general_purpose::STANDARD.encode(wav::bytes(e.sample.sample_rate,e.sample.frames())?),"source":if e.preset.history().is_some() || e.live_input.is_none() {"file"} else if e.live_input.as_ref().is_some_and(|i|i.effects_only) {"effects"} else {"grains"},"region":e.region,"fades":e.fades,"sync":true,"frozen":false,"bypass":e.bypass,"midi_gate":e.midi_gate,"playing":false,"timbres":[],"active_timbre":0}),
         )
     }
     /// A part from one timbre's saved state, as `meta` (its engine type
@@ -1364,9 +1455,7 @@ impl Part {
         let mut preset: Preset =
             serde_json::from_value(state["preset"].clone()).map_err(|e| e.to_string())?;
         preset.wavetable_pool = assets.clone();
-        preset
-            .wavetable_pool
-            .manifest(preset.wavetable.as_deref())?;
+        preset.wavetable_assets()?;
         if (meta.kind != Kind::PadFx || meta.owner.is_none()) && meta.kind != Kind::Empty {
             meta.kind = Kind::of(&preset);
         }

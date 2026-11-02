@@ -263,10 +263,7 @@ impl Controller {
             ..Meta::default()
         };
         state.timbres.clear();
-        state.wavetable_assets = state
-            .preset
-            .wavetable_pool
-            .manifest(state.preset.wavetable.as_deref())?;
+        state.wavetable_assets = state.preset.wavetable_assets()?;
         state.active_timbre = 0;
         state.source = Source::File;
         state.sync = true;

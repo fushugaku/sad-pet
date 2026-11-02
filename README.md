@@ -233,7 +233,7 @@ with different per-timbre BPM values use the first timbre's tempo on recall.
   Phones show one wave at a time with A–D tabs. The source ships with **96 original tables
   in 13 packs** and **80 instrument presets** in Instruments → Wavetable.
   Position ENV selects an existing envelope independently for each note;
-  the shared LFOs, matrix, macros, MIDI learn and Neuropolis work with
+  the shared LFOs, matrix, macros, MIDI learn, Neuropolis and Control work with
   all four waves. Import prepared mono/stereo WAV tables (16 MiB, 1–256 frames)
   with an explicit frame size and stereo channel when needed. Preview before
   applying, export the table as WAV, or save the Rack as a portable `.sadinst`.
@@ -266,6 +266,18 @@ with different per-timbre BPM values use the first timbre's tempo on recall.
   [implementation and measured limits](docs/WAVETABLE_IMPLEMENTATION.md),
   [3rd Wave feature study and complex packs](docs/WAVETABLE_THIRD_WAVE.md),
   [Third Wave implementation, usage and release gates](docs/WAVETABLE_THIRD_WAVE_IMPLEMENTATION.md).
+- **Control timbres** collect linked controls from any timbre on a free canvas.
+  Add **Control** with **+ Timbre**, then right-click a knob, slider, button or
+  sequencer step and choose **To control → Control**. Right-click a module's
+  grip or power button to add the whole module. The original editor and the
+  Control surface edit the same settings. Drag the surface's grips (or use
+  arrow keys, Shift for larger moves) to arrange them. The canvas fills the
+  window width and grows with its contents; the page itself scrolls.
+  Add a sequencer with **+ Sequencer**, choose a linked parameter as its
+  destination, or right-click a linked knob and choose **Control sequencer**.
+  Its lanes add to the original timbre's modulation; multiple Controls sum
+  before clamping. Control is silent, and its Mute disables its modulation.
+  Layouts, references and independent tracks save with the scene.
 - **Bus and Master** (browser and DAW plug-ins). Every scene has one **Master**
   tab that sums all timbres and buses into the output; add up to eight **Bus**
   timbres with **+ Timbre**. The tabs list the instruments on one row and the

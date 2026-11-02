@@ -187,6 +187,11 @@ impl Snapshot {
             bands: v.resynth_bands,
             frequencies: v.resynth_frequencies,
         };
+        state.oscillator_positions = v.oscillator_positions;
+        state.oscillator_motion = v.modulated_oscillator_motion;
+        state.wavetable_positions = v.wavetable_positions;
+        state.wavetable_motion = v.modulated_wavetable_motion;
+        state.rack_peaks = v.rack_peaks;
         state.source_fx = SourceFxStatus {
             pending: v.source_fx_pending,
             error: v.source_fx_error.then_some("Could not prepare Source FX"),
@@ -194,6 +199,7 @@ impl Snapshot {
         state.underruns = self.underruns;
         let sample = self.sample.take().unwrap();
         if !Arc::ptr_eq(&state.sample, &sample) {
+            state.file_source = serde_json::json!({"sample_name":sample.name,"sample_id":sample.library_id,"sample_seconds":sample.duration(),"sample_frames":sample.len()});
             state.sample_name = sample.name.clone();
             state.sample_id = sample.library_id.clone();
             state.sample_seconds = sample.duration();

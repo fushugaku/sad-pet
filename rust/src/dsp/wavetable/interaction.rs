@@ -6,7 +6,7 @@ use super::{Bank, Lane, Layer, MAX_UNISON, OSCILLATORS, Stereo};
 use std::sync::{Arc, OnceLock};
 #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
 mod pair_simd;
-mod routing;
+pub(super) mod routing;
 pub(super) use routing::{Graph, render as render_routed};
 
 pub(super) const OVERSAMPLE: usize = 8;
@@ -79,7 +79,7 @@ impl Kernel {
     }
 }
 #[derive(Clone, Copy)]
-struct Filter {
+pub(super) struct Filter {
     history: [Stereo; TAPS * 2],
     head: usize,
     input: Stereo,
@@ -246,13 +246,66 @@ fn fir(weights: &[f32], frames: &[Stereo], symmetric: bool) -> Stereo {
     let _ = symmetric;
     dot(weights, frames)
 }
+
+/// Mixed taps participate in feedback, so scalar, SIMD and native use the
+/// same symmetric pairs and the same four accumulation chains. The legacy
+/// final-audio reduction above retains its released arithmetic.
+#[inline]
+fn mixed_fir(weights: &[f32], frames: &[Stereo], symmetric: bool) -> Stereo {
+    if !symmetric {
+        return dot(weights, frames);
+    }
+    #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+    {
+        fir(weights, frames, true)
+    }
+    #[cfg(not(all(target_arch = "wasm32", target_feature = "simd128")))]
+    {
+        let half = weights.len() / 2;
+        let full = half / 4 * 4;
+        let mut sums = [[0.0_f32; 2]; 4];
+        for i in (0..full).step_by(4) {
+            for j in 0..4 {
+                for c in 0..2 {
+                    sums[j][c] +=
+                        weights[i + j] * (frames[i + j][c] + frames[weights.len() - 1 - i - j][c]);
+                }
+            }
+        }
+        let mut sum = [
+            (sums[0][0] + sums[1][0]) + (sums[2][0] + sums[3][0]),
+            (sums[0][1] + sums[1][1]) + (sums[2][1] + sums[3][1]),
+        ];
+        for i in full..half {
+            for c in 0..2 {
+                sum[c] += weights[i] * (frames[i][c] + frames[weights.len() - 1 - i][c]);
+            }
+        }
+        for c in 0..2 {
+            sum[c] += weights[half] * frames[half][c];
+        }
+        sum
+    }
+}
 impl Filter {
-    fn push(&mut self, x: Stereo) {
+    /// Once a silent FIR history has drained, only the 5 Hz DC state remains.
+    /// Preserve that release without convolving a buffer full of zeroes.
+    pub(super) fn silence(&mut self, dc: f32) -> Stereo {
+        for c in 0..2 {
+            self.output[c] = -self.input[c] + dc * self.output[c];
+            self.input[c] = 0.0;
+            if self.output[c].abs() < 1e-20 {
+                self.output[c] = 0.0;
+            }
+        }
+        self.output
+    }
+    pub(super) fn push(&mut self, x: Stereo) {
         self.history[self.head] = x;
         self.history[self.head + TAPS] = x;
         self.head = (self.head + 1) % TAPS;
     }
-    fn pre(&mut self, frame: Stereo, kernel: &Kernel, read: bool) -> Stereo {
+    pub(super) fn pre(&mut self, frame: Stereo, kernel: &Kernel, read: bool) -> Stereo {
         self.pre_history[self.pre_head] = frame;
         self.pre_history[self.pre_head + 63] = frame;
         self.pre_head = (self.pre_head + 1) % 63;
@@ -266,12 +319,23 @@ impl Filter {
             [0.0; 2]
         }
     }
-    fn next(&mut self, kernel: &Kernel, dc: f32) -> Stereo {
-        let mut sum = fir(
+    pub(super) fn next(&mut self, kernel: &Kernel, dc: f32) -> Stereo {
+        let sum = fir(
             &kernel.weights,
             &self.history[self.head..self.head + TAPS],
             kernel.symmetric,
         );
+        self.finish(sum, dc)
+    }
+    pub(super) fn next_mixed(&mut self, kernel: &Kernel, dc: f32) -> Stereo {
+        let sum = mixed_fir(
+            &kernel.weights,
+            &self.history[self.head..self.head + TAPS],
+            kernel.symmetric,
+        );
+        self.finish(sum, dc)
+    }
+    fn finish(&mut self, mut sum: Stereo, dc: f32) -> Stereo {
         for (c, value) in sum.iter_mut().enumerate() {
             let filtered = *value - self.input[c] + dc * self.output[c];
             self.input[c] = *value;
@@ -305,7 +369,7 @@ fn read(
     }
 }
 #[derive(Clone, Copy)]
-struct Lookup<'a> {
+pub(super) struct Lookup<'a> {
     current: super::lookup::Reader<'a>,
     previous: Option<&'a Bank>,
     position: f32,
@@ -313,7 +377,7 @@ struct Lookup<'a> {
     blend: f32,
 }
 impl<'a> Lookup<'a> {
-    fn new(
+    pub(super) fn new(
         bank: &'a Bank,
         previous: Option<&'a Bank>,
         blend: f32,

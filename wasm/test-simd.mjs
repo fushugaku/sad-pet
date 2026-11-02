@@ -2,17 +2,19 @@
 // only changes how the compiler schedules the same IEEE float arithmetic.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { Core } from "./web/core.mjs";
 import { supportsSimd } from "./web/compile.mjs";
 
 assert.equal(typeof supportsSimd(), "boolean");
-const simdBytes = await readFile("dist/web/sad_pet.simd.wasm").catch(() => null);
+const folder = resolve(process.argv[2] || "dist/web");
+const simdBytes = await readFile(resolve(folder, "sad_pet.simd.wasm")).catch(() => null);
 if (!simdBytes) {
-  console.log("No SIMD engine in dist/web (build with wasm/build.py --simd); nothing to compare");
+  console.log(`No SIMD engine in ${folder} (build with wasm/build.py --simd); nothing to compare`);
   process.exit(0);
 }
 const [base, simd] = await Promise.all(
-  [await readFile("dist/web/sad_pet.wasm"), simdBytes].map((bytes) => WebAssembly.compile(bytes)),
+  [await readFile(resolve(folder, "sad_pet.wasm")), simdBytes].map((bytes) => WebAssembly.compile(bytes)),
 );
 
 function render(module) {
@@ -58,4 +60,37 @@ function render(module) {
 }
 
 assert.equal(Buffer.compare(render(base), render(simd)), 0, "SIMD engine renders different samples");
-console.log("SIMD engine matches the baseline engine bit for bit");
+function mixed(module) {
+  const core = new Core(module, 48000);
+  core.request("/api/timbres/add", { kind: "oscillators" });
+  core.request("/api/timbres/remove", { id: 0 });
+  const p = core.request("/api/preset"), template = structuredClone(p.oscillators.slots[0]);
+  for (let i = 0; i < 8; i++) p.oscillators.slots[i] = {
+    ...structuredClone(template), id: i + 1,
+    kind: ["radias", "wavefolder", "pcm", "wavetable"][i % 4], level: .1, transpose: i,
+  };
+  p.oscillators.next_id = 9;
+  p.rack.modules.splice(1, 0, { module: "grains", enabled: true });
+  p.grain_capture = { mode: "osc", slots: 0b01010101 };
+  p.grain_groups = { advanced: true, groups: Array.from({ length: 4 }, () => ({})) };
+  p.interactions = { version: 1, routes: [
+    { source: { kind: "osc", id: 4 }, target: { kind: "osc", id: 1 }, ring: .4, sync: "hard" },
+    { source: { kind: "group", index: 0 }, target: { kind: "osc", id: 8 }, sync: "soft" },
+    { source: { kind: "osc", id: 1 }, target: { kind: "group", index: 0 }, sync: "hard", scope: "both" },
+    { source: { kind: "group", index: 1 }, target: { kind: "group", index: 2 }, ring: .5 },
+  ] };
+  core.request("/api/preset", p);
+  core.request("/api/transport", { playing: true, midi_gate: true });
+  for (const note of [60, 64, 67]) core.request("/api/note", { kind: "note_on", channel: 0, note, velocity: 100 });
+  const samples = new Float32Array(256 * 96);
+  for (let block = 0; block < 96; block++) {
+    if (block === 48) core.request("/api/parameters", { interaction1_ring: .8, osc8_wt_position: .7 });
+    if (block === 64) core.request("/api/note", { kind: "note_off", channel: 0, note: 64, velocity: 0 });
+    samples.set(core.process(128), block * 256);
+  }
+  assert.ok(samples.every(Number.isFinite));
+  assert.ok(samples.some(v => Math.abs(v) > 1e-4), "mixed render is silent");
+  return Buffer.from(samples.buffer);
+}
+assert.equal(Buffer.compare(mixed(base), mixed(simd)), 0, "SIMD mixed bank/group interactions differ");
+console.log("SIMD engine matches baseline bit for bit: legacy and 8 mixed OSC with group Ring/Sync/capture");

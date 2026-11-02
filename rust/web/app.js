@@ -32,9 +32,12 @@ let timbreEditor = null,
   samplerEditor = null,
   tb303Editor = null,
   wavetableEditor = null,
+  oscillatorEditor = null,
+  interactionEditor = null,
   timbreBusy = false;
 const drumEdits = new Map();
 let sequenceCatalog = null;
+let controlTargets = [];
 let sampleSelection = null;
 let recordingBusy = false,
   recordingAction = null,
@@ -1209,6 +1212,7 @@ function createKnob(
   // costs a style and layout pass of the whole editor. update() repaints
   // the knob directly, so it forgets what was shown.
   let shown = null;
+  let paintedBase, paintedFormat;
   const modulation = (feedback) => {
     const base = get();
     const since = Date.now() - edited,
@@ -1276,13 +1280,15 @@ function createKnob(
     if (!preset) return;
     shown = null;
     const v = get();
+    paintedBase = v;
+    paintedFormat = format(v);
     const unit = toUnit(v);
     value.textContent = format(v);
     pointer.style.transform = `rotate(${-135 + 270 * unit}deg)`;
     arc.style.strokeDasharray = `${Math.max(0.01, 117.81 * unit)} 157.08`;
     dial.setAttribute("aria-valuenow", String(v * ariaScale));
     dial.setAttribute("aria-valuetext", format(v));
-    modulation(state?.knobs?.[key]);
+    modulation(binding?.feedback?.() ?? state?.knobs?.[key]);
   };
   dial.addEventListener("focus", update);
   dial.addEventListener("blur", update);
@@ -1295,6 +1301,7 @@ function createKnob(
     drag = { x: e.clientX, y: e.clientY, value: get() };
     dial.classList.add("dragging");
     editing++;
+    binding?.gesture?.(true);
     e.preventDefault();
   });
   dial.addEventListener("pointermove", (e) => {
@@ -1307,6 +1314,7 @@ function createKnob(
     if (drag) {
       drag = null;
       editing = Math.max(0, editing - 1);
+      binding?.gesture?.(false);
       dial.classList.remove("dragging");
     }
   };
@@ -1364,6 +1372,17 @@ function createKnob(
     modulationViews.set(key, modulation);
   }
   knobUnits.set(key, { format, min, max, get });
+  dial.controlBinding = {
+    schema: [key, label, format, min, max, aria],
+    binding: { ...binding, get, set,
+      reset: () => binding ? binding.reset() : presets[0].params[key],
+      feedback: () => state?.knobs?.[key] },
+  };
+  update.paint = () => {
+    const v = get();
+    if (v !== paintedBase || format(v) !== paintedFormat) update();
+    else modulation(binding?.feedback?.() ?? state?.knobs?.[key]);
+  };
   (typeof bank === "string" ? $(bank) : bank).append(box);
   return update;
 }
@@ -1998,6 +2017,8 @@ function syncTimbreRouting() {
   samplerEditor?.sync();
   tb303Editor?.sync();
   wavetableEditor?.sync();
+  oscillatorEditor?.sync();
+  interactionEditor?.sync();
   syncSynth();
   rackEditor?.sync();
 }
@@ -2008,6 +2029,13 @@ function syncTempo() {
 }
 function syncAll() {
   syncTempo();
+  if (preset.control && !window.sadPetControlSource) {
+    $("load-wav").hidden = true;
+    timbreEditor?.sync(state?.timbres);
+    window.SadControl?.sync?.();
+    neuroEditor?.sync();
+    return;
+  }
   syncTimbreRouting();
   syncColors();
   syncResynth();
@@ -2028,7 +2056,9 @@ function syncAll() {
   syncMatrix();
   window.SadModulation?.sync();
   syncPerformance();
+  window.SadControl?.sync?.();
   neuroEditor?.sync();
+  window.sadPetControlSource?.mount();
 }
 function syncLoopControls() {
   $("loop-one-bar").checked = !!preset.params.loop_one_bar;
@@ -5123,9 +5153,10 @@ function parseNote(text) {
 }
 function buildSequence() {
   neuroEditor = new window.SadNeuropolis($("neuropolis"), sequenceCatalog, {
-    context: () => [state?.timbres?.active, state?.timbres?.revision, state?.source_generation].join(":"),
-    parameter: scheduleParameter,
     read: () => preset,
+    controlTargets: () => controlTargets,
+    context: () => [state?.timbres?.active,state?.timbres?.revision,state?.source_generation].join(":"),
+    parameter: scheduleParameter,
     edit: scheduleSequence,
     structure: schedulePreset,
     fxParameters: (slot) => colorDestinationSchema(slot.kind).map(([key]) => key),
@@ -5840,6 +5871,7 @@ function paintWaveform(context, w, h, colors) {
 }
 function draw() {
   requestAnimationFrame(draw);
+  if (preset?.control && !window.sadPetControlSource) return;
   if (!state || document.hidden || (drawnState === state && !canvasDirty)) return;
   canvasDirty = false;
   drawnState = state;
@@ -6036,23 +6068,26 @@ async function poll() {
     if (generation === editGeneration && !pending && !editing
         && !document.activeElement?.matches("input,select,.sad-menu-layer *"))
       receivedPreset = next.preset;
+    if (window.sadPetControlSource?.pool) return;
     setText($("sample-name"), next.sample_name);
     presetLibrary?.observe(next, pending > 0);
     fileLibrary?.observe(next);
     setText($("sample-info"), `${next.sample_seconds.toFixed((next.preset?.drums || next.preset?.synth) && next.sample_seconds < 1 ? 3 : 2)} s`);
-    syncInput(next.input);
-    updateResynthMeter(next.resynth);
+    if (!preset.control) syncInput(next.input);
+    if (!preset.control) updateResynthMeter(next.resynth);
     updateMasterMeter(next.master_limiter);
     neuroEditor?.update(next.sequencer, next.playing);
     timbreEditor?.sync(next.timbres);
-    busMixer?.sync(next.timbres);
-    rackEditor?.meters(next.rack_peaks);
-    syncTaps();
-    syncFilterOutputs();
-    syncGrainGroupOutputs();
-    drumEditor?.update(next.drums);
-    tb303Editor?.update(next.tb303);
-    sampleSelection?.sync(next);
+    if (!preset.control) {
+      busMixer?.sync(next.timbres);
+      rackEditor?.meters(next.rack_peaks);
+      syncTaps(); syncFilterOutputs(); syncGrainGroupOutputs();
+      drumEditor?.update(next.drums); tb303Editor?.update(next.tb303);
+      wavetableEditor?.update(next.wavetable_positions,next.wavetable_motion);
+      oscillatorEditor?.update(next.oscillator_positions);
+      interactionEditor?.update();
+      sampleSelection?.sync(next);
+    }
     setText($("sample-end"), formatTime(next.sample_seconds));
     setText($("position-info"), formatTime(next.center * next.sample_seconds));
     setText($("grain-count"), next.active_grains);
@@ -6085,21 +6120,21 @@ async function poll() {
       saveCompletedRecording(next.recording);
     setText($("cpu"), `DSP ${next.cpu_percent.toFixed(1)}%`);
     if (next.audio_error) notify(next.audio_error, true);
-    for (let i = 0; i < scopes.length; i++) {
+    for (let i = 0; !preset.control && i < scopes.length; i++) {
       const a = scopes[i].values;
       a.push(next.lfos[i] || 0);
       if (a.length > 80) a.shift();
       setText(envCards[i].card.querySelector(".env-level"), percent(next.envs[i] || 0));
     }
-    for (const key of document.querySelectorAll(".key"))
+    for (const key of preset.control ? [] : document.querySelectorAll(".key"))
       key.classList.toggle(
         "active",
         held.has(Number(key.dataset.note)) ||
           next.notes.includes(Number(key.dataset.note)),
       );
     syncStepEntry();
-    for (const [key, update] of modulationViews) update(next.knobs?.[key]);
-    for (const [i, row] of matrixRows.entries())
+    if (!preset.control) for (const [key, update] of modulationViews) update(next.knobs?.[key]);
+    for (const [i, row] of preset.control ? [] : matrixRows.entries())
       row.querySelector(".matrix-signal").style.opacity = String(
         0.15 + Math.min(1, Math.abs(next.matrix_values?.[i] || 0)) * 0.85,
       );
@@ -6113,6 +6148,9 @@ async function poll() {
     }
   } finally {
     // A hidden editor still notices finished recordings and audio errors.
+    window.sadPetControlSource?.mount();
+    window.sadPetControlSource?.updated();
+    window.SadControl?.sync?.();
     setTimeout(poll, document.hidden ? 500 : performance.now() - midiMovedAt < 400 ? 20 : 80);
   }
 }
@@ -6160,6 +6198,32 @@ async function init() {
           editGeneration++;presetLibrary?.markDirty();
         } finally {editing=Math.max(0,editing-1);}
       },
+    });
+    oscillatorEditor = new window.SadOscillators.Editor($("oscillator-engine"), {
+      read: () => preset, parameter: scheduleParameter, knob: createKnob, request, download,
+      structure: schedulePreset, changed: () => interactionEditor?.sync(),
+      source: () => state?.file_source ?? state,
+      sourceGroups: () => fileLibrary?.sourceGroups() ?? [],
+      selectSource: id => fileLibrary.activateId(id),
+      previewSource: (id,notify) => fileLibrary.preview(id,notify),
+      stopSourcePreview: () => fileLibrary?.stopPreview(),
+      importSource: () => $("load-wav").click(),
+      sourceRoot: () => preset.params.sample_root_note,
+      setSourceRoot: value => {preset.params.sample_root_note=value;scheduleParameter("sample_root_note",value);},
+      select: async (index, id) => {
+        const original=preset, slot=preset.oscillators?.slots[index];
+        if(!slot?.id)return;
+        await flushEdits();
+        if(preset!==original||preset.oscillators?.slots[index]!==slot)throw new Error("The oscillator changed while loading.");
+        const previous=slot.asset_id;slot.asset_id=id;slot.wavetable.asset_id=id;
+        editing++;
+        try { await writePreset(preset);editGeneration++;presetLibrary?.markDirty(); }
+        catch(error){if(preset===original&&slot.asset_id===id){slot.asset_id=previous;slot.wavetable.asset_id=previous;}throw error;}
+        finally{editing=Math.max(0,editing-1);}
+      },
+    });
+    interactionEditor = new window.SadOscillators.Connections($("interaction-engine"), {
+      read: () => preset, parameter: scheduleParameter, knob: createKnob, groups: ensureGrainGroups, structure: () => {schedulePreset();syncGrainGroups();},
     });
     tb303Editor = new window.Sad303($("tb303-engine"), {
       read: () => preset, parameter: scheduleParameter, knob: createKnob,
@@ -6297,6 +6361,84 @@ async function init() {
       saved: showSavedRecording,
     });
     syncAll();
+    if (window.sadPetControlSource) {
+      window.sadPetControlSource.ready({
+        parameter: sequencerParameter,
+        baseline: () => receivedPreset || state.preset,
+        valid: item => !item.view?.sequence || item.module
+          || preset.sequencer.tracks.some(t => t.id === item.view.neuro?.selected),
+        read: () => ({ preset, state }),
+        gesture: active => { editing = Math.max(0, editing + (active ? 1 : -1)); },
+        pick: (stage, event) => neuroEditor?.pickKey(stage, event),
+        picked: stage => neuroEditor?.selection.has(stage),
+        node: item => document.querySelector(item.selector),
+        describe(item) {
+          this.view(item.view);
+          syncAll();
+          return document.querySelector(item.selector);
+        },
+        run(item, action) {
+          const neuro = neuroEditor && { selected: neuroEditor.selected, visiblePage: neuroEditor.visiblePage, page: neuroEditor.page };
+          const drums = preset.drums && drumEditor ? { ...drumEditor.view() } : null;
+          const group = grainGroupPage;
+          const sampler = preset.sampler && samplerEditor
+            ? { bank: samplerEditor.bank, zone: samplerEditor.zone, mode: samplerEditor.mode } : null;
+          if (item.view?.neuro && neuroEditor) Object.assign(neuroEditor, item.view.neuro);
+          if (item.view?.drums && drums) Object.assign(drumEditor.view(), item.view.drums);
+          if (item.view?.grain !== undefined) grainGroupPage = item.view.grain;
+          if (item.view?.sampler && sampler) Object.assign(samplerEditor, item.view.sampler);
+          try { return action(); }
+          finally {
+            if (neuro) Object.assign(neuroEditor, neuro);
+            if (drums) Object.assign(drumEditor.view(), drums);
+            grainGroupPage = group;
+            if (sampler) Object.assign(samplerEditor, sampler);
+          }
+        },
+        view(view) {
+          if (view?.grain !== undefined) { grainGroupPage = view.grain; syncGrainGroups(); }
+          if (view?.sampler && samplerEditor) { Object.assign(samplerEditor, view.sampler); samplerEditor.sync(); }
+          if (view?.neuro && neuroEditor) {
+            Object.assign(neuroEditor, view.neuro); neuroEditor.signature = ""; neuroEditor.sync();
+          }
+          if (view?.drums && drumEditor && preset.drums) {
+            Object.assign(drumEditor.view(), view.drums); drumEditor.signature = ""; drumEditor.sync();
+          }
+        },
+      });
+      const item = window.sadPetControlSource.item;
+      const node = document.querySelector(item.selector);
+      const bindings = [...(node?.querySelectorAll("[data-control-key]") || [])];
+      if (node?.matches("[data-control-key]")) bindings.push(node);
+      const ids = new Set(bindings.map(n => sequencerParameter(n.dataset.controlKey)).filter(Boolean));
+      parent.SadControl.bindings(window.frameElement, sequenceCatalog.parameters.filter(p => ids.has(p.id)));
+      poll(); if (!window.sadPetControlSource.pool) draw(); return;
+    }
+    window.SadControl?.setup({
+      read: () => preset, context: () => state?.timbres, features: () => state?.features,
+      request, change: changeTimbre, flush: flushEdits, notify,
+      dirty: () => presetLibrary?.markDirty(),
+      gesture: down => { editing = Math.max(0, editing + (down ? 1 : -1)); },
+      parameter: sequencerParameter, catalog: () => sequenceCatalog, addTrack,
+      knob: createKnob,
+      forgetControl: key => knobUnits.delete(key),
+      view: () => ({ neuro: neuroEditor ? { selected: neuroEditor.selected,
+        visiblePage: neuroEditor.visiblePage, page: neuroEditor.page } : null,
+        drums: preset.drums && drumEditor ? { ...drumEditor.view() } : null,
+        grain: grainGroupPage,
+        sampler: preset.sampler && samplerEditor
+          ? { bank: samplerEditor.bank, zone: samplerEditor.zone, mode: samplerEditor.mode } : null }),
+      targets(value) {
+        if (!value) return controlTargets;
+        const signature = JSON.stringify(value.map(p => [p.id, p.name]));
+        if (signature === JSON.stringify(controlTargets.map(p => [p.id, p.name]))) return;
+        controlTargets = value;
+        for (const spec of value) if (!sequenceCatalog.parameters.some(p => p.id === spec.id)) sequenceCatalog.parameters.push(spec);
+        if (neuroEditor) neuroEditor.signature = "";
+      },
+      changed() { schedulePreset(); neuroEditor.signature = ""; syncAll(); },
+      save: schedulePreset,
+    });
     fileLibrary = new window.EvilFileLibrary({
       notify,
       download,
@@ -6379,6 +6521,7 @@ async function init() {
     draw();
   } catch (e) {
     console.error("SAD PET startup:",e);
+    window.sadPetControlSource?.error(e.message);
     notify(`Cannot connect to SAD PET: ${e.message}`, true);
   }
 }

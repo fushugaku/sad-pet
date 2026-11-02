@@ -320,6 +320,15 @@ pub struct Runtime {
     lfo: f32,
     fm_sample: f64,
     fm_dc: f64,
+    graph_input: super::interaction::Input,
+    graph_layers: [super::interaction::Input; 4],
+    graph_mask: u8,
+    graph_slew: super::interaction::PhaseSlew,
+    graph_correction: Stereo,
+    vco_frame: super::wavetable::mixed::SlotFrame,
+    layer_frames: [super::wavetable::mixed::SlotFrame; 4],
+    vco_reduction: [[Decimator; 5]; 2],
+    layer_reduction: [[[Decimator; 5]; 2]; 4],
 }
 impl std::fmt::Debug for Runtime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -379,6 +388,17 @@ impl Runtime {
             lfo: 0.0,
             fm_sample: 0.0,
             fm_dc: 0.0,
+            graph_input: Default::default(),
+            graph_layers: [super::interaction::Input::default(); 4],
+            graph_mask: 0,
+            graph_slew: Default::default(),
+            graph_correction: [0.0; 2],
+            vco_frame: Default::default(),
+            layer_frames: [super::wavetable::mixed::SlotFrame::default(); 4],
+            vco_reduction: std::array::from_fn(|_| std::array::from_fn(|_| Decimator::new())),
+            layer_reduction: std::array::from_fn(|_| {
+                std::array::from_fn(|_| std::array::from_fn(|_| Decimator::new()))
+            }),
         }
     }
     pub fn inherit(&mut self, old: &mut Self) {
@@ -561,6 +581,24 @@ impl Runtime {
     pub fn view(&self) -> View {
         self.view
     }
+    pub(crate) fn configure_interactions(
+        &mut self,
+        vco: super::interaction::Input,
+        layers: [super::interaction::Input; 4],
+        mask: u8,
+    ) {
+        self.graph_input = vco;
+        self.graph_layers = layers;
+        self.graph_mask = mask;
+    }
+    pub(crate) fn interaction_frames(
+        &self,
+    ) -> (
+        super::wavetable::mixed::SlotFrame,
+        [super::wavetable::mixed::SlotFrame; 4],
+    ) {
+        (self.vco_frame, self.layer_frames)
+    }
     pub fn configure(&mut self, radias: &crate::synth::Settings, transpose: f32, lfo: f32) {
         self.radias
             .configure(radias, 0.0, &self.radias_sample, 60.0);
@@ -586,6 +624,20 @@ impl Runtime {
         playing: bool,
         bpm: f32,
     ) -> Stereo {
+        self.frame_interacting(settings, controls, playing, bpm, None, 0)
+    }
+    pub(crate) fn frame_interacting(
+        &mut self,
+        settings: &Settings,
+        controls: Controls,
+        playing: bool,
+        bpm: f32,
+        mut adapters: Option<&mut super::phase_transport::Runtime>,
+        stamp: u64,
+    ) -> Stereo {
+        self.vco_frame = Default::default();
+        self.layer_frames
+            .fill(super::wavetable::mixed::SlotFrame::default());
         self.transport(playing);
         let pattern = playing && settings.pattern;
         if pattern != self.pattern_running {
@@ -737,17 +789,115 @@ impl Runtime {
                 + fm * self.controls.filter_fm as f64 * 8000.0)
                 .clamp(20.0, 18_000.0_f64.min(rate * 0.15));
             filter_hz = hz;
+            let command = self.graph_input.playback;
+            let event = command.event_in(sample, self.oversample);
+            if event.is_some() {
+                self.graph_slew.correct(self.phase, command, rate);
+            }
+            let step = dt + self.graph_slew.next();
+            let hard = event.is_some() && command.mode == crate::interaction::SyncMode::Hard;
             let phase = self.phase;
-            let osc = self
-                .waves
-                .sample(phase, band, osc_pitch, self.controls.waveform as f64);
-            self.phase = (phase + dt).fract();
-            let extra = if self.radias.active() {
+            let generated = if self.graph_mask & 16 != 0 {
+                let (value, end) = super::interaction::read_phase(
+                    &mut self.graph_correction,
+                    phase,
+                    step,
+                    hard.then(|| (event.unwrap(), command.phase)),
+                    |p| {
+                        [self.waves.sample(
+                            p.rem_euclid(1.0),
+                            band,
+                            osc_pitch,
+                            self.controls.waveform as f64,
+                        ) as f32; 2]
+                    },
+                );
+                self.phase = end.rem_euclid(1.0);
+                value[0] as f64
+            } else {
+                self.phase = (phase + step).rem_euclid(1.0);
+                self.waves
+                    .sample(phase, band, osc_pitch, self.controls.waveform as f64)
+            };
+            let osc = if self.graph_mask & 16 != 0 {
+                generated * self.graph_input.factor_at(sample, self.oversample) as f64
+            } else {
+                generated
+            };
+            if self.graph_mask & 16 != 0 {
+                if !hard && phase + step >= 1.0 {
+                    self.vco_frame.wrap =
+                        Some((sample as f64 + (1.0 - phase) / step) / self.oversample as f64);
+                }
+                for (i, value) in [generated, osc].into_iter().enumerate() {
+                    if let Some(value) =
+                        reduce_interaction(value, &mut self.vco_reduction[i], self.levels)
+                    {
+                        if i == 0 {
+                            self.vco_frame.generation = [value as f32; 2];
+                        } else {
+                            self.vco_frame.output = [value as f32; 2];
+                        }
+                    }
+                }
+            }
+            let extra = if self.radias.active() || self.graph_mask & 15 != 0 {
                 self.radias.set_source(osc as f32, phase + dt >= 1.0);
                 self.radias.begin_frame(self.lfo);
-                self.radias
-                    .render(0, 0, pitch as f32, &self.radias_sample, &(0..1))[0]
-                    as f64
+                let inputs = (self.graph_mask & 15 != 0).then(|| {
+                    self.graph_layers.map(|mut input| {
+                        input.playback.event = input
+                            .playback
+                            .event_in(sample, self.oversample)
+                            .unwrap_or(-1.0);
+                        input.clock.event = input
+                            .clock
+                            .event_in(sample, self.oversample)
+                            .unwrap_or(-1.0);
+                        input
+                    })
+                });
+                let transport = adapters
+                    .as_deref_mut()
+                    .map(|p| (p, 20, super::interaction::GLOBAL, stamp));
+                let result = self.radias.render_interacting(
+                    0,
+                    0,
+                    pitch as f32,
+                    &self.radias_sample,
+                    &(0..1),
+                    inputs,
+                    self.graph_mask & 15,
+                    transport,
+                )[0] as f64;
+                if self.graph_mask & 15 != 0 {
+                    for (layer, frame) in self.radias.interaction_frames().into_iter().enumerate() {
+                        if self.graph_mask & (1 << layer) == 0 {
+                            continue;
+                        }
+                        if let Some(at) = frame.wrap {
+                            self.layer_frames[layer].wrap =
+                                Some((sample as f64 + at) / self.oversample as f64);
+                        }
+                        for (i, value) in [frame.generation[0], frame.output[0]]
+                            .into_iter()
+                            .enumerate()
+                        {
+                            if let Some(value) = reduce_interaction(
+                                value as f64,
+                                &mut self.layer_reduction[layer][i],
+                                self.levels,
+                            ) {
+                                if i == 0 {
+                                    self.layer_frames[layer].generation = [value as f32; 2];
+                                } else {
+                                    self.layer_frames[layer].output = [value as f32; 2];
+                                }
+                            }
+                        }
+                    }
+                }
+                result
             } else {
                 0.0
             };
@@ -783,6 +933,13 @@ impl Runtime {
         };
         output
     }
+}
+
+fn reduce_interaction(mut value: f64, filters: &mut [Decimator; 5], levels: usize) -> Option<f64> {
+    for filter in filters.iter_mut().take(levels) {
+        value = filter.next(value)?;
+    }
+    Some(value)
 }
 
 #[cfg(test)]

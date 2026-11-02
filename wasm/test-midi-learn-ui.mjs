@@ -238,3 +238,39 @@ assert.equal(dial(rebuilt).querySelector(".knob-midi"), null);
 learn.input(0, 74, 127);
 assert.equal(values.pitch, 1, "a forgotten controller still turned the knob");
 console.log("MIDI learn UI tests passed");
+
+// A Control surface may show hundreds of linked knobs. Unchanged telemetry
+// must not rewrite text/styles on each poll; real base/feedback edits still paint.
+const painted = new Element("div");
+document.body.append(painted);
+let paintValue = .5, feedback = { base: .5, current: .6, min: .4, max: .7, modulated: true };
+const paint = context.createKnob(["control:0:filter", "Cutoff", String], painted, {
+  register: false, get: () => paintValue, set: v => { paintValue = v; }, reset: () => .5,
+  feedback: () => feedback,
+});
+let writes = 0;
+for (const node of painted.all()) {
+  let text = node.textContent;
+  Object.defineProperty(node, "textContent", { get: () => text, set: value => { writes++; text = value; } });
+  node.style = new Proxy(node.style, { set(target, key, value) { writes++; target[key] = value; return true; } });
+}
+paint.paint();
+writes = 0;
+for (let i = 0; i < 1000; i++) paint.paint();
+assert.equal(writes, 0, "Unchanged Control knobs repainted at every poll");
+paintValue = .8;
+paint.paint();
+assert.equal(dial(painted.firstElementChild).getAttribute("aria-valuenow"), "80");
+feedback = { base: .8, current: .9, min: .7, max: 1, modulated: true };
+paint.paint();
+assert.equal(dial(painted.firstElementChild).dataset.modulationCurrent, "0.9");
+console.log("Control knob feedback: 1000 unchanged polls make no text/style writes; edits still repaint.");
+const sharedDial = dial(painted.firstElementChild);
+context.SadMidiLearn.learn("control:0:filter");
+context.SadMidiLearn.input(0, 11, 127);
+assert.equal(paintValue, 1);
+context.SadMidiLearn.detach(sharedDial);
+context.SadMidiLearn.input(0, 11, 0);
+assert.equal(paintValue, 1, "A disposed Control view retained its source callback");
+assert.deepEqual(plain(context.SadMidiLearn.mappings())["control:0:filter"], [0, 11],
+  "Disposing a view must preserve its saved MIDI mapping");

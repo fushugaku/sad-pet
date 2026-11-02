@@ -38,6 +38,16 @@ pub struct RealtimeView {
     #[serde(default)]
     pub wavetable_positions: [super::wavetable::PositionView; crate::wavetable::OSCILLATORS],
     #[serde(default)]
+    pub oscillator_positions: [super::wavetable::PositionView; crate::oscillators::SLOTS],
+    #[serde(default)]
+    pub modulated_oscillators: [crate::oscillators::Controls; crate::oscillators::SLOTS],
+    #[serde(default)]
+    pub modulated_oscillator_motion: crate::wavetable::motion::Motion,
+    #[serde(default)]
+    pub modulated_interactions: crate::interaction::Controls,
+    #[serde(default)]
+    pub dropped_grain_births: u64,
+    #[serde(default)]
     pub modulated_lfos: [crate::preset::Lfo; crate::preset::MODULATORS],
     #[serde(default)]
     pub modulated_envs: [crate::preset::Env; crate::preset::MODULATORS],
@@ -113,6 +123,12 @@ impl Default for RealtimeView {
             modulated_wavetable: crate::wavetable::default_controls(),
             modulated_wavetable_motion: Default::default(),
             wavetable_positions: Default::default(),
+            oscillator_positions: Default::default(),
+            modulated_oscillators: [crate::oscillators::Controls::default();
+                crate::oscillators::SLOTS],
+            modulated_oscillator_motion: Default::default(),
+            modulated_interactions: Default::default(),
+            dropped_grain_births: 0,
             modulated_lfos: [crate::preset::Lfo::default(); crate::preset::MODULATORS],
             modulated_envs: [crate::preset::Env::default(); crate::preset::MODULATORS],
             matrix: [0.0; crate::matrix::MAX_ROUTES],
@@ -244,7 +260,19 @@ impl Engine {
         view.modulated_synth = self.modulated.synth;
         view.modulated_wavetable = self.modulated.wavetable;
         view.modulated_wavetable_motion = self.modulated.wavetable_motion;
+        view.oscillator_positions = self
+            .oscillator_engine
+            .mixed
+            .as_ref()
+            .map_or([Default::default(); crate::oscillators::SLOTS], |m| {
+                m.positions()
+            });
+        view.modulated_oscillators = self.modulated.oscillator_controls;
+        view.modulated_oscillator_motion = self.modulated.oscillator_motion;
+        view.modulated_interactions = self.modulated.interaction_controls;
+        view.dropped_grain_births = self.oscillator_engine.graph.dropped_births;
         view.wavetable_positions = self
+            .oscillator_engine
             .wavetable
             .as_ref()
             .map_or_else(Default::default, |w| w.positions());
@@ -252,8 +280,8 @@ impl Engine {
         view.modulated_envs = self.modulated.envs;
         view.modulated_rack_eqs = self.modulated.rack_eqs;
         view.filter_cutoffs = self.current_filter_cutoffs();
-        view.resynth_bands = self.resynth.carrier_levels();
-        view.resynth_frequencies = self.resynth.frequencies();
+        view.resynth_bands = self.oscillator_engine.resynth.carrier_levels();
+        view.resynth_frequencies = self.oscillator_engine.resynth.frequencies();
         view.source_fx_pending = self.source_effects_pending();
         view.source_fx_error = self.source_fx_error;
         view.source_gain_reduction = self
@@ -286,7 +314,11 @@ impl Engine {
             view.notes[view.note_count] = voice.note;
             view.note_count += 1;
         }
-        if let Some((_, note, _)) = self.tb303.as_ref().and_then(|b| b.note_state())
+        if let Some((_, note, _)) = self
+            .oscillator_engine
+            .tb303
+            .as_ref()
+            .and_then(|b| b.note_state())
             && view.note_count < view.notes.len()
             && !view.notes[..view.note_count].contains(&note)
         {
@@ -553,6 +585,16 @@ impl ControlFeedback<'_> {
                 || (self.preset.drums.is_some() && s.id.starts_with("drum"))
                 || (self.preset.synth.is_some() && s.id.starts_with("synth_"))
                 || (self.preset.wavetable.is_some() && s.id.starts_with("wt_"))
+                || (self.preset.oscillators.is_some() && s.id.starts_with("osc"))
+                || s.id
+                    .strip_prefix("interaction")
+                    .and_then(|tail| tail.split('_').next()?.parse::<usize>().ok())
+                    .and_then(|n| n.checked_sub(1))
+                    .and_then(|n| self.preset.interactions.routes.get(n))
+                    .is_some_and(|r| {
+                        r.source != crate::interaction::Node::None
+                            || r.target != crate::interaction::Node::None
+                    })
                 || (self.preset.tb303.is_some() && s.id.starts_with("tb303_"))
                 || equalizers.iter().any(|prefix| s.id.starts_with(prefix))
         }) {
@@ -582,6 +624,9 @@ pub fn knob_states_from_view(
     m.synth = view.modulated_synth;
     m.wavetable = view.modulated_wavetable;
     m.wavetable_motion = view.modulated_wavetable_motion;
+    m.oscillator_controls = view.modulated_oscillators;
+    m.oscillator_motion = view.modulated_oscillator_motion;
+    m.interaction_controls = view.modulated_interactions;
     m.tb303 = view.modulated_tb303;
     m.tb303_radias = view.modulated_tb303_radias;
     m.lfos = view.modulated_lfos;

@@ -173,12 +173,14 @@ window.SadMidiLearn = (() => {
     if (map.size > (cc ? 1 : 0))
       choices.push(item(`Forget all MIDI mappings (${map.size})`, forgetAll));
     const more = hooks.menu(key, label(key)),
+      surface = window.SadControl?.menu(dial, key, label(key)),
       // A keyboard context menu has no pointer position: open by the knob.
       pointer = event.clientX || event.clientY;
     window.SadLazySelect.popup(
       dial,
-      [{ choices }, ...(more?.groups || [])],
-      (value) => (actions.has(value) ? actions.get(value)() : more?.choose(value)),
+      [{ choices }, ...(more?.groups || []), ...(surface?.groups || [])],
+      (value) => (actions.has(value) ? actions.get(value)() : /^(surface:|control-track:)/.test(value)
+        ? surface?.choose(value) : more?.choose(value)),
       {
         title: label(key),
         point: pointer ? [event.clientX, event.clientY] : null,
@@ -189,6 +191,16 @@ window.SadMidiLearn = (() => {
 
   return {
     attach,
+    detach(dial) {
+      const key = dial.dataset.controlKey, set = knobs.get(key);
+      if (!set) return 0;
+      for (const registration of set) if (registration.dial === dial) set.delete(registration);
+      if (!set.size) {
+        knobs.delete(key);
+        if (learning === key) cancel();
+      }
+      return set.size;
+    },
     input,
     bytes,
     learn,

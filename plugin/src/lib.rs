@@ -64,6 +64,8 @@ enum Command {
     Preset(Box<Preset>),
     Parameters(Box<[parameters::Change]>),
     Sequence(Box<[sad_pet::sequence::Edit]>),
+    ControlInputs(Vec<sad_pet::control::Input>),
+    ControlSequence(u32, Box<[sad_pet::sequence::Edit]>),
     SequenceView(usize),
     Drums(Box<[sad_pet::drums::Edit]>),
     DrumTrigger(usize, f32),
@@ -444,10 +446,7 @@ impl SavedState {
             pool: &sad_pet::wavetable::assets::Pool,
         ) -> Result<(), String> {
             state.preset.wavetable_pool.merge(pool)?;
-            state
-                .preset
-                .wavetable_pool
-                .manifest(state.preset.wavetable.as_deref())?;
+            state.preset.wavetable_assets()?;
             for part in &mut state.timbres {
                 bind(part, pool)?;
             }
@@ -608,8 +607,19 @@ impl Controller {
 
     fn enqueue(&mut self, command: Command) -> Result<(), String> {
         let error = match &command {
-            Command::Preset(preset) => preset.wavetable_runtime.1.as_ref(),
-            Command::Restore(restore) => restore.preset.wavetable_runtime.1.as_ref(),
+            Command::Preset(preset) => preset
+                .wavetable_runtime
+                .1
+                .as_ref()
+                .or(preset.oscillator_runtime.1.as_ref())
+                .or(preset.phase_runtime.1.as_ref()),
+            Command::Restore(restore) => restore
+                .preset
+                .wavetable_runtime
+                .1
+                .as_ref()
+                .or(restore.preset.oscillator_runtime.1.as_ref())
+                .or(restore.preset.phase_runtime.1.as_ref()),
             _ => None,
         };
         if let Some(error) = error {
@@ -733,7 +743,7 @@ impl Controller {
         } else {
             None
         };
-        Audio {
+        let mut audio = Audio {
             capture,
             preview: None,
             meta: self.meta.clone(),
@@ -774,13 +784,40 @@ impl Controller {
             }),
             chains,
             bounced: false,
+        };
+        if self.meta.id == 0 {
+            let sources: Vec<_> = std::iter::once((&self.meta, &self.preset))
+                .chain(self.parts.iter().map(|p| (&p.meta, &p.preset)))
+                .filter(|(m, _)| m.kind == sad_pet::timbres::Kind::Control)
+                .collect();
+            fn install(audio: &mut Audio, sources: &[(&sad_pet::timbres::Meta, &Preset)]) {
+                let mut inputs = sad_pet::control::inputs(audio.meta.id, sources.iter().copied());
+                audio.engine.exchange_control_inputs(&mut inputs);
+                for head in [&mut audio.parts, &mut audio.chains] {
+                    let mut part = head.as_mut();
+                    while let Some(p) = part {
+                        install(&mut p.audio, sources);
+                        part = p.next.as_mut();
+                    }
+                }
+            }
+            install(&mut audio, &sources);
         }
+        audio
     }
 
     /// Timbres that render their own source: the scene's part and every
     /// part that is not a Bus or Master.
     fn rendered_timbres(&self) -> usize {
-        1 + self.parts.iter().filter(|p| !p.meta.kind.routing()).count()
+        let renders = |kind: sad_pet::timbres::Kind| {
+            !kind.routing()
+                && !matches!(
+                    kind,
+                    sad_pet::timbres::Kind::Control | sad_pet::timbres::Kind::Empty
+                )
+        };
+        usize::from(renders(self.meta.kind))
+            + self.parts.iter().filter(|p| renders(p.meta.kind)).count()
     }
     /// Workers for the scene once it renders two timbres or more; a part
     /// of the scene, or a scene of one timbre, renders on the audio thread.
@@ -947,6 +984,8 @@ impl Controller {
         state["rack_peaks"] = json!(view.rack_peaks);
         state["wavetable_positions"] = json!(view.wavetable_positions);
         state["wavetable_motion"] = json!(view.modulated_wavetable_motion);
+        state["oscillator_positions"] = json!(view.oscillator_positions);
+        state["oscillator_motion"] = json!(view.modulated_oscillator_motion);
         // A Rack's Vocal module sings here and its Sampler plays. The app's
         // kits play, but their samples never cross its editor boundary.
         state["features"] = json!({"rack_vocal": true, "sampler": !self.standalone});
@@ -1017,10 +1056,7 @@ impl Controller {
             } else {
                 Vec::new()
             },
-            wavetable_assets: self
-                .preset
-                .wavetable_pool
-                .manifest(self.preset.wavetable.as_deref())?,
+            wavetable_assets: self.preset.wavetable_assets()?,
         };
         state.hoist_wavetables();
         Ok(state)
@@ -1138,6 +1174,7 @@ impl Controller {
         }
         self.offer_workers();
         if self.meta.id == 0 {
+            self.sync_controls()?;
             self.sync_tempo()?;
         }
         Ok(())
@@ -1224,9 +1261,7 @@ impl Controller {
                     settings.oscillators[index].asset_id =
                         data["id"].as_str().ok_or("Choose a wavetable")?.into();
                 }
-                preset
-                    .wavetable_pool
-                    .manifest(preset.wavetable.as_deref())?;
+                preset.wavetable_assets()?;
                 let prepared = self.prepared_preset(&preset);
                 if let Some(error) = &prepared.wavetable_runtime.1 {
                     return Err(error.clone());
@@ -1282,9 +1317,7 @@ impl Controller {
                     preset.params.bpm = self.preset.params.bpm;
                 }
                 preset.wavetable_pool = self.preset.wavetable_pool.clone();
-                preset
-                    .wavetable_pool
-                    .manifest(preset.wavetable.as_deref())?;
+                preset.wavetable_assets()?;
                 self.enqueue(Command::Preset(self.prepared_preset(&preset)))?;
                 // A loaded preset can change the timbre's engine type; a Pad
                 // FX timbre stays one.
@@ -1654,6 +1687,10 @@ impl Audio {
                     numeric_changed |= parameters::apply(&mut self.engine.preset, changes);
                 }
                 Command::Sequence(edits) => self.engine.apply_sequence_edits(edits),
+                Command::ControlInputs(inputs) => self.engine.exchange_control_inputs(inputs),
+                Command::ControlSequence(source, edits) => {
+                    self.engine.apply_control_sequence_edits(*source, edits)
+                }
                 Command::SequenceView(offset) => self.engine.set_sequence_view(*offset),
                 Command::Source(source) => self.source(source),
                 Command::Restore(state) => {
@@ -1811,7 +1848,9 @@ impl Audio {
                 self.engine.set_playing(playing);
             }
             self.engine.set_sequence_transport(playing);
-            if (self.engine.preset.sequencer.enabled || own_pattern)
+            if (self.engine.preset.sequencer.enabled
+                || own_pattern
+                || self.engine.has_control_inputs())
                 && playing
                 && !self.engine.playing
             {
@@ -1822,7 +1861,8 @@ impl Audio {
             self.engine.host_transport(
                 bpm,
                 beat,
-                (performance || own_pattern || sequencer) && (moved || preset_changed),
+                (performance || own_pattern || sequencer || self.engine.has_control_inputs())
+                    && (moved || preset_changed),
                 sequencer && moved,
             );
         } else {

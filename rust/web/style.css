@@ -6681,6 +6681,49 @@ input[type="range"] {
   .tb303-radias .resynth-knobs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tb303-mod-knobs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+/* Control surfaces use the same editors as their source timbres. */
+.control-timbre main > :is(.bank, .rack-area, .rack-pattern, .performance-section, .mod-section, .keyboard-section,
+  .sample-panel, #engine-type, #recording-result-slot) { display: none !important; }
+.control-timbre main > :is(#control-surface, #neuropolis) { display: block !important; }
+.control-timbre main > .transport .output-controls > label { display: none; }
+.control-timbre main { max-width: none; padding-inline: 0; }
+.control-timbre main > :is(header, #timbres, .transport, #notice, #neuropolis, footer) { margin-inline: clamp(12px, 3vw, 36px); }
+.control-surface { padding: 0; border-inline: 0; border-radius: 0; }
+.control-surface > .section-heading { margin-inline: clamp(12px, 3vw, 36px); }
+.control-surface > .section-heading { justify-content: space-between; }
+.control-scroll { position: relative; min-height: 360px; }
+.control-canvas { position: relative; width: 100%; min-height: 360px; background-image: radial-gradient(#56634c55 1px, transparent 1px); background-size: 20px 20px; }
+.control-empty { position: absolute; top: 115px; left: 24px; right: 24px; color: var(--muted, #8e9a81); text-align: center; pointer-events: none; }
+.control-tile { position: absolute; min-width: 100px; border: 1px solid #536245; border-radius: 9px; background: #252e22; box-shadow: 0 4px 14px #0003; overflow: hidden; }
+.control-tile.is-module { min-width: 300px; max-width: calc(100vw - 40px); }
+.control-tile.is-moving { z-index: 2; box-shadow: 0 8px 24px #0006; border-color: #a9cf81; }
+.control-tile-heading { display: flex; align-items: center; gap: 4px; height: 30px; padding: 0 4px; border-bottom: 1px solid #46523d; cursor: grab; touch-action: none; user-select: none; }
+.control-tile-heading button { min-width: 22px; min-height: 24px; padding: 0 4px; border: 0; background: transparent; box-shadow: none; }
+.control-tile-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.control-tile-grip { cursor: grab; color: #9aa88d; }
+.control-tile-tools { display: flex; gap: 1px; }
+.control-tile-tools button { font-size: 14px; }
+.control-tile-frame { display: block; width: 100%; border: 0; background: transparent; }
+.control-source-pool { position: fixed; left: -20000px; top: 0; width: 1240px; height: 800px; visibility: hidden; pointer-events: none; border: 0; }
+.control-proxy { padding: 8px; }
+.control-proxy-ancestor { display: contents !important; }
+.control-proxy-ancestor::before, .control-proxy-ancestor::after { display: none !important; }
+.control-proxy .knob { margin-inline: auto; }
+.control-missing { padding: 12px; font-size: 11px; color: #c2ad8d; }
+.control-fragment-document, .control-fragment-document body { min-width: 0; width: 100%; margin: 0; overflow: hidden; background: #252e22; }
+.control-fragment-document body { padding: 8px; box-sizing: border-box; }
+.control-fragment-document body > :not(.control-fragment-path):not(.control-fragment-node) { display: none !important; }
+.control-fragment-path { display: contents !important; }
+.control-fragment-path::before, .control-fragment-path::after { display: none !important; }
+.control-fragment-path > :not(.control-fragment-path):not(.control-fragment-node) { display: none !important; }
+.control-fragment-node { margin: 0 !important; max-width: 100%; }
+.control-fragment-document .knob.control-fragment-node { margin-inline: auto !important; }
+@media (max-width: 600px) {
+  .control-tile-heading { height: 36px; }
+  .control-tile-heading button { min-height: 32px; min-width: 26px; }
+  .control-tile.is-module { min-width: 280px; }
+}
+
 /* Shared multi-point ENV */
 .wave-env[hidden],.env-controls[hidden]{display:none}
 .wave-env-options{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}.wave-env-options label{display:flex;flex-direction:column;gap:5px;font-size:10px;color:var(--muted)}.wave-env-options .wave-loop{flex-direction:row;align-items:center;min-height:44px}

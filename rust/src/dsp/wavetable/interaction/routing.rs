@@ -2,6 +2,22 @@
 //! tap delay makes every connection, including feedback cycles, causal and
 //! independent of A/B/C/D iteration order. Old paired patches keep their path.
 use super::*;
+use crate::dsp::interaction::{Input, PhaseSlew};
+
+pub(in crate::dsp::wavetable) struct InteropVoice {
+    reductions: [Filter; OSCILLATORS],
+    slews: [[PhaseSlew; MAX_UNISON]; OSCILLATORS],
+    pub frames: [super::super::mixed::SlotFrame; OSCILLATORS],
+}
+impl Default for InteropVoice {
+    fn default() -> Self {
+        Self {
+            reductions: [Filter::default(); OSCILLATORS],
+            slews: [[PhaseSlew::default(); MAX_UNISON]; OSCILLATORS],
+            frames: [super::super::mixed::SlotFrame::default(); OSCILLATORS],
+        }
+    }
+}
 #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
 mod simd;
 #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
@@ -55,7 +71,7 @@ impl Graph {
 }
 
 #[inline]
-fn crossing(phase: f64, step: f64) -> f64 {
+pub(in crate::dsp::wavetable) fn crossing(phase: f64, step: f64) -> f64 {
     let next = phase + step;
     if phase > 0.0 && phase < 1.0 && next > 0.0 && next < 1.0 {
         return -1.0;
@@ -82,7 +98,7 @@ fn discontinuity(view: &mut Lookup<'_>, before: f64, reset: f64, pm: f64, step: 
     (jump, slope)
 }
 #[inline(always)]
-fn value(
+pub(in crate::dsp::wavetable) fn value(
     view: Option<&mut Lookup<'_>>,
     correction: &mut f32,
     phase: f64,
@@ -122,7 +138,15 @@ pub(in crate::dsp::wavetable) fn render(
     rate: f64,
     kernel: &Kernel,
     dc: f32,
+    external: Option<(&mut InteropVoice, [Input; OSCILLATORS], u8)>,
 ) -> (Stereo, f32) {
+    let (mut interop, inputs, demand) = match external {
+        Some((state, inputs, demand)) => (Some(state), inputs, demand),
+        None => (None, [Input::default(); OSCILLATORS], 0),
+    };
+    if let Some(state) = &mut interop {
+        state.frames.fill(super::super::mixed::SlotFrame::default());
+    }
     let fm = std::array::from_fn::<_, OSCILLATORS, _>(|i| {
         let s = layers[i].target.fm_source as usize;
         layers[i].target.fm_mode != 0
@@ -136,7 +160,9 @@ pub(in crate::dsp::wavetable) fn render(
                 .get(layers[i].target.sync_source as usize)
                 .is_some_and(Option::is_some)
     });
-    let enabled = engaged && (0..OSCILLATORS).any(|i| banks[i].is_some() && (fm[i] || sync[i]));
+    let enabled = engaged
+        && ((0..OSCILLATORS).any(|i| banks[i].is_some() && (fm[i] || sync[i]))
+            || interop.is_some());
     state.active = true;
     state.mix.target(f32::from(enabled), (rate * 0.020) as u32);
     let mix = state.mix.next();
@@ -144,8 +170,16 @@ pub(in crate::dsp::wavetable) fn render(
         state.active = false;
         return ([0.0; 2], 0.0);
     }
-    let synced = sync.iter().any(|&x| x);
+    let synced = sync.iter().any(|&x| x)
+        || inputs
+            .iter()
+            .any(|input| input.playback.mode == crate::interaction::SyncMode::Hard);
     let factor = if synced { 32 } else { OVERSAMPLE };
+    if let Some(state) = &mut interop {
+        for frame in &mut state.frames {
+            frame.latency = if synced { 40.0 } else { 39.125 };
+        }
+    }
     let internal = rate * factor as f64;
     let counts = std::array::from_fn::<_, OSCILLATORS, _>(|i| {
         layers[i]
@@ -165,6 +199,7 @@ pub(in crate::dsp::wavetable) fn render(
     let mut needed = [false; OSCILLATORS];
     let mut limits = [rate; OSCILLATORS];
     for i in 0..OSCILLATORS {
+        needed[i] |= demand & (1 << i) != 0;
         if fm[i] {
             let s = layers[i].target.fm_source as usize;
             needed[s] = true;
@@ -268,7 +303,8 @@ pub(in crate::dsp::wavetable) fn render(
         }
     }
     #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
-    let batched = counts == [4; OSCILLATORS]
+    let batched = interop.is_none()
+        && counts == [4; OSCILLATORS]
         && simd::render(
             state,
             lanes,
@@ -318,6 +354,7 @@ pub(in crate::dsp::wavetable) fn render(
             } else {
                 0.0
             };
+            let mut generation = 0.0;
             for lane in lanes[i].iter_mut().take(counts[i]) {
                 if lane.mode != mode_key {
                     lane.phase = wrap(lane.phase + lane.phase_mod - pm);
@@ -325,9 +362,10 @@ pub(in crate::dsp::wavetable) fn render(
                 }
                 lane.phase_mod = pm;
             }
+            let reference = lanes[i][0].phase;
             for id in 0..counts[i] {
                 let lane = &mut lanes[i][id];
-                let event = if !sync[i] {
+                let mut event = if !sync[i] {
                     -1.0
                 } else if clock == i {
                     if lane.master + masters[i][id] >= 1.0 {
@@ -338,9 +376,30 @@ pub(in crate::dsp::wavetable) fn render(
                 } else {
                     old_edges[clock][id % counts[clock]]
                 };
-                let step = steps[i][id] + fm_step;
+                let mut command = inputs[i].playback;
+                command.phase = (command.phase + lane.phase - reference).rem_euclid(1.0);
+                let external_event = command.event_in(sub, factor);
+                let mut soft = 0.0;
+                if let Some(state) = &mut interop {
+                    if external_event.is_some() {
+                        state.slews[i][id].correct(lane.phase, command, internal);
+                    }
+                    soft = state.slews[i][id].next();
+                }
+                if command.mode != crate::interaction::SyncMode::Off {
+                    event = if command.mode == crate::interaction::SyncMode::Hard {
+                        external_event.unwrap_or(-1.0)
+                    } else {
+                        -1.0
+                    };
+                }
+                let step = steps[i][id] + fm_step + soft;
                 let phase = lane.phase;
-                let reset = layers[i].target.phase as f64;
+                let reset = if command.mode != crate::interaction::SyncMode::Off {
+                    command.phase
+                } else {
+                    layers[i].target.phase as f64
+                };
                 if needed[i] {
                     let tap = value(
                         tapped[i][id].as_mut(),
@@ -352,6 +411,7 @@ pub(in crate::dsp::wavetable) fn render(
                         pm,
                     );
                     new_taps[i] += tap * tap_gains[i][id];
+                    generation += tap * tap_gains[i][id];
                 }
                 let value = value(
                     heard[i][id].as_mut(),
@@ -378,8 +438,30 @@ pub(in crate::dsp::wavetable) fn render(
                 }
                 lane.master = wrap(lane.master + masters[i][id]);
                 state.edges[i][id] = edge;
+                if id == 0
+                    && edge >= 0.0
+                    && let Some(state) = &mut interop
+                {
+                    state.frames[i].wrap = Some((sub as f64 + edge) / factor as f64);
+                }
                 for c in 0..2 {
+                    let value = if interop.is_some() {
+                        value * inputs[i].factor_at(sub, factor)
+                    } else {
+                        value
+                    };
                     frame[c] += value * gains[i][id][c];
+                }
+            }
+            if let Some(state) = &mut interop {
+                let signal = [generation, generation * inputs[i].factor_at(sub, factor)];
+                if synced {
+                    let reduced = state.reductions[i].pre(signal, kernel, sub % 4 == 3);
+                    if sub % 4 == 3 {
+                        state.reductions[i].push(reduced);
+                    }
+                } else {
+                    state.reductions[i].push(signal);
                 }
             }
             if needed[i] && (fm[i] || sync[i]) {
@@ -410,6 +492,13 @@ pub(in crate::dsp::wavetable) fn render(
             lane.master = wrap(lane.master + masters[i][id] * factor as f64);
             lane.phase = wrap(lane.phase + steps[i][id] * factor as f64);
             lane.correction = 0.0;
+        }
+    }
+    if let Some(state) = &mut interop {
+        for i in 0..OSCILLATORS {
+            let signal = state.reductions[i].next(kernel, dc);
+            state.frames[i].generation = [signal[0]; 2];
+            state.frames[i].output = [signal[1]; 2];
         }
     }
     (state.filter.next(kernel, dc), mix)

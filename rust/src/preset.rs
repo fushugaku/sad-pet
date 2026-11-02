@@ -851,6 +851,8 @@ pub struct Preset {
     pub env_count: u8,
     pub performance: crate::performance::Settings,
     pub sequencer: crate::sequence::Program,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub control: Option<Box<crate::control::Settings>>,
     pub resynth: crate::resynth::Settings,
     /// Where each section's output goes: on down the chain and to a Bus.
     #[serde(skip_serializing_if = "crate::taps::Taps::is_default")]
@@ -858,6 +860,18 @@ pub struct Preset {
     /// Advanced grain mode and its groups.
     #[serde(skip_serializing_if = "crate::grain_groups::Settings::is_default")]
     pub grain_groups: crate::grain_groups::Settings,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oscillators: Option<Box<crate::oscillators::Settings>>,
+    #[serde(skip)]
+    pub oscillator_runtime: crate::dsp::oscillators::Prepared,
+    #[serde(skip)]
+    pub phase_runtime: crate::dsp::phase_transport::Prepared,
+    #[serde(skip_serializing_if = "crate::interaction::Settings::is_default")]
+    pub interactions: crate::interaction::Settings,
+    #[serde(skip_serializing_if = "crate::interaction::Capture::is_default")]
+    pub grain_capture: crate::interaction::Capture,
+    #[serde(skip_serializing_if = "crate::interaction::Scheduler::is_legacy")]
+    pub grain_scheduler: crate::interaction::Scheduler,
     pub drums: Option<Box<crate::drums::Settings>>,
     #[serde(skip)]
     pub drum_runtime: crate::drums::Prepared,
@@ -930,9 +944,16 @@ impl Default for Preset {
             env_count: 3,
             performance: crate::performance::Settings::default(),
             sequencer: crate::sequence::Program::default(),
+            control: None,
             resynth: crate::resynth::Settings::default(),
             taps: Default::default(),
             grain_groups: Default::default(),
+            oscillators: None,
+            oscillator_runtime: Default::default(),
+            phase_runtime: Default::default(),
+            interactions: Default::default(),
+            grain_capture: Default::default(),
+            grain_scheduler: Default::default(),
             drums: None,
             drum_runtime: Default::default(),
             synth: None,
@@ -978,9 +999,14 @@ impl<'de> Deserialize<'de> for Preset {
             env_count: u8,
             performance: crate::performance::Settings,
             sequencer: Option<crate::sequence::Program>,
+            control: Option<Box<crate::control::Settings>>,
             resynth: Option<serde_json::Value>,
             taps: Option<crate::taps::Taps>,
             grain_groups: crate::grain_groups::Settings,
+            oscillators: Option<Box<crate::oscillators::Settings>>,
+            interactions: crate::interaction::Settings,
+            grain_capture: crate::interaction::Capture,
+            grain_scheduler: crate::interaction::Scheduler,
             drums: Option<Box<crate::drums::Settings>>,
             synth: Option<Box<crate::synth::Settings>>,
             wavetable: Option<Box<crate::wavetable::Settings>>,
@@ -1010,9 +1036,14 @@ impl<'de> Deserialize<'de> for Preset {
                     env_count: p.env_count,
                     performance: p.performance,
                     sequencer: None,
+                    control: None,
                     resynth: None,
                     taps: None,
                     grain_groups: Default::default(),
+                    oscillators: None,
+                    interactions: Default::default(),
+                    grain_capture: Default::default(),
+                    grain_scheduler: Default::default(),
                     drums: None,
                     synth: None,
                     wavetable: None,
@@ -1032,6 +1063,12 @@ impl<'de> Deserialize<'de> for Preset {
             }
         }
         let d = Data::deserialize(deserializer)?;
+        if let Some(oscillators) = &d.oscillators {
+            oscillators.validate().map_err(serde::de::Error::custom)?;
+        }
+        d.interactions
+            .validate(d.oscillators.as_deref())
+            .map_err(serde::de::Error::custom)?;
         let legacy_filter = d.params.as_ref().is_some_and(|p| {
             p.get("filter_routing").is_none() && p.get("filter_env_depth").is_none()
         });
@@ -1154,9 +1191,16 @@ impl<'de> Deserialize<'de> for Preset {
             env_count: d.env_count,
             performance,
             sequencer,
+            control: d.control,
             resynth,
             taps,
             grain_groups: d.grain_groups,
+            oscillators: d.oscillators,
+            oscillator_runtime: Default::default(),
+            phase_runtime: Default::default(),
+            interactions: d.interactions,
+            grain_capture: d.grain_capture,
+            grain_scheduler: d.grain_scheduler,
             drums: d.drums,
             drum_runtime: Default::default(),
             synth: d.synth,
@@ -1186,6 +1230,43 @@ impl<'de> Deserialize<'de> for Preset {
     }
 }
 impl Preset {
+    pub fn prepare_phase_transports(&mut self, rate: u32) -> Result<(), String> {
+        let mut prepared = crate::dsp::phase_transport::Prepared::default();
+        let result = prepared.prepare(self, rate);
+        self.phase_runtime = prepared;
+        result
+    }
+    pub fn needs_wavetable_interactions(&self) -> bool {
+        self.interactions.routes.iter().any(|r| {
+            matches!(r.source, crate::interaction::Node::Wavetable { .. })
+                || matches!(r.target, crate::interaction::Node::Wavetable { .. })
+        })
+    }
+    pub fn prepare_wavetable_interactions(&mut self) {
+        if self.needs_wavetable_interactions()
+            && let Some(w) = &mut self.wavetable_runtime.0
+        {
+            w.prepare_interactions();
+        }
+    }
+    pub fn wavetable_ids(&self) -> impl Iterator<Item = &str> {
+        self.wavetable
+            .iter()
+            .flat_map(|s| s.oscillators.iter().take(s.count as usize))
+            .map(|o| o.asset_id.as_str())
+            .chain(
+                self.oscillators
+                    .iter()
+                    .flat_map(|s| s.slots.iter())
+                    .filter(|s| s.id != 0 && s.kind == crate::oscillators::Kind::Wavetable)
+                    .map(|s| s.asset_id.as_str()),
+            )
+    }
+    pub fn wavetable_assets(
+        &self,
+    ) -> Result<Vec<std::sync::Arc<crate::wavetable::assets::Asset>>, String> {
+        self.wavetable_pool.manifest_ids(self.wavetable_ids())
+    }
     /// Prepare the audio owner's copy on the control thread.
     pub fn prepared_clone(&self) -> Self {
         self.prepared_clone_for(self.imported_effects.sample_rate().unwrap_or(48_000))
@@ -1193,11 +1274,18 @@ impl Preset {
     pub fn prepared_clone_for(&self, rate: u32) -> Self {
         let mut preset = self.clone();
         preset.sanitize();
+        let _ = preset.prepare_phase_transports(rate);
+        let _ = preset.oscillator_runtime.prepare(
+            preset.oscillators.as_deref(),
+            &preset.wavetable_pool,
+            rate,
+        );
         let _ = preset.wavetable_runtime.prepare(
             preset.wavetable.as_deref(),
             &preset.wavetable_pool,
             rate,
         );
+        preset.prepare_wavetable_interactions();
         preset.tb303_runtime.prepare(preset.tb303.as_deref(), rate);
         preset.prepare_effects(rate);
         if preset.rack.is_some() {
@@ -1302,6 +1390,18 @@ impl Preset {
         }
     }
     pub fn sanitize(&mut self) {
+        if self.oscillators.is_some() && self.rack.is_none() {
+            use crate::rack::{Module, Slot};
+            self.rack = Some(Box::new(crate::rack::Settings {
+                modules: [Module::Oscillators, Module::Filters, Module::PostFx]
+                    .map(|module| Slot {
+                        module,
+                        ..Default::default()
+                    })
+                    .to_vec(),
+                ..Default::default()
+            }));
+        }
         // Migrate the first 303 projects to a real source chain in a Rack.
         if self.tb303.is_some() && self.rack.is_none() {
             use crate::rack::{Module, Slot};
@@ -1343,10 +1443,21 @@ impl Preset {
         self.resynth.sanitize();
         self.taps.sanitize();
         self.grain_groups.sanitize();
+        self.interactions.sanitize();
+        if let Some(oscillators) = &mut self.oscillators {
+            oscillators.sanitize();
+        }
         if let Some(rack) = &mut self.rack {
             // A Rack holds the settings of the sources it has, and only those.
             rack.sanitize();
             self.bus = None;
+            if rack.has(crate::rack::Module::Oscillators) {
+                self.oscillators
+                    .get_or_insert_with(Default::default)
+                    .sanitize();
+            } else {
+                self.oscillators = None;
+            }
             if rack.has(crate::rack::Module::Tb303) {
                 self.tb303.get_or_insert_with(Default::default).sanitize();
             } else {
@@ -1388,6 +1499,9 @@ impl Preset {
             self.sanitize_engine();
         }
         self.sequencer.sanitize();
+        if let Some(control) = &mut self.control {
+            control.sanitize();
+        }
         self.matrix.truncate(crate::matrix::MAX_ROUTES);
         self.color_chain.truncate(crate::color::MAX_COLOR_SLOTS);
         self.pre_color_chain.truncate(crate::color::MAX_COLOR_SLOTS);

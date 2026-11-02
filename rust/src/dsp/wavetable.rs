@@ -2,6 +2,7 @@
 //! Each lookup interpolates periodic samples, adjacent frames and safe mip levels.
 mod interaction;
 mod lookup;
+pub(crate) mod mixed;
 mod polynomial;
 mod transport;
 use crate::wavetable::{
@@ -593,6 +594,7 @@ pub struct Runtime {
     weights: [f32; 4],
     interaction_kernel: &'static interaction::Kernel,
     dc: f32,
+    interop: Option<Box<[interaction::routing::InteropVoice]>>,
 }
 impl Runtime {
     pub fn new(rate: u32, settings: &Settings, assets: &Pool) -> Result<Self, String> {
@@ -626,10 +628,14 @@ impl Runtime {
             weights: [1.0; 4],
             interaction_kernel: interaction::Kernel::shared(),
             dc: (-std::f64::consts::TAU * 5.0 / rate as f64).exp() as f32,
+            interop: None,
         })
     }
     /// Exchanges only small states/handles. The caller retires `old` off audio.
     pub fn inherit(&mut self, old: &mut Self) {
+        if self.interop.is_some() && old.interop.is_some() {
+            std::mem::swap(&mut self.interop, &mut old.interop);
+        }
         std::mem::swap(&mut self.voices, &mut old.voices);
         if self.rate != old.rate {
             for voice in self.voices.iter_mut() {
@@ -695,6 +701,22 @@ impl Runtime {
             layer.configure(controls, self.rate as f32);
         }
     }
+    pub fn prepare_interactions(&mut self) {
+        if self.interop.is_none() {
+            self.interop = Some(
+                (0..super::VOICES)
+                    .map(|_| interaction::routing::InteropVoice::default())
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
+            );
+        }
+    }
+    pub(crate) fn interaction_frames(&self, index: usize) -> [mixed::SlotFrame; OSCILLATORS] {
+        self.interop
+            .as_ref()
+            .and_then(|s| s.get(index))
+            .map_or([mixed::SlotFrame::default(); OSCILLATORS], |s| s.frames)
+    }
     /// No old voice is audible. The next note starts with the selected bank,
     /// rather than paying for a crossfade from an unplayed previous table.
     /// Handles remain available for normal control-side retirement.
@@ -745,6 +767,9 @@ impl Runtime {
                 .layers
                 .iter()
                 .any(|l| l.ramps[3].value > 0.0 || l.ramps[3].target > 0.0)
+    }
+    pub(crate) fn powered(&self) -> bool {
+        self.power.target > 0.0
     }
     pub fn positions(&self) -> [PositionView; OSCILLATORS] {
         if self.viewed {
@@ -806,6 +831,17 @@ impl Runtime {
         note: f32,
         envs: &[f32; crate::preset::MODULATORS],
         lfos: &[f32; crate::preset::MODULATORS],
+    ) -> Stereo {
+        self.render_interacting(index, generation, note, envs, lfos, None)
+    }
+    pub(crate) fn render_interacting(
+        &mut self,
+        index: usize,
+        generation: u32,
+        note: f32,
+        envs: &[f32; crate::preset::MODULATORS],
+        lfos: &[f32; crate::preset::MODULATORS],
+        external: Option<([super::interaction::Input; OSCILLATORS], u8)>,
     ) -> Stereo {
         if !note.is_finite() || note.abs() > 512.0 || index >= self.voices.len() {
             return [0.0; 2];
@@ -1007,10 +1043,11 @@ impl Runtime {
                     .get(l.target.sync_source as usize)
                     .is_some_and(Option::is_some)
         });
-        let custom = (0..OSCILLATORS).any(|i| {
-            (fm[i] && (i % 2 == 1 || self.layers[i].target.fm_source as usize != (i ^ 1)))
-                || (sync[i] && self.layers[i].target.sync_source as usize != i)
-        });
+        let custom = external.is_some()
+            || (0..OSCILLATORS).any(|i| {
+                (fm[i] && (i % 2 == 1 || self.layers[i].target.fm_source as usize != (i ^ 1)))
+                    || (sync[i] && self.layers[i].target.sync_source as usize != i)
+            });
         let output = if custom || voice.graph.active {
             let mut old_lanes = if voice.graph.mix.value < 1.0 || !custom {
                 Some(voice.lanes)
@@ -1034,6 +1071,11 @@ impl Runtime {
                 self.rate,
                 self.interaction_kernel,
                 self.dc,
+                external.and_then(|(inputs, demand)| {
+                    self.interop
+                        .as_mut()
+                        .map(|s| (&mut s[index], inputs, demand))
+                }),
             );
             // The graph retires at zero mix without advancing its clocks.
             // Keep the dry trajectory on that final transition sample too.

@@ -3,7 +3,7 @@
 //! DC blocker together. Every Resynth carrier owns independent history.
 use crate::resynth::{FoldShape, Waveform};
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct Wavefolder {
     pub phase: f64,
     output: f64,
@@ -13,6 +13,30 @@ pub(super) struct Wavefolder {
     bias: Option<f64>,
 }
 impl Wavefolder {
+    pub fn next_interacting(
+        &mut self,
+        increment: f64,
+        wave: Waveform,
+        shape: FoldShape,
+        controls: [f64; 2],
+        reset: Option<(f64, f64)>,
+        correction: &mut crate::Stereo,
+    ) -> f32 {
+        let mut preview = self.clone();
+        let before = self.phase;
+        let (sample, end) =
+            super::interaction::read_phase(correction, before, increment, reset, |phase| {
+                preview = self.clone();
+                preview.phase = phase.rem_euclid(1.0);
+                [preview.next(0.0, wave, shape, controls, false); 2]
+            });
+        self.phase = reset
+            .map_or(before, |(at, p)| p - increment * at)
+            .rem_euclid(1.0);
+        self.next(increment, wave, shape, controls, false);
+        self.phase = end.rem_euclid(1.0);
+        sample[0]
+    }
     pub fn next(
         &mut self,
         increment: f64,

@@ -260,6 +260,20 @@ impl Controls {
         self.unison = self.unison.clamp(1, MAX_UNISON as u8);
         self.position_env = self.position_env.min(crate::preset::MODULATORS as u8);
     }
+    /// Mixed banks have eight physical addresses and no legacy missing sentinel.
+    pub fn sanitize_mixed(&mut self) {
+        let sources = [self.fm_source.min(7), self.sync_source.min(7)];
+        self.sanitize();
+        self.fm_source = sources[0];
+        self.sync_source = sources[1];
+    }
+    pub fn set_mixed(&mut self, field: Field, value: f32) {
+        match field {
+            Field::FmSource => self.fm_source = value.round().clamp(0.0, 7.0) as u8,
+            Field::SyncSource => self.sync_source = value.round().clamp(0.0, 7.0) as u8,
+            _ => self.set(field, value),
+        }
+    }
     pub fn resolve_sources(&mut self, index: usize) {
         if self.fm_source >= 4 {
             self.fm_source = (index ^ 1) as u8;

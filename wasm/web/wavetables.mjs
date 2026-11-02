@@ -6,6 +6,8 @@ export function wavetableIds(value) {
     if (!part || typeof part !== "object") return;
     for (const oscillator of (part.wavetable?.oscillators || []).slice(0,part.wavetable?.count??4))
       if (typeof oscillator.asset_id === "string") ids.add(oscillator.asset_id);
+    for (const oscillator of part.oscillators?.slots || [])
+      if (oscillator.id && oscillator.kind === "wavetable" && typeof oscillator.asset_id === "string") ids.add(oscillator.asset_id);
     if (part.preset) visit(part.preset);
     if (part.state) visit(part.state);
     if (Array.isArray(part.timbres)) part.timbres.forEach(visit);

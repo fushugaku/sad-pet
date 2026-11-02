@@ -301,8 +301,13 @@ struct Carrier {
     audible: bool,
     folder: radias_wavefolder::Wavefolder,
     phase_initialized: bool,
+    phase_slew: super::interaction::PhaseSlew,
+    tap_decimator: Decimator,
+    transport_phase: f64,
+    phase_correction: Stereo,
 }
 
+#[derive(Clone, Copy)]
 pub(super) struct PcmLoop {
     start: f64,
     pub(super) length: f64,
@@ -394,6 +399,10 @@ impl Default for Carrier {
             audible: true,
             folder: Default::default(),
             phase_initialized: false,
+            phase_slew: Default::default(),
+            tap_decimator: Decimator::new(),
+            transport_phase: 0.0,
+            phase_correction: [0.0; 2],
         }
     }
 }
@@ -506,6 +515,22 @@ impl CarrierEnvelopes {
     }
 }
 
+struct GraphState {
+    inputs: [[super::interaction::Input; BANDS]; MAX_OSCILLATORS],
+    demand: [u16; MAX_OSCILLATORS],
+    frames: [[super::wavetable::mixed::SlotFrame; BANDS]; MAX_OSCILLATORS],
+    active: bool,
+}
+impl Default for GraphState {
+    fn default() -> Self {
+        Self {
+            inputs: [[super::interaction::Input::default(); BANDS]; MAX_OSCILLATORS],
+            demand: [0; MAX_OSCILLATORS],
+            frames: [[super::wavetable::mixed::SlotFrame::default(); BANDS]; MAX_OSCILLATORS],
+            active: false,
+        }
+    }
+}
 pub struct Resynth {
     sample_rate: f32,
     oversample: usize,
@@ -559,6 +584,7 @@ pub struct Resynth {
     /// The last frame paused every carrier, so all taps, feedback and wraps
     /// hold zero.
     taps_clear: bool,
+    graph: Box<GraphState>,
 }
 impl Resynth {
     pub fn new(sr: u32) -> Self {
@@ -609,9 +635,13 @@ impl Resynth {
             lfo: 0,
             control_epoch: 0,
             taps_clear: false,
+            graph: Box::default(),
         }
     }
     pub fn clear(&mut self) {
+        self.graph
+            .frames
+            .fill([super::wavetable::mixed::SlotFrame::default(); BANDS]);
         self.bands.clear();
         self.source_bands.clear();
         self.grain_bands.clear();
@@ -636,6 +666,10 @@ impl Resynth {
             for carrier in &mut layer.carriers {
                 carrier.pcm_phase = 0.0;
                 carrier.phase_initialized = false;
+                carrier.phase_slew.clear();
+                carrier.tap_decimator.clear();
+                carrier.phase_correction = [0.0; 2];
+                carrier.transport_phase = 0.0;
             }
         }
     }
@@ -697,7 +731,9 @@ impl Resynth {
         self.needed = std::array::from_fn(|i| {
             i < settings.count as usize
                 && settings.oscillators[i].enabled
-                && (settings.oscillators[i].level > 0.0 || self.layers[i].gain > 0.0)
+                && (settings.oscillators[i].level > 0.0
+                    || self.layers[i].gain > 0.0
+                    || self.graph.demand[i] != 0)
         });
         // Keep an unmixed source running when another oscillator uses its
         // signal or phase. Fixed-size closure also handles forward links/cycles.
@@ -879,7 +915,27 @@ impl Resynth {
         });
     }
     pub fn active(&self) -> bool {
-        self.wet > 0.0 || self.wet_target > 0.0
+        self.wet > 0.0 || self.wet_target > 0.0 || (self.settings.enabled && self.graph.active)
+    }
+    pub(crate) fn configure_interactions(
+        &mut self,
+        inputs: [[super::interaction::Input; BANDS]; MAX_OSCILLATORS],
+        demand: [u16; MAX_OSCILLATORS],
+    ) {
+        self.graph
+            .frames
+            .fill([super::wavetable::mixed::SlotFrame::default(); BANDS]);
+        if self.graph.demand != demand {
+            self.configured = false;
+        }
+        self.graph.inputs = inputs;
+        self.graph.demand = demand;
+        self.graph.active = demand.iter().any(|&d| d != 0);
+    }
+    pub(crate) fn interaction_frames(
+        &self,
+    ) -> &[[super::wavetable::mixed::SlotFrame; BANDS]; MAX_OSCILLATORS] {
+        &self.graph.frames
     }
     pub fn levels(&self) -> [f32; BANDS] {
         self.levels
@@ -952,8 +1008,44 @@ impl Resynth {
         running: bool,
         layer_filters: [u16; MAX_OSCILLATORS],
         banks: &mut [Box<Bank>],
-        mut route: Option<(&mut super::taps::Runtime, f32)>,
+        route: Option<(&mut super::taps::Runtime, f32)>,
     ) -> Stereo {
+        self.process_interacting(
+            dry,
+            source,
+            grains,
+            lfo,
+            voice_scale,
+            sample,
+            range,
+            running,
+            layer_filters,
+            banks,
+            route,
+            None,
+            0,
+        )
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn process_interacting(
+        &mut self,
+        dry: Stereo,
+        source: Stereo,
+        grains: Stereo,
+        lfo: f32,
+        voice_scale: f32,
+        sample: &SampleBuffer,
+        range: &Range<usize>,
+        running: bool,
+        layer_filters: [u16; MAX_OSCILLATORS],
+        banks: &mut [Box<Bank>],
+        mut route: Option<(&mut super::taps::Runtime, f32)>,
+        mut transports: Option<&mut super::phase_transport::Runtime>,
+        stamp: u64,
+    ) -> Stereo {
+        self.graph
+            .frames
+            .fill([super::wavetable::mixed::SlotFrame::default(); BANDS]);
         if !self.active() {
             return dry;
         }
@@ -1044,7 +1136,7 @@ impl Resynth {
         // While stopped they pause there instead of rendering silence, and later
         // resume from their own phases. During playback they always run, so
         // rendered audio is unchanged.
-        let paused = !running && self.gains.iter().all(|&gain| gain == 0.0);
+        let paused = !running && self.gains.iter().all(|&gain| gain == 0.0) && !self.graph.active;
         // A paused frame only stores zero taps for every layer; once one has,
         // the next paused frames would store the same zeros again.
         let idle = paused && self.taps_clear;
@@ -1094,6 +1186,12 @@ impl Resynth {
                     let mut waiting = None;
                     for band in 0..BANDS {
                         if !layer.carriers[band].audible {
+                            continue;
+                        }
+                        if self.graph.inputs[layer_id][band].playback.mode
+                            != crate::interaction::SyncMode::Off
+                            || layer.carriers[band].phase_slew.is_active()
+                        {
                             continue;
                         }
                         let wrap = match o.interaction_source {
@@ -1149,7 +1247,61 @@ impl Resynth {
                             self.wraps[id as usize - 2][band],
                         ),
                     };
-                    let sync = o.interaction.sync() && wrap;
+                    let interaction = self.graph.inputs[layer_id][band];
+                    let command = interaction.playback;
+                    let event = command.event_in(sub, self.oversample);
+                    let phase_override = command.mode != crate::interaction::SyncMode::Off
+                        || carrier.phase_slew.is_active();
+                    let external_sync =
+                        command.mode == crate::interaction::SyncMode::Hard && event.is_some();
+                    let sync = if command.mode != crate::interaction::SyncMode::Off {
+                        external_sync
+                    } else {
+                        o.interaction.sync() && wrap
+                    };
+                    let transporting = matches!(
+                        o.waveform,
+                        Waveform::Noise | Waveform::AudioIn | Waveform::Formant
+                    ) && (o.transport.enabled
+                        || command.mode != crate::interaction::SyncMode::Off)
+                        && transports
+                            .as_ref()
+                            .is_some_and(|p| p.contains(16 + layer_id, super::VOICES + band));
+                    let phase = if transporting {
+                        carrier.transport_phase
+                    } else if let Some(pcm) = &pcm_loop {
+                        carrier.pcm_phase / pcm.length.max(1.0)
+                    } else if o.model == Model::Wavefolder {
+                        carrier.folder.phase
+                    } else {
+                        radias_oscillator::phase(&carrier.oscillator)
+                    };
+                    if event.is_some() {
+                        carrier.phase_slew.correct(
+                            phase,
+                            command,
+                            self.sample_rate as f64 * self.oversample as f64,
+                        );
+                    }
+                    let correction = carrier.phase_slew.next();
+                    if correction != 0.0 && !transporting {
+                        if let Some(pcm) = &pcm_loop {
+                            carrier.pcm_phase = (carrier.pcm_phase + correction * pcm.length)
+                                .rem_euclid(pcm.length.max(1.0));
+                        } else if o.model == Model::Wavefolder {
+                            carrier.folder.phase =
+                                (carrier.folder.phase + correction).rem_euclid(1.0);
+                        } else {
+                            let offset = (-correction * 4294967296.0) as i64 as u32;
+                            carrier.oscillator.phase.0 =
+                                carrier.oscillator.phase.0.wrapping_add(offset);
+                            carrier.oscillator.modulated_phase.0 =
+                                carrier.oscillator.modulated_phase.0.wrapping_add(offset);
+                            for phase in &mut carrier.oscillator.unison.phases {
+                                phase.0 = phase.0.wrapping_add(offset);
+                            }
+                        }
+                    }
                     let modulator = if o.cross_source == 0 {
                         mono(match o.cross_input {
                             CrossInput::Analysis => *analyzed_band,
@@ -1159,21 +1311,71 @@ impl Resynth {
                     } else {
                         self.feedback[o.cross_source as usize - 1][band]
                     };
-                    let (mut raw, wrapped) = match o.waveform {
+                    let (mut raw, mut wrapped) = match o.waveform {
                         Waveform::AudioIn => (
                             analyzed_band.map(|x| x * self.sensitivity),
                             sub == 0 && analysis_wraps[band],
                         ),
                         Waveform::Pcm => {
-                            if sync {
+                            if sync && !external_sync {
                                 carrier.pcm_phase = 0.0;
                             }
                             let pcm_loop = pcm_loop.as_ref().unwrap();
                             let wrapped = carrier.pcm_phase + carrier.pcm_rate >= pcm_loop.length;
-                            (pcm_loop.read(carrier, sample, range), wrapped)
+                            (
+                                if external_sync || carrier.phase_correction != [0.0; 2] {
+                                    let (value, end) = super::interaction::read_phase(
+                                        &mut carrier.phase_correction,
+                                        carrier.pcm_phase,
+                                        carrier.pcm_rate,
+                                        external_sync.then(|| {
+                                            (event.unwrap(), command.phase * pcm_loop.length)
+                                        }),
+                                        |p| {
+                                            let mut position =
+                                                p.rem_euclid(pcm_loop.length.max(1.0));
+                                            pcm_loop.read_at(
+                                                &mut position,
+                                                0.0,
+                                                carrier.pcm_mip,
+                                                sample,
+                                                range,
+                                            )
+                                        },
+                                    );
+                                    carrier.pcm_phase = end.rem_euclid(pcm_loop.length.max(1.0));
+                                    value
+                                } else {
+                                    pcm_loop.read(carrier, sample, range)
+                                },
+                                wrapped,
+                            )
                         }
                         _ if o.model == Model::Wavefolder => {
-                            let (x, wrapped) = folds[band];
+                            let (x, wrapped) = if phase_override {
+                                let before = carrier.folder.phase;
+                                let x = if external_sync || carrier.phase_correction != [0.0; 2] {
+                                    carrier.folder.next_interacting(
+                                        carrier.increment.0 as f64 / 4294967296.0,
+                                        o.waveform,
+                                        o.fold_shape,
+                                        layer.fold_controls,
+                                        external_sync.then(|| (event.unwrap(), command.phase)),
+                                        &mut carrier.phase_correction,
+                                    )
+                                } else {
+                                    carrier.folder.next(
+                                        carrier.increment.0 as f64 / 4294967296.0,
+                                        o.waveform,
+                                        o.fold_shape,
+                                        layer.fold_controls,
+                                        sync && !external_sync,
+                                    )
+                                };
+                                (x, carrier.folder.phase < before)
+                            } else {
+                                folds[band]
+                            };
                             ([x; 2], wrapped)
                         }
                         _ => {
@@ -1185,7 +1387,7 @@ impl Resynth {
                             let phase = carrier.oscillator.phase;
                             let x = carrier
                                 .controller
-                                .next_with_sync(
+                                .next_with_fractional_reset(
                                     &mut carrier.oscillator,
                                     layer.program,
                                     carrier.increment,
@@ -1197,8 +1399,18 @@ impl Resynth {
                                     &self.waveform,
                                     frame,
                                     layer_id * BANDS + band,
-                                    sync,
+                                    sync && !transporting,
                                     self.control_epoch,
+                                    if external_sync {
+                                        radias_oscillator::reset_word(command.phase)
+                                    } else {
+                                        0
+                                    },
+                                    if external_sync && !transporting {
+                                        event
+                                    } else {
+                                        None
+                                    },
                                 )
                                 .0 as f32
                                 / 1073741824.0;
@@ -1211,10 +1423,94 @@ impl Resynth {
                             ([x; 2], wrapped)
                         }
                     };
+                    if let Some(pool) = &mut transports {
+                        let scale = if o.model == Model::Radias
+                            && !matches!(o.waveform, Waveform::AudioIn | Waveform::Pcm)
+                        {
+                            0.5
+                        } else {
+                            1.0
+                        };
+                        if sub + 1 == self.oversample {
+                            pool.capture(
+                                16 + layer_id,
+                                super::VOICES + band,
+                                raw.map(|x| x * scale),
+                                stamp,
+                            );
+                        }
+                        if transporting {
+                            let hz = carrier.increment.0 as f64 / 4294967296.0
+                                * self.sample_rate as f64
+                                * self.oversample as f64;
+                            let advance = carrier.increment.0 as f64 / 4294967296.0
+                                * o.transport.rate as f64
+                                + correction;
+                            let (value, end) = super::interaction::read_phase(
+                                &mut carrier.phase_correction,
+                                carrier.transport_phase,
+                                advance,
+                                external_sync.then(|| (event.unwrap(), command.phase)),
+                                |p| {
+                                    pool.read(
+                                        16 + layer_id,
+                                        super::VOICES + band,
+                                        p,
+                                        hz,
+                                        self.sample_rate as f64 * self.oversample as f64,
+                                        o.waveform,
+                                    )
+                                    .unwrap_or([0.0; 2])
+                                },
+                            );
+                            raw = value.map(|x| x / scale);
+                            wrapped = end >= 1.0;
+                            carrier.transport_phase = end.rem_euclid(1.0);
+                        }
+                    }
                     self.wraps[layer_id][band] = carrier.phase_initialized && (sync || wrapped);
                     carrier.phase_initialized = true;
-                    if o.interaction.ring() {
+                    let scale = if o.waveform == Waveform::Pcm
+                        || o.waveform == Waveform::AudioIn
+                        || o.model == Model::Wavefolder
+                    {
+                        0.5
+                    } else {
+                        0.25
+                    };
+                    let generation = (raw[0] + raw[1]) * scale;
+                    if o.interaction.ring() && interaction.depth == 0.0 {
                         raw = raw.map(|x| x * reference.clamp(-1.0, 1.0));
+                    }
+                    if self.graph.active && self.graph.demand[layer_id] & (1 << band) != 0 {
+                        raw = raw.map(|x| x * interaction.factor_at(sub, self.oversample));
+                        let tap = [generation, (raw[0] + raw[1]) * scale];
+                        let reduced = if self.oversample == 2 {
+                            carrier.tap_decimator.next(tap)
+                        } else {
+                            tap
+                        };
+                        let outgoing = &mut self.graph.frames[layer_id][band];
+                        outgoing.generation = [reduced[0]; 2];
+                        outgoing.output = [reduced[1]; 2];
+                        let step = if let Some(pcm) = pcm_loop {
+                            carrier.pcm_rate / pcm.length.max(1.0)
+                        } else {
+                            carrier.increment.0 as f64 / 4294967296.0
+                                * if transporting {
+                                    o.transport.rate as f64
+                                } else {
+                                    1.0
+                                }
+                        } + correction;
+                        if !sync
+                            && phase + step >= 1.0
+                            && step > 0.0
+                            && (o.waveform != Waveform::AudioIn || transporting)
+                        {
+                            outgoing.wrap =
+                                Some((sub as f64 + (1.0 - phase) / step) / self.oversample as f64);
+                        }
                     }
                     // Interaction taps precede envelope, oscillator level and
                     // pan. Ordered current/previous taps permit feedback links.

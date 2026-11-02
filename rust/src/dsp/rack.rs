@@ -31,6 +31,8 @@ pub(super) struct Runtime {
     gains: [Stereo; STRIPS],
     /// Each chain's loudest sample since the host last read it.
     peaks: [f32; STRIPS],
+    capture: [f32; crate::oscillators::SLOTS],
+    capture_initialized: bool,
     /// The Sampler and Vocal modules are in the rack.
     kit: bool,
     vocal: bool,
@@ -55,6 +57,10 @@ impl Runtime {
             targets,
             gains: previous.map_or(targets, |p| p.gains),
             peaks: previous.map_or([0.0; STRIPS], |p| p.peaks),
+            capture: previous.map_or([1.0; crate::oscillators::SLOTS], |p| p.capture),
+            capture_initialized: previous.is_some_and(|p| {
+                p.capture_initialized && p.plan.iter().any(|s| s.module == Module::Oscillators)
+            }),
             kit: settings.has(Module::Sampler),
             vocal: settings.has(Module::Vocal),
             equalizers: plan
@@ -90,6 +96,8 @@ struct Flow {
     source: Stereo,
     /// The chain's grains, for Resynth's Grains input.
     grains: Option<Stereo>,
+    bypass_notes: [Stereo; VOICES],
+    split: bool,
 }
 
 impl Engine {
@@ -125,6 +133,19 @@ impl Engine {
             flow.signal = sum;
             flow.per_note = false;
         }
+    }
+    fn rack_merge_bypass(&self, flow: &mut Flow) {
+        if !flow.split {
+            return;
+        }
+        for i in bits(self.sounding) {
+            let gain = self.voices[i].value.max(0.0);
+            for c in 0..2 {
+                flow.signal[c] += flow.bypass_notes[i][c] * gain;
+            }
+        }
+        flow.split = false;
+        flow.bypass_notes.fill([0.0; 2]);
     }
 
     /// The notes' signals as one, each weighed by its VCA and the sum by
@@ -269,21 +290,12 @@ impl Engine {
             self.update_modulation();
         }
         let bass = self.render_tb303();
-        let Some(rack) = self.rack else {
+        let Some(mut rack) = self.rack else {
             return [0.0; 2];
         };
-        self.grain_clock += self.grain_step;
         // A live input for effects only plays without grains.
         let effects_only = live && self.live_input.as_ref().is_some_and(|i| i.effects_only);
-        if rack.grains
-            && !bypass
-            && !effects_only
-            && self.grain_density > 0.0
-            && self.grain_clock >= 1.0
-        {
-            self.grain_clock = self.grain_clock.fract();
-            self.spawn();
-        }
+        self.schedule_grains(rack.grains && !bypass && !effects_only);
         self.smooth_mix =
             fast::flush(self.smooth_mix + (self.modulated.params.mix - self.smooth_mix) * 0.002);
         let dry_scale = if voice_sum > 0.0 {
@@ -300,6 +312,8 @@ impl Engine {
             signal: [0.0; 2],
             source: [0.0; 2],
             grains: None,
+            bypass_notes: [[0.0; 2]; VOICES],
+            split: false,
         };
         let mut mixer = [0.0; 2];
         let mut out = [0.0; 2];
@@ -310,6 +324,7 @@ impl Engine {
                 step.enabled && (!bypass || step.module.source() || step.module == Module::Mixer);
             if step.module.source() || step.module == Module::Mixer {
                 self.rack_collapse(&mut flow);
+                self.rack_merge_bypass(&mut flow);
                 match flow.chain {
                     Chain::Source(source) => {
                         let index = strip_index(source);
@@ -342,6 +357,7 @@ impl Engine {
                 continue;
             }
             match step.module {
+                Module::Connections => {}
                 Module::Sample => {
                     let source = file.map(|x| x * input_gain);
                     flow.source = source;
@@ -357,7 +373,7 @@ impl Engine {
                 }
                 Module::Synth => {
                     flow.source = [0.0; 2];
-                    let Some(synth) = &mut self.synth else {
+                    let Some(synth) = &mut self.oscillator_engine.synth else {
                         continue;
                     };
                     synth.begin_frame(self.lfo_values[0]);
@@ -366,31 +382,72 @@ impl Engine {
                     }
                     flow.per_note = true;
                     for i in bits(self.sounding) {
-                        let voice = &self.voices[i];
-                        if voice.value <= 0.0 {
+                        let gain = self.voices[i].value;
+                        if gain <= 0.0 {
                             continue;
                         }
-                        let note = voice.note as f32
-                            + self.bend[voice.channel as usize]
-                                * self.modulated.params.midi_pitchbend_range;
-                        let frame =
-                            synth.render(i, voice.generation, note, &self.sample, &self.file_range);
+                        let frame = self.render_synth_voice(i);
                         flow.notes[i] = frame.map(|x| x * input_gain);
                         for c in 0..2 {
-                            flow.source[c] += flow.notes[i][c] * voice.value;
+                            flow.source[c] += flow.notes[i][c] * gain;
                         }
                     }
                 }
                 Module::Wavetable => {
                     flow.source = [0.0; 2];
-                    let Some(wavetable) = &mut self.wavetable else {
+                    let Some(wavetable) = &mut self.oscillator_engine.wavetable else {
                         continue;
                     };
                     wavetable.begin_frame(on);
-                    if !wavetable.active() {
+                    if !wavetable.active()
+                        && (self.oscillator_engine.graph.demanded
+                            | self.oscillator_engine.graph.targets)
+                            & (15 << 12)
+                            == 0
+                    {
                         continue;
                     }
                     flow.per_note = true;
+                    for i in bits(self.sounding) {
+                        let gain = self.voices[i].value;
+                        if gain <= 0.0 {
+                            continue;
+                        }
+                        let frame = self.render_wavetable_voice(i);
+                        flow.notes[i] = frame.map(|x| x * input_gain);
+                        for c in 0..2 {
+                            flow.source[c] += flow.notes[i][c] * gain;
+                        }
+                    }
+                }
+                Module::Oscillators => {
+                    flow.source = [0.0; 2];
+                    let split = on
+                        && !bypass
+                        && self.preset.grain_capture.mode == crate::interaction::CaptureMode::Osc
+                        && rack.plan.iter().any(|s| {
+                            s.module == Module::Grains && s.enabled && s.chain == step.chain
+                        });
+                    let selected = self.preset.grain_capture.slots;
+                    for slot in 0..crate::oscillators::SLOTS {
+                        let target = f32::from(!split || selected & (1 << slot) != 0);
+                        if rack.capture_initialized {
+                            rack.capture[slot] += (target - rack.capture[slot]).clamp(
+                                -1.0 / (self.sample_rate as f32 * 0.005),
+                                1.0 / (self.sample_rate as f32 * 0.005),
+                            );
+                        } else {
+                            rack.capture[slot] = target;
+                        }
+                    }
+                    rack.capture_initialized = true;
+                    let owner = &mut self.oscillator_engine;
+                    let Some(mixed) = &mut owner.mixed else {
+                        continue;
+                    };
+                    mixed.begin_frame(on);
+                    flow.per_note = true;
+                    flow.split = split || rack.capture.iter().any(|&v| v < 1.0);
                     for i in bits(self.sounding) {
                         let voice = &self.voices[i];
                         if voice.value <= 0.0 {
@@ -399,16 +456,43 @@ impl Engine {
                         let note = voice.note as f32
                             + self.bend[voice.channel as usize]
                                 * self.modulated.params.midi_pitchbend_range;
-                        let frame = wavetable.render_modulated(
+                        owner.graph.prepare_voice(i, voice.generation);
+                        let inputs = std::array::from_fn(|slot| owner.graph.input(slot, i));
+                        let (frames, into, bypass) = mixed.render(
                             i,
                             voice.generation,
                             note,
                             &voice.env_values,
                             &self.voice_lfo_values[i],
+                            inputs,
+                            (owner.graph.demanded | owner.graph.targets) as u8,
+                            owner.graph.demanded as u8,
+                            rack.capture,
+                            &self.sample,
+                            &self.file_range,
+                            self.modulated.params.sample_root_note,
+                            owner.phase_adapters.as_deref_mut(),
+                            self.frame,
                         );
-                        flow.notes[i] = frame.map(|x| x * input_gain);
-                        for c in 0..2 {
-                            flow.source[c] += flow.notes[i][c] * voice.value;
+                        for (slot, frame) in frames.into_iter().enumerate() {
+                            owner.graph.publish(
+                                slot,
+                                i,
+                                frame.generation,
+                                frame.output,
+                                voice.value,
+                            );
+                            if let Some(at) = frame.wrap {
+                                owner.graph.natural_event(slot, i, at, frame.latency);
+                            }
+                        }
+                        flow.notes[i] = into.map(|x| x * input_gain);
+                        flow.bypass_notes[i] = bypass.map(|x| x * input_gain);
+                        flow.split |= bypass != [0.0; 2];
+                        // Source follows the selected branch until the Granular
+                        // merge. Processors between them must not hear bypass.
+                        for (source, sample) in flow.source.iter_mut().zip(into) {
+                            *source += sample * input_gain * voice.value;
                         }
                     }
                 }
@@ -500,7 +584,7 @@ impl Engine {
                             g
                         }
                     });
-                    let output = self.resynth.process_with_filters(
+                    let output = self.oscillator_engine.resynth.process_interacting(
                         mean,
                         flow.source,
                         grains,
@@ -517,6 +601,8 @@ impl Engine {
                         ],
                         &mut self.filter_banks,
                         Some((&mut self.taps, weight)),
+                        self.oscillator_engine.phase_adapters.as_deref_mut(),
+                        self.frame,
                     );
                     let output = filter_slots::route_chain(
                         &mut self.filter_banks,
@@ -543,7 +629,7 @@ impl Engine {
                 Module::Resynth => {
                     self.rack_collapse(&mut flow);
                     let input = flow.signal;
-                    let output = self.resynth.process_with_filters(
+                    let output = self.oscillator_engine.resynth.process_interacting(
                         input,
                         flow.source,
                         flow.grains.unwrap_or(input),
@@ -560,6 +646,8 @@ impl Engine {
                         ],
                         &mut self.filter_banks,
                         Some((&mut self.taps, 1.0)),
+                        self.oscillator_engine.phase_adapters.as_deref_mut(),
+                        self.frame,
                     );
                     let output = filter_slots::route_chain(
                         &mut self.filter_banks,
@@ -607,6 +695,7 @@ impl Engine {
         }
         // The last chain ends at the output.
         self.rack_collapse(&mut flow);
+        self.rack_merge_bypass(&mut flow);
         match flow.chain {
             Chain::Source(source) => {
                 let index = strip_index(source);
@@ -622,8 +711,10 @@ impl Engine {
             }
             Chain::None => {}
         }
-        if let Some(rack) = &mut self.rack {
-            rack.peaks = peaks;
+        if let Some(active) = &mut self.rack {
+            active.peaks = peaks;
+            active.capture = rack.capture;
+            active.capture_initialized = rack.capture_initialized;
         }
         self.finish_frame(out, None, input_gain, source_rate)
     }
@@ -737,6 +828,7 @@ impl Engine {
             self.frozen_center -= shift;
             for slot in self.live_grain_slots() {
                 self.grains[slot].position -= shift;
+                self.grains[slot].anchor -= shift;
             }
         }
         let (voice_frames, group_sent) = self.render_grains(true);
@@ -758,6 +850,7 @@ impl Engine {
         let output = std::array::from_fn(|c| input[c] * (1.0 - mix) + grains[c] * norm * mix);
         flow.grains = Some(grains.map(|x| x * norm));
         flow.signal = self.tap(Stage::Grains, input, output);
+        self.rack_merge_bypass(flow);
     }
 
     /// Each advanced group's grains to its bus, before Dry/Wet.

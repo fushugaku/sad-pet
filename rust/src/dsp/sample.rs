@@ -478,6 +478,18 @@ impl LiveInput {
     }
     fn with_capacity(sample_rate: u32, effects_only: bool, seconds: usize, window: f32) -> Self {
         let capacity = sample_rate as usize * seconds;
+        let window = ((window.clamp(0.125, seconds as f32) * sample_rate as f32).round() as usize)
+            .clamp(1, capacity);
+        Self::with_frames(sample_rate, effects_only, capacity, window)
+    }
+    /// A bounded phaseable window; no long drum/rack history is reserved.
+    pub(crate) fn for_transport(sample_rate: u32, seconds: f32) -> Self {
+        let frames = (sample_rate as f32 * seconds.clamp(0.005, 0.25))
+            .round()
+            .max(1.0) as usize;
+        Self::with_frames(sample_rate, false, frames, frames)
+    }
+    fn with_frames(sample_rate: u32, effects_only: bool, capacity: usize, window: usize) -> Self {
         let mut length = capacity;
         let mut levels = Vec::with_capacity(7);
         for _ in 0..7 {
@@ -495,8 +507,7 @@ impl LiveInput {
             write: 0,
             captured: 0,
             total: capacity as u64,
-            window: ((window.clamp(0.125, seconds as f32) * sample_rate as f32).round() as usize)
-                .clamp(1, capacity),
+            window,
             waveform_rebuild: None,
             lowpass: [[[0.0; 2]; 2]; 6],
         }
@@ -599,6 +610,9 @@ impl LiveInput {
     }
     pub fn seconds(&self) -> f64 {
         self.captured.min(self.window) as f64 / self.sample.sample_rate as f64
+    }
+    pub(crate) fn window_full(&self) -> bool {
+        self.captured >= self.window
     }
 
     /// Return only captured frames, oldest first, including after a ring wrap.
@@ -1114,7 +1128,10 @@ fn interpolated<const N: usize, const MONO: bool>(
     // Most grain reads are inside the region. Boundary reads retain the exact
     // wrap used for tiny selections, negative positions and reverse grains.
     if first >= range.start as i64 && base + half < range.end as i64 {
-        let i = first as usize;
+        // Rolling histories use logical coordinates beyond the physical ring.
+        // Once the complete footprint is inside the logical selection, only
+        // the physical seam can prevent a contiguous read.
+        let i = first as usize % data.len();
         // One bounds check for the taps instead of one per frame.
         if let Some(frames) = data.get(i..i + N) {
             return interpolate::<N, MONO>(frames.try_into().unwrap(), fraction, rows);
@@ -1147,6 +1164,30 @@ pub(crate) fn wrap_position(position: f64, length: f64) -> f64 {
 #[cfg(test)]
 mod preparation_tests {
     use super::*;
+    #[test]
+    fn logical_rolling_regions_read_the_same_bits_across_the_physical_ring() {
+        let data: Vec<Stereo> = (0..127)
+            .map(|i| [(i as f32 * 0.37).sin(), (i as f32 * 0.19).cos()])
+            .collect();
+        for range in [0..127, 90..217, 254..381, 100..107] {
+            for base in range.clone() {
+                for fraction in [0.0, 0.31, 0.999] {
+                    let first = base as i64 - (HALF - 1);
+                    let frames = std::array::from_fn(|i| {
+                        data[(range.start
+                            + (first + i as i64 - range.start as i64).rem_euclid(range.len() as i64)
+                                as usize)
+                            % data.len()]
+                    });
+                    let expected = interpolate::<TAPS, false>(&frames, fraction, &KERNEL);
+                    assert_eq!(
+                        interpolated::<TAPS, false>(&data, base as i64, fraction, &range, &KERNEL),
+                        expected
+                    );
+                }
+            }
+        }
+    }
     #[test]
     fn bounded_input_preparation_matches_the_original_history_and_mips() {
         for rate in [8000, 44_100, 96_000] {

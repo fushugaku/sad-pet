@@ -835,7 +835,16 @@ export class BrowserBackend {
         || (route === "/api/transport" && data?.playing)) await this.resume();
       let result,
         mime = "application/json";
-      if (route === "/api/diagnostics/memory") {
+      if (route === "/api/control/request" && data?.path?.startsWith("/api/wavetables")) {
+        const nested=data.path,payload=data.data;
+        if(["/api/wavetables/select","/api/wavetables/audition","/api/wavetables/layers"].includes(nested)) {
+          if(nested.endsWith("audition"))await this.resume();
+          result=await this.stageWavetables(payload.id?[payload.id]:payload.action==="add"?["factory:wt-basic-morph:v1"]:[],
+            ()=>this.audio.call("request",data,[],route));
+        } else result=await this.wavetableLibrary(nested,payload);
+      } else if(route === "/api/control/request" && data?.path === "/api/preset" && data.data) {
+        result=await this.stageWavetables(wavetableIds(data.data),()=>this.audio.call("request",data,[],route));
+      } else if (route === "/api/diagnostics/memory") {
         const roles = Object.fromEntries(await Promise.all(["audio", "worker", "telemetry", "vocal", "recorder"]
           .map(async (name) => [name, await this[name].call("memory")] )));
         const stats = this.context.playbackStats || this.context.playoutStats;

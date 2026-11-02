@@ -342,14 +342,25 @@ impl Pool {
     /// Only referenced user data travels with a sound. Both oscillators,
     /// including a disabled one, retain their exact asset when recalled.
     pub fn manifest(&self, settings: Option<&super::Settings>) -> Result<Vec<Arc<Asset>>, String> {
-        let mut used = BTreeMap::new();
         if let Some(settings) = settings {
             settings.validate_version()?;
-            for oscillator in settings.oscillators.iter().take(settings.count as usize) {
-                let asset = self.resolve(&oscillator.asset_id)?;
-                if asset.id.starts_with("user:") {
-                    used.entry(asset.id.clone()).or_insert(asset);
-                }
+        }
+        self.manifest_ids(
+            settings
+                .into_iter()
+                .flat_map(|s| s.oscillators.iter().take(s.count as usize))
+                .map(|s| s.asset_id.as_str()),
+        )
+    }
+    pub fn manifest_ids<'a>(
+        &self,
+        ids: impl IntoIterator<Item = &'a str>,
+    ) -> Result<Vec<Arc<Asset>>, String> {
+        let mut used = BTreeMap::new();
+        for id in ids {
+            let asset = self.resolve(id)?;
+            if asset.id.starts_with("user:") {
+                used.entry(asset.id.clone()).or_insert(asset);
             }
         }
         Ok(used.into_values().collect())

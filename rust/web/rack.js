@@ -29,6 +29,7 @@
   /** What a Rack can hold, as the module menu lists it. Each at most once,
    * but for the EQ: up to MAX_EQS of those, each with its number. */
   const MODULES = [
+    { key: "oscillators", label: "Oscillators", group: "Sources", hint: "Eight mixed RADIAS, wavefolder, PCM or wavetable oscillators" },
     { key: "sample", label: "Sample", group: "Sources",
       hint: "The loaded file, played by the notes" },
     { key: "synth", label: "Synth", group: "Sources",
@@ -55,14 +56,16 @@
     { key: "post_fx", label: "FX B", group: "Effects", hint: "A chain of up to 12 effects" },
     { key: "mixer", label: "Mixer", group: "Routing",
       hint: "Where the chains above meet: level, pan, mute, solo" },
+    { key: "connections", label: "Connections", group: "Routing",
+      hint: "Ring and Sync between oscillators and grain groups" },
   ];
   const INFO = Object.fromEntries(MODULES.map((m) => [m.key, m]));
   /** The sources in Mixer strip order (rack::STRIP_SOURCES), as the host's
    * meters list them. */
-  const SOURCES = ["sample", "synth", "drums", "sampler", "vocal", "tb303", "wavetable"];
+  const SOURCES = ["sample", "synth", "drums", "sampler", "vocal", "tb303", "wavetable", "oscillators"];
   /** Sources whose settings a removed module leaves for its undo. */
-  const KEPT = ["drums", "synth", "sampler", "vocal", "tb303", "wavetable"];
-  const CHAINS = { sample: "Sample", synth: "Synth", drums: "Drums", sampler: "Sampler", vocal: "Vocal", tb303: "303 Bass", wavetable: "Wavetable", mix: "Mix" };
+  const KEPT = ["drums", "synth", "sampler", "vocal", "tb303", "wavetable", "oscillators"];
+  const CHAINS = { sample: "Sample", synth: "Synth", drums: "Drums", sampler: "Sampler", vocal: "Vocal", tb303: "303 Bass", wavetable: "Wavetable", oscillators: "Oscillators", mix: "Mix" };
   /** The section tap (Output row) of each processor. */
   const STAGES = { source_fx: "source", grains: "grains", resynth: "resynth",
     pre_fx: "pre_fx", filters: "filters", post_fx: "post_fx" };
@@ -86,10 +89,11 @@
       const enabled = slot.enabled !== false;
       const step = { module: slot.module, key: keyOf(slot), id: slot.id ?? 0, enabled, chain,
         perNote: false, readsFile: false, mixed: false };
+      if (slot.module === "connections") return step;
       if (SOURCES.includes(slot.module)) {
         chain = step.chain = slot.module;
         // Drums, kit and voice are streams with no notes of their own.
-        perNote = step.perNote = ["sample","synth","wavetable"].includes(slot.module) && enabled;
+        perNote = step.perNote = ["sample","synth","wavetable","oscillators"].includes(slot.module) && enabled;
         step.mixed = mixer > i;
       } else if (slot.module === "mixer") {
         chain = step.chain = "mix";
@@ -160,6 +164,8 @@
         sample: this.sampleCard,
         synth: $("synth-engine"),
         wavetable: $("wavetable-engine"),
+        oscillators: $("oscillator-engine"),
+        connections: $("interaction-engine"),
         drums: $("drum-machine"),
         sampler: $("sampler-editor"),
         vocal: $("vocal-editor"),
@@ -189,7 +195,7 @@
           : "A Rack's voice sings in the browser version for now; here this module is silent."));
         this.sections[key] = card;
       }
-      for (const key of SOURCES.filter((k) => !this.unavailable.has(k)))
+      for (const key of SOURCES.filter((k) => !this.unavailable.has(k)&&!["synth","wavetable"].includes(k)))
         this.empty.querySelector(".rack-empty-sources").append(
           button(`+ ${INFO[key].label}`, `Add ${INFO[key].label}`, () => this.add(key, 0)));
       for (const [key, section] of Object.entries(this.sections)) {
@@ -254,7 +260,7 @@
       (h2.parentElement === heading ? summary : h2.parentElement).after(spacer);
       const tools = el("div", "rack-tools");
       // Resynth keeps its own power button; the Mixer has none.
-      const power = key === "resynth" || key === "mixer" ? null
+      const power = ["resynth", "mixer", "connections"].includes(key) ? null
         : button("", `${label} on`, () => this.toggle(key), "power rack-power");
       if (power) {
         power.innerHTML = POWER;
@@ -326,6 +332,7 @@
         !!preset.synth,
         !!preset.tb303,
         !!preset.wavetable,
+        !!preset.oscillators,
       ]);
       if (layout !== this.layout) {
         this.layout = layout;
@@ -352,7 +359,7 @@
         const section = this.sections[step.key];
         section.classList.remove("rack-absent");
         section.classList.add("rack-module");
-        section.classList.toggle("rack-idle", step.chain === null);
+        section.classList.toggle("rack-idle", step.chain === null && step.module !== "connections");
         section.dataset.chain = step.chain ?? "none";
         nodes.push(section);
       });
@@ -477,7 +484,7 @@
         const r = section.rack;
         const label = labelOf(step.key);
         if (r.text) r.text.nodeValue = `${label} `;
-        const on = step.module === "resynth" ? !!preset.resynth?.enabled : step.enabled;
+        const on = step.module === "connections" || (step.module === "resynth" ? !!preset.resynth?.enabled : step.enabled);
         section.classList.toggle("rack-off", !on);
         if (r.power) {
           r.power.setAttribute("aria-pressed", String(on));
@@ -491,7 +498,7 @@
         r.fold.setAttribute("aria-expanded", String(!folded));
         r.fold.setAttribute("aria-label", `${folded ? "Unfold" : "Fold"} ${label}`);
         r.fold.title = r.fold.getAttribute("aria-label");
-        this.setText(r.summary, step.chain === null ? "No sound reaches it — move it under a source"
+        this.setText(r.summary, step.chain === null && step.module !== "connections" ? "No sound reaches it — move it under a source"
           : folded ? this.summary(step, preset) : "");
       });
       const allFolded = count > 0 && steps.every((s) => this.folded.has(`${id}:${s.key}`));
@@ -535,6 +542,10 @@
         }
         case "grains":
           return `${Math.round((preset.params.mix ?? 1) * 100)}% wet`;
+        case "connections": {
+          const n = (preset.interactions?.routes ?? []).filter(r => r.enabled && (r.ring > 0 || r.sync !== "off")).length;
+          return `${n} ${n === 1 ? "connection" : "connections"}`;
+        }
         case "filters":
           return { single: "Filter 1", serial: "Filter 1 → 2", parallel: "Filter 1 + 2" }[preset.params.filter_routing] ?? "";
         case "resynth":
@@ -574,7 +585,7 @@
         for (const step of steps) {
           if (step.module === source) seen = true;
           else if (seen && (SOURCES.includes(step.module) || step.module === "mixer")) break;
-          else if (seen) chain.push(labelOf(step.key));
+          else if (seen && step.module !== "connections") chain.push(labelOf(step.key));
         }
         this.stripViews.push(this.stripView(source, chain));
       }
@@ -760,6 +771,7 @@
       const preset = this.preset();
       const stash = this.stash.get(this.timbre());
       if (KEPT.includes(key) && stash?.[key]) preset[key] = stash[key];
+      if (key === "oscillators" && !preset.oscillators) preset.oscillators = window.SadOscillators.defaults();
       if (key === "wavetable" && !preset.wavetable) preset.wavetable = window.SadWavetable.defaults();
       const source = SOURCES.includes(key) && key !== "sample";
       this.hideUndo();
@@ -883,7 +895,7 @@
       const eqs = this.modules().filter((m) => m.module === "eq").length;
       this.menu.replaceChildren();
       let group = "";
-      for (const module of MODULES.filter((m) => !this.unavailable.has(m.key))) {
+      for (const module of MODULES.filter((m) => !this.unavailable.has(m.key)&&(!["synth","wavetable"].includes(m.key)||present.has(m.key)))) {
         if (module.group !== group) {
           group = module.group;
           this.menu.append(el("div", "rack-menu-group", group));

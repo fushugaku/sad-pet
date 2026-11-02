@@ -126,6 +126,9 @@ impl Host {
         state["rack_peaks"] = json!(e.rack_peaks().unwrap_or_default());
         state["wavetable_positions"] = json!(e.wavetable_positions());
         state["wavetable_motion"] = json!(e.wavetable_motion());
+        state["oscillator_positions"] = json!(e.oscillator_positions());
+        state["oscillator_motion"] = json!(e.oscillator_motion());
+        state["file_source"] = json!({"sample_name":e.sample.name,"sample_id":e.sample.library_id,"sample_seconds":e.sample.duration(),"sample_frames":e.sample.len()});
         if self.engine.preset.drums.is_some() && self.engine.preset.rack.is_none() {
             state["playing"] = json!(self.engine.drum_view().playing);
         }
@@ -179,6 +182,12 @@ impl Host {
                     &preset.wavetable_pool,
                     self.rate,
                 )?;
+                preset.oscillator_runtime.prepare(
+                    preset.oscillators.as_deref(),
+                    &preset.wavetable_pool,
+                    self.rate,
+                )?;
+                preset.prepare_phase_transports(self.rate)?;
                 self.engine.set_preset(preset);
                 let size = rmp_serde::to_vec_named(&self.engine.preset)
                     .map_err(|e| e.to_string())?

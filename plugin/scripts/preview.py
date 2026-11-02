@@ -183,7 +183,7 @@ def main():
             name = url.path.rsplit("/", 1)[-1] or "index.html"
             paths = {
                 "index.html": PROJECT / "rust/web/index.html",
-                **{name: PROJECT / "rust/web" / name for name in ["app.js", "style.css", "library.js", "selection.js", "presets.js", "sequence.js", "panels.js", "eq.js", "rack.js", "midi.js", "clock.js", "modulation.js"]},
+                **{name: PROJECT / "rust/web" / name for name in ["app.js", "control.js", "style.css", "library.js", "selection.js", "presets.js", "sequence.js", "panels.js", "tb303.js", "wavetable.js", "wavetable-tools.js", "wavetable.css", "oscillators.js", "oscillators.css", "vocal.js", "vocal.css", "sampler.js", "sampler-library.js", "sampler.css", "eq.js", "rack.js", "midi.js", "clock.js", "modulation.js"]},
                 **{name: ROOT / "web" / name for name in ["plugin-backend.js", "plugin.css", "standalone-backend.js", "native-library.js", "standalone.css"]},
             }
             file = paths.get(name)

@@ -117,6 +117,47 @@ fn sample_grains_filters_and_fx_play_a_granular_timbre_bit_for_bit() {
 }
 
 #[test]
+fn connections_module_is_transparent_at_every_rack_position() {
+    let p = rack_preset(
+        &[
+            Module::Sample,
+            Module::Grains,
+            Module::Filters,
+            Module::Mixer,
+            Module::PostFx,
+        ],
+        sound(|_| {}),
+    );
+    let rack = p.rack.as_ref().unwrap();
+    let expected_plan: Vec<_> = rack.plan().iter().collect();
+    let expected = bits(&play(&mut start(p.clone())));
+    for at in 0..=rack.modules.len() {
+        let mut with_panel = p.clone();
+        let settings = with_panel.rack.as_mut().unwrap();
+        settings.modules.insert(
+            at,
+            Slot {
+                module: Module::Connections,
+                enabled: true,
+                id: 0,
+            },
+        );
+        let loaded: Preset =
+            serde_json::from_str(&serde_json::to_string(&with_panel).unwrap()).unwrap();
+        let settings = loaded.rack.as_ref().unwrap();
+        assert!(settings.has(Module::Connections));
+        assert!(settings.grains_read_file(), "position {at}");
+        assert!(settings.history().is_none());
+        assert_eq!(
+            settings.plan().iter().collect::<Vec<_>>(),
+            expected_plan,
+            "position {at}"
+        );
+        assert_eq!(bits(&play(&mut start(loaded))), expected, "position {at}");
+    }
+}
+
+#[test]
 fn a_synth_over_its_filters_plays_the_synth_engine() {
     let edit = sound(|p| p.color_chain.clear());
     let mut synth = Kind::Synth.preset().unwrap();

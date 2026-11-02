@@ -50,9 +50,13 @@ pub enum Module {
     Eq,
     /// Two multiframe, bandlimited wavetable oscillators per engine note.
     Wavetable,
+    /// Up to eight mixed oscillator types, with stable physical slots.
+    Oscillators,
+    /// A view of the interaction routes; its position never changes audio.
+    Connections,
 }
 impl Module {
-    pub const ALL: [Module; 15] = [
+    pub const ALL: [Module; 17] = [
         Module::Sample,
         Module::Synth,
         Module::Drums,
@@ -68,6 +72,8 @@ impl Module {
         Module::Mixer,
         Module::Eq,
         Module::Wavetable,
+        Module::Oscillators,
+        Module::Connections,
     ];
     pub fn source(self) -> bool {
         matches!(
@@ -79,6 +85,7 @@ impl Module {
                 | Module::Vocal
                 | Module::Tb303
                 | Module::Wavetable
+                | Module::Oscillators
         )
     }
     /// The section tap (Output row) this module ends in, if any.
@@ -110,6 +117,8 @@ impl Module {
             Module::Mixer => "Mixer",
             Module::Eq => "EQ",
             Module::Wavetable => "Wavetable",
+            Module::Oscillators => "Oscillators",
+            Module::Connections => "Connections",
         }
     }
 }
@@ -162,6 +171,9 @@ impl Default for Strip {
     }
 }
 impl Strip {
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
     fn sanitize(&mut self) {
         self.level = if self.level.is_finite() {
             self.level.clamp(0.0, 2.0)
@@ -211,8 +223,9 @@ pub const STRIP_SOURCES: [Module; STRIPS] = [
     Module::Vocal,
     Module::Tb303,
     Module::Wavetable,
+    Module::Oscillators,
 ];
-pub const STRIPS: usize = 7;
+pub const STRIPS: usize = 8;
 /// A strip's numeric controls, in host order.
 pub const STRIP_FIELDS: [(&str, &str, f32, f32, f32); 4] = [
     ("level", "level", 0.0, 2.0, 1.0),
@@ -232,6 +245,8 @@ pub struct Strips {
     pub vocal: Strip,
     pub tb303: Strip,
     pub wavetable: Strip,
+    #[serde(skip_serializing_if = "Strip::is_default")]
+    pub oscillators: Strip,
 }
 impl Strips {
     pub fn get(&self, source: Module) -> Strip {
@@ -243,6 +258,7 @@ impl Strips {
             Module::Vocal => self.vocal,
             Module::Tb303 => self.tb303,
             Module::Wavetable => self.wavetable,
+            Module::Oscillators => self.oscillators,
             _ => Strip::default(),
         }
     }
@@ -258,7 +274,8 @@ impl Strips {
             3 => &mut self.sampler,
             4 => &mut self.vocal,
             5 => &mut self.tb303,
-            _ => &mut self.wavetable,
+            6 => &mut self.wavetable,
+            _ => &mut self.oscillators,
         }
     }
     pub fn get_mut(&mut self, source: Module) -> Option<&mut Strip> {
@@ -270,6 +287,7 @@ impl Strips {
             Module::Vocal => Some(&mut self.vocal),
             Module::Tb303 => Some(&mut self.tb303),
             Module::Wavetable => Some(&mut self.wavetable),
+            Module::Oscillators => Some(&mut self.oscillators),
             _ => None,
         }
     }
@@ -397,12 +415,17 @@ impl Settings {
     /// A Grain engine granulates the file when it sits right under the Sample
     /// and both are on.
     pub fn grains_read_file(&self) -> bool {
-        self.modules.windows(2).any(|pair| {
-            pair[0].module == Module::Sample
-                && pair[1].module == Module::Grains
-                && pair[0].enabled
-                && pair[1].enabled
-        })
+        let mut previous: Option<&Slot> = None;
+        self.modules
+            .iter()
+            .filter(|s| s.module != Module::Connections)
+            .any(|slot| {
+                let reads = slot.module == Module::Grains
+                    && slot.enabled
+                    && previous.is_some_and(|p| p.module == Module::Sample && p.enabled);
+                previous = Some(slot);
+                reads
+            })
     }
     /// A live input (a microphone, a DAW's audio) plays in place of the
     /// Sample's file, as a Granular timbre's does: when there is a Sample, no
@@ -467,8 +490,9 @@ impl Plan {
         let mut chain = Chain::None;
         let mut per_note = false;
         let mut previous: Option<Slot> = None;
-        let mixer = modules.iter().position(|s| s.module == Module::Mixer);
-        for (i, slot) in modules.iter().take(steps.len()).enumerate() {
+        let audio = || modules.iter().filter(|s| s.module != Module::Connections);
+        let mixer = audio().position(|s| s.module == Module::Mixer);
+        for (i, slot) in audio().take(steps.len()).enumerate() {
             let mut step = Step {
                 module: slot.module,
                 enabled: slot.enabled,
@@ -485,14 +509,15 @@ impl Plan {
                 | Module::Sampler
                 | Module::Vocal
                 | Module::Tb303
-                | Module::Wavetable => {
+                | Module::Wavetable
+                | Module::Oscillators => {
                     chain = Chain::Source(slot.module);
                     step.chain = chain;
                     // Off, a voiced source has no notes for the modules under it;
                     // the stream sources have none of the notes' own.
                     per_note = matches!(
                         slot.module,
-                        Module::Sample | Module::Synth | Module::Wavetable
+                        Module::Sample | Module::Synth | Module::Wavetable | Module::Oscillators
                     ) && slot.enabled;
                     step.per_note = per_note;
                     step.mixed = mixer.is_some_and(|m| m > i);

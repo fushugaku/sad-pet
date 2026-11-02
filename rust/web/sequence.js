@@ -29,6 +29,7 @@ window.SadLazySelect = (() => {
     anchor.title = label;
   }
   function show(anchor, model = models.get(anchor)) {
+    if (window.sadPetControlSource) return window.sadPetControlSource.menu(anchor, model);
     hide(false);
     const layer = document.createElement("div"),
       view = viewport(),
@@ -539,6 +540,11 @@ window.SadNeuropolis = class {
       track.id = 1;
       while (used.has(track.id)) track.id++;
     }
+    if (!copy && this.hooks.read().control) {
+      track.target = { kind: "parameter", parameter: this.hooks.controlTargets?.()[0]?.id || "" };
+      track.absolute = false;
+      p.enabled = true;
+    }
     track.name = copy ? `${base.name} copy` : `Track ${track.id}`;
     p.tracks.push(track);
     this.selected = track.id;
@@ -622,7 +628,7 @@ window.SadNeuropolis = class {
   }
   // Resynth and Synth engine oscillator lanes edit a signed offset.
   relative(track) {
-    return ["oscillator", "synth_oscillator", "tb303_oscillator", "wavetable_oscillator"].includes(track?.target.kind);
+    return ["oscillator", "synth_oscillator", "tb303_oscillator", "wavetable_oscillator", "mixed_oscillator"].includes(track?.target.kind);
   }
   pitchText(track, value) {
     return this.relative(track)
@@ -744,6 +750,8 @@ window.SadNeuropolis = class {
             ? `Synth OSC ${t.target.index + 1} offset`
           : t.target.kind === "tb303_oscillator"
             ? `303 RADIAS OSC ${t.target.index + 1} offset`
+          : t.target.kind === "mixed_oscillator"
+            ? `OSC ${t.target.index+1} pitch offset`
           : t.target.kind === "wavetable_oscillator"
             ? `Wavetable ${["A","B","C","D"][t.target.index]} pitch offset`
           : this.catalog.parameters.find((p) => p.id === t.target.parameter)
@@ -1211,8 +1219,10 @@ window.SadNeuropolis = class {
   // Destination menu sections. Numbered filters, LFOs, envelopes, effect slots,
   // oscillators and drum voices each get a submenu inside their family.
   parameterGroups(prefix = "") {
+    if (this.hooks.read().control) return [{ label: "Control", choices:
+      (this.hooks.controlTargets?.() || []).map(p => [`${prefix}${p.id}`, p.name]) }];
     const preset = this.hooks.read(), families = new Map(), drums = new Map(),
-      order = ["Main", "Wavetable", "303 Bass", "Grains", "Filters", "LFO", "Envelopes", "Arpeggiator", "Pre-filter FX", "Post-filter FX", "Resynth", "Synth engine", "Drums"],
+      order = ["Main", "Oscillators", "Connections", "Wavetable", "303 Bass", "Grains", "Filters", "LFO", "Envelopes", "Arpeggiator", "Pre-filter FX", "Post-filter FX", "Resynth", "Synth engine", "Drums"],
       voices = window.SadDrums?.controlSections,
       grainControls = new Set(["position", "grains", "min_grains", "grain_size", "pitch", "grain_shape",
         "cloud", "detune", "stereo_spread", "grain_feedback", "grain_advanced", "grain_attack"]);
@@ -1227,6 +1237,9 @@ window.SadNeuropolis = class {
       if (id.startsWith("drum") && !preset.drums) continue;
       if (id.startsWith("tb303_") && !preset.tb303) continue;
       if (id.startsWith("wt_") && !preset.wavetable) continue;
+      if (/^osc(?:\d+_|_)/.test(id)&&!preset.oscillators) continue;
+      const mixed=/^osc(\d+)_/.exec(id);if(mixed&&!preset.oscillators?.slots[+mixed[1]-1]?.id)continue;
+      const route=/^interaction(\d+)_/.exec(id);if(route&&!preset.interactions?.routes[+route[1]-1]?.source?.kind)continue;
       const drum = /^drum(\d+)_(\d+|note_shift)$/.exec(id);
       if (drum && voices) {
         drums.set(id, spec.name);
@@ -1238,6 +1251,9 @@ window.SadNeuropolis = class {
         group = /^grain_group(\d)_/.exec(id)?.[1];
       const [family, sub, strip = sub] = fx
         ? [`${fx[1] ? "Pre-filter" : "Post-filter"} FX`, kind ? `${slotName} · ${kind}` : slotName, slotName]
+        : /^osc\d+_/.test(id)?["Oscillators",`OSC ${n}`]
+        : id.startsWith("osc_")?["Oscillators"]
+        : id.startsWith("interaction")?["Connections",`Connection ${n}`]
         : id.startsWith("resynth_osc") ? ["Resynth", `OSC ${n}`, `Resynth OSC ${n}`]
         : id.startsWith("resynth_") ? ["Resynth"]
         : id.startsWith("drum") ? ["Drums", spec.name.split(" · ")[0]]
@@ -1694,16 +1710,18 @@ window.SadNeuropolis = class {
       track.target.kind === "oscillator" ? `osc:${track.target.index}`
         : track.target.kind === "synth_oscillator" ? `synth-osc:${track.target.index}`
         : track.target.kind === "tb303_oscillator" ? `tb303-osc:${track.target.index}`
+        : track.target.kind === "mixed_oscillator" ? `mixed-osc:${track.target.index}`
         : track.target.kind === "wavetable_oscillator" ? `wt-osc:${track.target.index}`
         : track.target.kind === "pad" ? `pad:${track.target.pad}`
         : track.target.kind === "parameter" ? `param:${track.target.parameter}` : track.target.kind,
-      [{ label: "Pitch & notes", choices: [
+      this.hooks.read().control ? this.parameterGroups("param:") : [{ label: "Pitch & notes", choices: [
         ["main_pitch", bass ? "303 pattern pitch" : "Main track pitch"], ["notes", this.notesName()],
+        ...(this.hooks.read().oscillators?.order??[]).filter(i=>this.hooks.read().oscillators.slots[i].id).map(i=>[`mixed-osc:${i}`,`OSC ${i+1} pitch offset`]),
         // A Synth engine timbre plays its own oscillators; Resynth's follow.
         ...(synth ? [0, 1, 2, 3].map(i => [`synth-osc:${i}`, `Synth OSC ${i + 1} pitch offset`]) : []),
         ...(bass ? [0, 1, 2, 3].map(i => [`tb303-osc:${i}`, `303 RADIAS OSC ${i + 1} pitch offset`]) : []),
         ...(wavetable ? Array.from({length:this.hooks.read().wavetable.count??2},(_,i)=>[`wt-osc:${i}`,`Wavetable ${["A","B","C","D"][i]} pitch offset`]) : []),
-        ...[0, 1, 2, 3].map(i => [`osc:${i}`, `${synth || bass ? "Resynth " : ""}OSC ${i + 1} pitch offset`]),
+        ...[0, 1, 2, 3].map(i => [`osc:${i}`, `${synth || bass || this.hooks.read().oscillators ? "Resynth " : ""}OSC ${i + 1} pitch offset`]),
       ] },
       // A kit's pads, each played by its own track whatever its keys.
       ...(pads.length ? [{ label: "Sampler pads", choices: pads
@@ -1718,6 +1736,8 @@ window.SadNeuropolis = class {
           ? { kind: "synth_oscillator", index: Number(target.value.slice(10)) }
         : target.value.startsWith("tb303-osc:")
           ? { kind: "tb303_oscillator", index: Number(target.value.slice(10)) }
+        : target.value.startsWith("mixed-osc:")
+          ? { kind:"mixed_oscillator",index:Number(target.value.slice(10)) }
         : target.value.startsWith("wt-osc:")
           ? { kind: "wavetable_oscillator", index: Number(target.value.slice(7)) }
         : target.value.startsWith("pad:")
@@ -1807,7 +1827,7 @@ window.SadNeuropolis = class {
       units.className = "neuro-depth-units";
       units.setAttribute("aria-label", "Track depth in target units");
       depth.after(units);
-      this.configControl(controls, "Mapping", 44, [
+      if (!this.hooks.read().control) this.configControl(controls, "Mapping", 44, [
         [0, "Relative"],
         [1, "Absolute"],
       ]);
@@ -1934,7 +1954,7 @@ window.SadNeuropolis = class {
     const tracks = view.tracks.slice(0, view.count),
       active = this.program().enabled && playing;
     const selected = tracks.find((t) => t.id === this.selected),
-      value = selected?.value,
+      value = this.hooks.read().control ? selected?.cv : selected?.value,
       offset = this.offset(this.track()),
       playingPage = active && selected ? Math.floor(selected.step / 16) : -1;
     for (const row of this.root.querySelectorAll(".neuro-track")) {

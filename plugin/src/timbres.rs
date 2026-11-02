@@ -33,6 +33,7 @@ pub(super) fn ensure_master_in(
 /// timbre ignores bus settings.
 pub(super) fn keep_role(preset: &mut Preset, current: &Preset, kind: Kind) {
     if kind.keeps_role() {
+        preset.control = None;
         preset.tb303 = None;
         preset.rack = None;
     }
@@ -396,6 +397,22 @@ pub(super) fn prepare_audio(
 }
 
 impl Controller {
+    pub(super) fn sync_controls(&mut self) -> Result<(), String> {
+        let prepare = |id| {
+            sad_pet::control::inputs(
+                id,
+                std::iter::once((&self.meta, &self.preset))
+                    .chain(self.parts.iter().map(|p| (&p.meta, &p.preset))),
+            )
+        };
+        let own = prepare(self.meta.id);
+        let parts: Vec<_> = self.parts.iter().map(|p| prepare(p.meta.id)).collect();
+        self.enqueue(Command::ControlInputs(own))?;
+        for (part, inputs) in self.parts.iter_mut().zip(parts) {
+            part.enqueue(Command::ControlInputs(inputs))?;
+        }
+        Ok(())
+    }
     /// A Bus or Master starts with everything off.
     pub(super) fn routing_part(&self, kind: Kind, id: u32, bus: u8) -> Controller {
         let mut part = self.new_part();
@@ -563,6 +580,36 @@ impl Controller {
                 .is_some_and(|revision| revision != self.scene_revision)
         {
             return Err("The scene changed while the wavetable was loading".into());
+        }
+        if path == "/api/control/request" {
+            let id = data["timbre"].as_u64().ok_or("Choose a timbre")? as u32;
+            if !(id == self.meta.id && self.meta.kind != Kind::Empty)
+                && !self
+                    .parts
+                    .iter()
+                    .any(|p| p.meta.id == id && p.meta.kind != Kind::Empty)
+            {
+                return Err("The source timbre was removed".into());
+            }
+            let nested = data["path"].as_str().ok_or("Missing control command")?;
+            if !nested.starts_with("/api/") || nested.starts_with("/api/control/") {
+                return Err("Invalid control command".into());
+            }
+            let previous = self.active;
+            self.active = id;
+            let result = self.scene_request(&json!({"path":nested,
+                "method":if data.get("data").is_some() { "POST" } else { "GET" },
+                "data":data.get("data").cloned().unwrap_or(Value::Null)}));
+            self.active = previous;
+            return result.map(|mut value| {
+                if matches!(
+                    nested,
+                    "/api/timbres" | "/api/timbres/update" | "/api/timbres/select"
+                ) {
+                    value["active"] = json!(id);
+                }
+                value
+            });
         }
         if path == "/api/sample-preview" && request["method"] == "POST" {
             return self.preview_request(data);
@@ -775,6 +822,7 @@ impl Controller {
             }
             self.offer_workers();
             self.scene_revision = self.scene_revision.wrapping_add(1);
+            self.sync_controls()?;
             return Ok(json!(self.context()));
         }
         if path == "/api/scene" {
@@ -818,6 +866,19 @@ impl Controller {
                 }
             }
         }
+        let controls_changed = request["method"] == "POST"
+            && matches!(
+                path,
+                "/api/preset" | "/api/sequencer/edit" | "/api/parameters"
+            )
+            && ((path == "/api/preset" && data.get("control").is_some_and(|v| !v.is_null()))
+                || if self.active == 0 {
+                    self.meta.kind == Kind::Control
+                } else {
+                    self.parts
+                        .iter()
+                        .any(|p| p.meta.id == self.active && p.meta.kind == Kind::Control)
+                });
         let mut result = if self.active == 0 {
             self.request_part(request)?
         } else {
@@ -827,6 +888,24 @@ impl Controller {
                 .ok_or("Unknown timbre")?
                 .request_part(request)?
         };
+        if controls_changed {
+            if path == "/api/sequencer/edit" {
+                let source = self.active;
+                let edits = sad_pet::sequence::parse_edits(data)?;
+                self.enqueue(Command::ControlSequence(
+                    source,
+                    edits.clone().into_boxed_slice(),
+                ))?;
+                for part in &mut self.parts {
+                    part.enqueue(Command::ControlSequence(
+                        source,
+                        edits.clone().into_boxed_slice(),
+                    ))?;
+                }
+            } else {
+                self.sync_controls()?;
+            }
+        }
         let (route, query) = path.split_once('?').unwrap_or((path, ""));
         if route == "/api/state" {
             result["timbres"] = json!(self.context());
@@ -974,7 +1053,10 @@ impl Audio {
             let mut jobs = Jobs::default();
             let mut part = parts.as_mut();
             while let Some(p) = part {
-                if !p.audio.meta.kind.routing() {
+                if p.audio.meta.kind == Kind::Control {
+                    // A silent control clock needs no render worker.
+                    p.audio.source_chunk(input, buses);
+                } else if !p.audio.meta.kind.routing() {
                     let job = workers::Job::Timbre {
                         audio: &mut p.audio,
                         input: input.as_ptr(),

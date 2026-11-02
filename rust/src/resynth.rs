@@ -159,6 +159,8 @@ pub struct Oscillator {
     /// Select the external Cross tap without changing the released 0..4
     /// cross_source automation range (0 previously meant analysis input).
     pub cross_input: CrossInput,
+    #[serde(skip_serializing_if = "crate::interaction::Transport::is_default")]
+    pub transport: crate::interaction::Transport,
 }
 impl Default for Oscillator {
     fn default() -> Self {
@@ -178,6 +180,7 @@ impl Default for Oscillator {
             pan: 0.5,
             cross_source: 0,
             cross_input: CrossInput::Analysis,
+            transport: Default::default(),
         }
     }
 }
@@ -244,6 +247,7 @@ fn finite(value: &mut f32, low: f32, high: f32, fallback: f32) {
 impl Oscillator {
     pub fn sanitize(&mut self) {
         let d = Self::default();
+        self.transport.sanitize();
         finite(&mut self.control1, 0.0, 1.0, d.control1);
         finite(&mut self.control2, 0.0, 1.0, d.control2);
         finite(&mut self.transpose, -48.0, 48.0, d.transpose);

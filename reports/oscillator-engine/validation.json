@@ -1,0 +1,102 @@
+{
+  "date": "2026-11-02",
+  "rust_targeted_passed": 320,
+  "native_hosts_passed": 2,
+  "wasm_scalar_suites_passed": [
+    "oscillators",
+    "wavetable",
+    "rack",
+    "timbres",
+    "synth",
+    "tb303",
+    "control",
+    "telemetry",
+    "realtime",
+    "resynth"
+  ],
+  "wasm_simd_oscillators_passed": true,
+  "wasm_bitwise_parity_passed": [
+    "legacy",
+    "8 mixed OSC with group Ring/Sync/capture"
+  ],
+  "ui_passed": [
+    "empty bank",
+    "mixed types",
+    "capture",
+    "OSC/group/group routing",
+    "reorder stable IDs",
+    "PCM library/root",
+    "WT library/Wave Maker/editor",
+    "scene recall",
+    "360px and 389px no overflow",
+    "fresh console errors absent",
+    "Ring/Sync controls directly in each OSC card",
+    "all six inline modes",
+    "independent Ring and Sync source masters",
+    "inline/Connections numeric and mode synchronization",
+    "inline scene save/reload",
+    "inline mobile 360px no overflow",
+    "Ring/Sync controls directly in Grain A-D",
+    "all six inline Grain modes and Playback/Clock/Both",
+    "independent Ring, Playback Sync and Clock Sync masters",
+    "Grain inline/Connections numeric feedback equality",
+    "Connections optional Rack module: add/move/remove/Undo",
+    "Grain connections, all groups Off and capture scene save/reload",
+    "Grain inline 360px and 389px no overflow; selects 36px",
+    "fresh console errors absent after Grain/Rack changes"
+  ],
+  "builds": {
+    "sad_pet.wasm": {
+      "bytes": 50492860,
+      "sha256": "3b75c16ab5e9f7ca82410ada97782d43823367cbcbbb913b300fc36980a406be"
+    },
+    "sad_pet.simd.wasm": {
+      "bytes": 50631831,
+      "sha256": "0dfd152b1e88180402c0433bb0aaf1d64d3965165245e7fe7cfe23d3a88f5253"
+    }
+  },
+  "native_render_benchmark_completed": true,
+  "universal_realtime_deadline_guarantee": false,
+  "inline_ui_tests_passed": [
+    "controls-ui",
+    "midi-learn-ui",
+    "parameter transport",
+    "native host 2/2",
+    "grain-groups-ui",
+    "final WASM Rack",
+    "final scalar/SIMD bitwise parity"
+  ],
+  "grain_groups_off": {
+    "advanced": true,
+    "shares": [
+      0,
+      0,
+      0,
+      0
+    ],
+    "active_grains": 0,
+    "all_capture_output_meter_percent": [
+      0,
+      0
+    ],
+    "osc2_bypass_output_meter_percent": [
+      16.3313,
+      16.3313
+    ],
+    "cause": "OSC 2 excluded from Selected OSC capture stays audible on bypass",
+    "regressions": [
+      "legacy/independent/forced Clock/note-on births stop at zero shares",
+      "Advanced transition only finishes existing finite grains"
+    ],
+    "guard": "Explicit chosen-group spawn checks positive share"
+  },
+  "connections_module": {
+    "audio_plan_transparent": true,
+    "bitwise_audio_all_insert_positions": true,
+    "routes_survive_removal": true
+  },
+  "grain_inline_screenshots": [
+    "grain-inline-desktop.jpg",
+    "grain-inline-mobile.jpg"
+  ]
+}
