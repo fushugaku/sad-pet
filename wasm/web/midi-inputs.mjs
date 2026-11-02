@@ -1,4 +1,5 @@
 import { LaunchControl, launchControlModel } from "./launch-control.mjs";
+import { Xl3Feedback, isLaunchControlPort, matchingOutput, xl3DawPorts } from "./xl3-feedback.mjs";
 
 const STORAGE = "sad-pet-launch-control";
 /** One owner for Web MIDI ports: keyboard and control surface can coexist. */
@@ -33,6 +34,13 @@ export class MidiInputs {
       error: message => { this.error = message; this.ui()?.notify(message); },
     });
     this.highResolution = new Map();
+    this.feedback = new Xl3Feedback({ learn: this.learn,
+      page: page => {
+        this.learn()?.selectPage?.(page, { preserveLearning: true });
+        this.changed();
+      },
+      error: message => { if (this.error !== message) this.ui()?.notify(message); this.error = message; },
+    });
   }
   save() {
     try { this.storage?.setItem(STORAGE, JSON.stringify(this.settings)); } catch { /* Optional. */ }
@@ -41,17 +49,21 @@ export class MidiInputs {
     for (const pair of this.highResolution.values()) clearTimeout(pair.timer);
     this.highResolution.clear();
   }
-  async access() {
+  async access({ sysex = false } = {}) {
     if (!this.navigator?.requestMIDIAccess)
       throw new Error(globalThis.isSecureContext === false
         ? "MIDI needs HTTPS or localhost" : "Web MIDI is unavailable in this browser. Use Chrome or Edge");
-    if (!this.backend.midiAccess) {
-      this.accessPending ||= this.navigator.requestMIDIAccess({ sysex: false });
+    if (this.accessPending) await this.accessPending;
+    if (!this.backend.midiAccess || (sysex && !this.backend.midiAccess.sysexEnabled)) {
+      this.accessPending = this.navigator.requestMIDIAccess({ sysex });
       try {
-        this.backend.midiAccess = await this.accessPending;
+        const access = await this.accessPending;
+        if (this.backend.midiAccess && this.backend.midiAccess !== access)
+          this.backend.midiAccess.onstatechange = null;
+        this.backend.midiAccess = access;
       } catch (error) {
         this.error = error.name === "NotAllowedError"
-          ? "MIDI access was denied. Allow MIDI for this site in your browser settings" : error.message;
+          ? "MIDI access was denied. Allow MIDI and system exclusive messages for XL3 lights and display" : error.message;
         if (error.name === "NotAllowedError") throw new Error(this.error);
         throw error;
       } finally { this.accessPending = null; }
@@ -64,8 +76,9 @@ export class MidiInputs {
     // Permission checks do not show a prompt; a fresh visit waits for Connect.
     if (!this.navigator?.permissions?.query || !this.navigator.requestMIDIAccess) return;
     try {
-      if ((await this.navigator.permissions.query({ name: "midi", sysex: false })).state === "granted")
-        await this.access();
+      const sysex = (await this.navigator.permissions.query({ name: "midi", sysex: true })).state === "granted";
+      if (sysex || (await this.navigator.permissions.query({ name: "midi", sysex: false })).state === "granted")
+        await this.access({ sysex });
     } catch { /* Browsers without a MIDI permission query still have Connect. */ }
   }
   candidates() { return this.inputs.filter(p => launchControlModel(p.name)); }
@@ -90,18 +103,23 @@ export class MidiInputs {
     }
     let keyboard = this.inputs.find(p => p.id === this.keyboardId) || null;
     // The control surface's buttons are never musical notes.
-    if (keyboard && launchControlModel(keyboard.name)) { keyboard = null; this.keyboardId = null; }
+    if (keyboard && isLaunchControlPort(keyboard.name)) { keyboard = null; this.keyboardId = null; }
     if (keyboard !== this.backend.selectedMidi) {
       this.backend.selectedMidi = keyboard;
       this.gateChange = this.backend.audio.call("request", { midi_gate: !!keyboard }, [], "/api/transport")
         .catch(error => { this.error = error.message; });
     }
     const outputs = [...(this.backend.midiAccess?.outputs.values() || [])];
-    const output = this.controller ? outputs.find(p => p.state === "connected" &&
-      p.name === this.controller.name && p.manufacturer === this.controller.manufacturer) || null : null;
+    const output = matchingOutput(this.controller, outputs);
     this.surface.configure({ model: launchControlModel(this.controller?.name) || "xl",
       mode: this.settings.mode, output, page: this.learn()?.page?.() ?? 0 });
-    const desired = new Set([keyboard, this.controller].filter(Boolean));
+    const daw = this.surface.model === "xl3" && this.settings.mode === "native"
+      ? xl3DawPorts(this.controller, this.inputs, outputs) : {};
+    this.feedbackInput = daw.input || null;
+    this.feedbackOutput = daw.output || null;
+    this.feedback.configure({ output: daw.output || null, midiOutput: output,
+      enabled: !!this.backend.midiAccess?.sysexEnabled, page: this.learn()?.page?.() ?? 0 });
+    const desired = new Set([keyboard, this.controller, this.feedbackInput].filter(Boolean));
     for (const port of this.bound) if (!desired.has(port)) {
       port.onmidimessage = null;
       port.close?.().catch(() => {});
@@ -115,6 +133,7 @@ export class MidiInputs {
     if (signature !== this.signature) { this.signature = signature; this.changed(); }
   }
   message(port, event) {
+    if (port === this.feedbackInput) { this.feedback.input(event.data); return; }
     if (port === this.controller) {
       const learner = this.learn();
       if (this.settings.mode === "native") {
@@ -162,6 +181,8 @@ export class MidiInputs {
       learner?.selectPage?.(channel, { preserveLearning: true });
       this.changed();
     }
+    this.feedback.selectPage(channel, true);
+    this.feedback.touch(lsb ? cc - 32 : cc);
     if (channel === 15) { learner?.input(channel, cc, value); return; }
     if (encoder) { learner?.input(channel, cc, value, "relative"); return; }
     if (button) { learner?.input(channel, cc, value); return; }
@@ -188,19 +209,19 @@ export class MidiInputs {
     else this.refresh();
     if (data && "port" in data) {
       const port = data.port === null ? null : this.inputs[data.port];
-      if (data.port !== null && (!port || launchControlModel(port.name)))
+      if (data.port !== null && (!port || isLaunchControlPort(port.name)))
         throw new Error("Choose a connected keyboard input");
       this.keyboardId = port?.id || null;
       this.refresh();
       await this.gateChange;
     }
     return {
-      ports: this.inputs.flatMap((p, id) => launchControlModel(p.name) ? [] : [{ id, name: p.name || "MIDI input" }]),
+      ports: this.inputs.flatMap((p, id) => isLaunchControlPort(p.name) ? [] : [{ id, name: p.name || "MIDI input" }]),
       connected: this.backend.selectedMidi?.name || null,
     };
   }
   async request(path, data) {
-    if (path.searchParams.has("request")) await this.access();
+    if (path.searchParams.has("request")) await this.access({ sysex: true });
     if (data) {
       if ("mode" in data && !["mixer", "learn", "native"].includes(data.mode)) throw new Error("Unknown controller mode");
       if ("page" in data && (!Number.isInteger(data.page) || data.page < 0 || data.page >= 16))
@@ -238,11 +259,15 @@ export class MidiInputs {
       ports: this.candidates().map(p => ({ id: p.id, name: p.name })),
       connected: this.controller?.name || null, mode: this.settings.mode,
       page: this.surface.mappingPage, pages: learner?.pages?.() || [],
-      feedback: !!this.surface.output && this.surface.model === "xl", error: this.error || null,
+      feedback: this.feedback.active || (!!this.surface.output && this.surface.model === "xl"),
+      feedbackPermission: !!this.backend.midiAccess?.sysexEnabled,
+      feedbackAvailable: this.surface.model === "xl3" && this.settings.mode === "native" && !!this.feedbackInput && !!this.feedbackOutput,
+      error: this.error || null,
       ...this.surface.status(),
     };
   }
   dispose() {
+    this.feedback.dispose();
     this.clearHighResolution();
     this.surface.dispose();
     for (const port of this.bound) { port.onmidimessage = null; port.close?.().catch(() => {}); }

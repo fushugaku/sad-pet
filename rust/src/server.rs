@@ -186,6 +186,10 @@ fn handle(
                     include_bytes!("../web/vocal.js").to_vec(),
                     "application/javascript",
                 )),
+                "/midi-targets.js" => Ok((
+                    include_bytes!("../web/midi-targets.js").to_vec(),
+                    "application/javascript",
+                )),
                 "/midi.js" => Ok((
                     include_bytes!("../web/midi.js").to_vec(),
                     "application/javascript",

@@ -749,7 +749,7 @@ Absolute faders and knobs use pickup: move to or across the project's current
 value before taking control. Changing a bank, editing a value with the mouse or
 recalling a different value re-arms pickup. Mk1/Mk2 button LEDs reflect the
 selected timbre, Mute/Solo state and available banks when its MIDI output is
-available. XL3 retains its custom-mode colours.
+available. In Mixer mode XL3 retains its custom-mode colours.
 
 For custom assignments, right-click an on-screen knob or slider, choose
 **MIDI learn**, then move a hardware control. These assignments take precedence
@@ -791,15 +791,40 @@ matching page's channel and updated CC numbers. Unrelated mappings stay as
 they are; the previous map is backed up in this browser under
 `sad-pet-midi-pages-before-xl3-native`.
 
+In the browser, new assignments retain the **source instrument and parameter**.
+Opening another instrument or the Control surface does not redirect or disable
+them. Assigning Pitch on two instruments creates two separate targets. Existing
+assignments are attached to their original visible instrument when its editor
+first opens; the previous map is backed up under
+`sad-pet-midi-pages-before-targets`. Removing a source instrument disables its
+assignments.
+
+**XL3 · 16 modes** also supports live RGB and OLED feedback. Use **Enable
+feedback** if MIDI was already connected without SysEx permission, and allow
+system exclusive messages. SAD PET uses the paired DAW USB port for feedback
+while Custom Mode controls keep using the main MIDI port. Changing a mode on
+either the hardware or the browser selects the corresponding page.
+
+Pitch is red, resonance blue, cutoff green, level/mix yellow, time orange,
+modulation purple, stereo/position cyan and effects teal. The LED stays dim at
+minimum and reaches full brightness at maximum, following the parameter's
+current base value, including mouse edits and preset recalls. Turning a mapped
+control displays its instrument, parameter name and value; Pitch uses semitones.
+These are temporary device settings; the uploaded Custom Modes are preserved.
+
 `node wasm/test-launch-control.mjs` checks both hardware layouts, pickup,
 coalescing, MIDI Learn priority, LED traffic, independent keyboard input,
 permission errors, device settings, page navigation and USB reconnection.
 `node wasm/test-midi-learn-ui.mjs` also verifies 16 × 32 assignments, migration,
 page isolation, badge changes, cancellation, persistence and clearing one page.
+`node wasm/test-midi-targets.mjs` checks instrument targeting, fine pitch,
+sampler pad identity and compact feedback reads. `node wasm/test-xl3-feedback.mjs`
+checks DAW port pairing, RGB brightness, display names and MIDI cleanup.
 
 Protocol references: [Novation Mk1/Mk2 programmer's reference](https://fael-downloads-prod.focusrite.com/customer/prod/downloads/launch_control_xl_programmer_s_reference_guide.pdf),
 [Ardour's legacy control-number map](https://github.com/Ardour/ardour/blob/master/share/midi_maps/Novation_LaunchControl_XL.map),
 [Novation XL3 Mode 16](https://userguides.novationmusic.com/hc/en-gb/articles/26260540230162-Launch-Control-XL-3-appendix),
+[Novation XL3 DAW feedback protocol](https://userguides.novationmusic.com/hc/en-gb/articles/27840466544402-Launch-Control-XL-3-programmer-s-DAW-mode),
 and [Web MIDI access requirements](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/requestMIDIAccess).
 
 ## Check and package

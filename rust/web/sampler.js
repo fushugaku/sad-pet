@@ -32,10 +32,12 @@
   const signed = (v, unit, digits = 0) => `${v > 0 ? "+" : ""}${v.toFixed(digits)}${unit}`;
   // Knob scales: times and frequencies feel even on a log dial.
   const logScale = (max, floor = 0) => ({
+    midiScale: { type: "log1p", max, floor },
     normalize: (v) => Math.log1p(Math.max(0, v - floor)) / Math.log1p(max - floor),
     denormalize: (u) => floor + Math.expm1(clamp(u, 0, 1) * Math.log1p(max - floor)),
   });
   const hertz = {
+    midiScale: { type: "log", min: 20, max: 20000 },
     normalize: (v) => Math.log(v / 20) / Math.log(1000),
     denormalize: (u) => 20 * 1000 ** clamp(u, 0, 1),
   };
@@ -624,6 +626,11 @@
       const knob = (container, key, text, format, min, max, path, extra = {}) =>
         this.knobs.push(this.hooks.knob([`sampler_${key}`, text, format, min, max, `Pad ${text.toLowerCase()}`], container, {
           register: false,
+          midiPath: () => {
+            const pad = this.pad();
+            return pad ? { path: ["sampler", "pads", this.padIndex(pad), ...path], padId: pad.id } : null;
+          },
+          midiLabel: () => `${label(this.padIndex())} ${text.toLowerCase()}`,
           get: () => {
             const pad = this.pad();
             return pad ? path.reduce((o, k) => o[k], pad) : extra.reset ?? 0;

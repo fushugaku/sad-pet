@@ -150,6 +150,7 @@ impl Host {
                     | "/api/sequencer/edit"
                     | "/api/sequencer/view"
                     | "/api/parameters"
+                    | "/api/parameters/values"
                     | "/api/drums/edit"
                     | "/api/drums/trigger"
             )
@@ -204,6 +205,7 @@ impl Host {
                 let _ = serde_json::to_vec(&self.state());
                 Ok(json!(self.engine.preset))
             }
+            "/api/parameters/values" => sad_pet::parameters::read_values(&self.engine.preset, data),
             "/api/parameters" => {
                 let changes = sad_pet::parameters::parse(data)?;
                 self.engine.apply_parameters(&changes);

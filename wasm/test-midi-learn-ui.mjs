@@ -406,3 +406,65 @@ context.SadMidiLearn.input(0, 11, 0);
 assert.equal(paintValue, 1, "A disposed Control view retained its source callback");
 assert.deepEqual(plain(context.SadMidiLearn.mappings())["control:0:filter"], [0, 11],
   "Disposing a view must preserve its saved MIDI mapping");
+
+// Browser mappings pin a parameter to its source, rather than whichever
+// instrument currently owns the reused knob DOM. Both pitches can coexist.
+stored.clear();
+const scoped = editor(), scopedBank = new Element("div"), routed = [];
+document.body.append(scopedBank);
+scoped.state.timbres = { active: 0, timbres: [{ id: 0, kind: "rack" }, { id: 1, kind: "rack" }] };
+scoped.preset = { params: { pitch: .5, pitch_range: 36 } };
+scoped.sequencerParameter = key => key;
+scoped.SadMidiTargets = { enabled: true, describe: d => ({ ...d, id: `control:${d.timbre}:${d.parameter}` }),
+  command: (target, format, value) => routed.push({ target: plain(target), format, value }),
+  value: () => ({ unit: .5, text: "0.0 st" }), refresh() {},
+};
+scoped.createKnob(["pitch", "Pitch", String], scopedBank);
+const scopedLearn = scoped.SadMidiLearn, scopedDial = dial(scopedBank.firstElementChild);
+scopedLearn.learn("pitch"); scopedLearn.input(0, 13, 65, "relative");
+assert.deepEqual(plain(scopedLearn.mappings()), { "control:0:pitch": [0, 13, "relative"] });
+scoped.state.timbres.active = 1;
+scopedLearn.refresh();
+assert.equal(scopedBank.firstElementChild.classList.contains("midi-mapped"), false, "another instrument inherited the source's badge");
+scopedLearn.input(0, 13, 66, "relative");
+assert.equal(routed.at(-1).target.timbre, 0, "switching instruments redirected the mapping");
+scopedLearn.learn("pitch"); scopedLearn.input(0, 14, 65, "relative");
+assert.equal(routed.at(-1).target.timbre, 1);
+assert.equal(Object.keys(scopedLearn.mappings()).length, 2, "two instruments' Pitch mappings collided");
+scopedBank.remove();
+// Old effect controls close over modules absent in the new editor. Painting
+// current badges must not evaluate those detached bindings.
+const retired = new Element("div");
+document.body.append(retired);
+let disposed = false;
+scopedLearn.attach(retired, "retired-effect", "Retired", () => {}, null,
+  { describe() { if (disposed) throw new Error("Disposed editor binding was evaluated"); return null; } });
+disposed = true;
+scopedLearn.refresh();
+retired.remove();
+scopedLearn.refresh();
+scopedLearn.input(0, 13, 63, "relative");
+assert.equal(routed.at(-1).target.timbre, 0, "a removed editor disabled its MIDI target");
+const scopedRestored = editor();
+scopedRestored.SadMidiTargets = scoped.SadMidiTargets;
+scopedRestored.SadMidiLearn.input(0, 14, 65, "relative");
+assert.equal(routed.at(-1).target.timbre, 1, "source identity was lost on reload");
+assert.equal(JSON.parse(stored.get("sad-pet-midi-pages")).version, 2);
+assert.equal(Object.keys(scopedRestored.SadMidiLearn.targets()).length, 2);
+assert.equal(scopedLearn.feedback()[0].label, "Pitch");
+
+// Existing assignments migrate once, retain their CC/channel, and keep a copy.
+stored.clear(); stored.set("sad-pet-midi-map", JSON.stringify({ pitch: [0, 16] }));
+const legacyScoped = editor(), legacyBank = new Element("div");
+document.body.append(legacyBank);
+legacyScoped.SadMidiTargets = scoped.SadMidiTargets;
+legacyScoped.sequencerParameter = key => key;
+legacyScoped.state.timbres = { active: 0, timbres: [{ id: 0, kind: "rack" }] };
+legacyScoped.preset = { params: { pitch: .5, pitch_range: 36 } };
+legacyScoped.createKnob(["pitch", "Pitch", String], legacyBank);
+legacyScoped.SadMidiLearn.setup({});
+assert.deepEqual(plain(legacyScoped.SadMidiLearn.mappings()), { "control:0:pitch": [0, 16] });
+assert.ok(stored.get("sad-pet-midi-pages-before-targets") || stored.get("sad-pet-midi-map"));
+legacyScoped.SadMidiLearn.refresh();
+assert.equal(Object.keys(legacyScoped.SadMidiLearn.mappings()).length, 1);
+console.log("Pinned MIDI UI passed: independent instrument targets, offscreen control, badges, reload and legacy migration.");

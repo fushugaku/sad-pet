@@ -9,6 +9,13 @@ const catalog = core.request("/api/sequencer/catalog");
 const target = (id, path, data) => core.request("/api/control/request", {
   timbre: id, path, ...(data === undefined ? {} : { data }),
 });
+const values = target(0, "/api/parameters/values", ["pitch", "pitch_range", "filter", "matrix1_depth", "macro1_depth1"]);
+assert.ok(Number.isFinite(values.pitch));
+assert.equal(values.pitch_range, 36);
+assert.ok(Number.isFinite(values.filter));
+assert.equal(values.matrix1_depth, 0);
+assert.equal(values.macro1_depth1, 0);
+assert.throws(() => target(0, "/api/parameters/values", ["unknown-midi-target"]), /Unknown parameter/);
 const lane = (id, parameter, cv) => {
   const track = structuredClone(catalog.track);
   Object.assign(track, { id, target: { kind: "parameter", parameter }, absolute: false });
@@ -42,6 +49,8 @@ close(state.knobs.filter.current, .65, "Parent and Control must sum");
 close(state.preset.params.filter, .3, "Modulation must preserve the base");
 assert.equal(core.request("/api/timbres").active, control, "Addressed edits must not change the active tab");
 target(0, "/api/parameters", { filter: .2 });
+assert.ok(Math.abs(target(0, "/api/parameters/values", ["filter"]).filter - .2) < 1e-6);
+assert.equal(core.request("/api/timbres").active, control, "Reading MIDI feedback selected its source editor");
 core.process(128);
 close(target(0, "/api/state").knobs.filter.current, .55, "A linked edit changes the source base");
 const second = core.request("/api/timbres/add", { kind: "control" }).active;

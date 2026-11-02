@@ -140,6 +140,33 @@ pub fn apply(preset: &mut Preset, changes: &[Change]) -> bool {
     changed
 }
 
+/// Read a small set of base values without serialising an instrument editor.
+/// Uses the same addresses as scalar edits, including matrix and macro depths.
+pub fn read_values(preset: &Preset, data: &serde_json::Value) -> Result<serde_json::Value, String> {
+    let ids = data
+        .as_array()
+        .filter(|ids| ids.len() <= 256)
+        .ok_or("Choose up to 256 parameters")?;
+    let mut result = serde_json::Map::new();
+    for id in ids {
+        let id = id.as_str().ok_or("Expected a parameter name")?;
+        let change = parse(&serde_json::json!({id: 0.0}))?[0];
+        let value = match change.address {
+            Address::Host(index) => specs()[index].get(preset),
+            Address::MatrixDepth(index) => {
+                preset.matrix.get(index).map_or(0.0, |route| route.depth)
+            }
+            Address::MacroDepth(index, target) => preset
+                .macros
+                .get(index)
+                .and_then(|m| m.targets.get(target))
+                .map_or(0.0, |target| target.depth),
+        };
+        result.insert(id.into(), serde_json::json!(value));
+    }
+    Ok(serde_json::Value::Object(result))
+}
+
 #[derive(Clone, Copy)]
 enum Target {
     Core {

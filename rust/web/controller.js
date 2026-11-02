@@ -36,14 +36,15 @@ window.SadController = (() => {
       selectValue("controller-device", data.device ?? "");
       selectValue("controller-mode", data.mode);
       $("controller-connect").disabled = !data.supported;
-      text("controller-connect", data.access ? "Refresh" : "Connect");
+      text("controller-connect", data.feedbackAvailable && !data.feedbackPermission ? "Enable feedback"
+        : data.access ? "Refresh" : "Connect");
     }
     text("controller-status", data.error || (!data.supported
       ? "Web MIDI needs Chrome or Edge on HTTPS or localhost"
       : data.device === null ? "Disconnected"
       : !data.access ? "Connect USB, then allow MIDI access"
       : !connected ? "Waiting for Launch Control XL"
-      : data.mode !== "mixer" ? `${data.connected} · right-click a knob → MIDI learn`
+      : data.mode !== "mixer" ? `${data.connected} · ${data.feedback ? "RGB + display" : "right-click a knob → MIDI learn"}`
       : data.pickup || `${data.connected} · Bank ${data.bank + 1}/${data.banks}`));
     text("controller-template", `${data.template}. Faders and knobs take over when they reach the value in the project.`);
     $("controller-map").hidden = data.mode !== "mixer";

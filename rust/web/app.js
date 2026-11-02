@@ -194,6 +194,8 @@ function schedulePreset() {
 }
 function scheduleParameter(id, value) {
   if (!Number.isFinite(value)) return;
+  const midi = window.sadPetControlSource ? parent.SadMidiTargets : window.SadMidiTargets;
+  midi?.observe(window.sadPetControlSource?.item.timbre ?? state?.timbres?.active, id, value);
   editGeneration++;
   presetLibrary?.markDirty();
   pending++;
@@ -313,10 +315,12 @@ async function flushEdits() {
 }
 async function flushPreset() {
   await flushEdits();
+  await window.SadMidiTargets?.flush();
   await sampleSelection?.flush();
   await refreshPresetState();
 }
 async function preparePresetRecall() {
+  await window.SadMidiTargets?.flush();
   effectPresetLibrary?.selections.clear();
   if (drumEditor) {
     drumEditor.views.clear();
@@ -1371,6 +1375,18 @@ function createKnob(
     const step = midiStep();
     return step ? v + delta * step : fromUnit(toUnit(v) + delta / 1024);
   });
+  const midiTarget = binding?.midiTarget || (() => {
+    const host = window.sadPetControlSource ? parent.SadMidiTargets : window.SadMidiTargets;
+    if (!host?.enabled) return null;
+    const timbre = window.sadPetControlSource?.item.timbre ?? state?.timbres?.active;
+    const address = binding?.midiPath?.();
+    return host.describe({ timbre, kind: state?.timbres?.timbres.find(t => t.id === timbre)?.kind,
+      key, parameter: address ? `preset:${address.padId || address.path.join(".")}:${address.path.slice(3).join(".")}`
+        : sequencerParameter(key) || (/^(matrix\d+_depth|macro\d+_depth\d+)$/.test(key) ? key : null),
+      ...(address || {}), label: binding?.midiLabel?.() || aria, min, max,
+      step: binding?.midiStep ?? binding?.step,
+      scale: typeof binding?.midiScale === "function" ? binding.midiScale() : binding?.midiScale });
+  });
   globalThis.SadMidiLearn?.attach(dial, key, aria, (unit) => {
     if (!preset) return;
     const v = clamp(midiQuantize(clamp(fromUnit(unit)), get()));
@@ -1379,7 +1395,7 @@ function createKnob(
     if (!preset) return;
     const v = clamp(midiQuantize(clamp(midiIncrement(get(), delta)), get()));
     if (v !== get()) set(v);
-  });
+  }, { describe: midiTarget, read: () => ({ value: get(), unit: toUnit(get()), text: format(get()) }) });
   if (binding?.register !== false) {
     controls.set(key, update);
     modulationViews.set(key, modulation);
@@ -1387,7 +1403,7 @@ function createKnob(
   knobUnits.set(key, { format, min, max, get });
   dial.controlBinding = {
     schema: [key, label, format, min, max, aria],
-    binding: { ...binding, get, set, midiIncrement, midiQuantize,
+    binding: { ...binding, get, set, midiIncrement, midiQuantize, midiTarget,
       reset: () => binding ? binding.reset() : presets[0].params[key],
       feedback: () => state?.knobs?.[key] },
   };
@@ -2041,6 +2057,7 @@ function syncTempo() {
   if (document.activeElement !== input) input.value = Math.round(preset.params.bpm * 10) / 10;
 }
 function syncAll() {
+  window.SadMidiLearn?.refresh();
   syncTempo();
   if (preset.control && !window.sadPetControlSource) {
     $("load-wav").hidden = true;
@@ -3116,6 +3133,7 @@ function moozBinding(kind, parameter) {
     quantize: (v) => snap(v),
     increment: (v, direction) => snap(v + (direction * step) / param.max),
     midiIncrement: (v, delta) => snap(v + delta / param.max),
+    midiStep: 1 / param.max,
     reset: () => param.default / param.max,
   };
 }
@@ -3208,6 +3226,7 @@ function lcrRatioBinding(getSlot) {
   const ratio = (v) => delayLookup(table(), v, true);
   const position = (value) => delayRatioPosition(table(), value);
   return {
+    midiScale: () => ({ type: "table", values: [...table()], quantum: 2.5 }),
     normalize: (v) => (ratio(v) - table()[0]) / (table().at(-1) - table()[0]),
     denormalize: (v) => position(table()[0] + v * (table().at(-1) - table()[0])),
     quantize: (v, origin = 0) => {
@@ -4701,7 +4720,15 @@ function sliderMenu(input, key, label) {
   window.SadMidiLearn?.attach(input, key, label, apply, delta => {
     const min = Number(input.min), max = Number(input.max), step = Number(input.step) || (max - min) / 1024;
     apply((Number(input.value) + delta * step - min) / (max - min));
-  });
+  }, { describe: () => {
+    const host = window.sadPetControlSource ? parent.SadMidiTargets : window.SadMidiTargets;
+    if (!host?.enabled) return null;
+    const timbre = window.sadPetControlSource?.item.timbre ?? state?.timbres?.active;
+    return host.describe({ timbre, kind: state?.timbres?.timbres.find(t => t.id === timbre)?.kind,
+      key, parameter: sequencerParameter(key), label, min: Number(input.min), max: Number(input.max),
+      step: Number(input.step) || undefined });
+  }, read: () => ({ value: Number(input.value),
+    unit: (Number(input.value) - Number(input.min)) / (Number(input.max) - Number(input.min)), text: input.value }) });
 }
 function syncLfos() {
   const count = preset.lfo_count || 3;
@@ -6183,6 +6210,8 @@ async function init() {
     sequenceCatalog = await request("/api/sequencer/catalog");
     state = await request("/api/state");
     preset = structuredClone(state.preset);
+    window.SadMidiTargets?.setup({ request, context: () => state?.timbres, flush: flushEdits, notify,
+      dirty() { editGeneration++; presetLibrary?.markDirty(); midiMovedAt = performance.now(); } });
     for (const s of grainSchema) createKnob(s, "grain-controls");
     buildGrainGroups();
     buildFilters();
@@ -6355,6 +6384,19 @@ async function init() {
     window.SadMidiLearn?.setup({
       notify,
       changed: () => window.SadController?.syncPages(),
+      capture(key, label, dial) {
+        const host = window.sadPetControlSource ? parent.SadMidiTargets : window.SadMidiTargets;
+        if (!host?.enabled) return null;
+        const linked = /^control:(\d+):(.+)$/.exec(key);
+        const parameter = linked?.[2] || sequencerParameter(key) ||
+          (/^(matrix\d+_depth|macro\d+_depth\d+)$/.test(key) ? key : null);
+        const spec = sequenceCatalog?.parameters.find(p => p.id === parameter);
+        if (!spec && !parameter) return null;
+        const timbre = linked ? Number(linked[1]) : window.sadPetControlSource?.item.timbre ?? state?.timbres?.active;
+        return host.describe({ timbre, kind: state?.timbres?.timbres.find(t => t.id === timbre)?.kind,
+          key, parameter, label, min: spec?.min ?? Number(dial.min), max: spec?.max ?? Number(dial.max),
+          step: dial.tagName === "SELECT" ? 1 : Number(dial.step) || undefined });
+      },
       // The browser and desktop builds play the MIDI input chosen by Keyboard.
       hint: () =>
         getComputedStyle($("midi")).display !== "none" && !$("midi").value && !window.SadController?.connected

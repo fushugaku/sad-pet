@@ -239,11 +239,10 @@
   async function sourceTemplate() {
     if (!template) template = fetch(location.href).then(r => r.text()).then(html => {
       const doc = new DOMParser().parseFromString(html, "text/html");
-      for (const script of doc.querySelectorAll("script")) script.remove();
-      for (const name of ["control", "library", "selection", "presets", "sequence", "panels", "tb303", "eq", "rack", "vocal", "sampler-library", "sampler", "midi", "clock", "modulation", "app"]) {
-        const script = doc.createElement("script");
-        script.src = `./${name}.js`; script.defer = true; doc.head.append(script);
-      }
+      // Keep the host's complete, versioned UI dependencies. Only the browser
+      // audio owner is excluded: fragments share their parent's engine.
+      for (const script of doc.querySelectorAll('script[src]'))
+        if (/\/browser\.js(?:\?|$)/.test(script.getAttribute("src"))) script.remove();
       const base = doc.createElement("base");
       base.href = new URL(".", location.href).href;
       doc.head.prepend(base);
@@ -325,6 +324,7 @@
           reset: () => api.run(item, saved.binding.reset),
           midiIncrement: (value, delta) => api.run(item, () => saved.binding.midiIncrement(value, delta)),
           midiQuantize: (value, origin) => api.run(item, () => saved.binding.midiQuantize(value, origin)),
+          midiTarget: () => api.run(item, saved.binding.midiTarget),
           feedback: () => api.read().state?.knobs?.[key],
           gesture: active => api.gesture(active),
         };

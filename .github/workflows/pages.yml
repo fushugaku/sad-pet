@@ -94,7 +94,9 @@ jobs:
           node wasm/test-startup.mjs
           node wasm/test-controls-ui.mjs
           node wasm/test-midi-learn-ui.mjs
+          node wasm/test-midi-targets.mjs
           node wasm/test-launch-control.mjs
+          node wasm/test-xl3-feedback.mjs
           node wasm/test-midi-clock.mjs
           node wasm/test-clock-ui.mjs
           node wasm/test-modulation-ui.mjs
