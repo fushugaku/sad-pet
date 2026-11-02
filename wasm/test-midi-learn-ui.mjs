@@ -468,3 +468,10 @@ assert.ok(stored.get("sad-pet-midi-pages-before-targets") || stored.get("sad-pet
 legacyScoped.SadMidiLearn.refresh();
 assert.equal(Object.keys(legacyScoped.SadMidiLearn.mappings()).length, 1);
 console.log("Pinned MIDI UI passed: independent instrument targets, offscreen control, badges, reload and legacy migration.");
+let preparations = 0;
+legacyScoped.SadMidiLearn.setup({ prepare: () => { preparations++; } });
+legacyScoped.SadMidiLearn.learn("pitch");
+assert.equal(preparations, 1, "the Learn menu did not prepare live controller feedback");
+legacyScoped.SadMidiLearn.learnTarget({ id: "control:0:pitch", timbre: 0, parameter: "pitch", label: "Pitch" });
+assert.equal(preparations, 2, "linked Control views bypassed automatic feedback preparation");
+assert.equal(legacyScoped.SadMidiLearn.learning(), "control:0:pitch");

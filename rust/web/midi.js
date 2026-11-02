@@ -137,6 +137,10 @@ window.SadMidiLearn = (() => {
     event.stopPropagation();
     cancel();
   }
+  function prepare() {
+    try { Promise.resolve(hooks.prepare?.()).catch(error => hooks.notify(error.message)); }
+    catch (error) { hooks.notify(error.message); }
+  }
   function learn(key) {
     const previous = learning;
     const shown = [...(knobs.get(key) || [])].findLast(k => k.dial.isConnected);
@@ -149,6 +153,7 @@ window.SadMidiLearn = (() => {
     document.addEventListener("keydown", escape, true);
     const hint = hooks.hint();
     hooks.notify(`MIDI learn: move a controller to turn ${label(learning)} · Page ${page + 1} · Esc cancels${hint ? ` · ${hint}` : ""}`, true);
+    prepare();
   }
   function stop() {
     const key = learning;
@@ -350,6 +355,7 @@ window.SadMidiLearn = (() => {
       learning = target.id; paint();
       document.addEventListener("keydown", escape, true);
       hooks.notify(`MIDI learn: move a controller to turn ${target.label} · Page ${page + 1} · Esc cancels`, true);
+      prepare();
     },
     cancel,
     forget,

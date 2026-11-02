@@ -255,7 +255,21 @@ export class MidiInputs {
     };
   }
   async request(path, data) {
-    if (path.searchParams.has("request")) await this.access({ sysex: true });
+    const prepareLearn = path.searchParams.has("learn");
+    if (path.searchParams.has("request") || prepareLearn) await this.access({ sysex: true });
+    if (prepareLearn) {
+      const xl3 = [this.controller, ...this.candidates()].find(p => p && launchControlModel(p.name) === "xl3");
+      if (xl3) {
+        await this.surface.flush();
+        // Learn is the user's request for live parameter feedback. Reassert
+        // DAW mode even if another client previously disabled the hardware.
+        this.feedback.stop();
+        this.clearHighResolution(); this.pageButtons.clear();
+        Object.assign(this.settings, { enabled: true, mode: "daw", id: xl3.id, name: xl3.name });
+        this.learn()?.configureXL3?.();
+        this.error = null; this.save();
+      }
+    }
     if (data) {
       if ("mode" in data && !["mixer", "learn", "native", "daw"].includes(data.mode)) throw new Error("Unknown controller mode");
       if ("page" in data && (!Number.isInteger(data.page) || data.page < 0 || data.page >= 16))
@@ -291,6 +305,7 @@ export class MidiInputs {
       supported: !!this.navigator?.requestMIDIAccess, access: !!this.backend.midiAccess,
       device: !this.settings.enabled ? null : this.settings.id || "auto",
       ports: this.candidates().map(p => ({ id: p.id, name: p.name })),
+      xl3Available: this.candidates().some(p => launchControlModel(p.name) === "xl3"),
       connected: this.controller?.name || null, mode: this.settings.mode,
       page: this.surface.mappingPage, pages: learner?.pages?.() || [],
       feedback: this.feedback.active || (!!this.surface.output && this.surface.model === "xl"),

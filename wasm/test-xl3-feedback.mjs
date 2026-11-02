@@ -69,7 +69,7 @@ const midiAccess = { sysexEnabled: false,
   outputs: new Map([mainOut, auxiliaryOut].map(p => [p.id, p])),
 };
 const requests = [], received = [], notes = [];
-let activePage = 0, deny = false;
+let activePage = 0, deny = false, learningTarget = null, learnedBindings = [];
 const inputs = new MidiInputs({ audio: { async call(...args) { notes.push(args); } },
   midiClock: { input: () => false }, async resume() {} }, {
   navigator: { async requestMIDIAccess(options) {
@@ -80,7 +80,17 @@ const inputs = new MidiInputs({ audio: { async call(...args) { notes.push(args);
   } },
   storage: { getItem() { return JSON.stringify({ mode: "daw" }); }, setItem() {} },
   learn: () => ({ page: () => activePage, selectPage: p => { activePage = p; },
-    input: (...args) => received.push(args), feedback: () => [] }),
+    learning: () => learningTarget,
+    input: (...args) => {
+      received.push(args);
+      if (learningTarget) {
+        const pitch = learningTarget.endsWith(":pitch");
+        learnedBindings = [{ key: learningTarget, channel: args[0], controller: args[1],
+          parameter: pitch ? "pitch" : "filter", label: pitch ? "Pitch" : "Cutoff",
+          available: true, unit: .5, text: "0.5" }];
+        learningTarget = null;
+      }
+    }, feedback: () => learnedBindings }),
   ui: () => ({ context: () => ({ active: 0, timbres: [] }), notify: m => errors.push(m) }), changed() {},
 });
 await inputs.access();
@@ -130,6 +140,33 @@ assert.equal(auxiliaryIn.onmidimessage, null);
 assert.equal(typeof mainIn.onmidimessage, "function");
 await inputs.request(new URL("http://localhost/api/controller"), { mode: "native" });
 assert.equal(inputs.status().feedbackAvailable, false, "Custom Modes advertised unsupported live LEDs");
+
+// Exactly the public Learn flow: no manual controller/profile selection.
+// It also recovers if an external MIDI client disabled the device while the
+// app's cached mode still says DAW Control.
+auxiliaryIn.state = "connected";
+await inputs.request(new URL("http://localhost/api/controller"), { device: null });
+const learnRequest = new URL("http://localhost/api/controller?learn=1");
+learningTarget = "control:0:filter";
+await inputs.request(learnRequest);
+assert.equal(inputs.status().mode, "daw");
+assert.equal(inputs.status().connected, mainIn.name);
+assert.equal(inputs.status().feedback, true);
+assert.equal(activePage, 13, "automatic Learn changed the selected mapping page");
+assert.equal(learningTarget, "control:0:filter", "preparing feedback cancelled Learn");
+auxiliaryIn.onmidimessage({ data: [0xbf, 77, 65] });
+await inputs.feedback.sync();
+assert.equal(learningTarget, null);
+assert.deepEqual(messages.filter(b => b[6] === 1 && b[8] === 13).at(-1).slice(9, 12), [0, 69, 6]);
+const enables = () => messages.filter(b => b.join() === "159,12,127").length;
+const beforeRelearn = enables();
+learningTarget = "control:0:pitch";
+await inputs.request(learnRequest);
+assert.equal(enables(), beforeRelearn + 1, "Learn did not reassert the real hardware configuration");
+auxiliaryIn.onmidimessage({ data: [0xbf, 77, 65] });
+await inputs.feedback.sync();
+assert.deepEqual(messages.filter(b => b[6] === 1 && b[8] === 13).at(-1).slice(9, 12), [69, 0, 0]);
+assert.deepEqual(requests, [false, true, true], "Learn repeatedly requested already-granted MIDI permission");
 inputs.dispose();
 assert.deepEqual(errors, []);
 console.log("XL3 feedback passed: actual DAW Control surface, 16 logical pages, relative rows, pickup, RGB/OLED, mode gestures, independent ports, endpoint refresh and cleanup.");

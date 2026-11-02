@@ -2,7 +2,7 @@
 // Browser-only control surface row. The instrument's normal edit queue owns
 // all changes, including selecting a timbre while it has unsent preset edits.
 window.SadController = (() => {
-  let hooks, busy = false, connected = false, ports = "", rows = "";
+  let hooks, busy = false, connected = false, ports = "", rows = "", lastData, preparing;
   const $ = id => document.getElementById(id);
   const option = (value, text) => new Option(text, value);
   const text = (id, value) => { const node = $(id); if (node.textContent !== value) node.textContent = value; };
@@ -21,6 +21,7 @@ window.SadController = (() => {
   }
   function sync(data) {
     if (!hooks || !data) return;
+    lastData = data;
     connected = !!data.connected;
     $("controller-led").classList.toggle("off", !connected);
     const signature = JSON.stringify([data.ports, data.device]);
@@ -99,6 +100,14 @@ window.SadController = (() => {
     },
     sync,
     syncPages,
+    prepareLearn() {
+      if (!hooks || !navigator.requestMIDIAccess || (lastData?.access && !lastData.xl3Available)) return;
+      if (!preparing) preparing = hooks.request("/api/controller?learn=1")
+        .then(sync).catch(error => {
+          text("controller-status", error.message); hooks.notify(error.message, true);
+        }).finally(() => { preparing = null; });
+      return preparing;
+    },
     context: () => hooks?.context(),
     change: (...args) => hooks.change(...args),
     notify: (...args) => hooks?.notify(...args),

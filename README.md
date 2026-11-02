@@ -799,9 +799,11 @@ first opens; the previous map is backed up under
 `sad-pet-midi-pages-before-targets`. Removing a source instrument disables its
 assignments.
 
-Choose **XL3 · 16 pages + RGB** for live RGB and OLED feedback. Use **Enable
-feedback** if MIDI was already connected without SysEx permission, and allow
-system exclusive messages. This profile uses the actual **DAW Control** surface:
+On XL3, clicking **MIDI learn** automatically connects the controller and
+enables **XL3 · 16 pages + RGB**. Turn a control to assign it; its colour and
+brightness then follow that parameter. Allow system exclusive messages when
+the browser first asks. Each Learn reasserts the device configuration, including
+after another MIDI client disabled it. This profile uses the actual **DAW Control** surface:
 Custom Modes retain their template colours and do not display DAW LED updates.
 Controls use the paired DAW USB interface, with three relative encoder rows.
 

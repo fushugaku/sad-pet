@@ -6383,6 +6383,7 @@ async function init() {
     window.SadController?.setup({ request, notify, context: () => state?.timbres, change: changeTimbre });
     window.SadMidiLearn?.setup({
       notify,
+      prepare: () => window.SadController?.prepareLearn(),
       changed: () => window.SadController?.syncPages(),
       capture(key, label, dial) {
         const host = window.sadPetControlSource ? parent.SadMidiTargets : window.SadMidiTargets;
