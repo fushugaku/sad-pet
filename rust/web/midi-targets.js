@@ -117,22 +117,23 @@ window.SadMidiTargets = (() => {
     });
     return running;
   }
-  function command(d, format, amount) {
+  function command(d, format, amount, multiplier = 1) {
     const key = id(d);
     const work = (queues.get(key) || Promise.resolve()).catch(() => {}).then(async () => {
       await hooks.flush();
       const current = await read(d, true);
       if (!current || !exists(d)) return;
       const pitch = d.parameter === "pitch", step = pitch ? .1 / (2 * Math.max(.1, current.pitchRange || 36)) : d.step;
+      const delta = (amount - 64) * multiplier;
       let value;
       if (format === "relative") value = step
-        ? current.value + (amount - 64) * step
-        : scale(d, scale(d, current.value) + (amount - 64) / 1024, true);
+        ? current.value + delta * step
+        : scale(d, scale(d, current.value) + delta / 1024, true);
       else value = scale(d, amount / (format === "14bit" ? 16383 : 127), true);
       if (d.scale?.type === "table" && d.scale.quantum) {
         const first = d.scale.values[0], range = d.scale.values.at(-1) - first;
         const origin = Math.round((first + scale(d, current.value) * range) * 10) / 10;
-        const physical = format === "relative" ? origin + (amount - 64) * d.scale.quantum
+        const physical = format === "relative" ? origin + delta * d.scale.quantum
           : origin + Math.round((first + scale(d, value) * range - origin) / d.scale.quantum) * d.scale.quantum;
         value = scale(d, (physical - first) / range, true);
       }

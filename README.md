@@ -812,7 +812,15 @@ a page and immediately returns the hardware to DAW Control; **Page ▲/▼** or
 **Track ◀/▶** steps between pages. The screen shows the current page. DAW CCs
 are translated to the existing per-page logical channels and control numbers,
 so switching profiles preserves assignments. All sixteen channel buttons remain
-assignable. Relative Pitch keeps its 0.1 semitone steps. DAW faders use 7-bit
+assignable. Hold the controller's **Shift** while turning an encoder for ten
+times the normal step: Pitch moves by 1 semitone instead of 0.1, and returns
+to 0.1 as soon as Shift is released. The app releases the XL3's built-in
+preview mode while retaining the physical Shift modifier, so rotation still
+changes the parameter. **Play** starts/stops playback; **Record** starts
+recording and playback, then stops/saves the take to Library on its next press.
+Stopping playback with Play also finishes an active recording. The buttons'
+lights follow playback and recording, including changes made onscreen.
+DAW faders use 7-bit
 absolute values with hardware pickup; choose **XL3 · 16 modes** for the Custom
 Modes' 14-bit faders with fixed template colours.
 
@@ -831,7 +839,8 @@ page isolation, badge changes, cancellation, persistence and clearing one page.
 `node wasm/test-midi-targets.mjs` checks instrument targeting, fine pitch,
 sampler pad identity and compact feedback reads. `node wasm/test-xl3-feedback.mjs`
 checks DAW port pairing, DAW Control selection, relative rows, all sixteen
-logical channels, mode gestures, page buttons, RGB brightness, display names
+logical channels, mode gestures, page buttons, Shift acceleration and release,
+transport press/release handling, button lights, RGB brightness, display names
 and MIDI cleanup.
 
 Protocol references: [Novation Mk1/Mk2 programmer's reference](https://fael-downloads-prod.focusrite.com/customer/prod/downloads/launch_control_xl_programmer_s_reference_guide.pdf),

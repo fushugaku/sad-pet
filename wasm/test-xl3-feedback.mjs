@@ -79,7 +79,8 @@ const midiAccess = { sysexEnabled: false,
   inputs: new Map([mainIn, auxiliaryIn].map(p => [p.id, p])),
   outputs: new Map([mainOut, auxiliaryOut].map(p => [p.id, p])),
 };
-const requests = [], received = [], notes = [];
+const requests = [], received = [], notes = [], actions = [];
+const transportState = { playing: false, recording: false };
 let activePage = 0, deny = false, learningTarget = null, learnedBindings = [];
 const inputs = new MidiInputs({ audio: { async call(...args) { notes.push(args); } },
   midiClock: { input: () => false }, async resume() {} }, {
@@ -102,7 +103,14 @@ const inputs = new MidiInputs({ audio: { async call(...args) { notes.push(args);
         learningTarget = null;
       }
     }, feedback: () => learnedBindings }),
-  ui: () => ({ context: () => ({ active: 0, timbres: [] }), notify: m => errors.push(m) }), changed() {},
+  ui: () => ({ context: () => ({ active: 0, timbres: [] }), notify: m => errors.push(m),
+    transportState: () => transportState,
+    async transport(action) {
+      actions.push(action);
+      await new Promise(resolve => setTimeout(resolve, 0));
+      transportState[action === "play" ? "playing" : "recording"] = !transportState[action === "play" ? "playing" : "recording"];
+    },
+  }), changed() {},
 });
 await inputs.access();
 assert.equal(inputs.status().feedbackAvailable, true);
@@ -123,7 +131,7 @@ for (let page = 0; page < 16; page++) {
   auxiliaryIn.onmidimessage({ data: [0xb6, 30, page < 4 ? page + 6 : page + 14] });
   assert.equal(activePage, page);
   auxiliaryIn.onmidimessage({ data: [0xbf, 77, 65] });
-  assert.deepEqual(received.at(-1), [page, 13, 65, "relative"], "DAW encoder lost its logical page/channel");
+  assert.deepEqual(received.at(-1), [page, 13, 65, "relative", 1], "DAW encoder lost its logical page/channel");
   auxiliaryIn.onmidimessage({ data: [0xbf, 5, 127] });
   assert.deepEqual(received.at(-1), [page, 5, 127]);
   auxiliaryIn.onmidimessage({ data: [0xb0, 37, 127] });
@@ -142,10 +150,47 @@ const beforeTouch = received.length;
 auxiliaryIn.onmidimessage({ data: [0xbe, 13, 127] });
 auxiliaryIn.onmidimessage({ data: [0xbf, 13, 100] });
 assert.equal(received.length, beforeTouch, "touch or absolute position feedback changed a relative parameter");
+// Firmware Shift normally suppresses control changes. Release its preview,
+// ignore that feature acknowledgement, and retain the physical modifier.
+auxiliaryIn.onmidimessage({ data: [0xb6, 63, 127] });
+assert.ok(messages.some(b => b.join() === "182,63,0"), "Shift did not release the firmware's preview-only mode");
+auxiliaryIn.onmidimessage({ data: [0xb6, 63, 0] }); // Feature-control acknowledgement.
+auxiliaryIn.onmidimessage({ data: [0xbf, 77, 72] });
+assert.deepEqual(received.at(-1), [activePage, 13, 72, "relative", 10], "Shift lost accelerated or multi-tick input");
+auxiliaryIn.onmidimessage({ data: [0xb6, 63, 0] }); // Physical release.
+auxiliaryIn.onmidimessage({ data: [0xbf, 77, 65] });
+assert.deepEqual(received.at(-1), [activePage, 13, 65, "relative", 1]);
+
+// Transport bypasses Learn, fires once per press, and serializes quick taps.
+const beforeTransportInput = received.length;
+learningTarget = "control:0:pitch";
+auxiliaryIn.onmidimessage({ data: [0xb0, 116, 127] });
+auxiliaryIn.onmidimessage({ data: [0xb0, 116, 127] });
+auxiliaryIn.onmidimessage({ data: [0xb0, 116, 0] });
+await inputs.transportQueue;
+assert.deepEqual(actions, ["play"]);
+assert.equal(transportState.playing, true);
+await inputs.feedback.sync();
+assert.deepEqual(messages.filter(b => b[6] === 1 && b[8] === 116).at(-1).slice(9, 12), [0, 127, 0]);
+for (const cc of [116, 116, 118]) {
+  auxiliaryIn.onmidimessage({ data: [0xb0, cc, 127] });
+  auxiliaryIn.onmidimessage({ data: [0xb0, cc, 0] });
+}
+await inputs.transportQueue;
+assert.deepEqual(actions, ["play", "play", "play", "record"]);
+assert.equal(transportState.playing, true, "rapid taps read stale playback state");
+assert.equal(transportState.recording, true);
+await inputs.feedback.sync();
+assert.deepEqual(messages.filter(b => b[6] === 1 && b[8] === 118).at(-1).slice(9, 12), [127, 0, 0]);
+assert.equal(received.length, beforeTransportInput, "transport was assigned to a parameter");
+assert.equal(learningTarget, "control:0:pitch", "transport consumed the armed MIDI Learn");
+learningTarget = null;
+auxiliaryIn.onmidimessage({ data: [0xb6, 63, 127] });
 auxiliaryIn.onmidimessage({ data: [0x90, 60, 100] });
 assert.equal(notes.filter(args => args[3] === "/api/midi-bytes").length, 0, "DAW messages reached the synth");
 auxiliaryIn.state = "disconnected";
 inputs.refresh();
+assert.equal(inputs.shiftHeld, false, "disconnect left the coarse modifier held");
 assert.equal(inputs.status().feedback, false);
 assert.equal(auxiliaryIn.onmidimessage, null);
 assert.equal(typeof mainIn.onmidimessage, "function");

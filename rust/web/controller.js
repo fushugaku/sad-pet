@@ -52,7 +52,7 @@ window.SadController = (() => {
     $("controller-pages").hidden = data.mode === "mixer";
     $("controller-learn-hint").hidden = data.mode === "mixer";
     text("controller-learn-hint", data.mode === "daw"
-      ? "Mode + 1–16 selects a page · Page ▲/▼: previous/next · relative knobs, fader pickup."
+      ? "Mode + 1–16: page · Shift + turn: ×10 · Play: start/stop · Record: record/save."
       : data.mode === "native"
       ? "Custom Modes: relative knobs, 14-bit faders; fixed colours. For live lights and OLED, choose 16 pages + RGB."
       : "Upper buttons: pages 1–8 · lower: 9–16 · ← / → changes page.");
@@ -110,6 +110,8 @@ window.SadController = (() => {
     },
     context: () => hooks?.context(),
     change: (...args) => hooks.change(...args),
+    transport: action => hooks?.transport?.(action),
+    transportState: () => hooks?.transportState?.(),
     notify: (...args) => hooks?.notify(...args),
     get connected() { return connected; },
   };

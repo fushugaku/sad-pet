@@ -45,6 +45,12 @@ assert.equal(context.active, 1);
 assert.ok(writes.length <= 2, "relative bursts were not coalesced");
 await midi.command(other, "relative", 65); await midi.flush();
 assert.ok(Math.abs((params.get(1).pitch * 2 - 1) * 12 - .1) < 1e-8);
+await midi.command(other, "relative", 65, 10); await midi.flush();
+assert.ok(Math.abs((params.get(1).pitch * 2 - 1) * 12 - 1.1) < 1e-8, "Shift did not give a 1 st pitch step");
+await midi.command(other, "relative", 63); await midi.flush();
+assert.ok(Math.abs((params.get(1).pitch * 2 - 1) * 12 - 1) < 1e-8, "releasing Shift lost the fine step grid");
+await midi.command(cutoff, "relative", 72, 10); await midi.flush();
+assert.ok(Math.abs(params.get(0).filter - (.2 + 80 / 1024)) < 1e-8, "coarse continuous rotation clipped the MIDI delta");
 await midi.command(cutoff, "14bit", 8193); await midi.flush();
 assert.equal(params.get(0).filter, 8193 / 16383);
 await midi.command(pitch, "absolute", 127); await midi.flush();
@@ -71,9 +77,11 @@ const pad = target(2, "preset:pad-a:tune", { min: -48, max: 48, step: 1,
   path: ["sampler", "pads", 0, "tune"], padId: "pad-a" });
 await midi.command(pad, "relative", 65); await midi.flush();
 assert.equal(sampler.sampler.pads[0].tune, 1);
+await midi.command(pad, "relative", 65, 10); await midi.flush();
+assert.equal(sampler.sampler.pads[0].tune, 11);
 sampler.sampler.pads.reverse(); now += 100;
 await midi.command(pad, "relative", 65); await midi.flush();
-assert.equal(sampler.sampler.pads.find(p => p.id === "pad-a").tune, 2);
+assert.equal(sampler.sampler.pads.find(p => p.id === "pad-a").tune, 12);
 assert.equal(sampler.sampler.pads.find(p => p.id === "pad-b").tune, 12);
 assert.equal(sampler.sampler.pads.find(p => p.id === "pad-b").gain, -6);
 

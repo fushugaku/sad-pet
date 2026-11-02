@@ -35,7 +35,11 @@ export class MidiInputs {
     });
     this.highResolution = new Map();
     this.pageButtons = new Set();
+    this.transportButtons = new Set();
+    this.shiftHeld = false; this.shiftOffReply = false;
+    this.transportQueue = Promise.resolve();
     this.feedback = new Xl3Feedback({ learn: this.learn,
+      transport: () => this.ui()?.transportState?.(),
       page: page => {
         this.clearHighResolution();
         this.learn()?.selectPage?.(page, { preserveLearning: true });
@@ -99,6 +103,7 @@ export class MidiInputs {
     if (previous !== this.controller) {
       this.clearHighResolution();
       this.pageButtons.clear();
+      this.resetDawButtons();
       this.surface.resetPickup();
       this.surface.buttonsDown.clear();
       this.surface.lights.clear();
@@ -118,6 +123,7 @@ export class MidiInputs {
       mode: this.settings.mode, output, page: this.learn()?.page?.() ?? 0 });
     const daw = this.surface.model === "xl3" && this.settings.mode === "daw"
       ? xl3DawPorts(this.controller, this.inputs, outputs) : {};
+    if (this.feedbackInput !== (daw.input || null)) this.resetDawButtons();
     this.feedbackInput = daw.input || null;
     this.feedbackOutput = daw.output || null;
     this.feedback.configure({ output: daw.output || null,
@@ -169,9 +175,34 @@ export class MidiInputs {
   }
   dawInput(data) {
     if (data?.length !== 3 || !this.feedback.active) return;
-    if (data[0] === 0xb6 && data[1] === 30) { this.feedback.input(data); return; }
+    if (data[0] === 0xb6 && data[1] === 30) {
+      this.resetDawButtons(); this.feedback.input(data); return;
+    }
     const [status, cc, value] = data;
     if (value < 0 || value > 127) return;
+    if (status === 0xb6 && cc === 63) {
+      // XL3's built-in Shift previews controls and suppresses their CCs.
+      // Keep the physical modifier here, but release firmware preview so
+      // rotations still arrive. Feature controls acknowledge this release.
+      if (!value && this.shiftOffReply) { this.shiftOffReply = false; return; }
+      this.shiftHeld = !!value;
+      if (value) {
+        this.shiftOffReply = true;
+        this.feedback.send([0xb6, 63, 0]);
+      }
+      return;
+    }
+    if (status === 0xb0 && [116, 118].includes(cc)) {
+      this.feedback.colors.delete(cc);
+      if (!value) { this.transportButtons.delete(cc); return; }
+      if (this.transportButtons.has(cc)) return;
+      this.transportButtons.add(cc);
+      const action = cc === 116 ? "play" : "record";
+      // Read the current app state after the previous press has completed.
+      this.transportQueue = this.transportQueue.then(() => this.ui()?.transport?.(action))
+        .catch(error => this.ui()?.notify(error.message));
+      return;
+    }
     if (status === 0xbe && cc >= 5 && cc <= 36) {
       if (value) this.feedback.touch(cc);
       return;
@@ -189,13 +220,17 @@ export class MidiInputs {
     if (status === 0xbf && cc >= 77 && cc <= 100) {
       const controller = cc - 64;
       this.feedback.touch(controller);
-      learner?.input(page, controller, value, "relative");
+      learner?.input(page, controller, value, "relative", this.shiftHeld ? 10 : 1);
     } else if (status === 0xbf && cc >= 5 && cc <= 12) {
       this.feedback.touch(cc);
       learner?.input(page, cc, value);
     } else if (status === 0xb0 && cc >= 37 && cc <= 52) {
       learner?.input(page, page === 15 ? cc : cc + 43, value);
     }
+  }
+  resetDawButtons() {
+    this.shiftHeld = false; this.shiftOffReply = false;
+    this.transportButtons.clear();
   }
   // SAD PET XL3 Custom Modes 1–15: relative encoders, 14-bit faders,
   // freely assignable buttons. Factory Mode 16 keeps its fixed 7-bit format.
@@ -265,7 +300,7 @@ export class MidiInputs {
         // Learn is the user's request for live parameter feedback. Reassert
         // DAW mode even if another client previously disabled the hardware.
         reassertFeedback = !!this.feedback.active;
-        this.clearHighResolution(); this.pageButtons.clear();
+        this.clearHighResolution(); this.pageButtons.clear(); this.resetDawButtons();
         Object.assign(this.settings, { enabled: true, mode: "daw", id: xl3.id, name: xl3.name });
         this.learn()?.configureXL3?.();
         this.error = null; this.save();
@@ -285,7 +320,9 @@ export class MidiInputs {
         this.settings.name = selected?.name || null;
       }
       if ("mode" in data) {
-        if (this.settings.mode !== data.mode) { this.clearHighResolution(); this.pageButtons.clear(); }
+        if (this.settings.mode !== data.mode) {
+          this.clearHighResolution(); this.pageButtons.clear(); this.resetDawButtons();
+        }
         this.settings.mode = data.mode;
         if (["native", "daw"].includes(data.mode)) this.learn()?.configureXL3?.();
       }
@@ -321,6 +358,7 @@ export class MidiInputs {
     this.feedback.dispose();
     this.clearHighResolution();
     this.pageButtons.clear();
+    this.resetDawButtons();
     this.surface.dispose();
     for (const port of this.bound) { port.onmidimessage = null; port.close?.().catch(() => {}); }
     this.bound.clear();

@@ -6380,7 +6380,18 @@ async function init() {
         syncAll();
       },
     });
-    window.SadController?.setup({ request, notify, context: () => state?.timbres, change: changeTimbre });
+    window.SadController?.setup({ request, notify, context: () => state?.timbres, change: changeTimbre,
+      transportState: () => ({ playing: !!state?.playing, recording: !!state?.recording?.active }),
+      async transport(action) {
+        if (action === "record") {
+          if (!$("record").disabled) await toggleRecording();
+        } else if (action === "play") {
+          if (!state || !connected) return;
+          if (state.playing && state.recording?.active) await toggleRecording();
+          await transport({ playing: !state.playing, midi_gate: false });
+        }
+      },
+    });
     window.SadMidiLearn?.setup({
       notify,
       prepare: () => window.SadController?.prepareLearn(),

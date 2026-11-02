@@ -40,8 +40,9 @@ export function xl3DawPorts(input, inputs, outputs) {
 }
 
 export class Xl3Feedback {
-  constructor({ learn, page, error }) {
+  constructor({ learn, page, error, transport = () => null }) {
     this.learn = learn; this.pageChanged = page; this.error = error;
+    this.transport = transport;
     this.colors = new Map(); this.positions = new Map(); this.names = new Map();
     this.page = 0; this.hardwareMode = null; this.lastControl = null;
   }
@@ -119,6 +120,14 @@ export class Xl3Feedback {
     const page = this.page, output = this.output;
     try {
       const learner = this.learn();
+      const transport = this.transport();
+      for (const [control, rgb] of [[116, [0, transport?.playing ? 127 : 12, 0]],
+        [118, [transport?.recording ? 127 : 12, 0, 0]]]) {
+        const signature = rgb.join();
+        if (this.colors.get(control) !== signature) {
+          this.sysex(1, 83, control, ...rgb); this.colors.set(control, signature);
+        }
+      }
       await learner?.refreshFeedback?.();
       if (!this.active || this.page !== page || this.output !== output) return;
       const controls = new Map((learner?.feedback?.() || []).filter(m => m.channel === page).map(m => [m.controller, m]));

@@ -194,7 +194,7 @@ window.SadMidiLearn = (() => {
     hooks.notify(`Forgot ${mapped.length} MIDI mapping${mapped.length === 1 ? "" : "s"} on Page ${page + 1}`);
   }
   /** A controller moved: learn it, then turn the knob it is mapped to. */
-  function input(channel, controller, value, format = "absolute") {
+  function input(channel, controller, value, format = "absolute", multiplier = 1) {
     const maximum = format === "14bit" ? 16383 : 127;
     if (!valid(channel, controller) || !["absolute", "relative", "14bit"].includes(format) ||
         !Number.isInteger(value) || value < 0 || value > maximum) return false;
@@ -217,13 +217,13 @@ window.SadMidiLearn = (() => {
     }
     if (key === undefined) return false;
     if (targets.has(key) && window.SadMidiTargets?.enabled) {
-      window.SadMidiTargets.command(targets.get(key), format, value);
+      window.SadMidiTargets.command(targets.get(key), format, value, multiplier);
       return true;
     }
     const shown = [...(knobs.get(key) || [])].filter(knob => knob.dial.isConnected);
     if (format === "relative") {
       // Linked views may show one parameter more than once. Increment once.
-      shown.findLast(knob => knob.increment)?.increment(value - 64);
+      shown.findLast(knob => knob.increment)?.increment((value - 64) * multiplier);
     } else for (const knob of shown) knob.apply(value / maximum);
     return true;
   }
