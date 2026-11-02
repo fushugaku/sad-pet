@@ -799,11 +799,20 @@ first opens; the previous map is backed up under
 `sad-pet-midi-pages-before-targets`. Removing a source instrument disables its
 assignments.
 
-**XL3 · 16 modes** also supports live RGB and OLED feedback. Use **Enable
+Choose **XL3 · 16 pages + RGB** for live RGB and OLED feedback. Use **Enable
 feedback** if MIDI was already connected without SysEx permission, and allow
-system exclusive messages. SAD PET uses the paired DAW USB port for feedback
-while Custom Mode controls keep using the main MIDI port. Changing a mode on
-either the hardware or the browser selects the corresponding page.
+system exclusive messages. This profile uses the actual **DAW Control** surface:
+Custom Modes retain their template colours and do not display DAW LED updates.
+Controls use the paired DAW USB interface, with three relative encoder rows.
+
+The same sixteen saved mapping pages remain available. **Mode + 1–16** selects
+a page and immediately returns the hardware to DAW Control; **Page ▲/▼** or
+**Track ◀/▶** steps between pages. The screen shows the current page. DAW CCs
+are translated to the existing per-page logical channels and control numbers,
+so switching profiles preserves assignments. All sixteen channel buttons remain
+assignable. Relative Pitch keeps its 0.1 semitone steps. DAW faders use 7-bit
+absolute values with hardware pickup; choose **XL3 · 16 modes** for the Custom
+Modes' 14-bit faders with fixed template colours.
 
 Pitch is red, resonance blue, cutoff green, level/mix yellow, time orange,
 modulation purple, stereo/position cyan and effects teal. The LED stays dim at
@@ -819,7 +828,9 @@ permission errors, device settings, page navigation and USB reconnection.
 page isolation, badge changes, cancellation, persistence and clearing one page.
 `node wasm/test-midi-targets.mjs` checks instrument targeting, fine pitch,
 sampler pad identity and compact feedback reads. `node wasm/test-xl3-feedback.mjs`
-checks DAW port pairing, RGB brightness, display names and MIDI cleanup.
+checks DAW port pairing, DAW Control selection, relative rows, all sixteen
+logical channels, mode gestures, page buttons, RGB brightness, display names
+and MIDI cleanup.
 
 Protocol references: [Novation Mk1/Mk2 programmer's reference](https://fael-downloads-prod.focusrite.com/customer/prod/downloads/launch_control_xl_programmer_s_reference_guide.pdf),
 [Ardour's legacy control-number map](https://github.com/Ardour/ardour/blob/master/share/midi_maps/Novation_LaunchControl_XL.map),

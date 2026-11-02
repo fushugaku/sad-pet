@@ -50,8 +50,10 @@ window.SadController = (() => {
     $("controller-map").hidden = data.mode !== "mixer";
     $("controller-pages").hidden = data.mode === "mixer";
     $("controller-learn-hint").hidden = data.mode === "mixer";
-    text("controller-learn-hint", data.mode === "native"
-      ? "XL3 Mode 1–16 → Page 1–16 · SAD PET templates: relative knobs, 14-bit faders. Mode 16: factory resolution."
+    text("controller-learn-hint", data.mode === "daw"
+      ? "Mode + 1–16 selects a page · Page ▲/▼: previous/next · relative knobs, fader pickup."
+      : data.mode === "native"
+      ? "Custom Modes: relative knobs, 14-bit faders; fixed colours. For live lights and OLED, choose 16 pages + RGB."
       : "Upper buttons: pages 1–8 · lower: 9–16 · ← / → changes page.");
     syncPages();
     text("controller-send-names", data.sends.length ? data.sends.join(" · ") : "Add a Bus timbre to use sends");

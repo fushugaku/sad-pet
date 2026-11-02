@@ -19,7 +19,7 @@ export class MidiInputs {
     try {
       const saved = JSON.parse(storage?.getItem(STORAGE) || "null");
       if (saved) this.settings = {
-        enabled: saved.enabled !== false, mode: ["learn", "native"].includes(saved.mode) ? saved.mode : "mixer",
+        enabled: saved.enabled !== false, mode: ["learn", "native", "daw"].includes(saved.mode) ? saved.mode : "mixer",
         id: typeof saved.id === "string" ? saved.id : null,
         name: typeof saved.name === "string" ? saved.name : null,
       };
@@ -34,8 +34,10 @@ export class MidiInputs {
       error: message => { this.error = message; this.ui()?.notify(message); },
     });
     this.highResolution = new Map();
+    this.pageButtons = new Set();
     this.feedback = new Xl3Feedback({ learn: this.learn,
       page: page => {
+        this.clearHighResolution();
         this.learn()?.selectPage?.(page, { preserveLearning: true });
         this.changed();
       },
@@ -96,6 +98,7 @@ export class MidiInputs {
     }
     if (previous !== this.controller) {
       this.clearHighResolution();
+      this.pageButtons.clear();
       this.surface.resetPickup();
       this.surface.buttonsDown.clear();
       this.surface.lights.clear();
@@ -113,11 +116,11 @@ export class MidiInputs {
     const output = matchingOutput(this.controller, outputs);
     this.surface.configure({ model: launchControlModel(this.controller?.name) || "xl",
       mode: this.settings.mode, output, page: this.learn()?.page?.() ?? 0 });
-    const daw = this.surface.model === "xl3" && this.settings.mode === "native"
+    const daw = this.surface.model === "xl3" && this.settings.mode === "daw"
       ? xl3DawPorts(this.controller, this.inputs, outputs) : {};
     this.feedbackInput = daw.input || null;
     this.feedbackOutput = daw.output || null;
-    this.feedback.configure({ output: daw.output || null, midiOutput: output,
+    this.feedback.configure({ output: daw.output || null,
       enabled: !!this.backend.midiAccess?.sysexEnabled, page: this.learn()?.page?.() ?? 0 });
     const desired = new Set([keyboard, this.controller, this.feedbackInput].filter(Boolean));
     for (const port of this.bound) if (!desired.has(port)) {
@@ -133,10 +136,11 @@ export class MidiInputs {
     if (signature !== this.signature) { this.signature = signature; this.changed(); }
   }
   message(port, event) {
-    if (port === this.feedbackInput) { this.feedback.input(event.data); return; }
+    if (port === this.feedbackInput) { this.dawInput(event.data); return; }
     if (port === this.controller) {
       const learner = this.learn();
-      if (this.settings.mode === "native") {
+      if (this.settings.mode === "daw" && this.feedback.active) return;
+      if (["native", "daw"].includes(this.settings.mode)) {
         if (this.surface.model === "xl3") this.nativeInput(event.data, learner);
         return;
       }
@@ -162,6 +166,36 @@ export class MidiInputs {
     const bytes = [...event.data];
     this.backend.resume().then(() => this.backend.audio.call("request", bytes, [], "/api/midi-bytes"))
       .catch(() => {});
+  }
+  dawInput(data) {
+    if (data?.length !== 3 || !this.feedback.active) return;
+    if (data[0] === 0xb6 && data[1] === 30) { this.feedback.input(data); return; }
+    const [status, cc, value] = data;
+    if (value < 0 || value > 127) return;
+    if (status === 0xbe && cc >= 5 && cc <= 36) {
+      if (value) this.feedback.touch(cc);
+      return;
+    }
+    const learner = this.learn(), page = learner?.page?.() ?? 0;
+    if (status === 0xb0 && [106, 107, 103, 102].includes(cc)) {
+      if (!value) { this.pageButtons.delete(cc); return; }
+      if (this.pageButtons.has(cc)) return;
+      this.pageButtons.add(cc);
+      const next = Math.max(0, Math.min(15, page + ([106, 103].includes(cc) ? -1 : 1)));
+      learner?.selectPage?.(next, { preserveLearning: true });
+      this.feedback.selectPage(next); this.changed();
+      return;
+    }
+    if (status === 0xbf && cc >= 77 && cc <= 100) {
+      const controller = cc - 64;
+      this.feedback.touch(controller);
+      learner?.input(page, controller, value, "relative");
+    } else if (status === 0xbf && cc >= 5 && cc <= 12) {
+      this.feedback.touch(cc);
+      learner?.input(page, cc, value);
+    } else if (status === 0xb0 && cc >= 37 && cc <= 52) {
+      learner?.input(page, page === 15 ? cc : cc + 43, value);
+    }
   }
   // SAD PET XL3 Custom Modes 1–15: relative encoders, 14-bit faders,
   // freely assignable buttons. Factory Mode 16 keeps its fixed 7-bit format.
@@ -223,7 +257,7 @@ export class MidiInputs {
   async request(path, data) {
     if (path.searchParams.has("request")) await this.access({ sysex: true });
     if (data) {
-      if ("mode" in data && !["mixer", "learn", "native"].includes(data.mode)) throw new Error("Unknown controller mode");
+      if ("mode" in data && !["mixer", "learn", "native", "daw"].includes(data.mode)) throw new Error("Unknown controller mode");
       if ("page" in data && (!Number.isInteger(data.page) || data.page < 0 || data.page >= 16))
         throw new Error("Choose a MIDI mapping page from 1 to 16");
       if ("device" in data && data.device !== "auto" && data.device !== null &&
@@ -236,9 +270,9 @@ export class MidiInputs {
         this.settings.name = selected?.name || null;
       }
       if ("mode" in data) {
-        if (this.settings.mode !== data.mode) this.clearHighResolution();
+        if (this.settings.mode !== data.mode) { this.clearHighResolution(); this.pageButtons.clear(); }
         this.settings.mode = data.mode;
-        if (data.mode === "native") this.learn()?.configureXL3?.();
+        if (["native", "daw"].includes(data.mode)) this.learn()?.configureXL3?.();
       }
       if ("page" in data) {
         this.clearHighResolution();
@@ -261,7 +295,7 @@ export class MidiInputs {
       page: this.surface.mappingPage, pages: learner?.pages?.() || [],
       feedback: this.feedback.active || (!!this.surface.output && this.surface.model === "xl"),
       feedbackPermission: !!this.backend.midiAccess?.sysexEnabled,
-      feedbackAvailable: this.surface.model === "xl3" && this.settings.mode === "native" && !!this.feedbackInput && !!this.feedbackOutput,
+      feedbackAvailable: this.surface.model === "xl3" && this.settings.mode === "daw" && !!this.feedbackInput && !!this.feedbackOutput,
       error: this.error || null,
       ...this.surface.status(),
     };
@@ -269,6 +303,7 @@ export class MidiInputs {
   dispose() {
     this.feedback.dispose();
     this.clearHighResolution();
+    this.pageButtons.clear();
     this.surface.dispose();
     for (const port of this.bound) { port.onmidimessage = null; port.close?.().catch(() => {}); }
     this.bound.clear();

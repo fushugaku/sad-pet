@@ -1,8 +1,8 @@
 // Novation XL3 programmer reference: DAW USB interface, RGB command 01 53,
-// display commands 04/06, feature channel 7. Custom Modes keep their MIDI port.
+// display commands 04/06, feature channel 7. Live LEDs require DAW Control;
+// Custom Modes have a separate surface and retain their template colours.
 const HEADER = [0xf0, 0, 0x20, 0x29, 2, 0x15];
 const unit = v => Math.max(0, Math.min(1, Number(v) || 0));
-const modeCode = page => page < 4 ? page + 6 : page + 14;
 const modePage = value => value >= 6 && value <= 9 ? value - 6 : value >= 18 && value <= 29 ? value - 14 : null;
 const ascii = text => [...String(text).normalize("NFKD").replace(/[^\x20-\x7e]/g, " ").replace(/\s+/g, " ").trim().slice(0, 48)]
   .map(char => char.charCodeAt(0));
@@ -43,36 +43,37 @@ export class Xl3Feedback {
   constructor({ learn, page, error }) {
     this.learn = learn; this.pageChanged = page; this.error = error;
     this.colors = new Map(); this.positions = new Map(); this.names = new Map();
-    this.page = 0; this.hardwarePage = null; this.lastControl = null;
+    this.page = 0; this.hardwareMode = null; this.lastControl = null;
   }
   send(bytes, port = this.output) {
     if (!port) return;
     try { port.send(bytes); } catch (error) { this.error(`XL3 feedback: ${error.message}`); }
   }
   sysex(...bytes) { this.send([...HEADER, ...bytes, 0xf7]); }
-  configure({ output, midiOutput, enabled, page = this.page } = {}) {
+  configure({ output, enabled, page = this.page } = {}) {
     const active = !!(enabled && output);
     if (this.output !== output || this.active !== active) {
-      this.stop(); this.output = output; this.midiOutput = midiOutput; this.active = active;
+      this.stop(); this.output = output; this.active = active;
       if (active) {
-        this.send([0x9f, 11, 127]); // feature controls, also in standalone mode
-        this.send([0x9f, 12, 127]); // DAW functionality; reselect our Custom Mode
-        this.hardwarePage = null;
+        this.send([0x9f, 12, 127]);
+        this.send([0x9f, 11, 127]);
+        for (const row of [69, 72, 73]) this.send([0xb6, row, 127]);
+        this.send([0xb6, 70, 127]); // fader pickup follows feedback positions
+        this.send([0xb6, 71, 127]); // Shift + turn can preview a parameter
+        this.hardwareMode = null;
         this.interval = setInterval(() => this.sync(), 50);
       }
     }
-    this.midiOutput = midiOutput;
     this.selectPage(page);
   }
-  selectPage(page, fromDevice = false) {
+  selectPage(page) {
     if (!Number.isInteger(page) || page < 0 || page > 15) return;
     if (this.page !== page) {
       this.page = page; this.colors.clear(); this.positions.clear(); this.names.clear(); this.lastControl = null;
     }
-    if (fromDevice) this.hardwarePage = page;
-    if (this.active && this.hardwarePage !== page) {
-      this.hardwarePage = page;
-      this.send([0xb6, 30, modeCode(page)]);
+    if (this.active && this.hardwareMode !== 2) {
+      this.hardwareMode = 2;
+      this.send([0xb6, 30, 2]);
       this.colors.clear(); this.positions.clear(); this.names.clear();
     }
     if (this.active) this.sync();
@@ -80,9 +81,12 @@ export class Xl3Feedback {
   input(data) {
     if (data?.length !== 3 || data[0] !== 0xb6 || data[1] !== 30) return;
     const page = modePage(data[2]);
-    if (page === null) return;
-    this.selectPage(page, true);
-    this.pageChanged(page);
+    if (page === null && ![1, 2].includes(data[2])) return;
+    this.hardwareMode = data[2];
+    // Mode + 1–16 selects the software page, then returns to the DAW surface.
+    // This preserves the familiar hardware gesture and every saved mapping.
+    if (page !== null) this.pageChanged(page);
+    this.selectPage(page ?? this.page);
   }
   touch(controller) {
     if (controller < 5 || controller > 36) return;
@@ -101,6 +105,15 @@ export class Xl3Feedback {
       await learner?.refreshFeedback?.();
       if (!this.active || this.page !== page || this.output !== output) return;
       const controls = new Map((learner?.feedback?.() || []).filter(m => m.channel === page).map(m => [m.controller, m]));
+      const header = `${page}:${controls.size}`;
+      if (this.header !== header) {
+        this.sysex(4, 53, 2);
+        this.sysex(6, 53, 0, ...ascii("SAD PET"));
+        this.sysex(6, 53, 1, ...ascii(`Page ${page + 1}`));
+        this.sysex(6, 53, 2, ...ascii(`${controls.size} assignments`));
+        this.sysex(4, 53, 127);
+        this.header = header;
+      }
       for (let control = 13; control <= 52; control++) {
         const cc = control <= 36 ? control : page === 15 ? control : control + 43;
         const binding = controls.get(cc);
@@ -113,16 +126,10 @@ export class Xl3Feedback {
       for (const binding of controls.values()) {
         const control = binding.controller;
         if (!binding.available || control < 5 || control > 36) continue;
-        const format = page === 15 ? "absolute" : control < 13 ? "14bit" : "relative";
-        const value = Math.round(unit(binding.unit) * 127), fine = Math.round(unit(binding.unit) * 16383);
-        const signature = format === "14bit" ? fine : value;
-        if (this.positions.get(control) !== signature) {
+        const value = Math.round(unit(binding.unit) * 127);
+        if (this.positions.get(control) !== value) {
           this.send([0xbf, control, value]);
-          if (format === "14bit") {
-            this.send([0xb0 | page, control, fine >> 7], this.midiOutput);
-            this.send([0xb0 | page, control + 32, fine & 127], this.midiOutput);
-          } else if (format !== "relative") this.send([0xb0 | page, control, value], this.midiOutput);
-          this.positions.set(control, signature);
+          this.positions.set(control, value);
         }
         const name = ascii(binding.label);
         if (this.names.get(control) !== name.join()) {
@@ -151,11 +158,12 @@ export class Xl3Feedback {
     clearInterval(this.interval); this.interval = null;
     if (this.active) {
       this.sysex(4, 54, 0);
+      this.sysex(4, 53, 0);
       this.send([0x9f, 12, 0]);
       this.send([0x9f, 11, 0]);
     }
     this.active = false; this.colors.clear(); this.positions.clear(); this.names.clear();
-    this.displaySignature = null; this.hardwarePage = null;
+    this.displaySignature = null; this.header = null; this.hardwareMode = null;
   }
-  dispose() { this.stop(); this.output = this.midiOutput = null; }
+  dispose() { this.stop(); this.output = null; }
 }

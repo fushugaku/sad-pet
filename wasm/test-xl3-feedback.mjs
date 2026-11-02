@@ -24,10 +24,12 @@ const daw = { send: bytes => messages.push([...bytes]) }, midi = { send: bytes =
 feedback.configure({ enabled: true, output: daw, midiOutput: midi, page: 0 });
 await new Promise(resolve => setTimeout(resolve, 0));
 assert.ok(messages.some(b => b.join() === "159,12,127"));
-assert.ok(messages.some(b => b.join() === "182,30,6"));
+assert.ok(messages.some(b => b.join() === "182,30,2"), "live feedback did not select DAW Control");
+for (const row of [69, 72, 73]) assert.ok(messages.some(b => b.join() === `182,${row},127`));
 const rgb = messages.find(b => b[6] === 1 && b[7] === 83 && b[8] === 13);
 assert.deepEqual(rgb.slice(9, 12), feedbackRgb("pitch", "Pitch", .5));
-assert.deepEqual(positions, [[0xb0, 5, 64], [0xb0, 37, 1]]);
+assert.deepEqual(positions, [], "DAW feedback wrote into the Custom Mode's main MIDI interface");
+assert.ok(messages.some(b => b.join() === "191,5,64"));
 assert.ok(!positions.some(b => b[1] === 13), "absolute feedback was sent into the relative MIDI input");
 feedback.touch(13); await feedback.sync();
 const displayText = messages.filter(b => b[6] === 6 && b[7] === 54 && b[8] === 1);
@@ -48,7 +50,8 @@ for (let page = 0; page < 16; page++) {
   assert.equal(pages.at(-1), page);
 }
 feedback.selectPage(2);
-assert.ok(messages.some(b => b.join() === "182,30,8"));
+assert.equal(feedback.hardwareMode, 2, "page selection left the RGB-capable DAW surface");
+assert.ok(messages.some(b => b[6] === 6 && b[7] === 53 && String.fromCharCode(...b.slice(9, -1)) === "Page 3"));
 feedback.dispose();
 assert.ok(messages.some(b => b.join() === "159,12,0"), "disconnect left DAW mode enabled");
 const stopped = messages.length;
@@ -75,7 +78,7 @@ const inputs = new MidiInputs({ audio: { async call(...args) { notes.push(args);
     if (options.sysex) return { ...midiAccess, sysexEnabled: true };
     return midiAccess;
   } },
-  storage: { getItem() { return JSON.stringify({ mode: "native" }); }, setItem() {} },
+  storage: { getItem() { return JSON.stringify({ mode: "daw" }); }, setItem() {} },
   learn: () => ({ page: () => activePage, selectPage: p => { activePage = p; },
     input: (...args) => received.push(args), feedback: () => [] }),
   ui: () => ({ context: () => ({ active: 0, timbres: [] }), notify: m => errors.push(m) }), changed() {},
@@ -92,8 +95,32 @@ deny = false;
 await inputs.access({ sysex: true });
 assert.equal(inputs.status().feedback, true);
 assert.deepEqual(requests, [false, true, true]);
+const beforeDawInput = received.length;
+mainIn.onmidimessage({ data: [0xb0, 13, 65] });
+assert.equal(received.length, beforeDawInput, "a transient Custom Mode duplicated DAW input");
+for (let page = 0; page < 16; page++) {
+  auxiliaryIn.onmidimessage({ data: [0xb6, 30, page < 4 ? page + 6 : page + 14] });
+  assert.equal(activePage, page);
+  auxiliaryIn.onmidimessage({ data: [0xbf, 77, 65] });
+  assert.deepEqual(received.at(-1), [page, 13, 65, "relative"], "DAW encoder lost its logical page/channel");
+  auxiliaryIn.onmidimessage({ data: [0xbf, 5, 127] });
+  assert.deepEqual(received.at(-1), [page, 5, 127]);
+  auxiliaryIn.onmidimessage({ data: [0xb0, 37, 127] });
+  assert.deepEqual(received.at(-1), [page, page === 15 ? 37 : 80, 127]);
+  assert.equal(inputs.feedback.hardwareMode, 2);
+}
 auxiliaryIn.onmidimessage({ data: [0xb6, 30, 29] });
 assert.equal(activePage, 15);
+auxiliaryIn.onmidimessage({ data: [0xb0, 106, 127] });
+auxiliaryIn.onmidimessage({ data: [0xb0, 106, 127] });
+assert.equal(activePage, 14, "held page navigation repeated");
+auxiliaryIn.onmidimessage({ data: [0xb0, 106, 0] });
+auxiliaryIn.onmidimessage({ data: [0xb0, 106, 127] });
+assert.equal(activePage, 13);
+const beforeTouch = received.length;
+auxiliaryIn.onmidimessage({ data: [0xbe, 13, 127] });
+auxiliaryIn.onmidimessage({ data: [0xbf, 13, 100] });
+assert.equal(received.length, beforeTouch, "touch or absolute position feedback changed a relative parameter");
 auxiliaryIn.onmidimessage({ data: [0x90, 60, 100] });
 assert.equal(notes.filter(args => args[3] === "/api/midi-bytes").length, 0, "DAW messages reached the synth");
 auxiliaryIn.state = "disconnected";
@@ -101,6 +128,8 @@ inputs.refresh();
 assert.equal(inputs.status().feedback, false);
 assert.equal(auxiliaryIn.onmidimessage, null);
 assert.equal(typeof mainIn.onmidimessage, "function");
+await inputs.request(new URL("http://localhost/api/controller"), { mode: "native" });
+assert.equal(inputs.status().feedbackAvailable, false, "Custom Modes advertised unsupported live LEDs");
 inputs.dispose();
 assert.deepEqual(errors, []);
-console.log("XL3 feedback passed: port pairing, RGB families/brightness, OLED names, 14-bit positions, endpoint refresh, deduplication, all mode reports and cleanup.");
+console.log("XL3 feedback passed: actual DAW Control surface, 16 logical pages, relative rows, pickup, RGB/OLED, mode gestures, independent ports, endpoint refresh and cleanup.");
