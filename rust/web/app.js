@@ -124,6 +124,10 @@ async function api(path, data, headers) {
 let stateCache = null;
 // Polls come faster while a MIDI controller moves, so a learned knob follows it.
 let midiMovedAt = -Infinity;
+function midiIsMoving() {
+  const targets = window.sadPetControlSource ? parent.SadMidiTargets : window.SadMidiTargets;
+  return !!targets?.active || performance.now() - midiMovedAt < 400;
+}
 async function readState() {
   if (window.sadPetState) return window.sadPetState();
   const token = stateCache?.state_token;
@@ -4428,7 +4432,7 @@ function syncMatrix() {
     if (document.activeElement !== source) source.value = route.source;
     if (document.activeElement !== destination)
       fillDestination(destination, route.destination);
-    if (document.activeElement !== depth) depth.value = route.depth;
+    if (document.activeElement !== depth || depth.type === "range") depth.value = route.depth;
     row.querySelector("output").textContent = depthText(route.destination, route.depth);
     row
       .querySelector(".matrix-bypass")
@@ -4698,7 +4702,7 @@ function syncModulatorRoutes(routes, holder) {
       depth = holder[route.depth] ?? 0;
     if (document.activeElement !== route.select)
       window.SadLazySelect.setValue(route.select, destinationValue(destination));
-    if (document.activeElement !== route.input) route.input.value = depth;
+    if (document.activeElement !== route.input || route.input.type === "range") route.input.value = depth;
     route.output.textContent = depthText(destination, depth);
     route.select.closest(".env-route").classList.toggle("is-unrouted", destination === "none");
   }
@@ -4756,7 +4760,7 @@ function syncLfos() {
     for (const label of scopes[i].parameters) {
       const field = label.dataset.field,
         input = label.querySelector("input");
-      if (document.activeElement !== input) input.value = l[field] ?? 0;
+      if (document.activeElement !== input || input.type === "range") input.value = l[field] ?? 0;
       label.querySelector("output").textContent = lfoControlText(l, field);
       if (field === "shape")
         label.querySelector(".lfo-name").textContent = lfoShapeName(l.waveform);
@@ -4924,7 +4928,7 @@ function buildWaveEnv(card,i) {
     preset.env_count=count+selected.length;output.textContent=`Copied to ${selected.map(n=>"ABCD"[n]).join(", ")}`;syncEnvs();refreshColorDestinations();wavetableEditor?.sync();schedulePreset();
   };
   return {root,sync(env){const w={...waveEnvDefaults(),...env.wave};root.hidden=!w.enabled;if(root.hidden)return;unit.value=String(Number(w.beats));loop.checked=!!w.loop_on;start.value=String(w.loop_start);end.value=String(w.loop_end);[...start.options].forEach(o=>o.disabled=Number(o.value)>w.loop_end);
-    points.forEach((row,n)=>{row.classList.toggle("is-release",n>w.loop_end);row.querySelectorAll("input,select").forEach((input,j)=>{if(document.activeElement!==input)input.value=String(w[["times","levels","curves"][j]][n]);});});
+    points.forEach((row,n)=>{row.classList.toggle("is-release",n>w.loop_end);row.querySelectorAll("input,select").forEach((input,j)=>{if(document.activeElement!==input||input.type==="range")input.value=String(w[["times","levels","curves"][j]][n]);});});
     root.querySelector(".wave-copy").hidden=!preset.wavetable;root.querySelectorAll("[data-wave]").forEach(input=>input.closest("label").hidden=Number(input.dataset.wave)>=(preset.wavetable?.count??0));
   }};
 }
@@ -5026,7 +5030,7 @@ function syncEnvs() {
       if (field === "decay" || field === "sustain")
         label.querySelector(".env-name").textContent =
           `${field.toUpperCase()}${extended ? " 1" : ""}`;
-      if (document.activeElement !== input) input.value = env[field];
+      if (document.activeElement !== input || input.type === "range") input.value = env[field];
       label.querySelector("output").textContent = ENV_LEVELS.includes(field)
         ? percent(envLevel(env, field))
         : envTime(envSeconds(env, field));
@@ -5249,7 +5253,7 @@ function syncPerformance() {
     ["arp-gate", "arp_gate"],
   ]) {
     const input = $(id);
-    if (document.activeElement === input) continue;
+    if (document.activeElement === input && input.type !== "range") continue;
     if (input.tagName === "SELECT" && typeof p[field] === "number") {
       const selected = [...input.options].find(
         (o) => Math.abs(Number(o.value) - p[field]) < 0.00001,
@@ -6083,6 +6087,9 @@ async function poll() {
     if (timbreBusy) return;
     const initial = state === null;
     state = next;
+    // MIDI Learn leaves its anchor focused. External MIDI changes must still
+    // reach the UI; each text field keeps its own unfinished input below.
+    const midiActive = midiIsMoving();
     connected = true;
     failures = 0;
     if (initial && generation === editGeneration && !pending) {
@@ -6105,7 +6112,7 @@ async function poll() {
       (generation === editGeneration &&
         !pending &&
         !editing &&
-        !document.activeElement?.matches("input,select,.sad-menu-layer *") &&
+        (midiActive || !document.activeElement?.matches("input:not([type=range]),select,.sad-menu-layer *")) &&
         next.preset !== receivedPreset &&
         JSON.stringify(preset) !== JSON.stringify(next.preset))
     ) {
@@ -6113,7 +6120,7 @@ async function poll() {
       syncAll();
     }
     if (generation === editGeneration && !pending && !editing
-        && !document.activeElement?.matches("input,select,.sad-menu-layer *"))
+        && (midiActive || !document.activeElement?.matches("input:not([type=range]),select,.sad-menu-layer *")))
       receivedPreset = next.preset;
     if (window.sadPetControlSource?.pool) return;
     setText($("sample-name"), next.sample_name);
@@ -6199,7 +6206,7 @@ async function poll() {
     window.sadPetControlSource?.mount();
     window.sadPetControlSource?.updated();
     window.SadControl?.sync?.();
-    setTimeout(poll, document.hidden ? 500 : performance.now() - midiMovedAt < 400 ? 20 : 80);
+    setTimeout(poll, document.hidden ? 500 : midiIsMoving() ? 20 : 80);
   }
 }
 async function init() {

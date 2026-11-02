@@ -321,7 +321,7 @@ window.SadModulation = (() => {
         const t = m.targets[j];
         if (document.activeElement !== select)
           window.SadLazySelect.setValue(select, hooks.value(t.destination));
-        if (document.activeElement !== input) input.value = t.depth;
+        if (document.activeElement !== input || input.type === "range") input.value = t.depth;
         output.textContent = hooks.depthText(t.destination, t.depth);
       });
     });

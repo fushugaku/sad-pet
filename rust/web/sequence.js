@@ -811,7 +811,7 @@ window.SadNeuropolis = class {
     for (const input of this.root.querySelectorAll("[data-config]")) {
       const f = Number(input.dataset.config),
         value = this.configValue(track, f);
-      if (document.activeElement !== input) {
+      if (document.activeElement !== input || input.type === "range") {
         if (input.type === "checkbox") input.checked = !!value;
         else input.value = Number(value);
       }
@@ -848,7 +848,7 @@ window.SadNeuropolis = class {
           input.textContent = ["Rest", "Single", "Multi", "Hold"][raw];
           input.dataset.mode = raw;
         } else input.setAttribute("aria-pressed", String(!!raw));
-      } else if (document.activeElement !== input) {
+      } else if (document.activeElement !== input || input.type === "range") {
         if (input.type === "checkbox") input.checked = !!value;
         else
           input.value = input.dataset.optional && raw < 0 ? "" : Number(value);
@@ -868,7 +868,7 @@ window.SadNeuropolis = class {
         // Sliders step through the track's notes; each shows the one it plays.
         const slot = this.slot(notes, value);
         fader.max = notes.length - 1;
-        if (document.activeElement !== fader) fader.value = slot;
+        if (document.activeElement !== fader || fader.type === "range") fader.value = slot;
         value = notes[slot];
       }
       card.classList.toggle("outside", i >= track.config[1]);

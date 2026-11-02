@@ -837,6 +837,11 @@ modulation purple, stereo/position cyan and effects teal. The LED stays dim at
 minimum and reaches full brightness at maximum, following the parameter's
 current base value, including mouse edits and preset recalls. Turning a mapped
 control displays its instrument, parameter name and value; Pitch uses semitones.
+The last parameter stays on the stationary display after rotation stops, until
+another control or mapping bank is selected. Automatic temporary control
+overlays are disabled, so the display timeout cannot hide this information.
+Mapped ranges continue to repaint while focused after Learn, including sliders
+on the Control surface; text and number fields retain unfinished input.
 These are temporary device settings; the uploaded Custom Modes are preserved.
 
 `node wasm/test-launch-control.mjs` checks both hardware layouts, pickup,

@@ -334,3 +334,36 @@ assert.equal(units.unitDepth(units.parameterUnit("resynth_osc1_transpose"), -0.2
     [track, [[`control:${900 + t}`, "Note shift", `${track} · Pattern note shift`]]]));
 }
 console.log("Controls: immediate drum-knob paint, linked track/voice selection, drum note shift and extra LFO/ENV removal passed.");
+
+// MIDI Learn returns focus to its range. A model update must still move that
+// range and its readout, while an unfinished numeric/text field stays intact.
+const midiEnvNodes = new Map();
+const midiEnvNode = id => {
+  if (!midiEnvNodes.has(id)) midiEnvNodes.set(id, new Element("div"));
+  return midiEnvNodes.get(id);
+};
+const midiEnvLabel = new Element("label"), midiEnvInput = midiEnvLabel.querySelector("input");
+midiEnvInput.type = "range"; midiEnvInput.value = .2;
+const midiEnvContext = vm.createContext({
+  document, $: midiEnvNode, preset: { env_count: 1, envs: [{ sustain: .55 }] },
+  envCards: [{ card: new Element("div"), routes: [], mode: new Element("select"), curve: new Element("select"),
+    parameters: [midiEnvLabel], waveEditor: { sync() {} } }],
+  ENV_FIELDS: ["sustain"], ENV_EXTENDED: [], ENV_LEVELS: ["sustain"],
+  envExtended: () => false, envMode: () => "legacy", syncModulatorRoutes() {},
+  envLevel: (env, field) => env[field], percent: value => `${Math.round(value * 100)}%`,
+});
+vm.runInContext(app.slice(app.indexOf("function syncEnvs()"), app.indexOf("function drawEnvs()")), midiEnvContext);
+document.activeElement = midiEnvInput;
+midiEnvContext.syncEnvs();
+assert.equal(midiEnvInput.value, .55, "a focused MIDI slider ignored the model value");
+assert.equal(midiEnvLabel.querySelector("output").textContent, "55%");
+midiEnvContext.preset.envs[0].sustain = .713;
+midiEnvContext.syncEnvs();
+assert.equal(midiEnvInput.value, .713);
+assert.equal(midiEnvLabel.querySelector("output").textContent, "71%");
+midiEnvInput.type = "number"; midiEnvInput.value = "";
+midiEnvContext.preset.envs[0].sustain = .8;
+midiEnvContext.syncEnvs();
+assert.equal(midiEnvInput.value, "", "external changes overwrote a field being typed");
+document.activeElement = null;
+console.log("Focused MIDI ranges follow model updates and preserve text/number drafts.");

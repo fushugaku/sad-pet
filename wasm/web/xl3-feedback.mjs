@@ -88,7 +88,7 @@ export class Xl3Feedback {
       this.send([0xb6, 30, 2]);
       this.configureControls();
       this.colors.clear(); this.positions.clear(); this.names.clear();
-      this.header = null; this.displaySignature = null; this.lastControl = null;
+      this.displaySignature = null; this.lastControl = null;
     }
     if (this.active) this.sync();
   }
@@ -100,7 +100,7 @@ export class Xl3Feedback {
     if (this.active && data[2] === 2) {
       this.configureControls();
       this.colors.clear(); this.positions.clear(); this.names.clear();
-      this.header = null; this.displaySignature = null;
+      this.displaySignature = null;
     }
     // Mode + 1–16 selects the software page, then returns to the DAW surface.
     // This preserves the familiar hardware gesture and every saved mapping.
@@ -121,7 +121,7 @@ export class Xl3Feedback {
     const page = this.page, output = this.output, track = this.learn()?.track?.() ?? 0;
     if (this.track !== track) {
       this.track = track; this.colors.clear(); this.positions.clear(); this.names.clear();
-      this.lastControl = null; this.header = null; this.displaySignature = null;
+      this.lastControl = null; this.displaySignature = null;
       this.sysex(4, 54, 0);
     }
     try {
@@ -140,15 +140,6 @@ export class Xl3Feedback {
       await learner?.refreshFeedback?.();
       if (!this.active || this.page !== page || this.output !== output || (learner?.track?.() ?? 0) !== track) return;
       const controls = new Map((learner?.feedback?.() || []).filter(m => m.channel === page).map(m => [m.controller, m]));
-      const header = `${page}:${track}:${controls.size}`;
-      if (this.header !== header) {
-        this.sysex(4, 53, 2);
-        this.sysex(6, 53, 0, ...ascii("SAD PET"));
-        this.sysex(6, 53, 1, ...ascii(`Page ${page + 1} / Track ${track + 1}`));
-        this.sysex(6, 53, 2, ...ascii(`${controls.size} assignments`));
-        this.sysex(4, 53, 127);
-        this.header = header;
-      }
       for (let control = 13; control <= 52; control++) {
         const cc = control <= 36 ? control : page === 15 ? control : control + 43;
         const binding = controls.get(cc);
@@ -162,7 +153,9 @@ export class Xl3Feedback {
         const binding = controls.get(control);
         if (!binding?.available) {
           if (this.names.get(control) !== null) {
-            this.sysex(4, control, 0); this.names.set(control, null);
+            this.sysex(4, control, 0);
+            this.sysex(4, control, 1); // No automatic touch/change overlays.
+            this.names.set(control, null);
           }
           this.positions.delete(control);
           continue;
@@ -174,23 +167,24 @@ export class Xl3Feedback {
         }
         const name = ascii(binding.label);
         if (this.names.get(control) !== name.join()) {
-          this.sysex(4, control, 0x61);
+          this.sysex(4, control, 0);
+          this.sysex(4, control, 1);
           this.sysex(6, control, 0, ...name);
           this.names.set(control, name.join());
         }
       }
       const selected = controls.get(this.lastControl);
-      if (selected) {
-        const text = selected.available ? selected.text || `${Math.round(unit(selected.unit) * 100)}%` : "Loading...";
-        const signature = `${selected.key}:${text}`;
-        if (this.displayDirty || this.displaySignature !== signature) {
-          this.sysex(4, 54, 0x62);
-          this.sysex(6, 54, 0, ...ascii(selected.instrument || `Page ${page + 1}`));
-          this.sysex(6, 54, 1, ...ascii(selected.label));
-          this.sysex(6, 54, 2, ...ascii(text));
-          this.sysex(4, 54, 127);
-          this.displaySignature = signature; this.displayDirty = false;
-        }
+      const fields = selected ? [selected.instrument || `Page ${page + 1}`, selected.label,
+        selected.available ? selected.text || `${Math.round(unit(selected.unit) * 100)}%` : "Loading..."]
+        : ["SAD PET", `Page ${page + 1} / Track ${track + 1}`, `${controls.size} assignments`];
+      const signature = JSON.stringify([page, track, selected?.key, fields]);
+      if (this.displayDirty || this.displaySignature !== signature) {
+        // Target 53 is stationary. Temporary target 54 expires according to
+        // the device's timeout and cannot hold the last parameter on screen.
+        this.sysex(4, 53, 2);
+        fields.forEach((text, field) => this.sysex(6, 53, field, ...ascii(text)));
+        this.sysex(4, 53, 127);
+        this.displaySignature = signature; this.displayDirty = false;
       }
     } catch (error) { this.error(`XL3 feedback: ${error.message}`); }
     finally { this.syncing = false; }
@@ -204,7 +198,7 @@ export class Xl3Feedback {
       this.send([0x9f, 11, 0]);
     }
     this.active = false; this.colors.clear(); this.positions.clear(); this.names.clear();
-    this.displaySignature = null; this.header = null; this.hardwareMode = null;
+    this.displaySignature = null; this.hardwareMode = null;
   }
   dispose() { this.stop(); this.output = null; }
 }

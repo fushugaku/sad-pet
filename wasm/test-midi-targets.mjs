@@ -35,6 +35,7 @@ const target = (timbre, parameter, extra = {}) => midi.describe({ timbre,
   kind: context.timbres.find(t => t.id === timbre).kind, key: parameter, parameter,
   label: parameter, min: 0, max: 1, ...extra });
 const pitch = target(0, "pitch"), cutoff = target(0, "filter"), other = target(1, "pitch");
+assert.equal(midi.active, false);
 context.active = 1;
 // A burst while another instrument is open changes only its addressed source.
 await Promise.all(Array.from({ length: 100 }, () => midi.command(pitch, "relative", 65)));
@@ -43,6 +44,9 @@ assert.ok(Math.abs((params.get(0).pitch * 2 - 1) * 36 - 10) < 1e-8);
 assert.equal(params.get(1).pitch, .5);
 assert.equal(context.active, 1);
 assert.ok(writes.length <= 2, "relative bursts were not coalesced");
+assert.equal(midi.active, true, "linked views could not detect the MIDI gesture");
+now += 500;
+assert.equal(midi.active, false, "the editor stayed in rapid polling after MIDI stopped");
 await midi.command(other, "relative", 65); await midi.flush();
 assert.ok(Math.abs((params.get(1).pitch * 2 - 1) * 12 - .1) < 1e-8);
 await midi.command(other, "relative", 65, 10); await midi.flush();

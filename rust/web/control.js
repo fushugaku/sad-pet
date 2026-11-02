@@ -416,7 +416,7 @@
       for (const update of knobUpdates) update();
       for (const { source, copy } of pairs) {
         if (!copy.isConnected) continue;
-        if (document.activeElement !== copy && "value" in source && "value" in copy) copy.value = source.value;
+        if ((document.activeElement !== copy || copy.type === "range") && "value" in source && "value" in copy) copy.value = source.value;
         if ("checked" in source) copy.checked = source.checked;
         if ("disabled" in source) copy.disabled = source.disabled;
         for (const name of ["aria-pressed", "aria-selected", "aria-valuenow", "aria-valuetext"])

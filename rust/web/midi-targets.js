@@ -1,7 +1,7 @@
 "use strict";
 // MIDI addresses the audio model, not the currently mounted instrument editor.
 window.SadMidiTargets = (() => {
-  let hooks = null, timer = null, running = null;
+  let hooks = null, timer = null, running = null, movedAt = -Infinity;
   const values = new Map(), pending = new Map(), queues = new Map(), reads = new Map();
   const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
   const exists = d => hooks?.context()?.timbres?.some(t => t.id === d.timbre &&
@@ -147,6 +147,7 @@ window.SadMidiTargets = (() => {
         if (pitch) pitch.pitchRange = value;
       }
       pending.set(key, { target: d, value, revision });
+      movedAt = Date.now();
       hooks.dirty();
       if (!timer && !running) timer = setTimeout(() => { timer = null; flush(); }, 16);
     }).catch(error => hooks.notify(error.message));
@@ -156,6 +157,7 @@ window.SadMidiTargets = (() => {
   }
   return {
     get enabled() { return !!hooks; },
+    get active() { return Date.now() - movedAt < 400; },
     setup(next) { if (window.sadPetAudio && !window.sadPetControlSource) hooks = next; },
     describe(d) {
       if (!hooks || !Number.isInteger(d.timbre) || !d.parameter ||

@@ -139,7 +139,7 @@
       this.solo.setAttribute("aria-pressed", String(part.solo));
       if (document.activeElement !== this.channel)
         this.channel.value = part.channel;
-      if (document.activeElement !== this.level) this.level.value = part.gain;
+      if (document.activeElement !== this.level || this.level.type === "range") this.level.value = part.gain;
       const routing = part.kind === "bus" || part.kind === "master" || part.kind === "pad_fx";
       this.solo.hidden = routing || part.kind === "control";
       this.midi.hidden = routing || part.kind === "control";
@@ -216,7 +216,7 @@
         );
       }
       for (const range of this.sends.querySelectorAll("input")) {
-        if (document.activeElement !== range)
+        if (document.activeElement !== range || range.type === "range")
           range.value = range.dataset.route
             ? routes.find(r => r.key === range.dataset.route)?.value ?? 0
             : part.sends?.[Number(range.dataset.bus) - 1] ?? 0;
@@ -368,7 +368,7 @@
           const signature = JSON.stringify([level, entries, part.muted, part.solo]);
           if (signature === shown) return;
           shown = signature;
-          if (document.activeElement !== range) range.value = level;
+          if (document.activeElement !== range || range.type === "range") range.value = level;
           value.textContent = decibels(level);
           // A knob being turned shows its own value, not an older answer's.
           updates.forEach((update, i) => dials[i] !== document.activeElement && update());

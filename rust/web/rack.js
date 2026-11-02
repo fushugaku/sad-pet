@@ -643,7 +643,7 @@
           const signature = JSON.stringify([strip, soloing]);
           if (signature === shown) return;
           shown = signature;
-          if (document.activeElement !== range) range.value = strip.level;
+          if (document.activeElement !== range || range.type === "range") range.value = strip.level;
           value.textContent = decibels(strip.level);
           if (document.activeElement !== pan.querySelector(".dial")) updatePan();
           mute.setAttribute("aria-pressed", String(!!strip.muted));

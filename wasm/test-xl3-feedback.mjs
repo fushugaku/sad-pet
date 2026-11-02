@@ -23,8 +23,28 @@ const feedback = new Xl3Feedback({ learn: () => ({ feedback: () => bindings, asy
 feedback.configure({ enabled: false, output: { send: bytes => messages.push([...bytes]) }, page: 0 });
 assert.equal(messages.length, 0, "feedback ran without permission");
 const deviceRows = new Map([[69, 0], [72, 0], [73, 0]]);
+const screenFields = new Map();
+let screenTime = 0, temporaryScreen = null, stationaryScreen = false;
+const visibleScreen = () => {
+  const target = temporaryScreen?.until > screenTime ? temporaryScreen.target : stationaryScreen ? 53 : null;
+  return target === null ? [] : [0, 1, 2].map(field => screenFields.get(target)?.get(field) || "");
+};
 const daw = { send: bytes => {
   messages.push([...bytes]);
+  if (bytes[0] === 0xf0 && bytes[6] === 6) {
+    const fields = screenFields.get(bytes[7]) || new Map();
+    fields.set(bytes[8], String.fromCharCode(...bytes.slice(9, -1)));
+    screenFields.set(bytes[7], fields);
+  }
+  if (bytes[0] === 0xf0 && bytes[6] === 4) {
+    if (bytes[8] === 127) {
+      if (bytes[7] === 53) stationaryScreen = true;
+      else temporaryScreen = { target: bytes[7], until: screenTime + 100 };
+    } else if (bytes[8] === 0) {
+      if (bytes[7] === 53) stationaryScreen = false;
+      if (temporaryScreen?.target === bytes[7]) temporaryScreen = null;
+    }
+  }
   // Observed on the real XL3: mode 2 resets row 1, position feedback does not.
   if (bytes.join() === "182,30,2") deviceRows.set(69, 0);
   if (bytes[0] === 182 && deviceRows.has(bytes[1])) deviceRows.set(bytes[1], bytes[2]);
@@ -41,8 +61,18 @@ assert.deepEqual(positions, [], "DAW feedback wrote into the Custom Mode's main 
 assert.ok(messages.some(b => b.join() === "191,5,64"));
 assert.ok(!positions.some(b => b[1] === 13), "absolute feedback was sent into the relative MIDI input");
 feedback.touch(13); await feedback.sync();
-const displayText = messages.filter(b => b[6] === 6 && b[7] === 54 && b[8] === 1);
+const displayText = messages.filter(b => b[6] === 6 && b[7] === 53 && b[8] === 1);
 assert.equal(String.fromCharCode(...displayText.at(-1).slice(9, -1)), "Pitch");
+screenTime += 5000;
+assert.deepEqual(visibleScreen(), ["Grains", "Pitch", "0.0 st"], "the last parameter expired with the temporary-display timeout");
+assert.ok(!messages.some(b => b[6] === 6 && b[7] === 54), "parameters still used the expiring display");
+assert.ok(!messages.some(b => b[6] === 4 && b[7] >= 5 && b[7] <= 36 && (b[8] & 0x60)),
+  "native touch/change overlays could cover the stationary parameter");
+feedback.touch(5); await feedback.sync();
+assert.equal(visibleScreen()[1], "Filter 1 cutoff", "the next control did not replace the previous parameter");
+screenTime += 5000;
+assert.equal(visibleScreen()[1], "Filter 1 cutoff");
+feedback.touch(13); await feedback.sync();
 const count = messages.length;
 await feedback.sync();
 assert.equal(messages.length, count, "unchanged values flooded MIDI");
@@ -62,7 +92,7 @@ assert.deepEqual(messages.filter(b => b[6] === 1 && b[8] === 13).at(-1).slice(9,
   "switching Track kept the previous parameter's colour");
 assert.ok(messages.some(b => b.join() === "191,5,32"), "switching Track did not update fader pickup");
 feedback.touch(13); await feedback.sync();
-assert.equal(String.fromCharCode(...messages.filter(b => b[6] === 6 && b[7] === 54 && b[8] === 1).at(-1).slice(9, -1)), "Cutoff");
+assert.equal(String.fromCharCode(...messages.filter(b => b[6] === 6 && b[7] === 53 && b[8] === 1).at(-1).slice(9, -1)), "Cutoff");
 feedbackTrack = 0; bindings = originalBindings;
 await feedback.sync();
 for (let page = 0; page < 16; page++) {
