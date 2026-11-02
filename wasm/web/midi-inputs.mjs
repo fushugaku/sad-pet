@@ -153,7 +153,7 @@ export class MidiInputs {
     const channel = data[0] & 15, cc = data[1], value = data[2];
     const encoder = cc >= 13 && cc <= 36, fader = cc >= 5 && cc <= 12;
     const lsb = channel < 15 && cc >= 37 && cc <= 44;
-    const button = channel < 15 ? cc >= 64 && cc <= 79 : cc >= 37 && cc <= 52;
+    const button = channel < 15 ? cc >= 80 && cc <= 95 : cc >= 37 && cc <= 52;
     // Side/transport buttons use the global channel, not the custom mode's
     // channel. They must never choose an unrelated mapping page.
     if (!encoder && !fader && !lsb && !button) return;

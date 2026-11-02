@@ -778,7 +778,7 @@ using the global channel do not change the page. When Learn is armed, the first
 native-mode movement chooses its page and completes the assignment there.
 
 The templates use relative offset-binary encoders (CC13–36, 64 is neutral),
-14-bit absolute faders (CC5–12 plus LSB CC37–44), and momentary buttons CC64–79.
+14-bit absolute faders (CC5–12 plus LSB CC37–44), and momentary buttons CC80–95.
 Relative Pitch moves in **0.1 semitone** increments at any pitch range; other
 continuous knobs use 1/1024 of their range per tick, and stepped parameters
 keep their physical steps. Fader MSB/LSB pairs are combined before updating a

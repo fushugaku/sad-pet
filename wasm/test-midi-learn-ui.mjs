@@ -363,7 +363,7 @@ fineLearn.learn("old_button"); fineLearn.input(15, 37, 127);
 fineLearn.learn("keyboard"); fineLearn.input(2, 74, 127);
 fineLearn.configureXL3();
 assert.deepEqual(plain(fineLearn.mappings()).old_pitch, [0, 14, "relative"]);
-assert.deepEqual(plain(fineLearn.mappings()).old_button, [0, 64]);
+assert.deepEqual(plain(fineLearn.mappings()).old_button, [0, 80]);
 assert.deepEqual(plain(fineLearn.mappings()).keyboard, [2, 74]);
 assert.ok(stored.get("sad-pet-midi-pages-before-xl3-native"));
 const migrated = plain(fineLearn.mappings());

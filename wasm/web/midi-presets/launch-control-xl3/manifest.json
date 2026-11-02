@@ -19,8 +19,8 @@
   },
   "buttons": {
     "cc": [
-      64,
-      79
+      80,
+      95
     ],
     "type": "momentary"
   },
@@ -29,91 +29,91 @@
       "mode": 1,
       "channel": 1,
       "file": "sadpet-mode-01.syx",
-      "sha256": "611cd389d901900c1d5ad39172e10c8576ded724571659c6e55e0424970e6f94"
+      "sha256": "1bddb294bde21dac04dc9ddc11532ee4868c5047fbf05b079057200f6f8553a4"
     },
     {
       "mode": 2,
       "channel": 2,
       "file": "sadpet-mode-02.syx",
-      "sha256": "51465cc150036403819b6a9517e0d2263465ebc1b3188c73b072be19a6e997dc"
+      "sha256": "528698d141bc75efccde2b38c87ba2104a13031b8783cb6a771b4b63e75ecdb5"
     },
     {
       "mode": 3,
       "channel": 3,
       "file": "sadpet-mode-03.syx",
-      "sha256": "18bbaab61cfe599531b2c10dfe495faa6c4cb1f51980ab7cf2f0ba48b6dcdbd5"
+      "sha256": "5e8e2332561dfd826d98583905f01a043117226a206a5beb1eca5cc09e87d563"
     },
     {
       "mode": 4,
       "channel": 4,
       "file": "sadpet-mode-04.syx",
-      "sha256": "bb4035f5041468b0b2df2943b22532ce8801b232761caf6ed9255024cac47228"
+      "sha256": "092adc39752a4b4af5113d862efc9f55e2bb9bda14bf2aec209148862c416fa7"
     },
     {
       "mode": 5,
       "channel": 5,
       "file": "sadpet-mode-05.syx",
-      "sha256": "d59d6cdce34cca0ba5c63a31b77df28640eb6887388711158595c2898e154b95"
+      "sha256": "8b50619ea1f8b5c49803c2e88ad6720231440cf35c133592d743430421b5ee09"
     },
     {
       "mode": 6,
       "channel": 6,
       "file": "sadpet-mode-06.syx",
-      "sha256": "1f701b27763824e3b96f8f9eb66e55ee82c6fcd5999dca8fa2a767fb8c73f14c"
+      "sha256": "064cd9755eb3e8b51ee46fff4ae7ca1b925c95d9ea3efbfc428da76035bca97c"
     },
     {
       "mode": 7,
       "channel": 7,
       "file": "sadpet-mode-07.syx",
-      "sha256": "96333a6eca7a224c0810eeb1d97f7c284b005845df5780f54975b765bb7ed333"
+      "sha256": "37a2590b21858873a00add4122cca3940ca322bdf1d1c43b9ce3980a9cd31a88"
     },
     {
       "mode": 8,
       "channel": 8,
       "file": "sadpet-mode-08.syx",
-      "sha256": "5d396a405c229347f14691b46436eb08b4a57a511ca4aed445dcb71652c10a7f"
+      "sha256": "888f5aea8f1d1977fb7d71a2b4e19fb65affa116dd4774c278225cba9f881398"
     },
     {
       "mode": 9,
       "channel": 9,
       "file": "sadpet-mode-09.syx",
-      "sha256": "e2246abf60f1fd859623df09ac77f7fb624cc0fb14c5b9d053158bf20f58f670"
+      "sha256": "bddf5419a88b540d91e4f40dabd9ed256415b604009a3e5af66633a1444a1838"
     },
     {
       "mode": 10,
       "channel": 10,
       "file": "sadpet-mode-10.syx",
-      "sha256": "0fb85f4da7d09c1f5aa0ca648c01755aa57b2d8480a725455cc3a56bd9b48d08"
+      "sha256": "72e4f09adb0de9b3a948340f122946f67946c3138c600ce9b37f45411efa8fec"
     },
     {
       "mode": 11,
       "channel": 11,
       "file": "sadpet-mode-11.syx",
-      "sha256": "07ff3b5e164fa4c169fbe989d21b3569fbefda2475a5a7e3b789d3d77d437cb9"
+      "sha256": "0b76986fc2e03e82cfcdeed4b6d43cf833b72d9e29adcd66c1bb04786b2de507"
     },
     {
       "mode": 12,
       "channel": 12,
       "file": "sadpet-mode-12.syx",
-      "sha256": "ee131cc929d9a51764c6d9961937ba5d3d33e9b175bdae108af0e4156500ba2e"
+      "sha256": "cddf0aef28ae63df37af15f77730331cf34b28c01282e074392067e90311fe3f"
     },
     {
       "mode": 13,
       "channel": 13,
       "file": "sadpet-mode-13.syx",
-      "sha256": "3ea3e271f3059cb7462896dc85b91df4a734f4def99b2a154ddffd60d63fad44"
+      "sha256": "7824877d9706daf877bc232db43e2f8a1680c3951f6376647b6734174dbf1377"
     },
     {
       "mode": 14,
       "channel": 14,
       "file": "sadpet-mode-14.syx",
-      "sha256": "b963b4f98c69168b113e38fb9946bd95cf6ceb4d6684842673ec07a413e00e86"
+      "sha256": "a9976f3e93adf19fa73ceae8043b6bedd2b2412c177f822f856ab3bca2a4449c"
     },
     {
       "mode": 15,
       "channel": 15,
       "file": "sadpet-mode-15.syx",
-      "sha256": "3b055bf85c968aa86049f857cad14842e81493b372c193ee71cc32134f5cd650"
+      "sha256": "34056f455245c8c8abffb6000df366192586c314c63f69de7b63813ca9778b0c"
     }
   ]
 }

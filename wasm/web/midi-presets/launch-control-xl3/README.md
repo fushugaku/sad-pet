@@ -7,7 +7,7 @@ then select **XL3 · 16 modes** in SAD PET.
 | --- | --- |
 | 24 encoders | CC13–36, Relative (offset binary, centre 64) |
 | 8 faders | CC5–12 MSB + CC37–44 LSB, 14-bit absolute |
-| 16 buttons | CC64–79, momentary, on 127 / off 0 |
+| 16 buttons | CC80–95, momentary, on 127 / off 0 |
 
 All 48 controls in mode N explicitly use MIDI channel N. Modes 1–15 are
 editable. Factory mode 16 already uses channel 16 and cannot be replaced;

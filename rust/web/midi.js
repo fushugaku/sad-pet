@@ -206,7 +206,7 @@ window.SadMidiLearn = (() => {
           p.set(key, [channel, cc, cc < 13 ? "14bit" : "relative"]);
           changed = true;
         } else if (cc >= 37 && cc <= 52) {
-          p.set(key, [channel, cc + 27]);
+          p.set(key, [channel, cc + 43]);
           changed = true;
         }
       }
