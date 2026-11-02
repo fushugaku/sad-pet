@@ -11,6 +11,31 @@ pub const GLOBAL: usize = VOICES + BANDS;
 pub const LANES: usize = GLOBAL + 1;
 const ABSENT: f32 = -1.0;
 const EVENT_DELAY: usize = 64;
+// Polyphonic sources have voice lanes, spectral sources have band lanes,
+// and mono sources/groups use GLOBAL. Their unused cross-domain lanes never
+// receive natural events, so they do not need 64-sample delay lines.
+const POLY_DELAY_LINES: usize = 16 * (VOICES + 1);
+const SPECTRAL_DELAY_LINES: usize = 4 * (BANDS + 1);
+const DELAY_LINES: usize = POLY_DELAY_LINES + SPECTRAL_DELAY_LINES + model::NODES - 20;
+fn delay_line(node: usize, lane: usize) -> Option<usize> {
+    if node < 16 {
+        let lane = if lane < VOICES {
+            lane
+        } else if lane == GLOBAL {
+            VOICES
+        } else {
+            return None;
+        };
+        Some(node * (VOICES + 1) + lane)
+    } else if node < 20 {
+        (VOICES..=GLOBAL)
+            .contains(&lane)
+            .then(|| POLY_DELAY_LINES + (node - 16) * (BANDS + 1) + lane - VOICES)
+    } else {
+        (node < model::NODES && lane == GLOBAL)
+            .then_some(POLY_DELAY_LINES + SPECTRAL_DELAY_LINES + node - 20)
+    }
+}
 #[derive(Clone, Copy, Default)]
 struct Scheduled {
     stamp: u64,
@@ -223,8 +248,7 @@ impl Runtime {
             previous: vec![[Frame::default(); LANES]; model::NODES].into_boxed_slice(),
             current: vec![[Frame::default(); LANES]; model::NODES].into_boxed_slice(),
             detectors: vec![[Detector::default(); LANES]; model::NODES].into_boxed_slice(),
-            scheduled: vec![Scheduled::default(); model::NODES * LANES * EVENT_DELAY]
-                .into_boxed_slice(),
+            scheduled: vec![Scheduled::default(); DELAY_LINES * EVENT_DELAY].into_boxed_slice(),
             routes: [Compiled::default(); model::MAX_ROUTES],
             count: 0,
             frame: 1,
@@ -336,16 +360,22 @@ impl Runtime {
             self.previous[node][lane] = Frame::default();
             self.current[node][lane] = Frame::default();
             self.detectors[node][lane] = Detector::default();
-            let start = (node * LANES + lane) * EVENT_DELAY;
-            self.scheduled[start..start + EVENT_DELAY].fill(Scheduled::default());
+            if let Some(line) = delay_line(node, lane) {
+                let start = line * EVENT_DELAY;
+                self.scheduled[start..start + EVENT_DELAY].fill(Scheduled::default());
+            }
         }
     }
     pub fn invalidate_node(&mut self, node: usize) {
         self.previous[node].fill(Frame::default());
         self.current[node].fill(Frame::default());
         self.detectors[node].fill(Detector::default());
-        let start = node * LANES * EVENT_DELAY;
-        self.scheduled[start..start + LANES * EVENT_DELAY].fill(Scheduled::default());
+        for lane in 0..LANES {
+            if let Some(line) = delay_line(node, lane) {
+                let start = line * EVENT_DELAY;
+                self.scheduled[start..start + EVENT_DELAY].fill(Scheduled::default());
+            }
+        }
         for r in self.routes.iter_mut().take(self.count) {
             if r.source == node || r.target == node {
                 r.counters.fill(0);
@@ -363,7 +393,10 @@ impl Runtime {
                 continue;
             }
             for lane in 0..LANES {
-                let index = (node * LANES + lane) * EVENT_DELAY + self.frame as usize % EVENT_DELAY;
+                let Some(line) = delay_line(node, lane) else {
+                    continue;
+                };
+                let index = line * EVENT_DELAY + self.frame as usize % EVENT_DELAY;
                 let event = self.scheduled[index];
                 if event.stamp == self.frame {
                     self.event(
@@ -576,7 +609,10 @@ impl Runtime {
             self.event(node, lane, Event::NaturalWrap, time.fract(), false);
             return;
         }
-        let index = (node * LANES + lane) * EVENT_DELAY + stamp as usize % EVENT_DELAY;
+        let Some(line) = delay_line(node, lane) else {
+            return;
+        };
+        let index = line * EVENT_DELAY + stamp as usize % EVENT_DELAY;
         let event = &mut self.scheduled[index];
         let fraction = time.fract() as f32;
         if event.stamp != stamp || fraction < event.time {
@@ -642,6 +678,67 @@ impl Runtime {
 mod tests {
     use super::*;
     use model::{Node, Route, Settings};
+    #[test]
+    fn compact_delay_lines_keep_voice_band_and_mono_events_independent() {
+        let mut used = vec![false; DELAY_LINES];
+        for node in 0..model::NODES {
+            for lane in 0..LANES {
+                if let Some(line) = delay_line(node, lane) {
+                    assert!(!used[line], "delay-line alias at {node}/{lane}");
+                    used[line] = true;
+                }
+            }
+        }
+        assert!(used.into_iter().all(|v| v));
+        assert!(DELAY_LINES * EVENT_DELAY * std::mem::size_of::<Scheduled>() <= 640 * 1024);
+        let mut r = Runtime::new(48000);
+        r.configure(
+            &Settings {
+                routes: [
+                    (Node::Synth { index: 0 }, Node::Synth { index: 1 }),
+                    (Node::Resynth { index: 0 }, Node::Resynth { index: 1 }),
+                    (Node::Tb303Vco, Node::Group { index: 0 }),
+                ]
+                .map(|(source, target)| Route {
+                    source,
+                    target,
+                    event: Event::NaturalWrap,
+                    sync: SyncMode::Hard,
+                    ..Route::default()
+                })
+                .to_vec(),
+                ..Settings::default()
+            },
+            None,
+        );
+        let lanes = [
+            (8, 0, 9),
+            (8, 1, 9),
+            (16, VOICES, 17),
+            (16, VOICES + 1, 17),
+            (24, GLOBAL, 25),
+        ];
+        r.begin_frame();
+        for (i, &(source, lane, _)) in lanes.iter().enumerate() {
+            r.natural_event(source, lane, 0.05 + i as f64 * 0.1, 39.125);
+        }
+        r.finish_frame();
+        let mut seen: [Vec<f64>; 5] = Default::default();
+        for _ in 0..44 {
+            r.begin_frame();
+            for (i, &(_, lane, target)) in lanes.iter().enumerate() {
+                let event = r.input(target, lane).playback.event;
+                if event >= 0.0 {
+                    seen[i].push(event);
+                }
+            }
+            r.finish_frame();
+        }
+        for (i, events) in seen.iter().enumerate() {
+            assert_eq!(events.len(), 1, "lane {i}");
+            assert!((events[0] - (0.175 + i as f64 * 0.1)).abs() < 1e-6);
+        }
+    }
     #[test]
     fn directed_edges_and_reciprocal_ring_read_the_same_previous_snapshot() {
         let mut r = Runtime::new(48000);

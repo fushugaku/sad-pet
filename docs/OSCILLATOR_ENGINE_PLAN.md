@@ -341,11 +341,13 @@ Ring и hard jumps readheads требуют oversampling, реконструкц
 
 Причинный snapshot добавляет один host sample на ребро. FIR смешанного банка добавляет 39,125 host samples; NaturalWrap проходит соответствующую задержку с дробным carry. События хранятся в заранее ограниченной очереди: один выбранный event каждого вида на source/lane за host sample; это не неограниченный список всех oversampled пересечений. При нескольких событиях сохраняются согласованные timestamp/origin самого раннего.
 
+Перед публикацией очередь задержанных NaturalWrap уплотнена по voice/band/mono domains: только допустимые lanes получают свои delay lines. Длина 64 samples, дробные времена и независимость событий сохраняются; неиспользуемые cross-domain lanes больше не резервируют память. Регрессия проверяет отсутствие alias между lanes и доставку событий разных owners.
+
 Астра проверяла архитектуру и DSP после реализации. По её замечаниям исправлены утечка bypass в capture через промежуточный Resynth, остаточные FM taps после voice stealing и отсутствие default Sync events у aggregate источников. Для всех трёх добавлены регрессии.
 
 ### Проверенные сборки и регрессии
 
-- `cargo check --workspace` прошёл. Полный workspace-прогон на промежуточной реализации: 668 passed, 0 failed, 1 ignored. После последних исправлений повторён целевой прогон: **320 passed, 0 failed** — core lib (195), oscillator engine (10), knob feedback (8), Rack (11), Synth (7), WT (19), plugin (61), WASM Rust (9).
+- `cargo check --workspace` прошёл. Полный workspace-прогон на промежуточной реализации: 668 passed, 0 failed, 1 ignored. Целевые проверки: **321 passed, 0 failed** — core lib (196), oscillator engine (10), knob feedback (8), Rack (11), Synth (7), WT (19), plugin (61), WASM Rust (9). После уплотнения очереди повторены core lib, oscillator engine и Rack.
 - `oscillator_engine` проверяет 4×4 направленных пары типов в пяти активных режимах (80 случаев), восемь WT, reorder с удерживаемой нотой, нулевой capture, bypass через Resynth, default Auto events в обе стороны OSC/group, независимость group Ring от Level/CHAIN/SEND, Playback против Clock и подготовленное включение Noise Sync из automation без heap work.
 - Нативные AU/VST3 для инструмента и FX собраны через CMake. `SadPetHostTest` и `SadPetFXHostTest` прошли: **2/2**.
 - Финальный scalar-WASM прошёл **10 сценарных suites**: oscillators, wavetable, rack, timbres, synth, tb303, control, telemetry, realtime, resynth. Проверены JSON/scene round trip, embedded user WT, численные edits без роста памяти, позиции/knob feedback восьми слотов, transferable buffers и legacy paths при нескольких sample rates.
