@@ -166,8 +166,8 @@ export class Core extends Abi {
   constructor(module, rate = 48000) {
     super(module, rate, "sad");
   }
-  request(path, data = null) {
-    return this.json("sad_command", { path, data });
+  request(path, data = null, reply = true) {
+    return this.json("sad_command", reply ? { path, data } : { path, data, reply });
   }
   prepareWavetable(data) {
     if (!this.wasm.sad_wavetable_prepare_view)

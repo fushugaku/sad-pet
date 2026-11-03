@@ -262,6 +262,57 @@ const looped = chainScene((scene, ids) => {
   scene.request("/api/parameters", { tap_post_fx_bus: 2, tap_post_fx_send: 1 });
 });
 assert.ok(looped.peak < straight * 2.5, `The loop fed back (${looped.peak} vs ${straight})`);
+
+// Compare a running cached layout with one explicitly refreshed each block.
+// Edits arrive after both layouts have already rendered, including a nested
+// control request that changes a Bus's scalar tap destination.
+const cachedBuses = chainScene(() => {});
+const refreshedBuses = chainScene(() => {});
+const busPair = [cachedBuses.scene, refreshedBuses.scene];
+const [earlierBus, sendingBus, laterBus] = cachedBuses.ids;
+const editBusPair = (id, changes, nested = false) => {
+  for (const scene of busPair) {
+    if (nested) scene.request("/api/control/request", { timbre: id, path: "/api/parameters", data: changes });
+    else {
+      scene.request("/api/timbres/select", { id });
+      scene.request("/api/parameters", changes);
+    }
+  }
+};
+const updateBusPair = (id, changes) => {
+  for (const scene of busPair) scene.request("/api/timbres/update", { id, ...changes });
+};
+const compareBusAudio = (label, audible = true) => {
+  let level = 0;
+  for (let block = 0; block < 32; block++) {
+    refreshedBuses.scene.request("/api/timbres/update", { id: 0 });
+    const actual = Array.from(cachedBuses.scene.process(128));
+    const expected = Array.from(refreshedBuses.scene.process(128));
+    assert.ok(actual.every(Number.isFinite), `${label}: finite output`);
+    assert.deepEqual(actual, expected, `${label}: cached routing changed PCM`);
+    if (block >= 24) level = Math.max(level, most(actual));
+  }
+  assert.ok(audible ? level > 0.001 : level < 1e-4, `${label}: output level ${level}`);
+};
+updateBusPair(0, { gain: 0, sends: to(2) });
+updateBusPair(sendingBus, { gain: 0 });
+compareBusAudio("closed Bus 2 has no direct path", false);
+editBusPair(sendingBus, { tap_post_fx_bus: 1, tap_post_fx_send: 1 });
+compareBusAudio("scalar edit opens an earlier bus after layout preparation");
+editBusPair(sendingBus, { tap_post_fx_bus: 3 }, true);
+compareBusAudio("control request moves the tap to a later bus");
+editBusPair(sendingBus, { tap_post_fx_bus: 1 }, true);
+compareBusAudio("control request moves the tap back to an earlier bus");
+editBusPair(sendingBus, { tap_post_fx_send: 0 });
+compareBusAudio("a cached dependency does not freeze dynamic send gains", false);
+editBusPair(sendingBus, { tap_post_fx_send: 1 });
+compareBusAudio("the unchanged tap destination can become audible again");
+for (const scene of busPair) scene.request("/api/timbres/remove", { id: earlierBus });
+compareBusAudio("removing a bus closes existing section routes", false);
+for (const scene of busPair) scene.request("/api/timbres/add", { kind: "bus" });
+compareBusAudio("reusing a removed bus number refreshes its new part index");
+updateBusPair(laterBus, { muted: true });
+compareBusAudio("muting an unrelated bus leaves the prepared route audible");
 console.log(
   "Buses: Master always present, sends reach Master through Bus 1, roles survive preset loads, scenes keep routing, sections send to a bus, timbres enter Master after its filters, buses feed buses without loops.",
 );

@@ -45,8 +45,27 @@ struct Preparing {
     instrument: Kind,
     stage: u8,
     host: Option<Host>,
+    engine: Option<sad_pet::dsp::EnginePreparation>,
     preset: Option<Preset>,
     live: Option<sad_pet::dsp::sample::LiveInputPreparation>,
+}
+/// List order is also the floating-point summing order. Each kit owns one
+/// contiguous span of Pad FX chains, in their original part-list order.
+struct RenderPart {
+    part: usize,
+    kit: bool,
+    chains: std::ops::Range<usize>,
+}
+#[derive(Default)]
+struct RenderRoutes {
+    parts: Vec<RenderPart>,
+    chains: Vec<(usize, u32)>,
+    bus_parts: Vec<usize>,
+    bus_at: [usize; MAX_BUSES],
+    master: Option<usize>,
+    open: u16,
+    wanted: Option<sad_pet::timbres::Feeds>,
+    order: sad_pet::timbres::BusOrder,
 }
 pub(super) struct Registry {
     pub wavetable_assets: sad_pet::wavetable::assets::Pool,
@@ -59,6 +78,7 @@ pub(super) struct Registry {
     pub wavetable_preview_generation: u64,
     preparing: Option<Preparing>,
     pub parts: Vec<Part>,
+    render_routes: RenderRoutes,
     pub selected: usize,
     pub target: Option<usize>,
     pub revision: u64,
@@ -111,6 +131,7 @@ impl Registry {
                 sends: SendGains::default(),
                 vocal: None,
             }],
+            render_routes: RenderRoutes::default(),
             selected: 0,
             target: None,
             revision: 0,
@@ -170,6 +191,101 @@ impl Registry {
     fn bus_feeds(&self) -> sad_pet::timbres::Feeds {
         sad_pet::timbres::bus_feeds(self.parts.iter().map(|p| (&p.meta, &p.host.engine.preset)))
     }
+    /// Refresh after replacing parts, changing their kinds/ownership, or
+    /// changing a kit's pads/bounces. Scalar bus destinations are checked at
+    /// block boundaries separately; send gains and entry plans stay dynamic.
+    pub fn refresh_render_routes(&mut self) {
+        let links = self.chain_links();
+        let routes = &mut self.render_routes;
+        routes.parts.clear();
+        routes.chains.clear();
+        routes.bus_parts.clear();
+        routes.bus_at.fill(0);
+        routes.master = None;
+        routes.open = sad_pet::timbres::open_buses(self.parts.iter().map(|p| &p.meta));
+        routes.wanted = None;
+        for (p, part) in self.parts.iter_mut().enumerate() {
+            match part.meta.kind {
+                Kind::Master => {
+                    if routes.master.is_none() {
+                        routes.master = Some(p);
+                    }
+                }
+                Kind::Bus => {
+                    routes.bus_parts.push(p);
+                    if part.meta.bus > 0 {
+                        routes.bus_at[part.meta.bus as usize - 1] = p;
+                    }
+                }
+                kind if !kind.routing() => {
+                    let kit = matches!(part.meta.kind, Kind::Sampler | Kind::Rack);
+                    let start = routes.chains.len();
+                    if super::sampler::plays_kit(part) {
+                        let pads: Vec<u32> =
+                            links.iter().filter(|l| l.0 == p).map(|l| l.2).collect();
+                        part.host.engine.set_sampler_routes(&pads);
+                        let settings = part.host.engine.preset.sampler.as_ref().unwrap();
+                        routes.chains.extend(
+                            links
+                                .iter()
+                                .filter(|l| l.0 == p)
+                                .filter(|l| {
+                                    settings.pad(l.2).is_some_and(|pad| pad.bounce.is_none())
+                                })
+                                .map(|l| (l.1, l.2)),
+                        );
+                    }
+                    routes.parts.push(RenderPart {
+                        part: p,
+                        kit,
+                        chains: start..routes.chains.len(),
+                    });
+                }
+                _ => {}
+            }
+        }
+        self.refresh_bus_routes();
+    }
+    /// Tap destinations can change through scalar/control/MIDI edits without
+    /// a scene-context refresh. Compare only their dependency masks, not their
+    /// modulated levels, before reusing the loop-free bus order.
+    fn refresh_bus_routes(&mut self) {
+        let mut wanted = [0; MAX_BUSES];
+        for &p in &self.render_routes.bus_parts {
+            let part = &self.parts[p];
+            if part.meta.bus > 0 {
+                wanted[part.meta.bus as usize - 1] = part
+                    .meta
+                    .mix
+                    .sends
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, level)| **level > 0.)
+                    .fold(
+                        sad_pet::timbres::tapped(&part.host.engine.preset),
+                        |mask, (b, _)| mask | 1 << b,
+                    );
+            }
+        }
+        if self.render_routes.wanted == Some(wanted) {
+            return;
+        }
+        let feeds = self.bus_feeds();
+        let routes = &mut self.render_routes;
+        routes.wanted = Some(wanted);
+        routes.order = sad_pet::timbres::BusOrder::new(
+            routes.bus_parts.iter().map(|&p| self.parts[p].meta.bus),
+            &feeds,
+        );
+        for part in &mut self.parts {
+            let open = match part.meta.kind {
+                Kind::Bus if part.meta.bus > 0 => u16::from(feeds[part.meta.bus as usize - 1]) << 1,
+                kind if kind.routing() => 0,
+                _ => routes.open,
+            };
+            part.host.engine.set_open_buses(open);
+        }
+    }
     pub fn refresh_context(&mut self) {
         // The first part stores the scene tempo, including in older scenes.
         // New parts and recalled instruments inherit it before they can play.
@@ -189,11 +305,16 @@ impl Registry {
         for p in &mut self.parts {
             p.host.context = context.clone();
         }
-        self.sync_sampler_routes();
+        self.refresh_render_routes();
     }
     pub fn adopt_context(&mut self, context: Context) -> Result<(), String> {
         if context.timbres.is_empty() || context.revision < self.revision {
             return Ok(());
+        }
+        // Reject before changing part indices, so an invalid active id cannot
+        // leave the prepared render layout pointing into a partially adopted scene.
+        if !context.timbres.iter().any(|meta| meta.id == context.active) {
+            return Err("Unknown timbre".into());
         }
         let rate = self.parts[0].host.rate;
         for meta in &context.timbres {
@@ -302,6 +423,7 @@ impl Registry {
             instrument,
             stage: 0,
             host: None,
+            engine: None,
             preset: None,
             live: None,
         });
@@ -314,7 +436,23 @@ impl Registry {
             .ok_or("No timbre preparation is pending")?;
         let rate = self.parts[0].host.rate;
         match pending.stage {
-            0 => pending.host = Some(Host::new(rate)),
+            0 => {
+                let engine = pending
+                    .engine
+                    .get_or_insert_with(|| sad_pet::dsp::EnginePreparation::new(rate));
+                if !engine.step() {
+                    self.preparing = Some(pending);
+                    return Ok(false);
+                }
+                let sample = SampleBuffer::new("Loading…".into(), rate, vec![[0.0; 2]; 2])?;
+                let engine = pending
+                    .engine
+                    .take()
+                    .unwrap()
+                    .finish(Arc::new(sample), Preset::default())
+                    .unwrap();
+                pending.host = Some(Host::from_engine(rate, engine));
+            }
             1 if pending.kind != Kind::Granular => {
                 let mut preset = if pending.kind == Kind::Rack {
                     pending.instrument.rack_instrument()
@@ -334,22 +472,40 @@ impl Registry {
                     &preset.wavetable_pool,
                     rate,
                 )?;
+            }
+            3 if pending.kind != Kind::Granular => {
+                let preset = pending.preset.as_mut().unwrap();
                 preset.oscillator_runtime.prepare(
                     preset.oscillators.as_deref(),
                     &preset.wavetable_pool,
                     rate,
                 )?;
+            }
+            4 if pending.kind != Kind::Granular => {
+                let preset = pending.preset.as_mut().unwrap();
                 preset.prepare_phase_transports(rate)?;
+            }
+            5 if pending.kind != Kind::Granular => {
+                let preset = pending.preset.as_mut().unwrap();
                 preset.prepare_wavetable_interactions();
+            }
+            6 if pending.kind != Kind::Granular => {
+                let preset = pending.preset.as_mut().unwrap();
                 preset.tb303_runtime.prepare(preset.tb303.as_deref(), rate);
+            }
+            7 if pending.kind != Kind::Granular => {
+                let preset = pending.preset.as_mut().unwrap();
                 preset
                     .drum_runtime
                     .prepare_engine(preset.drums.as_deref(), rate);
+            }
+            8 if pending.kind != Kind::Granular => {
+                let preset = pending.preset.as_mut().unwrap();
                 preset
                     .synth_runtime
                     .prepare_engine(preset.synth.as_deref(), rate);
             }
-            3 if pending.kind != Kind::Granular && !pending.kind.keeps_role() => {
+            9 if pending.kind != Kind::Granular && !pending.kind.keeps_role() => {
                 let preset = pending.preset.as_mut().unwrap();
                 // A Rack keeps a history only for a Grain engine that reads one.
                 let Some(history) = preset.history() else {
@@ -376,10 +532,8 @@ impl Registry {
                     synth.live = Some(input);
                 }
             }
-            4 if pending.kind != Kind::Granular => {
-                let size = rmp_serde::to_vec_named(pending.preset.as_ref().unwrap())
-                    .map_or(0, |bytes| bytes.len())
-                    + 131072;
+            10 if pending.kind != Kind::Granular => {
+                let size = Host::snapshot_bytes(pending.preset.as_ref().unwrap())?;
                 pending
                     .host
                     .as_mut()
@@ -961,31 +1115,8 @@ impl Registry {
             .parts
             .iter()
             .any(|p| p.meta.mix.solo && !p.meta.kind.routing());
-        let open = sad_pet::timbres::open_buses(self.parts.iter().map(|p| &p.meta));
-        let buses = open != 0;
-        // A bus renders after every bus that feeds it, so a send never
-        // reaches a bus that already rendered the frame: no loop can form.
-        let feeds = self.bus_feeds();
-        let order = sad_pet::timbres::BusOrder::new(
-            self.parts
-                .iter()
-                .filter(|p| p.meta.kind == Kind::Bus)
-                .map(|p| p.meta.bus),
-            &feeds,
-        );
-        let mut at = [0; MAX_BUSES];
-        for (i, part) in self.parts.iter_mut().enumerate() {
-            let open = match part.meta.kind {
-                Kind::Bus if part.meta.bus > 0 => {
-                    at[part.meta.bus as usize - 1] = i;
-                    u16::from(feeds[part.meta.bus as usize - 1]) << 1
-                }
-                kind if kind.routing() => 0,
-                _ => open,
-            };
-            part.host.engine.set_open_buses(open);
-        }
-        let master = self.parts.iter().position(|p| p.meta.kind == Kind::Master);
+        self.refresh_bus_routes();
+        let buses = self.render_routes.open != 0;
         // Destinations (0 = Master, b = Bus b) that some timbre enters after
         // their input; the others take the plain sum as before.
         let split = self
@@ -999,22 +1130,7 @@ impl Registry {
         };
         let count = count.min(BLOCK);
         self.clock_block(count);
-        // A pad's chain runs on the pad's voices of the previous frame and
-        // returns into its Sampler; a bounced pad needs no chain.
-        let links: Vec<(usize, usize, u32)> = self
-            .chain_links()
-            .into_iter()
-            .filter(|&(o, _, pad)| {
-                self.parts[o]
-                    .host
-                    .engine
-                    .preset
-                    .sampler
-                    .as_ref()
-                    .and_then(|s| s.pad(pad))
-                    .is_some_and(|p| p.bounce.is_none())
-            })
-            .collect();
+        // Prepared chains still consume the previous frame's pad voices.
         for part in &mut self.parts {
             if let Some(vocal) = &mut part.vocal {
                 let out = &mut vocal.buffer[..count];
@@ -1034,14 +1150,12 @@ impl Registry {
             if split != 0 {
                 entered = Default::default();
             }
-            for p in 0..self.parts.len() {
-                if self.parts[p].meta.kind.routing() {
-                    continue;
-                }
+            for render in &self.render_routes.parts {
+                let p = render.part;
                 let mut returned = [0.; 2];
-                let kit = matches!(self.parts[p].meta.kind, Kind::Sampler | Kind::Rack);
+                let kit = render.kit;
                 if kit {
-                    for &(_, c, pad) in links.iter().filter(|l| l.0 == p) {
+                    for &(c, pad) in &self.render_routes.chains[render.chains.clone()] {
                         let send = self.parts[p].host.engine.sampler_send(pad);
                         let chain = &mut self.parts[c];
                         let level = gain(chain, !chain.meta.mix.muted);
@@ -1091,9 +1205,9 @@ impl Registry {
                 }
             }
             if buses {
-                for &bus in order.buses() {
+                for &bus in self.render_routes.order.buses() {
                     let bus = bus as usize;
-                    let part = &mut self.parts[at[bus - 1]];
+                    let part = &mut self.parts[self.render_routes.bus_at[bus - 1]];
                     let audible = !part.meta.mix.muted;
                     let level = gain(part, audible);
                     if split & 1 << bus != 0 {
@@ -1131,7 +1245,7 @@ impl Registry {
                 let cue = preview.process_frame();
                 frame = [frame[0] + cue[0], frame[1] + cue[1]];
             }
-            if let Some(m) = master {
+            if let Some(m) = self.render_routes.master {
                 let part = &mut self.parts[m];
                 let level = gain(part, !part.meta.mix.muted);
                 if split & 1 != 0 {
@@ -1605,6 +1719,7 @@ impl Registry {
         // Source FX for this timbre now read its new sample here.
         self.parts[index] = part;
         self.wavetable_assets = assets;
+        self.refresh_render_routes();
         Ok(bytes)
     }
     /// Swaps in a part from `prepare_instrument`. The timbre keeps its place, mix

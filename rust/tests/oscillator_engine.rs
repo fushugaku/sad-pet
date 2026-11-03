@@ -81,6 +81,66 @@ fn energy(a: &[f32]) -> f64 {
 }
 
 #[test]
+fn prepared_updates_preserve_held_voices_and_release_tails() {
+    for wavetable in [false, true] {
+        let mut preset = if wavetable {
+            sad_pet::timbres::Kind::Wavetable.preset().unwrap()
+        } else {
+            patch()
+        };
+        if let Some(settings) = &mut preset.oscillators {
+            settings.add(Kind::Wavetable).unwrap();
+            settings.add(Kind::Pcm).unwrap();
+        }
+        if let Some(settings) = &mut preset.wavetable {
+            settings.count = 4;
+            for (i, oscillator) in settings.oscillators.iter_mut().enumerate() {
+                oscillator.controls.unison = 4;
+                oscillator.controls.position = i as f32 * 0.2;
+            }
+        }
+        let mut actual = play(preset.clone());
+        let mut reference = play(preset);
+        for engine in [&mut actual, &mut reference] {
+            engine.midi(Message::NoteOn {
+                channel: 0,
+                note: 67,
+                velocity: 91,
+            });
+        }
+        assert_eq!(audio(&mut actual, 1024), audio(&mut reference, 1024));
+        for edit in 0..6 {
+            let mut next = actual.preset.clone();
+            next.params.master_volume = 0.3 + edit as f32 * 0.05;
+            if let Some(settings) = &mut next.oscillators {
+                settings.slots[1].controls.wavetable.position = edit as f32 * 0.13;
+            }
+            if let Some(settings) = &mut next.wavetable {
+                settings.oscillators[1].controls.position = edit as f32 * 0.13;
+            }
+            let cold = next.prepared_clone_for(48000);
+            reference.set_preset(cold);
+            actual.prepare_preset_update(&mut next).unwrap();
+            actual.set_preset(next);
+            if edit == 3 {
+                for engine in [&mut actual, &mut reference] {
+                    engine.midi(Message::NoteOff {
+                        channel: 0,
+                        note: 67,
+                        velocity: 0,
+                    });
+                }
+            }
+            assert_eq!(
+                audio(&mut actual, 2048),
+                audio(&mut reference, 2048),
+                "prepared voices changed at edit {edit}, wavetable={wavetable}"
+            );
+        }
+    }
+}
+
+#[test]
 fn eight_wavetables_are_real_slots_and_reorder_keeps_the_held_note() {
     let mut p = patch();
     let settings = p.oscillators.as_mut().unwrap();

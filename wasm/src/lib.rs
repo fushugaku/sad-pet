@@ -24,6 +24,17 @@ use std::{cell::RefCell, io::Cursor, sync::Arc};
 const MAX_INPUT: usize = 300 * 1024 * 1024;
 const BLOCK: usize = 4096;
 
+struct ByteCount(usize);
+impl std::io::Write for ByteCount {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0 += bytes.len();
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
 struct Host {
     context: sad_pet::timbres::Context,
     engine: Box<Engine>,
@@ -57,9 +68,12 @@ impl Host {
     fn new(rate: u32) -> Self {
         sad_pet::parameters::specs();
         let sample = SampleBuffer::new("Loading…".into(), rate, vec![[0.0; 2]; 2]).unwrap();
+        Self::from_engine(rate, Engine::new(rate, Arc::new(sample), Preset::default()))
+    }
+    fn from_engine(rate: u32, engine: Engine) -> Self {
         Self {
             context: sad_pet::timbres::Context::default(),
-            engine: Box::new(Engine::new(rate, Arc::new(sample), Preset::default())),
+            engine: Box::new(engine),
             midi: sad_pet::midi::Parser::default(),
             rate,
             input: Vec::new(),
@@ -87,9 +101,18 @@ impl Host {
         }
     }
 
+    fn snapshot_bytes(preset: &Preset) -> Result<usize, String> {
+        let mut count = ByteCount(131072);
+        preset
+            .serialize(&mut rmp_serde::Serializer::new(&mut count).with_struct_map())
+            .map_err(|error| error.to_string())?;
+        Ok(count.0)
+    }
     fn resize_snapshot(&mut self) {
-        let size = rmp_serde::to_vec_named(&self.engine.preset).map_or(0, |v| v.len()) + 131072;
-        self.snapshot_buffer.resize(size, 0);
+        let size = Self::snapshot_bytes(&self.engine.preset).unwrap_or(131072);
+        if self.snapshot_buffer.len() < size {
+            self.snapshot_buffer.resize(size, 0);
+        }
     }
     fn state(&self) -> Value {
         let e = &self.engine;
@@ -172,38 +195,24 @@ impl Host {
                 if data["format"].as_str() != Some("evil-pet-rust-v1") {
                     return Err("Use an SAD PET preset (.sad.json)".into());
                 }
-                let mut preset: Preset =
-                    serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
+                let mut preset = Preset::deserialize(data).map_err(|e| e.to_string())?;
                 preset.sanitize();
                 preset.wavetable_pool = self.engine.preset.wavetable_pool.clone();
-                // A worklet resolves only already staged banks. A utility
-                // instance validates canonical user assets before compilation.
-                preset.wavetable_runtime.prepare(
-                    preset.wavetable.as_deref(),
-                    &preset.wavetable_pool,
-                    self.rate,
-                )?;
-                preset.oscillator_runtime.prepare(
-                    preset.oscillators.as_deref(),
-                    &preset.wavetable_pool,
-                    self.rate,
-                )?;
-                preset.prepare_phase_transports(self.rate)?;
+                // Resolve only staged banks and inherit this engine's voice storage.
+                self.engine.prepare_preset_update(&mut preset)?;
                 self.engine.set_preset(preset);
-                let size = rmp_serde::to_vec_named(&self.engine.preset)
-                    .map_err(|e| e.to_string())?
-                    .len()
-                    + 131072;
+                let size = Self::snapshot_bytes(&self.engine.preset)?;
                 if self.snapshot_buffer.len() < size {
                     self.snapshot_buffer.resize(size, 0);
                 }
                 self.sequence_edits.clear();
                 self.drum_edits.clear();
                 self.parameter_edits.clear();
-                // Reserve the control-message high-water mark while preparing a
-                // patch. First-time metadata must not grow memory after a scalar edit.
-                let _ = serde_json::to_vec(&self.state());
-                Ok(json!(self.engine.preset))
+                if request["reply"] == false {
+                    Ok(json!({"ok": true}))
+                } else {
+                    Ok(json!(self.engine.preset))
+                }
             }
             "/api/parameters/values" => sad_pet::parameters::read_values(&self.engine.preset, data),
             "/api/parameters" => {

@@ -232,14 +232,18 @@ fn atan2(y: f32, x: f32) -> f32 {
     if y < 0.0 { -r } else { r }
 }
 
-/// The 2x decimator: an eighth-order minimum-phase anti-alias filter at
-/// 0.45 * host rate, as four biquad sections in series. The states are
-/// stored by channel within each section, so one vector operation covers
-/// both channels; every channel runs the per-section arithmetic unchanged.
-#[derive(Clone, Copy)]
-pub(super) struct Decimator {
+struct DecimatorCoefficients {
     b: [[f32; 3]; 4],
     a: [[f32; 2]; 4],
+}
+
+/// The 2x decimator: an eighth-order minimum-phase anti-alias filter at
+/// 0.45 * host rate, as four biquad sections in series. Coefficients are
+/// shared; each instance owns its stereo history. The SIMD recurrence keeps
+/// each channel's multiplication, subtraction, addition and flush order.
+#[derive(Clone, Copy)]
+pub(super) struct Decimator {
+    coefficients: &'static DecimatorCoefficients,
     /// [section][state][channel]
     z: [[Stereo; 2]; 4],
 }
@@ -247,19 +251,25 @@ impl Decimator {
     /// The four sections, in order.
     const QS: [f32; 4] = [0.5097956, 0.6013449, 0.8999762, 2.5629154];
     pub(super) fn new() -> Self {
-        let w = 2.0 * PI * 0.225;
-        let sections = Self::QS.map(|q| {
-            let alpha = w.sin() / (2.0 * q);
-            let scale = 1.0 / (1.0 + alpha);
-            let b = (1.0 - w.cos()) * 0.5 * scale;
-            (
-                [b, 2.0 * b, b],
-                [-2.0 * w.cos() * scale, (1.0 - alpha) * scale],
-            )
-        });
+        static COEFFICIENTS: std::sync::LazyLock<DecimatorCoefficients> =
+            std::sync::LazyLock::new(|| {
+                let w = 2.0 * PI * 0.225;
+                let sections = Decimator::QS.map(|q| {
+                    let alpha = w.sin() / (2.0 * q);
+                    let scale = 1.0 / (1.0 + alpha);
+                    let b = (1.0 - w.cos()) * 0.5 * scale;
+                    (
+                        [b, 2.0 * b, b],
+                        [-2.0 * w.cos() * scale, (1.0 - alpha) * scale],
+                    )
+                });
+                DecimatorCoefficients {
+                    b: sections.map(|(b, _)| b),
+                    a: sections.map(|(_, a)| a),
+                }
+            });
         Self {
-            b: sections.map(|(b, _)| b),
-            a: sections.map(|(_, a)| a),
+            coefficients: &COEFFICIENTS,
             z: [[[0.0; 2]; 2]; 4],
         }
     }
@@ -273,8 +283,27 @@ impl Decimator {
         if input[0] == 0.0 && input[1] == 0.0 && self.z == [[[0.0; 2]; 2]; 4] {
             return [0.0; 2];
         }
+        #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+        {
+            self.next_simd(input)
+        }
+        #[cfg(not(all(target_arch = "wasm32", target_feature = "simd128")))]
+        {
+            self.next_scalar(input)
+        }
+    }
+
+    #[cfg(any(test, not(all(target_arch = "wasm32", target_feature = "simd128"))))]
+    #[inline]
+    fn next_scalar(&mut self, input: Stereo) -> Stereo {
         let mut x = input;
-        for (([b0, b1, b2], [a0, a1]), [z0, z1]) in self.b.iter().zip(&self.a).zip(&mut self.z) {
+        for (([b0, b1, b2], [a0, a1]), [z0, z1]) in self
+            .coefficients
+            .b
+            .iter()
+            .zip(&self.coefficients.a)
+            .zip(&mut self.z)
+        {
             let y = [b0 * x[0] + z0[0], b0 * x[1] + z0[1]];
             *z0 = [
                 super::fast::flush(b1 * x[0] - a0 * y[0] + z1[0]),
@@ -287,6 +316,46 @@ impl Decimator {
             x = y;
         }
         x
+    }
+
+    #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+    #[inline]
+    fn next_simd(&mut self, input: Stereo) -> Stereo {
+        use core::arch::wasm32::*;
+        // Duplicate stereo into both pairs: y occupies [L, R, L, R],
+        // while the state update occupies [z0L, z0R, z1L, z1R].
+        let mut x = f32x4(input[0], input[1], input[0], input[1]);
+        let threshold = f32x4_splat(1e-20);
+        for (([b0, b1, b2], [a0, a1]), state) in self
+            .coefficients
+            .b
+            .iter()
+            .zip(&self.coefficients.a)
+            .zip(&mut self.z)
+        {
+            // SAFETY: each section contains exactly four contiguous f32s.
+            // Wasm vector loads/stores allow the array's f32 alignment.
+            unsafe {
+                let z = v128_load(state.as_ptr().cast());
+                let z0 = i32x4_shuffle::<0, 1, 0, 1>(z, z);
+                let z1 = i32x4_shuffle::<2, 3, 2, 3>(z, z);
+                let y = f32x4_add(f32x4_mul(f32x4_splat(*b0), x), z0);
+                let next = f32x4_sub(
+                    f32x4_mul(f32x4(*b1, *b1, *b2, *b2), x),
+                    f32x4_mul(f32x4(*a0, *a0, *a1, *a1), y),
+                );
+                // Only z0 adds old z1. Splicing retains z1's original
+                // subtraction without an extra add, including signed zero.
+                let next_z0 = f32x4_add(next, z1);
+                let next = i32x4_shuffle::<0, 1, 6, 7>(next_z0, next);
+                // Identical to fast::flush: strict abs(x) < 1e-20 maps to
+                // +0; equality, infinities and NaNs retain the input bits.
+                let next = v128_andnot(next, f32x4_lt(f32x4_abs(next), threshold));
+                v128_store(state.as_mut_ptr().cast(), next);
+                x = y;
+            }
+        }
+        [f32x4_extract_lane::<0>(x), f32x4_extract_lane::<1>(x)]
     }
 }
 
@@ -1602,6 +1671,178 @@ fn zero_crossings(input: &[Stereo; BANDS], signs: &mut [i8; BANDS]) -> [bool; BA
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn assert_decimator_value(actual: f32, expected: f32) {
+        if expected.is_nan() {
+            // Wasm permits different arithmetic NaN payloads, including
+            // between scalar and SIMD instructions; neither may flush NaN.
+            assert!(actual.is_nan());
+        } else {
+            assert_eq!(actual.to_bits(), expected.to_bits());
+        }
+    }
+
+    fn assert_decimator_state(actual: &Decimator, expected: &Decimator) {
+        for (actual, expected) in actual
+            .z
+            .iter()
+            .flatten()
+            .flatten()
+            .zip(expected.z.iter().flatten().flatten())
+        {
+            assert_decimator_value(*actual, *expected);
+        }
+    }
+
+    fn assert_decimator_step(
+        actual: &mut Decimator,
+        expected: &mut Decimator,
+        input: Stereo,
+    ) -> Stereo {
+        let output = actual.next(input);
+        let reference = expected.next_scalar(input);
+        for (actual, expected) in output.into_iter().zip(reference) {
+            assert_decimator_value(actual, expected);
+        }
+        assert_decimator_state(actual, expected);
+        output
+    }
+
+    #[test]
+    fn decimator_shared_coefficients_keep_original_precision_and_independent_history() {
+        let mut first = Decimator::new();
+        let mut second = Decimator::new();
+        assert!(std::ptr::eq(first.coefficients, second.coefficients));
+        let w = 2.0 * PI * 0.225;
+        for (i, q) in Decimator::QS.into_iter().enumerate() {
+            let alpha = w.sin() / (2.0 * q);
+            let scale = 1.0 / (1.0 + alpha);
+            let b = (1.0 - w.cos()) * 0.5 * scale;
+            assert_eq!(
+                first.coefficients.b[i].map(f32::to_bits),
+                [b, 2.0 * b, b].map(f32::to_bits)
+            );
+            assert_eq!(
+                first.coefficients.a[i].map(f32::to_bits),
+                [-2.0 * w.cos() * scale, (1.0 - alpha) * scale].map(f32::to_bits)
+            );
+        }
+        first.next([1.0, -0.5]);
+        assert!(first.z.iter().flatten().flatten().any(|x| *x != 0.0));
+        assert_eq!(second.next([0.0; 2]).map(f32::to_bits), [0; 2]);
+        second.clear();
+        assert!(first.next([0.0; 2]).iter().any(|x| *x != 0.0));
+    }
+
+    #[test]
+    fn decimator_impulse_tail_channel_isolation_and_clear_are_exact() {
+        let mut actual = Decimator::new();
+        let mut expected = Decimator::new();
+        let impulse = assert_decimator_step(&mut actual, &mut expected, [1.0, -0.0]);
+        assert!(impulse[0] > 0.0);
+        assert_eq!(impulse[1].to_bits(), 0);
+        let mut tail_energy = 0.0;
+        for _ in 0..8192 {
+            let output = assert_decimator_step(&mut actual, &mut expected, [-0.0, 0.0]);
+            tail_energy += output[0] * output[0];
+            assert_eq!(output[1].to_bits(), 0);
+        }
+        assert!(tail_energy > 1e-4);
+        assert!(
+            actual
+                .z
+                .iter()
+                .flatten()
+                .flatten()
+                .all(|x| x.to_bits() == 0)
+        );
+        assert_eq!(actual.next([-0.0; 2]).map(f32::to_bits), [0; 2]);
+        actual.next([0.25, -0.75]);
+        actual.clear();
+        expected.clear();
+        assert_eq!(
+            assert_decimator_step(&mut actual, &mut expected, [1.0, -0.0]).map(f32::to_bits),
+            impulse.map(f32::to_bits)
+        );
+    }
+
+    #[test]
+    fn decimator_denormal_threshold_and_nonfinite_inputs_follow_scalar_flush() {
+        let threshold = 1e-20_f32;
+        let edges = [
+            0.0,
+            -0.0,
+            f32::from_bits(1),
+            -f32::from_bits(1),
+            f32::MIN_POSITIVE,
+            -f32::MIN_POSITIVE,
+            f32::from_bits(threshold.to_bits() - 1),
+            threshold,
+            f32::from_bits(threshold.to_bits() + 1),
+            -threshold,
+            1e-19,
+            -1e-19,
+            f32::MAX,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::from_bits(0x7fc1_2345),
+            f32::from_bits(0xffc1_2345),
+        ];
+        for edge in edges {
+            for section in 0..4 {
+                let mut actual = Decimator::new();
+                // Include values around flush's strict threshold in every
+                // section, even histories ordinary rendering would flush.
+                let state = if edge == 0.0 { 0.0 } else { edge };
+                actual.z[section] = [[state, 0.0], [state, 0.0]];
+                let mut expected = actual;
+                for n in 0..64 {
+                    let input = if n == 0 { [edge, -0.0] } else { [0.0; 2] };
+                    let output = assert_decimator_step(&mut actual, &mut expected, input);
+                    assert_eq!(output[1].to_bits(), 0, "cross-channel state leaked");
+                    for state in actual.z.iter().flatten().flatten() {
+                        if state.abs() < threshold {
+                            assert_eq!(state.to_bits(), 0, "flush did not produce +0");
+                        }
+                    }
+                }
+                actual.clear();
+                expected = Decimator::new();
+                assert_decimator_step(&mut actual, &mut expected, [0.5, -0.25]);
+            }
+        }
+    }
+
+    #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+    #[test]
+    fn decimator_simd_matches_scalar_bits_for_deterministic_stereo_and_resets() {
+        let mut actual = Decimator::new();
+        let mut expected = Decimator::new();
+        let mut random = 0x6a09_e667_u32;
+        for n in 0..16384 {
+            if n % 4096 == 0 {
+                actual.clear();
+                expected.clear();
+            }
+            let input = if n % 37 == 0 {
+                [0.0, -0.0]
+            } else {
+                std::array::from_fn(|_| {
+                    random = random.wrapping_mul(1664525).wrapping_add(1013904223);
+                    (random as i32 as f32) * (1.0 / 2147483648.0)
+                })
+            };
+            // Bypass the silence shortcut to exercise SIMD at zero state too.
+            let output = actual.next_simd(input);
+            let reference = expected.next_scalar(input);
+            assert_eq!(
+                output.map(f32::to_bits),
+                reference.map(f32::to_bits),
+                "frame {n}"
+            );
+            assert_decimator_state(&actual, &expected);
+        }
+    }
     fn tone(n: usize, hz: f32, sr: u32) -> Stereo {
         [(n as f32 * 2.0 * PI * hz / sr as f32).sin() * 0.2; 2]
     }

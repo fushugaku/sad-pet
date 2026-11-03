@@ -204,14 +204,14 @@ class SadPetProcessor extends AudioWorkletProcessor {
           this.flushRecording();
           this.recording = false;
           result = { frames: this.recordedFrames };
-        } else result = this.core.request(message.path, data);
+        } else result = this.core.request(message.path, data, message.path !== "/api/preset");
         if (type !== "capture-input" && (type !== "request" || data != null))
           this.stateStamp++;
         const capacity = this.core.wasm.sad_snapshot_capacity();
         this.snapshotMaxBytes = Math.max(this.snapshotMaxBytes, capacity);
-        this.snapshotPool = this.snapshotPool.map((buffer) =>
-          buffer.length >= capacity ? buffer : new Uint8Array(capacity),
-        );
+        for (let i = 0; i < this.snapshotPool.length; i++)
+          if (this.snapshotPool[i].length < capacity)
+            this.snapshotPool[i] = new Uint8Array(capacity);
         this.port.postMessage(
           { id, result, stamp: this.stateStamp },
           result instanceof ArrayBuffer ? [result] : [],
@@ -265,7 +265,9 @@ class SadPetProcessor extends AudioWorkletProcessor {
       this.stateStamp++;
       const capacity = this.core.wasm.sad_snapshot_capacity();
       this.snapshotMaxBytes = Math.max(this.snapshotMaxBytes, capacity);
-      this.snapshotPool = this.snapshotPool.map(buffer => buffer.length >= capacity ? buffer : new Uint8Array(capacity));
+      for (let i = 0; i < this.snapshotPool.length; i++)
+        if (this.snapshotPool[i].length < capacity)
+          this.snapshotPool[i] = new Uint8Array(capacity);
       this.port.postMessage({ id: pending.id, result: result.context, stamp: this.stateStamp });
       this.vocalJobs();
       this.snapshot();

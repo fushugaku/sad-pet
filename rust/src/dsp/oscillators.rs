@@ -11,19 +11,6 @@ pub(super) struct OscillatorEngine {
     pub mixed: Option<Box<wavetable::mixed::Runtime>>,
     pub phase_adapters: Option<Box<super::phase_transport::Runtime>>,
 }
-impl OscillatorEngine {
-    pub fn new(rate: u32) -> Self {
-        Self {
-            synth: None,
-            wavetable: None,
-            resynth: Box::new(resynth::Resynth::new(rate)),
-            tb303: None,
-            graph: Box::new(interaction::Runtime::new(rate)),
-            mixed: None,
-            phase_adapters: None,
-        }
-    }
-}
 
 #[derive(Default)]
 pub struct Prepared(
@@ -50,9 +37,21 @@ impl Prepared {
         assets: &crate::wavetable::assets::Pool,
         rate: u32,
     ) -> Result<(), String> {
+        self.prepare_reusing(settings, assets, rate, None)
+    }
+    pub(crate) fn prepare_reusing(
+        &mut self,
+        settings: Option<&crate::oscillators::Settings>,
+        assets: &crate::wavetable::assets::Pool,
+        rate: u32,
+        previous: Option<&wavetable::mixed::Runtime>,
+    ) -> Result<(), String> {
         self.1 = None;
         self.0 = match settings {
-            Some(s) => match wavetable::mixed::Runtime::new(rate, s, assets) {
+            Some(s) => match previous.map_or_else(
+                || wavetable::mixed::Runtime::new(rate, s, assets),
+                |old| wavetable::mixed::Runtime::prepare(rate, s, assets, Some(old)),
+            ) {
                 Ok(runtime) => Some(Box::new(runtime)),
                 Err(error) => {
                     self.1 = Some(error.clone());

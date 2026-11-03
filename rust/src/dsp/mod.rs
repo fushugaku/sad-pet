@@ -706,11 +706,92 @@ pub struct Engine {
     limiter: limiter::Limiter,
 }
 
-impl Engine {
-    pub fn new(sample_rate: u32, sample: Arc<SampleBuffer>, preset: Preset) -> Self {
+/// Constructs the engine's independent resource banks in bounded stages.
+/// No audio or event state advances until the completed engine is installed.
+pub struct EnginePreparation {
+    sample_rate: u32,
+    stage: u8,
+    grain_interaction: Option<Box<grain_interaction::Runtime>>,
+    group_grains: Option<Box<grain_groups::Runtime>>,
+    voices: Option<Box<[Voice; VOICES]>>,
+    voice_oscillators: Option<Box<[[Oscillator; crate::preset::MODULATORS]; VOICES]>>,
+    color_rack: Option<Box<ColorRack>>,
+    pre_color_rack: Option<Box<ColorRack>>,
+    resynth: Option<Box<resynth::Resynth>>,
+    graph: Option<Box<interaction::Runtime>>,
+    equalizers: Option<Box<eq::Bank>>,
+    filters: Option<Box<[FilterBank; VOICES]>>,
+    modulated: Option<Box<Modulated>>,
+    spare_modulated: Option<Box<Modulated>>,
+}
+impl EnginePreparation {
+    pub fn new(sample_rate: u32) -> Self {
         fast::warm_up();
         sample::prepare_interpolation();
-        let sr = sample_rate.clamp(8_000, 384_000);
+        Self {
+            sample_rate: sample_rate.clamp(8_000, 384_000),
+            stage: 0,
+            grain_interaction: None,
+            group_grains: None,
+            voices: None,
+            voice_oscillators: None,
+            color_rack: None,
+            pre_color_rack: None,
+            resynth: None,
+            graph: None,
+            equalizers: None,
+            filters: None,
+            modulated: None,
+            spare_modulated: None,
+        }
+    }
+    /// Prepares one independent bank, never the whole engine in one call.
+    pub fn step(&mut self) -> bool {
+        let sr = self.sample_rate;
+        match self.stage {
+            0 => self.grain_interaction = Some(Box::new(grain_interaction::Runtime::new(sr))),
+            1 => self.group_grains = Some(Box::new(grain_groups::Runtime::new(sr))),
+            2 => self.voices = Some(Box::new([Voice::default(); VOICES])),
+            3 => {
+                self.voice_oscillators = Some(Box::new(std::array::from_fn(|v| {
+                    std::array::from_fn(|i| {
+                        Oscillator::new(0x504f4c59 ^ (v as u64) << 16 ^ i as u64)
+                    })
+                })));
+            }
+            4 => self.color_rack = Some(Box::new(ColorRack::new(sr))),
+            5 => self.pre_color_rack = Some(Box::new(ColorRack::new(sr))),
+            6 => self.resynth = Some(Box::new(resynth::Resynth::new(sr))),
+            7 => self.graph = Some(Box::new(interaction::Runtime::new(sr))),
+            8 => self.equalizers = Some(Box::new(eq::Bank::new(sr))),
+            9 => self.filters = Some(Box::new(std::array::from_fn(|_| FilterBank::new(sr)))),
+            10 => self.modulated = Some(Box::new(Modulated::default())),
+            11 => self.spare_modulated = Some(Box::new(Modulated::default())),
+            _ => return true,
+        }
+        self.stage += 1;
+        self.stage == 12
+    }
+    /// Applying the supplied preset may prepare its own resources; live hosts
+    /// finish with Init, then prepare their instrument separately before commit.
+    pub fn finish(self, sample: Arc<SampleBuffer>, preset: Preset) -> Option<Engine> {
+        (self.stage == 12).then(|| Engine::from_preparation(self, sample, preset))
+    }
+}
+
+impl Engine {
+    pub fn new(sample_rate: u32, sample: Arc<SampleBuffer>, preset: Preset) -> Self {
+        let mut prepared = EnginePreparation::new(sample_rate);
+        while !prepared.step() {}
+        prepared.finish(sample, preset).unwrap()
+    }
+
+    fn from_preparation(
+        prepared: EnginePreparation,
+        sample: Arc<SampleBuffer>,
+        preset: Preset,
+    ) -> Self {
+        let sr = prepared.sample_rate;
         let mut engine = Self {
             sample_rate: sr,
             preset: Preset::default(),
@@ -730,43 +811,49 @@ impl Engine {
             sequence_running: true,
             control_inputs: Vec::new(),
             grains: [Grain::default(); MAX_GRAINS],
-            grain_interaction: Box::new(grain_interaction::Runtime::new(sample_rate)),
+            grain_interaction: prepared.grain_interaction.unwrap(),
             live_grains: 0,
             wide_grains: 0,
             wide_frames: [[0.0; 2]; MAX_GRAINS],
             onsets: 0,
-            group_grains: Box::new(grain_groups::Runtime::new(sr)),
+            group_grains: prepared.group_grains.unwrap(),
             group_clocks: [GroupClock::default(); crate::grain_groups::GROUPS],
             group_sync_mask: 0,
             grain_feedback: feedback::Feedback::new(),
-            voices: Box::new([Voice::default(); VOICES]),
+            voices: prepared.voices.unwrap(),
             oscillators: std::array::from_fn(|i| {
                 Oscillator::new(0x853c49e6748fea9b_u64.wrapping_add(i as u64 * 0x12345679))
             }),
             song_beat: 0.0,
             host_beat: None,
             lfo_values: [0.0; crate::preset::MODULATORS],
-            voice_oscillators: Box::new(std::array::from_fn(|v| {
-                std::array::from_fn(|i| Oscillator::new(0x504f4c59 ^ (v as u64) << 16 ^ i as u64))
-            })),
+            voice_oscillators: prepared.voice_oscillators.unwrap(),
             voice_lfo_values: [[0.0; crate::preset::MODULATORS]; VOICES],
             env_values: [0.0; crate::preset::MODULATORS],
-            color_rack: Box::new(ColorRack::new(sr)),
-            pre_color_rack: Box::new(ColorRack::new(sr)),
+            color_rack: prepared.color_rack.unwrap(),
+            pre_color_rack: prepared.pre_color_rack.unwrap(),
             source_color: color::ColorProcessor::new(sr),
-            oscillator_engine: oscillators::OscillatorEngine::new(sr),
+            oscillator_engine: oscillators::OscillatorEngine {
+                synth: None,
+                wavetable: None,
+                resynth: prepared.resynth.unwrap(),
+                tb303: None,
+                graph: prepared.graph.unwrap(),
+                mixed: None,
+                phase_adapters: None,
+            },
             taps: taps::Runtime::new(),
             entered: None,
             pad_return: [0.0; 2],
             drums: None,
             sampler: None,
             rack: None,
-            equalizers: Box::new(eq::Bank::new(sr)),
+            equalizers: prepared.equalizers.unwrap(),
             processed_source: None,
             previous_source: None,
             source_fade_remaining: 0,
             source_fx_error: false,
-            filters: Box::new(std::array::from_fn(|_| FilterBank::new(sr))),
+            filters: prepared.filters.unwrap(),
             filter_banks: Vec::new(),
             filter_masks: [0; filter_slots::POSITIONS],
             random: Random::default(),
@@ -792,8 +879,8 @@ impl Engine {
             pressure: [0.0; 16],
             poly_pressure: [[0.0; 128]; 16],
             matrix_values: [0.0; matrix::MAX_ROUTES],
-            modulated: Box::new(Modulated::default()),
-            spare_modulated: Some(Box::new(Modulated::default())),
+            modulated: prepared.modulated.unwrap(),
+            spare_modulated: prepared.spare_modulated,
             rack_key: None,
             rack_configured_dirty: false,
             source_key: None,
@@ -830,6 +917,25 @@ impl Engine {
         engine
     }
 
+    /// Prepare an immediate update for this engine. Existing voice banks are
+    /// inherited at exchange, rather than allocating unused replacement voices.
+    /// The prepared preset must be exchanged with this same engine before render.
+    pub fn prepare_preset_update(&self, preset: &mut Preset) -> Result<(), String> {
+        preset.wavetable_runtime.prepare_reusing(
+            preset.wavetable.as_deref(),
+            &preset.wavetable_pool,
+            self.sample_rate,
+            self.oscillator_engine.wavetable.as_deref(),
+        )?;
+        preset.oscillator_runtime.prepare_reusing(
+            preset.oscillators.as_deref(),
+            &preset.wavetable_pool,
+            self.sample_rate,
+            self.oscillator_engine.mixed.as_deref(),
+        )?;
+        preset.prepare_phase_transports(self.sample_rate)
+    }
+
     pub fn set_preset(&mut self, mut preset: Preset) {
         preset.sanitize();
         if preset.phase_runtime.1.is_some() {
@@ -846,10 +952,11 @@ impl Engine {
         if preset.oscillator_runtime.0.is_none()
             && preset
                 .oscillator_runtime
-                .prepare(
+                .prepare_reusing(
                     preset.oscillators.as_deref(),
                     &preset.wavetable_pool,
                     self.sample_rate,
+                    self.oscillator_engine.mixed.as_deref(),
                 )
                 .is_err()
         {
@@ -861,10 +968,11 @@ impl Engine {
         if preset.wavetable_runtime.0.is_none()
             && preset
                 .wavetable_runtime
-                .prepare(
+                .prepare_reusing(
                     preset.wavetable.as_deref(),
                     &preset.wavetable_pool,
                     self.sample_rate,
+                    self.oscillator_engine.wavetable.as_deref(),
                 )
                 .is_err()
         {

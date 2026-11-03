@@ -598,6 +598,14 @@ pub struct Runtime {
 }
 impl Runtime {
     pub fn new(rate: u32, settings: &Settings, assets: &Pool) -> Result<Self, String> {
+        Self::prepare(rate, settings, assets, None)
+    }
+    fn prepare(
+        rate: u32,
+        settings: &Settings,
+        assets: &Pool,
+        previous: Option<&Self>,
+    ) -> Result<Self, String> {
         settings.validate_version()?;
         let mut banks = std::array::from_fn(|_| None);
         for (i, bank) in banks.iter_mut().enumerate().take(settings.count as usize) {
@@ -606,10 +614,16 @@ impl Runtime {
         Ok(Self {
             rate: rate.clamp(8_000, 384_000) as f64,
             count: settings.count as usize,
-            voices: (0..super::VOICES)
-                .map(|_| Voice::default())
-                .collect::<Vec<_>>()
-                .into_boxed_slice(),
+            // The running voices move here in inherit(); an unused second bank
+            // would only add allocation, initialization and retirement work.
+            voices: if previous.is_some() {
+                Box::default()
+            } else {
+                (0..super::VOICES)
+                    .map(|_| Voice::default())
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice()
+            },
             banks,
             previous: std::array::from_fn(|_| None),
             fade_left: [0; OSCILLATORS],
@@ -1168,8 +1182,24 @@ impl Prepared {
         assets: &Pool,
         rate: u32,
     ) -> Result<(), String> {
+        self.prepare_reusing(settings, assets, rate, None)
+    }
+    pub(crate) fn prepare_reusing(
+        &mut self,
+        settings: Option<&Settings>,
+        assets: &Pool,
+        rate: u32,
+        previous: Option<&Runtime>,
+    ) -> Result<(), String> {
         match settings
-            .map(|s| Runtime::new(rate, s, assets).map(Box::new))
+            .map(|s| {
+                previous
+                    .map_or_else(
+                        || Runtime::new(rate, s, assets),
+                        |old| Runtime::prepare(rate, s, assets, Some(old)),
+                    )
+                    .map(Box::new)
+            })
             .transpose()
         {
             Ok(runtime) => {

@@ -1,0 +1,4298 @@
+{
+  "scope": "Actual SAD PET index.html, production BrowserBackend, AudioWorklet and real workers; no production code instrumentation or DSP modifications. Full callback and same-thread message handlers measured by Chromium tracing.",
+  "environment": {
+    "cpu": "Apple M5 Max",
+    "logical_cpus": 18,
+    "platform": "darwin arm64",
+    "browser": "Chrome/150.0.7871.24",
+    "mode": "managed headless Chromium, visible document",
+    "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+    "sample_rate": 48000,
+    "quantum_frames": 128,
+    "quantum_budget_ms": 2.6666666666666665,
+    "observed_render_batch_frames": 512,
+    "render_batch_budget_ms": 10.666666666666666,
+    "requested_latency_hint_seconds": 0.01,
+    "base_latency_seconds": 0.005,
+    "output_latency_seconds": 0.01
+  },
+  "artifacts_sha256": {
+    "dist/web/sad_pet.simd.wasm": "02b632655842aa1141088459d5a5a71d03bab952ef3fe4a7ba1ad44ed4619241",
+    "dist/web/worklet.mjs": "b07064d892f5c8ae598738395f6b9132c6fd82ce0d488042a4273c104fbd4afd",
+    "dist/web/core.mjs": "f27bf29cdcc804b0542f633e3bbb542d8c6412f43022eec29487fe131561fe0d",
+    "dist/web/browser-backend.mjs": "538aac6aefbf22b673e123ba9cf5d9ad8a8cb4cc74645f86ec22d4ed198d738d"
+  },
+  "artifact_hashes_unchanged_after_runs": true,
+  "method": {
+    "warmup_seconds_per_run": 5,
+    "measured_seconds_per_run": 60,
+    "runs_per_scenario": 1,
+    "order": [
+      "glasses5-steady",
+      "glasses5-scalar-50hz",
+      "glasses5-preset-1hz",
+      "glasses5-add-remove-drums",
+      "mixed8-four-voices",
+      "mixed8-playback-ring",
+      "mixed8-audio-rate-grains"
+    ],
+    "trace_categories": [
+      "disabled-by-default-audio-worklet",
+      "devtools.timeline",
+      "webaudio",
+      "blink.user_timing"
+    ],
+    "interval": "Events fully contained between sad-profile:<case>:start and :end performance marks; boundary-crossing events excluded. Exactly one worklet thread required per run.",
+    "quantiles": "Nearest rank: sorted[ceil(p * count) - 1]. No averaging of percentiles across runs.",
+    "callback_boundary": "AudioWorkletProcessor::Process encloses the complete production process(): staging, Core.process, output copying, recording if active, snapshots, and advanceTimbre, plus browser wrapper. author_script is a nested event and must not be added to full_callback.",
+    "management_boundary": "FunctionCall for SadPetProcessor.port.onmessage, on the same realtime thread but outside process(). Includes request decoding/application, immediate preparation, replies and snapshot work.",
+    "combined_cost": "Each complete AudioDestination::RequestRender batch plus onmessage handlers fully between the preceding batch end and this batch start. Compared to actual frames_to_render/sample_rate. This is accounted work, not a measured browser scheduling deadline.",
+    "workloads": {
+      "glasses5-steady": "Unmodified factory startup scene, Play enabled.",
+      "glasses5-scalar-50hz": "3000 serial /api/parameters requests targeting position and filter over 60 seconds, 20 ms nominal spacing; full UI/telemetry active.",
+      "glasses5-preset-1hz": "60 /api/preset requests, changing params.position in the full factory preset; first request at 500 ms, then 1 Hz.",
+      "glasses5-add-remove-drums": "30 add/remove cycles of default drums timbre while factory scene plays; first at 500 ms, then every 2 seconds. Add is the production staged path. Base timbre reselected after each removal.",
+      "mixed8-four-voices": "One oscillator timbre plus Master, other source timbre removed. RADIAS/Wavefolder/PCM/Wavetable repeated twice; level 0.1, transpose 0..7, next_id=9. Filter params=1, no pre/post effects. Held notes 60/64/67/72.",
+      "mixed8-playback-ring": "Same mixed patch plus four advanced grain groups, capture mask 85, Ring and soft/hard Sync routes matching wasm/bench-oscillators.mjs.",
+      "mixed8-audio-rate-grains": "Same routed patch; OSC1 -> group A uses Hard Sync, scope Both, producing audio-rate grain births."
+    }
+  },
+  "limitations": [
+    "Tracing overhead is included; no simultaneous builds/tests/benchmarks were started by this measurement. Other user processes were not stopped.",
+    "One 60-second run per scenario, not a worst-case or cross-device guarantee. p99.9 has roughly 22 observations above it in a normal 22500-callback run.",
+    "Five-second playback warmup excluded. The first live add/preset operation remains in its measured scenario, so cold control/preparation tails are retained.",
+    "Only actual playbackStats counters from /api/diagnostics/memory are used for underruns; /api/state placeholder underruns are not used.",
+    "One callback exceeding 2.667 ms does not imply an audible underrun: Chromium produced 512-frame batches with buffering.",
+    "Chromium thread_cpu durations are retained as diagnostic data, but their granularity can make short-event CPU tails exceed wall tails; conclusions use wall durations.",
+    "Headless Chromium on one Mac, not a physical-phone or real-DAW acceptance run.",
+    "No production profiler, new test suite, or behavior changes were added. Raw complete browser traces remain at recorded temporary paths; compact duration samples are retained with this report."
+  ],
+  "runs": [
+    {
+      "name": "glasses5-steady",
+      "trace_events": 444638,
+      "trace_interval_seconds": 60.00134,
+      "thread": {
+        "pid": 27021,
+        "tid": 209039245
+      },
+      "callback": {
+        "wall": {
+          "count": 22500,
+          "mean_ms": 0.6189148888888889,
+          "p50_ms": 0.6,
+          "p95_ms": 0.736,
+          "p99_ms": 0.828,
+          "p99_9_ms": 0.956,
+          "max_ms": 2.161,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 22500,
+          "mean_ms": 0.6166260888888889,
+          "p50_ms": 0.597,
+          "p95_ms": 0.733,
+          "p99_ms": 0.828,
+          "p99_9_ms": 1.907,
+          "max_ms": 2.205,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "author_script": {
+        "wall": {
+          "count": 22500,
+          "mean_ms": 0.6150472444444445,
+          "p50_ms": 0.598,
+          "p95_ms": 0.731,
+          "p99_ms": 0.82,
+          "p99_9_ms": 0.949,
+          "max_ms": 2.157,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 22500,
+          "mean_ms": 0.6150768,
+          "p50_ms": 0.596,
+          "p95_ms": 0.731,
+          "p99_ms": 0.824,
+          "p99_9_ms": 1.907,
+          "max_ms": 2.201,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "message_handler": {
+        "wall": {
+          "count": 1185,
+          "mean_ms": 0.01549704641350211,
+          "p50_ms": 0.014,
+          "p95_ms": 0.026,
+          "p99_ms": 0.042,
+          "p99_9_ms": 0.118,
+          "max_ms": 0.131,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 1185,
+          "mean_ms": 0.014835443037974683,
+          "p50_ms": 0.013,
+          "p95_ms": 0.025,
+          "p99_ms": 0.04,
+          "p99_9_ms": 0.117,
+          "max_ms": 0.131,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "render_batch_frames": [
+        512
+      ],
+      "render_batch": {
+        "wall": {
+          "count": 5625,
+          "mean_ms": 2.500978133333333,
+          "p50_ms": 2.481,
+          "p95_ms": 2.708,
+          "p99_ms": 2.832,
+          "p99_9_ms": 2.999,
+          "max_ms": 6.975,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 5625,
+          "mean_ms": 2.478466311111111,
+          "p50_ms": 2.453,
+          "p95_ms": 2.685,
+          "p99_ms": 2.837,
+          "p99_9_ms": 3.973,
+          "max_ms": 4.114,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "render_plus_intervening_messages": {
+        "wall": {
+          "count": 5624,
+          "mean_ms": 2.504214082503556,
+          "p50_ms": 2.486,
+          "p95_ms": 2.709,
+          "p99_ms": 2.832,
+          "p99_9_ms": 2.999,
+          "max_ms": 6.975,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 5624,
+          "mean_ms": 2.4815649004267426,
+          "p50_ms": 2.457,
+          "p95_ms": 2.685,
+          "p99_ms": 2.837,
+          "p99_9_ms": 3.973,
+          "max_ms": 4.114,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "max_consecutive_callbacks_over_budget": 0,
+      "action_window_count": 0,
+      "callbacks_during_actions": {
+        "wall": {
+          "count": 0
+        },
+        "thread_cpu": {
+          "count": 0
+        }
+      },
+      "callbacks_outside_actions": {
+        "wall": {
+          "count": 22500,
+          "mean_ms": 0.6189148888888889,
+          "p50_ms": 0.6,
+          "p95_ms": 0.736,
+          "p99_ms": 0.828,
+          "p99_9_ms": 0.956,
+          "max_ms": 2.161,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 22500,
+          "mean_ms": 0.6166260888888889,
+          "p50_ms": 0.597,
+          "p95_ms": 0.733,
+          "p99_ms": 0.828,
+          "p99_9_ms": 1.907,
+          "max_ms": 2.205,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "longest_callbacks": [
+        {
+          "at_seconds": 12.827579,
+          "wall_ms": 2.161,
+          "thread_cpu_ms": 0.657,
+          "actions": []
+        },
+        {
+          "at_seconds": 17.284549,
+          "wall_ms": 1.083,
+          "thread_cpu_ms": 1.079,
+          "actions": []
+        },
+        {
+          "at_seconds": 12.825847,
+          "wall_ms": 1.079,
+          "thread_cpu_ms": 0.881,
+          "actions": []
+        },
+        {
+          "at_seconds": 15.055288,
+          "wall_ms": 1.043,
+          "thread_cpu_ms": 1.038,
+          "actions": []
+        },
+        {
+          "at_seconds": 22.95922,
+          "wall_ms": 1.034,
+          "thread_cpu_ms": 1.03,
+          "actions": []
+        },
+        {
+          "at_seconds": 59.236749,
+          "wall_ms": 1.033,
+          "thread_cpu_ms": 1.029,
+          "actions": []
+        },
+        {
+          "at_seconds": 47.481996,
+          "wall_ms": 1.031,
+          "thread_cpu_ms": 1.028,
+          "actions": []
+        },
+        {
+          "at_seconds": 18.042509,
+          "wall_ms": 1.026,
+          "thread_cpu_ms": 1.021,
+          "actions": []
+        },
+        {
+          "at_seconds": 15.460559,
+          "wall_ms": 1.021,
+          "thread_cpu_ms": 1.017,
+          "actions": []
+        },
+        {
+          "at_seconds": 50.671999,
+          "wall_ms": 1.021,
+          "thread_cpu_ms": 1.018,
+          "actions": []
+        }
+      ],
+      "longest_messages": [
+        {
+          "at_seconds": 44.895428,
+          "wall_ms": 0.131,
+          "thread_cpu_ms": 0.131,
+          "actions": []
+        },
+        {
+          "at_seconds": 45.299409,
+          "wall_ms": 0.118,
+          "thread_cpu_ms": 0.117,
+          "actions": []
+        },
+        {
+          "at_seconds": 24.530364,
+          "wall_ms": 0.085,
+          "thread_cpu_ms": 0.085,
+          "actions": []
+        },
+        {
+          "at_seconds": 45.458031,
+          "wall_ms": 0.057,
+          "thread_cpu_ms": 0.056,
+          "actions": []
+        },
+        {
+          "at_seconds": 24.586197,
+          "wall_ms": 0.054,
+          "thread_cpu_ms": 0.053,
+          "actions": []
+        },
+        {
+          "at_seconds": 18.300542,
+          "wall_ms": 0.048,
+          "thread_cpu_ms": 0.047,
+          "actions": []
+        },
+        {
+          "at_seconds": 1.375839,
+          "wall_ms": 0.045,
+          "thread_cpu_ms": 0.044,
+          "actions": []
+        },
+        {
+          "at_seconds": 36.386913,
+          "wall_ms": 0.045,
+          "thread_cpu_ms": 0.043,
+          "actions": []
+        },
+        {
+          "at_seconds": 55.230462,
+          "wall_ms": 0.045,
+          "thread_cpu_ms": 0.025,
+          "actions": []
+        },
+        {
+          "at_seconds": 20.576712,
+          "wall_ms": 0.043,
+          "thread_cpu_ms": 0.043,
+          "actions": []
+        }
+      ],
+      "samples_file": "glasses5-steady.samples.json.gz",
+      "original_trace_path": "/var/folders/tz/_myylhzn7_x55wpnwj77k0th0000gn/T/omp-browser-15bec7e01ed35dd9.json",
+      "original_trace_sha256": "c2d2993204b7d3313bb29bab166a34297cd3685a303a8bbd740215e432d935a5",
+      "configuration": {
+        "preset": "glasses5",
+        "active": 0,
+        "notes": [
+          48
+        ],
+        "peak": [
+          0.19299383461475372,
+          0.21581992506980896
+        ],
+        "grains": 8,
+        "playing": true,
+        "modules": [
+          {
+            "enabled": true,
+            "module": "sample"
+          },
+          {
+            "enabled": true,
+            "module": "grains"
+          },
+          {
+            "enabled": true,
+            "module": "resynth"
+          },
+          {
+            "enabled": true,
+            "module": "pre_fx"
+          },
+          {
+            "enabled": true,
+            "module": "filters"
+          },
+          {
+            "enabled": true,
+            "module": "post_fx"
+          }
+        ],
+        "visibility": "visible"
+      },
+      "requested_seconds": 60,
+      "wall_seconds": 60.001299999952316,
+      "audio_seconds": 59.99999999999999,
+      "operations": 0,
+      "operation_round_trip_ms": {},
+      "visibility": [
+        {
+          "at_ms": 0,
+          "state": "visible"
+        }
+      ],
+      "final": {
+        "playing": true,
+        "peak": [
+          0.19492773711681366,
+          0.21678951382637024
+        ],
+        "notes": [
+          60
+        ],
+        "active_grains": 7,
+        "dropped_grain_births": 0,
+        "preset": "glasses5"
+      },
+      "diagnostics_start": {
+        "roles": {
+          "audio": {
+            "linear_bytes": 150208512,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "buffer_bytes": 1014422
+          },
+          "worker": {
+            "linear_bytes": 133234688,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 24117248
+              },
+              {
+                "type": "startup",
+                "before": 24117248,
+                "after": 133234688
+              }
+            ]
+          },
+          "telemetry": {
+            "linear_bytes": 7143424,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 4390912
+              },
+              {
+                "type": "snapshot",
+                "before": 4390912,
+                "after": 7143424
+              }
+            ]
+          },
+          "vocal": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          },
+          "recorder": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          }
+        },
+        "engine_variant": "sad_pet.simd.wasm",
+        "startup_mode": null,
+        "shared_rom_bytes": 22554339,
+        "max_transfer_bytes": 0,
+        "accounted_audio_data_bytes": 314155385,
+        "sample_rate": 48000,
+        "current_time": 4.96,
+        "context_state": "running",
+        "base_latency": 0.005,
+        "output_latency": 0.01,
+        "playback_stats": {
+          "underrunDuration": 0,
+          "underrunEvents": 0,
+          "totalDuration": 4.950762,
+          "averageLatency": 0.023929,
+          "minimumLatency": 0,
+          "maximumLatency": 0.024007
+        },
+        "fatal": null,
+        "peak": [
+          0.19299383461475372,
+          0.21581992506980896
+        ],
+        "notes": [
+          48
+        ]
+      },
+      "diagnostics_end": {
+        "roles": {
+          "audio": {
+            "linear_bytes": 150208512,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "buffer_bytes": 1014422
+          },
+          "worker": {
+            "linear_bytes": 133234688,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 24117248
+              },
+              {
+                "type": "startup",
+                "before": 24117248,
+                "after": 133234688
+              }
+            ]
+          },
+          "telemetry": {
+            "linear_bytes": 7143424,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 4390912
+              },
+              {
+                "type": "snapshot",
+                "before": 4390912,
+                "after": 7143424
+              }
+            ]
+          },
+          "vocal": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          },
+          "recorder": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          }
+        },
+        "engine_variant": "sad_pet.simd.wasm",
+        "startup_mode": null,
+        "shared_rom_bytes": 22554339,
+        "max_transfer_bytes": 0,
+        "accounted_audio_data_bytes": 314155385,
+        "sample_rate": 48000,
+        "current_time": 64.96,
+        "context_state": "running",
+        "base_latency": 0.005,
+        "output_latency": 0.01,
+        "playback_stats": {
+          "underrunDuration": 0,
+          "underrunEvents": 0,
+          "totalDuration": 64.093306,
+          "averageLatency": 0.023977,
+          "minimumLatency": 0,
+          "maximumLatency": 0.024009
+        },
+        "fatal": null,
+        "peak": [
+          0.19492773711681366,
+          0.21678951382637024
+        ],
+        "notes": [
+          60
+        ]
+      },
+      "playback_delta": {
+        "underrunEvents": 0,
+        "underrunDuration": 0,
+        "totalDuration": 59.142544
+      }
+    },
+    {
+      "name": "glasses5-scalar-50hz",
+      "trace_events": 476037,
+      "trace_interval_seconds": 60.001757,
+      "thread": {
+        "pid": 27021,
+        "tid": 209046405
+      },
+      "callback": {
+        "wall": {
+          "count": 22500,
+          "mean_ms": 0.6213860444444445,
+          "p50_ms": 0.603,
+          "p95_ms": 0.739,
+          "p99_ms": 0.831,
+          "p99_9_ms": 0.978,
+          "max_ms": 1.704,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 22500,
+          "mean_ms": 0.6190689777777778,
+          "p50_ms": 0.599,
+          "p95_ms": 0.735,
+          "p99_ms": 0.83,
+          "p99_9_ms": 1.962,
+          "max_ms": 2.162,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "author_script": {
+        "wall": {
+          "count": 22500,
+          "mean_ms": 0.6175166666666667,
+          "p50_ms": 0.6,
+          "p95_ms": 0.733,
+          "p99_ms": 0.822,
+          "p99_9_ms": 0.969,
+          "max_ms": 1.7,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 22500,
+          "mean_ms": 0.6175282666666667,
+          "p50_ms": 0.599,
+          "p95_ms": 0.732,
+          "p99_ms": 0.826,
+          "p99_9_ms": 1.962,
+          "max_ms": 2.156,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "message_handler": {
+        "wall": {
+          "count": 4184,
+          "mean_ms": 0.06368785850860421,
+          "p50_ms": 0.07,
+          "p95_ms": 0.124,
+          "p99_ms": 0.202,
+          "p99_9_ms": 0.27,
+          "max_ms": 1.486,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 4184,
+          "mean_ms": 0.06355473231357553,
+          "p50_ms": 0.069,
+          "p95_ms": 0.123,
+          "p99_ms": 0.201,
+          "p99_9_ms": 0.322,
+          "max_ms": 1.518,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "render_batch_frames": [
+        512
+      ],
+      "render_batch": {
+        "wall": {
+          "count": 5625,
+          "mean_ms": 2.511623822222222,
+          "p50_ms": 2.495,
+          "p95_ms": 2.717,
+          "p99_ms": 2.838,
+          "p99_9_ms": 3.094,
+          "max_ms": 3.63,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 5625,
+          "mean_ms": 2.488813688888889,
+          "p50_ms": 2.466,
+          "p95_ms": 2.69,
+          "p99_ms": 2.837,
+          "p99_9_ms": 3.961,
+          "max_ms": 4.118,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "render_plus_intervening_messages": {
+        "wall": {
+          "count": 5624,
+          "mean_ms": 2.5589511024182077,
+          "p50_ms": 2.544,
+          "p95_ms": 2.778,
+          "p99_ms": 2.903,
+          "p99_9_ms": 3.209,
+          "max_ms": 3.929,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 5624,
+          "mean_ms": 2.536043029871977,
+          "p50_ms": 2.515,
+          "p95_ms": 2.753,
+          "p99_ms": 2.903,
+          "p99_9_ms": 4.059,
+          "max_ms": 4.205,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "max_consecutive_callbacks_over_budget": 0,
+      "action_window_count": 0,
+      "callbacks_during_actions": {
+        "wall": {
+          "count": 0
+        },
+        "thread_cpu": {
+          "count": 0
+        }
+      },
+      "callbacks_outside_actions": {
+        "wall": {
+          "count": 22500,
+          "mean_ms": 0.6213860444444445,
+          "p50_ms": 0.603,
+          "p95_ms": 0.739,
+          "p99_ms": 0.831,
+          "p99_9_ms": 0.978,
+          "max_ms": 1.704,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 22500,
+          "mean_ms": 0.6190689777777778,
+          "p50_ms": 0.599,
+          "p95_ms": 0.735,
+          "p99_ms": 0.83,
+          "p99_9_ms": 1.962,
+          "max_ms": 2.162,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "longest_callbacks": [
+        {
+          "at_seconds": 44.893835,
+          "wall_ms": 1.704,
+          "thread_cpu_ms": 0.707,
+          "actions": []
+        },
+        {
+          "at_seconds": 1.3855,
+          "wall_ms": 1.632,
+          "thread_cpu_ms": 0.652,
+          "actions": []
+        },
+        {
+          "at_seconds": 39.239791,
+          "wall_ms": 1.351,
+          "thread_cpu_ms": 0.731,
+          "actions": []
+        },
+        {
+          "at_seconds": 48.499844,
+          "wall_ms": 1.257,
+          "thread_cpu_ms": 0.753,
+          "actions": []
+        },
+        {
+          "at_seconds": 57.031832,
+          "wall_ms": 1.2,
+          "thread_cpu_ms": 1.195,
+          "actions": []
+        },
+        {
+          "at_seconds": 8.967704,
+          "wall_ms": 1.089,
+          "thread_cpu_ms": 1.084,
+          "actions": []
+        },
+        {
+          "at_seconds": 47.272618,
+          "wall_ms": 1.088,
+          "thread_cpu_ms": 0.691,
+          "actions": []
+        },
+        {
+          "at_seconds": 1.469196,
+          "wall_ms": 1.077,
+          "thread_cpu_ms": 0.862,
+          "actions": []
+        },
+        {
+          "at_seconds": 19.506393,
+          "wall_ms": 1.075,
+          "thread_cpu_ms": 1.071,
+          "actions": []
+        },
+        {
+          "at_seconds": 5.725013,
+          "wall_ms": 1.064,
+          "thread_cpu_ms": 1.06,
+          "actions": []
+        }
+      ],
+      "longest_messages": [
+        {
+          "at_seconds": 27.32151,
+          "wall_ms": 1.486,
+          "thread_cpu_ms": 0.387,
+          "actions": []
+        },
+        {
+          "at_seconds": 1.43277,
+          "wall_ms": 0.411,
+          "thread_cpu_ms": 0.088,
+          "actions": []
+        },
+        {
+          "at_seconds": 9.3e-05,
+          "wall_ms": 0.322,
+          "thread_cpu_ms": 0.322,
+          "actions": []
+        },
+        {
+          "at_seconds": 6.641818,
+          "wall_ms": 0.271,
+          "thread_cpu_ms": 0.271,
+          "actions": []
+        },
+        {
+          "at_seconds": 6.303564,
+          "wall_ms": 0.27,
+          "thread_cpu_ms": 0.27,
+          "actions": []
+        },
+        {
+          "at_seconds": 54.988567,
+          "wall_ms": 0.27,
+          "thread_cpu_ms": 0.269,
+          "actions": []
+        },
+        {
+          "at_seconds": 7.542699,
+          "wall_ms": 0.263,
+          "thread_cpu_ms": 0.262,
+          "actions": []
+        },
+        {
+          "at_seconds": 50.96193,
+          "wall_ms": 0.259,
+          "thread_cpu_ms": 0.258,
+          "actions": []
+        },
+        {
+          "at_seconds": 7.821823,
+          "wall_ms": 0.257,
+          "thread_cpu_ms": 0.254,
+          "actions": []
+        },
+        {
+          "at_seconds": 56.922225,
+          "wall_ms": 0.256,
+          "thread_cpu_ms": 0.255,
+          "actions": []
+        }
+      ],
+      "samples_file": "glasses5-scalar-50hz.samples.json.gz",
+      "original_trace_path": "/var/folders/tz/_myylhzn7_x55wpnwj77k0th0000gn/T/omp-browser-15bec87fd4135dda.json",
+      "original_trace_sha256": "0247f6ae63528e6755d1ee1e53bff4114281165d03974b5e4795009fa16d05b8",
+      "configuration": {
+        "preset": "glasses5",
+        "active": 0,
+        "notes": [
+          48
+        ],
+        "peak": [
+          0.19299383461475372,
+          0.21581992506980896
+        ],
+        "grains": 8,
+        "playing": true,
+        "modules": [
+          {
+            "enabled": true,
+            "module": "sample"
+          },
+          {
+            "enabled": true,
+            "module": "grains"
+          },
+          {
+            "enabled": true,
+            "module": "resynth"
+          },
+          {
+            "enabled": true,
+            "module": "pre_fx"
+          },
+          {
+            "enabled": true,
+            "module": "filters"
+          },
+          {
+            "enabled": true,
+            "module": "post_fx"
+          }
+        ],
+        "visibility": "visible"
+      },
+      "requested_seconds": 60,
+      "wall_seconds": 60.001700000047684,
+      "audio_seconds": 60.00000000000001,
+      "operations": 3000,
+      "operation_round_trip_ms": {
+        "parameters": {
+          "count": 3000,
+          "mean_ms": 5.3184666631221775,
+          "p50_ms": 0.2999999523162842,
+          "p95_ms": 25.90000009536743,
+          "p99_ms": 27.899999856948853,
+          "p99_9_ms": 45.89999985694885,
+          "max_ms": 50.90000009536743
+        }
+      },
+      "visibility": [
+        {
+          "at_ms": 0,
+          "state": "visible"
+        }
+      ],
+      "final": {
+        "playing": true,
+        "peak": [
+          0.16112744808197021,
+          0.1556161791086197
+        ],
+        "notes": [
+          60
+        ],
+        "active_grains": 7,
+        "dropped_grain_births": 0,
+        "preset": "glasses5"
+      },
+      "diagnostics_start": {
+        "roles": {
+          "audio": {
+            "linear_bytes": 150208512,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "buffer_bytes": 1014422
+          },
+          "worker": {
+            "linear_bytes": 133234688,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 24117248
+              },
+              {
+                "type": "startup",
+                "before": 24117248,
+                "after": 133234688
+              }
+            ]
+          },
+          "telemetry": {
+            "linear_bytes": 7143424,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 4390912
+              },
+              {
+                "type": "snapshot",
+                "before": 4390912,
+                "after": 7143424
+              }
+            ]
+          },
+          "vocal": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          },
+          "recorder": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          }
+        },
+        "engine_variant": "sad_pet.simd.wasm",
+        "startup_mode": null,
+        "shared_rom_bytes": 22554339,
+        "max_transfer_bytes": 0,
+        "accounted_audio_data_bytes": 314155385,
+        "sample_rate": 48000,
+        "current_time": 4.970666666666666,
+        "context_state": "running",
+        "base_latency": 0.005,
+        "output_latency": 0.01,
+        "playback_stats": {
+          "underrunDuration": 0,
+          "underrunEvents": 0,
+          "totalDuration": 4.950762,
+          "averageLatency": 0.023923,
+          "minimumLatency": 0,
+          "maximumLatency": 0.023992
+        },
+        "fatal": null,
+        "peak": [
+          0.17038880288600922,
+          0.2522670328617096
+        ],
+        "notes": [
+          48
+        ]
+      },
+      "diagnostics_end": {
+        "roles": {
+          "audio": {
+            "linear_bytes": 150208512,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "buffer_bytes": 1014422
+          },
+          "worker": {
+            "linear_bytes": 133234688,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 24117248
+              },
+              {
+                "type": "startup",
+                "before": 24117248,
+                "after": 133234688
+              }
+            ]
+          },
+          "telemetry": {
+            "linear_bytes": 7143424,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 4390912
+              },
+              {
+                "type": "snapshot",
+                "before": 4390912,
+                "after": 7143424
+              }
+            ]
+          },
+          "vocal": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          },
+          "recorder": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          }
+        },
+        "engine_variant": "sad_pet.simd.wasm",
+        "startup_mode": null,
+        "shared_rom_bytes": 22554339,
+        "max_transfer_bytes": 0,
+        "accounted_audio_data_bytes": 314155385,
+        "sample_rate": 48000,
+        "current_time": 64.97066666666667,
+        "context_state": "running",
+        "base_latency": 0.005,
+        "output_latency": 0.01,
+        "playback_stats": {
+          "underrunDuration": 0,
+          "underrunEvents": 0,
+          "totalDuration": 64.093306,
+          "averageLatency": 0.023974,
+          "minimumLatency": 0,
+          "maximumLatency": 0.024008
+        },
+        "fatal": null,
+        "peak": [
+          0.16112744808197021,
+          0.1556161791086197
+        ],
+        "notes": [
+          60
+        ]
+      },
+      "playback_delta": {
+        "underrunEvents": 0,
+        "underrunDuration": 0,
+        "totalDuration": 59.142544
+      }
+    },
+    {
+      "name": "glasses5-preset-1hz",
+      "trace_events": 447838,
+      "trace_interval_seconds": 60.001046,
+      "thread": {
+        "pid": 27021,
+        "tid": 209049528
+      },
+      "callback": {
+        "wall": {
+          "count": 22501,
+          "mean_ms": 0.6241137727212124,
+          "p50_ms": 0.603,
+          "p95_ms": 0.744,
+          "p99_ms": 0.843,
+          "p99_9_ms": 0.968,
+          "max_ms": 1.191,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 22501,
+          "mean_ms": 0.622148882271899,
+          "p50_ms": 0.6,
+          "p95_ms": 0.741,
+          "p99_ms": 0.847,
+          "p99_9_ms": 1.949,
+          "max_ms": 2.145,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "author_script": {
+        "wall": {
+          "count": 22501,
+          "mean_ms": 0.6201621261277277,
+          "p50_ms": 0.601,
+          "p95_ms": 0.739,
+          "p99_ms": 0.836,
+          "p99_9_ms": 0.962,
+          "max_ms": 1.183,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 22501,
+          "mean_ms": 0.6205067774765566,
+          "p50_ms": 0.6,
+          "p95_ms": 0.738,
+          "p99_ms": 0.842,
+          "p99_9_ms": 1.949,
+          "max_ms": 2.145,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "message_handler": {
+        "wall": {
+          "count": 1305,
+          "mean_ms": 0.14170421455938698,
+          "p50_ms": 0.015,
+          "p95_ms": 0.052,
+          "p99_ms": 2.793,
+          "p99_9_ms": 3.591,
+          "max_ms": 9.382,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 22,
+          "over_budget_percent": 1.6858237547892718
+        },
+        "thread_cpu": {
+          "count": 1305,
+          "mean_ms": 0.13973333333333335,
+          "p50_ms": 0.014,
+          "p95_ms": 0.052,
+          "p99_ms": 2.724,
+          "p99_9_ms": 3.392,
+          "max_ms": 9.166,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 19,
+          "over_budget_percent": 1.4559386973180077
+        }
+      },
+      "render_batch_frames": [
+        512
+      ],
+      "render_batch": {
+        "wall": {
+          "count": 5625,
+          "mean_ms": 2.523937422222222,
+          "p50_ms": 2.504,
+          "p95_ms": 2.732,
+          "p99_ms": 2.845,
+          "p99_9_ms": 2.968,
+          "max_ms": 3.139,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 5625,
+          "mean_ms": 2.5025093333333333,
+          "p50_ms": 2.476,
+          "p95_ms": 2.709,
+          "p99_ms": 2.846,
+          "p99_9_ms": 4.005,
+          "max_ms": 4.074,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "render_plus_intervening_messages": {
+        "wall": {
+          "count": 5624,
+          "mean_ms": 2.5567880512091037,
+          "p50_ms": 2.51,
+          "p95_ms": 2.75,
+          "p99_ms": 4.678,
+          "p99_9_ms": 5.66,
+          "max_ms": 11.907,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 1,
+          "over_budget_percent": 0.017780938833570414
+        },
+        "thread_cpu": {
+          "count": 5624,
+          "mean_ms": 2.5349043385490755,
+          "p50_ms": 2.482,
+          "p95_ms": 2.731,
+          "p99_ms": 4.65,
+          "p99_9_ms": 5.557,
+          "max_ms": 11.66,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 1,
+          "over_budget_percent": 0.017780938833570414
+        }
+      },
+      "max_consecutive_callbacks_over_budget": 0,
+      "action_window_count": 60,
+      "callbacks_during_actions": {
+        "wall": {
+          "count": 62,
+          "mean_ms": 0.607258064516129,
+          "p50_ms": 0.585,
+          "p95_ms": 0.712,
+          "p99_ms": 0.941,
+          "p99_9_ms": 0.941,
+          "max_ms": 0.941,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 62,
+          "mean_ms": 0.5997096774193549,
+          "p50_ms": 0.581,
+          "p95_ms": 0.702,
+          "p99_ms": 0.938,
+          "p99_9_ms": 0.938,
+          "max_ms": 0.938,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "callbacks_outside_actions": {
+        "wall": {
+          "count": 22439,
+          "mean_ms": 0.6241603458264628,
+          "p50_ms": 0.604,
+          "p95_ms": 0.744,
+          "p99_ms": 0.843,
+          "p99_9_ms": 0.968,
+          "max_ms": 1.191,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 22439,
+          "mean_ms": 0.622210882837916,
+          "p50_ms": 0.6,
+          "p95_ms": 0.741,
+          "p99_ms": 0.847,
+          "p99_9_ms": 1.949,
+          "max_ms": 2.145,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "longest_callbacks": [
+        {
+          "at_seconds": 18.688209,
+          "wall_ms": 1.191,
+          "thread_cpu_ms": 0.675,
+          "actions": []
+        },
+        {
+          "at_seconds": 11.338841,
+          "wall_ms": 1.162,
+          "thread_cpu_ms": 0.718,
+          "actions": []
+        },
+        {
+          "at_seconds": 20.449953,
+          "wall_ms": 1.128,
+          "thread_cpu_ms": 0.628,
+          "actions": []
+        },
+        {
+          "at_seconds": 45.24831,
+          "wall_ms": 1.096,
+          "thread_cpu_ms": 1.092,
+          "actions": []
+        },
+        {
+          "at_seconds": 2.688162,
+          "wall_ms": 1.062,
+          "thread_cpu_ms": 1.057,
+          "actions": []
+        },
+        {
+          "at_seconds": 22.54959,
+          "wall_ms": 1.053,
+          "thread_cpu_ms": 1.048,
+          "actions": []
+        },
+        {
+          "at_seconds": 34.506953,
+          "wall_ms": 1.028,
+          "thread_cpu_ms": 1.019,
+          "actions": []
+        },
+        {
+          "at_seconds": 58.624338,
+          "wall_ms": 1.018,
+          "thread_cpu_ms": 1.013,
+          "actions": []
+        },
+        {
+          "at_seconds": 38.154957,
+          "wall_ms": 1.015,
+          "thread_cpu_ms": 1.01,
+          "actions": []
+        },
+        {
+          "at_seconds": 44.842942,
+          "wall_ms": 1.01,
+          "thread_cpu_ms": 1.006,
+          "actions": []
+        }
+      ],
+      "longest_messages": [
+        {
+          "at_seconds": 0.500209,
+          "wall_ms": 9.382,
+          "thread_cpu_ms": 9.166,
+          "actions": [
+            "preset:0"
+          ]
+        },
+        {
+          "at_seconds": 4.503991,
+          "wall_ms": 3.591,
+          "thread_cpu_ms": 3.392,
+          "actions": [
+            "preset:4"
+          ]
+        },
+        {
+          "at_seconds": 25.500155,
+          "wall_ms": 3.577,
+          "thread_cpu_ms": 3.318,
+          "actions": [
+            "preset:25"
+          ]
+        },
+        {
+          "at_seconds": 26.501308,
+          "wall_ms": 3.408,
+          "thread_cpu_ms": 3.133,
+          "actions": [
+            "preset:26"
+          ]
+        },
+        {
+          "at_seconds": 2.501202,
+          "wall_ms": 3.378,
+          "thread_cpu_ms": 3.307,
+          "actions": [
+            "preset:2"
+          ]
+        },
+        {
+          "at_seconds": 1.500121,
+          "wall_ms": 3.29,
+          "thread_cpu_ms": 3.289,
+          "actions": [
+            "preset:1"
+          ]
+        },
+        {
+          "at_seconds": 10.50114,
+          "wall_ms": 3.085,
+          "thread_cpu_ms": 3.085,
+          "actions": [
+            "preset:10"
+          ]
+        },
+        {
+          "at_seconds": 44.500899,
+          "wall_ms": 2.974,
+          "thread_cpu_ms": 2.699,
+          "actions": [
+            "preset:44"
+          ]
+        },
+        {
+          "at_seconds": 33.500115,
+          "wall_ms": 2.956,
+          "thread_cpu_ms": 2.955,
+          "actions": [
+            "preset:33"
+          ]
+        },
+        {
+          "at_seconds": 11.501512,
+          "wall_ms": 2.953,
+          "thread_cpu_ms": 2.953,
+          "actions": [
+            "preset:11"
+          ]
+        }
+      ],
+      "samples_file": "glasses5-preset-1hz.samples.json.gz",
+      "original_trace_path": "/var/folders/tz/_myylhzn7_x55wpnwj77k0th0000gn/T/omp-browser-15bec8c4b5135ddb.json",
+      "original_trace_sha256": "4f166907d4ad6e43acf5ac7b15d10fe0a2e1293a3d0053f02c816c5035d9ee3e",
+      "configuration": {
+        "preset": "glasses5",
+        "active": 0,
+        "notes": [
+          48
+        ],
+        "peak": [
+          0.19299383461475372,
+          0.21581992506980896
+        ],
+        "grains": 8,
+        "playing": true,
+        "modules": [
+          {
+            "enabled": true,
+            "module": "sample"
+          },
+          {
+            "enabled": true,
+            "module": "grains"
+          },
+          {
+            "enabled": true,
+            "module": "resynth"
+          },
+          {
+            "enabled": true,
+            "module": "pre_fx"
+          },
+          {
+            "enabled": true,
+            "module": "filters"
+          },
+          {
+            "enabled": true,
+            "module": "post_fx"
+          }
+        ],
+        "visibility": "visible"
+      },
+      "requested_seconds": 60,
+      "wall_seconds": 60.00109999990463,
+      "audio_seconds": 60.01066666666667,
+      "operations": 60,
+      "operation_round_trip_ms": {
+        "preset": {
+          "count": 60,
+          "mean_ms": 4.1,
+          "p50_ms": 3.200000047683716,
+          "p95_ms": 7.5,
+          "p99_ms": 11.600000143051147,
+          "p99_9_ms": 11.600000143051147,
+          "max_ms": 11.600000143051147
+        }
+      },
+      "visibility": [
+        {
+          "at_ms": 0,
+          "state": "visible"
+        }
+      ],
+      "final": {
+        "playing": true,
+        "peak": [
+          0.15774786472320557,
+          0.1559598445892334
+        ],
+        "notes": [
+          60
+        ],
+        "active_grains": 7,
+        "dropped_grain_births": 0,
+        "preset": "glasses5"
+      },
+      "diagnostics_start": {
+        "roles": {
+          "audio": {
+            "linear_bytes": 150208512,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "buffer_bytes": 1014422
+          },
+          "worker": {
+            "linear_bytes": 133234688,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 24117248
+              },
+              {
+                "type": "startup",
+                "before": 24117248,
+                "after": 133234688
+              }
+            ]
+          },
+          "telemetry": {
+            "linear_bytes": 7143424,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 4390912
+              },
+              {
+                "type": "snapshot",
+                "before": 4390912,
+                "after": 7143424
+              }
+            ]
+          },
+          "vocal": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          },
+          "recorder": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          }
+        },
+        "engine_variant": "sad_pet.simd.wasm",
+        "startup_mode": null,
+        "shared_rom_bytes": 22554339,
+        "max_transfer_bytes": 0,
+        "accounted_audio_data_bytes": 314155385,
+        "sample_rate": 48000,
+        "current_time": 4.96,
+        "context_state": "running",
+        "base_latency": 0.005,
+        "output_latency": 0.01,
+        "playback_stats": {
+          "underrunDuration": 0,
+          "underrunEvents": 0,
+          "totalDuration": 4.950762,
+          "averageLatency": 0.023924,
+          "minimumLatency": 0,
+          "maximumLatency": 0.024005
+        },
+        "fatal": null,
+        "peak": [
+          0.19299383461475372,
+          0.21581992506980896
+        ],
+        "notes": [
+          48
+        ]
+      },
+      "diagnostics_end": {
+        "roles": {
+          "audio": {
+            "linear_bytes": 150208512,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "buffer_bytes": 1014422
+          },
+          "worker": {
+            "linear_bytes": 133234688,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 24117248
+              },
+              {
+                "type": "startup",
+                "before": 24117248,
+                "after": 133234688
+              }
+            ]
+          },
+          "telemetry": {
+            "linear_bytes": 7602176,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 4390912
+              },
+              {
+                "type": "snapshot",
+                "before": 4390912,
+                "after": 7143424
+              },
+              {
+                "type": "snapshot",
+                "before": 7143424,
+                "after": 7274496
+              },
+              {
+                "type": "snapshot",
+                "before": 7274496,
+                "after": 7602176
+              }
+            ]
+          },
+          "vocal": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          },
+          "recorder": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          }
+        },
+        "engine_variant": "sad_pet.simd.wasm",
+        "startup_mode": null,
+        "shared_rom_bytes": 22554339,
+        "max_transfer_bytes": 0,
+        "accounted_audio_data_bytes": 314614137,
+        "sample_rate": 48000,
+        "current_time": 64.97066666666667,
+        "context_state": "running",
+        "base_latency": 0.005,
+        "output_latency": 0.01,
+        "playback_stats": {
+          "underrunDuration": 0,
+          "underrunEvents": 0,
+          "totalDuration": 64.093306,
+          "averageLatency": 0.023976,
+          "minimumLatency": 0,
+          "maximumLatency": 0.024009
+        },
+        "fatal": null,
+        "peak": [
+          0.15774786472320557,
+          0.1559598445892334
+        ],
+        "notes": [
+          60
+        ]
+      },
+      "playback_delta": {
+        "underrunEvents": 0,
+        "underrunDuration": 0,
+        "totalDuration": 59.142544
+      }
+    },
+    {
+      "name": "glasses5-add-remove-drums",
+      "trace_events": 455363,
+      "trace_interval_seconds": 60.000091,
+      "thread": {
+        "pid": 27021,
+        "tid": 209052395
+      },
+      "callback": {
+        "wall": {
+          "count": 22500,
+          "mean_ms": 0.6254025333333333,
+          "p50_ms": 0.603,
+          "p95_ms": 0.748,
+          "p99_ms": 0.864,
+          "p99_9_ms": 1.297,
+          "max_ms": 6.673,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 2,
+          "over_budget_percent": 0.008888888888888889
+        },
+        "thread_cpu": {
+          "count": 22500,
+          "mean_ms": 0.6229957777777777,
+          "p50_ms": 0.599,
+          "p95_ms": 0.744,
+          "p99_ms": 0.867,
+          "p99_9_ms": 1.966,
+          "max_ms": 6.287,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 2,
+          "over_budget_percent": 0.008888888888888889
+        }
+      },
+      "author_script": {
+        "wall": {
+          "count": 22500,
+          "mean_ms": 0.6214204444444444,
+          "p50_ms": 0.601,
+          "p95_ms": 0.743,
+          "p99_ms": 0.854,
+          "p99_9_ms": 1.294,
+          "max_ms": 6.669,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 2,
+          "over_budget_percent": 0.008888888888888889
+        },
+        "thread_cpu": {
+          "count": 22500,
+          "mean_ms": 0.6213395111111111,
+          "p50_ms": 0.599,
+          "p95_ms": 0.742,
+          "p99_ms": 0.862,
+          "p99_9_ms": 1.966,
+          "max_ms": 6.286,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 2,
+          "over_budget_percent": 0.008888888888888889
+        }
+      },
+      "message_handler": {
+        "wall": {
+          "count": 1539,
+          "mean_ms": 0.21698700454840805,
+          "p50_ms": 0.015,
+          "p95_ms": 1.836,
+          "p99_ms": 5.069,
+          "p99_9_ms": 8.189,
+          "max_ms": 9.535,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 37,
+          "over_budget_percent": 2.4041585445094213
+        },
+        "thread_cpu": {
+          "count": 1539,
+          "mean_ms": 0.20301299545159196,
+          "p50_ms": 0.014,
+          "p95_ms": 1.836,
+          "p99_ms": 4.419,
+          "p99_9_ms": 7.29,
+          "max_ms": 7.913,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 33,
+          "over_budget_percent": 2.144249512670565
+        }
+      },
+      "render_batch_frames": [
+        512
+      ],
+      "render_batch": {
+        "wall": {
+          "count": 5625,
+          "mean_ms": 2.5282533333333332,
+          "p50_ms": 2.498,
+          "p95_ms": 2.747,
+          "p99_ms": 3.154,
+          "p99_9_ms": 4.409,
+          "max_ms": 10.342,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 5625,
+          "mean_ms": 2.5052956444444447,
+          "p50_ms": 2.47,
+          "p95_ms": 2.727,
+          "p99_ms": 3.295,
+          "p99_9_ms": 4.382,
+          "max_ms": 9.907,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "render_plus_intervening_messages": {
+        "wall": {
+          "count": 5624,
+          "mean_ms": 2.587640291607397,
+          "p50_ms": 2.504,
+          "p95_ms": 2.771,
+          "p99_ms": 4.908,
+          "p99_9_ms": 10.241,
+          "max_ms": 12.265,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 4,
+          "over_budget_percent": 0.07112375533428165
+        },
+        "thread_cpu": {
+          "count": 5624,
+          "mean_ms": 2.5608604196301568,
+          "p50_ms": 2.476,
+          "p95_ms": 2.75,
+          "p99_ms": 4.878,
+          "p99_9_ms": 9.175,
+          "max_ms": 10.61,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "max_consecutive_callbacks_over_budget": 1,
+      "action_window_count": 60,
+      "callbacks_during_actions": {
+        "wall": {
+          "count": 425,
+          "mean_ms": 0.7993458823529411,
+          "p50_ms": 0.679,
+          "p95_ms": 1.279,
+          "p99_ms": 2.293,
+          "p99_9_ms": 6.673,
+          "max_ms": 6.673,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 2,
+          "over_budget_percent": 0.4705882352941176
+        },
+        "thread_cpu": {
+          "count": 425,
+          "mean_ms": 0.7909882352941177,
+          "p50_ms": 0.675,
+          "p95_ms": 1.255,
+          "p99_ms": 2.237,
+          "p99_9_ms": 6.287,
+          "max_ms": 6.287,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 2,
+          "over_budget_percent": 0.4705882352941176
+        }
+      },
+      "callbacks_outside_actions": {
+        "wall": {
+          "count": 22075,
+          "mean_ms": 0.6220536806342015,
+          "p50_ms": 0.602,
+          "p95_ms": 0.74,
+          "p99_ms": 0.836,
+          "p99_9_ms": 0.968,
+          "max_ms": 1.648,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 22075,
+          "mean_ms": 0.6197614949037373,
+          "p50_ms": 0.599,
+          "p95_ms": 0.737,
+          "p99_ms": 0.838,
+          "p99_9_ms": 1.936,
+          "max_ms": 2.17,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "longest_callbacks": [
+        {
+          "at_seconds": 20.509929,
+          "wall_ms": 6.673,
+          "thread_cpu_ms": 6.287,
+          "actions": [
+            "add-drums:10"
+          ]
+        },
+        {
+          "at_seconds": 0.506835,
+          "wall_ms": 3.869,
+          "thread_cpu_ms": 3.584,
+          "actions": [
+            "add-drums:0"
+          ]
+        },
+        {
+          "at_seconds": 20.517552,
+          "wall_ms": 2.54,
+          "thread_cpu_ms": 2.237,
+          "actions": [
+            "add-drums:10"
+          ]
+        },
+        {
+          "at_seconds": 0.511578,
+          "wall_ms": 2.366,
+          "thread_cpu_ms": 2.312,
+          "actions": [
+            "add-drums:0"
+          ]
+        },
+        {
+          "at_seconds": 20.506909,
+          "wall_ms": 2.293,
+          "thread_cpu_ms": 2.267,
+          "actions": [
+            "add-drums:10"
+          ]
+        },
+        {
+          "at_seconds": 44.518449,
+          "wall_ms": 1.972,
+          "thread_cpu_ms": 1.255,
+          "actions": [
+            "add-drums:22"
+          ]
+        },
+        {
+          "at_seconds": 20.5201,
+          "wall_ms": 1.94,
+          "thread_cpu_ms": 1.917,
+          "actions": [
+            "add-drums:10"
+          ]
+        },
+        {
+          "at_seconds": 0.518707,
+          "wall_ms": 1.875,
+          "thread_cpu_ms": 1.871,
+          "actions": [
+            "add-drums:0"
+          ]
+        },
+        {
+          "at_seconds": 38.501609,
+          "wall_ms": 1.746,
+          "thread_cpu_ms": 1.742,
+          "actions": [
+            "add-drums:19"
+          ]
+        },
+        {
+          "at_seconds": 54.854319,
+          "wall_ms": 1.648,
+          "thread_cpu_ms": 0.952,
+          "actions": []
+        }
+      ],
+      "longest_messages": [
+        {
+          "at_seconds": 0.524364,
+          "wall_ms": 9.535,
+          "thread_cpu_ms": 7.02,
+          "actions": [
+            "add-drums:0"
+          ]
+        },
+        {
+          "at_seconds": 14.515846,
+          "wall_ms": 8.189,
+          "thread_cpu_ms": 7.913,
+          "actions": [
+            "add-drums:7"
+          ]
+        },
+        {
+          "at_seconds": 20.531985,
+          "wall_ms": 7.329,
+          "thread_cpu_ms": 7.29,
+          "actions": [
+            "add-drums:10"
+          ]
+        },
+        {
+          "at_seconds": 10.526148,
+          "wall_ms": 7.195,
+          "thread_cpu_ms": 6.747,
+          "actions": [
+            "add-drums:5"
+          ]
+        },
+        {
+          "at_seconds": 36.521114,
+          "wall_ms": 6.433,
+          "thread_cpu_ms": 6.1,
+          "actions": [
+            "add-drums:18"
+          ]
+        },
+        {
+          "at_seconds": 16.522436,
+          "wall_ms": 6.278,
+          "thread_cpu_ms": 6.215,
+          "actions": [
+            "add-drums:8"
+          ]
+        },
+        {
+          "at_seconds": 4.522348,
+          "wall_ms": 6.127,
+          "thread_cpu_ms": 4.62,
+          "actions": [
+            "add-drums:2"
+          ]
+        },
+        {
+          "at_seconds": 6.519811,
+          "wall_ms": 6.037,
+          "thread_cpu_ms": 4.771,
+          "actions": [
+            "add-drums:3"
+          ]
+        },
+        {
+          "at_seconds": 2.515685,
+          "wall_ms": 5.914,
+          "thread_cpu_ms": 5.565,
+          "actions": [
+            "add-drums:1"
+          ]
+        },
+        {
+          "at_seconds": 18.515603,
+          "wall_ms": 5.852,
+          "thread_cpu_ms": 5.828,
+          "actions": [
+            "add-drums:9"
+          ]
+        }
+      ],
+      "samples_file": "glasses5-add-remove-drums.samples.json.gz",
+      "original_trace_path": "/var/folders/tz/_myylhzn7_x55wpnwj77k0th0000gn/T/omp-browser-15bec90953135ddc.json",
+      "original_trace_sha256": "b5727f3af997331c75087624788bea16ebe50eed6a583c79cef2024d68b9c3b1",
+      "configuration": {
+        "preset": "glasses5",
+        "active": 0,
+        "notes": [
+          48
+        ],
+        "peak": [
+          0.19299383461475372,
+          0.21581992506980896
+        ],
+        "grains": 8,
+        "playing": true,
+        "modules": [
+          {
+            "enabled": true,
+            "module": "sample"
+          },
+          {
+            "enabled": true,
+            "module": "grains"
+          },
+          {
+            "enabled": true,
+            "module": "resynth"
+          },
+          {
+            "enabled": true,
+            "module": "pre_fx"
+          },
+          {
+            "enabled": true,
+            "module": "filters"
+          },
+          {
+            "enabled": true,
+            "module": "post_fx"
+          }
+        ],
+        "visibility": "visible"
+      },
+      "requested_seconds": 60,
+      "wall_seconds": 60.000200000047684,
+      "audio_seconds": 60.00000000000001,
+      "operations": 30,
+      "operation_round_trip_ms": {
+        "add-drums": {
+          "count": 30,
+          "mean_ms": 30.956666668256123,
+          "p50_ms": 26,
+          "p95_ms": 82,
+          "p99_ms": 89.40000009536743,
+          "p99_9_ms": 89.40000009536743,
+          "max_ms": 89.40000009536743
+        },
+        "remove-drums": {
+          "count": 30,
+          "mean_ms": 7.126666673024496,
+          "p50_ms": 4.700000047683716,
+          "p95_ms": 26.200000047683716,
+          "p99_ms": 41,
+          "p99_9_ms": 41,
+          "max_ms": 41
+        }
+      },
+      "visibility": [
+        {
+          "at_ms": 0,
+          "state": "visible"
+        }
+      ],
+      "final": {
+        "playing": true,
+        "peak": [
+          0.1949283331632614,
+          0.21678996086120605
+        ],
+        "notes": [
+          60
+        ],
+        "active_grains": 7,
+        "dropped_grain_births": 0,
+        "preset": "glasses5"
+      },
+      "diagnostics_start": {
+        "roles": {
+          "audio": {
+            "linear_bytes": 150208512,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "buffer_bytes": 1014422
+          },
+          "worker": {
+            "linear_bytes": 133234688,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 24117248
+              },
+              {
+                "type": "startup",
+                "before": 24117248,
+                "after": 133234688
+              }
+            ]
+          },
+          "telemetry": {
+            "linear_bytes": 7143424,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 4390912
+              },
+              {
+                "type": "snapshot",
+                "before": 4390912,
+                "after": 7143424
+              }
+            ]
+          },
+          "vocal": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          },
+          "recorder": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          }
+        },
+        "engine_variant": "sad_pet.simd.wasm",
+        "startup_mode": null,
+        "shared_rom_bytes": 22554339,
+        "max_transfer_bytes": 0,
+        "accounted_audio_data_bytes": 314155385,
+        "sample_rate": 48000,
+        "current_time": 4.970666666666666,
+        "context_state": "running",
+        "base_latency": 0.005,
+        "output_latency": 0.01,
+        "playback_stats": {
+          "underrunDuration": 0,
+          "underrunEvents": 0,
+          "totalDuration": 4.950762,
+          "averageLatency": 0.023923,
+          "minimumLatency": 0,
+          "maximumLatency": 0.023999
+        },
+        "fatal": null,
+        "peak": [
+          0.19299383461475372,
+          0.21581992506980896
+        ],
+        "notes": [
+          48
+        ]
+      },
+      "diagnostics_end": {
+        "roles": {
+          "audio": {
+            "linear_bytes": 150208512,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "buffer_bytes": 1321640
+          },
+          "worker": {
+            "linear_bytes": 133234688,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 24117248
+              },
+              {
+                "type": "startup",
+                "before": 24117248,
+                "after": 133234688
+              }
+            ]
+          },
+          "telemetry": {
+            "linear_bytes": 12255232,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 4390912
+              },
+              {
+                "type": "snapshot",
+                "before": 4390912,
+                "after": 7143424
+              },
+              {
+                "type": "snapshot",
+                "before": 7143424,
+                "after": 12255232
+              }
+            ]
+          },
+          "vocal": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          },
+          "recorder": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          }
+        },
+        "engine_variant": "sad_pet.simd.wasm",
+        "startup_mode": null,
+        "shared_rom_bytes": 22554339,
+        "max_transfer_bytes": 0,
+        "accounted_audio_data_bytes": 319574411,
+        "sample_rate": 48000,
+        "current_time": 64.97066666666667,
+        "context_state": "running",
+        "base_latency": 0.005,
+        "output_latency": 0.01,
+        "playback_stats": {
+          "underrunDuration": 0,
+          "underrunEvents": 0,
+          "totalDuration": 64.093306,
+          "averageLatency": 0.023974,
+          "minimumLatency": 0,
+          "maximumLatency": 0.024009
+        },
+        "fatal": null,
+        "peak": [
+          0.1949283331632614,
+          0.21678996086120605
+        ],
+        "notes": [
+          60
+        ]
+      },
+      "playback_delta": {
+        "underrunEvents": 0,
+        "underrunDuration": 0,
+        "totalDuration": 59.142544
+      }
+    },
+    {
+      "name": "mixed8-four-voices",
+      "trace_events": 357546,
+      "trace_interval_seconds": 60.000606,
+      "thread": {
+        "pid": 27021,
+        "tid": 209057475
+      },
+      "callback": {
+        "wall": {
+          "count": 22500,
+          "mean_ms": 1.42061,
+          "p50_ms": 1.397,
+          "p95_ms": 1.537,
+          "p99_ms": 1.644,
+          "p99_9_ms": 1.775,
+          "max_ms": 1.945,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 22500,
+          "mean_ms": 1.4205243555555556,
+          "p50_ms": 1.393,
+          "p95_ms": 1.537,
+          "p99_ms": 1.663,
+          "p99_9_ms": 2.828,
+          "max_ms": 3.025,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 64,
+          "over_budget_percent": 0.28444444444444444
+        }
+      },
+      "author_script": {
+        "wall": {
+          "count": 22500,
+          "mean_ms": 1.416566888888889,
+          "p50_ms": 1.394,
+          "p95_ms": 1.529,
+          "p99_ms": 1.638,
+          "p99_9_ms": 1.765,
+          "max_ms": 1.942,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 22500,
+          "mean_ms": 1.4188908,
+          "p50_ms": 1.393,
+          "p95_ms": 1.532,
+          "p99_ms": 1.66,
+          "p99_9_ms": 2.823,
+          "max_ms": 3.025,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 64,
+          "over_budget_percent": 0.28444444444444444
+        }
+      },
+      "message_handler": {
+        "wall": {
+          "count": 1184,
+          "mean_ms": 0.018452702702702703,
+          "p50_ms": 0.016,
+          "p95_ms": 0.033,
+          "p99_ms": 0.06,
+          "p99_9_ms": 0.157,
+          "max_ms": 0.215,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 1184,
+          "mean_ms": 0.017877533783783785,
+          "p50_ms": 0.016,
+          "p95_ms": 0.032,
+          "p99_ms": 0.06,
+          "p99_9_ms": 0.157,
+          "max_ms": 0.214,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "render_batch_frames": [
+        512
+      ],
+      "render_batch": {
+        "wall": {
+          "count": 5625,
+          "mean_ms": 5.710667377777778,
+          "p50_ms": 5.689,
+          "p95_ms": 5.936,
+          "p99_ms": 6.12,
+          "p99_9_ms": 6.433,
+          "max_ms": 6.691,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 5625,
+          "mean_ms": 5.6971879111111114,
+          "p50_ms": 5.661,
+          "p95_ms": 5.933,
+          "p99_ms": 6.95,
+          "p99_9_ms": 7.28,
+          "max_ms": 7.698,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "render_plus_intervening_messages": {
+        "wall": {
+          "count": 5624,
+          "mean_ms": 5.714548364153627,
+          "p50_ms": 5.693,
+          "p95_ms": 5.939,
+          "p99_ms": 6.12,
+          "p99_9_ms": 6.433,
+          "max_ms": 6.691,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 5624,
+          "mean_ms": 5.7009509246088195,
+          "p50_ms": 5.665,
+          "p95_ms": 5.937,
+          "p99_ms": 6.951,
+          "p99_9_ms": 7.28,
+          "max_ms": 7.698,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "max_consecutive_callbacks_over_budget": 0,
+      "action_window_count": 0,
+      "callbacks_during_actions": {
+        "wall": {
+          "count": 0
+        },
+        "thread_cpu": {
+          "count": 0
+        }
+      },
+      "callbacks_outside_actions": {
+        "wall": {
+          "count": 22500,
+          "mean_ms": 1.42061,
+          "p50_ms": 1.397,
+          "p95_ms": 1.537,
+          "p99_ms": 1.644,
+          "p99_9_ms": 1.775,
+          "max_ms": 1.945,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 22500,
+          "mean_ms": 1.4205243555555556,
+          "p50_ms": 1.393,
+          "p95_ms": 1.537,
+          "p99_ms": 1.663,
+          "p99_9_ms": 2.828,
+          "max_ms": 3.025,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 64,
+          "over_budget_percent": 0.28444444444444444
+        }
+      },
+      "longest_callbacks": [
+        {
+          "at_seconds": 4.065335,
+          "wall_ms": 1.945,
+          "thread_cpu_ms": 1.94,
+          "actions": []
+        },
+        {
+          "at_seconds": 44.368376,
+          "wall_ms": 1.944,
+          "thread_cpu_ms": 1.94,
+          "actions": []
+        },
+        {
+          "at_seconds": 52.502709,
+          "wall_ms": 1.916,
+          "thread_cpu_ms": 1.911,
+          "actions": []
+        },
+        {
+          "at_seconds": 11.563991,
+          "wall_ms": 1.904,
+          "thread_cpu_ms": 1.9,
+          "actions": []
+        },
+        {
+          "at_seconds": 0.494786,
+          "wall_ms": 1.895,
+          "thread_cpu_ms": 1.891,
+          "actions": []
+        },
+        {
+          "at_seconds": 9.818943,
+          "wall_ms": 1.881,
+          "thread_cpu_ms": 1.877,
+          "actions": []
+        },
+        {
+          "at_seconds": 44.900292,
+          "wall_ms": 1.862,
+          "thread_cpu_ms": 1.859,
+          "actions": []
+        },
+        {
+          "at_seconds": 37.505355,
+          "wall_ms": 1.854,
+          "thread_cpu_ms": 1.848,
+          "actions": []
+        },
+        {
+          "at_seconds": 58.936117,
+          "wall_ms": 1.837,
+          "thread_cpu_ms": 1.833,
+          "actions": []
+        },
+        {
+          "at_seconds": 25.142573,
+          "wall_ms": 1.834,
+          "thread_cpu_ms": 1.83,
+          "actions": []
+        }
+      ],
+      "longest_messages": [
+        {
+          "at_seconds": 43.13246,
+          "wall_ms": 0.215,
+          "thread_cpu_ms": 0.214,
+          "actions": []
+        },
+        {
+          "at_seconds": 44.295329,
+          "wall_ms": 0.157,
+          "thread_cpu_ms": 0.157,
+          "actions": []
+        },
+        {
+          "at_seconds": 1.030964,
+          "wall_ms": 0.067,
+          "thread_cpu_ms": 0.066,
+          "actions": []
+        },
+        {
+          "at_seconds": 3.665743,
+          "wall_ms": 0.067,
+          "thread_cpu_ms": 0.067,
+          "actions": []
+        },
+        {
+          "at_seconds": 47.388576,
+          "wall_ms": 0.067,
+          "thread_cpu_ms": 0.066,
+          "actions": []
+        },
+        {
+          "at_seconds": 25.703007,
+          "wall_ms": 0.064,
+          "thread_cpu_ms": 0.063,
+          "actions": []
+        },
+        {
+          "at_seconds": 38.727147,
+          "wall_ms": 0.064,
+          "thread_cpu_ms": 0.064,
+          "actions": []
+        },
+        {
+          "at_seconds": 56.561762,
+          "wall_ms": 0.064,
+          "thread_cpu_ms": 0.063,
+          "actions": []
+        },
+        {
+          "at_seconds": 55.143321,
+          "wall_ms": 0.062,
+          "thread_cpu_ms": 0.061,
+          "actions": []
+        },
+        {
+          "at_seconds": 38.929744,
+          "wall_ms": 0.061,
+          "thread_cpu_ms": 0.061,
+          "actions": []
+        }
+      ],
+      "samples_file": "mixed8-four-voices.samples.json.gz",
+      "original_trace_path": "/var/folders/tz/_myylhzn7_x55wpnwj77k0th0000gn/T/omp-browser-15bec97519535ddd.json",
+      "original_trace_sha256": "3f0ec99f22c1df6b1bb66529012d9b28688f295e2b34ade1f993ee4c56a46b12",
+      "configuration": {
+        "preset": "Oscillators",
+        "active": 3,
+        "notes": [
+          60,
+          64,
+          67,
+          72
+        ],
+        "peak": [
+          0.1600833535194397,
+          0.16030356287956238
+        ],
+        "grains": 0,
+        "playing": true,
+        "modules": [
+          {
+            "enabled": true,
+            "module": "oscillators"
+          },
+          {
+            "enabled": false,
+            "module": "filters"
+          },
+          {
+            "enabled": true,
+            "module": "mixer"
+          },
+          {
+            "enabled": true,
+            "module": "post_fx"
+          }
+        ],
+        "oscillators": [
+          {
+            "id": 1,
+            "kind": "radias"
+          },
+          {
+            "id": 2,
+            "kind": "wavefolder"
+          },
+          {
+            "id": 3,
+            "kind": "pcm"
+          },
+          {
+            "id": 4,
+            "kind": "wavetable"
+          },
+          {
+            "id": 5,
+            "kind": "radias"
+          },
+          {
+            "id": 6,
+            "kind": "wavefolder"
+          },
+          {
+            "id": 7,
+            "kind": "pcm"
+          },
+          {
+            "id": 8,
+            "kind": "wavetable"
+          }
+        ],
+        "visibility": "visible"
+      },
+      "requested_seconds": 60,
+      "wall_seconds": 60.000700000047686,
+      "audio_seconds": 60,
+      "operations": 0,
+      "operation_round_trip_ms": {},
+      "visibility": [
+        {
+          "at_ms": 0,
+          "state": "visible"
+        }
+      ],
+      "final": {
+        "playing": true,
+        "peak": [
+          0.1822107583284378,
+          0.17940393090248108
+        ],
+        "notes": [
+          60,
+          64,
+          67,
+          72
+        ],
+        "active_grains": 0,
+        "dropped_grain_births": 0,
+        "preset": "Oscillators"
+      },
+      "diagnostics_start": {
+        "roles": {
+          "audio": {
+            "linear_bytes": 150208512,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "buffer_bytes": 1014422
+          },
+          "worker": {
+            "linear_bytes": 133234688,
+            "factory_reads": {
+              "calls": 2,
+              "bytes": 385898
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 24117248
+              },
+              {
+                "type": "startup",
+                "before": 24117248,
+                "after": 133234688
+              }
+            ]
+          },
+          "telemetry": {
+            "linear_bytes": 7864320,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 4390912
+              },
+              {
+                "type": "snapshot",
+                "before": 4390912,
+                "after": 7143424
+              },
+              {
+                "type": "snapshot",
+                "before": 7143424,
+                "after": 7864320
+              }
+            ]
+          },
+          "vocal": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          },
+          "recorder": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          }
+        },
+        "engine_variant": "sad_pet.simd.wasm",
+        "startup_mode": null,
+        "shared_rom_bytes": 22554339,
+        "max_transfer_bytes": 4530337,
+        "accounted_audio_data_bytes": 319406618,
+        "sample_rate": 48000,
+        "current_time": 5.408,
+        "context_state": "running",
+        "base_latency": 0.005,
+        "output_latency": 0.01,
+        "playback_stats": {
+          "underrunDuration": 0,
+          "underrunEvents": 0,
+          "totalDuration": 4.950762,
+          "averageLatency": 0.023929,
+          "minimumLatency": 0,
+          "maximumLatency": 0.024006
+        },
+        "fatal": null,
+        "peak": [
+          0.1600833535194397,
+          0.16030356287956238
+        ],
+        "notes": [
+          60,
+          64,
+          67,
+          72
+        ]
+      },
+      "diagnostics_end": {
+        "roles": {
+          "audio": {
+            "linear_bytes": 150208512,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "buffer_bytes": 1014422
+          },
+          "worker": {
+            "linear_bytes": 133234688,
+            "factory_reads": {
+              "calls": 2,
+              "bytes": 385898
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 24117248
+              },
+              {
+                "type": "startup",
+                "before": 24117248,
+                "after": 133234688
+              }
+            ]
+          },
+          "telemetry": {
+            "linear_bytes": 7864320,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 4390912
+              },
+              {
+                "type": "snapshot",
+                "before": 4390912,
+                "after": 7143424
+              },
+              {
+                "type": "snapshot",
+                "before": 7143424,
+                "after": 7864320
+              }
+            ]
+          },
+          "vocal": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          },
+          "recorder": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          }
+        },
+        "engine_variant": "sad_pet.simd.wasm",
+        "startup_mode": null,
+        "shared_rom_bytes": 22554339,
+        "max_transfer_bytes": 4530337,
+        "accounted_audio_data_bytes": 319406618,
+        "sample_rate": 48000,
+        "current_time": 65.408,
+        "context_state": "running",
+        "base_latency": 0.005,
+        "output_latency": 0.01,
+        "playback_stats": {
+          "underrunDuration": 0,
+          "underrunEvents": 0,
+          "totalDuration": 65.095722,
+          "averageLatency": 0.023977,
+          "minimumLatency": 0,
+          "maximumLatency": 0.024007
+        },
+        "fatal": null,
+        "peak": [
+          0.1822107583284378,
+          0.17940393090248108
+        ],
+        "notes": [
+          60,
+          64,
+          67,
+          72
+        ]
+      },
+      "playback_delta": {
+        "underrunEvents": 0,
+        "underrunDuration": 0,
+        "totalDuration": 60.14496
+      }
+    },
+    {
+      "name": "mixed8-playback-ring",
+      "trace_events": 362104,
+      "trace_interval_seconds": 60.001404,
+      "thread": {
+        "pid": 27021,
+        "tid": 209060169
+      },
+      "callback": {
+        "wall": {
+          "count": 22500,
+          "mean_ms": 1.6842246666666667,
+          "p50_ms": 1.665,
+          "p95_ms": 1.853,
+          "p99_ms": 1.974,
+          "p99_9_ms": 2.157,
+          "max_ms": 2.766,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 1,
+          "over_budget_percent": 0.0044444444444444444
+        },
+        "thread_cpu": {
+          "count": 22500,
+          "mean_ms": 1.6843630666666667,
+          "p50_ms": 1.661,
+          "p95_ms": 1.853,
+          "p99_ms": 1.996,
+          "p99_9_ms": 3.13,
+          "max_ms": 3.65,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 72,
+          "over_budget_percent": 0.32
+        }
+      },
+      "author_script": {
+        "wall": {
+          "count": 22500,
+          "mean_ms": 1.6798930222222224,
+          "p50_ms": 1.661,
+          "p95_ms": 1.846,
+          "p99_ms": 1.967,
+          "p99_9_ms": 2.152,
+          "max_ms": 2.758,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 1,
+          "over_budget_percent": 0.0044444444444444444
+        },
+        "thread_cpu": {
+          "count": 22500,
+          "mean_ms": 1.6826796444444445,
+          "p50_ms": 1.66,
+          "p95_ms": 1.849,
+          "p99_ms": 1.993,
+          "p99_9_ms": 3.128,
+          "max_ms": 3.637,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 72,
+          "over_budget_percent": 0.32
+        }
+      },
+      "message_handler": {
+        "wall": {
+          "count": 1185,
+          "mean_ms": 0.019433755274261603,
+          "p50_ms": 0.016,
+          "p95_ms": 0.036,
+          "p99_ms": 0.062,
+          "p99_9_ms": 0.174,
+          "max_ms": 0.689,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 1185,
+          "mean_ms": 0.018284388185654008,
+          "p50_ms": 0.016,
+          "p95_ms": 0.035,
+          "p99_ms": 0.061,
+          "p99_9_ms": 0.138,
+          "max_ms": 0.174,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "render_batch_frames": [
+        512
+      ],
+      "render_batch": {
+        "wall": {
+          "count": 5625,
+          "mean_ms": 6.767802488888889,
+          "p50_ms": 6.737,
+          "p95_ms": 7.214,
+          "p99_ms": 7.49,
+          "p99_9_ms": 7.816,
+          "max_ms": 8.138,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 5625,
+          "mean_ms": 6.7548378666666675,
+          "p50_ms": 6.709,
+          "p95_ms": 7.227,
+          "p99_ms": 7.996,
+          "p99_9_ms": 8.603,
+          "max_ms": 8.88,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "render_plus_intervening_messages": {
+        "wall": {
+          "count": 5624,
+          "mean_ms": 6.771876778093884,
+          "p50_ms": 6.741,
+          "p95_ms": 7.217,
+          "p99_ms": 7.497,
+          "p99_9_ms": 7.816,
+          "max_ms": 8.138,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 5624,
+          "mean_ms": 6.758673008534851,
+          "p50_ms": 6.712,
+          "p95_ms": 7.23,
+          "p99_ms": 8.006,
+          "p99_9_ms": 8.603,
+          "max_ms": 8.88,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "max_consecutive_callbacks_over_budget": 1,
+      "action_window_count": 0,
+      "callbacks_during_actions": {
+        "wall": {
+          "count": 0
+        },
+        "thread_cpu": {
+          "count": 0
+        }
+      },
+      "callbacks_outside_actions": {
+        "wall": {
+          "count": 22500,
+          "mean_ms": 1.6842246666666667,
+          "p50_ms": 1.665,
+          "p95_ms": 1.853,
+          "p99_ms": 1.974,
+          "p99_9_ms": 2.157,
+          "max_ms": 2.766,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 1,
+          "over_budget_percent": 0.0044444444444444444
+        },
+        "thread_cpu": {
+          "count": 22500,
+          "mean_ms": 1.6843630666666667,
+          "p50_ms": 1.661,
+          "p95_ms": 1.853,
+          "p99_ms": 1.996,
+          "p99_9_ms": 3.13,
+          "max_ms": 3.65,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 72,
+          "over_budget_percent": 0.32
+        }
+      },
+      "longest_callbacks": [
+        {
+          "at_seconds": 11.26431,
+          "wall_ms": 2.766,
+          "thread_cpu_ms": 1.77,
+          "actions": []
+        },
+        {
+          "at_seconds": 0.400365,
+          "wall_ms": 2.411,
+          "thread_cpu_ms": 2.407,
+          "actions": []
+        },
+        {
+          "at_seconds": 35.686232,
+          "wall_ms": 2.312,
+          "thread_cpu_ms": 2.309,
+          "actions": []
+        },
+        {
+          "at_seconds": 7.898844,
+          "wall_ms": 2.287,
+          "thread_cpu_ms": 2.284,
+          "actions": []
+        },
+        {
+          "at_seconds": 38.256709,
+          "wall_ms": 2.277,
+          "thread_cpu_ms": 2.273,
+          "actions": []
+        },
+        {
+          "at_seconds": 54.667156,
+          "wall_ms": 2.267,
+          "thread_cpu_ms": 2.262,
+          "actions": []
+        },
+        {
+          "at_seconds": 39.632931,
+          "wall_ms": 2.255,
+          "thread_cpu_ms": 2.25,
+          "actions": []
+        },
+        {
+          "at_seconds": 46.155211,
+          "wall_ms": 2.252,
+          "thread_cpu_ms": 3.65,
+          "actions": []
+        },
+        {
+          "at_seconds": 46.607946,
+          "wall_ms": 2.245,
+          "thread_cpu_ms": 2.241,
+          "actions": []
+        },
+        {
+          "at_seconds": 0.347544,
+          "wall_ms": 2.238,
+          "thread_cpu_ms": 2.233,
+          "actions": []
+        }
+      ],
+      "longest_messages": [
+        {
+          "at_seconds": 49.246048,
+          "wall_ms": 0.689,
+          "thread_cpu_ms": 0.052,
+          "actions": []
+        },
+        {
+          "at_seconds": 43.217675,
+          "wall_ms": 0.174,
+          "thread_cpu_ms": 0.174,
+          "actions": []
+        },
+        {
+          "at_seconds": 44.382204,
+          "wall_ms": 0.139,
+          "thread_cpu_ms": 0.138,
+          "actions": []
+        },
+        {
+          "at_seconds": 28.529864,
+          "wall_ms": 0.07,
+          "thread_cpu_ms": 0.069,
+          "actions": []
+        },
+        {
+          "at_seconds": 28.27406,
+          "wall_ms": 0.068,
+          "thread_cpu_ms": 0.066,
+          "actions": []
+        },
+        {
+          "at_seconds": 10.087155,
+          "wall_ms": 0.067,
+          "thread_cpu_ms": 0.066,
+          "actions": []
+        },
+        {
+          "at_seconds": 19.612677,
+          "wall_ms": 0.067,
+          "thread_cpu_ms": 0.066,
+          "actions": []
+        },
+        {
+          "at_seconds": 48.188866,
+          "wall_ms": 0.067,
+          "thread_cpu_ms": 0.066,
+          "actions": []
+        },
+        {
+          "at_seconds": 37.447392,
+          "wall_ms": 0.065,
+          "thread_cpu_ms": 0.065,
+          "actions": []
+        },
+        {
+          "at_seconds": 51.431335,
+          "wall_ms": 0.064,
+          "thread_cpu_ms": 0.064,
+          "actions": []
+        }
+      ],
+      "samples_file": "mixed8-playback-ring.samples.json.gz",
+      "original_trace_path": "/var/folders/tz/_myylhzn7_x55wpnwj77k0th0000gn/T/omp-browser-15bec9b954135dde.json",
+      "original_trace_sha256": "4f84b866d6b153c628045ae8d3721f2021774c0a85d8348ee5a459c65439e254",
+      "configuration": {
+        "preset": "Oscillators",
+        "active": 3,
+        "notes": [
+          60,
+          64,
+          67,
+          72
+        ],
+        "peak": [
+          0.15214625000953674,
+          0.15214625000953674
+        ],
+        "grains": 0,
+        "playing": true,
+        "modules": [
+          {
+            "enabled": true,
+            "module": "oscillators"
+          },
+          {
+            "enabled": true,
+            "module": "grains"
+          },
+          {
+            "enabled": false,
+            "module": "filters"
+          },
+          {
+            "enabled": true,
+            "module": "mixer"
+          },
+          {
+            "enabled": true,
+            "module": "post_fx"
+          }
+        ],
+        "oscillators": [
+          {
+            "id": 1,
+            "kind": "radias"
+          },
+          {
+            "id": 2,
+            "kind": "wavefolder"
+          },
+          {
+            "id": 3,
+            "kind": "pcm"
+          },
+          {
+            "id": 4,
+            "kind": "wavetable"
+          },
+          {
+            "id": 5,
+            "kind": "radias"
+          },
+          {
+            "id": 6,
+            "kind": "wavefolder"
+          },
+          {
+            "id": 7,
+            "kind": "pcm"
+          },
+          {
+            "id": 8,
+            "kind": "wavetable"
+          }
+        ],
+        "visibility": "visible"
+      },
+      "requested_seconds": 60,
+      "wall_seconds": 60.0025,
+      "audio_seconds": 60.01066666666666,
+      "operations": 0,
+      "operation_round_trip_ms": {},
+      "visibility": [
+        {
+          "at_ms": 0,
+          "state": "visible"
+        }
+      ],
+      "final": {
+        "playing": true,
+        "peak": [
+          0.20017662644386292,
+          0.20750698447227478
+        ],
+        "notes": [
+          60,
+          64,
+          67,
+          72
+        ],
+        "active_grains": 4,
+        "dropped_grain_births": 0,
+        "preset": "Oscillators"
+      },
+      "diagnostics_start": {
+        "roles": {
+          "audio": {
+            "linear_bytes": 150208512,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "buffer_bytes": 1014422
+          },
+          "worker": {
+            "linear_bytes": 133234688,
+            "factory_reads": {
+              "calls": 2,
+              "bytes": 385898
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 24117248
+              },
+              {
+                "type": "startup",
+                "before": 24117248,
+                "after": 133234688
+              }
+            ]
+          },
+          "telemetry": {
+            "linear_bytes": 7995392,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 4390912
+              },
+              {
+                "type": "snapshot",
+                "before": 4390912,
+                "after": 7143424
+              },
+              {
+                "type": "snapshot",
+                "before": 7143424,
+                "after": 7864320
+              },
+              {
+                "type": "snapshot",
+                "before": 7864320,
+                "after": 7995392
+              }
+            ]
+          },
+          "vocal": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          },
+          "recorder": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          }
+        },
+        "engine_variant": "sad_pet.simd.wasm",
+        "startup_mode": null,
+        "shared_rom_bytes": 22554339,
+        "max_transfer_bytes": 4530337,
+        "accounted_audio_data_bytes": 319537690,
+        "sample_rate": 48000,
+        "current_time": 5.472,
+        "context_state": "running",
+        "base_latency": 0.005,
+        "output_latency": 0.01,
+        "playback_stats": {
+          "underrunDuration": 0,
+          "underrunEvents": 0,
+          "totalDuration": 4.950762,
+          "averageLatency": 0.023929,
+          "minimumLatency": 0,
+          "maximumLatency": 0.024007
+        },
+        "fatal": null,
+        "peak": [
+          0.15214625000953674,
+          0.15214625000953674
+        ],
+        "notes": [
+          60,
+          64,
+          67,
+          72
+        ]
+      },
+      "diagnostics_end": {
+        "roles": {
+          "audio": {
+            "linear_bytes": 150208512,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "buffer_bytes": 1014422
+          },
+          "worker": {
+            "linear_bytes": 133234688,
+            "factory_reads": {
+              "calls": 2,
+              "bytes": 385898
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 24117248
+              },
+              {
+                "type": "startup",
+                "before": 24117248,
+                "after": 133234688
+              }
+            ]
+          },
+          "telemetry": {
+            "linear_bytes": 7995392,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 4390912
+              },
+              {
+                "type": "snapshot",
+                "before": 4390912,
+                "after": 7143424
+              },
+              {
+                "type": "snapshot",
+                "before": 7143424,
+                "after": 7864320
+              },
+              {
+                "type": "snapshot",
+                "before": 7864320,
+                "after": 7995392
+              }
+            ]
+          },
+          "vocal": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          },
+          "recorder": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          }
+        },
+        "engine_variant": "sad_pet.simd.wasm",
+        "startup_mode": null,
+        "shared_rom_bytes": 22554339,
+        "max_transfer_bytes": 4530337,
+        "accounted_audio_data_bytes": 319537690,
+        "sample_rate": 48000,
+        "current_time": 65.48266666666666,
+        "context_state": "running",
+        "base_latency": 0.005,
+        "output_latency": 0.01,
+        "playback_stats": {
+          "underrunDuration": 0,
+          "underrunEvents": 0,
+          "totalDuration": 65.095722,
+          "averageLatency": 0.023977,
+          "minimumLatency": 0,
+          "maximumLatency": 0.02401
+        },
+        "fatal": null,
+        "peak": [
+          0.20017662644386292,
+          0.20750698447227478
+        ],
+        "notes": [
+          60,
+          64,
+          67,
+          72
+        ]
+      },
+      "playback_delta": {
+        "underrunEvents": 0,
+        "underrunDuration": 0,
+        "totalDuration": 60.14496
+      }
+    },
+    {
+      "name": "mixed8-audio-rate-grains",
+      "trace_events": 255740,
+      "trace_interval_seconds": 60.002027,
+      "thread": {
+        "pid": 27021,
+        "tid": 209063846
+      },
+      "callback": {
+        "wall": {
+          "count": 13338,
+          "mean_ms": 4.475420827710302,
+          "p50_ms": 4.449,
+          "p95_ms": 4.711,
+          "p99_ms": 4.857,
+          "p99_9_ms": 5.089,
+          "max_ms": 5.546,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 13338,
+          "over_budget_percent": 100.0
+        },
+        "thread_cpu": {
+          "count": 13338,
+          "mean_ms": 4.4788264357474885,
+          "p50_ms": 4.446,
+          "p95_ms": 4.719,
+          "p99_ms": 5.071,
+          "p99_9_ms": 5.556,
+          "max_ms": 6.034,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 13338,
+          "over_budget_percent": 100.0
+        }
+      },
+      "author_script": {
+        "wall": {
+          "count": 13338,
+          "mean_ms": 4.470826660668766,
+          "p50_ms": 4.444,
+          "p95_ms": 4.706,
+          "p99_ms": 4.854,
+          "p99_9_ms": 5.084,
+          "max_ms": 5.543,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 13338,
+          "over_budget_percent": 100.0
+        },
+        "thread_cpu": {
+          "count": 13338,
+          "mean_ms": 4.47691820362873,
+          "p50_ms": 4.444,
+          "p95_ms": 4.716,
+          "p99_ms": 5.07,
+          "p99_9_ms": 5.555,
+          "max_ms": 6.032,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 13338,
+          "over_budget_percent": 100.0
+        }
+      },
+      "message_handler": {
+        "wall": {
+          "count": 702,
+          "mean_ms": 0.025977207977207976,
+          "p50_ms": 0.023,
+          "p95_ms": 0.062,
+          "p99_ms": 0.071,
+          "p99_9_ms": 0.085,
+          "max_ms": 0.085,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        },
+        "thread_cpu": {
+          "count": 702,
+          "mean_ms": 0.02546296296296296,
+          "p50_ms": 0.022,
+          "p95_ms": 0.061,
+          "p99_ms": 0.071,
+          "p99_9_ms": 0.084,
+          "max_ms": 0.084,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 0,
+          "over_budget_percent": 0.0
+        }
+      },
+      "render_batch_frames": [
+        512
+      ],
+      "render_batch": {
+        "wall": {
+          "count": 3333,
+          "mean_ms": 17.938812781278127,
+          "p50_ms": 17.883,
+          "p95_ms": 18.694,
+          "p99_ms": 19.002,
+          "p99_9_ms": 19.319,
+          "max_ms": 19.71,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 3333,
+          "over_budget_percent": 100.0
+        },
+        "thread_cpu": {
+          "count": 3333,
+          "mean_ms": 17.93782178217822,
+          "p50_ms": 17.867,
+          "p95_ms": 18.751,
+          "p99_ms": 19.206,
+          "p99_9_ms": 19.762,
+          "max_ms": 20.551,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 3333,
+          "over_budget_percent": 100.0
+        }
+      },
+      "render_plus_intervening_messages": {
+        "wall": {
+          "count": 3332,
+          "mean_ms": 17.94432412965186,
+          "p50_ms": 17.885,
+          "p95_ms": 18.699,
+          "p99_ms": 19.011,
+          "p99_9_ms": 19.319,
+          "max_ms": 19.71,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 3332,
+          "over_budget_percent": 100.0
+        },
+        "thread_cpu": {
+          "count": 3332,
+          "mean_ms": 17.943233793517408,
+          "p50_ms": 17.868,
+          "p95_ms": 18.756,
+          "p99_ms": 19.206,
+          "p99_9_ms": 19.762,
+          "max_ms": 20.551,
+          "budget_ms": 10.666666666666666,
+          "over_budget": 3332,
+          "over_budget_percent": 100.0
+        }
+      },
+      "max_consecutive_callbacks_over_budget": 13338,
+      "action_window_count": 0,
+      "callbacks_during_actions": {
+        "wall": {
+          "count": 0
+        },
+        "thread_cpu": {
+          "count": 0
+        }
+      },
+      "callbacks_outside_actions": {
+        "wall": {
+          "count": 13338,
+          "mean_ms": 4.475420827710302,
+          "p50_ms": 4.449,
+          "p95_ms": 4.711,
+          "p99_ms": 4.857,
+          "p99_9_ms": 5.089,
+          "max_ms": 5.546,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 13338,
+          "over_budget_percent": 100.0
+        },
+        "thread_cpu": {
+          "count": 13338,
+          "mean_ms": 4.4788264357474885,
+          "p50_ms": 4.446,
+          "p95_ms": 4.719,
+          "p99_ms": 5.071,
+          "p99_9_ms": 5.556,
+          "max_ms": 6.034,
+          "budget_ms": 2.6666666666666665,
+          "over_budget": 13338,
+          "over_budget_percent": 100.0
+        }
+      },
+      "longest_callbacks": [
+        {
+          "at_seconds": 39.458068,
+          "wall_ms": 5.546,
+          "thread_cpu_ms": 5.542,
+          "actions": []
+        },
+        {
+          "at_seconds": 7.221328,
+          "wall_ms": 5.295,
+          "thread_cpu_ms": 5.291,
+          "actions": []
+        },
+        {
+          "at_seconds": 7.637999,
+          "wall_ms": 5.261,
+          "thread_cpu_ms": 4.479,
+          "actions": []
+        },
+        {
+          "at_seconds": 11.799668,
+          "wall_ms": 5.241,
+          "thread_cpu_ms": 5.236,
+          "actions": []
+        },
+        {
+          "at_seconds": 54.257578,
+          "wall_ms": 5.206,
+          "thread_cpu_ms": 5.202,
+          "actions": []
+        },
+        {
+          "at_seconds": 46.927372,
+          "wall_ms": 5.193,
+          "thread_cpu_ms": 5.189,
+          "actions": []
+        },
+        {
+          "at_seconds": 6.738319,
+          "wall_ms": 5.156,
+          "thread_cpu_ms": 5.152,
+          "actions": []
+        },
+        {
+          "at_seconds": 12.313499,
+          "wall_ms": 5.146,
+          "thread_cpu_ms": 5.143,
+          "actions": []
+        },
+        {
+          "at_seconds": 24.908445,
+          "wall_ms": 5.141,
+          "thread_cpu_ms": 5.137,
+          "actions": []
+        },
+        {
+          "at_seconds": 32.416916,
+          "wall_ms": 5.128,
+          "thread_cpu_ms": 5.125,
+          "actions": []
+        }
+      ],
+      "longest_messages": [
+        {
+          "at_seconds": 4.268152,
+          "wall_ms": 0.085,
+          "thread_cpu_ms": 0.084,
+          "actions": []
+        },
+        {
+          "at_seconds": 39.917347,
+          "wall_ms": 0.084,
+          "thread_cpu_ms": 0.083,
+          "actions": []
+        },
+        {
+          "at_seconds": 32.641196,
+          "wall_ms": 0.075,
+          "thread_cpu_ms": 0.067,
+          "actions": []
+        },
+        {
+          "at_seconds": 23.069027,
+          "wall_ms": 0.073,
+          "thread_cpu_ms": 0.072,
+          "actions": []
+        },
+        {
+          "at_seconds": 30.668093,
+          "wall_ms": 0.073,
+          "thread_cpu_ms": 0.072,
+          "actions": []
+        },
+        {
+          "at_seconds": 17.356689,
+          "wall_ms": 0.072,
+          "thread_cpu_ms": 0.072,
+          "actions": []
+        },
+        {
+          "at_seconds": 42.325503,
+          "wall_ms": 0.072,
+          "thread_cpu_ms": 0.071,
+          "actions": []
+        },
+        {
+          "at_seconds": 25.541776,
+          "wall_ms": 0.071,
+          "thread_cpu_ms": 0.071,
+          "actions": []
+        },
+        {
+          "at_seconds": 53.106307,
+          "wall_ms": 0.071,
+          "thread_cpu_ms": 0.071,
+          "actions": []
+        },
+        {
+          "at_seconds": 0.318394,
+          "wall_ms": 0.07,
+          "thread_cpu_ms": 0.069,
+          "actions": []
+        }
+      ],
+      "samples_file": "mixed8-audio-rate-grains.samples.json.gz",
+      "original_trace_path": "/var/folders/tz/_myylhzn7_x55wpnwj77k0th0000gn/T/omp-browser-15beca1d9d135ddf.json",
+      "original_trace_sha256": "6f402cbd857a8010512b75641cde77c47f24d193f6e14a40737cf9f9c5bcaa03",
+      "configuration": {
+        "preset": "Oscillators",
+        "active": 3,
+        "notes": [
+          60,
+          64,
+          67,
+          72
+        ],
+        "peak": [
+          0.1474371701478958,
+          0.1432972252368927
+        ],
+        "grains": 126,
+        "playing": true,
+        "modules": [
+          {
+            "enabled": true,
+            "module": "oscillators"
+          },
+          {
+            "enabled": true,
+            "module": "grains"
+          },
+          {
+            "enabled": false,
+            "module": "filters"
+          },
+          {
+            "enabled": true,
+            "module": "mixer"
+          },
+          {
+            "enabled": true,
+            "module": "post_fx"
+          }
+        ],
+        "oscillators": [
+          {
+            "id": 1,
+            "kind": "radias"
+          },
+          {
+            "id": 2,
+            "kind": "wavefolder"
+          },
+          {
+            "id": 3,
+            "kind": "pcm"
+          },
+          {
+            "id": 4,
+            "kind": "wavetable"
+          },
+          {
+            "id": 5,
+            "kind": "radias"
+          },
+          {
+            "id": 6,
+            "kind": "wavefolder"
+          },
+          {
+            "id": 7,
+            "kind": "pcm"
+          },
+          {
+            "id": 8,
+            "kind": "wavetable"
+          }
+        ],
+        "visibility": "visible"
+      },
+      "requested_seconds": 60,
+      "wall_seconds": 60.00209999990463,
+      "audio_seconds": 35.57333333333333,
+      "operations": 0,
+      "operation_round_trip_ms": {},
+      "visibility": [
+        {
+          "at_ms": 0,
+          "state": "visible"
+        }
+      ],
+      "final": {
+        "playing": true,
+        "peak": [
+          0.1400177776813507,
+          0.1409769356250763
+        ],
+        "notes": [
+          60,
+          64,
+          67,
+          72
+        ],
+        "active_grains": 121,
+        "dropped_grain_births": 6020,
+        "preset": "Oscillators"
+      },
+      "diagnostics_start": {
+        "roles": {
+          "audio": {
+            "linear_bytes": 150208512,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "buffer_bytes": 1014422
+          },
+          "worker": {
+            "linear_bytes": 133234688,
+            "factory_reads": {
+              "calls": 2,
+              "bytes": 385898
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 24117248
+              },
+              {
+                "type": "startup",
+                "before": 24117248,
+                "after": 133234688
+              }
+            ]
+          },
+          "telemetry": {
+            "linear_bytes": 7995392,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 4390912
+              },
+              {
+                "type": "snapshot",
+                "before": 4390912,
+                "after": 7143424
+              },
+              {
+                "type": "snapshot",
+                "before": 7143424,
+                "after": 7864320
+              },
+              {
+                "type": "snapshot",
+                "before": 7864320,
+                "after": 7995392
+              }
+            ]
+          },
+          "vocal": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          },
+          "recorder": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          }
+        },
+        "engine_variant": "sad_pet.simd.wasm",
+        "startup_mode": null,
+        "shared_rom_bytes": 22554339,
+        "max_transfer_bytes": 4530337,
+        "accounted_audio_data_bytes": 319537690,
+        "sample_rate": 48000,
+        "current_time": 3.466666666666667,
+        "context_state": "running",
+        "base_latency": 0.005,
+        "output_latency": 0.01,
+        "playback_stats": {
+          "underrunDuration": 4.47972,
+          "underrunEvents": 420,
+          "totalDuration": 7.668256,
+          "averageLatency": 0.023896,
+          "minimumLatency": 0,
+          "maximumLatency": 0.024005
+        },
+        "fatal": null,
+        "peak": [
+          0.1474371701478958,
+          0.1432972252368927
+        ],
+        "notes": [
+          60,
+          64,
+          67,
+          72
+        ]
+      },
+      "diagnostics_end": {
+        "roles": {
+          "audio": {
+            "linear_bytes": 150208512,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "buffer_bytes": 1014422
+          },
+          "worker": {
+            "linear_bytes": 133234688,
+            "factory_reads": {
+              "calls": 2,
+              "bytes": 385898
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 24117248
+              },
+              {
+                "type": "startup",
+                "before": 24117248,
+                "after": 133234688
+              }
+            ]
+          },
+          "telemetry": {
+            "linear_bytes": 7995392,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": [
+              {
+                "type": "init",
+                "before": 0,
+                "after": 4390912
+              },
+              {
+                "type": "snapshot",
+                "before": 4390912,
+                "after": 7143424
+              },
+              {
+                "type": "snapshot",
+                "before": 7143424,
+                "after": 7864320
+              },
+              {
+                "type": "snapshot",
+                "before": 7864320,
+                "after": 7995392
+              }
+            ]
+          },
+          "vocal": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          },
+          "recorder": {
+            "linear_bytes": 0,
+            "factory_reads": {
+              "calls": 0,
+              "bytes": 0
+            },
+            "growth": []
+          }
+        },
+        "engine_variant": "sad_pet.simd.wasm",
+        "startup_mode": null,
+        "shared_rom_bytes": 22554339,
+        "max_transfer_bytes": 4530337,
+        "accounted_audio_data_bytes": 319537690,
+        "sample_rate": 48000,
+        "current_time": 39.04,
+        "context_state": "running",
+        "base_latency": 0.005,
+        "output_latency": 0.01,
+        "playback_stats": {
+          "underrunDuration": 64.614628,
+          "underrunEvents": 6058,
+          "totalDuration": 103.439586,
+          "averageLatency": 0.023971,
+          "minimumLatency": 0,
+          "maximumLatency": 0.024005
+        },
+        "fatal": null,
+        "peak": [
+          0.1400177776813507,
+          0.1409769356250763
+        ],
+        "notes": [
+          60,
+          64,
+          67,
+          72
+        ]
+      },
+      "playback_delta": {
+        "underrunEvents": 5638,
+        "underrunDuration": 60.134907999999996,
+        "totalDuration": 95.77133
+      }
+    }
+  ]
+}

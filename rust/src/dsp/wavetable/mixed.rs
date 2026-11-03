@@ -105,6 +105,8 @@ pub struct Runtime {
     root: u32,
     root_hz: f64,
     layers: [Layer; SLOTS],
+    dependencies: [u8; SLOTS],
+    reachability: [u8; 1 << SLOTS],
     voices: Box<[MixedVoice]>,
     banks: [Option<Arc<Bank>>; SLOTS],
     previous: [Option<Arc<Bank>>; SLOTS],
@@ -125,6 +127,14 @@ pub struct Runtime {
 }
 impl Runtime {
     pub fn new(rate: u32, settings: &model::Settings, assets: &Pool) -> Result<Self, String> {
+        Self::prepare(rate, settings, assets, None)
+    }
+    pub(crate) fn prepare(
+        rate: u32,
+        settings: &model::Settings,
+        assets: &Pool,
+        previous: Option<&Self>,
+    ) -> Result<Self, String> {
         settings.validate()?;
         let rate = rate.clamp(8000, 384000) as f64;
         let mut banks = std::array::from_fn(|_| None);
@@ -135,7 +145,7 @@ impl Runtime {
         }
         let controls = settings.controls();
         let native_controls = std::array::from_fn(|i| controls[i].native(settings.slots[i].kind));
-        Ok(Self {
+        let mut runtime = Self {
             rate,
             identities: settings.slots.each_ref().map(|s| s.id),
             kinds: settings.slots.each_ref().map(|s| s.kind),
@@ -147,10 +157,18 @@ impl Runtime {
             root: u32::MAX,
             root_hz: 440.0,
             layers: controls.map(|c| Layer::new(c.table())),
-            voices: (0..crate::dsp::VOICES)
-                .map(|_| MixedVoice::default())
-                .collect::<Vec<_>>()
-                .into_boxed_slice(),
+            dependencies: [0; SLOTS],
+            reachability: std::array::from_fn(|mask| mask as u8),
+            // inherit() exchanges the running voices before this bank can render.
+            // Do not allocate a second complete bank just to discard it there.
+            voices: if previous.is_some_and(|old| old.rate == rate) {
+                Box::default()
+            } else {
+                (0..crate::dsp::VOICES)
+                    .map(|_| MixedVoice::default())
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice()
+            },
             banks,
             previous: std::array::from_fn(|_| None),
             blends: [1.0; SLOTS],
@@ -171,7 +189,9 @@ impl Runtime {
                 min: c.wavetable.position,
                 max: c.wavetable.position,
             }),
-        })
+        };
+        runtime.refresh_dependencies();
+        Ok(runtime)
     }
     pub fn inherit(&mut self, old: &mut Self) {
         if self.rate != old.rate {
@@ -218,6 +238,7 @@ impl Runtime {
                 }
             }
         }
+        self.refresh_dependencies();
     }
     pub fn configure(&mut self, controls: [model::Controls; SLOTS], transpose: f32) {
         self.transpose = transpose;
@@ -225,6 +246,52 @@ impl Runtime {
             self.native_controls[i] = c.native(self.kinds[i]);
             self.programs[i] = primary_program(self.native_controls[i]);
             self.layers[i].configure(c.table(), self.rate as f32);
+        }
+        self.refresh_dependencies();
+    }
+    fn refresh_dependencies(&mut self) {
+        let direct = std::array::from_fn::<_, SLOTS, _>(|i| {
+            let c = self.layers[i].target;
+            let source = if self.kinds[i] == Kind::Wavetable && c.fm_mode != 0 && c.fm_index > 0.0 {
+                Some(c.fm_source as usize)
+            } else if self.native_controls[i].mode == crate::resynth::Mode::Cross
+                && self.native_controls[i].cross_source > 0
+            {
+                Some(self.native_controls[i].cross_source as usize - 1)
+            } else {
+                None
+            };
+            let mut mask = 0;
+            if let Some(source) = source
+                && source < SLOTS
+                && self.identities[source] != 0
+                && self.layers[source].target.enabled
+            {
+                mask |= 1 << source;
+            }
+            let source = c.sync_source.min(7) as usize;
+            if c.sync && self.identities[source] != 0 && self.layers[source].target.enabled {
+                mask |= 1 << source;
+            }
+            mask
+        });
+        if direct == self.dependencies {
+            return;
+        }
+        self.dependencies = direct;
+        let mut reachable = std::array::from_fn::<_, SLOTS, _>(|i| direct[i] | (1 << i));
+        for via in 0..SLOTS {
+            for i in 0..SLOTS {
+                if reachable[i] & (1 << via) != 0 {
+                    reachable[i] |= reachable[via];
+                }
+            }
+        }
+        // Any dynamic demand/level/operator seed now needs just one lookup.
+        // Recheck effective targets on every configure, including modulation.
+        for mask in 1usize..self.reachability.len() {
+            let source = mask.trailing_zeros() as usize;
+            self.reachability[mask] = self.reachability[mask & (mask - 1)] | reachable[source];
         }
     }
     pub fn configure_motion(&mut self, motion: crate::wavetable::motion::Motion) {
@@ -392,6 +459,7 @@ impl Runtime {
         let limits = self.limits;
         let alpha = self.alpha;
         let mut positions = [[0.0; MAX_UNISON]; SLOTS];
+        let mut norms = [1.0; SLOTS];
         let mut views: [[Option<interaction::Lookup<'_>>; MAX_UNISON]; SLOTS] =
             [[None; MAX_UNISON]; SLOTS];
         for i in 0..SLOTS {
@@ -399,6 +467,12 @@ impl Runtime {
             let Some(bank) = &self.banks[i] else {
                 continue;
             };
+            norms[i] = layer
+                .lanes
+                .iter()
+                .map(|lane| lane.value)
+                .sum::<f32>()
+                .max(1.0);
             let env = layer
                 .target
                 .position_env
@@ -496,38 +570,7 @@ impl Runtime {
                 needed |= 1 << i;
             }
         }
-        for _ in 0..SLOTS {
-            for i in 0..SLOTS {
-                if needed & (1 << i) == 0 {
-                    continue;
-                }
-                let c = self.layers[i].target;
-                let source =
-                    if self.kinds[i] == Kind::Wavetable && c.fm_mode != 0 && c.fm_index > 0.0 {
-                        Some(c.fm_source as usize)
-                    } else if self.native_controls[i].mode == crate::resynth::Mode::Cross
-                        && self.native_controls[i].cross_source > 0
-                    {
-                        Some(self.native_controls[i].cross_source as usize - 1)
-                    } else {
-                        None
-                    };
-                if let Some(source) = source
-                    && source < SLOTS
-                    && self.identities[source] != 0
-                    && self.layers[source].target.enabled
-                {
-                    needed |= 1 << source;
-                }
-                let sync_source = c.sync_source.min(7) as usize;
-                if c.sync
-                    && self.identities[sync_source] != 0
-                    && self.layers[sync_source].target.enabled
-                {
-                    needed |= 1 << sync_source;
-                }
-            }
-        }
+        let needed = self.reachability[needed as usize];
         for i in 0..SLOTS {
             if export & (1 << i) != 0 && voice.exported & (1 << i) == 0 {
                 voice.generation_reduction[i] = interaction::Filter::default();
@@ -584,7 +627,7 @@ impl Runtime {
                 let mut raw = [0.0; 2];
                 let mut heard = [0.0; 2];
                 if self.kinds[i] == Kind::Wavetable {
-                    let norm = layer.lanes.iter().map(|l| l.value).sum::<f32>().max(1.0);
+                    let norm = norms[i];
                     let reference = voice.lanes[i][0].phase;
                     for (j, view) in views[i].iter_mut().enumerate() {
                         if layer.lanes[j].value == 0.0 {
@@ -999,6 +1042,208 @@ fn reduce(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fixed_point_needed(runtime: &Runtime, mut needed: u8) -> u8 {
+        for _ in 0..SLOTS {
+            for i in 0..SLOTS {
+                if needed & (1 << i) == 0 {
+                    continue;
+                }
+                let c = runtime.layers[i].target;
+                let source =
+                    if runtime.kinds[i] == Kind::Wavetable && c.fm_mode != 0 && c.fm_index > 0.0 {
+                        Some(c.fm_source as usize)
+                    } else if runtime.native_controls[i].mode == crate::resynth::Mode::Cross
+                        && runtime.native_controls[i].cross_source > 0
+                    {
+                        Some(runtime.native_controls[i].cross_source as usize - 1)
+                    } else {
+                        None
+                    };
+                if let Some(source) = source
+                    && source < SLOTS
+                    && runtime.identities[source] != 0
+                    && runtime.layers[source].target.enabled
+                {
+                    needed |= 1 << source;
+                }
+                let source = c.sync_source.min(7) as usize;
+                if c.sync
+                    && runtime.identities[source] != 0
+                    && runtime.layers[source].target.enabled
+                {
+                    needed |= 1 << source;
+                }
+            }
+        }
+        needed
+    }
+
+    #[test]
+    fn dependency_transitions_preserve_fixed_point_reachability_and_audio() {
+        let mut settings = model::Settings {
+            xy_slots: [0; 4],
+            ..Default::default()
+        };
+        settings.slots[0].kind = Kind::Wavetable;
+        settings.add(Kind::Wavetable).unwrap();
+        settings.add(Kind::Wavetable).unwrap();
+        settings.add(Kind::Radias).unwrap();
+        for i in 0..4 {
+            let c = &mut settings.slots[i].controls;
+            c.level = if i == 0 { 0.65 } else { 0.0 };
+            c.transpose = i as f32 * 7.0;
+            c.wavetable.unison = 3;
+        }
+        settings.slots[0].controls.wavetable.fm_mode = 1;
+        settings.slots[0].controls.wavetable.fm_index = 0.8;
+        settings.slots[0].controls.wavetable.fm_source = 1;
+        settings.slots[1].controls.wavetable.fm_mode = 2;
+        settings.slots[1].controls.wavetable.fm_index = 0.6;
+        settings.slots[1].controls.wavetable.fm_source = 2;
+        settings.slots[2].controls.wavetable.sync = true;
+        settings.slots[2].controls.wavetable.sync_source = 3;
+        settings.slots[3].controls.native.mode = crate::resynth::Mode::Cross;
+        settings.slots[3].controls.native.cross_source = 1;
+        let pool = Pool::default();
+        let mut cached = Runtime::new(48000, &settings, &pool).unwrap();
+        let mut reference = Runtime::new(48000, &settings, &pool).unwrap();
+        assert_eq!(cached.reachability[1], 0b1111);
+        let sample = SampleBuffer::new("Unused".into(), 48000, vec![[0.0; 2]; 128]).unwrap();
+        let env = [0.0; crate::preset::MODULATORS];
+        let mut audible = false;
+        let mut silent_modulator_ran = false;
+        for stamp in 0..2560u64 {
+            let stage = stamp / 128;
+            if stamp % 128 == 0 {
+                match stage {
+                    1 => settings.slots[0].controls.wavetable.fm_index = 0.0,
+                    2 => {
+                        settings.slots[0].controls.wavetable.fm_index = 0.8;
+                        settings.slots[0].controls.wavetable.fm_mode = 0;
+                    }
+                    3 => settings.slots[0].controls.wavetable.fm_mode = 2,
+                    4 => settings.slots[0].controls.wavetable.fm_source = 0,
+                    5 => settings.slots[0].controls.wavetable.fm_source = 1,
+                    6 => settings.slots[1].controls.enabled = false,
+                    7 => settings.slots[1].controls.enabled = true,
+                    8 => settings.slots[2].controls.wavetable.sync = false,
+                    9 => {
+                        settings.slots[2].controls.wavetable.sync = true;
+                        settings.slots[2].controls.wavetable.sync_source = 2;
+                    }
+                    10 => settings.slots[2].controls.wavetable.sync_source = 3,
+                    11 => settings.slots[3].controls.native.cross_source = 0,
+                    12 => {
+                        settings.slots[3].controls.native.cross_source = 1;
+                        settings.slots[3].controls.native.mode = crate::resynth::Mode::Wave;
+                    }
+                    13 => settings.slots[0].controls.level = 0.0,
+                    14 => {
+                        settings.slots[0].controls.level = 0.65;
+                        settings.slots[1].id = 0;
+                    }
+                    15 => settings.slots[1].id = 42,
+                    16 => {
+                        settings.slots[0].kind = Kind::Radias;
+                        settings.slots[0].controls.native.mode = crate::resynth::Mode::Cross;
+                        settings.slots[0].controls.native.cross_source = 4;
+                    }
+                    17 => settings.slots[0].kind = Kind::Wavetable,
+                    _ => {}
+                }
+                if (14..=17).contains(&stage) {
+                    let mut next = Runtime::new(48000, &settings, &pool).unwrap();
+                    next.inherit(&mut cached);
+                    cached = next;
+                    let mut next = Runtime::new(48000, &settings, &pool).unwrap();
+                    next.inherit(&mut reference);
+                    reference = next;
+                }
+            }
+            if stage == 18 {
+                settings.slots[0].controls.wavetable.fm_index =
+                    if stamp & 1 == 0 { 0.0 } else { 0.8 };
+            } else if stage == 19 {
+                settings.slots[0].controls.wavetable.fm_mode = (stamp % 3) as u8;
+                settings.slots[0].controls.wavetable.fm_source = (stamp % 4) as u8;
+            }
+            // Effective controls can change at audio rate, without replacing a runtime.
+            cached.configure(settings.controls(), 0.0);
+            reference.configure(settings.controls(), 0.0);
+            if stamp % 128 == 0 || stage >= 18 {
+                let expected =
+                    std::array::from_fn(|mask| fixed_point_needed(&reference, mask as u8));
+                assert_eq!(cached.reachability, expected, "reachability at {stamp}");
+                // Render the independent baseline dependency closure, not the cached one.
+                reference.reachability = expected;
+            }
+            cached.begin_frame(true);
+            reference.begin_frame(true);
+            let demand = match stamp % 5 {
+                0 => 0,
+                n => 1 << (n - 1),
+            };
+            let render = |runtime: &mut Runtime| {
+                runtime.render(
+                    0,
+                    1,
+                    60.0,
+                    &env,
+                    &env,
+                    [Input::default(); SLOTS],
+                    demand,
+                    u8::MAX,
+                    [1.0; SLOTS],
+                    &sample,
+                    &(0..128),
+                    60.0,
+                    None,
+                    stamp,
+                )
+            };
+            let (actual, into, bypass) = render(&mut cached);
+            let (expected, expected_into, expected_bypass) = render(&mut reference);
+            assert_eq!(
+                into.map(f32::to_bits),
+                expected_into.map(f32::to_bits),
+                "mix at {stamp}"
+            );
+            assert_eq!(bypass.map(f32::to_bits), expected_bypass.map(f32::to_bits));
+            for (actual, expected) in actual.into_iter().zip(expected) {
+                assert_eq!(
+                    actual.audio.map(f32::to_bits),
+                    expected.audio.map(f32::to_bits)
+                );
+                assert_eq!(
+                    actual.generation.map(f32::to_bits),
+                    expected.generation.map(f32::to_bits)
+                );
+                assert_eq!(
+                    actual.output.map(f32::to_bits),
+                    expected.output.map(f32::to_bits)
+                );
+                assert_eq!(
+                    actual.wrap.map(f64::to_bits),
+                    expected.wrap.map(f64::to_bits)
+                );
+                assert_eq!(actual.latency.to_bits(), expected.latency.to_bits());
+            }
+            assert_eq!(cached.voices[0].quiet, reference.voices[0].quiet);
+            assert_eq!(
+                cached.voices[0].taps.map(f32::to_bits),
+                reference.voices[0].taps.map(f32::to_bits)
+            );
+            audible |= into.iter().any(|x| x.abs() > 1e-5);
+            if stage == 0 {
+                assert_eq!(cached.voices[0].quiet[1], 0);
+                silent_modulator_ran |= cached.voices[0].taps[1].abs() > 1e-5;
+            }
+        }
+        assert!(audible);
+        assert!(silent_modulator_ran);
+    }
+
     #[test]
     fn a_reused_voice_does_not_inherit_the_previous_notes_fm_taps() {
         let mut settings = model::Settings::default();

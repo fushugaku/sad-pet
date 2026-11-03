@@ -450,9 +450,8 @@ export class BrowserBackend {
       await this.worker.call("request", context, [], "/api/timbres/context");
       this.queuedSource = null;
       this.sourceRecipeKey = null;
-      this.state = await this.audio.call("request", null, [], "/api/state");
+      await this.freshState();
       this.sourceGeneration = this.state.source_generation ?? this.sourceGeneration;
-      this.viewStamp = this.audio.stamp || 0;
       return context;
     }
     return this.audio.call("request", data, [], route);
@@ -834,8 +833,7 @@ export class BrowserBackend {
           await this.stageWavetables(wavetableIds(data));
           result = await this.audio.call("scene-load", prepared, [prepared]);
           this.sourceRecipeKey = null;
-          this.state = await this.audio.call("request", null, [], "/api/state");
-          this.viewStamp = this.audio.stamp || 0;
+          await this.freshState();
           this.sourceGeneration = this.state.source_generation ?? 0;
           this.queuedSource = null;
           await this.worker.call(
@@ -862,9 +860,8 @@ export class BrowserBackend {
         await this.worker.call("request", result, [], "/api/timbres/context");
         this.queuedSource = null;
         this.sourceRecipeKey = null;
-        this.state = await this.audio.call("request", null, [], "/api/state");
+        await this.freshState();
         this.sourceGeneration = this.state.source_generation ?? generation;
-        this.viewStamp = this.audio.stamp || 0;
       } else if (route.startsWith("/api/timbres")) {
         await this.sourceLoadTail;
         if (route === "/api/timbres/add" && data?.kind === "wavetable")
@@ -878,11 +875,11 @@ export class BrowserBackend {
           await this.worker.call("request", result, [], "/api/timbres/context");
           this.queuedSource = null;
           this.sourceRecipeKey = null;
-          this.state = await this.audio.call("request", null, [], "/api/state");
+          await this.freshState();
           this.sourceGeneration =
             this.state.source_generation ?? this.sourceGeneration;
         }
-        this.viewStamp = this.audio.stamp || 0;
+        if (route === "/api/timbres/update") this.viewStamp = this.audio.stamp || 0;
       } else if (route === "/api/wavetables/select" || route === "/api/wavetables/layers") {
         result = await this.stageWavetables(data.id?[data.id]:data.action==="add"?["factory:wt-basic-morph:v1"]:[],
           () => this.audio.call("request",data,[],route));
@@ -894,7 +891,9 @@ export class BrowserBackend {
         result=await this.wavetableLibrary(route,data);
       } else if (route === "/api/preset" && data) {
         await this.stageWavetables(wavetableIds(data));
-        result = await this.audio.call("request",data,[],route);
+        await this.audio.call("request",data,[],route);
+        await this.freshState();
+        result = this.state.preset;
       } else if (route.startsWith("/api/vocal/")) {
         result = await this.vocalRequest(route, data, options);
         if (result instanceof ArrayBuffer) mime = "application/octet-stream";

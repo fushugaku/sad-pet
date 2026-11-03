@@ -179,4 +179,110 @@ assert.ok(hits[2] >= 3, `the pad track played pad 2: ${hits[2]}`);
 // Removing the Sampler removes its Pad FX timbres.
 const after = core.request("/api/timbres/remove", { id: kit.id });
 assert.ok(!after.timbres.some((t) => t.kind === "pad_fx" || t.kind === "sampler"));
+
+// Multiple owners and non-pad-sorted chains must retain their own returns
+// when insertion/removal shifts every later part index.
+const routing = new Core(module, rate);
+routing.request("/api/timbres/update", { id: 0, muted: true });
+const addKit = (target = routing) => {
+  const id = target.request("/api/timbres/add", { kind: "sampler", classic: true }).active;
+  target.prefixedJson("sad_sampler_sample", "tone", prepared, id);
+  const kit = target.request("/api/preset").sampler;
+  for (const pad of kit.pads.slice(0, 3)) {
+    pad.zones = [{ sample: "tone" }];
+    pad.gain = 20 * Math.log10(0.2);
+  }
+  target.request("/api/sampler/settings", { settings: kit });
+  return id;
+};
+const chainGain = [0, 0.125, 0.25, 0.5];
+const openFx = (owner, pad, target = routing) => {
+  target.request("/api/timbres/select", { id: owner });
+  const id = target.request("/api/sampler/chain", { pad }).active;
+  const preset = target.request("/api/preset");
+  preset.params.master_volume = chainGain[pad];
+  target.request("/api/preset", preset);
+  return id;
+};
+const owners = [addKit(), addKit()];
+const chains = new Map();
+for (const [owner, pad] of [[owners[0], 3], [owners[1], 2], [owners[0], 1], [owners[1], 3], [owners[0], 2], [owners[1], 1]])
+  chains.set(`${owner}:${pad}`, openFx(owner, pad));
+const hitKits = (ids, target = routing) => {
+  peak(0.5, target);
+  for (const id of ids) {
+    target.request("/api/timbres/select", { id });
+    for (const pad of [1, 2, 3]) target.request("/api/sampler/trigger", { pad, velocity: 127 });
+  }
+  return peak(0.1, target);
+};
+const checkKits = (expected, label, ids = owners, target = routing) => {
+  const actual = hitKits(ids, target);
+  assert.ok(Math.abs(actual - expected) < 0.004, `${label}: ${actual} vs ${expected}`);
+};
+checkKits(0.175, "both kits sum their three distinct Pad FX returns");
+routing.request("/api/timbres/update", { id: owners[0], solo: true });
+checkKits(0.0875, "owner solo excludes the other kit, not its own chains");
+routing.request("/api/timbres/update", { id: owners[0], solo: false, muted: true });
+checkKits(0.0875, "owner mute silences its returns");
+routing.request("/api/timbres/update", { id: owners[0], muted: false });
+const bouncedFx = chains.get(`${owners[0]}:3`);
+routing.request("/api/timbres/update", { id: bouncedFx, muted: true });
+checkKits(0.125, "muting one chain leaves the other pads and owner intact");
+routing.request("/api/timbres/select", { id: owners[0] });
+const bouncing = routing.request("/api/preset").sampler;
+bouncing.pads[2].bounce = { zones: [{ sample: "tone", root: bouncing.pads[2].keys[0] }] };
+routing.request("/api/sampler/settings", { settings: bouncing });
+checkKits(0.225, "a bounced pad bypasses its muted Pad FX");
+bouncing.pads[2].bounce = null;
+routing.request("/api/timbres/select", { id: owners[0] });
+routing.request("/api/sampler/settings", { settings: bouncing });
+checkKits(0.125, "unbounce resumes the muted Pad FX instead of a dry pad");
+routing.request("/api/timbres/update", { id: bouncedFx, muted: false });
+checkKits(0.175, "unmuting the unbounced chain restores its return");
+routing.request("/api/timbres/remove", { id: chains.get(`${owners[0]}:1`) });
+checkKits(0.2625, "removing a chain makes only its pad dry");
+openFx(owners[0], 1);
+checkKits(0.175, "a readded chain is routed at its new part index");
+routing.request("/api/timbres/remove", { id: owners[0] });
+checkKits(0.0875, "removing an owner does not steal the remaining kit's returns", [owners[1]]);
+const replacement = addKit();
+for (const pad of [2, 1, 3]) openFx(replacement, pad);
+const remaining = [owners[1], replacement];
+checkKits(0.175, "a readded owner keeps independent chains", remaining);
+
+// A saved scene may list chains before their owners, and Master anywhere.
+const reorderedDocument = routing.json("sad_scene_document");
+reorderedDocument.timbres.reverse();
+const reordered = new Core(module, rate);
+reordered.call("sad_scene_load", reordered.call("sad_scene_prepare", reorderedDocument));
+checkKits(0.175, "reordered scene chains still return into the correct owners", remaining, reordered);
+
+// A unity Pad FX still returns the previous frame, not the current one.
+const timedPad = (withChain) => {
+  const target = new Core(module, rate);
+  target.call("sad_scene_load", target.call("sad_scene_prepare", reorderedDocument));
+  const id = chains.get(`${owners[1]}:1`);
+  if (withChain) {
+    target.request("/api/timbres/select", { id });
+    const preset = target.request("/api/preset");
+    preset.params.master_volume = 1;
+    target.request("/api/preset", preset);
+  } else target.request("/api/timbres/remove", { id });
+  peak(0.5, target);
+  target.request("/api/timbres/select", { id: owners[1] });
+  target.request("/api/sampler/trigger", { pad: 1, velocity: 127 });
+  const out = [];
+  for (let block = 0; block < 16; block++) out.push(...target.process(128));
+  return out;
+};
+const immediatePad = timedPad(false);
+const returnedPad = timedPad(true);
+const firstSound = (out) => out.findIndex((sample) => Math.abs(sample) > 1e-6);
+assert.ok(firstSound(immediatePad) >= 0, "the timing reference pad is audible");
+assert.equal(firstSound(returnedPad), firstSound(immediatePad) + 2, "the Pad FX return retains exactly one stereo frame of delay");
+let returnError = 0;
+for (let sample = 2; sample < returnedPad.length; sample++)
+  returnError = Math.max(returnError, Math.abs(returnedPad[sample] - immediatePad[sample - 2]));
+assert.ok(returnError < 1e-5, `a unity Pad FX changes only return timing: ${returnError}`);
 console.log("Sampler WASM tests passed");

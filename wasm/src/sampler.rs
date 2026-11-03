@@ -43,16 +43,6 @@ impl super::timbres::Registry {
         }
         links
     }
-    /// Pads with a Pad FX timbre send their voices to it, unless bounced.
-    pub fn sync_sampler_routes(&mut self) {
-        let links = self.chain_links();
-        for (o, part) in self.parts.iter_mut().enumerate() {
-            if plays_kit(part) {
-                let routes: Vec<u32> = links.iter().filter(|l| l.0 == o).map(|l| l.2).collect();
-                part.host.engine.set_sampler_routes(&routes);
-            }
-        }
-    }
     /// Drops Pad FX timbres whose Sampler or pad is gone, and duplicates.
     /// Returns whether any went.
     pub fn prune_chains(&mut self) -> bool {
@@ -188,7 +178,7 @@ impl super::timbres::Registry {
                     self.revision = self.revision.wrapping_add(1);
                     self.refresh_context();
                 }
-                self.sync_sampler_routes();
+                self.refresh_render_routes();
                 json!({ "ok": true, "settings": settings })
             }
             "/api/sampler/trigger" => {

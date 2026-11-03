@@ -690,6 +690,33 @@ The SuperEcho benchmark also covers Tape/BBD, two simultaneous instances and a
 SuperEcho + AlphaVerb chain, including shimmer, dynamics, freeze and tempo sync.
 Both imported effects retain the original firmware arithmetic and audio rate.
 
+Live performance measurements must include the outer
+`AudioWorkletProcessor::Process` callback, not just the Rust render kernel, plus
+`SadPetProcessor.port.onmessage` on the same audio thread. Keep p99, p99.9,
+maxima and real `AudioContext.playbackStats` deltas alongside the median.
+Chrome may request four 128-frame quanta together: a single quantum over budget
+does not by itself prove an audible underrun.
+
+Full-preset edits reuse live Wavetable/mixed voice banks and grow-only snapshot
+buffers. Snapshot sizing counts MessagePack bytes without allocating a discarded
+encoded copy; the browser gets the canonical preset through stamped binary
+telemetry rather than a second full JSON reply on the audio thread. Timbre
+construction prepares independent engine banks and instrument resources over
+separate quanta. Mixed OSC dependency closures and scene/Pad FX/bus render routes
+are cached; dynamic modulation, gains and routing edits remain live. The SIMD
+stereo decimator retains the original filter arithmetic and shared coefficients.
+
+The [lossless before/after report](reports/performance/audio-worklet-lossless/summary.json)
+contains full-callback and message tails, all 32 live runs, compact trace samples,
+client roundtrips and 36 sample-timed PCM comparisons at 44.1/48/96 kHz.
+Before/after PCM is bit-identical within each build variant; this is not a blanket
+scalar/SIMD equivalence claim for legacy Wavetable patches. Oversampling,
+interpolation, grain/unison limits and event/summation order are unchanged.
+Preparation takes more quanta and structural API calls may wait longer for a
+fresh view; heavy audio-rate sync still overruns. Host timing varied in both
+builds, so the report separates the fresh-process series and does not claim a
+universal speedup or a hard real-time guarantee.
+
 Use **Load audio** or drop a mono/stereo WAV or MP3 onto the waveform to import your
 own audio. MP3 is decoded to float WAV before it is stored or loaded; its original
 sample rate and channels are preserved. Wavetable **Import audio** and **Wave Maker**
