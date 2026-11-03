@@ -84,6 +84,24 @@ bindings[0].unit = 1; bindings[0].text = "36.0 st";
 await feedback.sync();
 assert.deepEqual(messages.filter(b => b[6] === 1 && b[8] === 13).at(-1).slice(9, 12), [127, 0, 0]);
 const originalBindings = structuredClone(bindings);
+// Delayed feedback must not re-arm pickup during a fader gesture.
+for (const value of [70, 75, 80]) {
+  const before = messages.length;
+  feedback.faderInput(5, value);
+  await feedback.sync();
+  assert.ok(!messages.slice(before).some(b => b[0] === 0xbf && b[1] === 5),
+    "feedback re-armed pickup during an absolute fader gesture");
+}
+bindings[1].unit = 80 / 127;
+feedback.faders.get(5).time = 0;
+const settled = messages.length;
+await feedback.sync();
+assert.ok(!messages.slice(settled).some(b => b[0] === 0xbf && b[1] === 5), "settled fader echoed itself");
+bindings[1].unit = .9;
+await feedback.sync();
+assert.equal(messages.filter(b => b[0] === 0xbf && b[1] === 5).at(-1)[2], 114,
+  "an external edit no longer updated hardware pickup");
+bindings = structuredClone(originalBindings);
 feedbackTrack = 1;
 bindings[0] = { ...bindings[0], parameter: "filter", label: "Cutoff", unit: .25, text: "25%" };
 bindings[1] = { ...bindings[1], unit: .25 };

@@ -257,7 +257,7 @@ export class MidiInputs {
       this.feedback.touch(controller);
       learner?.input(page, controller, value, "relative", this.shiftHeld ? 10 : 1);
     } else if (status === 0xbf && cc >= 5 && cc <= 12) {
-      this.feedback.touch(cc);
+      this.feedback.faderInput(cc, value);
       learner?.input(page, cc, value);
     } else if (status === 0xb0 && cc >= 37 && cc <= 52) {
       learner?.input(page, page === 15 ? cc : cc + 43, value);

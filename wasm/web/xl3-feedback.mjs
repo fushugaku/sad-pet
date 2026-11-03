@@ -47,6 +47,7 @@ export class Xl3Feedback {
     this.colors = new Map(); this.positions = new Map(); this.names = new Map();
     this.page = 0; this.hardwareMode = null; this.lastControl = null;
     this.modeReplies = [];
+    this.faders = new Map();
   }
   send(bytes, port = this.output) {
     if (!port) return;
@@ -95,6 +96,7 @@ export class Xl3Feedback {
   selectPage(page) {
     if (!Number.isInteger(page) || page < 0 || page > 15) return;
     if (this.page !== page) {
+      this.faders.clear();
       this.page = page; this.colors.clear(); this.positions.clear(); this.names.clear(); this.lastControl = null;
       if (this.active) this.sysex(4, 54, 0);
     }
@@ -134,12 +136,18 @@ export class Xl3Feedback {
     this.colors.delete(controller);
     this.displayDirty = true;
   }
+  faderInput(controller, value) {
+    this.touch(controller);
+    this.faders.set(controller, { time: Date.now() });
+    this.positions.set(controller, value);
+  }
   async sync() {
     if (!this.active || this.syncing) return;
     this.syncing = true;
     const page = this.page, output = this.output, track = this.learn()?.track?.() ?? 0;
     const surface = this.surface();
     if (this.track !== track || this.surfaceKey !== surface?.key) {
+      this.faders.clear();
       this.track = track; this.colors.clear(); this.positions.clear(); this.names.clear();
       this.surfaceKey = surface?.key;
       this.lastControl = null; this.displaySignature = null;
@@ -187,7 +195,10 @@ export class Xl3Feedback {
           continue;
         }
         const value = Math.round(unit(binding.unit) * 127);
-        if (this.positions.get(control) !== value) {
+        // Position feedback re-arms hardware pickup. A moving fader must
+        // never receive its own value or an older asynchronous snapshot.
+        const moving = control <= 12 && Date.now() - (this.faders.get(control)?.time ?? -Infinity) < 300;
+        if (!moving && this.positions.get(control) !== value) {
           this.send([0xbf, control, value]);
           this.positions.set(control, value);
         }
@@ -216,6 +227,7 @@ export class Xl3Feedback {
     finally { this.syncing = false; }
   }
   stop() {
+    this.faders.clear();
     this.modeReplies.length = 0;
     clearInterval(this.interval); this.interval = null;
     if (this.active) {
