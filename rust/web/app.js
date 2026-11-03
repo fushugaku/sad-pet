@@ -1223,6 +1223,13 @@ function createKnob(
   let paintedBase, paintedFormat;
   const modulation = (feedback) => {
     const base = get();
+    // External MIDI/model edits must repaint the whole face, including the
+    // arc and ARIA value, rather than only its number and live pointer.
+    if (base !== paintedBase || format(base) !== paintedFormat) {
+      edited = Date.now();
+      update();
+      return;
+    }
     const since = Date.now() - edited,
       stale = !!drag || since < 300 ||
         (since < 2000 && Math.abs((feedback?.base ?? base) - base) > Math.abs(max - min) * 1e-6);
@@ -1399,7 +1406,8 @@ function createKnob(
     if (!preset) return;
     const v = clamp(midiQuantize(clamp(midiIncrement(get(), delta)), get()));
     if (v !== get()) set(v);
-  }, { describe: midiTarget, read: () => ({ value: get(), unit: toUnit(get()), text: format(get()) }) });
+  }, { describe: midiTarget, format: value => format(value),
+    read: () => ({ value: get(), unit: toUnit(get()), text: format(get()) }) });
   if (binding?.register !== false) {
     controls.set(key, update);
     modulationViews.set(key, modulation);
@@ -3826,6 +3834,7 @@ function syncColors() {
           {
             ...(parameter === "lcr_ratio" ? lcrRatioBinding(getSlot) : {}),
             ...moozBinding(slot.kind, parameter),
+            midiLabel: () => `${COLOR_TYPES.find(([kind]) => kind === getSlot()?.kind)?.[1] || rack.label} · ${label}`,
             get,
             set: (value) => {
               const s = getSlot();

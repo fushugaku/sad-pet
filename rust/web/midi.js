@@ -362,10 +362,14 @@ window.SadMidiLearn = (() => {
   function feedback() {
     return [...map].map(([key, [channel, controller, format = "absolute"]]) => {
       const target = targets.get(key);
-      const knob = [...(knobs.get(key) || [])].findLast(k => k.dial.isConnected && k.details?.read);
+      const knob = [...(knobs.get(target?.key || key) || [])].findLast(k => k.dial.isConnected && k.details?.read &&
+        (!target || k.details.describe()?.id === key));
       const value = target ? window.SadMidiTargets?.value(target) : knob?.details.read();
-      return { key, channel, controller, format, label: target?.label || label(key),
-        parameter: target?.parameter || key, ...(value || {}), available: !!value };
+      const shown = knob?.details.describe?.();
+      return { ...(value || {}), key, channel, controller, format,
+        label: shown?.label || target?.label || label(key), parameter: target?.parameter || key,
+        text: value && knob?.details.format ? knob.details.format(value.value) : value?.text,
+        available: !!value };
     });
   }
 

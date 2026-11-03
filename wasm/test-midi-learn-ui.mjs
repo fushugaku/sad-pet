@@ -457,6 +457,18 @@ assert.equal(JSON.parse(stored.get("sad-pet-midi-pages")).version, 3);
 assert.equal(Object.keys(scopedRestored.SadMidiLearn.targets()).length, 2);
 assert.equal(scopedLearn.feedback()[0].label, "Pitch");
 
+const effectBank = new Element("div"); document.body.append(effectBank);
+scoped.createKnob(["fx1_alpha_verb_size", "SIZE", v => `${Math.round(v * 100)}%`], effectBank, {
+  get: () => .2, set() {}, reset: () => .2, midiLabel: () => "AlphaVerb · Size",
+});
+scopedLearn.learn("fx1_alpha_verb_size"); scopedLearn.input(0, 13, 65, "relative");
+scoped.SadMidiTargets.value = () => ({ value: .8, unit: .8, text: "old grains value", label: "Grains pitch", key: "pitch" });
+const effectFeedback = scopedLearn.feedback().find(entry => entry.controller === 13);
+assert.equal(effectFeedback.label, "AlphaVerb · Size", "cached feedback overrode the newly mapped effect label");
+assert.equal(effectFeedback.text, "80%", "OLED did not use the effect's formatter");
+assert.equal(effectFeedback.key, "control:1:fx1_alpha_verb_size");
+effectBank.remove();
+
 // Existing assignments migrate once, retain their CC/channel, and keep a copy.
 stored.clear(); stored.set("sad-pet-midi-map", JSON.stringify({ pitch: [0, 16] }));
 const legacyScoped = editor(), legacyBank = new Element("div");

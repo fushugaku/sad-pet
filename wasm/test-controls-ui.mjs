@@ -56,6 +56,24 @@ dial.events.pointerup();
 dial.events.keydown({ key: "ArrowUp", preventDefault() {} });
 assert.equal(Number(dial.getAttribute("aria-valuenow")), value * 100);
 
+// Every registered rotary uses the same external-model repaint path. An
+// AlphaVerb MIDI edit used to update its number while leaving the arc frozen.
+for (const key of ["pitch", "color:7:alpha_verb_size", "filter_slot:3:frequency", "macro1_depth1"]) {
+  let external = .2;
+  const host = new Element("div");
+  const repaint = context.createKnob([key, key, v => `${Math.round(v * 100)}%`], host, {
+    get: () => external, set: v => { external = v; }, reset: () => .2,
+  });
+  repaint();
+  const face = host.children[0], arc = face.querySelector(".arc");
+  const before = arc.style.strokeDasharray;
+  external = .8;
+  context.modulationViews.get(key)();
+  assert.notEqual(arc.style.strokeDasharray, before, `${key}: external edit left the arc frozen`);
+  assert.equal(face.querySelector(".pointer").style.transform, "rotate(81deg)");
+  assert.equal(face.querySelector(".dial").getAttribute("aria-valuenow"), "80");
+}
+
 const panels = vm.createContext({ window: {}, document });
 vm.runInContext(await readFile(new URL("../rust/web/panels.js", import.meta.url), "utf8"), panels);
 const drums = Object.create(panels.window.SadDrums.prototype);
