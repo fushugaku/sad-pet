@@ -7,7 +7,7 @@ import { MidiInputs } from "./web/midi-inputs.mjs";
 // Use the shipping editor's addressing, scale quantisation and edit handler.
 const scope = { window: {}, document: {} };
 vm.runInNewContext(await readFile(new URL("../rust/web/sequence.js", import.meta.url), "utf8"), scope);
-const step = { pitch: 60, gate: 2, gate_override: -1, velocity: 100, ratchet: 1,
+const step = { pitch: 60, cv: 0, gate: 2, gate_override: -1, velocity: 100, ratchet: 1,
   slide: false, pulses: 1, skip: false, destination1: 0, destination2: 0, destination3: 0 };
 const lane = id => ({ id, name: `Track ${id}`, target: { kind: "notes" }, pages: 8,
   config: Array.from({ length: 43 }, (_, i) => ({ 1: 16, 7: 55, 41: 127 }[i] || 0)),
@@ -174,6 +174,31 @@ send(0xb0, 38, 127); send(0xbf, 93, 65); send(0xb0, 38, 0);
 assert.equal(track().steps[1].pitch, 62);
 assert.equal(track().steps[1].gate, 2);
 // Each fader edits the same parameter as the encoder above it, absolutely.
+// Parameter tracks use the visible Value (CV), not the hidden note pitch.
+track().target = { kind: "parameter", parameter: "osc2_transpose" };
+track().amount = .96;
+editor.selection = new Set([0, 3]);
+const pitches = track().steps.map(s => s.pitch);
+send(0xb0, 38, 127); send(0xbf, 93, 65);
+assert.deepEqual([0, 1, 2, 3].map(n => track().steps[n].cv), [50, 50, 0, 50]);
+assert.ok(edits.slice(-3).every(edit => edit.field === 12), "parameter Pitch did not queue the CV field");
+for (const [position, expected] of [[0, -5000], [127, 5000]]) {
+  send(0xbf, 5, position);
+  for (const stage of [0, 1, 3]) assert.equal(track().steps[stage].cv, expected);
+  const controls = sequencer.feedback().controls;
+  for (const cc of [5, 29]) {
+    assert.equal(controls.get(cc).label, "Value");
+    assert.equal(controls.get(cc).unit, position / 127);
+    assert.equal(controls.get(cc).text, `${expected / 5000 * .96 * 100}%`);
+  }
+}
+assert.deepEqual(track().steps.map(s => s.pitch), pitches, "parameter track changed hidden note pitch");
+track().absolute = true;
+assert.equal(sequencer.feedback().controls.get(29).text, "+100%");
+track().absolute = false;
+send(0xb0, 38, 0);
+assert.equal(track().steps[1].gate, 2, "parameter edit toggled held step on release");
+track().target = { kind: "notes" };
 editor.selection = new Set([3]);
 send(0xb0, 38, 127);
 for (const [cc, key, low, high] of [[5, "pitch", 0, 127], [6, "gate_override", 0, 100],

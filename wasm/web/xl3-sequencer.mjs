@@ -11,6 +11,8 @@ const PARAMETERS = [
     label: `Dest ${i + 1}`, field: 16 + i, min: -1, max: 1, increment: .01 })),
 ];
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const parameters = track => PARAMETERS.map(parameter => parameter.key === "pitch" && track.target.kind === "parameter"
+  ? { ...parameter, key: "cv", label: "Value", field: 12, min: -5000, max: 5000, increment: 50 } : parameter);
 
 /** Edits the browser's current Neuropolis track through its normal edit queue. */
 export class Xl3Sequencer {
@@ -99,9 +101,10 @@ export class Xl3Sequencer {
     if (cc >= 5 && cc <= 11) this.turn(cc + 24, value, true);
   }
   turn(cc, value, absolute = false) {
-    const parameter = PARAMETERS.find(p => p.cc === cc), delta = value - 64;
     const current = this.current();
-    if (!parameter || !absolute && !delta || !current) return;
+    if (!current) return;
+    const parameter = parameters(current.track).find(p => p.cc === cc), delta = value - 64;
+    if (!parameter || !absolute && !delta) return;
     const { editor, track } = current, targets = this.targets(current);
     for (const held of this.held.values()) held.used = true;
     for (const stage of targets) {
@@ -155,13 +158,16 @@ export class Xl3Sequencer {
     const tracks = editor.program().tracks, index = tracks.findIndex(t => t.id === track.id);
     colors.set(103, index > 0 ? [0, 80, 100] : [0, 0, 0]);
     colors.set(102, index < tracks.length - 1 ? [0, 80, 100] : [0, 0, 0]);
-    for (const parameter of PARAMETERS) {
+    for (const parameter of parameters(track)) {
       const stage = targets[0], step = track.steps[stage];
       const values = targets.map(n => this.value(parameter, track, track.steps[n]));
       const value = step ? values[0] : parameter.min;
       let text = targets.length ? values.some(v => v !== value) ? "Mixed" : String(value) : "Hold or select steps";
       if (targets.length && text !== "Mixed") {
         if (parameter.key === "pitch") text = editor.pitchText(track, value);
+        if (parameter.key === "cv") text = track.absolute
+          ? `${value > 0 ? "+" : ""}${(value / 50).toFixed(0)}%`
+          : editor.depthText(track.target.parameter, value / 5000 * track.amount);
         if (parameter.key === "gate_override") text = `${value}%`;
         if (parameter.key === "slide") text = value ? "On" : "Off";
         if (parameter.key === "gate") text = ["Rest", "Single", "Multi", "Hold"][value];
