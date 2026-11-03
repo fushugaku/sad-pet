@@ -885,17 +885,19 @@ tracks. A tap on one of the sixteen channel buttons switches its Gate type
 between Rest (off) and Multi (on), independently of Skip. Hold one
 or several buttons while turning an encoder to edit those steps together with
 the browser's selected steps; releasing an edited button does not toggle it.
-**Shift + 1–8** selects an existing block of sixteen steps (up to 128 steps),
-also changing the block shown in the browser.
+**Shift + 1–8** opens a block of sixteen steps (up to 128 steps), also changing
+the block shown in the browser. Existing blocks light white while Shift is held.
+Pressing an unlit block creates it, with new steps set to Rest, and opens it.
 
 The encoder row nearest the faders controls **Pitch, Gate length, Velocity,
 Ratchet, Slide, Gate type and Pulses** on knobs 1–7. The middle row's knobs 1–3
-control **Dest 1–3** amounts. Pitch edits the track's primary step value:
-notes follow its scale and note range; parameter tracks edit CV in 1% steps,
-including parameters such as oscillator transpose. Its display matches the
-editor's units and Relative/Absolute mapping. Gate starts from the inherited
-track value, and destinations move in 1% steps.
-Unused encoders and faders do not edit MIDI assignments in Sequencer. Button
+control **Dest 1–3** amounts. Faders 1–7 set absolute values for the same seven
+parameters as the encoder row directly above them, on the held and selected
+steps. Fader 8 remains unused. Pitch edits the primary step value: notes follow
+its scale and note range; parameter tracks edit CV in the editor's units, with
+whole semitone steps for pitch parameters. Gate starts from the inherited track
+value, and destinations move in 1% steps.
+Unused controls do not edit MIDI assignments in Sequencer. Button
 lights show enabled steps, held/selected steps and the playhead; Shift shows
 available step blocks. Instrument, track and parameter values appear on the
 OLED. Switching instrument, track, step block, mode or disconnecting USB

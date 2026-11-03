@@ -11,9 +11,8 @@ const PARAMETERS = [
     label: `Dest ${i + 1}`, field: 16 + i, min: -1, max: 1, increment: .01 })),
 ];
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-const CV = { cc: 29, key: "cv", label: "Value", field: 12, min: -5000, max: 5000, increment: 50 };
-const trackParameter = (parameter, track) =>
-  parameter.key === "pitch" && track.target.kind === "parameter" ? CV : parameter;
+const parameters = track => PARAMETERS.map(parameter => parameter.key === "pitch" && track.target.kind === "parameter"
+  ? { ...parameter, key: "cv", label: "Value", field: 12, min: -5000, max: 5000, increment: 50 } : parameter);
 
 /** Edits the browser's current Neuropolis track through its normal edit queue. */
 export class Xl3Sequencer {
@@ -62,7 +61,19 @@ export class Xl3Sequencer {
       if (repeated) return;
       if (shifted) {
         this.shift();
-        if (index < editor.pages(track)) editor.showPage(index);
+        if (index < 8) {
+          const previous = editor.pages(track);
+          if (index >= previous) {
+            editor.edit(track.id, null, 54, index + 1, false);
+            // Extending a track normally copies its last phrase. Controller
+            // creation starts with silent steps, including any skipped blocks.
+            for (let stage = previous * 16; stage < (index + 1) * 16; stage++) {
+              editor.edit(track.id, stage, 2, 0, false);
+              if (track.steps[stage].skip) editor.edit(track.id, stage, 6, 0, false);
+            }
+          }
+          editor.showPage(index);
+        }
         this.current();
       } else {
         this.held.set(index, { stage: offset + index, key, used: false });
@@ -86,24 +97,36 @@ export class Xl3Sequencer {
     if (parameter.key === "gate_override" && step.gate_override < 0) return track.config[7];
     return Number(step[parameter.key] ?? 0);
   }
-  turn(cc, value) {
-    const control = PARAMETERS.find(p => p.cc === cc), delta = value - 64;
+  fader(cc, value) {
+    if (cc >= 5 && cc <= 11) this.turn(cc + 24, value, true);
+  }
+  turn(cc, value, absolute = false) {
     const current = this.current();
-    if (!control || !delta || !current) return;
-    const { editor, track } = current, parameter = trackParameter(control, track), targets = this.targets(current);
+    if (!current) return;
+    const parameter = parameters(current.track).find(p => p.cc === cc), delta = value - 64;
+    if (!parameter || !absolute && !delta) return;
+    const { editor, track } = current, targets = this.targets(current);
     for (const held of this.held.values()) held.used = true;
     for (const stage of targets) {
       const step = editor.track(track.id)?.steps[stage];
       if (!step) continue;
       const previous = this.value(parameter, track, step);
       let next;
-      if (parameter.key === "pitch") {
+      const span = parameter.key === "cv" && editor.pitchValueSpan(track);
+      if (span) {
+        const limit = Math.floor(span);
+        const semitones = absolute ? Math.round(-limit + value / 127 * 2 * limit)
+          : clamp(Math.round(previous / 5000 * span) + delta, -limit, limit);
+        next = Math.round(semitones / span * 5000);
+      } else if (parameter.key === "pitch") {
         const notes = editor.sliderNotes(track);
-        next = notes[clamp(editor.slot(notes, previous) + delta, 0, notes.length - 1)];
+        next = notes[absolute ? Math.round(value / 127 * (notes.length - 1))
+          : clamp(editor.slot(notes, previous) + delta, 0, notes.length - 1)];
       } else if (parameter.key === "slide" || (parameter.field >= 16 &&
           /^lfo\d+_reset$/.test(track.destinations?.[parameter.field - 16] || ""))) {
-        next = Number(delta > 0);
-      } else next = clamp(Math.round((previous + delta * (parameter.increment || 1)) * 100) / 100,
+        next = Number(absolute ? value >= 64 : delta > 0);
+      } else if (absolute) next = Math.round(parameter.min + value / 127 * (parameter.max - parameter.min));
+      else next = clamp(Math.round((previous + delta * (parameter.increment || 1)) * 100) / 100,
         parameter.min, parameter.max);
       if (previous !== next || parameter.key === "gate_override" && step.gate_override < 0)
         editor.edit(track.id, stage, parameter.field, next, false);
@@ -126,14 +149,14 @@ export class Xl3Sequencer {
     for (let cc = 37; cc <= 52; cc++) colors.set(cc, [0, 0, 0]);
     if (!current) return { key: "sequencer:empty", controls, colors,
       fields: ["Sequencer", "No track selected", "Select a track in the browser"] };
-    const { editor, track, offset } = current, page = offset / 16;
+    const { editor, track, offset } = current;
     const targets = this.targets(current), selected = new Set(targets);
     const playing = current.playing && editor.program().enabled && !track.config[8] &&
       current.view?.tracks?.slice(0, current.view.count).find(t => t.id === track.id);
     for (let i = 0; i < 16; i++) {
       const step = track.steps[offset + i];
       colors.set(37 + i, shifted
-        ? i >= editor.pages(track) ? [0, 0, 0] : i === page ? [100, 100, 127] : [0, 30, 80]
+        ? i >= editor.pages(track) ? [0, 0, 0] : [127, 127, 127]
         : playing && playing.step === offset + i ? [127, 127, 127]
         : selected.has(offset + i) ? [0, 100, 127]
         : step && !step.skip && step.gate !== 0 ? [0, 75, 8] : [4, 8, 4]);
@@ -141,14 +164,14 @@ export class Xl3Sequencer {
     const tracks = editor.program().tracks, index = tracks.findIndex(t => t.id === track.id);
     colors.set(103, index > 0 ? [0, 80, 100] : [0, 0, 0]);
     colors.set(102, index < tracks.length - 1 ? [0, 80, 100] : [0, 0, 0]);
-    for (const control of PARAMETERS) {
-      const parameter = trackParameter(control, track);
+    for (const parameter of parameters(track)) {
       const stage = targets[0], step = track.steps[stage];
       const values = targets.map(n => this.value(parameter, track, track.steps[n]));
       const value = step ? values[0] : parameter.min;
       let text = targets.length ? values.some(v => v !== value) ? "Mixed" : String(value) : "Hold or select steps";
       if (targets.length && text !== "Mixed") {
-        if (parameter.key === "pitch" || parameter.key === "cv") text = editor.valueText(track, value);
+        if (parameter.key === "pitch") text = editor.pitchText(track, value);
+        if (parameter.key === "cv") text = editor.valueText(track, value);
         if (parameter.key === "gate_override") text = `${value}%`;
         if (parameter.key === "slide") text = value ? "On" : "Off";
         if (parameter.key === "gate") text = ["Rest", "Single", "Multi", "Hold"][value];
@@ -157,6 +180,12 @@ export class Xl3Sequencer {
       controls.set(parameter.cc, { key: `sequencer:${track.id}:${parameter.key}`, controller: parameter.cc,
         parameter: parameter.key, label: parameter.label, instrument: `${current.instrument} / ${track.name}`,
         available: true, unit: (value - parameter.min) / (parameter.max - parameter.min), text });
+      if (parameter.cc >= 29 && parameter.cc <= 35) {
+        const cc = parameter.cc - 24, notes = parameter.key === "pitch" ? editor.sliderNotes(track) : null;
+        controls.set(cc, { ...controls.get(parameter.cc), controller: cc,
+          unit: notes ? editor.slot(notes, value) / Math.max(1, notes.length - 1)
+            : (value - parameter.min) / (parameter.max - parameter.min), available: targets.length > 0 });
+      }
     }
     return { key: `sequencer:${current.key}`, controls, colors,
       fields: [current.instrument || "Sequencer", track.name, shifted

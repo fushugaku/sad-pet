@@ -149,6 +149,16 @@ for (let page = 0; page < 8; page++) {
 const beforeInvalidPage = editor.visiblePage;
 sequencer.button(15, 127, true); sequencer.button(15, 0, true);
 assert.equal(editor.visiblePage, beforeInvalidPage, "an unavailable block extended the pattern");
+track().pages = 1;
+sequencer.button(2, 127, true); sequencer.button(2, 0, true);
+assert.equal(track().pages, 3, "Shift + empty block did not extend the track");
+assert.equal(editor.visiblePage, 2, "created block did not open in the browser");
+assert.ok(track().steps.slice(16, 48).every(s => s.gate === 0 && !s.skip), "created blocks contain sounding or skipped steps");
+const afterCreation = edits.length;
+sequencer.button(0, 127, true); sequencer.button(0, 0, true);
+assert.equal(editor.visiblePage, 0);
+assert.equal(edits.length, afterCreation, "opening an existing block edited it");
+track().pages = 8;
 editor.visiblePage = 0;
 sequencer.button(1, 127, true);
 const gateAfterPage = track().steps[17].gate;
@@ -179,7 +189,8 @@ assert.deepEqual(surface.colors.get(37 + 5), [0, 100, 127], "browser selection d
 assert.equal(surface.controls.get(29).label, "Pitch");
 assert.equal(surface.controls.has(13), false, "top row was assigned instead of the row above the faders");
 surface = sequencer.feedback(true);
-assert.deepEqual(surface.colors.get(37), [100, 100, 127]);
+assert.deepEqual(surface.colors.get(37), [127, 127, 127]);
+assert.deepEqual(surface.colors.get(38), [127, 127, 127]);
 assert.deepEqual(surface.colors.get(45), [0, 0, 0]);
 
 // Exercise the real port owner, mode reports, Shift preview handshake and LEDs.
@@ -210,20 +221,81 @@ editor.selection = new Set();
 send(0xb0, 38, 127); send(0xbf, 93, 65); send(0xb0, 38, 0);
 assert.equal(track().steps[1].pitch, 62);
 assert.equal(track().steps[1].gate, 2);
-track().target = { kind: "parameter", parameter: "osc1_transpose" };
-track().steps[1].cv = 123;
-const portPitch = track().steps[1].pitch;
-send(0xb0, 38, 127); send(0xbf, 93, 65); send(0xb0, 38, 0);
-assert.equal(track().steps[1].cv, 173, "physical Pitch CC did not edit the parameter value");
-assert.equal(track().steps[1].pitch, portPitch);
-assert.equal(edits.at(-1).field, 12);
+// Each fader edits the same parameter as the encoder above it, absolutely.
+// Parameter tracks use the visible Value (CV), not the hidden note pitch.
+track().target = { kind: "parameter", parameter: "osc2_transpose" };
+track().amount = .96;
+for (const step of track().steps) step.cv = 0;
+editor.selection = new Set([0, 3]);
+const pitches = track().steps.map(s => s.pitch);
+send(0xb0, 38, 127); send(0xbf, 93, 65);
+assert.deepEqual([0, 1, 2, 3].map(n => track().steps[n].cv), [50, 50, 0, 50]);
+assert.ok(edits.slice(-3).every(edit => edit.field === 12), "parameter Pitch did not queue the CV field");
+for (const [position, expected] of [[0, -5000], [127, 5000]]) {
+  send(0xbf, 5, position);
+  for (const stage of [0, 1, 3]) assert.equal(track().steps[stage].cv, expected);
+  const controls = sequencer.feedback().controls;
+  for (const cc of [5, 29]) {
+    assert.equal(controls.get(cc).label, "Value");
+    assert.equal(controls.get(cc).unit, position / 127);
+    assert.equal(controls.get(cc).text, `${expected / 5000 * .96 * 100}%`);
+  }
+}
+assert.deepEqual(track().steps.map(s => s.pitch), pitches, "parameter track changed hidden note pitch");
+track().absolute = true;
+assert.equal(sequencer.feedback().controls.get(29).text, "+100%");
+track().absolute = false;
+// Pitch parameter lanes advance exactly one semitone, regardless of Depth.
+const originalDepthText = editor.depthText;
+editor.depthText = (_, depth) => `${depth * 96} st`;
+for (const amount of [1, .5]) {
+  track().amount = amount;
+  for (const stage of [0, 1, 3]) track().steps[stage].cv = 0;
+  send(0xbf, 93, 65);
+  for (const stage of [0, 1, 3]) {
+    assert.equal(editor.valueText(track(), track().steps[stage].cv), "+1 st");
+  }
+  send(0xbf, 93, 65);
+  assert.equal(sequencer.feedback().controls.get(29).text, "+2 st");
+  for (let position = 0; position <= 127; position++) {
+    send(0xbf, 5, position);
+    const expected = Math.round(-96 * amount + position / 127 * 192 * amount);
+    assert.equal(Math.round(track().steps[1].cv / 5000 * 96 * amount) || 0, expected || 0);
+    assert.match(sequencer.feedback().controls.get(5).text, /^[+-]?\d+ st$/);
+  }
+  editor.edit(track().id, 0, 12, 5000 * 2.4 / (96 * amount));
+  assert.equal(editor.valueText(track(), track().steps[0].cv), "+2 st", "browser edit retained fractional pitch");
+}
+track().target.parameter = "osc2_tune";
+editor.edit(track().id, 0, 12, 123);
+assert.equal(track().steps[0].cv, 123, "Tune lost fine resolution");
+editor.depthText = originalDepthText;
+send(0xb0, 38, 0);
+assert.equal(track().steps[1].gate, 2, "parameter edit toggled held step on release");
 track().target = { kind: "notes" };
+editor.selection = new Set([3]);
+send(0xb0, 38, 127);
+for (const [cc, key, low, high] of [[5, "pitch", 0, 127], [6, "gate_override", 0, 100],
+  [7, "velocity", 1, 127], [8, "ratchet", 1, 8], [9, "slide", false, true],
+  [10, "gate", 0, 3], [11, "pulses", 1, 8]]) {
+  for (const [position, expected] of [[0, low], [127, high]]) {
+    send(0xbf, cc, position);
+    for (const stage of [1, 3]) assert.equal(track().steps[stage][key], expected, `${key}: held/browser-selected fader target`);
+  }
+}
+const gateAfterFaders = track().steps[1].gate;
+send(0xb0, 38, 0);
+assert.equal(track().steps[1].gate, gateAfterFaders, "fader edit toggled the held note on release");
+const beforeUnusedFader = edits.length;
+editor.selection.clear(); send(0xbf, 5, 0); send(0xbf, 12, 127);
+assert.equal(edits.length, beforeUnusedFader, "fader without targets or unused fader edited a step");
 send(0xb6, 63, 127); send(0xb6, 63, 0); // Feature acknowledgement, Shift stays held.
 send(0xb0, 39, 127); send(0xb0, 39, 0);
 assert.equal(editor.visiblePage, 2, "Shift + 3 did not select steps 33-48");
 send(0xb6, 63, 0); // Physical release.
+const gateBeforeTap = track().steps[32].gate;
 send(0xb0, 37, 127); send(0xb0, 37, 0);
-assert.equal(track().steps[32].gate, 0);
+assert.equal(track().steps[32].gate, gateBeforeTap === 0 ? 2 : 0);
 assert.deepEqual(learned, [], "Sequencer controls leaked into MIDI Learn");
 send(0xb0, 107, 127); send(0xb0, 107, 0);
 await midi.surface.selections;
