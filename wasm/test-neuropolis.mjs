@@ -157,6 +157,27 @@ assert.equal(
 );
 assert.equal(messages.filter((m) => m.error).length, 0);
 
+// Shift's block launch reaches the audio owner, including a stopped transport.
+send("/api/sequencer/edit", [
+  { track: 1, field: 54, value: 3 },
+  { track: 1, stage: 32, field: 12, value: 4200 },
+  { track: 1, field: 56, value: 2 },
+]);
+const advanceLaunch = () => {
+  for (let i = 0; i < 4; i++)
+    processor.process([], [[new Float32Array(128), new Float32Array(128)]]);
+  return processor.core.request("/api/state");
+};
+let launched = advanceLaunch();
+assert.equal(launched.sequencer.tracks[0].step, 32, "block launch left audio on the old page");
+assert.equal(launched.preset.sequencer.tracks[0].steps[32].cv, 4200);
+send("/api/transport", { playing: false, midi_gate: false });
+send("/api/sequencer/edit", [{ track: 1, field: 56, value: 1 }]);
+send("/api/transport", { playing: true, midi_gate: false });
+launched = advanceLaunch();
+assert.equal(launched.sequencer.tracks[0].step, 16, "Play ignored the block chosen while stopped");
+assert.equal(messages.filter((m) => m.error).length, 0);
+
 // A successful add-track reply can overtake telemetry decoding. A state reader
 // must not return the previous one-track program and deselect the new track.
 const backend = Object.create(BrowserBackend.prototype),
@@ -221,5 +242,5 @@ assert.equal(
   3,
 );
 console.log(
-  "Neuropolis WASM: 257 tracks, independent clocks, ID adoption, sparse edits and worklet buffers passed",
+  "Neuropolis WASM: 257 tracks, independent clocks, block launches, ID adoption, sparse edits and worklet buffers passed",
 );

@@ -140,6 +140,8 @@ track().target = { kind: "notes" };
 for (let page = 0; page < 8; page++) {
   sequencer.button(page, 127, true); sequencer.button(page, 0, true);
   assert.equal(editor.offset(track()), page * 16);
+  assert.deepEqual({ ...edits.at(-1) }, { track: track().id, stage: null, field: 56, value: page },
+    "Shift opened the block without launching its playback");
   const before = track().steps[page * 16].pitch;
   sequencer.turn(29, 65);
   assert.equal(track().steps[page * 16].pitch, before + 1);
@@ -153,11 +155,13 @@ track().pages = 1;
 sequencer.button(2, 127, true); sequencer.button(2, 0, true);
 assert.equal(track().pages, 3, "Shift + empty block did not extend the track");
 assert.equal(editor.visiblePage, 2, "created block did not open in the browser");
+assert.equal(edits.at(-1).field, 56, "the new block was not launched after its steps were created");
 assert.ok(track().steps.slice(16, 48).every(s => s.gate === 0 && !s.skip), "created blocks contain sounding or skipped steps");
 const afterCreation = edits.length;
 sequencer.button(0, 127, true); sequencer.button(0, 0, true);
 assert.equal(editor.visiblePage, 0);
-assert.equal(edits.length, afterCreation, "opening an existing block edited it");
+assert.equal(edits.length, afterCreation + 1, "opening an existing block rewrote its steps");
+assert.deepEqual({ ...edits.at(-1) }, { track: track().id, stage: null, field: 56, value: 0 });
 track().pages = 8;
 editor.visiblePage = 0;
 sequencer.button(1, 127, true);
@@ -292,6 +296,8 @@ assert.equal(edits.length, beforeUnusedFader, "fader without targets or unused f
 send(0xb6, 63, 127); send(0xb6, 63, 0); // Feature acknowledgement, Shift stays held.
 send(0xb0, 39, 127); send(0xb0, 39, 0);
 assert.equal(editor.visiblePage, 2, "Shift + 3 did not select steps 33-48");
+assert.deepEqual({ ...edits.at(-1) }, { track: track().id, stage: null, field: 56, value: 2 },
+  "physical Shift + 3 did not launch steps 33-48");
 send(0xb6, 63, 0); // Physical release.
 const gateBeforeTap = track().steps[32].gate;
 send(0xb0, 37, 127); send(0xb0, 37, 0);

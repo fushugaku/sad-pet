@@ -219,7 +219,8 @@ function sequenceCommand(edit) {
     edit.stage === null &&
     ((edit.track === 0 && edit.field === 1) ||
       edit.field === 47 ||
-      edit.field === 48)
+      edit.field === 48 ||
+      edit.field === 56)
   );
 }
 function armPresetWrite(delay) {

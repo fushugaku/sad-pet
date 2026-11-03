@@ -1632,10 +1632,9 @@ impl Engine {
 
     pub fn apply_sequence_edits(&mut self, edits: &[crate::sequence::Edit]) {
         self.preset.sequencer.edit(edits);
-        for edit in edits
-            .iter()
-            .filter(|e| e.stage.is_none() && (e.field == 47 || (e.field == 8 && e.value >= 0.5)))
-        {
+        for edit in edits.iter().filter(|e| {
+            e.stage.is_none() && (matches!(e.field, 47 | 56) || (e.field == 8 && e.value >= 0.5))
+        }) {
             for voice in self.voices.iter_mut() {
                 if voice.owner == edit.track {
                     voice.held = false;

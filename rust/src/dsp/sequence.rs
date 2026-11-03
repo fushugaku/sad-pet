@@ -240,8 +240,12 @@ struct Pager {
 }
 impl Pager {
     fn new(config: &[i32; field::COUNT], stages: &[Stage; STEPS]) -> Self {
-        let (pass, trailing) = pass(config, page(stages, 0));
+        Self::at(config, stages, 0)
+    }
+    fn at(config: &[i32; field::COUNT], stages: &[Stage; STEPS], index: u8) -> Self {
+        let (pass, trailing) = pass(config, page(stages, index));
         Self {
+            page: index,
             pass,
             trailing,
             ..Self::default()
@@ -373,8 +377,11 @@ struct Lane {
     held: Option<(u8, u8)>,
     pitch: Glide,
     /// Core tick where this playhead started: the transport start, or its
-    /// own Restart track.
+    /// own Restart track or launched page.
     origin: u64,
+    origin_page: u8,
+    /// A controller launch waits for the next enabled clock tick.
+    launch: Option<u8>,
     /// A timing edit moved the playhead off the place its settings, played
     /// from its origin, give it now: a replay is queued.
     relock: bool,
@@ -513,6 +520,8 @@ impl Runtime {
                     held: None,
                     pitch: Glide::default(),
                     origin: 0,
+                    origin_page: 0,
+                    launch: None,
                     relock: false,
                     waiting: false,
                 }
@@ -665,6 +674,8 @@ impl Runtime {
                     lane.pager.masked,
                 );
                 lane.origin = old_lane.origin;
+                lane.origin_page = old_lane.origin_page;
+                lane.launch = old_lane.launch;
                 lane.waiting = old_lane.waiting;
                 lane.relock = old_lane.relock || old.replay == Some(j) || moved;
                 // A new destination keeps the playhead; held notes and
@@ -695,12 +706,21 @@ impl Runtime {
             .is_some_and(|i| self.lanes[i].binding == Binding::Notes)
     }
     pub fn edit(&mut self, index: usize, track: &Track, edit: Edit) {
+        if edit.stage.is_none() && edit.field == 56 {
+            self.lanes[index].launch = Some(
+                (edit.value.round().clamp(0.0, (PAGES - 1) as f32) as u8)
+                    .min(self.lanes[index].pages - 1),
+            );
+            return;
+        }
         if edit.stage.is_none() && matches!(edit.field, 47 | 48) {
             self.core.reset_track(index, edit.field == 48);
             if edit.field == 47 {
                 self.lanes[index].held = None;
                 // Restart track starts a grid of its own for this track.
                 self.lanes[index].origin = self.core.ticks;
+                self.lanes[index].origin_page = 0;
+                self.lanes[index].launch = None;
                 self.first_page(index);
                 self.settle(index);
             }
@@ -717,6 +737,17 @@ impl Runtime {
         let (lane, playhead) = (&mut self.lanes[i], &mut self.core.tracks[i]);
         lane.pager = Pager::new(&playhead.config, &lane.stages);
         load(playhead, &lane.stages, 0, 0);
+    }
+    fn launch_page(&mut self, i: usize, index: u8) {
+        self.core.reset_track(i, false);
+        let (lane, playhead) = (&mut self.lanes[i], &mut self.core.tracks[i]);
+        let index = index.min(lane.pages - 1);
+        lane.held = None;
+        lane.origin = self.core.ticks;
+        lane.origin_page = index;
+        lane.pager = Pager::at(&playhead.config, &lane.stages, index);
+        load(playhead, &lane.stages, index, 0);
+        self.settle(i);
     }
     fn set(&mut self, index: usize, track: &Track, edit: Edit) {
         if let Some(stage) = edit.stage.map(usize::from) {
@@ -792,8 +823,9 @@ impl Runtime {
                 self.anchor = origin + period(&live.config, lane).map_or(0, |p| elapsed / p * p);
                 let shadow = &mut self.shadow.tracks[0];
                 shadow.config = live.config;
-                load(shadow, &lane.stages, 0, 0);
-                self.shadow_pager = Pager::new(&live.config, &lane.stages);
+                let first = lane.origin_page.min(lane.pages - 1);
+                load(shadow, &lane.stages, first, 0);
+                self.shadow_pager = Pager::at(&live.config, &lane.stages, first);
                 self.shadow.restart();
                 // Drop the accumulators of the playhead it held last, even
                 // ones set never to reset.
@@ -835,6 +867,14 @@ impl Runtime {
         }
     }
     pub fn restart(&mut self) {
+        for lane in &mut self.lanes {
+            lane.launch = None;
+        }
+        self.reset();
+    }
+    /// Transport changes keep a launch queued while stopped. An explicit
+    /// Restart clears it above and returns every lane to the first page.
+    fn reset(&mut self) {
         self.core.restart();
         self.phase = 0.0;
         self.started = false;
@@ -843,6 +883,7 @@ impl Runtime {
             l.held = None;
             l.pitch = Glide::default();
             l.origin = 0;
+            l.origin_page = 0;
             l.relock = false;
             l.waiting = false;
         }
@@ -857,7 +898,7 @@ impl Runtime {
             return;
         }
         self.enabled = enabled;
-        self.restart();
+        self.reset();
     }
     pub fn seek(&mut self, beat: f64) {
         if self.started {
@@ -871,7 +912,7 @@ impl Runtime {
     }
     pub fn tick(&mut self, sr: u32, bpm: f32, enabled: bool) -> bool {
         if self.enabled != enabled {
-            self.restart();
+            self.reset();
             self.enabled = enabled;
         }
         if !enabled || self.lanes.is_empty() {
@@ -893,6 +934,11 @@ impl Runtime {
             }
             self.started = true;
             self.core.set_global(0, (bpm * 1000.0).round() as i32);
+            for i in 0..self.lanes.len() {
+                if let Some(page) = self.lanes[i].launch.take() {
+                    self.launch_page(i, page);
+                }
+            }
             self.core.tick();
             for i in 0..self.lanes.len() {
                 let (stage, lane) = (self.core.stage(i).unwrap_or(0), &mut self.lanes[i]);
@@ -1557,6 +1603,93 @@ mod tests {
             .cycle()
             .take(count)
             .collect()
+    }
+
+    #[test]
+    fn launch_page_plays_selected_values_without_restarting_other_tracks() {
+        let tracks = [paged(3), lane(2, Target::Notes, 72)];
+        let mut r = Runtime::new(&tracks);
+        starts(&mut r, 5);
+        let sibling = r.core.stage(1);
+        for value in [1.0, 2.0] {
+            r.edit(
+                0,
+                &tracks[0],
+                Edit {
+                    track: 1,
+                    stage: None,
+                    field: 56,
+                    value,
+                },
+            );
+        }
+        assert_eq!(steps(&starts(&mut r, 1)), [32]);
+        assert_eq!(r.core.stage(1), sibling);
+        assert_eq!(r.lanes[1].origin, 0);
+        assert_eq!(
+            steps(&starts(&mut r, 32)),
+            (33..48).chain(0..17).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn launch_page_survives_transport_start_and_preset_adoption() {
+        let track = paged(3);
+        let launch = |value| Edit {
+            track: 1,
+            stage: None,
+            field: 56,
+            value,
+        };
+        let mut r = Runtime::new(std::slice::from_ref(&track));
+        r.edit(0, &track, launch(2.0));
+        r.start(true);
+        assert_eq!(steps(&starts(&mut r, 1)), [32]);
+        r.start(false);
+        r.edit(0, &track, launch(1.0));
+        let mut next = Runtime::new(std::slice::from_ref(&track));
+        next.inherit(&mut r);
+        next.start(true);
+        assert_eq!(steps(&starts(&mut next, 1)), [16]);
+        next.edit(0, &track, launch(99.0));
+        assert_eq!(steps(&starts(&mut next, 1)), [32]);
+        next.edit(0, &track, launch(1.0));
+        next.restart();
+        assert_eq!(steps(&starts(&mut next, 1)), [0]);
+    }
+
+    #[test]
+    fn launch_page_is_the_origin_of_timing_replays() {
+        let mut track = paged(3);
+        let launch = Edit {
+            track: 1,
+            stage: None,
+            field: 56,
+            value: 2.0,
+        };
+        let mut r = Runtime::new(std::slice::from_ref(&track));
+        let mut reference = Runtime::new(std::slice::from_ref(&track));
+        for runtime in [&mut r, &mut reference] {
+            runtime.edit(0, &track, launch);
+            starts(runtime, 6);
+        }
+        for value in [2.0, 1.0] {
+            let edit = Edit {
+                track: 1,
+                stage: None,
+                field: 3,
+                value,
+            };
+            track.edit(edit);
+            r.edit(0, &track, edit);
+            for _ in 0..8000 {
+                r.tick(8000, 120.0, true);
+                reference.tick(8000, 120.0, true);
+            }
+        }
+        assert_eq!(r.view().tracks[0].step, reference.view().tracks[0].step);
+        assert_eq!(r.core.cv(0), reference.core.cv(0));
+        assert!(r.replay.is_none());
     }
 
     #[test]

@@ -529,8 +529,8 @@ fn sanitize_tracks(tracks: &mut [Track]) {
     }
 }
 
-/// Metadata is built on the control thread. Source FX is rendered ahead of
-/// playback and is deliberately absent from realtime destinations.
+/// Metadata is built on the control thread. The editor filters effect targets
+/// to the active slots and their realtime processing paths.
 pub fn catalog() -> serde_json::Value {
     serde_json::json!({
         "track":Track::default(),
@@ -549,6 +549,7 @@ pub fn catalog() -> serde_json::Value {
 /// IDs address an existing track; stage fields follow Neuropolis's stable ABI,
 /// with stages counted across pages (page × 16 + stage). Track field 54 sets
 /// the page count, 55 the track's own notes (a scale mask, zero for none).
+/// Field 56 launches a zero-based page on the next clock tick; it is not saved.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Edit {
     pub track: u32,
@@ -566,7 +567,7 @@ pub fn parse_edits(value: &serde_json::Value) -> Result<Vec<Edit>, String> {
                 > if e.stage.is_some() {
                     STAGE_FIELDS - 1
                 } else {
-                    55
+                    56
                 }
             || (e.track == 0 && (e.stage.is_some() || e.field > 1))
     }) {

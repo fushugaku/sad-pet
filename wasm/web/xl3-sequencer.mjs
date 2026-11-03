@@ -73,6 +73,7 @@ export class Xl3Sequencer {
             }
           }
           editor.showPage(index);
+          editor.edit(track.id, null, 56, index, false);
         }
         this.current();
       } else {
