@@ -159,9 +159,10 @@ assert.equal(messages.filter((m) => m.error).length, 0);
 
 // Shift's block launch reaches the audio owner, including a stopped transport.
 send("/api/sequencer/edit", [
+  // A coalesced launch can precede the page-count edit in the browser queue.
+  { track: 1, field: 56, value: 2 },
   { track: 1, field: 54, value: 3 },
   { track: 1, stage: 32, field: 12, value: 4200 },
-  { track: 1, field: 56, value: 2 },
 ]);
 const advanceLaunch = () => {
   for (let i = 0; i < 4; i++)

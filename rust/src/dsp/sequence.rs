@@ -707,10 +707,10 @@ impl Runtime {
     }
     pub fn edit(&mut self, index: usize, track: &Track, edit: Edit) {
         if edit.stage.is_none() && edit.field == 56 {
-            self.lanes[index].launch = Some(
-                (edit.value.round().clamp(0.0, (PAGES - 1) as f32) as u8)
-                    .min(self.lanes[index].pages - 1),
-            );
+            // Coalesced edits can grow the page count later in this batch.
+            // Clamp to the final count when the queued launch takes effect.
+            self.lanes[index].launch =
+                Some(edit.value.round().clamp(0.0, (PAGES - 1) as f32) as u8);
             return;
         }
         if edit.stage.is_none() && matches!(edit.field, 47 | 48) {
@@ -1634,7 +1634,7 @@ mod tests {
 
     #[test]
     fn launch_page_survives_transport_start_and_preset_adoption() {
-        let track = paged(3);
+        let mut track = paged(1);
         let launch = |value| Edit {
             track: 1,
             stage: None,
@@ -1643,6 +1643,14 @@ mod tests {
         };
         let mut r = Runtime::new(std::slice::from_ref(&track));
         r.edit(0, &track, launch(2.0));
+        let extend = Edit {
+            track: 1,
+            stage: None,
+            field: 54,
+            value: 3.0,
+        };
+        track.edit(extend);
+        r.edit(0, &track, extend);
         r.start(true);
         assert_eq!(steps(&starts(&mut r, 1)), [32]);
         r.start(false);
