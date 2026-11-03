@@ -145,6 +145,7 @@ await midi.request(new URL("http://localhost/api/controller"), { mode: "sequence
 assert.equal(midi.feedback.hardwareMode, 1, "Sequencer was another MIDI mapping page");
 assert.equal(midi.status().feedbackAvailable, true);
 const send = (...data) => daw.onmidimessage({ data });
+send(0xb6, 30, 1); // Acknowledge the initial programmatic mode selection.
 editor.selection = new Set();
 send(0xb0, 38, 127); send(0xbf, 93, 65); send(0xb0, 38, 0);
 assert.equal(track().steps[1].pitch, 62);
@@ -166,7 +167,17 @@ assert.equal(messages.length, beforeSteady, "steady Sequencer feedback flooded M
 send(0xb6, 30, 2);
 assert.equal(midi.status().mode, "daw");
 send(0xbf, 93, 65); assert.equal(learned.length, 1);
+// Simulate a reconnect/refresh that commands DAW Control, without delivering
+// its acknowledgement until after the following physical Mode gesture.
+midi.feedback.hardwareMode = null;
+midi.feedback.selectPage(page);
 send(0xb6, 30, 1); assert.equal(midi.status().mode, "sequencer");
+// A refresh can command DAW Control before a physical Mode gesture. Its
+// asynchronous acknowledgement must not undo the user's newer choice.
+send(0xb6, 30, 2);
+assert.equal(midi.status().mode, "sequencer", "late DAW Control acknowledgement exited Sequencer");
+send(0xb6, 30, 1);
+assert.equal(midi.status().mode, "sequencer");
 send(0xb6, 30, 7); assert.equal(midi.status().mode, "daw"); assert.equal(page, 1);
 await midi.request(new URL("http://localhost/api/controller"), { mode: "sequencer" });
 assert.equal(page, 1, "entering Sequencer changed the saved MIDI mapping page");

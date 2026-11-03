@@ -181,11 +181,12 @@ export class MidiInputs {
   dawInput(data) {
     if (data?.length !== 3 || !this.feedback.active) return;
     if (data[0] === 0xb6 && data[1] === 30) {
+      if (this.feedback.modeReply(data)) return;
       if (data[2] === 1 || data[2] === 2 || data[2] >= 6 && data[2] <= 9 || data[2] >= 18 && data[2] <= 29) {
         this.settings.mode = data[2] === 1 ? "sequencer" : "daw";
-        this.save(); this.changed();
+        this.save();
       }
-      this.resetDawButtons(); this.feedback.input(data); return;
+      this.resetDawButtons(); this.feedback.input(data); this.changed(); return;
     }
     const [status, cc, value] = data;
     if (value < 0 || value > 127) return;

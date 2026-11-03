@@ -46,12 +46,26 @@ export class Xl3Feedback {
     this.surface = surface;
     this.colors = new Map(); this.positions = new Map(); this.names = new Map();
     this.page = 0; this.hardwareMode = null; this.lastControl = null;
+    this.modeReplies = [];
   }
   send(bytes, port = this.output) {
     if (!port) return;
     try { port.send(bytes); } catch (error) { this.error(`XL3 feedback: ${error.message}`); }
   }
   sysex(...bytes) { this.send([...HEADER, ...bytes, 0xf7]); }
+  modeReply(data) {
+    if (data?.length !== 3 || data[0] !== 0xb6 || data[1] !== 30) return false;
+    const now = Date.now();
+    this.modeReplies = this.modeReplies.filter(reply => now - reply.time < 1000);
+    const index = this.modeReplies.findIndex(reply => reply.mode === data[2]);
+    if (index < 0) return false;
+    this.modeReplies.splice(index, 1);
+    // A delayed acknowledgement of an older command is not a Mode gesture.
+    // Restore the current surface if that older command took effect late.
+    this.hardwareMode = data[2];
+    this.selectPage(this.page);
+    return true;
+  }
   configure({ output, enabled, page = this.page } = {}) {
     const active = !!(enabled && output);
     if (this.output !== output || this.active !== active) {
@@ -87,6 +101,9 @@ export class Xl3Feedback {
     const mode = this.surface()?.mode || 2;
     if (this.active && this.hardwareMode !== mode) {
       this.hardwareMode = mode;
+      const now = Date.now();
+      this.modeReplies = this.modeReplies.filter(reply => now - reply.time < 1000);
+      this.modeReplies.push({ mode, time: now });
       this.send([0xb6, 30, mode]);
       this.configureControls();
       this.colors.clear(); this.positions.clear(); this.names.clear();
@@ -199,6 +216,7 @@ export class Xl3Feedback {
     finally { this.syncing = false; }
   }
   stop() {
+    this.modeReplies.length = 0;
     clearInterval(this.interval); this.interval = null;
     if (this.active) {
       this.sysex(4, 54, 0);
