@@ -6388,6 +6388,10 @@ async function init() {
       },
     });
     window.SadController?.setup({ request, notify, context: () => state?.timbres, change: changeTimbre,
+      sequencer: () => timbreBusy ? null : ({ editor: neuroEditor,
+        context: `${state?.timbres?.active}:${state?.source_generation}`,
+        instrument: state?.timbres?.timbres.find(t => t.id === state.timbres.active)?.name || "SAD PET",
+        view: state?.sequencer, playing: !!state?.playing }),
       transportState: () => ({ playing: !!state?.playing, recording: !!state?.recording?.active }),
       async transport(action) {
         if (action === "record") {

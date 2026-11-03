@@ -1,5 +1,5 @@
 // Novation XL3 programmer reference: DAW USB interface, RGB command 01 53,
-// display commands 04/06, feature channel 7. Live LEDs require DAW Control;
+// display commands 04/06, feature channel 7. Live LEDs use the DAW surface;
 // Custom Modes have a separate surface and retain their template colours.
 const HEADER = [0xf0, 0, 0x20, 0x29, 2, 0x15];
 const unit = v => Math.max(0, Math.min(1, Number(v) || 0));
@@ -40,9 +40,10 @@ export function xl3DawPorts(input, inputs, outputs) {
 }
 
 export class Xl3Feedback {
-  constructor({ learn, page, error, transport = () => null }) {
+  constructor({ learn, page, error, transport = () => null, surface = () => null }) {
     this.learn = learn; this.pageChanged = page; this.error = error;
     this.transport = transport;
+    this.surface = surface;
     this.colors = new Map(); this.positions = new Map(); this.names = new Map();
     this.page = 0; this.hardwareMode = null; this.lastControl = null;
   }
@@ -83,9 +84,10 @@ export class Xl3Feedback {
       this.page = page; this.colors.clear(); this.positions.clear(); this.names.clear(); this.lastControl = null;
       if (this.active) this.sysex(4, 54, 0);
     }
-    if (this.active && this.hardwareMode !== 2) {
-      this.hardwareMode = 2;
-      this.send([0xb6, 30, 2]);
+    const mode = this.surface()?.mode || 2;
+    if (this.active && this.hardwareMode !== mode) {
+      this.hardwareMode = mode;
+      this.send([0xb6, 30, mode]);
       this.configureControls();
       this.colors.clear(); this.positions.clear(); this.names.clear();
       this.displaySignature = null; this.lastControl = null;
@@ -97,7 +99,7 @@ export class Xl3Feedback {
     const page = modePage(data[2]);
     if (page === null && ![1, 2].includes(data[2])) return;
     this.hardwareMode = data[2];
-    if (this.active && data[2] === 2) {
+    if (this.active && [1, 2].includes(data[2])) {
       this.configureControls();
       this.colors.clear(); this.positions.clear(); this.names.clear();
       this.displaySignature = null;
@@ -119,8 +121,10 @@ export class Xl3Feedback {
     if (!this.active || this.syncing) return;
     this.syncing = true;
     const page = this.page, output = this.output, track = this.learn()?.track?.() ?? 0;
-    if (this.track !== track) {
+    const surface = this.surface();
+    if (this.track !== track || this.surfaceKey !== surface?.key) {
       this.track = track; this.colors.clear(); this.positions.clear(); this.names.clear();
+      this.surfaceKey = surface?.key;
       this.lastControl = null; this.displaySignature = null;
       this.sysex(4, 54, 0);
     }
@@ -128,19 +132,24 @@ export class Xl3Feedback {
       const learner = this.learn();
       const transport = this.transport();
       const trackCount = learner?.tracks?.().length || 1;
-      for (const [control, rgb] of [[116, [0, transport?.playing ? 127 : 12, 0]],
+      const lights = new Map([[116, [0, transport?.playing ? 127 : 12, 0]],
         [118, [transport?.recording ? 127 : 12, 0, 0]],
         [103, track > 0 ? [0, 80, 100] : [0, 0, 0]],
-        [102, track < trackCount - 1 ? [0, 80, 100] : [0, 0, 0]]]) {
+        [102, track < trackCount - 1 ? [0, 80, 100] : [0, 0, 0]],
+        ...(surface?.colors || [])]);
+      for (const [control, rgb] of lights) {
         const signature = rgb.join();
         if (this.colors.get(control) !== signature) {
           this.sysex(1, 83, control, ...rgb); this.colors.set(control, signature);
         }
       }
-      await learner?.refreshFeedback?.();
-      if (!this.active || this.page !== page || this.output !== output || (learner?.track?.() ?? 0) !== track) return;
-      const controls = new Map((learner?.feedback?.() || []).filter(m => m.channel === page).map(m => [m.controller, m]));
+      if (!surface) await learner?.refreshFeedback?.();
+      if (!this.active || this.page !== page || this.output !== output ||
+          (learner?.track?.() ?? 0) !== track || this.surface()?.key !== surface?.key) return;
+      const controls = surface?.controls || new Map((learner?.feedback?.() || [])
+        .filter(m => m.channel === page).map(m => [m.controller, m]));
       for (let control = 13; control <= 52; control++) {
+        if (surface?.colors?.has(control)) continue;
         const cc = control <= 36 ? control : page === 15 ? control : control + 43;
         const binding = controls.get(cc);
         const rgb = binding?.available ? feedbackRgb(binding.parameter, binding.label, binding.unit) : [0, 0, 0];
@@ -176,7 +185,7 @@ export class Xl3Feedback {
       const selected = controls.get(this.lastControl);
       const fields = selected ? [selected.instrument || `Page ${page + 1}`, selected.label,
         selected.available ? selected.text || `${Math.round(unit(selected.unit) * 100)}%` : "Loading..."]
-        : ["SAD PET", `Page ${page + 1} / Track ${track + 1}`, `${controls.size} assignments`];
+        : surface?.fields || ["SAD PET", `Page ${page + 1} / Track ${track + 1}`, `${controls.size} assignments`];
       const signature = JSON.stringify([page, track, selected?.key, fields]);
       if (this.displayDirty || this.displaySignature !== signature) {
         // Target 53 is stationary. Temporary target 54 expires according to

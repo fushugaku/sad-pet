@@ -1,5 +1,6 @@
 import { LaunchControl, launchControlModel } from "./launch-control.mjs";
 import { Xl3Feedback, isLaunchControlPort, matchingOutput, xl3DawPorts } from "./xl3-feedback.mjs";
+import { Xl3Sequencer } from "./xl3-sequencer.mjs";
 
 const STORAGE = "sad-pet-launch-control";
 /** One owner for Web MIDI ports: keyboard and control surface can coexist. */
@@ -19,7 +20,7 @@ export class MidiInputs {
     try {
       const saved = JSON.parse(storage?.getItem(STORAGE) || "null");
       if (saved) this.settings = {
-        enabled: saved.enabled !== false, mode: ["learn", "native", "daw"].includes(saved.mode) ? saved.mode : "mixer",
+        enabled: saved.enabled !== false, mode: ["learn", "native", "daw", "sequencer"].includes(saved.mode) ? saved.mode : "mixer",
         id: typeof saved.id === "string" ? saved.id : null,
         name: typeof saved.name === "string" ? saved.name : null,
       };
@@ -38,7 +39,10 @@ export class MidiInputs {
     this.transportButtons = new Set();
     this.shiftHeld = false; this.shiftOffReply = false;
     this.transportQueue = Promise.resolve();
+    this.sequencer = new Xl3Sequencer(() => this.ui()?.sequencer?.());
     this.feedback = new Xl3Feedback({ learn: this.learn,
+      surface: () => this.settings.mode === "sequencer"
+        ? { mode: 1, ...this.sequencer.feedback(this.shiftHeld) } : null,
       transport: () => this.ui()?.transportState?.(),
       page: page => {
         this.clearHighResolution();
@@ -121,7 +125,7 @@ export class MidiInputs {
     const output = matchingOutput(this.controller, outputs);
     this.surface.configure({ model: launchControlModel(this.controller?.name) || "xl",
       mode: this.settings.mode, output, page: this.learn()?.page?.() ?? 0 });
-    const daw = this.surface.model === "xl3" && this.settings.mode === "daw"
+    const daw = this.surface.model === "xl3" && ["daw", "sequencer"].includes(this.settings.mode)
       ? xl3DawPorts(this.controller, this.inputs, outputs) : {};
     if (this.feedbackInput !== (daw.input || null)) this.resetDawButtons();
     this.feedbackInput = daw.input || null;
@@ -145,6 +149,7 @@ export class MidiInputs {
     if (port === this.feedbackInput) { this.dawInput(event.data); return; }
     if (port === this.controller) {
       const learner = this.learn();
+      if (this.settings.mode === "sequencer") return;
       if (this.settings.mode === "daw" && this.feedback.active) return;
       if (["native", "daw"].includes(this.settings.mode)) {
         if (this.surface.model === "xl3") this.nativeInput(event.data, learner);
@@ -176,6 +181,10 @@ export class MidiInputs {
   dawInput(data) {
     if (data?.length !== 3 || !this.feedback.active) return;
     if (data[0] === 0xb6 && data[1] === 30) {
+      if (data[2] === 1 || data[2] === 2 || data[2] >= 6 && data[2] <= 9 || data[2] >= 18 && data[2] <= 29) {
+        this.settings.mode = data[2] === 1 ? "sequencer" : "daw";
+        this.save(); this.changed();
+      }
       this.resetDawButtons(); this.feedback.input(data); return;
     }
     const [status, cc, value] = data;
@@ -187,9 +196,11 @@ export class MidiInputs {
       if (!value && this.shiftOffReply) { this.shiftOffReply = false; return; }
       this.shiftHeld = !!value;
       if (value) {
+        this.sequencer.shift();
         this.shiftOffReply = true;
         this.feedback.send([0xb6, 63, 0]);
       }
+      if (this.settings.mode === "sequencer") this.feedback.sync();
       return;
     }
     if (status === 0xb0 && [116, 118].includes(cc)) {
@@ -205,6 +216,23 @@ export class MidiInputs {
     }
     if (status === 0xbe && cc >= 5 && cc <= 36) {
       if (value) this.feedback.touch(cc);
+      return;
+    }
+    if (this.settings.mode === "sequencer") {
+      if (status === 0xb0 && cc >= 37 && cc <= 52) {
+        this.sequencer.button(cc - 37, value, this.shiftHeld);
+      } else if (status === 0xbf && cc >= 77 && cc <= 100) {
+        this.feedback.touch(cc - 64);
+        this.sequencer.turn(cc - 64, value);
+      } else if (status === 0xb0 && [103, 102, 106, 107].includes(cc)) {
+        if (!value) this.pageButtons.delete(cc);
+        else if (!this.pageButtons.has(cc)) {
+          this.pageButtons.add(cc);
+          if (cc === 103 || cc === 102) this.sequencer.navigate(cc === 103 ? -1 : 1);
+          else this.navigateInstrument(cc === 106 ? -1 : 1);
+        }
+      }
+      this.feedback.sync();
       return;
     }
     const learner = this.learn(), page = learner?.page?.() ?? 0;
@@ -237,6 +265,16 @@ export class MidiInputs {
   resetDawButtons() {
     this.shiftHeld = false; this.shiftOffReply = false;
     this.transportButtons.clear();
+    this.pageButtons.clear();
+    this.sequencer.reset();
+  }
+  navigateInstrument(direction) {
+    const context = this.ui()?.context(), parts = this.surface.parts();
+    const index = parts.findIndex(t => t.id === context?.active), next = parts[index + direction];
+    if (next) {
+      this.sequencer.reset(true);
+      this.surface.select(next);
+    }
   }
   // SAD PET XL3 Custom Modes 1–15: relative encoders, 14-bit faders,
   // freely assignable buttons. Factory Mode 16 keeps its fixed 7-bit format.
@@ -313,13 +351,14 @@ export class MidiInputs {
       }
     }
     if (data) {
-      if ("mode" in data && !["mixer", "learn", "native", "daw"].includes(data.mode)) throw new Error("Unknown controller mode");
+      if ("mode" in data && !["mixer", "learn", "native", "daw", "sequencer"].includes(data.mode)) throw new Error("Unknown controller mode");
       if ("page" in data && (!Number.isInteger(data.page) || data.page < 0 || data.page >= 16))
         throw new Error("Choose a MIDI mapping page from 1 to 16");
       if ("mappingTrack" in data && (!Number.isInteger(data.mappingTrack) || data.mappingTrack < 0 || data.mappingTrack >= 6))
         throw new Error("Choose a mapping track from 1 to 6");
       if ("device" in data && data.device !== "auto" && data.device !== null &&
           !this.candidates().some(p => p.id === data.device)) throw new Error("That controller is no longer connected");
+      if (data.mode === "sequencer") await this.access({ sysex: true });
       await this.surface.flush();
       if ("device" in data) {
         const selected = this.candidates().find(p => p.id === data.device);
@@ -362,7 +401,8 @@ export class MidiInputs {
       mappingTrack: learner?.track?.() ?? 0, mappingTracks: learner?.tracks?.() || [],
       feedback: this.feedback.active || (!!this.surface.output && this.surface.model === "xl"),
       feedbackPermission: !!this.backend.midiAccess?.sysexEnabled,
-      feedbackAvailable: this.surface.model === "xl3" && this.settings.mode === "daw" && !!this.feedbackInput && !!this.feedbackOutput,
+      feedbackAvailable: this.surface.model === "xl3" && ["daw", "sequencer"].includes(this.settings.mode) && !!this.feedbackInput && !!this.feedbackOutput,
+      sequencer: this.settings.mode === "sequencer" ? this.sequencer.feedback(this.shiftHeld).fields : null,
       error: this.error || null,
       ...this.surface.status(),
     };

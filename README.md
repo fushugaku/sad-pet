@@ -874,6 +874,27 @@ instrument changes refresh the full set of badges once; controller feedback
 reads leave the editor state valid and do not request extra telemetry snapshots.
 These are temporary device settings; the uploaded Custom Modes are preserved.
 
+Choose **XL3 · Sequencer** to edit Neuropolis directly. With the DAW connection
+active, **Mode + DAW Mixer** enters Sequencer and **Mode + DAW Control** returns
+to MIDI Learn; Custom Mode buttons still select the existing mapping pages.
+Sequencer always follows the instrument and track selected in the browser.
+Page arrows select instruments, and Track arrows select its actual sequencer
+tracks. A tap on one of the sixteen channel buttons toggles that step. Hold one
+or several buttons while turning an encoder to edit those steps together with
+the browser's selected steps; releasing an edited button does not toggle it.
+**Shift + 1–8** selects an existing block of sixteen steps (up to 128 steps),
+also changing the block shown in the browser.
+
+The encoder row nearest the faders controls **Pitch, Gate length, Velocity,
+Ratchet, Slide, Gate type and Pulses** on knobs 1–7. The middle row's knobs 1–3
+control **Dest 1–3** amounts. Pitch follows the track's scale and note range;
+Gate starts from the inherited track value, and destinations move in 1% steps.
+Unused encoders and faders do not edit MIDI assignments in Sequencer. Button
+lights show enabled steps, held/selected steps and the playhead; Shift shows
+available step blocks. Instrument, track and parameter values appear on the
+OLED. Switching instrument, track, step block, mode or disconnecting USB
+cancels held steps, so their releases cannot edit a different context.
+
 `node wasm/test-launch-control.mjs` checks both hardware layouts, pickup,
 coalescing, MIDI Learn priority, LED traffic, independent keyboard input,
 permission errors, device settings, page navigation and USB reconnection.
@@ -885,6 +906,9 @@ checks DAW port pairing, DAW Control selection, relative rows, all sixteen
 logical channels, mode gestures, page buttons, Shift acceleration and release,
 six tracks per mode, bank feedback, transport press/release handling, button lights, RGB brightness, display names
 and MIDI cleanup.
+`node wasm/test-xl3-sequencer.mjs` checks held and browser selections, all ten
+encoder assignments, step blocks, scale/range limits, context changes, separate
+hardware modes, feedback and disconnect cleanup.
 
 Protocol references: [Novation Mk1/Mk2 programmer's reference](https://fael-downloads-prod.focusrite.com/customer/prod/downloads/launch_control_xl_programmer_s_reference_guide.pdf),
 [Ardour's legacy control-number map](https://github.com/Ardour/ardour/blob/master/share/midi_maps/Novation_LaunchControl_XL.map),

@@ -423,6 +423,7 @@ window.SadNeuropolis = class {
     // Stage indices stay selected across track switches, so a phrase copied
     // from one track pastes into the same steps of another.
     this.selection = new Set();
+    this.controllerHeld = new Set();
     this.anchor = null;
     this.clipboard = null;
     // The page of sixteen steps shown; like the selection, it stays put
@@ -897,9 +898,11 @@ window.SadNeuropolis = class {
   }
   syncSelection() {
     const selected = this.selection,
-      copied = this.clipboard?.steps.filter(Boolean).length ?? 0;
+      copied = this.clipboard?.steps.filter(Boolean).length ?? 0,
+      offset = this.offset(this.track());
     this.root.querySelectorAll(".neuro-stage, .neuro-detail-stage").forEach((card) =>
-      card.classList.toggle("selected", selected.has(Number(card.dataset.pick))),
+      card.classList.toggle("selected", selected.has(Number(card.dataset.pick)) ||
+        !!this.controllerHeld?.has(offset + Number(card.dataset.pick))),
     );
     for (const bar of this.root.querySelectorAll(".neuro-stage-pick"))
       bar.setAttribute("aria-pressed", String(selected.has(Number(bar.dataset.pick))));

@@ -52,13 +52,16 @@ window.SadController = (() => {
       : data.device === null ? "Disconnected"
       : !data.access ? "Connect USB, then allow MIDI access"
       : !connected ? "Waiting for Launch Control XL"
-      : data.mode !== "mixer" ? `${data.connected} · ${data.feedback ? "RGB + display" : "right-click a knob → MIDI learn"}`
+      : data.mode !== "mixer" ? `${data.connected} · ${data.feedback ? "RGB + display"
+        : data.mode === "sequencer" ? "Enable MIDI feedback" : "right-click a knob → MIDI learn"}`
       : data.pickup || `${data.connected} · Bank ${data.bank + 1}/${data.banks}`));
     text("controller-template", `${data.template}. Faders and knobs take over when they reach the value in the project.`);
     $("controller-map").hidden = data.mode !== "mixer";
-    $("controller-pages").hidden = data.mode === "mixer";
+    $("controller-pages").hidden = data.mode === "mixer" || data.mode === "sequencer";
     $("controller-learn-hint").hidden = data.mode === "mixer";
-    text("controller-learn-hint", data.mode === "daw"
+    text("controller-learn-hint", data.mode === "sequencer"
+      ? "Tap: on/off · Hold or select steps + turn: edit · Shift + 1–8: step block · Page: instrument · Track: track · Mode + DAW Control: MIDI Learn."
+      : data.mode === "daw"
       ? "Mode + 1–16: page · Track ◀/▶: 1–6 · Shift + turn: ×10 · Play: start/stop · Record: record/save."
       : data.mode === "native"
       ? "Custom Modes: relative knobs, 14-bit faders; fixed colours. For live lights and OLED, choose 16 pages + RGB."
@@ -119,6 +122,7 @@ window.SadController = (() => {
       return preparing;
     },
     context: () => hooks?.context(),
+    sequencer: () => hooks?.sequencer?.(),
     change: (...args) => hooks.change(...args),
     transport: action => hooks?.transport?.(action),
     transportState: () => hooks?.transportState?.(),
