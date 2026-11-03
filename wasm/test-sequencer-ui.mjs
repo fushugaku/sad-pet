@@ -223,6 +223,24 @@ const control = (label) => {
   return found[0];
 };
 ui.buildEditor();
+// Insert controls share the effect families, and list only the active model.
+const savedCatalog = ui.catalog.parameters;
+ui.catalog.parameters = ["source_fx1_mix", "source_fx1_waveshaper_depth", "source_fx1_chorus_rate"]
+  .map(id => ({ id, name: id.replaceAll("_", " ") }));
+preset.source_color_chain = [{ id: 90, kind: "waveshaper" }];
+ui.hooks.fxParameters = () => ["mix", "waveshaper_depth"];
+ui.hooks.fxName = () => "Waveshaper";
+ui.hooks.sourceFxRealtime = () => true;
+let fxGroups = ui.parameterGroups();
+assert.equal(fxGroups[0].label, "Source FX");
+assert.deepEqual(Array.from(fxGroups[0].choices[0].choices, c => c[0]), ["source_fx1_mix", "source_fx1_waveshaper_depth"]);
+ui.hooks.sourceFxRealtime = () => false;
+assert.equal(ui.parameterGroups().length, 0, "baked file FX must not offer realtime modulation");
+preset.bus = {};
+assert.equal(ui.parameterGroups()[0].label, "Source FX", "buses process inserts without a file cache");
+delete preset.bus;
+ui.catalog.parameters = savedCatalog;
+delete ui.hooks.fxParameters; delete ui.hooks.fxName; delete ui.hooks.sourceFxRealtime;
 assert.equal(
   knobs.length,
   96,

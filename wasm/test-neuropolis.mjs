@@ -12,7 +12,7 @@ const catalog = core.request("/api/sequencer/catalog");
 assert.equal(catalog.orders.length, 21);
 assert.equal(catalog.scales.length, 49);
 assert.ok(catalog.parameters.some((p) => p.id === "resynth_osc4_control1"));
-assert.ok(!catalog.parameters.some((p) => p.id.startsWith("source_fx")));
+assert.ok(catalog.parameters.some((p) => p.id === "source_fx1_waveshaper_depth"));
 const preset = core.request("/api/preset");
 preset.sequencer.enabled = true;
 preset.sequencer.tracks = Array.from({ length: 257 }, (_, i) => {

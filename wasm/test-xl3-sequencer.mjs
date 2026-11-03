@@ -7,9 +7,9 @@ import { MidiInputs } from "./web/midi-inputs.mjs";
 // Use the shipping editor's addressing, scale quantisation and edit handler.
 const scope = { window: {}, document: {} };
 vm.runInNewContext(await readFile(new URL("../rust/web/sequence.js", import.meta.url), "utf8"), scope);
-const step = { pitch: 60, gate: 2, gate_override: -1, velocity: 100, ratchet: 1,
+const step = { pitch: 60, cv: 0, gate: 2, gate_override: -1, velocity: 100, ratchet: 1,
   slide: false, pulses: 1, skip: false, destination1: 0, destination2: 0, destination3: 0 };
-const lane = id => ({ id, name: `Track ${id}`, target: { kind: "notes" }, pages: 8,
+const lane = id => ({ id, name: `Track ${id}`, target: { kind: "notes" }, pages: 8, amount: 1, absolute: false,
   config: Array.from({ length: 43 }, (_, i) => ({ 1: 16, 7: 55, 41: 127 }[i] || 0)),
   destinations: ["filter", "pitch", "lfo1_reset"],
   steps: Array.from({ length: 128 }, () => ({ ...step })) });
@@ -89,6 +89,54 @@ sequencer.turn(29, 65); assert.equal(track().steps[0].pitch, 64, "Pitch ignored 
 sequencer.turn(29, 127); assert.equal(track().steps[0].pitch, 72, "Pitch exceeded the track's octave range");
 track().notes = 0; track().config[40] = 0; track().config[41] = 127; track().steps[0].pitch = 60;
 
+// Pitch follows the visible value layer: parameter tracks play CV, even when
+// the parameter is an oscillator's transpose. Keep the off-grid starting CV.
+track().target = { kind: "parameter", parameter: "osc1_transpose" };
+editor.selection = new Set([0, 3]);
+track().steps[0].cv = 123; track().steps[1].cv = -200; track().steps[3].cv = 123;
+const noteValues = [0, 1, 3].map(n => track().steps[n].pitch);
+const gateValues = [0, 1, 3].map(n => track().steps[n].gate);
+sequencer.button(1, 127, false);
+sequencer.turn(29, 65);
+assert.deepEqual([0, 1, 3].map(n => track().steps[n].cv), [173, -150, 173]);
+assert.deepEqual([0, 1, 3].map(n => track().steps[n].pitch), noteValues, "CV edited a hidden note");
+assert.ok(edits.slice(-3).every(e => e.field === 12), "parameter values did not use the CV edit field");
+assert.equal(sequencer.feedback().controls.get(29).text, "Mixed");
+sequencer.turn(29, 63);
+sequencer.button(1, 0, false);
+assert.deepEqual([0, 1, 3].map(n => track().steps[n].gate), gateValues, "CV editing toggled a held step");
+assert.deepEqual([0, 1, 3].map(n => track().steps[n].cv), [123, -200, 123]);
+editor.selection = new Set([0]);
+const cvSnapshot = preset;
+preset = structuredClone(preset);
+sequencer.turn(29, 65);
+assert.equal(track().steps[0].cv, 173);
+assert.equal(cvSnapshot.sequencer.tracks[0].steps[0].cv, 123, "CV edited a stale preset");
+let cvFeedback = sequencer.feedback().controls.get(29);
+assert.deepEqual([cvFeedback.label, cvFeedback.parameter], ["Value", "cv"]);
+assert.equal(cvFeedback.text, editor.valueText(track(), 173));
+assert.equal(cvFeedback.unit, (173 + 5000) / 10000);
+track().absolute = true;
+assert.equal(sequencer.feedback().controls.get(29).text, "+3%");
+track().absolute = false;
+track().steps[0].cv = 4990; sequencer.turn(29, 65); assert.equal(track().steps[0].cv, 5000);
+track().steps[0].cv = -4990; sequencer.turn(29, 63); assert.equal(track().steps[0].cv, -5000);
+track().steps[0].cv = 123; sequencer.turn(29, 127); assert.equal(track().steps[0].cv, 3273);
+sequencer.turn(29, 1); assert.equal(track().steps[0].cv, 123);
+for (let page = 0; page < 8; page++) {
+  editor.showPage(page);
+  const before = track().steps[page * 16].cv;
+  sequencer.turn(29, 65);
+  assert.equal(track().steps[page * 16].cv, Math.min(5000, before + 50));
+}
+editor.showPage(0);
+editor.selection = new Set();
+const withoutSelection = edits.length;
+sequencer.turn(29, 65);
+assert.equal(edits.length, withoutSelection, "no selection edited a CV step");
+editor.selection = new Set([0]);
+track().target = { kind: "notes" };
+
 for (let page = 0; page < 8; page++) {
   sequencer.button(page, 127, true); sequencer.button(page, 0, true);
   assert.equal(editor.offset(track()), page * 16);
@@ -162,6 +210,14 @@ editor.selection = new Set();
 send(0xb0, 38, 127); send(0xbf, 93, 65); send(0xb0, 38, 0);
 assert.equal(track().steps[1].pitch, 62);
 assert.equal(track().steps[1].gate, 2);
+track().target = { kind: "parameter", parameter: "osc1_transpose" };
+track().steps[1].cv = 123;
+const portPitch = track().steps[1].pitch;
+send(0xb0, 38, 127); send(0xbf, 93, 65); send(0xb0, 38, 0);
+assert.equal(track().steps[1].cv, 173, "physical Pitch CC did not edit the parameter value");
+assert.equal(track().steps[1].pitch, portPitch);
+assert.equal(edits.at(-1).field, 12);
+track().target = { kind: "notes" };
 send(0xb6, 63, 127); send(0xb6, 63, 0); // Feature acknowledgement, Shift stays held.
 send(0xb0, 39, 127); send(0xb0, 39, 0);
 assert.equal(editor.visiblePage, 2, "Shift + 3 did not select steps 33-48");
@@ -199,4 +255,4 @@ assert.equal(editor.controllerHeld.size, 0, "USB disconnect left a step held");
 assert.equal(midi.sequencer.held.size, 0);
 midi.dispose();
 assert.deepEqual(errors, []);
-console.log("XL3 Sequencer passed: held + browser selection, all ten controls, eight step blocks, tap/hold gestures, snapshot and context safety, hardware mode separation, RGB/playhead and USB cleanup.");
+console.log("XL3 Sequencer passed: Pitch follows notes/CV, parameter feedback, held + browser selection, all ten controls, eight step blocks, tap/hold gestures, snapshot and context safety, hardware mode separation, RGB/playhead and USB cleanup.");

@@ -68,6 +68,8 @@ pub struct RealtimeView {
     pub source_fx_pending: bool,
     pub source_fx_error: bool,
     pub source_gain_reduction: (u32, f32),
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_color: Option<crate::color::ColorSlot>,
     #[serde(skip)]
     pub color: [crate::color::ColorSlot; crate::color::MAX_COLOR_SLOTS],
     pub color_len: usize,
@@ -145,6 +147,7 @@ impl Default for RealtimeView {
             source_fx_pending: false,
             source_fx_error: false,
             source_gain_reduction: (0, 0.0),
+            source_color: None,
             color: [crate::color::ColorSlot::default(); crate::color::MAX_COLOR_SLOTS],
             color_len: 0,
             pre_color: [crate::color::ColorSlot::default(); crate::color::MAX_COLOR_SLOTS],
@@ -302,6 +305,7 @@ impl Engine {
         view.color_len = self.modulated.color_len;
         view.pre_color = self.modulated.pre_color_slots;
         view.pre_color_len = self.modulated.pre_color_len;
+        view.source_color = self.modulated.source_color;
         let split = crate::color::MAX_COLOR_SLOTS;
         view.gain_reduction[..split].copy_from_slice(&self.color_rack.realtime_gain_reduction());
         view.gain_reduction[split..]
@@ -391,8 +395,11 @@ struct ControlFeedback<'a> {
     preset: &'a crate::preset::Preset,
 }
 impl ControlFeedback<'_> {
-    fn control_limits(&self) -> (Modulated, Modulated) {
+    fn control_limits(&self, source_realtime: bool) -> (Modulated, Modulated) {
         let mut low = Modulated::from_preset(self.preset);
+        if !source_realtime {
+            low.source_color = None;
+        }
         let mut high = low;
         // Equal and opposite routes from the same source cancel before bounds.
         let mut terms: Vec<(Destination, Source, f32)> = Vec::new();
@@ -461,7 +468,7 @@ impl ControlFeedback<'_> {
         modulated: &Modulated,
         current: [f32; 2],
     ) -> BTreeMap<String, KnobState> {
-        let (low, high) = self.control_limits();
+        let (low, high) = self.control_limits(modulated.source_color.is_some());
         let p = self.preset.params;
         let m = modulated.params;
         let mut result = BTreeMap::new();
@@ -531,24 +538,30 @@ impl ControlFeedback<'_> {
         }
         for (slots, current_slots, low_slots, high_slots) in [
             (
-                &self.preset.color_chain,
-                &modulated.color_slots,
-                &low.color_slots,
-                &high.color_slots,
+                self.preset.color_chain.as_slice(),
+                modulated.color_slots.as_slice(),
+                low.color_slots.as_slice(),
+                high.color_slots.as_slice(),
             ),
             (
-                &self.preset.pre_color_chain,
-                &modulated.pre_color_slots,
-                &low.pre_color_slots,
-                &high.pre_color_slots,
+                self.preset.pre_color_chain.as_slice(),
+                modulated.pre_color_slots.as_slice(),
+                low.pre_color_slots.as_slice(),
+                high.pre_color_slots.as_slice(),
+            ),
+            (
+                self.preset.source_color_chain.as_slice(),
+                modulated.source_color.as_slice(),
+                low.source_color.as_slice(),
+                high.source_color.as_slice(),
             ),
         ] {
             for (i, slot) in slots.iter().enumerate() {
                 for &parameter in slot.control_parameters() {
                     let mut base = *slot;
-                    let mut current = current_slots[i];
-                    let mut min = low_slots[i];
-                    let mut max = high_slots[i];
+                    let mut current = current_slots.get(i).copied().unwrap_or(*slot);
+                    let mut min = low_slots.get(i).copied().unwrap_or(*slot);
+                    let mut max = high_slots.get(i).copied().unwrap_or(*slot);
                     let key = format!("color:{}:{}", slot.id, parameter.key());
                     let state = KnobState::new(
                         *base.parameter_mut(parameter),
@@ -558,15 +571,6 @@ impl ControlFeedback<'_> {
                     );
                     result.insert(key, state);
                 }
-            }
-        }
-        for slot in &self.preset.source_color_chain {
-            for &parameter in slot.control_parameters() {
-                let base = *slot.to_owned().parameter_mut(parameter);
-                result.insert(
-                    format!("color:{}:{}", slot.id, parameter.key()),
-                    KnobState::new(base, base, base, base),
-                );
             }
         }
         let base_frame = Modulated::from_preset(self.preset);
@@ -620,6 +624,7 @@ pub fn knob_states_from_view(
     m.params = view.params;
     m.color_slots = view.color;
     m.pre_color_slots = view.pre_color;
+    m.source_color = view.source_color;
     m.resynth = view.modulated_resynth;
     m.synth = view.modulated_synth;
     m.wavetable = view.modulated_wavetable;

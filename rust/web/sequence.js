@@ -636,6 +636,11 @@ window.SadNeuropolis = class {
       ? `${value >= 60 ? "+" : ""}${Math.round(value - 60)} st`
       : this.note(value);
   }
+  valueText(track, value) {
+    return track.target.kind !== "parameter" ? this.pitchText(track, value)
+      : track.absolute ? `${value > 0 ? "+" : ""}${(value / 50).toFixed(0)}%`
+      : this.depthText(track.target.parameter, (value / 5000) * track.amount);
+  }
   // Pitch classes a track plays, bit 0 = C (offset 0 on oscillator lanes):
   // its own notes or its Scale's, from the Scale root.
   scaleMask(track) {
@@ -874,18 +879,7 @@ window.SadNeuropolis = class {
       }
       card.classList.toggle("outside", i >= track.config[1]);
       card.classList.toggle("rest", step.gate === 0 || step.skip);
-      card.querySelector(".neuro-value").textContent =
-        valueLayer === "pitch"
-          ? this.pitchText(track, value)
-          : valueLayer === "cv"
-            ? track.absolute
-              ? `${value > 0 ? "+" : ""}${(value / 50).toFixed(0)}%`
-              : this.depthText(track.target.parameter, (value / 5000) * track.amount)
-            : typeof value === "boolean"
-              ? value
-                ? "On"
-                : "Off"
-              : value;
+      card.querySelector(".neuro-value").textContent = this.valueText(track, value);
       fader.setAttribute(
         "aria-valuetext",
         card.querySelector(".neuro-value").textContent,
@@ -1225,15 +1219,18 @@ window.SadNeuropolis = class {
     if (this.hooks.read().control) return [{ label: "Control", choices:
       (this.hooks.controlTargets?.() || []).map(p => [`${prefix}${p.id}`, p.name]) }];
     const preset = this.hooks.read(), families = new Map(), drums = new Map(),
-      order = ["Main", "Oscillators", "Connections", "Wavetable", "303 Bass", "Grains", "Filters", "LFO", "Envelopes", "Arpeggiator", "Pre-filter FX", "Post-filter FX", "Resynth", "Synth engine", "Drums"],
+      order = ["Main", "Oscillators", "Connections", "Wavetable", "303 Bass", "Grains", "Filters", "LFO", "Envelopes", "Arpeggiator", "Source FX", "Pre-filter FX", "Post-filter FX", "Resynth", "Synth engine", "Drums"],
       voices = window.SadDrums?.controlSections,
       grainControls = new Set(["position", "grains", "min_grains", "grain_size", "pitch", "grain_shape",
         "cloud", "detune", "stereo_spread", "grain_feedback", "grain_advanced", "grain_attack"]);
     for (const spec of this.catalog.parameters) {
-      const id = spec.id, fx = /^(pre_)?fx(\d+)_/.exec(id);
+      const id = spec.id, fx = /^(pre_|source_)?fx(\d+)_/.exec(id);
       let slot = null;
       if (fx) {
-        slot = (fx[1] ? preset.pre_color_chain : preset.color_chain)[Number(fx[2]) - 1];
+        if (fx[1] === "source_" && !(preset.rack || preset.bus || this.hooks.sourceFxRealtime?.())) continue;
+        const chain = fx[1] === "source_" ? preset.source_color_chain
+          : fx[1] === "pre_" ? preset.pre_color_chain : preset.color_chain;
+        slot = chain?.[Number(fx[2]) - 1];
         if (!slot || (this.hooks.fxParameters && !this.hooks.fxParameters(slot).includes(id.slice(fx[0].length))))
           continue;
       }
@@ -1249,11 +1246,11 @@ window.SadNeuropolis = class {
         continue;
       }
       const n = /\d+/.exec(id)?.[0], filter = /^(?:filter|vcf)(\d*)(?:_|$)/.exec(id),
-        slotName = fx && `${fx[1] ? "Pre FX" : "FX"} ${fx[2]}`, kind = slot && this.hooks.fxName?.(slot),
+        slotName = fx && `${fx[1] === "source_" ? "Source FX" : fx[1] ? "Pre FX" : "FX"} ${fx[2]}`, kind = slot && this.hooks.fxName?.(slot),
         // The grain engine's controls, then each advanced mode group's.
         group = /^grain_group(\d)_/.exec(id)?.[1];
       const [family, sub, strip = sub] = fx
-        ? [`${fx[1] ? "Pre-filter" : "Post-filter"} FX`, kind ? `${slotName} · ${kind}` : slotName, slotName]
+        ? [fx[1] === "source_" ? "Source FX" : `${fx[1] ? "Pre-filter" : "Post-filter"} FX`, kind ? `${slotName} · ${kind}` : slotName, slotName]
         : /^osc\d+_/.test(id)?["Oscillators",`OSC ${n}`]
         : id.startsWith("osc_")?["Oscillators"]
         : id.startsWith("interaction")?["Connections",`Connection ${n}`]

@@ -500,6 +500,8 @@ with different per-timbre BPM values use the first timbre's tempo on recall.
 - A **Source FX** slot before the Grain Engine, with all existing effect types.
   Live audio is processed before grain capture; file selections are prepared in
   the background with the original FIR antialiasing and smooth source changes.
+  Rack **Insert FX** and live-input Source FX accept LFO, ENV, matrix, macro and
+  sequencer assignments from their knobs; file Source FX keeps its prepared sound.
 - **Resynth**: 16 analysis bands drive up to four independent Rustias oscillator
   layers, with Saw, Pulse, Triangle, Sine, Formant, Noise, Audio In and sample-based
   PCM. Each slot can also select Rustias OSC 4's Wavefolder, including Triangle,
@@ -888,8 +890,11 @@ also changing the block shown in the browser.
 
 The encoder row nearest the faders controls **Pitch, Gate length, Velocity,
 Ratchet, Slide, Gate type and Pulses** on knobs 1–7. The middle row's knobs 1–3
-control **Dest 1–3** amounts. Pitch follows the track's scale and note range;
-Gate starts from the inherited track value, and destinations move in 1% steps.
+control **Dest 1–3** amounts. Pitch edits the track's primary step value:
+notes follow its scale and note range; parameter tracks edit CV in 1% steps,
+including parameters such as oscillator transpose. Its display matches the
+editor's units and Relative/Absolute mapping. Gate starts from the inherited
+track value, and destinations move in 1% steps.
 Unused encoders and faders do not edit MIDI assignments in Sequencer. Button
 lights show enabled steps, held/selected steps and the playhead; Shift shows
 available step blocks. Instrument, track and parameter values appear on the
@@ -908,7 +913,7 @@ logical channels, mode gestures, page buttons, Shift acceleration and release,
 six tracks per mode, bank feedback, transport press/release handling, button lights, RGB brightness, display names
 and MIDI cleanup.
 `node wasm/test-xl3-sequencer.mjs` checks held and browser selections, all ten
-encoder assignments, step blocks, scale/range limits, context changes, separate
+encoder assignments, parameter CV values and feedback, step blocks, scale/range limits, context changes, separate
 hardware modes, feedback and disconnect cleanup.
 
 Protocol references: [Novation Mk1/Mk2 programmer's reference](https://fael-downloads-prod.focusrite.com/customer/prod/downloads/launch_control_xl_programmer_s_reference_guide.pdf),

@@ -296,8 +296,7 @@ impl Spec {
         ) && self.id != "bpm"
             && !matches!(
                 self.target,
-                Target::SourceFx(_)
-                    | Target::Performance(3..)
+                Target::Performance(3..)
                     | Target::Tap(_, TapField::Bus)
                     | Target::FilterSlot(_, 10)
                     | Target::Macro(_)
@@ -315,8 +314,11 @@ impl Spec {
             Target::Drum(i, field) => m.drums.0[i][field],
             Target::DrumShift(i) => m.drum_shifts[i],
             Target::Tap(stage, field) => tap_get(m.taps.get(stage), field),
-            Target::SourceFx(_)
-            | Target::DrumGrain
+            Target::SourceFx(field) => {
+                let slot = m.source_color?;
+                *slot.to_owned().parameter_mut(slot.playing_time(field))
+            }
+            Target::DrumGrain
             | Target::DrumBuffer
             | Target::SynthGrain
             | Target::SynthBuffer
@@ -370,6 +372,16 @@ impl Spec {
                     slot.settings.lcr_ratio,
                     amount,
                 );
+                m.color_dirty = true;
+            }
+        } else if let Target::SourceFx(ColorParameter::LcrRatio) = self.target {
+            if let Some(slot) = m.source_color.as_mut() {
+                slot.settings.lcr_ratio = crate::radias_delay::modulate_lcr_ratio(
+                    slot.settings.lcr_sync,
+                    slot.settings.lcr_ratio,
+                    amount,
+                );
+                m.source_dirty = true;
             }
         } else if let Some(base) = self.frame_get(m) {
             self.frame_set(m, base + amount * (self.max - self.min));
@@ -410,8 +422,13 @@ impl Spec {
             }
             Target::DrumShift(i) => m.drum_shifts[i] = value,
             Target::Tap(stage, field) => tap_set(m.taps.get_mut(stage), field, value),
-            Target::SourceFx(_)
-            | Target::DrumGrain
+            Target::SourceFx(field) => {
+                if let Some(slot) = m.source_color.as_mut() {
+                    *slot.parameter_mut(slot.playing_time(field)) = value;
+                    m.source_dirty = true;
+                }
+            }
+            Target::DrumGrain
             | Target::DrumBuffer
             | Target::SynthGrain
             | Target::SynthBuffer

@@ -1561,15 +1561,13 @@ impl Preset {
             .first()
             .map_or(SaturatorType::Distortion, |s| s.kind);
         crate::color::mirror_reverb(&mut self.params, &self.color_chain);
-        // Source FX for files is prepared off-thread, so it cannot be an
-        // audio-rate modulation destination. Host automation uses its own IDs.
-        let source_id = self.source_color_chain.first().map(|slot| slot.id);
+        // Every rack, including the live Insert FX, routes by stable slot ID.
         let validate = |route: &mut Destination| {
             if !crate::matrix::valid(*route) {
                 *route = Destination::None;
             }
             if let Destination::Color { slot, .. } = *route
-                && (!used.contains(&slot) || source_id == Some(slot))
+                && !used.contains(&slot)
             {
                 *route = Destination::None;
             }

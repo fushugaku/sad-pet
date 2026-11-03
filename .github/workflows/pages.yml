@@ -64,6 +64,7 @@ jobs:
           node wasm/test-imported-ui.mjs
           node wasm/test-filters-ui.mjs
           node wasm/test-neuropolis.mjs
+          node wasm/test-source-fx-modulation.mjs
           node wasm/test-timbres.mjs
           node wasm/test-tempo.mjs
           node wasm/test-buses.mjs
@@ -97,6 +98,7 @@ jobs:
           node wasm/test-midi-targets.mjs
           node wasm/test-launch-control.mjs
           node wasm/test-xl3-feedback.mjs
+          node wasm/test-xl3-sequencer.mjs
           node wasm/test-midi-clock.mjs
           node wasm/test-clock-ui.mjs
           node wasm/test-modulation-ui.mjs

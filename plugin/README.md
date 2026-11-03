@@ -310,7 +310,9 @@ with the same effect catalog. Live input is processed before entering the grain
 history. For files, only the selection is prepared in the background; changes
 become audible when ready and crossfade without restarting notes or loops.
 Tails outside that selection are excluded. Source FX numeric controls accept DAW
-automation with asynchronous file updates; the slot is not an LFO/matrix destination. Both racks have the same catalog and up to 12 independent
+automation with asynchronous file updates. Rack Insert FX and live-input Source FX
+also accept LFO, ENV, matrix, macro and sequencer routes; file Source FX retains its
+background preparation and does not offer realtime modulation. Both racks have the same catalog and up to 12 independent
 slots. Old presets load with an empty pre-filter rack and retain their sound.
 
 **Waveshaper** ports Drive and all eleven RADIAS WS types from radias-emulator:

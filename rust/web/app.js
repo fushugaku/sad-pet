@@ -3186,6 +3186,7 @@ function colorEntries() {
 function findColor(id) {
   return colorEntries().find((entry) => entry.slot.id === id)?.slot;
 }
+const sourceFxRealtime = () => !!preset?.rack || !!preset?.bus || !!state?.input?.active;
 const REVERB_TYPES = [
   ["plate_s", "Small plate"],
   ["plate_l", "Large plate"],
@@ -3880,6 +3881,7 @@ function syncColors() {
     colorRoutesSignature = "";
   }
   const routesSignature = JSON.stringify([
+    sourceFxRealtime(),
     preset.lfo_count,
     preset.env_count,
     !!preset.drums,
@@ -4028,6 +4030,7 @@ function destinationGroups() {
     { label: "Filters", choices: filters },
     { label: "LFO", choices: pull(/^LFO \d+$/).map(([label, choices]) => section(label, choices)) },
     { label: "Envelopes", choices: pull(/^ENV \d+$/).map(([label, choices]) => section(label, choices)) },
+    { label: "Source FX", choices: sourceFxRealtime() ? effects("source_color_chain") : [] },
     { label: "Pre-filter FX", choices: effects("pre_color_chain") },
     { label: "Post-filter FX", choices: effects("color_chain") },
     // A Rack's EQs: a section per band, then the output.
@@ -4093,8 +4096,8 @@ function sequencerParameter(key) {
   let id = key;
   if (color) {
     const entry = colorEntries().find((e) => e.slot.id === Number(color[1]));
-    id = entry?.rack.key !== "source_color_chain" && entry &&
-      `${entry.rack.key === "pre_color_chain" ? "pre_" : ""}fx${entry.index + 1}_${color[2]}`;
+    id = entry && (entry.rack.key !== "source_color_chain" || sourceFxRealtime()) &&
+      `${entry.rack.prefix || ""}fx${entry.index + 1}_${color[2]}`;
   } else if (filter) {
     const index = (preset.filter_slots || []).findIndex((s) => s.id === Number(filter[1]));
     id = index >= 0 && `filter${index + 3}_${filter[2]}`;
@@ -4279,7 +4282,7 @@ function modulationGroups() {
     if (spec.id.startsWith("tb303_") && !preset.tb303) continue;
     // Added filters have their own groups, addressed by slot id.
     if (
-      /^(pre_)?fx\d+_/.test(spec.id) ||
+      /^(pre_|source_)?fx\d+_/.test(spec.id) ||
       /^(lfo|env)\d+_/.test(spec.id) ||
       /^filter([3-9]|1\d)_/.test(spec.id)
     )
@@ -5219,6 +5222,7 @@ function buildSequence() {
     structure: schedulePreset,
     fxParameters: (slot) => colorDestinationSchema(slot.kind).map(([key]) => key),
     fxName: (slot) => COLOR_TYPES.find(([kind]) => kind === slot.kind)?.[1],
+    sourceFxRealtime,
     knob: (schema, container, binding) =>
       createKnob(schema, container, binding),
     depthText: (parameter, depth) => unitDepth(parameterUnit(parameter), depth),

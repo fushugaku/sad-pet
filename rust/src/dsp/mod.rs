@@ -207,6 +207,7 @@ pub(crate) struct Modulated {
     pub(crate) color_len: usize,
     pub(crate) pre_color_slots: [ColorSlot; MAX_COLOR_SLOTS],
     pub(crate) pre_color_len: usize,
+    pub(crate) source_color: Option<ColorSlot>,
     pub(crate) lfos: [Lfo; crate::preset::MODULATORS],
     pub(crate) envs: [Env; crate::preset::MODULATORS],
     pub(crate) lfo_count: usize,
@@ -229,6 +230,7 @@ pub(crate) struct Modulated {
     /// A modulation route wrote into a color slot of this frame. Clean frames
     /// carry the preset's own slots, so the racks need no reconfiguration.
     pub(crate) color_dirty: bool,
+    pub(crate) source_dirty: bool,
     pub(crate) filter_slots: [FilterSlot; MAX_FILTER_SLOTS],
     pub(crate) filter_len: usize,
     pub(crate) grain_groups: crate::grain_groups::Settings,
@@ -259,6 +261,7 @@ impl Modulated {
         self.color_slots[..self.color_len].copy_from_slice(&preset.color_chain);
         self.pre_color_len = preset.pre_color_chain.len();
         self.pre_color_slots[..self.pre_color_len].copy_from_slice(&preset.pre_color_chain);
+        self.source_color = preset.source_color_chain.first().copied();
         self.lfos = preset.lfos;
         self.envs = preset.envs;
         self.lfo_count = preset.lfo_count as usize;
@@ -318,6 +321,7 @@ impl Modulated {
             |s| s.radias(),
         );
         self.color_dirty = false;
+        self.source_dirty = false;
         self.filter_len = preset.filter_slots.len();
         self.filter_slots[..self.filter_len].copy_from_slice(&preset.filter_slots);
         self.grain_groups = preset.grain_groups;
@@ -540,14 +544,21 @@ impl Modulated {
                 }
             }
             Destination::Color { slot, parameter } => {
-                let Some(effect) = self.color_slots[..self.color_len]
-                    .iter_mut()
-                    .chain(self.pre_color_slots[..self.pre_color_len].iter_mut())
-                    .find(|s| s.id == slot)
-                else {
-                    return;
-                };
-                self.color_dirty = true;
+                let effect =
+                    if let Some(effect) = self.source_color.as_mut().filter(|s| s.id == slot) {
+                        self.source_dirty = true;
+                        effect
+                    } else {
+                        let Some(effect) = self.color_slots[..self.color_len]
+                            .iter_mut()
+                            .chain(self.pre_color_slots[..self.pre_color_len].iter_mut())
+                            .find(|s| s.id == slot)
+                        else {
+                            return;
+                        };
+                        self.color_dirty = true;
+                        effect
+                    };
                 if parameter == crate::color::ColorParameter::LcrRatio {
                     effect.settings.lcr_ratio = crate::radias_delay::modulate_lcr_ratio(
                         effect.settings.lcr_sync,
@@ -686,8 +697,9 @@ pub struct Engine {
     /// (preset revision, bpm bits, shaper pitch bits) the racks last saw.
     rack_key: Option<(u64, u32, u32)>,
     rack_configured_dirty: bool,
-    /// (preset revision, bpm bits, sample root note bits) the source FX last saw.
-    source_key: Option<(u64, u32, u32)>,
+    /// (preset revision, bpm bits, root note bits, live slot) the source FX last saw.
+    source_key: Option<(u64, u32, u32, bool)>,
+    source_configured_dirty: bool,
     color_revision: u64,
     applied_shaper_pitch: u32,
     overlap: f32,
@@ -884,6 +896,7 @@ impl Engine {
             rack_key: None,
             rack_configured_dirty: false,
             source_key: None,
+            source_configured_dirty: false,
             color_revision: 0,
             applied_shaper_pitch: 60.0_f32.to_bits(),
             overlap: 1.0,
@@ -2668,6 +2681,11 @@ impl Engine {
     fn update_modulation(&mut self) {
         let mut m = self.spare_modulated.take().expect("spare modulation frame");
         m.write_from_preset(&self.preset);
+        // File Source FX is baked off-thread; only live inputs and Rack inserts
+        // take control-rate modulation, without invalidating the file cache.
+        if self.reads_source_cache() && self.preset.bus.is_none() {
+            m.source_color = None;
+        }
         if !self.control_inputs.is_empty() && self.sequence_running {
             // All Control clocks and the parent's lanes contribute before a
             // single clamp. Opposing offsets cancel even near a range's ends.
@@ -2782,14 +2800,13 @@ impl Engine {
             self.color_revision,
             m.params.bpm.to_bits(),
             m.params.sample_root_note.to_bits(),
+            m.source_color.is_some(),
         );
-        if self.source_key != Some(source_key) {
+        if m.source_dirty || self.source_configured_dirty || self.source_key != Some(source_key) {
             self.source_color.set_pitch(m.params.sample_root_note);
             self.source_color.configure_tempo(
-                self.preset
-                    .source_color_chain
-                    .first()
-                    .copied()
+                m.source_color
+                    .or_else(|| self.preset.source_color_chain.first().copied())
                     .unwrap_or(ColorSlot {
                         enabled: false,
                         ..ColorSlot::default()
@@ -2797,6 +2814,7 @@ impl Engine {
                 m.params.bpm,
             );
             self.source_key = Some(source_key);
+            self.source_configured_dirty = m.source_dirty;
         }
         let phase_capable = self.phase_capabilities(&m);
         self.oscillator_engine.graph.configure_routes(

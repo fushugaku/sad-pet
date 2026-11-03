@@ -65,6 +65,58 @@ fn switched_on_processing_passes_at_unity_without_notes_or_transport() {
 }
 
 #[test]
+fn source_fx_routes_modulate_realtime_buses_without_history() {
+    for kind in [Kind::Bus, Kind::Master, Kind::PadFx] {
+        let make = |modulate| {
+            let mut e = engine(kind, |p| {
+                let mut slot = ColorSlot {
+                    id: 90,
+                    kind: SaturatorType::Waveshaper,
+                    mix: 1.0,
+                    ..Default::default()
+                };
+                slot.settings.waveshaper_type =
+                    sad_pet::dsp::radias_waveshaper::WaveshaperMode::HardClip;
+                slot.settings.waveshaper_depth = 0.1;
+                p.source_color_chain = vec![slot];
+                p.lfos[0].destination = if modulate {
+                    sad_pet::preset::Destination::Color {
+                        slot: 90,
+                        parameter: sad_pet::color::ColorParameter::WaveshaperDepth,
+                    }
+                } else {
+                    sad_pet::preset::Destination::None
+                };
+                p.lfos[0].depth = 0.8;
+                p.lfos[0].rate_hz = 3.0;
+            });
+            e.set_playing(true);
+            assert!(e.live_input.is_none());
+            e
+        };
+        let mut base = make(false);
+        let mut modulated = make(true);
+        let mut difference = 0.0_f32;
+        for n in 0..12_000 {
+            let x = input(n).map(|v| v * 0.5);
+            let a = base.process_input_frame(x);
+            let b = modulated.process_input_frame(x);
+            if n > 6_000 {
+                difference = difference.max((a[0] - b[0]).abs());
+            }
+        }
+        assert!(difference > 1e-4, "{kind:?} ignored Insert FX modulation");
+        assert!(modulated.knob_states()["color:90:waveshaper_depth"].modulated);
+        assert_eq!(
+            modulated.preset.source_color_chain[0]
+                .settings
+                .waveshaper_depth,
+            0.1
+        );
+    }
+}
+
+#[test]
 fn processed_buses_keep_headroom_even_when_bypassed() {
     for kind in [Kind::Bus, Kind::Master, Kind::PadFx] {
         for bypass in [false, true] {
