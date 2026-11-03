@@ -225,6 +225,9 @@ export class MidiInputs {
       } else if (status === 0xbf && cc >= 77 && cc <= 100) {
         this.feedback.touch(cc - 64);
         this.sequencer.turn(cc - 64, value);
+      } else if (status === 0xbf && cc >= 5 && cc <= 11) {
+        this.feedback.faderInput(cc, value);
+        this.sequencer.fader(cc, value);
       } else if (status === 0xb0 && [103, 102, 106, 107].includes(cc)) {
         if (!value) this.pageButtons.delete(cc);
         else if (!this.pageButtons.has(cc)) {

@@ -212,7 +212,7 @@ export class Xl3Feedback {
       }
       const selected = controls.get(this.lastControl);
       const fields = selected ? [selected.instrument || `Page ${page + 1}`, selected.label,
-        selected.available ? selected.text || `${Math.round(unit(selected.unit) * 100)}%` : "Loading..."]
+        selected.available || surface ? selected.text || `${Math.round(unit(selected.unit) * 100)}%` : "Loading..."]
         : surface?.fields || ["SAD PET", `Page ${page + 1} / Track ${track + 1}`, `${controls.size} assignments`];
       const signature = JSON.stringify([page, track, selected?.key, fields]);
       if (this.displayDirty || this.displaySignature !== signature) {

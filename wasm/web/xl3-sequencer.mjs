@@ -95,10 +95,13 @@ export class Xl3Sequencer {
     if (parameter.key === "gate_override" && step.gate_override < 0) return track.config[7];
     return Number(step[parameter.key] ?? 0);
   }
-  turn(cc, value) {
+  fader(cc, value) {
+    if (cc >= 5 && cc <= 11) this.turn(cc + 24, value, true);
+  }
+  turn(cc, value, absolute = false) {
     const parameter = PARAMETERS.find(p => p.cc === cc), delta = value - 64;
     const current = this.current();
-    if (!parameter || !delta || !current) return;
+    if (!parameter || !absolute && !delta || !current) return;
     const { editor, track } = current, targets = this.targets(current);
     for (const held of this.held.values()) held.used = true;
     for (const stage of targets) {
@@ -108,11 +111,13 @@ export class Xl3Sequencer {
       let next;
       if (parameter.key === "pitch") {
         const notes = editor.sliderNotes(track);
-        next = notes[clamp(editor.slot(notes, previous) + delta, 0, notes.length - 1)];
+        next = notes[absolute ? Math.round(value / 127 * (notes.length - 1))
+          : clamp(editor.slot(notes, previous) + delta, 0, notes.length - 1)];
       } else if (parameter.key === "slide" || (parameter.field >= 16 &&
           /^lfo\d+_reset$/.test(track.destinations?.[parameter.field - 16] || ""))) {
-        next = Number(delta > 0);
-      } else next = clamp(Math.round((previous + delta * (parameter.increment || 1)) * 100) / 100,
+        next = Number(absolute ? value >= 64 : delta > 0);
+      } else if (absolute) next = Math.round(parameter.min + value / 127 * (parameter.max - parameter.min));
+      else next = clamp(Math.round((previous + delta * (parameter.increment || 1)) * 100) / 100,
         parameter.min, parameter.max);
       if (previous !== next || parameter.key === "gate_override" && step.gate_override < 0)
         editor.edit(track.id, stage, parameter.field, next, false);
@@ -165,6 +170,12 @@ export class Xl3Sequencer {
       controls.set(parameter.cc, { key: `sequencer:${track.id}:${parameter.key}`, controller: parameter.cc,
         parameter: parameter.key, label: parameter.label, instrument: `${current.instrument} / ${track.name}`,
         available: true, unit: (value - parameter.min) / (parameter.max - parameter.min), text });
+      if (parameter.cc >= 29 && parameter.cc <= 35) {
+        const cc = parameter.cc - 24, notes = parameter.key === "pitch" ? editor.sliderNotes(track) : null;
+        controls.set(cc, { ...controls.get(parameter.cc), controller: cc,
+          unit: notes ? editor.slot(notes, value) / Math.max(1, notes.length - 1)
+            : (value - parameter.min) / (parameter.max - parameter.min), available: targets.length > 0 });
+      }
     }
     return { key: `sequencer:${current.key}`, controls, colors,
       fields: [current.instrument || "Sequencer", track.name, shifted

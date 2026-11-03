@@ -173,6 +173,23 @@ editor.selection = new Set();
 send(0xb0, 38, 127); send(0xbf, 93, 65); send(0xb0, 38, 0);
 assert.equal(track().steps[1].pitch, 62);
 assert.equal(track().steps[1].gate, 2);
+// Each fader edits the same parameter as the encoder above it, absolutely.
+editor.selection = new Set([3]);
+send(0xb0, 38, 127);
+for (const [cc, key, low, high] of [[5, "pitch", 0, 127], [6, "gate_override", 0, 100],
+  [7, "velocity", 1, 127], [8, "ratchet", 1, 8], [9, "slide", false, true],
+  [10, "gate", 0, 3], [11, "pulses", 1, 8]]) {
+  for (const [position, expected] of [[0, low], [127, high]]) {
+    send(0xbf, cc, position);
+    for (const stage of [1, 3]) assert.equal(track().steps[stage][key], expected, `${key}: held/browser-selected fader target`);
+  }
+}
+const gateAfterFaders = track().steps[1].gate;
+send(0xb0, 38, 0);
+assert.equal(track().steps[1].gate, gateAfterFaders, "fader edit toggled the held note on release");
+const beforeUnusedFader = edits.length;
+editor.selection.clear(); send(0xbf, 5, 0); send(0xbf, 12, 127);
+assert.equal(edits.length, beforeUnusedFader, "fader without targets or unused fader edited a step");
 send(0xb6, 63, 127); send(0xb6, 63, 0); // Feature acknowledgement, Shift stays held.
 send(0xb0, 39, 127); send(0xb0, 39, 0);
 assert.equal(editor.visiblePage, 2, "Shift + 3 did not select steps 33-48");
