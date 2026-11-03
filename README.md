@@ -879,7 +879,8 @@ active, **Mode + DAW Mixer** enters Sequencer and **Mode + DAW Control** returns
 to MIDI Learn; Custom Mode buttons still select the existing mapping pages.
 Sequencer always follows the instrument and track selected in the browser.
 Page arrows select instruments, and Track arrows select its actual sequencer
-tracks. A tap on one of the sixteen channel buttons toggles that step. Hold one
+tracks. A tap on one of the sixteen channel buttons switches its Gate type
+between Rest (off) and Multi (on), independently of Skip. Hold one
 or several buttons while turning an encoder to edit those steps together with
 the browser's selected steps; releasing an edited button does not toggle it.
 **Shift + 1–8** selects an existing block of sixteen steps (up to 128 steps),

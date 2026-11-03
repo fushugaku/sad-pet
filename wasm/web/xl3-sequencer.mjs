@@ -70,7 +70,7 @@ export class Xl3Sequencer {
     const held = this.held.get(index);
     this.held.delete(index);
     if (held && held.key === key && !held.used && track.steps[held.stage])
-      editor.edit(track.id, held.stage, 6, Number(!track.steps[held.stage].skip));
+      editor.edit(track.id, held.stage, 2, track.steps[held.stage].gate === 0 ? 2 : 0);
     this.paint(current);
   }
   targets(current) {

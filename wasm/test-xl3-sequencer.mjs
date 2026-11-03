@@ -24,21 +24,32 @@ const source = () => ({ editor, context: instrument, instrument: `Instrument ${i
 const sequencer = new Xl3Sequencer(source), track = () => editor.track();
 sequencer.button(0, 127, false);
 sequencer.button(0, 127, false);
-assert.equal(track().steps[0].skip, false, "holding immediately muted the note being edited");
+assert.equal(track().steps[0].gate, 2, "holding immediately muted the note being edited");
 assert.ok(editor.controllerHeld.has(0));
+assert.equal(track().steps[0].skip, false);
 sequencer.button(0, 0, false);
-assert.equal(track().steps[0].skip, true, "tap did not switch the step off");
+assert.equal(track().steps[0].gate, 0, "tap did not switch the step off");
 sequencer.button(0, 0, false);
-assert.equal(track().steps[0].skip, true, "duplicate release switched it twice");
+assert.equal(track().steps[0].gate, 0, "duplicate release switched it twice");
 
+// Every sounding gate type switches to Rest; Rest always returns to Multi.
+for (const gate of [1, 2, 3]) {
+  track().steps[0].gate = gate;
+  sequencer.button(0, 127, false); sequencer.button(0, 0, false);
+  assert.equal(track().steps[0].gate, 0);
+  sequencer.button(0, 127, false); sequencer.button(0, 0, false);
+  assert.equal(track().steps[0].gate, 2);
+  assert.equal(track().steps[0].skip, false, "gate toggle edited Skip");
+}
+track().steps[0].gate = 0;
 editor.selection = new Set([0, 3]);
 sequencer.button(0, 127, false); sequencer.button(1, 127, false);
 sequencer.turn(29, 65);
 assert.deepEqual([0, 1, 2, 3].map(n => track().steps[n].pitch), [61, 61, 60, 61],
   "held and browser-selected steps were not a deduplicated union");
 sequencer.button(0, 0, false); sequencer.button(1, 0, false);
-assert.equal(track().steps[0].skip, true, "editing toggled a held step on release");
-assert.equal(track().steps[1].skip, false);
+assert.equal(track().steps[0].gate, 0, "editing toggled a held step on release");
+assert.equal(track().steps[1].gate, 2);
 assert.deepEqual([...editor.selection], [0, 3], "hardware changed the browser's selection");
 editor.selection = new Set([0]);
 sequencer.turn(30, 65); assert.equal(track().steps[0].gate_override, 56);
@@ -47,6 +58,7 @@ sequencer.turn(32, 127); assert.equal(track().steps[0].ratchet, 8);
 sequencer.turn(32, 1); assert.equal(track().steps[0].ratchet, 1);
 sequencer.turn(33, 65); assert.equal(track().steps[0].slide, true);
 sequencer.turn(33, 63); assert.equal(track().steps[0].slide, false);
+track().steps[0].gate = 2;
 sequencer.turn(34, 65); assert.equal(track().steps[0].gate, 3);
 sequencer.turn(34, 65); assert.equal(track().steps[0].gate, 3);
 sequencer.turn(34, 1); assert.equal(track().steps[0].gate, 0);
@@ -84,30 +96,30 @@ for (let page = 0; page < 8; page++) {
   sequencer.turn(29, 65);
   assert.equal(track().steps[page * 16].pitch, before + 1);
   sequencer.button(15, 127, false); sequencer.button(15, 0, false);
-  assert.equal(track().steps[page * 16 + 15].skip, true, "step buttons did not follow the chosen block");
+  assert.equal(track().steps[page * 16 + 15].gate, 0, "step buttons did not follow the chosen block");
 }
 const beforeInvalidPage = editor.visiblePage;
 sequencer.button(15, 127, true); sequencer.button(15, 0, true);
 assert.equal(editor.visiblePage, beforeInvalidPage, "an unavailable block extended the pattern");
 editor.visiblePage = 0;
 sequencer.button(1, 127, true);
-const skipAfterPage = track().steps[17].skip;
+const gateAfterPage = track().steps[17].gate;
 sequencer.button(1, 127, false); // Repeated press after Shift was released first.
 sequencer.button(1, 0, false);
-assert.equal(track().steps[17].skip, skipAfterPage, "a repeating page button toggled a note after Shift release");
+assert.equal(track().steps[17].gate, gateAfterPage, "a repeating page button toggled a note after Shift release");
 editor.visiblePage = 0; editor.selection = new Set();
 sequencer.button(4, 127, false);
 editor.selected = 2;
 sequencer.button(4, 0, false);
-assert.equal(track().steps[4].skip, false, "a release from the previous track edited the new track");
+assert.equal(track().steps[4].gate, 2, "a release from the previous track edited the new track");
 sequencer.button(4, 127, false);
 instrument = 2;
 sequencer.button(4, 0, false);
-assert.equal(track().steps[4].skip, false, "same track IDs across instruments reused a held button");
+assert.equal(track().steps[4].gate, 2, "same track IDs across instruments reused a held button");
 sequencer.button(4, 127, false);
 editor.showPage(1);
 sequencer.button(4, 0, false);
-assert.equal(track().steps[20].skip, false, "browser page change redirected a held release");
+assert.equal(track().steps[20].gate, 2, "browser page change redirected a held release");
 sequencer.navigate(-1);
 assert.equal(editor.selected, 1, "Track navigation did not change the browser selection");
 sequencer.navigate(-1); assert.equal(editor.selected, 1);
@@ -149,13 +161,13 @@ send(0xb6, 30, 1); // Acknowledge the initial programmatic mode selection.
 editor.selection = new Set();
 send(0xb0, 38, 127); send(0xbf, 93, 65); send(0xb0, 38, 0);
 assert.equal(track().steps[1].pitch, 62);
-assert.equal(track().steps[1].skip, false);
+assert.equal(track().steps[1].gate, 2);
 send(0xb6, 63, 127); send(0xb6, 63, 0); // Feature acknowledgement, Shift stays held.
 send(0xb0, 39, 127); send(0xb0, 39, 0);
 assert.equal(editor.visiblePage, 2, "Shift + 3 did not select steps 33-48");
 send(0xb6, 63, 0); // Physical release.
 send(0xb0, 37, 127); send(0xb0, 37, 0);
-assert.equal(track().steps[32].skip, true);
+assert.equal(track().steps[32].gate, 0);
 assert.deepEqual(learned, [], "Sequencer controls leaked into MIDI Learn");
 send(0xb0, 107, 127); send(0xb0, 107, 0);
 await midi.surface.selections;
