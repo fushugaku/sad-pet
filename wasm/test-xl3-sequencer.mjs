@@ -196,6 +196,31 @@ assert.deepEqual(track().steps.map(s => s.pitch), pitches, "parameter track chan
 track().absolute = true;
 assert.equal(sequencer.feedback().controls.get(29).text, "+100%");
 track().absolute = false;
+// Pitch parameter lanes advance exactly one semitone, regardless of Depth.
+const originalDepthText = editor.depthText;
+editor.depthText = (_, depth) => `${depth * 96} st`;
+for (const amount of [1, .5]) {
+  track().amount = amount;
+  for (const stage of [0, 1, 3]) track().steps[stage].cv = 0;
+  send(0xbf, 93, 65);
+  for (const stage of [0, 1, 3]) {
+    assert.equal(editor.valueText(track(), track().steps[stage].cv), "+1 st");
+  }
+  send(0xbf, 93, 65);
+  assert.equal(sequencer.feedback().controls.get(29).text, "+2 st");
+  for (let position = 0; position <= 127; position++) {
+    send(0xbf, 5, position);
+    const expected = Math.round(-96 * amount + position / 127 * 192 * amount);
+    assert.equal(Math.round(track().steps[1].cv / 5000 * 96 * amount) || 0, expected || 0);
+    assert.match(sequencer.feedback().controls.get(5).text, /^[+-]?\d+ st$/);
+  }
+  editor.edit(track().id, 0, 12, 5000 * 2.4 / (96 * amount));
+  assert.equal(editor.valueText(track(), track().steps[0].cv), "+2 st", "browser edit retained fractional pitch");
+}
+track().target.parameter = "osc2_tune";
+editor.edit(track().id, 0, 12, 123);
+assert.equal(track().steps[0].cv, 123, "Tune lost fine resolution");
+editor.depthText = originalDepthText;
 send(0xb0, 38, 0);
 assert.equal(track().steps[1].gate, 2, "parameter edit toggled held step on release");
 track().target = { kind: "notes" };

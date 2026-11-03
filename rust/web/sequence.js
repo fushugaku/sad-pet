@@ -563,6 +563,13 @@ window.SadNeuropolis = class {
     const id = typeof track === "object" ? track?.id : track;
     track = id ? this.track(id) : null;
     if (id && !track) return;
+    if (track && stage !== null && field === 12) {
+      const span = this.pitchValueSpan(track);
+      if (span) {
+        const limit = Math.floor(span), semitones = Math.max(-limit, Math.min(limit, Math.round(value / 5000 * span)));
+        value = Math.round(semitones / span * 5000);
+      }
+    }
     if (!track) {
       if (field === 0) this.program().enabled = !!value;
     } else if (stage !== null)
@@ -626,6 +633,24 @@ window.SadNeuropolis = class {
   depthText(parameter, depth) {
     return (parameter && this.hooks.depthText?.(parameter, depth)) ||
       `${depth > 0 ? "+" : ""}${Math.round(depth * 100)}%`;
+  }
+  // Parameter pitch lanes store CV, but are edited in whole semitones.
+  pitchValueSpan(track) {
+    const id = track?.target.parameter;
+    if (track?.target.kind !== "parameter" || track.absolute ||
+        !(id === "pitch" || /_transpose$/.test(id || ""))) return 0;
+    const text = this.depthText(id, 1);
+    const span = /st$/.test(text) ? Math.abs(Number.parseFloat(text.replace("−", "-")) * track.amount) : 0;
+    return Number.isFinite(span) ? span : 0;
+  }
+  valueText(track, value) {
+    const span = this.pitchValueSpan(track);
+    if (span) {
+      const semitones = Math.round(value / 5000 * span);
+      return `${semitones > 0 ? "+" : ""}${semitones} st`;
+    }
+    return track.absolute ? `${value > 0 ? "+" : ""}${(value / 50).toFixed(0)}%`
+      : this.depthText(track.target.parameter, value / 5000 * track.amount);
   }
   // Resynth and Synth engine oscillator lanes edit a signed offset.
   relative(track) {
@@ -865,6 +890,12 @@ window.SadNeuropolis = class {
       const step = track.steps[offset + i],
         fader = card.querySelector(".neuro-fader");
       let value = step[valueLayer];
+      const pitchSpan = this.pitchValueSpan(track);
+      if (valueLayer === "cv") {
+        fader.min = pitchSpan ? -Math.floor(pitchSpan) : -5000;
+        fader.max = pitchSpan ? Math.floor(pitchSpan) : 5000;
+        fader.value = pitchSpan ? Math.round(value / 5000 * pitchSpan) : value;
+      }
       if (notes) {
         // Sliders step through the track's notes; each shows the one it plays.
         const slot = this.slot(notes, value);
@@ -878,9 +909,7 @@ window.SadNeuropolis = class {
         valueLayer === "pitch"
           ? this.pitchText(track, value)
           : valueLayer === "cv"
-            ? track.absolute
-              ? `${value > 0 ? "+" : ""}${(value / 50).toFixed(0)}%`
-              : this.depthText(track.target.parameter, (value / 5000) * track.amount)
+            ? this.valueText(track, value)
             : typeof value === "boolean"
               ? value
                 ? "On"
@@ -1436,7 +1465,10 @@ window.SadNeuropolis = class {
         `Stage ${i + 1} ${parameter ? "parameter value" : relative ? "pitch offset" : "pitch"}`,
       );
       if (parameter)
-        fader.oninput = () => this.edit(track.id, i, 12, Number(fader.value));
+        fader.oninput = () => {
+          const span = this.pitchValueSpan(this.track(track.id));
+          this.edit(track.id, i, 12, span ? Number(fader.value) / span * 5000 : Number(fader.value));
+        };
       else {
         // Positions are the track's notes, whatever their spacing.
         fader.dataset.notes = "true";

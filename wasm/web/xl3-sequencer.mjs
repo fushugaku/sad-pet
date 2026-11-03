@@ -112,7 +112,13 @@ export class Xl3Sequencer {
       if (!step) continue;
       const previous = this.value(parameter, track, step);
       let next;
-      if (parameter.key === "pitch") {
+      const span = parameter.key === "cv" && editor.pitchValueSpan(track);
+      if (span) {
+        const limit = Math.floor(span);
+        const semitones = absolute ? Math.round(-limit + value / 127 * 2 * limit)
+          : clamp(Math.round(previous / 5000 * span) + delta, -limit, limit);
+        next = Math.round(semitones / span * 5000);
+      } else if (parameter.key === "pitch") {
         const notes = editor.sliderNotes(track);
         next = notes[absolute ? Math.round(value / 127 * (notes.length - 1))
           : clamp(editor.slot(notes, previous) + delta, 0, notes.length - 1)];
@@ -165,9 +171,7 @@ export class Xl3Sequencer {
       let text = targets.length ? values.some(v => v !== value) ? "Mixed" : String(value) : "Hold or select steps";
       if (targets.length && text !== "Mixed") {
         if (parameter.key === "pitch") text = editor.pitchText(track, value);
-        if (parameter.key === "cv") text = track.absolute
-          ? `${value > 0 ? "+" : ""}${(value / 50).toFixed(0)}%`
-          : editor.depthText(track.target.parameter, value / 5000 * track.amount);
+        if (parameter.key === "cv") text = editor.valueText(track, value);
         if (parameter.key === "gate_override") text = `${value}%`;
         if (parameter.key === "slide") text = value ? "On" : "Off";
         if (parameter.key === "gate") text = ["Rest", "Single", "Multi", "Hold"][value];
