@@ -547,3 +547,31 @@ for (let t = 0; t < 6; t++) {
   assert.deepEqual(nativeBackup.banks[3][t][`native_${t}`], [15, 14]);
 }
 console.log("Mapping tracks passed: legacy migration, 16 × 6 independent banks, offscreen isolation, badges, per-Mode recall, Track-local clearing, Learn, reload and native migration.");
+
+// Opening an editor with saved mappings must not resolve every existing
+// control again for each new slider. Full refresh still follows its source.
+stored.clear();
+stored.set("sad-pet-midi-map", JSON.stringify({ "control:0:parameter_0": [0, 13] }));
+const opening = editor().SadMidiLearn, openingBank = new Element("div");
+document.body.append(openingBank);
+let resolutions = 0, openingTimbre = 0;
+const openingStarted = performance.now();
+for (let i = 0; i < 400; i++) {
+  const box = new Element("div"), input = new Element("div");
+  box.className = "knob"; box.append(input); openingBank.append(box);
+  opening.attach(input, `parameter_${i}`, `Parameter ${i}`, () => {}, null, {
+    describe() {
+      resolutions++;
+      return { id: `control:${openingTimbre}:parameter_${i}`, timbre: openingTimbre,
+        parameter: `parameter_${i}`, key: `parameter_${i}`, label: `Parameter ${i}` };
+    },
+  });
+}
+console.log(`Opening 400 MIDI controls: ${resolutions} target resolutions in ${(performance.now() - openingStarted).toFixed(1)} ms.`);
+assert.equal(resolutions, 400, "each new control repainted all previously mounted MIDI controls");
+assert.equal(openingBank.children[0].classList.contains("midi-mapped"), true);
+openingTimbre = 1;
+opening.refresh();
+assert.equal(openingBank.children[0].classList.contains("midi-mapped"), false,
+  "a full editor refresh retained the previous source's badge");
+openingBank.remove();

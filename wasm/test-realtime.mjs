@@ -109,6 +109,25 @@ assert.equal(
   processor.core.wasm.memory.buffer,
 );
 
+// Controller feedback is a read, including when addressed to an offscreen
+// source. It must not dirty the view stamp or consume telemetry buffers.
+while (messages.some(m => m.type === "snapshot")) await importSnapshot();
+const feedbackStamp = processor.stateStamp;
+for (let i = 0; i < 32; i++) send("request", {
+  timbre: 0, path: "/api/parameters/values", data: ["pitch", "filter"],
+}, "/api/control/request");
+assert.equal(typeof messages.findLast(m => m.id === id).result.filter, "number");
+send("request", { timbre: 0, path: "/api/preset" }, "/api/control/request");
+send("request", { timbre: 0, path: "/api/state" }, "/api/control/request");
+send("request", ["filter"], "/api/parameters/values");
+assert.equal(processor.stateStamp, feedbackStamp, "MIDI feedback reads invalidated the editor state");
+assert.equal(messages.some(m => m.type === "snapshot"), false,
+  "MIDI feedback reads consumed full-state telemetry buffers");
+send("request", { timbre: 0, path: "/api/parameters", data: { filter: .42 } }, "/api/control/request");
+assert.ok(processor.stateStamp > feedbackStamp, "a real MIDI edit did not invalidate the view");
+assert.ok(Math.abs(processor.core.request("/api/parameters/values", ["filter"]).filter - .42) < 1e-6);
+while (messages.some(m => m.type === "snapshot")) await importSnapshot();
+
 for (let cycle = 0; cycle < 10; cycle++) {
   await recorder.call("record-start", { id: `take${cycle}`, rate: 48000 });
   send("record-start");

@@ -84,7 +84,11 @@ window.SadMidiLearn = (() => {
     hooks.changed();
   }
   function paint(key, fresh = null) {
-    for (const [local, registrations] of knobs) for (const { dial, details } of registrations) {
+    // Mounting one slider must not repaint every knob already in the editor.
+    // Page/source changes call paint() without a key for one complete pass.
+    const groups = fresh ? [[key, knobs.get(key) || []]] : knobs;
+    for (const [local, registrations] of groups) for (const { dial, details } of registrations) {
+      if (fresh && dial !== fresh) continue;
       if (!dial.isConnected && dial !== fresh) continue;
       const target = details?.describe?.(), actual = target?.id || local;
       const cc = map.get(actual) || map.get(local);

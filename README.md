@@ -869,6 +869,9 @@ another control or mapping bank is selected. Automatic temporary control
 overlays are disabled, so the display timeout cannot hide this information.
 Mapped ranges continue to repaint while focused after Learn, including sliders
 on the Control surface; text and number fields retain unfinished input.
+Opening a mapped editor paints each newly mounted control once. Page and
+instrument changes refresh the full set of badges once; controller feedback
+reads leave the editor state valid and do not request extra telemetry snapshots.
 These are temporary device settings; the uploaded Custom Modes are preserved.
 
 `node wasm/test-launch-control.mjs` checks both hardware layouts, pickup,

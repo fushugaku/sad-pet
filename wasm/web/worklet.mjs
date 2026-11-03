@@ -85,6 +85,11 @@ class SadPetProcessor extends AudioWorkletProcessor {
           } });
           return;
         }
+        const request = message.path === "/api/control/request" ? data : message;
+        const readOnly = type === "request" && (
+          request?.path === "/api/parameters/values" ||
+          (request?.data == null && ["/api/state", "/api/preset"].includes(request?.path))
+        );
         let result;
         if (type === "wavetable-cached") {
           this.port.postMessage({ id, result: this.core.json("sad_wavetable_cached", data) });
@@ -205,6 +210,12 @@ class SadPetProcessor extends AudioWorkletProcessor {
           this.recording = false;
           result = { frames: this.recordedFrames };
         } else result = this.core.request(message.path, data, message.path !== "/api/preset");
+        // MIDI feedback and linked editors only read the model. A scoped read
+        // must not invalidate the UI or start another full telemetry transfer.
+        if (readOnly) {
+          this.port.postMessage({ id, result, stamp: this.stateStamp });
+          return;
+        }
         if (type !== "capture-input" && (type !== "request" || data != null))
           this.stateStamp++;
         const capacity = this.core.wasm.sad_snapshot_capacity();
