@@ -59,7 +59,19 @@ export class Xl3Sequencer {
       if (repeated) return;
       if (shifted) {
         this.shift();
-        if (index < editor.pages(track)) editor.showPage(index);
+        if (index < 8) {
+          const previous = editor.pages(track);
+          if (index >= previous) {
+            editor.edit(track.id, null, 54, index + 1, false);
+            // Extending a track normally copies its last phrase. Controller
+            // creation starts with silent steps, including any skipped blocks.
+            for (let stage = previous * 16; stage < (index + 1) * 16; stage++) {
+              editor.edit(track.id, stage, 2, 0, false);
+              if (track.steps[stage].skip) editor.edit(track.id, stage, 6, 0, false);
+            }
+          }
+          editor.showPage(index);
+        }
         this.current();
       } else {
         this.held.set(index, { stage: offset + index, key, used: false });
@@ -123,14 +135,14 @@ export class Xl3Sequencer {
     for (let cc = 37; cc <= 52; cc++) colors.set(cc, [0, 0, 0]);
     if (!current) return { key: "sequencer:empty", controls, colors,
       fields: ["Sequencer", "No track selected", "Select a track in the browser"] };
-    const { editor, track, offset } = current, page = offset / 16;
+    const { editor, track, offset } = current;
     const targets = this.targets(current), selected = new Set(targets);
     const playing = current.playing && editor.program().enabled && !track.config[8] &&
       current.view?.tracks?.slice(0, current.view.count).find(t => t.id === track.id);
     for (let i = 0; i < 16; i++) {
       const step = track.steps[offset + i];
       colors.set(37 + i, shifted
-        ? i >= editor.pages(track) ? [0, 0, 0] : i === page ? [100, 100, 127] : [0, 30, 80]
+        ? i >= editor.pages(track) ? [0, 0, 0] : [127, 127, 127]
         : playing && playing.step === offset + i ? [127, 127, 127]
         : selected.has(offset + i) ? [0, 100, 127]
         : step && !step.skip && step.gate !== 0 ? [0, 75, 8] : [4, 8, 4]);

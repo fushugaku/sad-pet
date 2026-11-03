@@ -101,6 +101,16 @@ for (let page = 0; page < 8; page++) {
 const beforeInvalidPage = editor.visiblePage;
 sequencer.button(15, 127, true); sequencer.button(15, 0, true);
 assert.equal(editor.visiblePage, beforeInvalidPage, "an unavailable block extended the pattern");
+track().pages = 1;
+sequencer.button(2, 127, true); sequencer.button(2, 0, true);
+assert.equal(track().pages, 3, "Shift + empty block did not extend the track");
+assert.equal(editor.visiblePage, 2, "created block did not open in the browser");
+assert.ok(track().steps.slice(16, 48).every(s => s.gate === 0 && !s.skip), "created blocks contain sounding or skipped steps");
+const afterCreation = edits.length;
+sequencer.button(0, 127, true); sequencer.button(0, 0, true);
+assert.equal(editor.visiblePage, 0);
+assert.equal(edits.length, afterCreation, "opening an existing block edited it");
+track().pages = 8;
 editor.visiblePage = 0;
 sequencer.button(1, 127, true);
 const gateAfterPage = track().steps[17].gate;
@@ -131,7 +141,8 @@ assert.deepEqual(surface.colors.get(37 + 5), [0, 100, 127], "browser selection d
 assert.equal(surface.controls.get(29).label, "Pitch");
 assert.equal(surface.controls.has(13), false, "top row was assigned instead of the row above the faders");
 surface = sequencer.feedback(true);
-assert.deepEqual(surface.colors.get(37), [100, 100, 127]);
+assert.deepEqual(surface.colors.get(37), [127, 127, 127]);
+assert.deepEqual(surface.colors.get(38), [127, 127, 127]);
 assert.deepEqual(surface.colors.get(45), [0, 0, 0]);
 
 // Exercise the real port owner, mode reports, Shift preview handshake and LEDs.
@@ -166,8 +177,9 @@ send(0xb6, 63, 127); send(0xb6, 63, 0); // Feature acknowledgement, Shift stays 
 send(0xb0, 39, 127); send(0xb0, 39, 0);
 assert.equal(editor.visiblePage, 2, "Shift + 3 did not select steps 33-48");
 send(0xb6, 63, 0); // Physical release.
+const gateBeforeTap = track().steps[32].gate;
 send(0xb0, 37, 127); send(0xb0, 37, 0);
-assert.equal(track().steps[32].gate, 0);
+assert.equal(track().steps[32].gate, gateBeforeTap === 0 ? 2 : 0);
 assert.deepEqual(learned, [], "Sequencer controls leaked into MIDI Learn");
 send(0xb0, 107, 127); send(0xb0, 107, 0);
 await midi.surface.selections;

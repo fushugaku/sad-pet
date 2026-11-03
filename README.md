@@ -883,8 +883,9 @@ tracks. A tap on one of the sixteen channel buttons switches its Gate type
 between Rest (off) and Multi (on), independently of Skip. Hold one
 or several buttons while turning an encoder to edit those steps together with
 the browser's selected steps; releasing an edited button does not toggle it.
-**Shift + 1–8** selects an existing block of sixteen steps (up to 128 steps),
-also changing the block shown in the browser.
+**Shift + 1–8** opens a block of sixteen steps (up to 128 steps), also changing
+the block shown in the browser. Existing blocks light white while Shift is held.
+Pressing an unlit block creates it, with new steps set to Rest, and opens it.
 
 The encoder row nearest the faders controls **Pitch, Gate length, Velocity,
 Ratchet, Slide, Gate type and Pulses** on knobs 1–7. The middle row's knobs 1–3
