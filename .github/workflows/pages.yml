@@ -53,6 +53,7 @@ jobs:
         run: |
           node wasm/test.mjs
           node wasm/test-realtime.mjs
+          node wasm/test-render.mjs
           node wasm/test-telemetry.mjs
           node wasm/test-loader.mjs
           node wasm/test-tailcall.mjs

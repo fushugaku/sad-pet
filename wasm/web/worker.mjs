@@ -256,6 +256,11 @@ async function handle(message) {
         break;
       }
       case "vocal-songs": {
+        // No Vocal jobs means the lazy worker has no renderer or clips yet.
+        if (!core) {
+          result = [];
+          break;
+        }
         const songs = core.json("sad_vocal_songs");
         const transfer = [];
         for (const song of songs)
