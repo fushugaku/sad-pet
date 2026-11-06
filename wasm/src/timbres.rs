@@ -541,10 +541,10 @@ impl Registry {
                 if self.parts[0].meta.kind == Kind::Empty && pending.kind != Kind::Bus {
                     let name = name(&self.parts);
                     let first = &mut self.parts[0];
-                    if let Some(mut preset) = pending.preset.take() {
-                        if !first.host.engine.exchange_preset(&mut preset) {
-                            return Err(super::PRESET_INSTALL_ERROR.into());
-                        }
+                    if let Some(mut preset) = pending.preset.take()
+                        && !first.host.engine.exchange_preset(&mut preset)
+                    {
+                        return Err(super::PRESET_INSTALL_ERROR.into());
                     }
                     if let Some(gate) = gate {
                         first.host.engine.set_midi_gate(gate);
@@ -566,10 +566,10 @@ impl Registry {
                     self.refresh_context();
                     return Ok(true);
                 }
-                if let Some(mut preset) = pending.preset.take() {
-                    if !host.engine.exchange_preset(&mut preset) {
-                        return Err(super::PRESET_INSTALL_ERROR.into());
-                    }
+                if let Some(mut preset) = pending.preset.take()
+                    && !host.engine.exchange_preset(&mut preset)
+                {
+                    return Err(super::PRESET_INSTALL_ERROR.into());
                 }
                 if let Some(gate) = gate {
                     host.engine.set_midi_gate(gate);
