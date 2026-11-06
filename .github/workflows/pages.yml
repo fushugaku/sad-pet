@@ -40,11 +40,12 @@ jobs:
           cargo test -p sad-pet --no-default-features --lib audio_import --locked
           cargo test -p sad-pet --no-default-features --lib wavetable --locked
           cargo test -p sad-pet --no-default-features --test wavetable --locked
-          cargo test -p sad-pet --no-default-features --test bus --test grain_continuity --locked
+          cargo test -p sad-pet --no-default-features --test bus --test grain_continuity --test sequence_sources_reuse --locked
           cargo test -p sad-pet --no-default-features --test rack_instruments --test rack --test rack_sources --locked
           cargo test -p sad-pet --no-default-features --lib interaction --locked
           cargo test -p sad-pet --no-default-features --lib grain_group_tests --locked
           cargo test -p sad-pet --no-default-features --lib waveshaper --locked
+          cargo test -p sad-pet --no-default-features --lib dsp::filter::delay_tests --locked
           cargo test -p sad-pet --no-default-features --test waveshaper_quality --test waveshaper_filters --test source_fx_waveshaper_latency --locked
           cargo test -p sad-pet --no-default-features --test oscillator_engine --locked
           cargo test -p sad-pet-alphaverb --release --lib --locked

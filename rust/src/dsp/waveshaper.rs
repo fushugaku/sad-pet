@@ -16,7 +16,8 @@ use std::cell::RefCell;
 const FIR_TAPS: usize = 65;
 const HALF_TAPS: usize = FIR_TAPS / 2;
 const FIR_CENTER: usize = FIR_TAPS / 2;
-const DELAY_CAPACITY: usize = 49;
+pub(crate) const MAX_LATENCY_SAMPLES: usize = FIR_CENTER * 3 / 2;
+const DELAY_CAPACITY: usize = MAX_LATENCY_SAMPLES + 1;
 const SMOOTH_SECONDS: f32 = 0.004;
 const LEVEL_MATCH_CACHE_SIZE: usize = 64;
 
@@ -491,7 +492,7 @@ impl Oversampler {
 /// for Drive/Pickup, while SubOSC advances one state at the oversampled rate.
 struct CleanRadias {
     states: [Waveshaper; 8],
-    tables: ShaperTables,
+    tables: &'static ShaperTables,
     mode: WaveshaperMode,
     current: ShaperCoefficients,
     target: ShaperCoefficients,
@@ -509,7 +510,7 @@ impl CleanRadias {
         let current = radias::coefficients(WaveshaperMode::Drive, 0.5, 60 * 256);
         let mut result = Self {
             states: [Waveshaper::default(); 8],
-            tables: radias::tables(),
+            tables: radias::shared_tables(),
             mode: WaveshaperMode::Drive,
             current,
             target: current,
@@ -589,7 +590,7 @@ impl CleanRadias {
                     frame[channel][phase],
                     coefficients,
                     (self.pitch, self.high_increment),
-                    &self.tables,
+                    self.tables,
                 );
             }
         }
@@ -610,7 +611,7 @@ impl CleanRadias {
                 frame[channel],
                 coefficients,
                 (self.pitch, self.host_increment),
-                &self.tables,
+                self.tables,
             )
         });
         self.advance_host_control();
@@ -1170,8 +1171,8 @@ fn step(current: f32, target: f32, left: f32) -> f32 {
 fn quality_latency(quality: Quality) -> usize {
     match quality {
         Quality::Legacy => 0,
-        Quality::Clean2x => (FIR_TAPS - 1) / 2,
-        Quality::Clean4x => (FIR_TAPS - 1) * 3 / 4,
+        Quality::Clean2x => FIR_CENTER,
+        Quality::Clean4x => MAX_LATENCY_SAMPLES,
     }
 }
 
@@ -1326,6 +1327,16 @@ mod tests {
         assert_eq!(curve_transfer(Curve::Custom, -2.0, 0.5, &points), -1.0);
         assert_eq!(curve_transfer(Curve::Custom, 2.0, 0.5, &points), 1.0);
         assert!((curve_transfer(Curve::Custom, -0.9375, 0.5, &points) + 0.9375).abs() < 1e-6);
+    }
+
+    #[test]
+    fn shared_sub_oscillator_table_matches_the_original_integer_formula() {
+        let tables = radias::shared_tables();
+        for index in 0..tables.sub_edges.len() {
+            let original = 16_384_usize.checked_div(index).unwrap_or(32_767) as i16;
+            assert_eq!(tables.sub_edges[index], original, "table index {index}");
+        }
+        assert!(std::ptr::eq(tables, radias::shared_tables()));
     }
 
     #[test]

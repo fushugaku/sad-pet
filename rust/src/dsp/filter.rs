@@ -2,7 +2,7 @@
 use super::{effects::Delay, fast};
 use crate::{
     Stereo,
-    preset::{FilterModel, FilterRouting, FilterType, Params},
+    preset::{FilterModel, FilterRouting, FilterType, MAX_FILTER_SLOTS, Params},
 };
 
 pub(crate) struct Filter {
@@ -284,6 +284,17 @@ pub fn response_request(data: &serde_json::Value) -> Result<serde_json::Value, S
     Ok(serde_json::json!({ "curves": curves }))
 }
 
+// A filter has two shaper stages. The two main filters and at most
+// MAX_FILTER_SLOTS added filters can all appear in the same chain.
+const FILTER_LATENCY: usize = 2 * super::waveshaper::MAX_LATENCY_SAMPLES;
+pub(crate) const CHAIN_DELAY_CAPACITY: usize = (MAX_FILTER_SLOTS + 2) * FILTER_LATENCY + 1;
+pub(crate) const RESYNTH_DELAY_CAPACITY: usize = MAX_FILTER_SLOTS * FILTER_LATENCY + 1;
+// A shared filter slot can be after Resynth OR after an FX, not both.
+pub(crate) const SOURCE_DELAY_CAPACITY: usize = crate::color::MAX_COLOR_SLOTS
+    * super::waveshaper::MAX_LATENCY_SAMPLES
+    + MAX_FILTER_SLOTS * FILTER_LATENCY
+    + 1;
+
 /// Small fixed delay for matching the dry path and parallel filter branches.
 /// Its storage is prepared with the filter, never allocated while rendering.
 pub(crate) struct FrameDelay<const N: usize = 128> {
@@ -304,9 +315,17 @@ impl<const N: usize> FrameDelay<N> {
     pub(crate) fn process(&mut self, frame: Stereo, delay: usize) -> Stereo {
         debug_assert!(delay < self.frames.len());
         self.frames[self.cursor] = frame;
-        let output =
-            self.frames[(self.cursor + self.frames.len() - delay.min(N - 1)) % self.frames.len()];
-        self.cursor = (self.cursor + 1) % self.frames.len();
+        let delay = delay.min(N - 1);
+        let read = if self.cursor >= delay {
+            self.cursor - delay
+        } else {
+            self.cursor + N - delay
+        };
+        let output = self.frames[read];
+        self.cursor += 1;
+        if self.cursor == N {
+            self.cursor = 0;
+        }
         output
     }
 }
@@ -372,17 +391,17 @@ impl ShapedFilter {
     }
 }
 
-pub struct FilterBank {
+struct FilterBankState {
     filters: [ShapedFilter; 2],
     routing: FilterRouting,
     order: [usize; 2],
     parallel: [FrameDelay; 2],
-    chain_dry: Box<FrameDelay<2048>>,
-    source_dry: Box<FrameDelay<4096>>,
-    resynth_dry: Box<FrameDelay<2048>>,
+    chain_dry: Box<FrameDelay<CHAIN_DELAY_CAPACITY>>,
+    source_dry: Box<FrameDelay<SOURCE_DELAY_CAPACITY>>,
+    resynth_dry: Box<FrameDelay<RESYNTH_DELAY_CAPACITY>>,
 }
-impl FilterBank {
-    pub fn new(sample_rate: u32) -> Self {
+impl FilterBankState {
+    fn new(sample_rate: u32) -> Self {
         Self {
             filters: std::array::from_fn(|_| ShapedFilter::new(sample_rate)),
             routing: FilterRouting::Single,
@@ -527,6 +546,254 @@ impl FilterBank {
             std::array::from_fn(|c| (branches[0][c] + branches[1][c]) * 0.5)
         } else {
             serial
+        }
+    }
+}
+
+/// A lightweight holder for optional filter DSP state. Voice arrays may keep
+/// an inactive bank where their filter output is masked; its alignment paths
+/// pass samples through without allocating delay histories.
+pub struct FilterBank {
+    state: Option<Box<FilterBankState>>,
+}
+
+impl FilterBank {
+    /// Construct a fully prepared bank. Use this before publishing a voice or
+    /// Bus role that may process filters on the audio callback.
+    pub fn new(sample_rate: u32) -> Self {
+        Self {
+            state: Some(Box::new(FilterBankState::new(sample_rate))),
+        }
+    }
+
+    /// Construct an empty holder for a role whose filter output is unused.
+    pub(crate) fn inactive() -> Self {
+        Self { state: None }
+    }
+
+    pub(crate) fn is_prepared(&self) -> bool {
+        self.state.is_some()
+    }
+
+    /// Swap a prepared bank into this holder without allocating or dropping
+    /// either side. If this holder was active, its previous state moves into
+    /// `prepared` and remains available for the inverse role transition.
+    pub(crate) fn attach_prepared(&mut self, prepared: &mut Self) {
+        debug_assert!(prepared.is_prepared(), "source FilterBank must be prepared");
+        std::mem::swap(&mut self.state, &mut prepared.state);
+    }
+
+    pub fn clear(&mut self) {
+        if let Some(state) = self.state.as_mut() {
+            state.clear();
+        }
+    }
+
+    pub fn configure<const N: usize>(&mut self, p: &Params, note: f32, envs: [f32; N]) {
+        if let Some(state) = self.state.as_mut() {
+            state.configure(p, note, envs);
+        }
+    }
+
+    pub fn process(&mut self, frame: Stereo) -> Stereo {
+        match self.state.as_mut() {
+            Some(state) => state.process(frame),
+            None => {
+                debug_assert!(
+                    frame == [0.0; 2],
+                    "inactive FilterBank received nonzero audio"
+                );
+                frame
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn latency_samples(&self) -> usize {
+        self.state
+            .as_ref()
+            .map_or(0, |state| state.latency_samples())
+    }
+
+    pub(crate) fn align_chain_input(&mut self, frame: Stereo, extra_latency: usize) -> Stereo {
+        self.state
+            .as_mut()
+            .map_or(frame, |state| state.align_chain_input(frame, extra_latency))
+    }
+
+    pub(crate) fn align_source_input(&mut self, frame: Stereo, latency: usize) -> Stereo {
+        self.state
+            .as_mut()
+            .map_or(frame, |state| state.align_source_input(frame, latency))
+    }
+
+    pub(crate) fn align_resynth_input(&mut self, frame: Stereo, latency: usize) -> Stereo {
+        self.state
+            .as_mut()
+            .map_or(frame, |state| state.align_resynth_input(frame, latency))
+    }
+
+    pub(crate) fn process_tapped(
+        &mut self,
+        frame: Stereo,
+        taps: &mut super::taps::Runtime,
+        gain: f32,
+    ) -> Stereo {
+        match self.state.as_mut() {
+            Some(state) => state.process_tapped(frame, taps, gain),
+            None => {
+                debug_assert!(
+                    frame == [0.0; 2],
+                    "inactive FilterBank received nonzero tapped audio"
+                );
+                frame
+            }
+        }
+    }
+
+    pub(crate) fn process_tapped_with_voice_gain(
+        &mut self,
+        frame: Stereo,
+        taps: &mut super::taps::Runtime,
+        gain: f32,
+        voice_gain: f32,
+    ) -> Stereo {
+        match self.state.as_mut() {
+            Some(state) => state.process_tapped_with_voice_gain(frame, taps, gain, voice_gain),
+            None => {
+                debug_assert!(
+                    frame == [0.0; 2],
+                    "inactive FilterBank received nonzero tapped audio"
+                );
+                frame
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod delay_tests {
+    use super::*;
+    use crate::waveshaper::{FilterShapers, Quality, Stage};
+
+    // Exercise zero delay, the last available sample and changes in delay
+    // across multiple wraps against the original, unbounded input timeline.
+    fn check_ring<const N: usize>() {
+        let mut ring = FrameDelay::<N>::new();
+        let frame = |i: usize| [i as f32 + 1.0, -(i as f32 + 1.0)];
+        for i in 0..N * 3 {
+            let delay = [0, 1, N / 2, N - 1][i % 4];
+            let expected = i.checked_sub(delay).map_or([0.0; 2], frame);
+            assert_eq!(
+                ring.process(frame(i), delay),
+                expected,
+                "N={N}, i={i}, delay={delay}"
+            );
+        }
+        ring.clear();
+        assert_eq!(ring.process([1.0, -1.0], N - 1), [0.0; 2]);
+        assert_eq!(ring.process([2.0, -2.0], 0), [2.0, -2.0]);
+    }
+
+    #[test]
+    fn latency_rings_cover_their_full_range_across_wraps() {
+        check_ring::<{ super::super::waveshaper::MAX_LATENCY_SAMPLES + 1 }>();
+        check_ring::<CHAIN_DELAY_CAPACITY>();
+        check_ring::<SOURCE_DELAY_CAPACITY>();
+        check_ring::<RESYNTH_DELAY_CAPACITY>();
+    }
+
+    #[test]
+    fn inactive_bank_is_small_and_alignment_calls_are_passthrough() {
+        let mut bank = FilterBank::inactive();
+        assert!(!bank.is_prepared());
+        assert_eq!(
+            std::mem::size_of::<FilterBank>(),
+            std::mem::size_of::<Option<Box<FilterBankState>>>()
+        );
+        let frame = [0.25, -0.5];
+        assert_eq!(bank.align_chain_input(frame, 96), frame);
+        assert_eq!(bank.align_source_input(frame, 3), frame);
+        assert_eq!(bank.align_resynth_input(frame, 7), frame);
+        assert_eq!(bank.latency_samples(), 0);
+        bank.configure(&Params::default(), 60.0, [0.0; 8]);
+        bank.clear();
+        assert!(!bank.is_prepared());
+    }
+
+    #[test]
+    fn prepared_bank_swap_preserves_both_full_states_without_replacement() {
+        let stage = Stage {
+            enabled: true,
+            mix: 0.0,
+            options: crate::waveshaper::Options {
+                quality: Quality::Clean2x,
+                ..Default::default()
+            },
+            ..Stage::default()
+        };
+        let params = Params {
+            filter_shapers: [FilterShapers {
+                before: stage,
+                after: stage,
+            }; 2],
+            ..Params::default()
+        };
+        let mut active = FilterBank::new(48_000);
+        active.configure(&params, 60.0, [0.0; 8]);
+        let old_latency = active.latency_samples();
+        assert!(old_latency > 0);
+
+        let mut prepared = FilterBank::new(48_000);
+        assert_eq!(prepared.latency_samples(), 0);
+        active.attach_prepared(&mut prepared);
+        assert_eq!(active.latency_samples(), 0);
+        assert_eq!(prepared.latency_samples(), old_latency);
+        assert!(active.is_prepared() && prepared.is_prepared());
+    }
+
+    #[test]
+    fn filter_bank_aligns_the_maximum_configured_chains() {
+        let mut stage = Stage {
+            enabled: true,
+            mix: 0.0,
+            ..Stage::default()
+        };
+        stage.options.quality = Quality::Clean4x;
+        let params = Params {
+            filter_routing: FilterRouting::Serial,
+            filter_shapers: [FilterShapers {
+                before: stage,
+                after: stage,
+            }; 2],
+            ..Params::default()
+        };
+        let mut bank = FilterBank::new(8_000);
+        bank.configure(&params, 60.0, [0.0; 8]);
+        let extra = MAX_FILTER_SLOTS * FILTER_LATENCY;
+        assert_eq!(bank.latency_samples() + extra, CHAIN_DELAY_CAPACITY - 1);
+        for i in 0..SOURCE_DELAY_CAPACITY {
+            let input = if i == 0 { [1.0, -0.5] } else { [0.0; 2] };
+            for (output, latency) in [
+                (
+                    bank.align_chain_input(input, extra),
+                    CHAIN_DELAY_CAPACITY - 1,
+                ),
+                (
+                    bank.align_source_input(input, SOURCE_DELAY_CAPACITY - 1),
+                    SOURCE_DELAY_CAPACITY - 1,
+                ),
+                (
+                    bank.align_resynth_input(input, RESYNTH_DELAY_CAPACITY - 1),
+                    RESYNTH_DELAY_CAPACITY - 1,
+                ),
+            ] {
+                assert_eq!(
+                    output,
+                    if i == latency { [1.0, -0.5] } else { [0.0; 2] },
+                    "frame {i}, latency {latency}"
+                );
+            }
         }
     }
 }

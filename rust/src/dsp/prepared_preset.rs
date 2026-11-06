@@ -3,6 +3,27 @@
 use super::{Engine, sample::LiveInputPreparation};
 use crate::{preset::Preset, wavetable::assets::Pool};
 
+/// A non-Rack bus forces all note gains except voice 0 to zero.
+pub(super) fn bus_mono(preset: &Preset) -> bool {
+    preset.bus.is_some() && preset.rack.is_none()
+}
+
+pub(super) fn resynth_voice_count(preset: &Preset) -> usize {
+    if bus_mono(preset) { 1 } else { super::VOICES }
+}
+
+/// Full banks made off-thread for a possible mono-bus to instrument change.
+#[derive(Default)]
+pub(super) struct FilterUpgrades(pub Vec<(usize, super::filter::FilterBank)>);
+
+impl std::fmt::Debug for FilterUpgrades {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("FilterUpgrades")
+            .field(&self.0.len())
+            .finish()
+    }
+}
+
 #[derive(Default, Debug)]
 pub(super) struct Resources {
     pub oscillator_runtime: super::oscillators::Prepared,
@@ -18,7 +39,10 @@ pub(super) struct Resources {
     pub filter_banks: super::filter_slots::Prepared,
     pub sequence: Option<Box<super::sequence::Runtime>>,
     pub sequence_sources: Option<Box<super::sequence_sources::SequenceSources>>,
+    /// An immediate update can transfer the compatible running pool at exchange.
+    pub reuse_sequence_sources: bool,
     pub sequence_histories: Option<Box<super::sequence_histories::SequenceHistories>>,
+    pub filter_upgrades: FilterUpgrades,
 }
 
 /// A finalized update, constructed outside the audio callback. Exchange reuses
@@ -76,10 +100,11 @@ pub struct PresetPreparation {
     stage: u8,
     history_reserve: usize,
     live: Option<LiveInputPreparation>,
+    filter_cursor: usize,
 }
 
 impl PresetPreparation {
-    const STAGES: u8 = 12;
+    const STAGES: u8 = 13;
 
     pub fn new(mut preset: Preset, sample_rate: u32) -> Self {
         preset.sanitize();
@@ -90,6 +115,7 @@ impl PresetPreparation {
             stage: 0,
             history_reserve: 32,
             live: None,
+            filter_cursor: 1,
         }
     }
 
@@ -136,13 +162,27 @@ impl PresetPreparation {
                 if parties > 0 || tails {
                     // Resynth can be enabled by numeric automation without a
                     // resource exchange, so its per-note states must be ready.
-                    r.sequence_sources =
-                        Some(Box::new(super::sequence_sources::SequenceSources::new(
-                            rate,
-                            super::VOICES,
-                            true,
-                            p.tb303.as_deref(),
-                        )));
+                    r.reuse_sequence_sources = previous
+                        .as_ref()
+                        .and_then(|e| e.preset_runtime.sequence_sources.as_ref())
+                        .is_some_and(|sources| {
+                            sources.supports_counts(
+                                rate,
+                                resynth_voice_count(p),
+                                super::VOICES,
+                                p.tb303.is_some(),
+                            )
+                        });
+                    if !r.reuse_sequence_sources {
+                        r.sequence_sources = Some(Box::new(
+                            super::sequence_sources::SequenceSources::new_with_resynth_count(
+                                rate,
+                                super::VOICES,
+                                resynth_voice_count(p),
+                                p.tb303.as_deref(),
+                            ),
+                        ));
+                    }
                     let history = if let Some(rack) = &p.rack {
                         rack.history().is_some()
                     } else {
@@ -274,6 +314,28 @@ impl PresetPreparation {
                             rate,
                         ),
                     });
+                }
+            }
+            12 => {
+                if !bus_mono(p) {
+                    // The first bank exists even in a mono engine. Independent
+                    // updates prepare every other bank; immediate updates only
+                    // prepare banks the current engine is missing. The loop
+                    // creates at most one bank per preparation step.
+                    while self.filter_cursor < super::VOICES
+                        && previous
+                            .as_ref()
+                            .is_some_and(|engine| engine.filters[self.filter_cursor].is_prepared())
+                    {
+                        self.filter_cursor += 1;
+                    }
+                    if self.filter_cursor < super::VOICES {
+                        r.filter_upgrades
+                            .0
+                            .push((self.filter_cursor, super::filter::FilterBank::new(rate)));
+                        self.filter_cursor += 1;
+                        return Ok(false);
+                    }
                 }
             }
             _ => return Ok(true),

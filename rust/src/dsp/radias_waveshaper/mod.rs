@@ -77,7 +77,7 @@ pub(crate) fn coefficients(mode: WaveshaperMode, depth: f32, pitch: u16) -> Shap
 
 pub struct RadiasWaveshaper {
     states: [Waveshaper; 2],
-    tables: ShaperTables,
+    tables: &'static ShaperTables,
     mode: WaveshaperMode,
     current: ShaperCoefficients,
     target: ShaperCoefficients,
@@ -90,7 +90,7 @@ impl RadiasWaveshaper {
     pub fn new(sample_rate: u32) -> Self {
         let mut result = Self {
             states: [Waveshaper::default(); 2],
-            tables: tables(),
+            tables: shared_tables(),
             mode: WaveshaperMode::Drive,
             current: coefficients(WaveshaperMode::Drive, 0.5, 60 * 256),
             target: coefficients(WaveshaperMode::Drive, 0.5, 60 * 256),
@@ -146,7 +146,7 @@ impl RadiasWaveshaper {
                 input[channel],
                 coefficients,
                 (self.pitch, self.increment),
-                &self.tables,
+                self.tables,
             )
         });
         // Same four-frame publication and staged Q15 rounding as VoiceRenderer.
@@ -163,6 +163,25 @@ impl RadiasWaveshaper {
     }
 }
 /// The sub oscillators' edge slopes.
+const fn build_tables() -> ShaperTables {
+    let mut sub_edges = [0_i16; 129];
+    let mut index = 0;
+    while index < sub_edges.len() {
+        sub_edges[index] = match 16384_usize.checked_div(index) {
+            Some(value) => value as i16,
+            None => 32767,
+        };
+        index += 1;
+    }
+    ShaperTables { sub_edges }
+}
+
+static SHARED_TABLES: ShaperTables = build_tables();
+
+pub(crate) fn shared_tables() -> &'static ShaperTables {
+    &SHARED_TABLES
+}
+/// Owned table for legacy callers that keep their own kernel data.
 pub(crate) fn tables() -> ShaperTables {
     ShaperTables {
         sub_edges: std::array::from_fn(|i| 16384usize.checked_div(i).unwrap_or(32767) as i16),

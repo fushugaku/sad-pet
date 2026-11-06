@@ -425,8 +425,8 @@ pub struct ColorRack {
     processors: Box<[ColorProcessor]>,
     len: usize,
     active: bool,
-    dry: Box<super::filter::FrameDelay<4096>>,
-    reference: Box<super::filter::FrameDelay<4096>>,
+    dry: Box<super::filter::FrameDelay<{ super::filter::SOURCE_DELAY_CAPACITY }>>,
+    reference: Box<super::filter::FrameDelay<{ super::filter::SOURCE_DELAY_CAPACITY }>>,
     aligned_input: Stereo,
     latency: usize,
 }
@@ -605,5 +605,100 @@ impl ColorRack {
                 (0, 0.0)
             }
         })
+    }
+}
+
+#[cfg(test)]
+mod latency_tests {
+    use super::super::filter_slots::{self, Instance};
+    use super::*;
+    use crate::{
+        preset::{FilterFxChain, FilterPosition, FilterSlot},
+        waveshaper::{FilterShapers, Quality, Stage},
+    };
+
+    #[test]
+    fn fx_and_disjoint_filter_chains_align_at_the_maximum_latency() {
+        let mut slots = [ColorSlot::default(); MAX_COLOR_SLOTS];
+        for (i, slot) in slots.iter_mut().enumerate() {
+            slot.id = i as u32 + 1;
+            slot.enabled = true;
+            slot.kind = SaturatorType::Waveshaper;
+            slot.settings.waveshaper_options.quality = Quality::Clean4x;
+        }
+        let mut rack = ColorRack::new(8_000);
+        rack.configure(&slots);
+
+        // Half the filter slots follow FX and half follow Resynth. Resolve
+        // their actual masks and configured latencies as the engine does.
+        let half = crate::preset::MAX_FILTER_SLOTS / 2;
+        let mut stage = Stage {
+            enabled: true,
+            mix: 0.0,
+            ..Stage::default()
+        };
+        stage.options.quality = Quality::Clean4x;
+        let filter_slots: Vec<_> = (0..crate::preset::MAX_FILTER_SLOTS)
+            .map(|i| FilterSlot {
+                id: i as u32 + 1,
+                position: if i < half {
+                    FilterPosition::AfterFx
+                } else {
+                    FilterPosition::AfterResynth
+                },
+                fx_chain: FilterFxChain::A,
+                fx_slot: Some((i % MAX_COLOR_SLOTS) as u32 + 1),
+                shapers: FilterShapers {
+                    before: stage,
+                    after: stage,
+                },
+                ..FilterSlot::default()
+            })
+            .collect();
+        let mut prepared = filter_slots::Prepared::default();
+        prepared.prepare(&filter_slots, 8_000);
+        let banks = &mut prepared.0;
+        filter_slots::configure_shared(&filter_slots, banks, 60.0, [0.0; 8], false);
+        let masks = filter_slots::masks(&filter_slots, banks);
+        let fx_masks = filter_slots::fx_masks(
+            &filter_slots,
+            masks[FilterPosition::AfterFx as usize],
+            [&slots, &[]],
+        );
+        let after_fx: usize = fx_masks[0]
+            .iter()
+            .map(|&mask| filter_slots::latency_samples(banks, mask, Instance::Shared))
+            .sum();
+        let after_resynth = filter_slots::latency_samples(
+            banks,
+            masks[FilterPosition::AfterResynth as usize],
+            Instance::Shared,
+        );
+        let max_latency = super::super::filter::SOURCE_DELAY_CAPACITY - 1;
+        let rack_latency =
+            MAX_COLOR_SLOTS * super::super::waveshaper::MAX_LATENCY_SAMPLES + after_fx;
+        assert_eq!(rack_latency + after_resynth, max_latency);
+
+        for i in 0..=max_latency {
+            let input = if i == 0 { [1.0, -0.5] } else { [0.0; 2] };
+            rack.capture_dry(input, after_fx);
+            assert_eq!(rack.latency_samples(), rack_latency);
+            assert_eq!(
+                rack.aligned_input(),
+                if i == rack_latency {
+                    [1.0, -0.5]
+                } else {
+                    [0.0; 2]
+                }
+            );
+            assert_eq!(
+                rack.align_reference(input, after_resynth),
+                if i == max_latency {
+                    [1.0, -0.5]
+                } else {
+                    [0.0; 2]
+                }
+            );
+        }
     }
 }

@@ -17,8 +17,7 @@ impl Part {
     /// A Bus or Master starts with everything off. It keeps the host's tiny
     /// placeholder sample, so scenes do not store the file again for it.
     fn routing(rate: u32, kind: Kind, id: u32, bus: u8) -> Self {
-        let mut host = Host::new(rate);
-        host.engine.set_preset(kind.preset().unwrap());
+        let mut host = Host::new_with_preset(rate, kind.preset().unwrap());
         host.resize_snapshot();
         let name = match kind {
             Kind::Bus => format!("Bus {bus}"),

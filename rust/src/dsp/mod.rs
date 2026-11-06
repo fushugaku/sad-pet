@@ -767,6 +767,7 @@ pub struct Engine {
 pub struct EnginePreparation {
     sample_rate: u32,
     stage: u8,
+    mono_filters: bool,
     grain_interaction: Option<Box<grain_interaction::Runtime>>,
     group_grains: Option<Box<grain_groups::Runtime>>,
     voices: Option<Box<[Voice; VOICES]>>,
@@ -787,6 +788,7 @@ impl EnginePreparation {
         Self {
             sample_rate: sample_rate.clamp(8_000, 384_000),
             stage: 0,
+            mono_filters: false,
             grain_interaction: None,
             group_grains: None,
             voices: None,
@@ -800,6 +802,13 @@ impl EnginePreparation {
             modulated: None,
             spare_modulated: None,
         }
+    }
+    /// For a known bus, or an independent prepared preset which already owns
+    /// any extra full banks. Voice 0 is always a complete filter bank.
+    fn with_mono_filters(sample_rate: u32) -> Self {
+        let mut preparation = Self::new(sample_rate);
+        preparation.mono_filters = true;
+        preparation
     }
     /// Prepares one independent bank, never the whole engine in one call.
     pub fn step(&mut self) -> bool {
@@ -823,7 +832,13 @@ impl EnginePreparation {
             9 => {
                 self.filters = Some(
                     (0..VOICES)
-                        .map(|_| FilterBank::new(sr))
+                        .map(|i| {
+                            if self.mono_filters && i != 0 {
+                                FilterBank::inactive()
+                            } else {
+                                FilterBank::new(sr)
+                            }
+                        })
                         .collect::<Vec<_>>()
                         .into_boxed_slice()
                         .try_into()
@@ -847,7 +862,11 @@ impl EnginePreparation {
 
 impl Engine {
     pub fn new(sample_rate: u32, sample: Arc<SampleBuffer>, preset: Preset) -> Self {
-        let mut prepared = EnginePreparation::new(sample_rate);
+        let mut prepared = if prepared_preset::bus_mono(&preset) {
+            EnginePreparation::with_mono_filters(sample_rate)
+        } else {
+            EnginePreparation::new(sample_rate)
+        };
         while !prepared.step() {}
         prepared.finish(sample, preset).unwrap()
     }
@@ -859,7 +878,11 @@ impl Engine {
         preset: Preset,
         assets: crate::wavetable::assets::Pool,
     ) -> Self {
-        let mut preparation = EnginePreparation::new(sample_rate);
+        let mut preparation = if prepared_preset::bus_mono(&preset) {
+            EnginePreparation::with_mono_filters(sample_rate)
+        } else {
+            EnginePreparation::new(sample_rate)
+        };
         while !preparation.step() {}
         Self::from_preparation(preparation, sample, preset, assets, None)
     }
@@ -868,7 +891,7 @@ impl Engine {
     /// Canonical originals remain with the host; set `wavetable_pool` explicitly
     /// if this engine will also resolve assets for later control-side edits.
     pub fn from_prepared(sample: Arc<SampleBuffer>, preset: PreparedPreset) -> Self {
-        let mut preparation = EnginePreparation::new(preset.sample_rate());
+        let mut preparation = EnginePreparation::with_mono_filters(preset.sample_rate());
         while !preparation.step() {}
         Self::from_preparation(
             preparation,
@@ -1080,9 +1103,42 @@ impl Engine {
 
     /// Install a finalized update without allocating or destroying buffers.
     /// The same envelope receives every old resource for off-thread retirement.
-    /// An incompatible format or already retired envelope is left untouched.
+    /// An incompatible format, stale reuse, or already retired envelope is
+    /// left untouched so its owner can prepare a fresh update.
     pub fn exchange_preset(&mut self, prepared: &mut PreparedPreset) -> bool {
         if !prepared.ready || prepared.sample_rate != self.sample_rate {
+            return false;
+        }
+        if prepared.resources.reuse_sequence_sources
+            && !self
+                .preset_runtime
+                .sequence_sources
+                .as_ref()
+                .is_some_and(|sources| {
+                    sources.supports_counts(
+                        self.sample_rate,
+                        prepared_preset::resynth_voice_count(&prepared.preset),
+                        VOICES,
+                        prepared.preset.tb303.is_some(),
+                    )
+                })
+        {
+            return false;
+        }
+        // Preflight the whole expansion before touching any state. A stale
+        // update prepared against a different, already-full engine cannot
+        // silently leave this one missing banks or allocate in the callback.
+        if !prepared_preset::bus_mono(&prepared.preset)
+            && (1..VOICES).any(|i| {
+                !self.filters[i].is_prepared()
+                    && !prepared
+                        .resources
+                        .filter_upgrades
+                        .0
+                        .iter()
+                        .any(|(index, bank)| *index == i && bank.is_prepared())
+            })
+        {
             return false;
         }
         let PreparedPreset {
@@ -1091,6 +1147,25 @@ impl Engine {
             ready,
             ..
         } = prepared;
+        for (index, bank) in &mut runtime.filter_upgrades.0 {
+            if !self.filters[*index].is_prepared() {
+                self.filters[*index].attach_prepared(bank);
+            }
+        }
+        // Staging is not part of the live preset. The old staging can only
+        // contain empty holders: each earlier exchange retired its full banks.
+        // Return this update's unused banks with the outgoing envelope.
+        debug_assert!(
+            self.preset_runtime
+                .filter_upgrades
+                .0
+                .iter()
+                .all(|(_, bank)| !bank.is_prepared())
+        );
+        std::mem::swap(
+            &mut self.preset_runtime.filter_upgrades,
+            &mut runtime.filter_upgrades,
+        );
         for slot in 0..crate::oscillators::SLOTS {
             let before = self
                 .preset
@@ -1206,7 +1281,16 @@ impl Engine {
         {
             next.inherit(old);
         }
-        if let (Some(next), Some(old)) = (
+        if runtime.reuse_sequence_sources {
+            // The running pool remains owned by the engine until this point.
+            // The preflight above rejects an incompatible stale update before
+            // any resources or preset state can be changed.
+            std::mem::swap(
+                &mut runtime.sequence_sources,
+                &mut self.preset_runtime.sequence_sources,
+            );
+            runtime.reuse_sequence_sources = false;
+        } else if let (Some(next), Some(old)) = (
             &mut runtime.sequence_sources,
             &mut self.preset_runtime.sequence_sources,
         ) {

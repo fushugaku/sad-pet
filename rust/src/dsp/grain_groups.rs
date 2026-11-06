@@ -218,7 +218,9 @@ pub(crate) struct Runtime {
     grains: [Grain; MAX_GRAINS],
     /// Prepared once; starting or retargeting a grain never allocates DSP.
     advanced_shapers: Box<[super::waveshaper::Processor]>,
-    parallel_delays: Box<[filter::FrameDelay]>,
+    // A grain has only one waveshaper, so even the parallel bypass needs at
+    // most one clean-stage latency.
+    parallel_delays: Box<[filter::FrameDelay<{ super::waveshaper::MAX_LATENCY_SAMPLES + 1 }>]>,
     /// Smooth weighted round robin: each deal adds every share, the richest
     /// group takes the grain and pays the total back.
     credit: [f32; GROUPS],

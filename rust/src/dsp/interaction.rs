@@ -42,9 +42,27 @@ fn delay_line(node: usize, lane: usize) -> Option<usize> {
 }
 #[derive(Clone, Copy, Default)]
 struct Scheduled {
-    stamp: u64,
+    epoch: u32,
+    frame: u32,
     time: f32,
-    forced: bool,
+}
+
+impl Scheduled {
+    fn at(stamp: u64, time: f32) -> Self {
+        Self {
+            epoch: (stamp >> 32) as u32,
+            frame: stamp as u32,
+            time,
+        }
+    }
+
+    fn stamp(self) -> u64 {
+        ((self.epoch as u64) << 32) | self.frame as u64
+    }
+
+    fn matches(self, stamp: u64) -> bool {
+        self.stamp() == stamp
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -414,14 +432,8 @@ impl Runtime {
                 };
                 let index = line * EVENT_DELAY + self.frame as usize % EVENT_DELAY;
                 let event = self.scheduled[index];
-                if event.stamp == self.frame {
-                    self.event(
-                        node,
-                        lane,
-                        Event::NaturalWrap,
-                        event.time as f64,
-                        event.forced,
-                    );
+                if event.matches(self.frame) {
+                    self.event(node, lane, Event::NaturalWrap, event.time as f64, false);
                     self.scheduled[index] = Scheduled::default();
                 }
             }
@@ -633,12 +645,8 @@ impl Runtime {
         let index = line * EVENT_DELAY + stamp as usize % EVENT_DELAY;
         let event = &mut self.scheduled[index];
         let fraction = time.fract() as f32;
-        if event.stamp != stamp || fraction < event.time {
-            *event = Scheduled {
-                stamp,
-                time: fraction,
-                forced: false,
-            };
+        if !event.matches(stamp) || fraction < event.time {
+            *event = Scheduled::at(stamp, fraction);
         }
     }
     pub fn finish_frame(&mut self) {
@@ -696,6 +704,27 @@ impl Runtime {
 mod tests {
     use super::*;
     use model::{Node, Route, Settings};
+
+    #[test]
+    fn compact_scheduled_stamp_round_trips_across_u32_epoch_wrap() {
+        assert_eq!(std::mem::size_of::<Scheduled>(), 12);
+        let stamps = [
+            u32::MAX as u64 - 1,
+            u32::MAX as u64,
+            u32::MAX as u64 + 1,
+            u32::MAX as u64 + 2,
+            (0x1234_5678_u64 << 32) | 0xffff_fffe,
+            u64::MAX,
+        ];
+        for stamp in stamps {
+            let scheduled = Scheduled::at(stamp, 0.375);
+            assert_eq!(scheduled.stamp(), stamp);
+            assert!(scheduled.matches(stamp));
+            assert!(!scheduled.matches(stamp.wrapping_add(1)));
+            assert_eq!(scheduled.time, 0.375);
+        }
+    }
+
     #[test]
     fn compact_delay_lines_keep_voice_band_and_mono_events_independent() {
         let mut used = vec![false; DELAY_LINES];

@@ -67,9 +67,12 @@ struct Host {
 
 impl Host {
     fn new(rate: u32) -> Self {
+        Self::new_with_preset(rate, Preset::default())
+    }
+    fn new_with_preset(rate: u32, preset: Preset) -> Self {
         sad_pet::parameters::specs();
         let sample = SampleBuffer::new("Loading…".into(), rate, vec![[0.0; 2]; 2]).unwrap();
-        Self::from_engine(rate, Engine::new(rate, Arc::new(sample), Preset::default()))
+        Self::from_engine(rate, Engine::new(rate, Arc::new(sample), preset))
     }
     fn from_engine(rate: u32, engine: Engine) -> Self {
         Self {
