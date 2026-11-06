@@ -333,6 +333,9 @@ pub struct Runtime {
     graph_input: super::interaction::Input,
     graph_layers: [super::interaction::Input; 4],
     graph_mask: u8,
+    voice_mask: u8,
+    voice_generation: u32,
+    voice_drone: bool,
     graph_slew: super::interaction::PhaseSlew,
     graph_correction: Stereo,
     vco_frame: super::wavetable::mixed::SlotFrame,
@@ -401,6 +404,9 @@ impl Runtime {
             graph_input: Default::default(),
             graph_layers: [super::interaction::Input::default(); 4],
             graph_mask: 0,
+            voice_mask: 31,
+            voice_generation: 0,
+            voice_drone: false,
             graph_slew: Default::default(),
             graph_correction: [0.0; 2],
             vco_frame: Default::default(),
@@ -609,6 +615,60 @@ impl Runtime {
     ) {
         (self.vco_frame, self.layer_frames)
     }
+    /// Reset only mutable circuit histories when a pooled slot changes owner.
+    /// Lookup tables, PCM storage and carrier allocations remain prepared.
+    pub(super) fn reset_sequence_voice(&mut self, generation: u32) {
+        self.stop();
+        self.filter = Ladder::new(self.rate * self.oversample as f64);
+        self.sweep = AccentSweep::default();
+        self.decimators = std::array::from_fn(|_| Decimator::new());
+        self.phase = 0.0;
+        self.main_env = 0.0;
+        self.volume_env = 0.0;
+        self.accent_vca = 0.0;
+        self.fm_sample = 0.0;
+        self.fm_dc = 0.0;
+        self.graph_input = Default::default();
+        self.graph_layers = [super::interaction::Input::default(); 4];
+        self.graph_mask = 0;
+        self.graph_slew.clear();
+        self.graph_correction = [0.0; 2];
+        self.voice_generation = generation;
+        self.pattern_running = false;
+    }
+    pub(super) fn set_sequence_drone(&mut self, drone: bool) {
+        self.voice_drone = drone;
+    }
+    /// MainPitch drives this private circuit directly, without changing the
+    /// legacy pattern/MIDI runtime. Pitch stays fractional throughout glide.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn sequence_frame(
+        &mut self,
+        settings: &Settings,
+        controls: Controls,
+        radias: &crate::synth::Settings,
+        pitch: f32,
+        gate: bool,
+        velocity: u8,
+        mask: u8,
+        lfo: f32,
+        bpm: f32,
+    ) -> Stereo {
+        self.transport(true);
+        if gate && !self.gate {
+            self.note(pitch.clamp(0.0, 127.0) as u8, velocity >= 100, false);
+        }
+        self.target_pitch = f64::from(pitch);
+        self.pitch = self.target_pitch;
+        self.gate = gate;
+        self.sliding = false;
+        self.voice_mask = mask;
+        self.configure(radias, 0.0, lfo);
+        // Settings contains only inline arrays; cloning does not allocate.
+        let mut settings = settings.clone();
+        settings.pattern = false;
+        self.frame(&settings, controls, true, bpm)
+    }
     pub fn configure(&mut self, radias: &crate::synth::Settings, transpose: f32, lfo: f32) {
         self.radias
             .configure(radias, 0.0, &self.radias_sample, 60.0);
@@ -770,7 +830,7 @@ impl Runtime {
                     self.volume_env += (1.0 - self.volume_env) * volume_charge;
                 }
                 self.volume_attack -= 1;
-            } else {
+            } else if !(self.voice_drone && self.gate) {
                 self.volume_env *= volume_decay;
             }
             if !self.gate {
@@ -870,15 +930,16 @@ impl Runtime {
                 let transport = adapters
                     .as_deref_mut()
                     .map(|p| (p, 20, super::interaction::GLOBAL, stamp));
-                let result = self.radias.render_interacting(
+                let result = self.radias.render_interacting_masked(
                     0,
-                    0,
+                    self.voice_generation,
                     pitch as f32,
                     &self.radias_sample,
                     &(0..1),
                     inputs,
                     self.graph_mask & 15,
                     transport,
+                    self.voice_mask & 15,
                 )[0] as f64;
                 if self.graph_mask & 15 != 0 {
                     for (layer, frame) in self.radias.interaction_frames().into_iter().enumerate() {
@@ -912,7 +973,11 @@ impl Runtime {
                 0.0
             };
             let filtered = self.filter.process(
-                osc * 0.35 * f64::from(self.controls.level) + extra,
+                if self.voice_mask & 16 != 0 {
+                    osc * 0.35 * f64::from(self.controls.level) + extra
+                } else {
+                    extra
+                },
                 hz,
                 self.controls.resonance as f64 * (1.0 + high_resonance),
             );
@@ -1330,5 +1395,47 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod sequence_voice_tests {
+    use super::*;
+
+    #[test]
+    fn drone_holds_vca_only_while_gate_is_open_and_filter_envelope_keeps_decaying() {
+        let settings = Settings::default();
+        let radias = crate::synth::Settings::default();
+        let mut voice = Runtime::new(48_000, settings.controls);
+        voice.transport(true);
+        voice.gate = true;
+        voice.volume_env = 0.5;
+        voice.main_env = 0.5;
+        voice.set_sequence_drone(true);
+        voice.sequence_frame(
+            &settings,
+            settings.controls,
+            &radias,
+            48.25,
+            true,
+            80,
+            16,
+            0.0,
+            120.0,
+        );
+        assert_eq!(voice.volume_env, 0.5);
+        assert!(voice.main_env < 0.5);
+        voice.sequence_frame(
+            &settings,
+            settings.controls,
+            &radias,
+            48.25,
+            false,
+            80,
+            16,
+            0.0,
+            120.0,
+        );
+        assert!(voice.volume_env < 0.5);
     }
 }

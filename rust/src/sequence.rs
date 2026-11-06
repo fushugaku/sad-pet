@@ -12,6 +12,9 @@ pub const PAGES: usize = 8;
 pub const STEPS: usize = STAGES * PAGES;
 pub const VIEW_TRACKS: usize = 64;
 pub const STAGE_FIELDS: u8 = 20;
+/// MainPitch output bits: eight mixed Rack slots, four each for Synth,
+/// Wavetable, Resynth and 303 RADIAS, followed by the 303 VCO.
+pub const MAIN_PITCH_OSCILLATOR_MASK: u32 = (1 << 25) - 1;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -246,11 +249,15 @@ pub struct Track {
     pub absolute: bool,
     pub gate_output: bool,
     pub root_note: u8,
-    /// Main pitch also transposes the selected Resynth layers. Oscillator
-    /// lanes add their own -24..24 semitone offset to that shared pitch.
+    /// Legacy MainPitch routing kept for older preset serialization/API.
+    /// MainPitch voice routing uses `oscillator_mask` instead.
     pub pitch_oscillators: [bool; 4],
-    /// Main pitch steps also gate ENV like a note: on at each trigger, off when
-    /// the step's gate ends. Off keeps older patterns droning as before.
+    /// Oscillators played by this MainPitch lane, using the stable 25-bit bank
+    /// mapping in `MAIN_PITCH_OSCILLATOR_MASK`.
+    pub oscillator_mask: u32,
+    /// Whether this MainPitch lane also plays the granular engine.
+    pub granular: bool,
+    /// MainPitch gates ENV when enabled; saved `false` keeps a drone.
     pub env_gate: bool,
     pub destinations: [Option<String>; 3],
     /// The track's own notes, one bit per semitone above the Scale root, in
@@ -275,7 +282,9 @@ impl Default for Track {
             gate_output: false,
             root_note: 60,
             pitch_oscillators: [false; 4],
-            env_gate: false,
+            oscillator_mask: MAIN_PITCH_OSCILLATOR_MASK,
+            granular: true,
+            env_gate: true,
             destinations: Default::default(),
             notes: 0,
             config: default_config(),
@@ -327,6 +336,15 @@ impl Track {
                 53 => self.env_gate = edit.value >= 0.5,
                 54 => self.set_pages(edit.value.round().clamp(1.0, PAGES as f32) as u8),
                 55 => self.notes = edit.value.round().clamp(0.0, 4095.0) as u16,
+                57 => self.granular = edit.value >= 0.5,
+                60..=84 => {
+                    let bit = 1 << (edit.field - 60);
+                    if edit.value >= 0.5 {
+                        self.oscillator_mask |= bit;
+                    } else {
+                        self.oscillator_mask &= !bit;
+                    }
+                }
                 _ => {}
             }
         }
@@ -474,6 +492,7 @@ fn sanitize_tracks(tracks: &mut [Track]) {
         track.root_note = track.root_note.min(127);
         track.pages = track.pages.clamp(1, PAGES as u8);
         track.notes &= 0x0fff;
+        track.oscillator_mask &= MAIN_PITCH_OSCILLATOR_MASK;
         let max_oscillator = if matches!(track.target, Target::MixedOscillator { .. }) {
             7
         } else {
@@ -530,7 +549,8 @@ pub fn catalog() -> serde_json::Value {
 /// IDs address an existing track; stage fields follow Neuropolis's stable ABI,
 /// with stages counted across pages (page × 16 + stage). Track field 54 sets
 /// the page count, 55 the track's own notes (a scale mask, zero for none).
-/// Field 56 launches a zero-based page on the next clock tick; it is not saved.
+/// Field 56 launches a page; 57 edits granular output; 60..=84 edit the
+/// MainPitch oscillator routing bits.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Edit {
     pub track: u32,
@@ -548,7 +568,7 @@ pub fn parse_edits(value: &serde_json::Value) -> Result<Vec<Edit>, String> {
                 > if e.stage.is_some() {
                     STAGE_FIELDS - 1
                 } else {
-                    56
+                    84
                 }
             || (e.track == 0 && (e.stage.is_some() || e.field > 1))
     }) {
@@ -602,5 +622,101 @@ mod view_tracks {
             *to = from;
         }
         Ok(out)
+    }
+}
+
+#[cfg(test)]
+mod main_pitch_routing_tests {
+    use super::*;
+
+    #[test]
+    fn main_pitch_routing_defaults_and_legacy_serialization_are_stable() {
+        let track = Track::default();
+        assert_eq!(track.oscillator_mask, MAIN_PITCH_OSCILLATOR_MASK);
+        assert!(track.granular);
+        assert!(track.env_gate);
+
+        let saved = serde_json::to_value(&track).unwrap();
+        assert_eq!(saved["oscillator_mask"], MAIN_PITCH_OSCILLATOR_MASK);
+        assert_eq!(saved["granular"], true);
+        assert_eq!(saved["env_gate"], true);
+        assert_eq!(
+            saved["pitch_oscillators"],
+            serde_json::json!([false, false, false, false])
+        );
+
+        // Older presets have only the legacy array. The new routing defaults
+        // on, while an explicitly saved ENV-off choice remains off.
+        let legacy: Track = serde_json::from_value(serde_json::json!({
+            "pitch_oscillators": [true, false, true, false],
+            "env_gate": false
+        }))
+        .unwrap();
+        assert_eq!(legacy.pitch_oscillators, [true, false, true, false]);
+        assert_eq!(legacy.oscillator_mask, MAIN_PITCH_OSCILLATOR_MASK);
+        assert!(legacy.granular);
+        assert!(!legacy.env_gate);
+    }
+
+    #[test]
+    fn routing_edits_cover_each_bit_and_allow_no_outputs() {
+        let mut track = Track::default();
+        for field in [60, 84] {
+            track.edit(Edit {
+                track: 1,
+                stage: None,
+                field,
+                value: 0.0,
+            });
+        }
+        assert_eq!(
+            track.oscillator_mask,
+            MAIN_PITCH_OSCILLATOR_MASK & !((1 << 0) | (1 << 24))
+        );
+
+        track.edit(Edit {
+            track: 1,
+            stage: None,
+            field: 60,
+            value: 1.0,
+        });
+        track.edit(Edit {
+            track: 1,
+            stage: None,
+            field: 84,
+            value: 1.0,
+        });
+        assert_eq!(track.oscillator_mask, MAIN_PITCH_OSCILLATOR_MASK);
+
+        track.oscillator_mask = 0;
+        track.granular = false;
+        let saved = serde_json::to_value(&track).unwrap();
+        let restored: Track = serde_json::from_value(saved).unwrap();
+        assert_eq!(restored.oscillator_mask, 0);
+        assert!(!restored.granular);
+    }
+
+    #[test]
+    fn live_edit_parser_accepts_route_fields_without_losing_integer_bits() {
+        for field in [57, 60, 84] {
+            assert!(
+                parse_edits(&serde_json::json!([{
+                    "track": 1,
+                    "stage": null,
+                    "field": field,
+                    "value": 1
+                }]))
+                .is_ok()
+            );
+        }
+        assert!(
+            parse_edits(&serde_json::json!([{
+                "track": 1,
+                "stage": null,
+                "field": 85,
+                "value": 1
+            }]))
+            .is_err()
+        );
     }
 }

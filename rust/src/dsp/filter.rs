@@ -284,25 +284,132 @@ pub fn response_request(data: &serde_json::Value) -> Result<serde_json::Value, S
     Ok(serde_json::json!({ "curves": curves }))
 }
 
+/// Small fixed delay for matching the dry path and parallel filter branches.
+/// Its storage is prepared with the filter, never allocated while rendering.
+pub(crate) struct FrameDelay<const N: usize = 128> {
+    frames: [Stereo; N],
+    cursor: usize,
+}
+impl<const N: usize> FrameDelay<N> {
+    pub(crate) fn new() -> Self {
+        Self {
+            frames: [[0.0; 2]; N],
+            cursor: 0,
+        }
+    }
+    pub(crate) fn clear(&mut self) {
+        self.frames.fill([0.0; 2]);
+        self.cursor = 0;
+    }
+    pub(crate) fn process(&mut self, frame: Stereo, delay: usize) -> Stereo {
+        debug_assert!(delay < self.frames.len());
+        self.frames[self.cursor] = frame;
+        let output =
+            self.frames[(self.cursor + self.frames.len() - delay.min(N - 1)) % self.frames.len()];
+        self.cursor = (self.cursor + 1) % self.frames.len();
+        output
+    }
+}
+
+/// A main/added filter and its two independent shapers. Grain filters retain
+/// the smaller raw Filter and do not pay for these extra states.
+pub(crate) struct ShapedFilter {
+    filter: Filter,
+    before: super::waveshaper::StageProcessor,
+    after: super::waveshaper::StageProcessor,
+    dry: FrameDelay,
+    aligned_input: Stereo,
+}
+impl ShapedFilter {
+    pub(crate) fn new(rate: u32) -> Self {
+        Self {
+            filter: Filter::new(rate),
+            before: super::waveshaper::StageProcessor::new(rate),
+            after: super::waveshaper::StageProcessor::new(rate),
+            dry: FrameDelay::new(),
+            aligned_input: [0.0; 2],
+        }
+    }
+    pub(crate) fn clear(&mut self) {
+        self.filter.clear();
+        self.before.clear();
+        self.after.clear();
+        self.dry.clear();
+        self.aligned_input = [0.0; 2];
+    }
+    pub(crate) fn configure(
+        &mut self,
+        model: FilterModel,
+        kind: FilterType,
+        cutoff: f32,
+        resonance: f32,
+        drive: f32,
+        morph: f32,
+    ) {
+        self.filter
+            .configure(model, kind, cutoff, resonance, drive, morph);
+    }
+    pub(crate) fn configure_shapers(
+        &mut self,
+        shapers: crate::waveshaper::FilterShapers,
+        note: f32,
+    ) {
+        self.before.configure(shapers.before, note);
+        self.after.configure(shapers.after, note);
+    }
+    pub(crate) fn latency_samples(&self) -> usize {
+        self.before.latency_samples() + self.after.latency_samples()
+    }
+    pub(crate) fn aligned_input(&self) -> Stereo {
+        self.aligned_input
+    }
+    pub(crate) fn process_with_voice_gain(&mut self, frame: Stereo, gain: f32) -> Stereo {
+        let latency = self.latency_samples();
+        self.aligned_input = self.dry.process(frame, latency);
+        let frame = self.before.process_with_voice_gain(frame, gain);
+        let frame = self.filter.process(frame);
+        self.after.process_with_voice_gain(frame, gain)
+    }
+}
+
 pub struct FilterBank {
-    filters: [Filter; 2],
+    filters: [ShapedFilter; 2],
     routing: FilterRouting,
+    order: [usize; 2],
+    parallel: [FrameDelay; 2],
+    chain_dry: Box<FrameDelay<2048>>,
+    source_dry: Box<FrameDelay<4096>>,
+    resynth_dry: Box<FrameDelay<2048>>,
 }
 impl FilterBank {
     pub fn new(sample_rate: u32) -> Self {
         Self {
-            filters: std::array::from_fn(|_| Filter::new(sample_rate)),
+            filters: std::array::from_fn(|_| ShapedFilter::new(sample_rate)),
             routing: FilterRouting::Single,
+            order: [0, 1],
+            parallel: std::array::from_fn(|_| FrameDelay::new()),
+            chain_dry: Box::new(FrameDelay::new()),
+            source_dry: Box::new(FrameDelay::new()),
+            resynth_dry: Box::new(FrameDelay::new()),
         }
     }
     pub fn clear(&mut self) {
-        self.filters.iter_mut().for_each(Filter::clear);
+        self.filters.iter_mut().for_each(ShapedFilter::clear);
+        self.parallel.iter_mut().for_each(FrameDelay::clear);
+        self.chain_dry.clear();
+        self.source_dry.clear();
+        self.resynth_dry.clear();
     }
     pub fn configure<const N: usize>(&mut self, p: &Params, note: f32, envs: [f32; N]) {
         if self.routing != p.filter_routing {
             self.clear();
         }
         self.routing = p.filter_routing;
+        self.order = if p.filter_order == [1, 0] {
+            [1, 0]
+        } else {
+            [0, 1]
+        };
         let cutoffs = voice_cutoffs(p, note, envs);
         self.filters[0].configure(
             p.filter_model,
@@ -320,18 +427,34 @@ impl FilterBank {
             p.filter2_drive,
             p.filter2_morph,
         );
-    }
-    /// Process a standalone bank without Rack taps or bus sends.
-    pub fn process(&mut self, frame: Stereo) -> Stereo {
-        let first = self.filters[0].process(frame);
-        match self.routing {
-            FilterRouting::Single => first,
-            FilterRouting::Serial => self.filters[1].process(first),
-            FilterRouting::Parallel => {
-                let second = self.filters[1].process(frame);
-                std::array::from_fn(|c| (first[c] + second[c]) * 0.5)
-            }
+        for (filter, shapers) in self.filters.iter_mut().zip(p.filter_shapers) {
+            filter.configure_shapers(shapers, note);
         }
+    }
+    pub fn process(&mut self, frame: Stereo) -> Stereo {
+        self.route(frame, None, 1.0, 1.0)
+    }
+    pub(crate) fn latency_samples(&self) -> usize {
+        match self.routing {
+            FilterRouting::Single => self.filters[0].latency_samples(),
+            FilterRouting::Serial => self.filters.iter().map(ShapedFilter::latency_samples).sum(),
+            FilterRouting::Parallel => self
+                .filters
+                .iter()
+                .map(ShapedFilter::latency_samples)
+                .max()
+                .unwrap_or(0),
+        }
+    }
+    pub(crate) fn align_chain_input(&mut self, frame: Stereo, extra_latency: usize) -> Stereo {
+        let latency = self.latency_samples() + extra_latency;
+        self.chain_dry.process(frame, latency)
+    }
+    pub(crate) fn align_source_input(&mut self, frame: Stereo, latency: usize) -> Stereo {
+        self.source_dry.process(frame, latency)
+    }
+    pub(crate) fn align_resynth_input(&mut self, frame: Stereo, latency: usize) -> Stereo {
+        self.resynth_dry.process(frame, latency)
     }
     pub(crate) fn process_tapped(
         &mut self,
@@ -339,31 +462,71 @@ impl FilterBank {
         taps: &mut super::taps::Runtime,
         gain: f32,
     ) -> Stereo {
+        self.route(frame, Some(taps), gain, 1.0)
+    }
+    /// Shared Rack filters have already summed their note VCAs. Only their
+    /// generated Sub component follows this separate note activity signal.
+    pub(crate) fn process_tapped_with_voice_gain(
+        &mut self,
+        frame: Stereo,
+        taps: &mut super::taps::Runtime,
+        gain: f32,
+        voice_gain: f32,
+    ) -> Stereo {
+        self.route(frame, Some(taps), gain, voice_gain)
+    }
+    fn route(
+        &mut self,
+        frame: Stereo,
+        mut taps: Option<&mut super::taps::Runtime>,
+        gain: f32,
+        voice_gain: f32,
+    ) -> Stereo {
         use crate::taps::Stage;
-        let first = self.filters[0].process(frame);
-        if taps.sends(Stage::Filter1) {
-            taps.send(Stage::Filter1, first.map(|x| x * gain));
-        }
-        let first = taps.mix(Stage::Filter1, frame, first);
-        match self.routing {
-            FilterRouting::Single => first,
-            FilterRouting::Serial | FilterRouting::Parallel => {
-                let input = if self.routing == FilterRouting::Serial {
-                    first
+        let count = if self.routing == FilterRouting::Single {
+            1
+        } else {
+            2
+        };
+        let order = if count == 1 { [0, 1] } else { self.order };
+        let mut serial = frame;
+        let mut branches = [[0.0; 2]; 2];
+        let common_latency = self
+            .filters
+            .iter()
+            .map(ShapedFilter::latency_samples)
+            .max()
+            .unwrap_or(0);
+        for &index in &order[..count] {
+            let input = if self.routing == FilterRouting::Serial {
+                serial
+            } else {
+                frame
+            };
+            let output = self.filters[index].process_with_voice_gain(input, voice_gain);
+            let output = if let Some(taps) = taps.as_deref_mut() {
+                let stage = if index == 0 {
+                    Stage::Filter1
                 } else {
-                    frame
+                    Stage::Filter2
                 };
-                let second = self.filters[1].process(input);
-                if taps.sends(Stage::Filter2) {
-                    taps.send(Stage::Filter2, second.map(|x| x * gain));
+                if taps.sends(stage) {
+                    taps.send(stage, output.map(|x| x * gain));
                 }
-                let second = taps.mix(Stage::Filter2, input, second);
-                if self.routing == FilterRouting::Serial {
-                    second
-                } else {
-                    std::array::from_fn(|c| (first[c] + second[c]) * 0.5)
-                }
+                taps.mix(stage, self.filters[index].aligned_input(), output)
+            } else {
+                output
+            };
+            serial = output;
+            if self.routing == FilterRouting::Parallel {
+                let delay = common_latency - self.filters[index].latency_samples();
+                branches[index] = self.parallel[index].process(output, delay);
             }
+        }
+        if self.routing == FilterRouting::Parallel {
+            std::array::from_fn(|c| (branches[0][c] + branches[1][c]) * 0.5)
+        } else {
+            serial
         }
     }
 }

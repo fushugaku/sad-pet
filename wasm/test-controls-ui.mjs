@@ -367,7 +367,7 @@ const midiEnvContext = vm.createContext({
   envCards: [{ card: new Element("div"), routes: [], mode: new Element("select"), curve: new Element("select"),
     parameters: [midiEnvLabel], waveEditor: { sync() {} } }],
   ENV_FIELDS: ["sustain"], ENV_EXTENDED: [], ENV_LEVELS: ["sustain"],
-  envExtended: () => false, envMode: () => "legacy", syncModulatorRoutes() {},
+  envExtended: () => false, envMode: () => "legacy", syncModulatorRoutes() {}, syncFilterEnvelopes() {},
   envLevel: (env, field) => env[field], percent: value => `${Math.round(value * 100)}%`,
 });
 vm.runInContext(app.slice(app.indexOf("function syncEnvs()"), app.indexOf("function drawEnvs()")), midiEnvContext);

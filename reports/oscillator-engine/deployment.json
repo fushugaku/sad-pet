@@ -1,0 +1,97 @@
+{
+  "commit": "d65dedb7460a07be422386435789c89a6a687b48",
+  "previous_commit": "a469663eff2a526bcb68d321032fc5a8fd33fc12",
+  "workflow_run": 41462621455,
+  "url": "https://fushugaku.github.io/sad-pet/",
+  "ci_url": "https://github.com/fushugaku/sad-pet/actions/runs/41462621455",
+  "state": "deployed",
+  "cancelled_run": 41460880769,
+  "memory_mib": 126.30254459381104,
+  "before_after_pcm_bit_identical": true,
+  "scalar_simd_bit_identical": true,
+  "ci_conclusion": "success",
+  "public_source_match": true,
+  "public_build_version": "04edcdbe6ae7",
+  "public_assets": {
+    "oscillators.js": {
+      "bytes": 38570,
+      "sha256": "36c4d5bf95e84003e9a73284757a0918ef48728dfc9d9caf0b4f8be9c5c2c767",
+      "mime": "application/javascript"
+    },
+    "oscillators.css": {
+      "bytes": 6819,
+      "sha256": "3ee69c9f1ed481cb9730f40d51ee408cabea17dd810d72d2952fd3af11b713d4",
+      "mime": "text/css"
+    },
+    "rack.js": {
+      "bytes": 48724,
+      "sha256": "8eb9d7a4afc64dd167142c07c33270a603240d640c12302d55e7f0dbb977b852",
+      "mime": "application/javascript"
+    },
+    "app.js": {
+      "bytes": 256757,
+      "sha256": "ab17d5ea3a29102bfb3b3150711f46e6cd6b1a08f78e37af56c28e07529ab7d3",
+      "mime": "application/javascript"
+    },
+    "midi.js": {
+      "bytes": 7766,
+      "sha256": "d78f31a261743da609af8ec6806f0a67804c99e2166637b6111442237cb4edf6",
+      "mime": "application/javascript"
+    },
+    "style.css": {
+      "bytes": 136654,
+      "sha256": "6e413ae46168699c259904bbd976c0b87ab47c53c4ade855d306a222185e3141",
+      "mime": "text/css"
+    },
+    "browser-backend.mjs": {
+      "bytes": 47842,
+      "sha256": "4778645f89d16f728fdeb571f3538b344f9d0ded1dde330f062b4c3f99359b3c",
+      "mime": "text/javascript"
+    },
+    "core.mjs": {
+      "bytes": 8259,
+      "sha256": "f27bf29cdcc804b0542f633e3bbb542d8c6412f43022eec29487fe131561fe0d",
+      "mime": "text/javascript"
+    },
+    "compile.mjs": {
+      "bytes": 2099,
+      "sha256": "fcb4a36232ef8f2052e82f92f87222b0f0e3dc315807601c7e45ee2546bfabec",
+      "mime": "text/javascript"
+    },
+    "wavetables.mjs": {
+      "bytes": 1308,
+      "sha256": "23cf838499963b38e74f7c8283fbe51a1d128f5dd03ac87aff85a0747504c344",
+      "mime": "text/javascript"
+    },
+    "worker.mjs": {
+      "bytes": 15734,
+      "sha256": "c8431b84d22597d4abb6fa4c657a54f51aafebf648f5b42b3b83292b13ba5c0e",
+      "mime": "text/javascript"
+    },
+    "sad_pet.wasm": {
+      "bytes": 50492894,
+      "sha256": "01b98fcc6a73c55f1bcc270f54938d0334b78cef6dfcccef4daf1056ca1eb73e",
+      "mime": "application/wasm"
+    },
+    "sad_pet.simd.wasm": {
+      "bytes": 50631828,
+      "sha256": "09e98513802ea4093b05779c6e82de3708dad08301fe505e66d11dc9b301c985",
+      "mime": "application/wasm"
+    }
+  },
+  "public_scalar_simd_bit_identical": true,
+  "public_oscillator_tests": [
+    "scalar",
+    "SIMD"
+  ],
+  "browser_checks": [
+    "new mixed bank with RADIAS and Wavetable",
+    "Selected OSC capture",
+    "inline Wavetable -> Grain A Ring + Hard Sync / Playback + Clock",
+    "inline Grain A -> OSC 1 Sync",
+    "all runtime script versions match deployed build",
+    "fresh console errors absent"
+  ],
+  "screenshot": "prod-grain.jpg",
+  "recorded_utc": "2026-11-02T15:06:59.973851+00:00"
+}

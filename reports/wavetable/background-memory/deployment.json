@@ -1,0 +1,28 @@
+{
+  "recorded_utc": "2026-10-31T22:03:34.634924+00:00",
+  "release_commit": "c7168152fbe78afee60308674fe027d2702c39fb",
+  "public_url": "https://fushugaku.github.io/sad-pet/?engine=wavetable&v=c716815",
+  "ci_url": "https://github.com/fushugaku/sad-pet/actions/runs/41242966681",
+  "ci_conclusion": "success",
+  "published_simd_sha256": "d86c66f654829dd71df4b7d7b37ec03ec24470f74594fd5a4ee2421e9555cafa",
+  "runtime_sources_match": true,
+  "local_release_pcm_bit_identical_cases": 21,
+  "before_after_pcm_cases_passed": 21,
+  "memory_public_max_mib": 127.24004459381104,
+  "earlier_local_600s_passed": true,
+  "current_public_realtime_passed": false,
+  "current_top_level_published_bundle_realtime_passed": false,
+  "current_top_level_underruns": 11257,
+  "power_observation": {
+    "drawing_from": "Battery Power",
+    "battery_percent_observed": 98,
+    "foundation_ProcessInfo_isLowPowerModeEnabled": true,
+    "settings_changed": false
+  },
+  "status": "Deployment and memory/PCM checks complete; real-time acceptance under current battery/Low Power Mode and concurrent load is not passed. Await target power-profile decision.",
+  "notes": [
+    "The earlier 600-cycle run had zero underruns and 127.115 MiB maximum.",
+    "Both local and published code now reproduce overload under current conditions. The published bundle was also checked in a top-level document, eliminating the iframe priority variable.",
+    "No unrelated user processes were stopped and no power settings were changed."
+  ]
+}

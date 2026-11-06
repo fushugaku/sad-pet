@@ -1,0 +1,1661 @@
+{
+  "scope": "Top-level SAD PET document with exact published runtime/WASM, production BrowserBackend, Rack, AudioWorklet and all real workers. The complete app loads and applies the target through its public API; includes UI state/telemetry and optional repeated preset edits. Overall playbackStats start before AudioContext.resume, including the first live audio block.",
+  "requested_seconds": 120,
+  "editing": true,
+  "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36",
+  "cold": {
+    "roles": {
+      "audio": {
+        "linear_bytes": 63111168,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "buffer_bytes": 954293
+      },
+      "worker": {
+        "linear_bytes": 33816576,
+        "factory_reads": {
+          "calls": 11,
+          "bytes": 2622165
+        },
+        "growth": [
+          {
+            "type": "init",
+            "before": 0,
+            "after": 29818880
+          },
+          {
+            "type": "wavetable-prepare",
+            "table": "factory:wt-cascade-steel:v1",
+            "before": 29818880,
+            "after": 30408704
+          },
+          {
+            "type": "request",
+            "path": "/api/sequencer/catalog",
+            "before": 30408704,
+            "after": 33816576
+          }
+        ],
+        "warmup": {
+          "frames": 98304,
+          "snapshots": 41,
+          "peak": 0.6181180477142334,
+          "elapsed_ms": 2196.5,
+          "linear_bytes": 29818880
+        }
+      },
+      "telemetry": {
+        "linear_bytes": 6684672,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "growth": [
+          {
+            "type": "init",
+            "before": 0,
+            "after": 4325376
+          },
+          {
+            "type": "snapshot",
+            "before": 4325376,
+            "after": 6422528
+          },
+          {
+            "type": "snapshot",
+            "before": 6422528,
+            "after": 6553600
+          },
+          {
+            "type": "snapshot",
+            "before": 6553600,
+            "after": 6684672
+          }
+        ]
+      },
+      "vocal": {
+        "linear_bytes": 0,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "growth": []
+      },
+      "recorder": {
+        "linear_bytes": 0,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "growth": []
+      }
+    },
+    "engine_variant": "sad_pet.simd.wasm",
+    "startup_mode": "wavetable",
+    "shared_rom_bytes": 22554339,
+    "max_transfer_bytes": 4530337,
+    "accounted_audio_data_bytes": 131651385,
+    "sample_rate": 48000,
+    "current_time": 0,
+    "context_state": "suspended",
+    "base_latency": 0.010666666666666666,
+    "output_latency": 0,
+    "playback_stats": {
+      "underrunDuration": 0,
+      "underrunEvents": 0,
+      "totalDuration": 0,
+      "averageLatency": 0,
+      "minimumLatency": 0,
+      "maximumLatency": 0
+    },
+    "fatal": null,
+    "peak": [
+      0,
+      0
+    ],
+    "notes": [],
+    "wavetable": {
+      "count": 4,
+      "engine_revision": 3,
+      "motion": {
+        "surf": 0,
+        "x": 0.5,
+        "xy_on": false,
+        "y": 0.5
+      },
+      "oscillators": [
+        {
+          "asset_id": "factory:wt-cascade-steel:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 3,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.27000001072883606,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 2.75,
+          "sync_source": 1,
+          "transpose": 0,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        },
+        {
+          "asset_id": "factory:wt-choir-machine:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 0,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.4000000059604645,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 3.25,
+          "sync_source": 2,
+          "transpose": 12,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        },
+        {
+          "asset_id": "factory:wt-wire-chamber:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 1,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.5299999713897705,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 3.75,
+          "sync_source": 3,
+          "transpose": 7,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        },
+        {
+          "asset_id": "factory:wt-peak-migration:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 2,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.6599999666213989,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 4.25,
+          "sync_source": 0,
+          "transpose": 19,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        }
+      ],
+      "schema_version": 2,
+      "seed": "6292746119127516500"
+    }
+  },
+  "initial": {
+    "roles": {
+      "audio": {
+        "linear_bytes": 63111168,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "buffer_bytes": 954293
+      },
+      "worker": {
+        "linear_bytes": 33816576,
+        "factory_reads": {
+          "calls": 11,
+          "bytes": 2622165
+        },
+        "growth": [
+          {
+            "type": "init",
+            "before": 0,
+            "after": 29818880
+          },
+          {
+            "type": "wavetable-prepare",
+            "table": "factory:wt-cascade-steel:v1",
+            "before": 29818880,
+            "after": 30408704
+          },
+          {
+            "type": "request",
+            "path": "/api/sequencer/catalog",
+            "before": 30408704,
+            "after": 33816576
+          }
+        ],
+        "warmup": {
+          "frames": 98304,
+          "snapshots": 41,
+          "peak": 0.6181180477142334,
+          "elapsed_ms": 2196.5,
+          "linear_bytes": 29818880
+        }
+      },
+      "telemetry": {
+        "linear_bytes": 6684672,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "growth": [
+          {
+            "type": "init",
+            "before": 0,
+            "after": 4325376
+          },
+          {
+            "type": "snapshot",
+            "before": 4325376,
+            "after": 6422528
+          },
+          {
+            "type": "snapshot",
+            "before": 6422528,
+            "after": 6553600
+          },
+          {
+            "type": "snapshot",
+            "before": 6553600,
+            "after": 6684672
+          }
+        ]
+      },
+      "vocal": {
+        "linear_bytes": 0,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "growth": []
+      },
+      "recorder": {
+        "linear_bytes": 0,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "growth": []
+      }
+    },
+    "engine_variant": "sad_pet.simd.wasm",
+    "startup_mode": "wavetable",
+    "shared_rom_bytes": 22554339,
+    "max_transfer_bytes": 4530337,
+    "accounted_audio_data_bytes": 131651385,
+    "sample_rate": 48000,
+    "current_time": 0.010666666666666666,
+    "context_state": "running",
+    "base_latency": 0.010666666666666666,
+    "output_latency": 0,
+    "playback_stats": {
+      "underrunDuration": 0,
+      "underrunEvents": 0,
+      "totalDuration": 0.0027,
+      "averageLatency": 0,
+      "minimumLatency": 0,
+      "maximumLatency": 0
+    },
+    "fatal": null,
+    "peak": [
+      0,
+      0
+    ],
+    "notes": [],
+    "wavetable": {
+      "count": 4,
+      "engine_revision": 3,
+      "motion": {
+        "surf": 0,
+        "x": 0.5,
+        "xy_on": false,
+        "y": 0.5
+      },
+      "oscillators": [
+        {
+          "asset_id": "factory:wt-cascade-steel:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 3,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.27000001072883606,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 2.75,
+          "sync_source": 1,
+          "transpose": 0,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        },
+        {
+          "asset_id": "factory:wt-choir-machine:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 0,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.4000000059604645,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 3.25,
+          "sync_source": 2,
+          "transpose": 12,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        },
+        {
+          "asset_id": "factory:wt-wire-chamber:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 1,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.5299999713897705,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 3.75,
+          "sync_source": 3,
+          "transpose": 7,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        },
+        {
+          "asset_id": "factory:wt-peak-migration:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 2,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.6599999666213989,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 4.25,
+          "sync_source": 0,
+          "transpose": 19,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        }
+      ],
+      "schema_version": 2,
+      "seed": "6292746119127516500"
+    }
+  },
+  "start": {
+    "roles": {
+      "audio": {
+        "linear_bytes": 63111168,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "buffer_bytes": 954293
+      },
+      "worker": {
+        "linear_bytes": 33816576,
+        "factory_reads": {
+          "calls": 11,
+          "bytes": 2622165
+        },
+        "growth": [
+          {
+            "type": "init",
+            "before": 0,
+            "after": 29818880
+          },
+          {
+            "type": "wavetable-prepare",
+            "table": "factory:wt-cascade-steel:v1",
+            "before": 29818880,
+            "after": 30408704
+          },
+          {
+            "type": "request",
+            "path": "/api/sequencer/catalog",
+            "before": 30408704,
+            "after": 33816576
+          }
+        ],
+        "warmup": {
+          "frames": 98304,
+          "snapshots": 41,
+          "peak": 0.6181180477142334,
+          "elapsed_ms": 2196.5,
+          "linear_bytes": 29818880
+        }
+      },
+      "telemetry": {
+        "linear_bytes": 6684672,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "growth": [
+          {
+            "type": "init",
+            "before": 0,
+            "after": 4325376
+          },
+          {
+            "type": "snapshot",
+            "before": 4325376,
+            "after": 6422528
+          },
+          {
+            "type": "snapshot",
+            "before": 6422528,
+            "after": 6553600
+          },
+          {
+            "type": "snapshot",
+            "before": 6553600,
+            "after": 6684672
+          }
+        ]
+      },
+      "vocal": {
+        "linear_bytes": 0,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "growth": []
+      },
+      "recorder": {
+        "linear_bytes": 0,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "growth": []
+      }
+    },
+    "engine_variant": "sad_pet.simd.wasm",
+    "startup_mode": "wavetable",
+    "shared_rom_bytes": 22554339,
+    "max_transfer_bytes": 4530337,
+    "accounted_audio_data_bytes": 131651385,
+    "sample_rate": 48000,
+    "current_time": 4.330666666666667,
+    "context_state": "running",
+    "base_latency": 0.010666666666666666,
+    "output_latency": 0.024,
+    "playback_stats": {
+      "underrunDuration": 4.8851,
+      "underrunEvents": 458,
+      "totalDuration": 9.2173,
+      "averageLatency": 0.023899999999999998,
+      "minimumLatency": 0,
+      "maximumLatency": 0.024
+    },
+    "fatal": null,
+    "peak": [
+      0.005707839038223028,
+      0.00593070313334465
+    ],
+    "notes": [
+      48,
+      51,
+      55,
+      58
+    ],
+    "wavetable": {
+      "count": 4,
+      "engine_revision": 3,
+      "motion": {
+        "surf": 0,
+        "x": 0.5,
+        "xy_on": false,
+        "y": 0.5
+      },
+      "oscillators": [
+        {
+          "asset_id": "factory:wt-cascade-steel:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 3,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.27000001072883606,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 2.75,
+          "sync_source": 1,
+          "transpose": 0,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        },
+        {
+          "asset_id": "factory:wt-choir-machine:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 0,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.4000000059604645,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 3.25,
+          "sync_source": 2,
+          "transpose": 12,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        },
+        {
+          "asset_id": "factory:wt-wire-chamber:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 1,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.5299999713897705,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 3.75,
+          "sync_source": 3,
+          "transpose": 7,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        },
+        {
+          "asset_id": "factory:wt-peak-migration:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 2,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.6599999666213989,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 4.25,
+          "sync_source": 0,
+          "transpose": 19,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        }
+      ],
+      "schema_version": 2,
+      "seed": "6292746119127516500"
+    }
+  },
+  "end": {
+    "roles": {
+      "audio": {
+        "linear_bytes": 64749568,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "buffer_bytes": 954293
+      },
+      "worker": {
+        "linear_bytes": 33816576,
+        "factory_reads": {
+          "calls": 11,
+          "bytes": 2622165
+        },
+        "growth": [
+          {
+            "type": "init",
+            "before": 0,
+            "after": 29818880
+          },
+          {
+            "type": "wavetable-prepare",
+            "table": "factory:wt-cascade-steel:v1",
+            "before": 29818880,
+            "after": 30408704
+          },
+          {
+            "type": "request",
+            "path": "/api/sequencer/catalog",
+            "before": 30408704,
+            "after": 33816576
+          }
+        ],
+        "warmup": {
+          "frames": 98304,
+          "snapshots": 41,
+          "peak": 0.6181180477142334,
+          "elapsed_ms": 2196.5,
+          "linear_bytes": 29818880
+        }
+      },
+      "telemetry": {
+        "linear_bytes": 6684672,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "growth": [
+          {
+            "type": "init",
+            "before": 0,
+            "after": 4325376
+          },
+          {
+            "type": "snapshot",
+            "before": 4325376,
+            "after": 6422528
+          },
+          {
+            "type": "snapshot",
+            "before": 6422528,
+            "after": 6553600
+          },
+          {
+            "type": "snapshot",
+            "before": 6553600,
+            "after": 6684672
+          }
+        ]
+      },
+      "vocal": {
+        "linear_bytes": 0,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "growth": []
+      },
+      "recorder": {
+        "linear_bytes": 0,
+        "factory_reads": {
+          "calls": 0,
+          "bytes": 0
+        },
+        "growth": []
+      }
+    },
+    "engine_variant": "sad_pet.simd.wasm",
+    "startup_mode": "wavetable",
+    "shared_rom_bytes": 22554339,
+    "max_transfer_bytes": 4530337,
+    "accounted_audio_data_bytes": 133289785,
+    "sample_rate": 48000,
+    "current_time": 99.448,
+    "context_state": "running",
+    "base_latency": 0.010666666666666666,
+    "output_latency": 0.024,
+    "playback_stats": {
+      "underrunDuration": 120.0672,
+      "underrunEvents": 11257,
+      "totalDuration": 218.92510000000001,
+      "averageLatency": 0.024,
+      "minimumLatency": 0,
+      "maximumLatency": 0.024
+    },
+    "fatal": null,
+    "peak": [
+      0.007608931977301836,
+      0.007385195232927799
+    ],
+    "notes": [
+      48,
+      51,
+      55,
+      58
+    ],
+    "wavetable": {
+      "count": 4,
+      "engine_revision": 3,
+      "motion": {
+        "surf": 0,
+        "x": 0.5,
+        "xy_on": false,
+        "y": 0.5
+      },
+      "oscillators": [
+        {
+          "asset_id": "factory:wt-cascade-steel:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 3,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.4333333373069763,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 2.75,
+          "sync_source": 1,
+          "transpose": 0,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        },
+        {
+          "asset_id": "factory:wt-choir-machine:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 0,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.4000000059604645,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 3.25,
+          "sync_source": 2,
+          "transpose": 12,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        },
+        {
+          "asset_id": "factory:wt-wire-chamber:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 1,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.5299999713897705,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 3.75,
+          "sync_source": 3,
+          "transpose": 7,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        },
+        {
+          "asset_id": "factory:wt-peak-migration:v1",
+          "detune": 7.300000190734863,
+          "enabled": true,
+          "fine": 0,
+          "fm_index": 2,
+          "fm_mode": 1,
+          "fm_source": 2,
+          "free_phase": false,
+          "key_waves": 0,
+          "level": 0.07000000029802322,
+          "pan": 0.5,
+          "phase": 0,
+          "phase_random": 0.699999988079071,
+          "position": 0.6599999666213989,
+          "position_env": 0,
+          "position_env_depth": 0,
+          "position_lfo": 0,
+          "position_lfo_depth": 0,
+          "spread": 0.75,
+          "step": false,
+          "surf_depth": 1,
+          "sync": true,
+          "sync_ratio": 4.25,
+          "sync_source": 0,
+          "transpose": 19,
+          "unison": 4,
+          "voice_shift": 0.05999999865889549
+        }
+      ],
+      "schema_version": 2,
+      "seed": "6292746119127516500"
+    }
+  },
+  "points": [
+    {
+      "wall_s": 1.0847999999523164,
+      "audio_s": 0.9493333333333336,
+      "bytes": 133289785,
+      "underruns": 552
+    },
+    {
+      "wall_s": 2.167200000047684,
+      "audio_s": 1.8986666666666663,
+      "bytes": 133289785,
+      "underruns": 645
+    },
+    {
+      "wall_s": 3.2512000000476835,
+      "audio_s": 2.848,
+      "bytes": 133289785,
+      "underruns": 739
+    },
+    {
+      "wall_s": 4.348099999904632,
+      "audio_s": 3.8080000000000007,
+      "bytes": 133289785,
+      "underruns": 833
+    },
+    {
+      "wall_s": 5.429700000047684,
+      "audio_s": 4.746666666666667,
+      "bytes": 133289785,
+      "underruns": 927
+    },
+    {
+      "wall_s": 6.518799999952316,
+      "audio_s": 5.632000000000001,
+      "bytes": 133289785,
+      "underruns": 1020
+    },
+    {
+      "wall_s": 7.596099999904633,
+      "audio_s": 6.517333333333334,
+      "bytes": 133289785,
+      "underruns": 1114
+    },
+    {
+      "wall_s": 8.686599999904633,
+      "audio_s": 7.469333333333334,
+      "bytes": 133289785,
+      "underruns": 1208
+    },
+    {
+      "wall_s": 9.775899999856948,
+      "audio_s": 8.362666666666666,
+      "bytes": 133289785,
+      "underruns": 1303
+    },
+    {
+      "wall_s": 10.868299999952317,
+      "audio_s": 9.248000000000001,
+      "bytes": 133289785,
+      "underruns": 1396
+    },
+    {
+      "wall_s": 11.947399999856948,
+      "audio_s": 10.175999999999998,
+      "bytes": 133289785,
+      "underruns": 1490
+    },
+    {
+      "wall_s": 13.039099999904632,
+      "audio_s": 11.114666666666668,
+      "bytes": 133289785,
+      "underruns": 1678
+    },
+    {
+      "wall_s": 14.122200000047684,
+      "audio_s": 11.989333333333335,
+      "bytes": 133289785,
+      "underruns": 1772
+    },
+    {
+      "wall_s": 15.2115,
+      "audio_s": 12.864,
+      "bytes": 133289785,
+      "underruns": 1866
+    },
+    {
+      "wall_s": 16.288599999904633,
+      "audio_s": 13.696000000000002,
+      "bytes": 133289785,
+      "underruns": 1960
+    },
+    {
+      "wall_s": 17.375,
+      "audio_s": 14.645333333333333,
+      "bytes": 133289785,
+      "underruns": 2054
+    },
+    {
+      "wall_s": 18.475799999952315,
+      "audio_s": 15.605333333333334,
+      "bytes": 133289785,
+      "underruns": 2148
+    },
+    {
+      "wall_s": 19.568700000047684,
+      "audio_s": 16.501333333333335,
+      "bytes": 133289785,
+      "underruns": 2242
+    },
+    {
+      "wall_s": 20.649200000047685,
+      "audio_s": 17.333333333333336,
+      "bytes": 133289785,
+      "underruns": 2335
+    },
+    {
+      "wall_s": 21.728200000047682,
+      "audio_s": 18.272000000000002,
+      "bytes": 133289785,
+      "underruns": 2429
+    },
+    {
+      "wall_s": 22.829,
+      "audio_s": 19.21066666666667,
+      "bytes": 133289785,
+      "underruns": 2523
+    },
+    {
+      "wall_s": 23.934200000047685,
+      "audio_s": 20.080000000000002,
+      "bytes": 133289785,
+      "underruns": 2617
+    },
+    {
+      "wall_s": 25.017099999904634,
+      "audio_s": 20.928,
+      "bytes": 133289785,
+      "underruns": 2711
+    },
+    {
+      "wall_s": 26.095299999952317,
+      "audio_s": 21.866666666666667,
+      "bytes": 133289785,
+      "underruns": 2899
+    },
+    {
+      "wall_s": 27.1775,
+      "audio_s": 22.816000000000003,
+      "bytes": 133289785,
+      "underruns": 2992
+    },
+    {
+      "wall_s": 28.284700000047685,
+      "audio_s": 23.701333333333334,
+      "bytes": 133289785,
+      "underruns": 3086
+    },
+    {
+      "wall_s": 29.365700000047685,
+      "audio_s": 24.576,
+      "bytes": 133289785,
+      "underruns": 3181
+    },
+    {
+      "wall_s": 30.450200000047683,
+      "audio_s": 25.525333333333336,
+      "bytes": 133289785,
+      "underruns": 3274
+    },
+    {
+      "wall_s": 31.548299999952317,
+      "audio_s": 26.46666666666667,
+      "bytes": 133289785,
+      "underruns": 3368
+    },
+    {
+      "wall_s": 32.65189999985695,
+      "audio_s": 27.285333333333334,
+      "bytes": 133289785,
+      "underruns": 3462
+    },
+    {
+      "wall_s": 33.75929999995232,
+      "audio_s": 28.14933333333333,
+      "bytes": 133289785,
+      "underruns": 3556
+    },
+    {
+      "wall_s": 34.83620000004768,
+      "audio_s": 29.077333333333335,
+      "bytes": 133289785,
+      "underruns": 3650
+    },
+    {
+      "wall_s": 35.921599999904636,
+      "audio_s": 30.02666666666667,
+      "bytes": 133289785,
+      "underruns": 3743
+    },
+    {
+      "wall_s": 37.009200000047684,
+      "audio_s": 30.890666666666668,
+      "bytes": 133289785,
+      "underruns": 3837
+    },
+    {
+      "wall_s": 38.097099999904636,
+      "audio_s": 31.776000000000003,
+      "bytes": 133289785,
+      "underruns": 4025
+    },
+    {
+      "wall_s": 39.1785,
+      "audio_s": 32.704,
+      "bytes": 133289785,
+      "underruns": 4120
+    },
+    {
+      "wall_s": 40.263599999904635,
+      "audio_s": 33.653333333333336,
+      "bytes": 133289785,
+      "underruns": 4213
+    },
+    {
+      "wall_s": 41.35739999985695,
+      "audio_s": 34.538666666666664,
+      "bytes": 133289785,
+      "underruns": 4306
+    },
+    {
+      "wall_s": 42.448799999952314,
+      "audio_s": 35.40266666666667,
+      "bytes": 133289785,
+      "underruns": 4401
+    },
+    {
+      "wall_s": 43.52889999985695,
+      "audio_s": 36.29866666666667,
+      "bytes": 133289785,
+      "underruns": 4494
+    },
+    {
+      "wall_s": 44.63239999985695,
+      "audio_s": 37.25333333333334,
+      "bytes": 133289785,
+      "underruns": 4588
+    },
+    {
+      "wall_s": 45.712299999952315,
+      "audio_s": 38.13333333333333,
+      "bytes": 133289785,
+      "underruns": 4681
+    },
+    {
+      "wall_s": 46.80389999985695,
+      "audio_s": 38.944,
+      "bytes": 133289785,
+      "underruns": 4776
+    },
+    {
+      "wall_s": 47.892,
+      "audio_s": 39.85066666666667,
+      "bytes": 133289785,
+      "underruns": 4870
+    },
+    {
+      "wall_s": 48.98009999990463,
+      "audio_s": 40.800000000000004,
+      "bytes": 133289785,
+      "underruns": 4964
+    },
+    {
+      "wall_s": 50.062299999952316,
+      "audio_s": 41.664,
+      "bytes": 133289785,
+      "underruns": 5058
+    },
+    {
+      "wall_s": 51.16070000004768,
+      "audio_s": 42.54933333333334,
+      "bytes": 133289785,
+      "underruns": 5245
+    },
+    {
+      "wall_s": 52.24670000004768,
+      "audio_s": 43.40266666666667,
+      "bytes": 133289785,
+      "underruns": 5340
+    },
+    {
+      "wall_s": 53.331299999952314,
+      "audio_s": 44.352000000000004,
+      "bytes": 133289785,
+      "underruns": 5434
+    },
+    {
+      "wall_s": 54.41489999985695,
+      "audio_s": 45.30133333333333,
+      "bytes": 133289785,
+      "underruns": 5527
+    },
+    {
+      "wall_s": 55.493,
+      "audio_s": 46.176,
+      "bytes": 133289785,
+      "underruns": 5621
+    },
+    {
+      "wall_s": 56.57720000004768,
+      "audio_s": 46.99733333333334,
+      "bytes": 133289785,
+      "underruns": 5715
+    },
+    {
+      "wall_s": 57.66239999985695,
+      "audio_s": 47.946666666666665,
+      "bytes": 133289785,
+      "underruns": 5809
+    },
+    {
+      "wall_s": 58.74609999990463,
+      "audio_s": 48.896,
+      "bytes": 133289785,
+      "underruns": 5904
+    },
+    {
+      "wall_s": 59.86229999995231,
+      "audio_s": 49.816,
+      "bytes": 133289785,
+      "underruns": 5998
+    },
+    {
+      "wall_s": 60.960200000047685,
+      "audio_s": 50.656,
+      "bytes": 133289785,
+      "underruns": 6092
+    },
+    {
+      "wall_s": 62.04379999995231,
+      "audio_s": 51.59466666666667,
+      "bytes": 133289785,
+      "underruns": 6185
+    },
+    {
+      "wall_s": 63.135899999856946,
+      "audio_s": 52.522666666666666,
+      "bytes": 133289785,
+      "underruns": 6373
+    },
+    {
+      "wall_s": 64.24970000004768,
+      "audio_s": 53.346666666666664,
+      "bytes": 133289785,
+      "underruns": 6466
+    },
+    {
+      "wall_s": 65.33820000004768,
+      "audio_s": 54.21866666666667,
+      "bytes": 133289785,
+      "underruns": 6561
+    },
+    {
+      "wall_s": 66.4245,
+      "audio_s": 55.14666666666667,
+      "bytes": 133289785,
+      "underruns": 6654
+    },
+    {
+      "wall_s": 67.52259999990463,
+      "audio_s": 56.10666666666667,
+      "bytes": 133289785,
+      "underruns": 6748
+    },
+    {
+      "wall_s": 68.62620000004769,
+      "audio_s": 56.96,
+      "bytes": 133289785,
+      "underruns": 6842
+    },
+    {
+      "wall_s": 69.7035,
+      "audio_s": 57.83466666666667,
+      "bytes": 133289785,
+      "underruns": 6936
+    },
+    {
+      "wall_s": 70.7885,
+      "audio_s": 58.74133333333334,
+      "bytes": 133289785,
+      "underruns": 7030
+    },
+    {
+      "wall_s": 71.87509999990463,
+      "audio_s": 59.690666666666665,
+      "bytes": 133289785,
+      "underruns": 7124
+    },
+    {
+      "wall_s": 72.96220000004769,
+      "audio_s": 60.61866666666666,
+      "bytes": 133289785,
+      "underruns": 7218
+    },
+    {
+      "wall_s": 74.05079999995232,
+      "audio_s": 61.568000000000005,
+      "bytes": 133289785,
+      "underruns": 7312
+    },
+    {
+      "wall_s": 75.13889999985695,
+      "audio_s": 62.51733333333333,
+      "bytes": 133289785,
+      "underruns": 7500
+    },
+    {
+      "wall_s": 76.22570000004768,
+      "audio_s": 63.46666666666666,
+      "bytes": 133289785,
+      "underruns": 7594
+    },
+    {
+      "wall_s": 77.34639999985694,
+      "audio_s": 64.40533333333333,
+      "bytes": 133289785,
+      "underruns": 7688
+    },
+    {
+      "wall_s": 78.435,
+      "audio_s": 65.24799999999999,
+      "bytes": 133289785,
+      "underruns": 7781
+    },
+    {
+      "wall_s": 79.541,
+      "audio_s": 66.17599999999999,
+      "bytes": 133289785,
+      "underruns": 7875
+    },
+    {
+      "wall_s": 80.64970000004769,
+      "audio_s": 66.98666666666666,
+      "bytes": 133289785,
+      "underruns": 7969
+    },
+    {
+      "wall_s": 81.74529999995232,
+      "audio_s": 67.86133333333332,
+      "bytes": 133289785,
+      "underruns": 8063
+    },
+    {
+      "wall_s": 82.842,
+      "audio_s": 68.75733333333332,
+      "bytes": 133289785,
+      "underruns": 8157
+    },
+    {
+      "wall_s": 83.96120000004768,
+      "audio_s": 69.65599999999999,
+      "bytes": 133289785,
+      "underruns": 8251
+    },
+    {
+      "wall_s": 85.07020000004768,
+      "audio_s": 70.48533333333333,
+      "bytes": 133289785,
+      "underruns": 8345
+    },
+    {
+      "wall_s": 86.15909999990463,
+      "audio_s": 71.36,
+      "bytes": 133289785,
+      "underruns": 8533
+    },
+    {
+      "wall_s": 87.2385,
+      "audio_s": 72.27733333333333,
+      "bytes": 133289785,
+      "underruns": 8626
+    },
+    {
+      "wall_s": 88.34779999995231,
+      "audio_s": 73.11999999999999,
+      "bytes": 133289785,
+      "underruns": 8720
+    },
+    {
+      "wall_s": 89.44579999995231,
+      "audio_s": 73.984,
+      "bytes": 133289785,
+      "underruns": 8814
+    },
+    {
+      "wall_s": 90.56920000004769,
+      "audio_s": 74.89066666666666,
+      "bytes": 133289785,
+      "underruns": 8909
+    },
+    {
+      "wall_s": 91.68659999990463,
+      "audio_s": 75.80799999999999,
+      "bytes": 133289785,
+      "underruns": 9003
+    },
+    {
+      "wall_s": 92.78809999990463,
+      "audio_s": 76.61866666666666,
+      "bytes": 133289785,
+      "underruns": 9097
+    },
+    {
+      "wall_s": 93.89309999990463,
+      "audio_s": 77.45066666666666,
+      "bytes": 133289785,
+      "underruns": 9190
+    },
+    {
+      "wall_s": 94.9885,
+      "audio_s": 78.33866666666665,
+      "bytes": 133289785,
+      "underruns": 9283
+    },
+    {
+      "wall_s": 96.07239999985696,
+      "audio_s": 79.28533333333333,
+      "bytes": 133289785,
+      "underruns": 9378
+    },
+    {
+      "wall_s": 97.17989999985694,
+      "audio_s": 80.13866666666667,
+      "bytes": 133289785,
+      "underruns": 9565
+    },
+    {
+      "wall_s": 98.28289999985695,
+      "audio_s": 81.00266666666666,
+      "bytes": 133289785,
+      "underruns": 9659
+    },
+    {
+      "wall_s": 99.37479999995232,
+      "audio_s": 81.88799999999999,
+      "bytes": 133289785,
+      "underruns": 9754
+    },
+    {
+      "wall_s": 100.462,
+      "audio_s": 82.83733333333333,
+      "bytes": 133289785,
+      "underruns": 9848
+    },
+    {
+      "wall_s": 101.57970000004768,
+      "audio_s": 83.75466666666667,
+      "bytes": 133289785,
+      "underruns": 9942
+    },
+    {
+      "wall_s": 102.68179999995232,
+      "audio_s": 84.59733333333332,
+      "bytes": 133289785,
+      "underruns": 10036
+    },
+    {
+      "wall_s": 103.789,
+      "audio_s": 85.48266666666666,
+      "bytes": 133289785,
+      "underruns": 10130
+    },
+    {
+      "wall_s": 104.87470000004768,
+      "audio_s": 86.38933333333333,
+      "bytes": 133289785,
+      "underruns": 10224
+    },
+    {
+      "wall_s": 105.9625,
+      "audio_s": 87.31733333333332,
+      "bytes": 133289785,
+      "underruns": 10317
+    },
+    {
+      "wall_s": 107.05670000004768,
+      "audio_s": 88.16,
+      "bytes": 133289785,
+      "underruns": 10410
+    },
+    {
+      "wall_s": 108.184,
+      "audio_s": 89.00266666666666,
+      "bytes": 133289785,
+      "underruns": 10599
+    },
+    {
+      "wall_s": 109.28839999985695,
+      "audio_s": 89.83466666666666,
+      "bytes": 133289785,
+      "underruns": 10692
+    },
+    {
+      "wall_s": 110.40609999990463,
+      "audio_s": 90.67733333333332,
+      "bytes": 133289785,
+      "underruns": 10787
+    },
+    {
+      "wall_s": 111.50689999985696,
+      "audio_s": 91.55199999999999,
+      "bytes": 133289785,
+      "underruns": 10880
+    },
+    {
+      "wall_s": 112.60379999995232,
+      "audio_s": 92.416,
+      "bytes": 133289785,
+      "underruns": 10975
+    },
+    {
+      "wall_s": 113.69679999995232,
+      "audio_s": 93.37066666666666,
+      "bytes": 133289785,
+      "underruns": 11068
+    },
+    {
+      "wall_s": 114.80309999990463,
+      "audio_s": 94.24,
+      "bytes": 133289785,
+      "underruns": 11162
+    },
+    {
+      "wall_s": 115.91389999985695,
+      "audio_s": 95.104,
+      "bytes": 133289785,
+      "underruns": 11257
+    }
+  ],
+  "visibility": [
+    {
+      "at": 0,
+      "state": "visible",
+      "app": "visible"
+    }
+  ],
+  "delta": {
+    "underrunDuration": 115.1821,
+    "underrunEvents": 10799,
+    "totalDuration": 209.70780000000002,
+    "averageLatency": 0.00010000000000000286,
+    "minimumLatency": 0,
+    "maximumLatency": 0
+  },
+  "overall_delta": {
+    "underrunDuration": 120.0672,
+    "underrunEvents": 11257,
+    "totalDuration": 218.92510000000001,
+    "averageLatency": 0.024,
+    "minimumLatency": 0,
+    "maximumLatency": 0.024
+  },
+  "wall_seconds": 115.93459999990463,
+  "audio_seconds": 95.11733333333332,
+  "peak": 0.021474875509738922,
+  "max_audio_data_bytes": 133289785,
+  "max_audio_data_mib": 127.11504459381104,
+  "aborted": true,
+  "completed_seconds": 106,
+  "passed": false
+}

@@ -1,0 +1,38 @@
+{
+  "checked_at": "2026-11-03T10:11:32.535674+00:00",
+  "commit": "4631fad14e6a579ef41a9c7ebd8d388375ec6381",
+  "url": "https://fushugaku.github.io/sad-pet/",
+  "version": "87a30de193ab",
+  "assets": [
+    {
+      "asset": "midi.js",
+      "source": "rust/web/midi.js",
+      "matches_commit": true,
+      "sha256": "f1a635ccf748bca423109d787e8068e028d2a36a6180875befdb671dfa181404"
+    },
+    {
+      "asset": "worklet.mjs",
+      "source": "wasm/web/worklet.mjs",
+      "matches_commit": true,
+      "sha256": "19e04ccffc2cad7fc7465ada721bd25f6247b257fc33c5197d30652cf8b26823"
+    },
+    {
+      "asset": "app.js",
+      "source": "rust/web/app.js",
+      "matches_commit": true,
+      "sha256": "06d458f2e3ca4b7127c0e4ebfacf19e89aeabbf3b4401a95b8aad9ad71452964"
+    },
+    {
+      "asset": "midi-targets.js",
+      "source": "rust/web/midi-targets.js",
+      "matches_commit": true,
+      "sha256": "de2ea844b99915f7834e96b91cde2d887f27d21830787b4308dfd1fb937dd0dd"
+    },
+    {
+      "asset": "xl3-feedback.mjs",
+      "source": "wasm/web/xl3-feedback.mjs",
+      "matches_commit": true,
+      "sha256": "5df732a719bf28c98c4c005b87767eb28676c1134364be6ad1235bdafcc38f31"
+    }
+  ]
+}

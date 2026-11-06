@@ -18,6 +18,8 @@ mod grain_interaction;
 mod imported_rate;
 pub(crate) mod interaction;
 pub mod limiter;
+#[cfg(test)]
+mod main_pitch_tests;
 pub mod modulation;
 pub mod oscillators;
 pub mod phase_transport;
@@ -32,6 +34,8 @@ pub mod resynth;
 pub mod sample;
 pub mod sampler;
 pub(crate) mod sequence;
+mod sequence_histories;
+mod sequence_sources;
 pub mod source_fx;
 #[cfg(all(feature = "source-worker", not(target_arch = "wasm32")))]
 pub mod source_fx_worker;
@@ -39,6 +43,7 @@ pub mod synth;
 mod taps;
 pub mod tb303;
 pub mod telemetry;
+pub mod waveshaper;
 pub mod wavetable;
 
 use crate::grain_groups as grain_groups_settings;
@@ -126,6 +131,8 @@ struct Grain {
     shape: f32,
     pan: Stereo,
     voice: usize,
+    /// A history-granulated MainPitch party; None retains the legacy/file path.
+    history: Option<u8>,
 }
 
 /// Set bits of `mask`, lowest first.
@@ -144,6 +151,15 @@ struct Voice {
     owner: u32,
     envelopes: [Envelope; crate::preset::MODULATORS],
     note: u8,
+    /// Main-pitch lanes retain fractional pitch independently of MIDI identity.
+    main_pitch: bool,
+    pitch: f32,
+    oscillator_mask: u32,
+    granular: bool,
+    /// ENV-off lanes sustain independently of any particular ENV 1 mode.
+    env_gate: bool,
+    drone_gain: f32,
+    drone_release: f32,
     channel: u8,
     velocity: f32,
     held: bool,
@@ -162,6 +178,23 @@ struct Voice {
     onset_step: [f32; crate::grain_groups::GROUPS + 1],
 }
 impl Voice {
+    fn pitch(&self) -> f32 {
+        if self.main_pitch {
+            self.pitch
+        } else {
+            self.note as f32
+        }
+    }
+    fn oscillator_mask(&self) -> u32 {
+        if self.main_pitch {
+            self.oscillator_mask
+        } else {
+            (1 << 25) - 1
+        }
+    }
+    fn granular(&self) -> bool {
+        !self.main_pitch || self.granular
+    }
     fn on(&mut self, count: usize) {
         self.generation = self.generation.wrapping_add(1);
         self.gated = false;
@@ -187,9 +220,11 @@ impl Voice {
         for env in &mut self.envelopes {
             env.kill();
         }
+        self.drone_gain = 0.0;
     }
     fn active(&self) -> bool {
         self.envelopes.iter().any(Envelope::active)
+            || (self.main_pitch && !self.env_gate && (self.held || self.drone_gain > 0.0))
     }
 }
 
@@ -785,7 +820,16 @@ impl EnginePreparation {
             6 => self.resynth = Some(Box::new(resynth::Resynth::new(sr))),
             7 => self.graph = Some(Box::new(interaction::Runtime::new(sr))),
             8 => self.equalizers = Some(Box::new(eq::Bank::new(sr))),
-            9 => self.filters = Some(Box::new(std::array::from_fn(|_| FilterBank::new(sr)))),
+            9 => {
+                self.filters = Some(
+                    (0..VOICES)
+                        .map(|_| FilterBank::new(sr))
+                        .collect::<Vec<_>>()
+                        .into_boxed_slice()
+                        .try_into()
+                        .unwrap_or_else(|_| unreachable!()),
+                );
+            }
             10 => self.modulated = Some(Box::new(Modulated::default())),
             11 => self.spare_modulated = Some(Box::new(Modulated::default())),
             _ => return true,
@@ -1162,13 +1206,28 @@ impl Engine {
         {
             next.inherit(old);
         }
+        if let (Some(next), Some(old)) = (
+            &mut runtime.sequence_sources,
+            &mut self.preset_runtime.sequence_sources,
+        ) {
+            next.inherit(old);
+        }
+        if let (Some(next), Some(old)) = (
+            &mut runtime.sequence_histories,
+            &mut self.preset_runtime.sequence_histories,
+        ) {
+            next.inherit(old);
+        }
         for voice in self.voices.iter_mut() {
             if voice.owner != 0
                 && (!preset.sequencer.enabled
-                    || !runtime
-                        .sequence
-                        .as_ref()
-                        .is_some_and(|r| r.retained_note(voice.owner)))
+                    || !runtime.sequence.as_ref().is_some_and(|r| {
+                        if voice.main_pitch {
+                            r.main_pitch_owner(voice.owner)
+                        } else {
+                            r.retained_note(voice.owner)
+                        }
+                    }))
             {
                 voice.held = false;
                 voice.sustained = false;
@@ -1491,12 +1550,12 @@ impl Engine {
     fn sequence_has_notes(&self) -> bool {
         self.sequence_running
             && self.preset.sequencer.enabled
-            && self
-                .preset
-                .sequencer
-                .tracks
-                .iter()
-                .any(|t| t.target == crate::sequence::Target::Notes && t.config[8] == 0)
+            && self.preset.sequencer.tracks.iter().any(|t| {
+                matches!(
+                    t.target,
+                    crate::sequence::Target::Notes | crate::sequence::Target::MainPitch
+                )
+            })
     }
     fn sequence_gates_envelopes(&self) -> bool {
         self.sequence_running
@@ -1556,6 +1615,7 @@ impl Engine {
     }
     /// Voice 0 is the note held while playing without keys or note tracks.
     fn start_free_voice(&mut self) {
+        self.voices[0].main_pitch = false;
         self.voices[0].velocity = 1.0;
         self.voices[0].note = 60;
         self.voices[0].held = true;
@@ -1566,6 +1626,100 @@ impl Engine {
         self.start_voice(0);
         self.mod_note_on(0, 60, 127);
         self.configure_voice_filter(0);
+    }
+    /// A Main pitch lane owns one held voice; released tails keep their last
+    /// pitch and routing until their own envelopes finish.
+    fn sync_main_pitch_voices(&mut self, events: bool) {
+        let count = self.preset_runtime.sequence.as_ref().map_or(0, |r| r.len());
+        for lane in 0..count {
+            let Some(state) = self
+                .preset_runtime
+                .sequence
+                .as_ref()
+                .and_then(|r| r.main_pitch(lane))
+            else {
+                continue;
+            };
+            let current = (1..VOICES).find(|&i| {
+                self.voices[i].main_pitch && self.voices[i].owner == state.id && self.voices[i].held
+            });
+            if (!state.open || (events && state.trigger))
+                && let Some(i) = current
+            {
+                self.voices[i].held = false;
+                self.voices[i].off();
+            }
+            if !state.open {
+                continue;
+            }
+            let current = current.filter(|_| !(events && state.trigger));
+            let pitch = self.modulated.params.sample_root_note + state.offset;
+            let index = current.unwrap_or_else(|| {
+                let index = (1..VOICES)
+                    .find(|&i| !self.voices[i].active())
+                    .unwrap_or_else(|| {
+                        (1..VOICES)
+                            .min_by(|&a, &b| {
+                                let (a, b) = (&self.voices[a], &self.voices[b]);
+                                (a.held || a.sustained)
+                                    .cmp(&(b.held || b.sustained))
+                                    .then(a.value.total_cmp(&b.value))
+                            })
+                            .unwrap()
+                    });
+                self.kill_voice_grains(index);
+                self.clear_voice_filters(index);
+                let v = &mut self.voices[index];
+                v.owner = state.id;
+                v.main_pitch = true;
+                v.note = pitch.round().clamp(0.0, 127.0) as u8;
+                v.pitch = pitch;
+                v.oscillator_mask = state.oscillators;
+                v.granular = state.granular;
+                v.env_gate = state.env_gate;
+                v.drone_gain = 0.0;
+                v.channel = 0;
+                v.velocity = state.velocity as f32 / 127.0;
+                v.held = true;
+                v.sustained = false;
+                self.start_voice(index);
+                self.mod_note_on(0, pitch.round().clamp(0.0, 127.0) as u8, state.velocity);
+                self.grain_clock = 1.0;
+                index
+            });
+            let v = &mut self.voices[index];
+            if v.env_gate && !state.env_gate {
+                v.drone_gain = if v.velocity > 0.0 {
+                    v.value / v.velocity
+                } else {
+                    0.0
+                };
+            }
+            v.env_gate = state.env_gate;
+            v.drone_release =
+                (-9.0 / (self.modulated.envs[0].release_seconds() * self.sample_rate as f32)).exp();
+            v.pitch = pitch;
+            v.note = pitch.round().clamp(0.0, 127.0) as u8;
+            v.oscillator_mask = state.oscillators;
+            v.granular = state.granular;
+            v.velocity = state.velocity as f32 / 127.0;
+            self.configure_voice_filter(index);
+        }
+        if let Some(histories) = &mut self.preset_runtime.sequence_histories {
+            let owners: [u32; VOICES] = std::array::from_fn(|i| {
+                let v = self.voices[i];
+                if v.main_pitch && (v.held || v.active()) {
+                    v.owner
+                } else {
+                    0
+                }
+            });
+            for &owner in &owners {
+                if owner != 0 {
+                    histories.ensure(owner, &owners);
+                }
+            }
+        }
     }
     pub fn apply_parameters(&mut self, changes: &[crate::parameters::Change]) {
         if crate::parameters::apply(&mut self.preset, changes) {
@@ -2421,6 +2575,7 @@ impl Engine {
                 }
                 let v = &mut self.voices[index];
                 v.note = note;
+                v.main_pitch = false;
                 v.owner = owner;
                 v.channel = channel;
                 v.velocity = velocity as f32 / 127.0;
@@ -2887,12 +3042,12 @@ impl Engine {
             self.filters[0].configure(&m.params, last_note, shared_envs);
         }
         for (i, voice) in self.voices.iter().enumerate() {
-            if chain_filters || (!voice.envelopes[0].active() && !(bus && i == 0)) {
+            if chain_filters || (!voice.active() && !(bus && i == 0)) {
                 continue;
             }
-            let note = voice.note as f32
-                + self.bend[voice.channel as usize] * m.params.midi_pitchbend_range;
-            let envs = filter::envelopes(voice.env_values, bass_env);
+            let note =
+                voice.pitch() + self.bend[voice.channel as usize] * m.params.midi_pitchbend_range;
+            let envs = filter::envelopes(voice.env_values, self.voice_tb303_envelope(i));
             self.filters[i].configure(&m.params, note, envs);
             filter_slots::configure_voice(slots, &mut self.filter_banks, i, note, envs);
         }
@@ -2912,6 +3067,7 @@ impl Engine {
             self.output_gain = 10.0_f32.powf(params.out_gain * 0.05);
         }
         self.gain_key = Some(gain_key);
+        self.sync_main_pitch_voices(false);
         self.grain_density =
             params.min_grains + (MAX_GRAINS as f32 - params.min_grains) * params.grains.powi(3);
         self.grain_step = self.grain_density as f64 / self.sample_rate as f64;
@@ -2943,10 +3099,28 @@ impl Engine {
         self.taps.buses()
     }
     pub fn resynth_meter(&self) -> crate::resynth::Meter {
-        crate::resynth::Meter {
+        let mut result = crate::resynth::Meter {
             bands: self.oscillator_engine.resynth.carrier_levels(),
             frequencies: self.oscillator_engine.resynth.frequencies(),
+        };
+        if self.main_pitch_sequence()
+            && let Some(sources) = &self.preset_runtime.sequence_sources
+        {
+            for (index, voice) in self.voices.iter().enumerate() {
+                if !voice.active() {
+                    continue;
+                }
+                if let Some(meter) = sources.resynth_meter(index) {
+                    for band in 0..result.bands.len() {
+                        if meter.bands[band] > result.bands[band] {
+                            result.bands[band] = meter.bands[band];
+                            result.frequencies[band] = meter.frequencies[band];
+                        }
+                    }
+                }
+            }
         }
+        result
     }
     pub fn modulated_params(&self) -> Params {
         self.modulated.params
@@ -2965,15 +3139,13 @@ impl Engine {
     }
 
     fn configure_voice_filter(&mut self, index: usize) {
-        if self.rack.is_some_and(|r| !r.filters_per_note) {
-            // Filter 1 and 2 of voice 0 filter the Rack chain as one.
-            return;
-        }
         let voice = &self.voices[index];
-        let note = voice.note as f32
+        let note = voice.pitch()
             + self.bend[voice.channel as usize] * self.modulated.params.midi_pitchbend_range;
-        let envs = filter::envelopes(voice.env_values, self.tb303_view().envelope);
-        self.filters[index].configure(&self.modulated.params, note, envs);
+        let envs = filter::envelopes(voice.env_values, self.voice_tb303_envelope(index));
+        if !self.rack.is_some_and(|r| !r.filters_per_note) {
+            self.filters[index].configure(&self.modulated.params, note, envs);
+        }
         filter_slots::configure_voice(
             &self.modulated.filter_slots[..self.modulated.filter_len],
             &mut self.filter_banks,
@@ -2998,15 +3170,16 @@ impl Engine {
     pub fn voice_filter_cutoffs(&self, note: u8) -> Option<[f32; 2]> {
         self.voices
             .iter()
-            .find(|voice| voice.active() && voice.note == note)
-            .map(|voice| {
-                let pitch = note as f32
+            .enumerate()
+            .find(|(_, voice)| voice.active() && voice.note == note)
+            .map(|(index, voice)| {
+                let pitch = voice.pitch()
                     + self.bend[voice.channel as usize]
                         * self.modulated.params.midi_pitchbend_range;
                 filter::voice_cutoffs(
                     &self.modulated.params,
                     pitch,
-                    filter::envelopes(voice.env_values, self.tb303_view().envelope),
+                    filter::envelopes(voice.env_values, self.voice_tb303_envelope(index)),
                 )
             })
     }
@@ -3021,46 +3194,126 @@ impl Engine {
         }
     }
 
+    /// A generated-note history is already pitched; a shared drum, sample or
+    /// vocal stream still needs the party's pitch on its grain playback.
+    fn individual_history(&self) -> bool {
+        self.rack
+            .as_ref()
+            .map_or(self.oscillator_engine.synth.is_some(), |rack| {
+                rack.history_pitched
+            })
+    }
+
+    fn main_pitch_sequence(&self) -> bool {
+        (self.preset.sequencer.enabled
+            && self.sequence_running
+            && self
+                .preset
+                .sequencer
+                .tracks
+                .iter()
+                .any(|t| t.target == crate::sequence::Target::MainPitch))
+            || self.voices.iter().any(|v| v.main_pitch && v.active())
+    }
+
+    fn grain_voice(&mut self, synth: bool) -> Option<usize> {
+        if synth && !self.main_pitch_sequence() {
+            return (self.playing || self.rack.is_some()).then_some(0);
+        }
+        let bus = self.preset.bus.is_some();
+        let legacy = synth && self.voices.iter().any(|v| !v.main_pitch && v.active());
+        let voice = (0..VOICES)
+            .map(|i| (i + self.next_voice) % VOICES)
+            .find(|&i| {
+                let v = &self.voices[i];
+                (synth && i == 0 && legacy)
+                    || ((v.active() || (bus && i == 0)) && v.granular() && (!synth || v.main_pitch))
+            })?;
+        self.next_voice = (voice + 1) % VOICES;
+        Some(voice)
+    }
+
+    /// History grains may be shared post-VCA grains or a Main pitch party's
+    /// own pitched/gated cloud. File grains always follow their voice's VCA.
+    fn mixed_grains(&self, frames: &[Stereo; VOICES], history: bool) -> Stereo {
+        let mut output = [0.0; 2];
+        for (i, frame) in frames.iter().enumerate() {
+            let weight = if history && !self.voices[i].main_pitch {
+                f32::from(i == 0)
+            } else {
+                self.voices[i].value.max(0.0)
+            };
+            for c in 0..2 {
+                output[c] += frame[c] * weight;
+            }
+        }
+        output
+    }
+
+    /// Capture each party before its VCA. Notes of the same party share their
+    /// evolving tape; weighting and normalizing their overlap keeps the VCA
+    /// from being applied twice when the grains are played.
+    fn capture_sequence_histories(
+        &mut self,
+        frames: &[Stereo; VOICES],
+        grains: &[Stereo; VOICES],
+        norm: f32,
+    ) {
+        let Some(live) = &self.live_input else {
+            return;
+        };
+        let time = live.range_epoch() + live.range().end as u64;
+        let Some(time) = time.checked_sub(1) else {
+            return;
+        };
+        let owners: [u32; VOICES] = std::array::from_fn(|i| {
+            let v = self.voices[i];
+            if v.main_pitch && (v.held || v.active()) {
+                v.owner
+            } else {
+                0
+            }
+        });
+        let Some(histories) = &mut self.preset_runtime.sequence_histories else {
+            return;
+        };
+        histories.begin_frame();
+        for i in bits(self.sounding) {
+            let voice = self.voices[i];
+            if voice.main_pitch && voice.granular {
+                histories.add(
+                    voice.owner,
+                    &owners,
+                    frames[i],
+                    grains[i],
+                    voice.value.max(0.0),
+                );
+            }
+        }
+        histories.finish_frame(
+            time,
+            self.frozen,
+            self.modulated.params.grain_feedback,
+            norm,
+        );
+    }
+
     fn spawn(&mut self) {
         // Lowest free slot, as the previous linear scan chose.
         if (!self.live_grains).trailing_zeros() as usize == MAX_GRAINS {
             return;
         }
         let synth = self.synth_grains();
-        let voice = if synth {
-            if !self.playing && self.rack.is_none() {
-                return;
-            }
-            0
-        } else {
-            let bus = self.preset.bus.is_some();
-            let Some(voice) = (0..VOICES)
-                .map(|i| (i + self.next_voice) % VOICES)
-                .find(|&i| self.voices[i].envelopes[0].active() || (bus && i == 0))
-            else {
-                return;
-            };
-            self.next_voice = (voice + 1) % VOICES;
-            voice
+        let Some(voice) = self.grain_voice(synth) else {
+            return;
         };
         self.spawn_grain(voice, synth, 0);
     }
 
     fn spawn_group(&mut self, group: usize, forced: bool, time: f64) {
         let synth = self.synth_grains();
-        let voice = if synth {
-            0
-        } else {
-            let Some(voice) = (0..VOICES)
-                .map(|i| (i + self.next_voice) % VOICES)
-                .find(|&i| {
-                    self.voices[i].envelopes[0].active() || (self.preset.bus.is_some() && i == 0)
-                })
-            else {
-                return;
-            };
-            self.next_voice = (voice + 1) % VOICES;
-            voice
+        let Some(voice) = self.grain_voice(synth) else {
+            return;
         };
         self.spawn_grain_group(voice, synth, 0, Some(group), forced, time);
     }
@@ -3140,6 +3393,9 @@ impl Engine {
         forced: bool,
         birth_time: f64,
     ) {
+        if !self.voices[voice].granular() {
+            return;
+        }
         let slot = (!self.live_grains).trailing_zeros() as usize;
         if slot == MAX_GRAINS {
             if chosen.is_some() {
@@ -3170,7 +3426,8 @@ impl Engine {
         }
         let p = &self.modulated.params;
         let note = self.voices[voice];
-        let bend = if synth {
+        let individual = synth && note.main_pitch && self.individual_history();
+        let bend = if synth && (voice == 0 || individual) {
             0.0
         } else {
             self.bend[note.channel as usize] * p.midi_pitchbend_range
@@ -3181,10 +3438,10 @@ impl Engine {
         } else {
             (p.sample_tune_semis, p.sample_tune_cents)
         };
-        let note_semis = if voice == 0 {
+        let note_semis = if voice == 0 || individual {
             0.0
         } else {
-            note.note as f32 - p.sample_root_note
+            note.pitch() - p.sample_root_note
         };
         let semis = match group {
             None => {
@@ -3266,6 +3523,19 @@ impl Engine {
             }
             None => self.group_grains.release(slot),
         }
+        let history = if individual {
+            let Some(index) = self
+                .preset_runtime
+                .sequence_histories
+                .as_ref()
+                .and_then(|h| h.slot(note.owner))
+            else {
+                return;
+            };
+            Some(index as u8)
+        } else {
+            None
+        };
         self.live_grains |= 1 << slot;
         let mip = match grain_quality() {
             GrainQuality::High => self.source_sample().mip_for_rate(rate, true),
@@ -3291,6 +3561,7 @@ impl Engine {
             shape: shape.clamp(0.0, 1.0),
             pan: tables::pan(pan),
             voice,
+            history,
         };
         if let Some((group, _)) = group {
             self.oscillator_engine.graph.event(
@@ -3352,6 +3623,7 @@ impl Engine {
             seconds[UNGROUPED] = self.layer_seconds(None);
         }
         if attacks.iter().all(|&a| a >= 1.0)
+            || !self.voices[voice].granular()
             || self.grain_density <= 0.0
             || self.synth_grains()
             || self.preset.bus.is_some()
@@ -3363,12 +3635,7 @@ impl Engine {
         }
         let sr = self.sample_rate as f64;
         // The round robin deals each sounding voice its share of the grains.
-        let voices = self
-            .voices
-            .iter()
-            .filter(|v| v.envelopes[0].active())
-            .count()
-            .max(1);
+        let voices = self.voices.iter().filter(|v| v.active()).count().max(1);
         let interval = voices as f64 * sr / self.grain_density as f64;
         let longest = (0..=UNGROUPED)
             .filter(|&k| attacks[k] < 1.0)
@@ -3540,22 +3807,7 @@ impl Engine {
                     }
                 }
             }
-            // Main pitch steps can gate the free voice's ENV like notes.
-            if let Some((trigger, open)) = self
-                .preset_runtime
-                .sequence
-                .as_ref()
-                .and_then(|r| r.env_gate())
-                && self.voices[0].held
-            {
-                if trigger {
-                    self.start_free_voice();
-                    self.grain_clock = 1.0;
-                } else if !open && !self.voices[0].gated {
-                    self.voices[0].off();
-                    self.voices[0].gated = true;
-                }
-            }
+            self.sync_main_pitch_voices(true);
             self.update_modulation();
         }
         if self.performance.ticking() {
@@ -3796,13 +4048,195 @@ impl Engine {
     }
 
     pub fn tb303_view(&self) -> crate::tb303::View {
+        let legacy = self
+            .oscillator_engine
+            .tb303
+            .as_ref()
+            .map_or_else(Default::default, |b| b.view());
+        if legacy.gate {
+            return legacy;
+        }
+        self.preset_runtime
+            .sequence_sources
+            .as_ref()
+            .and_then(|sources| {
+                self.voices
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, v)| v.main_pitch && v.active())
+                    .filter_map(|(index, v)| sources.tb303_view(index).map(|view| (v.value, view)))
+                    .max_by(|a, b| a.0.total_cmp(&b.0))
+                    .map(|(_, view)| view)
+            })
+            .unwrap_or(legacy)
+    }
+
+    /// Each sequence party has its own 303 filter-envelope state.
+    fn voice_tb303_envelope(&self, index: usize) -> f32 {
+        if self.voices[index].main_pitch
+            && let Some(view) = self
+                .preset_runtime
+                .sequence_sources
+                .as_ref()
+                .and_then(|sources| sources.tb303_view(index))
+        {
+            return view.envelope;
+        }
         self.oscillator_engine
             .tb303
             .as_ref()
-            .map_or_else(Default::default, |b| b.view())
+            .map_or(0.0, |bass| bass.view().envelope)
+    }
+
+    fn render_main_tb303(&mut self, index: usize) -> Stereo {
+        let v = self.voices[index];
+        let Some(settings) = self.preset.tb303.as_deref() else {
+            return [0.0; 2];
+        };
+        let Some(sources) = &mut self.preset_runtime.sequence_sources else {
+            return [0.0; 2];
+        };
+        let graph = &mut self.oscillator_engine.graph;
+        if v.main_pitch {
+            graph.prepare_sequence_voice(index, v.generation);
+        } else {
+            graph.prepare_voice(index, v.generation);
+        }
+        let demand = ((graph.demanded | graph.targets) >> 20) as u8 & 31;
+        sources.configure_tb303_interactions(
+            index,
+            v.generation,
+            graph.input(24, index),
+            std::array::from_fn(|i| graph.input(20 + i, index)),
+            demand,
+        );
+        sources.set_tb303_drone(index, v.main_pitch && !v.env_gate);
+        let output = sources.render_tb303(
+            index,
+            v.generation,
+            settings,
+            self.modulated.tb303,
+            &self.modulated.tb303_radias,
+            v.pitch()
+                + self.modulated.params.sample_tune_semis
+                + self.modulated.params.sample_tune_cents * 0.01,
+            v.held,
+            (v.velocity * 127.0).round() as u8,
+            ((v.oscillator_mask() >> 20) & 31) as u8,
+            self.voice_lfo_values[index][0],
+            self.modulated.params.bpm,
+        );
+        if demand != 0
+            && let Some((vco, layers)) = sources.tb303_frames(index)
+        {
+            for (node, frame) in std::iter::once((24, vco))
+                .chain(layers.into_iter().enumerate().map(|(i, f)| (20 + i, f)))
+            {
+                graph.publish(node, index, frame.generation, frame.output, v.value);
+                if let Some(at) = frame.wrap {
+                    graph.natural_event(node, index, at, frame.latency);
+                }
+            }
+        }
+        output
+    }
+
+    fn render_main_resynth(
+        &mut self,
+        index: usize,
+        dry: Stereo,
+        source: Stereo,
+        grains: Stereo,
+        source_pitched: bool,
+    ) -> Stereo {
+        let v = self.voices[index];
+        let Some(sources) = &mut self.preset_runtime.sequence_sources else {
+            return dry;
+        };
+        let masks = self.filter_masks;
+        let graph = &mut self.oscillator_engine.graph;
+        if v.main_pitch {
+            graph.prepare_sequence_voice(index, v.generation);
+        } else {
+            graph.prepare_voice(index, v.generation);
+        }
+        let demand = ((graph.demanded | graph.targets) >> 16) as u8 & 15;
+        sources.configure_resynth_interactions(
+            index,
+            v.generation,
+            std::array::from_fn(|i| graph.input(16 + i, index)),
+            demand,
+        );
+        let processed = sources.render_resynth(
+            index,
+            v.generation,
+            self.modulated.resynth,
+            if source_pitched || self.modulated.resynth.input == crate::resynth::Input::Grains {
+                0.0
+            } else {
+                v.pitch()
+                    + self.bend[v.channel as usize] * self.modulated.params.midi_pitchbend_range
+                    - self.modulated.params.sample_root_note
+            },
+            ((v.oscillator_mask() >> 16) & 15) as u8,
+            dry,
+            source,
+            grains,
+            self.voice_lfo_values[index][0],
+            1.0,
+            &self.sample,
+            &self.file_range,
+            self.modulated.params.sample_root_note,
+            self.playing,
+            [
+                masks[FilterPosition::AfterOsc1 as usize],
+                masks[FilterPosition::AfterOsc2 as usize],
+                masks[FilterPosition::AfterOsc3 as usize],
+                masks[FilterPosition::AfterOsc4 as usize],
+            ],
+            &mut self.filter_banks,
+            Some((&mut self.taps, v.value)),
+        );
+        if demand != 0
+            && let Some(layers) = sources.resynth_frames(index)
+        {
+            for (layer, frames) in layers.iter().enumerate() {
+                let mut generation = [0.0; 2];
+                let mut output = [0.0; 2];
+                for frame in frames {
+                    for c in 0..2 {
+                        generation[c] += frame.generation[c] / crate::resynth::BANDS as f32;
+                        output[c] += frame.output[c] / crate::resynth::BANDS as f32;
+                    }
+                    if let Some(at) = frame.wrap {
+                        graph.natural_event(16 + layer, index, at, frame.latency);
+                    }
+                }
+                graph.publish(16 + layer, index, generation, output, v.value);
+            }
+        }
+        let processed = filter_slots::route_chain(
+            &mut self.filter_banks,
+            masks[FilterPosition::AfterResynth as usize],
+            processed,
+            Instance::Voice(index),
+            Some((&mut self.taps, v.value)),
+        );
+        if self.taps.sends(Stage::Resynth) {
+            self.taps
+                .send(Stage::Resynth, processed.map(|x| x * v.value));
+        }
+        let latency = filter_slots::latency_samples(
+            &self.filter_banks,
+            masks[FilterPosition::AfterResynth as usize],
+            Instance::Voice(index),
+        );
+        let aligned = self.filters[index].align_resynth_input(dry, latency);
+        self.taps.mix(Stage::Resynth, aligned, processed)
     }
 
     fn render_tb303(&mut self) -> Stereo {
+        let sequenced = self.main_pitch_sequence();
         if let (Some(bass), Some(settings)) =
             (&mut self.oscillator_engine.tb303, &self.preset.tb303)
         {
@@ -3841,7 +4275,7 @@ impl Engine {
             let output = bass.frame_interacting(
                 settings,
                 self.modulated.tb303,
-                self.playing && self.sequence_running,
+                self.playing && self.sequence_running && !sequenced,
                 self.preset.params.bpm,
                 self.oscillator_engine.phase_adapters.as_deref_mut(),
                 self.frame,
@@ -3912,13 +4346,17 @@ impl Engine {
     }
     fn render_synth_voice(&mut self, index: usize) -> Stereo {
         let voice = &self.voices[index];
-        let note = voice.note as f32
+        let note = voice.pitch()
             + self.bend[voice.channel as usize] * self.modulated.params.midi_pitchbend_range;
         let owner = &mut self.oscillator_engine;
         let Some(synth) = &mut owner.synth else {
             return [0.0; 2];
         };
-        owner.graph.prepare_voice(index, voice.generation);
+        if voice.main_pitch {
+            owner.graph.prepare_sequence_voice(index, voice.generation);
+        } else {
+            owner.graph.prepare_voice(index, voice.generation);
+        }
         let demand = ((owner.graph.demanded | owner.graph.targets) >> 8) as u8 & 15;
         let inputs =
             (demand != 0).then(|| std::array::from_fn(|slot| owner.graph.input(8 + slot, index)));
@@ -3926,7 +4364,7 @@ impl Engine {
             .phase_adapters
             .as_deref_mut()
             .map(|p| (p, 8, index, self.frame));
-        let output = synth.render_interacting(
+        let output = synth.render_interacting_masked(
             index,
             voice.generation,
             note,
@@ -3935,6 +4373,7 @@ impl Engine {
             inputs,
             demand,
             transport,
+            ((voice.oscillator_mask() >> 8) & 15) as u8,
         );
         if demand != 0 {
             for (slot, frame) in synth.interaction_frames().into_iter().enumerate() {
@@ -3952,10 +4391,14 @@ impl Engine {
     }
     fn render_wavetable_voice(&mut self, index: usize) -> Stereo {
         let voice = &self.voices[index];
-        let note = voice.note as f32
+        let note = voice.pitch()
             + self.bend[voice.channel as usize] * self.modulated.params.midi_pitchbend_range;
         let owner = &mut self.oscillator_engine;
-        owner.graph.prepare_voice(index, voice.generation);
+        if voice.main_pitch {
+            owner.graph.prepare_sequence_voice(index, voice.generation);
+        } else {
+            owner.graph.prepare_voice(index, voice.generation);
+        }
         let Some(wavetable) = &mut owner.wavetable else {
             return [0.0; 2];
         };
@@ -3970,13 +4413,14 @@ impl Engine {
                 demand,
             )
         });
-        let output = wavetable.render_interacting(
+        let output = wavetable.render_interacting_masked(
             index,
             voice.generation,
             note,
             &voice.env_values,
             &self.voice_lfo_values[index],
             external,
+            ((voice.oscillator_mask() >> 12) & 15) as u8,
         );
         if demand != 0 {
             for (slot, frame) in wavetable.interaction_frames(index).into_iter().enumerate() {
@@ -4229,6 +4673,7 @@ impl Engine {
         if self.frame.is_multiple_of(CONTROL_INTERVAL) {
             self.update_modulation();
         }
+        filter_slots::set_voice_gain(&mut self.filter_banks, loudest_voice);
         self.schedule_grains(!effects_only);
         let synth_grains = self.oscillator_engine.synth.is_some();
         let (voice_frames, group_sent) = self.render_grains(synth_grains);
@@ -4240,8 +4685,11 @@ impl Engine {
         if feedback > 0.0 || self.grain_feedback.output != [0.0; 2] {
             // The grains as the notes' VCA weighs them, at the overlap level.
             let mut grains = [0.0; 2];
-            if synth_grains {
+            if synth_grains && self.main_pitch_sequence() {
+                // MainPitch histories feed themselves, never the legacy tape.
                 grains = voice_frames[0];
+            } else if synth_grains {
+                grains = self.mixed_grains(&voice_frames, true);
             } else {
                 for i in bits(self.sounding | u64::from(bus.is_some())) {
                     let weight = self.voices[i].value.max(0.0);
@@ -4337,9 +4785,13 @@ impl Engine {
                 Instance::Voice(i),
                 Some((&mut self.taps, norm * input_gain * self.voices[i].value)),
             );
-            mixed_frames[i] = std::array::from_fn(|c| {
-                (source[c] * chain_dry + frame[c] * chain_grain) * input_gain
-            });
+            let dry = if self.voices[i].granular() {
+                chain_dry
+            } else {
+                0.0
+            };
+            mixed_frames[i] =
+                std::array::from_fn(|c| (source[c] * dry + frame[c] * chain_grain) * input_gain);
             for (c, total) in before_fx.iter_mut().enumerate() {
                 *total += mixed_frames[i][c] * self.voices[i].value;
                 grain_tap[c] += frame[c] * norm * input_gain * self.voices[i].value;
@@ -4363,28 +4815,63 @@ impl Engine {
             before_fx.iter_mut().for_each(|v| *v /= voice_sum);
             grain_tap.iter_mut().for_each(|v| *v /= voice_sum);
         }
-        let resynth_active = self.oscillator_engine.resynth.active();
-        let resynth_output = self.oscillator_engine.resynth.process_interacting(
-            before_fx,
-            source.map(|x| x * input_gain),
-            grain_tap,
-            self.lfo_values[0],
-            dry_scale,
-            &self.sample,
-            &self.file_range,
-            self.playing,
-            [
-                masks[FilterPosition::AfterOsc1 as usize],
-                masks[FilterPosition::AfterOsc2 as usize],
-                masks[FilterPosition::AfterOsc3 as usize],
-                masks[FilterPosition::AfterOsc4 as usize],
-            ],
-            &mut self.filter_banks,
-            Some((&mut self.taps, voice_sum)),
-            self.oscillator_engine.phase_adapters.as_deref_mut(),
-            self.frame,
-        );
-        let after_resynth = masks[FilterPosition::AfterResynth as usize];
+        let main_pitch = self.main_pitch_sequence();
+        if main_pitch {
+            before_fx = [0.0; 2];
+            for i in bits(mixing) {
+                if self.voices[i].value > 0.0 {
+                    let grains = voice_frames[i].map(|x| x * norm * input_gain);
+                    let own_source = if self.oscillator_engine.synth.is_some() {
+                        mixed_frames[i]
+                    } else {
+                        source.map(|x| x * input_gain)
+                    };
+                    mixed_frames[i] = self.render_main_resynth(
+                        i,
+                        mixed_frames[i],
+                        own_source,
+                        grains,
+                        self.oscillator_engine.synth.is_some(),
+                    );
+                }
+                for c in 0..2 {
+                    before_fx[c] += mixed_frames[i][c] * self.voices[i].value;
+                }
+            }
+            if voice_sum > 0.0 {
+                before_fx = before_fx.map(|x| x / voice_sum);
+            }
+        }
+        let resynth_active = !main_pitch && self.oscillator_engine.resynth.active();
+        let resynth_output = if main_pitch {
+            before_fx
+        } else {
+            self.oscillator_engine.resynth.process_interacting(
+                before_fx,
+                source.map(|x| x * input_gain),
+                grain_tap,
+                self.lfo_values[0],
+                dry_scale,
+                &self.sample,
+                &self.file_range,
+                self.playing,
+                [
+                    masks[FilterPosition::AfterOsc1 as usize],
+                    masks[FilterPosition::AfterOsc2 as usize],
+                    masks[FilterPosition::AfterOsc3 as usize],
+                    masks[FilterPosition::AfterOsc4 as usize],
+                ],
+                &mut self.filter_banks,
+                Some((&mut self.taps, voice_sum)),
+                self.oscillator_engine.phase_adapters.as_deref_mut(),
+                self.frame,
+            )
+        };
+        let after_resynth = if main_pitch {
+            0
+        } else {
+            masks[FilterPosition::AfterResynth as usize]
+        };
         let resynth_output = filter_slots::route_chain(
             &mut self.filter_banks,
             after_resynth,
@@ -4394,11 +4881,18 @@ impl Engine {
         );
         // The shared stages reach every voice and are weighted by each, so
         // what they send follows the notes' VCA as their return does.
-        if self.taps.sends(Stage::Resynth) {
+        if !main_pitch && self.taps.sends(Stage::Resynth) {
             self.taps
                 .send(Stage::Resynth, resynth_output.map(|x| x * voice_sum));
         }
-        let resynth_output = self.taps.mix(Stage::Resynth, before_fx, resynth_output);
+        let resynth_latency =
+            filter_slots::latency_samples(&self.filter_banks, after_resynth, Instance::Shared);
+        let resynth_output = if main_pitch {
+            resynth_output
+        } else {
+            let aligned = self.filters[0].align_resynth_input(before_fx, resynth_latency);
+            self.taps.mix(Stage::Resynth, aligned, resynth_output)
+        };
         let resynth_output = match entered {
             Some(e) => std::array::from_fn(|c| resynth_output[c] + e[0][c] * input_gain),
             None => resynth_output,
@@ -4415,7 +4909,15 @@ impl Engine {
             self.taps
                 .send(Stage::PreFx, pre_output.map(|x| x * voice_sum));
         }
-        let pre_output = self.taps.mix(Stage::PreFx, resynth_output, pre_output);
+        let pre_output = self.taps.mix(
+            Stage::PreFx,
+            self.pre_color_rack.aligned_input(),
+            pre_output,
+        );
+        let shared_latency = self.pre_color_rack.latency_samples() + resynth_latency;
+        let aligned_before_fx = self
+            .pre_color_rack
+            .align_reference(before_fx, resynth_latency);
         let correction = if self.pre_color_rack.is_active()
             || self.filter_fx_masks[0].iter().any(|&mask| mask != 0)
             || resynth_active
@@ -4424,15 +4926,18 @@ impl Engine {
         {
             // A bus has one voice, so what enters at Filters reaches it here.
             let filters = entered.map_or([0.0; 2], |e| e[1].map(|x| x * input_gain));
-            std::array::from_fn(|c| pre_output[c] - before_fx[c] + filters[c])
+            std::array::from_fn(|c| pre_output[c] - aligned_before_fx[c] + filters[c])
         } else {
             [0.0; 2]
         };
         let mut filtered = [0.0; 2];
+        let mut grain_bypass = [0.0; 2];
+        let mut private_dry = [0.0; 2];
+        let mut private_frames = [[0.0; 2]; VOICES];
         let filter_sends = self.taps.sends(Stage::Filters);
         let mut filter_send = [0.0; 2];
         for i in bits(mixing) {
-            let mixed = mixed_frames[i];
+            let mixed = self.filters[i].align_source_input(mixed_frames[i], shared_latency);
             if self.voices[i].value <= 0.0 {
                 continue;
             }
@@ -4461,19 +4966,42 @@ impl Engine {
                     filter_send[c] += voice[c] * self.voices[i].value;
                 }
             }
-            let voice = self.taps.mix(Stage::Filters, unfiltered, voice);
+            let extra_latency = filter_slots::latency_samples(
+                &self.filter_banks,
+                masks[FilterPosition::BeforeFilters as usize]
+                    | masks[FilterPosition::AfterFilters as usize],
+                Instance::Voice(i),
+            );
+            let aligned = self.filters[i].align_chain_input(unfiltered, extra_latency);
+            let voice = self.taps.mix(Stage::Filters, aligned, voice);
+            if self.voices[i].main_pitch && self.voices[i].granular {
+                private_frames[i] = voice;
+            }
             for c in 0..2 {
                 filtered[c] += voice[c] * self.voices[i].value;
+                if self.voices[i].main_pitch && !self.voices[i].granular {
+                    grain_bypass[c] += voice[c] * self.voices[i].value;
+                } else if self.voices[i].main_pitch {
+                    private_dry[c] += voice[c] * self.voices[i].value;
+                }
             }
         }
         if filter_sends {
             self.taps.send(Stage::Filters, filter_send);
         }
+        let history_grains = self.mixed_grains(&voice_frames, true);
+        if self.oscillator_engine.synth.is_some() && main_pitch {
+            self.capture_sequence_histories(&private_frames, &voice_frames, norm);
+        }
         if let Some(synth) = &mut self.oscillator_engine.synth {
-            synth.set_output(filtered);
+            // The shared tape only records legacy/MIDI voices. MainPitch
+            // parties own separate tapes and must never enter each other's.
+            synth.set_output(std::array::from_fn(|c| {
+                filtered[c] - grain_bypass[c] - private_dry[c]
+            }));
             // The history's source path, one frame later, is the dry signal.
             let dry = if self.live_input.is_some() {
-                source
+                std::array::from_fn(|c| source[c] + grain_bypass[c] + private_dry[c])
             } else {
                 filtered
             };
@@ -4482,7 +5010,9 @@ impl Engine {
                 dry
             } else {
                 std::array::from_fn(|c| {
-                    dry[c] * (1.0 - self.smooth_mix) + voice_frames[0][c] * norm * self.smooth_mix
+                    grain_bypass[c]
+                        + (dry[c] - grain_bypass[c]) * (1.0 - self.smooth_mix)
+                        + history_grains[c] * norm * self.smooth_mix
                 })
             };
             if self.taps.sends(Stage::Grains) {
@@ -4608,6 +5138,7 @@ impl Engine {
         for index in bits(self.sounding) {
             let v = &mut self.voices[index];
             let mut active = false;
+            let mut amp = 0.0;
             for (i, env) in v
                 .envelopes
                 .iter_mut()
@@ -4619,11 +5150,26 @@ impl Engine {
                 v.env_values[i] = value;
                 self.env_values[i] = self.env_values[i].max(value);
                 if i == 0 {
-                    v.value = value * v.velocity;
-                    loudest_voice = loudest_voice.max(v.value);
-                    voice_sum += v.value;
+                    amp = value;
                 }
             }
+            if v.main_pitch && !v.env_gate {
+                if v.held {
+                    // Smooth the constant level at onsets and live mode edits.
+                    let step = (200.0 / sr).min(1.0);
+                    v.drone_gain += (1.0 - v.drone_gain) * step;
+                } else {
+                    v.drone_gain *= v.drone_release;
+                    if v.drone_gain < 0.0001 {
+                        v.drone_gain = 0.0;
+                    }
+                }
+                active |= v.held || v.drone_gain > 0.0;
+                amp = v.drone_gain;
+            }
+            v.value = amp * v.velocity;
+            loudest_voice = loudest_voice.max(v.value);
+            voice_sum += v.value;
             if !active {
                 self.sounding &= !(1 << index);
             }
@@ -4684,7 +5230,8 @@ impl Engine {
             } else {
                 None
             };
-            if self.grain_interaction.reading(slot)
+            if self.grains[slot].history.is_some()
+                || self.grain_interaction.reading(slot)
                 || self.grains[slot].playback_slew.is_active()
                 || command.is_some_and(|m| m != crate::interaction::SyncMode::Off)
             {
@@ -4704,6 +5251,11 @@ impl Engine {
             sample.read_mips(reads, &mut self.wide_frames);
         }
         let groups = &self.modulated.grain_groups;
+        let histories = self.preset_runtime.sequence_histories.as_deref();
+        let history_epoch = self
+            .live_input
+            .as_ref()
+            .map_or(0, |live| live.range_epoch());
         // Each group's grains in the chain, and what it sends to its bus.
         let group_chains = self.taps.group_chains();
         let group_sends = self.taps.group_sends();
@@ -4768,6 +5320,18 @@ impl Engine {
             let read = |position: f64| {
                 let position = range.start as f64
                     + sample::wrap_position(position - range.start as f64, range.len() as f64);
+                if let Some(history) = grain.history {
+                    return histories.map_or([0.0; 2], |h| {
+                        h.read(
+                            history as usize,
+                            position,
+                            &range,
+                            history_epoch,
+                            rate,
+                            antialiasing,
+                        )
+                    });
+                }
                 let mut frame = if wide & (1 << slot) != 0 {
                     self.wide_frames[slot]
                 } else if whole_file && !mip.is_wide() {
@@ -4833,7 +5397,7 @@ impl Engine {
                 };
                 let mut panned: Stereo = std::array::from_fn(|c| shaped[c] * grain.pan[c]);
                 if group_graph {
-                    let weight = if synth_grains {
+                    let weight = if synth_grains && !self.voices[grain.voice].main_pitch {
                         1.0
                     } else {
                         self.voices[grain.voice].value.max(0.0)
@@ -4854,7 +5418,7 @@ impl Engine {
                 if group_sends & 1 << group != 0 {
                     // Sends follow the notes' VCA as the chain does; a
                     // Synth's grains already read its voices after theirs.
-                    let weight = if synth_grains {
+                    let weight = if synth_grains && !self.voices[grain.voice].main_pitch {
                         1.0
                     } else {
                         self.voices[grain.voice].value.max(0.0)
@@ -4907,7 +5471,7 @@ impl Engine {
         if self.oscillator_engine.graph.needed(29) {
             let mut wet = [0.0; 2];
             for (i, frame) in voice_frames.iter().enumerate() {
-                let weight = if synth_grains {
+                let weight = if synth_grains && !self.voices[i].main_pitch {
                     f32::from(i == 0)
                 } else {
                     self.voices[i].value.max(0.0)

@@ -21,7 +21,7 @@ use radias_synth_domain::{
     primary_oscillator::PrimaryOscillator,
     waveform::WaveformTable,
 };
-use std::{f32::consts::PI, ops::Range};
+use std::{f32::consts::PI, ops::Range, sync::OnceLock};
 
 /// Rustias samples are Q30, so a full-scale wave reaches 2.0. One oscillator
 /// at level 1.0, centred, peaks near 0.5.
@@ -74,6 +74,10 @@ struct Voice {
     generation: u32,
     /// Bits of the semitone pitch the carriers are tuned to.
     pitch: Option<u32>,
+    /// Each note can route its layers independently without muting operators
+    /// that another layer uses as a modulation source.
+    selected: [f32; MAX_OSCILLATORS],
+    selection_ready: bool,
 }
 impl Default for Voice {
     fn default() -> Self {
@@ -85,6 +89,8 @@ impl Default for Voice {
             decimator: Decimator::new(),
             generation: 0,
             pitch: None,
+            selected: [1.0; MAX_OSCILLATORS],
+            selection_ready: false,
         }
     }
 }
@@ -127,8 +133,8 @@ struct State<const N: usize> {
     layers: [Layer; MAX_OSCILLATORS],
     /// A layer renders when audible or referenced by an audible layer.
     needed: [bool; MAX_OSCILLATORS],
-    tables: radias_oscillator::Tables,
-    waveform: WaveformTable,
+    tables: &'static radias_oscillator::Tables,
+    waveform: &'static WaveformTable,
     settings: Option<Settings>,
     /// Engine transposition (semitones) added to every voice.
     transpose: f32,
@@ -156,6 +162,11 @@ pub(super) type Mono = VoiceBank<1>;
 impl<const N: usize> VoiceBank<N> {
     pub fn new(sample_rate: u32) -> Self {
         let sample_rate = sample_rate.clamp(8_000, 384_000);
+        // Every bank has independent oscillator state, but these tables never
+        // change. A polyphonic 303 can therefore prepare many mono banks without
+        // duplicating the immutable data.
+        static TABLES: OnceLock<radias_oscillator::Tables> = OnceLock::new();
+        static WAVEFORM: OnceLock<WaveformTable> = OnceLock::new();
         Self {
             state: Box::new(State {
                 sample_rate: sample_rate as f32,
@@ -163,8 +174,8 @@ impl<const N: usize> VoiceBank<N> {
                 voices: std::array::from_fn(|_| Voice::default()),
                 layers: [Layer::default(); MAX_OSCILLATORS],
                 needed: [false; MAX_OSCILLATORS],
-                tables: radias_oscillator::Tables::new(),
-                waveform: radias_oscillator::waveform_table(),
+                tables: TABLES.get_or_init(radias_oscillator::Tables::new),
+                waveform: WAVEFORM.get_or_init(radias_oscillator::waveform_table),
                 settings: None,
                 transpose: 0.0,
                 pcm_source: (0, 0, 0, 0),
@@ -356,6 +367,7 @@ impl<const N: usize> VoiceBank<N> {
     ) -> [super::wavetable::mixed::SlotFrame; MAX_OSCILLATORS] {
         self.state.interaction_frames
     }
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn render_interacting(
         &mut self,
@@ -366,7 +378,35 @@ impl<const N: usize> VoiceBank<N> {
         range: &Range<usize>,
         inputs: Option<[super::interaction::Input; MAX_OSCILLATORS]>,
         demand: u8,
+        transport: Option<(&mut super::phase_transport::Runtime, usize, usize, u64)>,
+    ) -> Stereo {
+        self.render_interacting_masked(
+            index,
+            generation,
+            note,
+            sample,
+            range,
+            inputs,
+            demand,
+            transport,
+            u8::MAX,
+        )
+    }
+
+    /// `mask` selects the audible layers of this note; their unmixed signals
+    /// still run for internal and external interaction routes.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn render_interacting_masked(
+        &mut self,
+        index: usize,
+        generation: u32,
+        note: f32,
+        sample: &SampleBuffer,
+        range: &Range<usize>,
+        inputs: Option<[super::interaction::Input; MAX_OSCILLATORS]>,
+        demand: u8,
         mut transport: Option<(&mut super::phase_transport::Runtime, usize, usize, u64)>,
+        mask: u8,
     ) -> Stereo {
         let s = &mut *self.state;
         s.interaction_frames
@@ -375,6 +415,16 @@ impl<const N: usize> VoiceBank<N> {
         if voice.generation != generation {
             voice.reset(generation);
         }
+        let step = 1.0 / (s.sample_rate * 0.005).max(1.0);
+        for (i, selected) in voice.selected.iter_mut().enumerate() {
+            let target = f32::from(mask & (1 << i) != 0);
+            if voice.selection_ready {
+                *selected += (target - *selected).clamp(-step, step);
+            } else {
+                *selected = target;
+            }
+        }
+        voice.selection_ready = true;
         let pitch = note + s.transpose;
         if voice.pitch != Some(pitch.to_bits()) {
             tune(
@@ -559,8 +609,8 @@ impl<const N: usize> VoiceBank<N> {
                                 lfo,
                                 [0; 2],
                                 modulator,
-                                &s.tables,
-                                &s.waveform,
+                                s.tables,
+                                s.waveform,
                                 frame,
                                 index * MAX_OSCILLATORS + id,
                                 sync && !transporting,
@@ -671,7 +721,7 @@ impl<const N: usize> VoiceBank<N> {
                 }
                 voice.taps[id] = (raw[0] + raw[1]) * 0.5;
                 for c in 0..2 {
-                    wet[c] += raw[c] * layer.gain * layer.pan[c] * OUTPUT;
+                    wet[c] += raw[c] * layer.gain * layer.pan[c] * OUTPUT * voice.selected[id];
                 }
             }
             if s.oversample == 2 {
@@ -744,6 +794,72 @@ pub const NAME: &str = "Synth engine";
 mod source_tests {
     use super::*;
     use crate::resynth::{CrossInput, Interaction};
+
+    #[test]
+    fn mask_is_per_voice_and_keeps_hidden_ring_source_running() {
+        let sample = SampleBuffer::new(String::new(), 48_000, vec![[0.0; 2]]).unwrap();
+        let mut settings = Settings {
+            count: 2,
+            ..Settings::default()
+        };
+        settings.oscillators[0].interaction = Interaction::Ring;
+        settings.oscillators[0].interaction_source = FIRST_REFERENCE + 1;
+        settings.oscillators[1].transpose = 7.0;
+        // Matching bank/voice indices keep the four-frame control schedule the
+        // same across the independent reference renders.
+        let mut banks = std::array::from_fn::<_, 4, _>(|_| Mono::new(48_000));
+        assert!(std::ptr::eq(banks[0].state.tables, banks[1].state.tables));
+        assert!(std::ptr::eq(
+            banks[0].state.waveform,
+            banks[1].state.waveform
+        ));
+        for bank in &mut banks {
+            bank.configure(&settings, 0.0, &sample, 60.0);
+        }
+        let mut energy = 0.0;
+        let mut hidden_source = 0.0_f32;
+        for _ in 0..1024 {
+            let render = |bank: &mut Mono, mask| {
+                bank.begin_frame(0.0);
+                bank.render_interacting_masked(0, 1, 60.0, &sample, &(0..1), None, 0, None, mask)
+            };
+            let a = render(&mut banks[0], 1);
+            let b = render(&mut banks[1], 2);
+            let both = render(&mut banks[2], 3);
+            let neither = render(&mut banks[3], 0);
+            for c in 0..2 {
+                assert!(
+                    (both[c] - (a[c] + b[c])).abs() < 2e-6,
+                    "combined {} vs {} + {}",
+                    both[c],
+                    a[c],
+                    b[c]
+                );
+                assert_eq!(neither[c], 0.0);
+            }
+            energy += a[0].abs();
+            hidden_source = hidden_source.max(banks[0].state.voices[0].taps[1].abs());
+        }
+        assert!(energy > 1.0, "the selected ring-modulated layer was silent");
+        assert!(hidden_source > 0.01, "the unselected ring source stopped");
+
+        let bank = &mut banks[0];
+        bank.begin_frame(0.0);
+        bank.render_interacting_masked(0, 1, 60.0, &sample, &(0..1), None, 0, None, 0);
+        assert!(bank.state.voices[0].selected[0] > 0.99);
+        for _ in 0..400 {
+            bank.begin_frame(0.0);
+            bank.render_interacting_masked(0, 1, 60.0, &sample, &(0..1), None, 0, None, 0);
+        }
+        assert_eq!(bank.state.voices[0].selected[0], 0.0);
+        let mut poly = VoiceBank::<2>::new(48_000);
+        poly.configure(&settings, 0.0, &sample, 60.0);
+        poly.begin_frame(0.0);
+        poly.render_interacting_masked(0, 1, 60.0, &sample, &(0..1), None, 0, None, 1);
+        poly.render_interacting_masked(1, 1, 60.0, &sample, &(0..1), None, 0, None, 2);
+        assert_eq!(poly.state.voices[0].selected[..2], [1.0, 0.0]);
+        assert_eq!(poly.state.voices[1].selected[..2], [0.0, 1.0]);
+    }
 
     #[test]
     fn external_source_resets_radias_phase_and_multiplies_the_unmixed_wave() {

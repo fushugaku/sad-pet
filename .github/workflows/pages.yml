@@ -35,6 +35,8 @@ jobs:
           cargo test -p sad-pet --no-default-features --lib dsp::tb303 --locked
           cargo test -p sad-pet --no-default-features --lib dsp::synth --locked
           cargo test -p sad-pet --no-default-features --lib dsp::sequence --locked
+          cargo test -p sad-pet --no-default-features --lib dsp::main_pitch_tests --locked
+          cargo test -p sad-pet --no-default-features --test neuropolis --locked
           cargo test -p sad-pet --no-default-features --lib audio_import --locked
           cargo test -p sad-pet --no-default-features --lib wavetable --locked
           cargo test -p sad-pet --no-default-features --test wavetable --locked
@@ -65,6 +67,7 @@ jobs:
           node wasm/test-imported-ui.mjs
           node wasm/test-filters-ui.mjs
           node wasm/test-neuropolis.mjs
+          node wasm/test-polyphony.mjs
           node wasm/test-source-fx-modulation.mjs
           node wasm/test-timbres.mjs
           node wasm/test-tempo.mjs

@@ -1,0 +1,68 @@
+{
+  "checked_at": "2026-11-02T23:05:27.036637+00:00",
+  "url": "https://fushugaku.github.io/sad-pet/",
+  "commit": "8d85a82858ef079ffd316be288ff7b13aefa6bb4",
+  "version": "50f4c876e13c",
+  "assets": [
+    {
+      "asset": "app.js",
+      "source": "rust/web/app.js",
+      "matches_commit": true,
+      "sha256": "06d458f2e3ca4b7127c0e4ebfacf19e89aeabbf3b4401a95b8aad9ad71452964"
+    },
+    {
+      "asset": "control.js",
+      "source": "rust/web/control.js",
+      "matches_commit": true,
+      "sha256": "29d2d658125fdaa7623416c491d816b20ee6d0cf5476ae6be8cbc1efc4150d50"
+    },
+    {
+      "asset": "midi-targets.js",
+      "source": "rust/web/midi-targets.js",
+      "matches_commit": true,
+      "sha256": "de2ea844b99915f7834e96b91cde2d887f27d21830787b4308dfd1fb937dd0dd"
+    },
+    {
+      "asset": "modulation.js",
+      "source": "rust/web/modulation.js",
+      "matches_commit": true,
+      "sha256": "7011d7a7851ea9f79d5246329c12d9ef9c41b7c6629530b1553cc81e20316c9c"
+    },
+    {
+      "asset": "panels.js",
+      "source": "rust/web/panels.js",
+      "matches_commit": true,
+      "sha256": "771e46dcc891885aadd261ba3c981b8bec80fcfa94159076178a9dd8f27a5d24"
+    },
+    {
+      "asset": "rack.js",
+      "source": "rust/web/rack.js",
+      "matches_commit": true,
+      "sha256": "873e4d71f6bbb3603510328938421caee0a472fbe1c82eb236cfa7758e21de35"
+    },
+    {
+      "asset": "sequence.js",
+      "source": "rust/web/sequence.js",
+      "matches_commit": true,
+      "sha256": "38133f4c79084b17af551fc6b415c89c6b83afbadc8f5ad56b6b22295e5b398b"
+    },
+    {
+      "asset": "midi.js",
+      "source": "rust/web/midi.js",
+      "matches_commit": true,
+      "sha256": "258648c02d4af452699f94dddc4a2f2d8777bcac9915650053cebe5c9f6b35cb"
+    },
+    {
+      "asset": "controller.js",
+      "source": "rust/web/controller.js",
+      "matches_commit": true,
+      "sha256": "9e2eea192e6e819b6a04d664b6cfac039d9f7661117d0bdc0b9a32578c9fe954"
+    },
+    {
+      "asset": "xl3-feedback.mjs",
+      "source": "wasm/web/xl3-feedback.mjs",
+      "matches_commit": true,
+      "sha256": "5df732a719bf28c98c4c005b87767eb28676c1134364be6ad1235bdafcc38f31"
+    }
+  ]
+}

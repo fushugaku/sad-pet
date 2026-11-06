@@ -1,0 +1,170 @@
+{
+  "release_commit": "c7168152fbe78afee60308674fe027d2702c39fb",
+  "pages_run": 41242966681,
+  "files": [
+    {
+      "name": "browser-backend.mjs",
+      "url": "https://fushugaku.github.io/sad-pet/browser-backend.mjs?release=c7168152fbe78afee60308674fe027d2702c39fb",
+      "bytes": 46709,
+      "sha256": "fd54165e3b906de1654d350bf5c0331992c316b78a02c182b3728c27998d0d16",
+      "local_sha256": "d0a0079796086d259fa29aa9d39ed6b8f5866af24ba45dadc4700788b16832d0",
+      "byte_identical": false,
+      "version_normalized_equal": true
+    },
+    {
+      "name": "browser.js",
+      "url": "https://fushugaku.github.io/sad-pet/browser.js?release=c7168152fbe78afee60308674fe027d2702c39fb",
+      "bytes": 1173,
+      "sha256": "09e906b5d470b0052e71d5b091cb6c49ba191995c31b60821c8c4713aae13290",
+      "local_sha256": "029e45f36ea676b0032b7b70dc262d6a6db76c2474a16c6e404f652cb1d6e8d5",
+      "byte_identical": false,
+      "version_normalized_equal": true
+    },
+    {
+      "name": "capture.mjs",
+      "url": "https://fushugaku.github.io/sad-pet/capture.mjs?release=c7168152fbe78afee60308674fe027d2702c39fb",
+      "bytes": 2943,
+      "sha256": "45bde8fbaf95a01baf3633a45622334134ce6ae0afd36a8d980f0d5cf033a622",
+      "local_sha256": "45bde8fbaf95a01baf3633a45622334134ce6ae0afd36a8d980f0d5cf033a622",
+      "byte_identical": true,
+      "version_normalized_equal": true
+    },
+    {
+      "name": "compile.mjs",
+      "url": "https://fushugaku.github.io/sad-pet/compile.mjs?release=c7168152fbe78afee60308674fe027d2702c39fb",
+      "bytes": 2099,
+      "sha256": "fcb4a36232ef8f2052e82f92f87222b0f0e3dc315807601c7e45ee2546bfabec",
+      "local_sha256": "fcb4a36232ef8f2052e82f92f87222b0f0e3dc315807601c7e45ee2546bfabec",
+      "byte_identical": true,
+      "version_normalized_equal": true
+    },
+    {
+      "name": "core.mjs",
+      "url": "https://fushugaku.github.io/sad-pet/core.mjs?release=c7168152fbe78afee60308674fe027d2702c39fb",
+      "bytes": 8259,
+      "sha256": "f27bf29cdcc804b0542f633e3bbb542d8c6412f43022eec29487fe131561fe0d",
+      "local_sha256": "f27bf29cdcc804b0542f633e3bbb542d8c6412f43022eec29487fe131561fe0d",
+      "byte_identical": true,
+      "version_normalized_equal": true
+    },
+    {
+      "name": "index.html",
+      "url": "https://fushugaku.github.io/sad-pet/index.html?release=c7168152fbe78afee60308674fe027d2702c39fb",
+      "bytes": 35756,
+      "sha256": "d2d54de991774075b08dd99323c17c2fc5a70bd8f7cc5709fd43f8fd5e3acfcd",
+      "local_sha256": "8867826b099f38867f3c6d7fda2d46a924e6f1aa28d8ba54c1915ed7b5e726bf",
+      "byte_identical": false,
+      "version_normalized_equal": true
+    },
+    {
+      "name": "microphone.mjs",
+      "url": "https://fushugaku.github.io/sad-pet/microphone.mjs?release=c7168152fbe78afee60308674fe027d2702c39fb",
+      "bytes": 5838,
+      "sha256": "b3536a479d2ec13d6d3ca95b6911241786037f8cf402fb04953dd61be47d097b",
+      "local_sha256": "b3536a479d2ec13d6d3ca95b6911241786037f8cf402fb04953dd61be47d097b",
+      "byte_identical": true,
+      "version_normalized_equal": true
+    },
+    {
+      "name": "midi-clock.mjs",
+      "url": "https://fushugaku.github.io/sad-pet/midi-clock.mjs?release=c7168152fbe78afee60308674fe027d2702c39fb",
+      "bytes": 7807,
+      "sha256": "5911ac418abd732fc80e491a6679d8e5d630c69dccb53a8abfa89dcbb2a8742a",
+      "local_sha256": "5911ac418abd732fc80e491a6679d8e5d630c69dccb53a8abfa89dcbb2a8742a",
+      "byte_identical": true,
+      "version_normalized_equal": true
+    },
+    {
+      "name": "presets.js",
+      "url": "https://fushugaku.github.io/sad-pet/presets.js?release=c7168152fbe78afee60308674fe027d2702c39fb",
+      "bytes": 69941,
+      "sha256": "f83e9f906d9e801b427b8e129b535615c8b4772eec4a645edbcb01237db21370",
+      "local_sha256": "f83e9f906d9e801b427b8e129b535615c8b4772eec4a645edbcb01237db21370",
+      "byte_identical": true,
+      "version_normalized_equal": true
+    },
+    {
+      "name": "sad_pet.simd.wasm",
+      "url": "https://fushugaku.github.io/sad-pet/sad_pet.simd.wasm?release=c7168152fbe78afee60308674fe027d2702c39fb",
+      "bytes": 49290072,
+      "sha256": "d86c66f654829dd71df4b7d7b37ec03ec24470f74594fd5a4ee2421e9555cafa",
+      "local_sha256": "39623603e9c4034d7540e36902161709a75c1255ed2c89b968082a54b3543e30",
+      "byte_identical": false,
+      "version_normalized_equal": false
+    },
+    {
+      "name": "sad_pet.wasm",
+      "url": "https://fushugaku.github.io/sad-pet/sad_pet.wasm?release=c7168152fbe78afee60308674fe027d2702c39fb",
+      "bytes": 49133643,
+      "sha256": "e04240583afda4ad3b80ccd952f99ebefa346a1e856b4c6f4a740d35d512ad5a",
+      "local_sha256": "6f7abe6f5e424a78bd558feb280195503745c22b6c3e2380d2142a2d95cd54fb",
+      "byte_identical": false,
+      "version_normalized_equal": false
+    },
+    {
+      "name": "target-preset.json",
+      "url": "https://fushugaku.github.io/sad-pet/target-preset.json?release=c7168152fbe78afee60308674fe027d2702c39fb",
+      "bytes": 28338,
+      "sha256": "11eea5773b47acf03b8458753534c91827b37bc2fe9ed1ab62d0870e99710be4",
+      "local_sha256": "11eea5773b47acf03b8458753534c91827b37bc2fe9ed1ab62d0870e99710be4",
+      "byte_identical": true,
+      "version_normalized_equal": true
+    },
+    {
+      "name": "verify-wavetable-app.html",
+      "url": "https://fushugaku.github.io/sad-pet/verify-wavetable-app.html?release=c7168152fbe78afee60308674fe027d2702c39fb",
+      "bytes": 6835,
+      "sha256": "b0b0c46463eb275d896e28a59da38ee1d3fdefa3f1779f8df8257505ee5a520d",
+      "local_sha256": "75143dd7deeeb5a5b39551d0971daeadca006ad4e720981917b7f1ecad2608b4",
+      "byte_identical": false,
+      "version_normalized_equal": true
+    },
+    {
+      "name": "voices.mjs",
+      "url": "https://fushugaku.github.io/sad-pet/voices.mjs?release=c7168152fbe78afee60308674fe027d2702c39fb",
+      "bytes": 3987,
+      "sha256": "f0ecb798b863e3ed649bec5f3300a7e3f4f1178083004f212c029a0e88b27c06",
+      "local_sha256": "f0ecb798b863e3ed649bec5f3300a7e3f4f1178083004f212c029a0e88b27c06",
+      "byte_identical": true,
+      "version_normalized_equal": true
+    },
+    {
+      "name": "wavetable-store.mjs",
+      "url": "https://fushugaku.github.io/sad-pet/wavetable-store.mjs?release=c7168152fbe78afee60308674fe027d2702c39fb",
+      "bytes": 985,
+      "sha256": "1784b342c8b444cd7874129bc29b1b5d7cea43370f14c1ee3515a87753839ce6",
+      "local_sha256": "1784b342c8b444cd7874129bc29b1b5d7cea43370f14c1ee3515a87753839ce6",
+      "byte_identical": true,
+      "version_normalized_equal": true
+    },
+    {
+      "name": "wavetables.mjs",
+      "url": "https://fushugaku.github.io/sad-pet/wavetables.mjs?release=c7168152fbe78afee60308674fe027d2702c39fb",
+      "bytes": 1115,
+      "sha256": "863602fdec404fe474e04f50fdd0e30cdd231f3ccc555ad97b8f2c550b8ff4ba",
+      "local_sha256": "863602fdec404fe474e04f50fdd0e30cdd231f3ccc555ad97b8f2c550b8ff4ba",
+      "byte_identical": true,
+      "version_normalized_equal": true
+    },
+    {
+      "name": "worker.mjs",
+      "url": "https://fushugaku.github.io/sad-pet/worker.mjs?release=c7168152fbe78afee60308674fe027d2702c39fb",
+      "bytes": 15617,
+      "sha256": "28d62373d11e907c93697d69145347d62deb877da765f2f3c593193887435881",
+      "local_sha256": "b0abc8dbb7fe1300d2c3d65452fe431d87e681e829e21770dd491659bb954d99",
+      "byte_identical": false,
+      "version_normalized_equal": true
+    },
+    {
+      "name": "worklet.mjs",
+      "url": "https://fushugaku.github.io/sad-pet/worklet.mjs?release=c7168152fbe78afee60308674fe027d2702c39fb",
+      "bytes": 17206,
+      "sha256": "cefb373da91b0d83207be38871c1acacd6fa114e12822dc4beb44eefa4fcddf8",
+      "local_sha256": "afc92e57bf931ddb9d29d52a2211664fd03e356281dc985d6d19ec269ddb9339",
+      "byte_identical": false,
+      "version_normalized_equal": true
+    }
+  ],
+  "wasm_identical": false,
+  "runtime_source_identical": true
+}

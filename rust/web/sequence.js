@@ -586,6 +586,14 @@ window.SadNeuropolis = class {
     } else if (field === 53) track.env_gate = !!value;
     else if (field === 54) this.setPages(track, value);
     else if (field === 55) track.notes = value;
+    else if (field === 57) track.granular = !!value;
+    else if (field >= 60 && field <= 84) {
+      const bit = 1 << (field - 60);
+      track.oscillator_mask ??= 0x1ffffff;
+      track.oscillator_mask = value
+        ? track.oscillator_mask | bit
+        : track.oscillator_mask & ~bit;
+    }
     else if (field < 47)
       track[
         { 43: "amount", 44: "absolute", 45: "gate_output", 46: "root_note" }[
@@ -737,8 +745,12 @@ window.SadNeuropolis = class {
       : field === 54
         ? this.pages(track)
       : field === 53
-        ? !!track.env_gate
-        : field >= 49
+        ? track.env_gate ?? true
+        : field === 57
+          ? track.granular ?? true
+          : field >= 60 && field <= 84
+            ? !!((track.oscillator_mask ?? 0x1ffffff) & (1 << (field - 60)))
+            : field >= 49 && field <= 52
           ? !!track.pitch_oscillators?.[field - 49]
           : track[
               {
@@ -768,7 +780,7 @@ window.SadNeuropolis = class {
   targetName(t) {
     if (t.target.kind === "pad") return this.padName(t.target.pad);
     return t.target.kind === "main_pitch"
-      ? (this.hooks.read().tb303 ? "303 pattern pitch" : "Main pitch")
+      ? "Main pitch"
       : t.target.kind === "notes"
         ? this.notesName()
         : t.target.kind === "oscillator"
@@ -804,7 +816,12 @@ window.SadNeuropolis = class {
     const p = this.program();
     if (!p) return;
     this.syncMotions();
-    for (const t of p.tracks) this.fillPages(t);
+    for (const t of p.tracks) {
+      t.oscillator_mask ??= 0x1ffffff;
+      t.granular ??= true;
+      t.env_gate ??= true;
+      this.fillPages(t);
+    }
     if (!p.tracks.some((t) => t.id === this.selected))
       this.selected = p.tracks[0]?.id ?? null;
     this.page = Math.max(
@@ -826,7 +843,17 @@ window.SadNeuropolis = class {
       this.offset(this.track()),
       this.hooks.read().color_chain.map((s) => [s.id, s.kind]),
       this.hooks.read().pre_color_chain.map((s) => [s.id, s.kind]),
-      this.hooks.read().resynth.count,
+      !!this.hooks.read().resynth,
+      this.hooks.read().resynth?.count,
+      !!this.hooks.read().synth,
+      this.hooks.read().synth?.count,
+      !!this.hooks.read().wavetable,
+      this.hooks.read().wavetable?.count,
+      !!this.hooks.read().tb303,
+      this.hooks.read().tb303?.count,
+      this.hooks.read().oscillators?.order?.map(
+        (i) => [i, this.hooks.read().oscillators?.slots?.[i]?.id ?? null],
+      ),
     ]);
     if (key !== this.signature) {
       this.signature = key;
@@ -1767,7 +1794,7 @@ window.SadNeuropolis = class {
         : track.target.kind === "pad" ? `pad:${track.target.pad}`
         : track.target.kind === "parameter" ? `param:${track.target.parameter}` : track.target.kind,
       this.hooks.read().control ? this.parameterGroups("param:") : [{ label: "Pitch & notes", choices: [
-        ["main_pitch", bass ? "303 pattern pitch" : "Main track pitch"], ["notes", this.notesName()],
+        ["main_pitch", "Main pitch"], ["notes", this.notesName()],
         ...(this.hooks.read().oscillators?.order??[]).filter(i=>this.hooks.read().oscillators.slots[i].id).map(i=>[`mixed-osc:${i}`,`OSC ${i+1} pitch offset`]),
         // A Synth engine timbre plays its own oscillators; Resynth's follow.
         ...(synth ? [0, 1, 2, 3].map(i => [`synth-osc:${i}`, `Synth OSC ${i + 1} pitch offset`]) : []),
@@ -1833,18 +1860,73 @@ window.SadNeuropolis = class {
       const routing = document.createElement("div");
       routing.className = "neuro-pitch-routing";
       const label = document.createElement("span");
-      label.textContent = synth || bass ? "Main pitch → Resynth" : "Main pitch →";
+      label.textContent = "Main pitch →";
       routing.append(label);
-      for (let i = 0; i < 4; i++) {
+      const routeBank = (bank, entries) => {
+        if (!entries.length) return;
+        const heading = document.createElement("span");
+        heading.textContent = bank;
+        routing.append(heading);
+        for (const [bit, text, name] of entries) {
+          const check = document.createElement("label");
+          check.className = "check";
+          const input = document.createElement("input");
+          input.type = "checkbox";
+          input.dataset.config = 60 + bit;
+          input.checked = !!this.configValue(track, 60 + bit);
+          input.setAttribute("aria-label", `Main pitch affects ${name}`);
+          input.onchange = () =>
+            this.edit(track.id, null, 60 + bit, Number(input.checked));
+          check.append(input, text);
+          routing.append(check);
+        }
+      };
+      const state = this.hooks.read(),
+        sourceCount = (source, fallback) =>
+          Math.max(0, Math.min(4, Math.round(source?.count ?? fallback))),
+        mixed = (state.oscillators?.order ?? []).filter(
+          (i) => state.oscillators?.slots?.[i]?.id,
+        );
+      routeBank(
+        "Rack",
+        mixed.map((i) => [Number(i), `OSC ${Number(i) + 1}`, `Rack OSC ${Number(i) + 1}`]),
+      );
+      if (synth)
+        routeBank(
+          "Synth",
+          Array.from({ length: sourceCount(state.synth, 4) }, (_, i) => [8 + i, `OSC ${i + 1}`, `Synth OSC ${i + 1}`]),
+        );
+      if (wavetable)
+        routeBank(
+          "Wavetable",
+          Array.from(
+            { length: sourceCount(state.wavetable, 2) },
+            (_, i) => [12 + i, ["A", "B", "C", "D"][i], `Wavetable ${["A", "B", "C", "D"][i]}`],
+          ),
+        );
+      if (state.resynth)
+        routeBank(
+          "Resynth",
+          Array.from({ length: sourceCount(state.resynth, 4) }, (_, i) => [16 + i, `OSC ${i + 1}`, `Resynth OSC ${i + 1}`]),
+        );
+      if (bass)
+        routeBank("303", [
+          [24, "VCO", "303 VCO"],
+          ...Array.from({ length: sourceCount(state.tb303, 4) }, (_, i) => [20 + i, `RADIAS ${i + 1}`, `303 RADIAS OSC ${i + 1}`]),
+        ]);
+      for (const [field, text, aria] of [
+        [57, "Granular", "Granular output"],
+        [53, "ENV", "Gate ENV"],
+      ]) {
         const check = document.createElement("label");
         check.className = "check";
         const input = document.createElement("input");
         input.type = "checkbox";
-        input.dataset.config = 49 + i;
-        input.setAttribute("aria-label", `Main pitch affects OSC ${i + 1}`);
-        input.onchange = () =>
-          this.edit(track.id, null, 49 + i, Number(input.checked));
-        check.append(input, `OSC ${i + 1}`);
+        input.dataset.config = field;
+        input.checked = !!this.configValue(track, field);
+        input.setAttribute("aria-label", aria);
+        input.onchange = () => this.edit(track.id, null, field, Number(input.checked));
+        check.append(input, text);
         routing.append(check);
       }
       editor.append(routing);
@@ -1903,8 +1985,6 @@ window.SadNeuropolis = class {
         1,
         "checkbox",
       );
-    else if (track.target.kind === "main_pitch")
-      this.configControl(controls, "Gate ENV", 53, null, 0, 1, 1, "checkbox");
     editor.append(controls);
     const destinations = document.createElement("div");
     destinations.className = "neuro-destinations";

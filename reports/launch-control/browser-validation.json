@@ -1,0 +1,67 @@
+{
+  "browser": "151.0.7922.34",
+  "virtualMidi": true,
+  "checks": [
+    "no MIDI permission prompt on first load",
+    "pickup and simultaneous fader/send edits reach WASM; controller buttons create no notes",
+    "mute, solo, repeated presses and separate MIDI keyboard",
+    "right-click MIDI Learn saves assignment and overrides mixer send",
+    "USB reconnection, explicit Off, device/mode/map persistence and permission restore on reload",
+    "390px mobile layout has no horizontal overflow and equal control heights",
+    "denied permission remains visible; unsupported browser gives an actionable message"
+  ],
+  "errors": [],
+  "mixed": {
+    "bus": 0,
+    "channel": 0,
+    "gain": 1.574803113937378,
+    "id": 0,
+    "kind": "rack",
+    "muted": false,
+    "name": "Texture",
+    "sends": [
+      0.9448819160461426,
+      0.6299212574958801,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "solo": false
+  },
+  "learnedKey": "position",
+  "mobile": {
+    "width": 390,
+    "scrollWidth": 390,
+    "controls": [
+      {
+        "id": "controller-device",
+        "x": 36,
+        "y": 77,
+        "width": 338,
+        "height": 44
+      },
+      {
+        "id": "controller-mode",
+        "x": 36,
+        "y": 129,
+        "width": 255.78125,
+        "height": 44
+      },
+      {
+        "id": "controller-connect",
+        "x": 299.78125,
+        "y": 129,
+        "width": 74.21875,
+        "height": 44
+      }
+    ]
+  },
+  "physicalCheck": {
+    "status": "unavailable",
+    "reason": "page.evaluate: NotAllowedError: Permission to use Web MIDI API was not granted."
+  },
+  "passed": true
+}

@@ -1,0 +1,53 @@
+<script>
+if (!window.frameElement) {
+  localStorage.setItem('sad-pet-midi-pages', JSON.stringify({version:1,active:0,pages:Array.from({length:16},()=>({}))}));
+  localStorage.removeItem('sad-pet-midi-map');
+  const metrics={attach:0,attachMs:0,resolutions:0,navigation:[]};
+  let learner, pending;
+  const render=()=>{
+    const out=document.getElementById('qa-nav-log');if(!out)return;
+    out.textContent=JSON.stringify({...metrics,mappings:Object.keys(learner?.mappings?.()||{}).length},null,2);
+  };
+  Object.defineProperty(window,'SadMidiLearn',{configurable:true,get:()=>learner,set(value){
+    learner=value;
+    const setup=value.setup,attach=value.attach;
+    value.setup=function(hooks){
+      const capture=hooks.capture;
+      return setup.call(this,{...hooks,...(capture?{capture(...args){metrics.resolutions++;return capture(...args)}}:{})});
+    };
+    value.attach=function(...args){
+      const started=performance.now(),details=args[5];
+      if(details?.describe){const describe=details.describe;args[5]={...details,describe(...values){metrics.resolutions++;return describe(...values)}};}
+      try{return attach.apply(this,args)}finally{metrics.attach++;metrics.attachMs+=performance.now()-started;}
+    };
+  }});
+  document.addEventListener('click',event=>{
+    const tab=event.target.closest('[role="tab"][data-id]');
+    if(!tab||tab.getAttribute('aria-selected')==='true')return;
+    pending={id:tab.dataset.id,label:tab.textContent,started:performance.now(),attach:metrics.attach,attachMs:metrics.attachMs,resolutions:metrics.resolutions};
+  },true);
+  new MutationObserver(()=>{
+    if(!pending)return;
+    const current=[...document.querySelectorAll('[role="tab"][data-id]')].find(t=>t.dataset.id===pending.id);
+    if(current?.getAttribute('aria-selected')!=='true')return;
+    const entry=pending;pending=null;
+    requestAnimationFrame(()=>{
+      metrics.navigation.push({label:entry.label,ms:+(performance.now()-entry.started).toFixed(1),attach:metrics.attach-entry.attach,
+        attachMs:+(metrics.attachMs-entry.attachMs).toFixed(1),resolutions:metrics.resolutions-entry.resolutions});render();
+    });
+  }).observe(document,{subtree:true,attributes:true,childList:true});
+  document.addEventListener('DOMContentLoaded',()=>{
+    const panel=document.createElement('aside');
+    panel.style='position:fixed;left:12px;bottom:12px;z-index:99999;background:#172028;color:#fff;border:1px solid #527989;border-radius:10px;padding:12px;width:300px;font:12px monospace;max-height:70vh;overflow:auto';
+    panel.innerHTML='<b>MIDI navigation benchmark</b><div><button id="qa-bind">Bind 14 controls</button><button id="qa-reset">Reset metrics</button></div><pre id="qa-nav-log" style="white-space:pre-wrap"></pre>';
+    panel.querySelector('#qa-bind').onclick=()=>{
+      const controls=[...document.querySelectorAll('#grain-engine [data-control-key],#filters [data-control-key]')]
+        .filter(n=>!n.disabled&&n.getAttribute('aria-disabled')!=='true'&&n.getClientRects().length).slice(0,14);
+      for(const [i,node] of controls.entries()){learner.learn(node.dataset.controlKey);learner.input(learner.page(),13+i,65,'relative');}
+      render();
+    };
+    panel.querySelector('#qa-reset').onclick=()=>{metrics.attach=0;metrics.attachMs=0;metrics.resolutions=0;metrics.navigation=[];render();};
+    document.body.append(panel);render();
+  });
+}
+</script>

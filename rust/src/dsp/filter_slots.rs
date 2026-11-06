@@ -3,7 +3,7 @@
 //! Resynth oscillator rate, so position, model and response can change from a
 //! control without allocating. Banks are prepared off the audio thread and
 //! keep their histories across preset updates that retain the slot.
-use super::filter::{Filter, tracked_cutoff};
+use super::filter::{ShapedFilter as Filter, tracked_cutoff};
 use crate::{
     Stereo,
     color::{ColorSlot, MAX_COLOR_SLOTS},
@@ -15,34 +15,58 @@ pub(crate) type FxMasks = [[u16; MAX_COLOR_SLOTS]; 2];
 
 pub(crate) struct Bank {
     id: u32,
-    voices: [Filter; super::VOICES],
+    voices: Box<[Filter]>,
     shared: Filter,
     oscillator: Filter,
+    oscillator_voices: Box<[Filter]>,
+    voice_send_decimators: [super::resynth::Decimator; super::VOICES],
+    voice_send_phases: [bool; super::VOICES],
     send_decimator: super::resynth::Decimator,
     oversampled: bool,
     send_phase: bool,
+    gated_shared: bool,
+    voice_gain: f32,
 }
 impl Bank {
     fn new(id: u32, rate: u32) -> Box<Self> {
         Box::new(Self {
             id,
-            voices: std::array::from_fn(|_| Filter::new(rate)),
+            voices: (0..super::VOICES)
+                .map(|_| Filter::new(rate))
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
             shared: Filter::new(rate),
             oscillator: Filter::new(rate * super::resynth::oversample(rate)),
+            oscillator_voices: (0..super::VOICES)
+                .map(|_| Filter::new(rate * super::resynth::oversample(rate)))
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+            voice_send_decimators: std::array::from_fn(|_| super::resynth::Decimator::new()),
+            voice_send_phases: [false; super::VOICES],
             send_decimator: super::resynth::Decimator::new(),
             oversampled: super::resynth::oversample(rate) == 2,
             send_phase: false,
+            gated_shared: false,
+            voice_gain: 1.0,
         })
     }
     pub(crate) fn clear(&mut self) {
         self.voices.iter_mut().for_each(Filter::clear);
         self.shared.clear();
         self.oscillator.clear();
+        self.oscillator_voices.iter_mut().for_each(Filter::clear);
+        self.voice_send_decimators
+            .iter_mut()
+            .for_each(super::resynth::Decimator::clear);
+        self.voice_send_phases.fill(false);
         self.send_decimator.clear();
         self.send_phase = false;
     }
     pub(crate) fn clear_voice(&mut self, voice: usize) {
         self.voices[voice].clear();
+        self.oscillator_voices[voice].clear();
+        self.voice_send_decimators[voice].clear();
+        self.voice_send_phases[voice] = false;
     }
 }
 
@@ -154,6 +178,9 @@ pub(crate) fn configure_shared<const N: usize>(
         if slot.id != bank.id || (slot.position.per_voice() && !every) {
             continue;
         }
+        bank.gated_shared = every
+            || (slot.position == FilterPosition::AfterFx
+                && slot.fx_chain == crate::preset::FilterFxChain::B);
         let filter = if slot.position.oscillator().is_some() {
             &mut bank.oscillator
         } else {
@@ -167,6 +194,7 @@ pub(crate) fn configure_shared<const N: usize>(
             slot.drive,
             slot.morph,
         );
+        filter.configure_shapers(slot.shapers, note);
     }
 }
 
@@ -179,7 +207,7 @@ pub(crate) fn configure_voice<const N: usize>(
     envs: [f32; N],
 ) {
     for (slot, bank) in slots.iter().zip(banks) {
-        if slot.id != bank.id || !slot.position.per_voice() {
+        if slot.id != bank.id {
             continue;
         }
         bank.voices[voice].configure(
@@ -190,6 +218,18 @@ pub(crate) fn configure_voice<const N: usize>(
             slot.drive,
             slot.morph,
         );
+        bank.voices[voice].configure_shapers(slot.shapers, note);
+        if slot.position.oscillator().is_some() {
+            bank.oscillator_voices[voice].configure(
+                slot.model,
+                slot.kind,
+                cutoff(slot, note, envs),
+                slot.resonance,
+                slot.drive,
+                slot.morph,
+            );
+            bank.oscillator_voices[voice].configure_shapers(slot.shapers, note);
+        }
     }
 }
 
@@ -198,6 +238,36 @@ pub(crate) enum Instance {
     Voice(usize),
     Shared,
     Oscillator,
+    OscillatorVoice(usize),
+}
+
+/// This is note activity, separate from tap/send gain. Shared filters after
+/// note summing gate only the extra Sub oscillator, leaving audio tails intact.
+pub(crate) fn set_voice_gain(banks: &mut [Box<Bank>], gain: f32) {
+    for bank in banks {
+        bank.voice_gain = if bank.gated_shared {
+            gain.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+    }
+}
+
+pub(crate) fn latency_samples(banks: &[Box<Bank>], mut mask: u16, instance: Instance) -> usize {
+    let mut latency = 0;
+    while mask != 0 {
+        let i = mask.trailing_zeros() as usize;
+        mask &= mask - 1;
+        let Some(bank) = banks.get(i) else { break };
+        let filter = match instance {
+            Instance::Voice(voice) => &bank.voices[voice],
+            Instance::Shared => &bank.shared,
+            Instance::Oscillator => &bank.oscillator,
+            Instance::OscillatorVoice(voice) => &bank.oscillator_voices[voice],
+        };
+        latency += filter.latency_samples();
+    }
+    latency
 }
 
 /// Run one position's filters in list order; an empty mask is a no-op.
@@ -228,14 +298,32 @@ pub(crate) fn route_chain(
         let Some(bank) = banks.get_mut(i) else {
             break;
         };
-        let output = match instance {
-            Instance::Voice(voice) => bank.voices[voice].process(frame),
-            Instance::Shared => bank.shared.process(frame),
-            Instance::Oscillator => bank.oscillator.process(frame),
+        let filter = match instance {
+            Instance::Voice(voice) => &mut bank.voices[voice],
+            Instance::Shared => &mut bank.shared,
+            Instance::Oscillator => &mut bank.oscillator,
+            Instance::OscillatorVoice(voice) => &mut bank.oscillator_voices[voice],
         };
+        let gain = if matches!(instance, Instance::Shared | Instance::Oscillator) {
+            bank.voice_gain
+        } else {
+            1.0
+        };
+        let output = filter.process_with_voice_gain(frame, gain);
+        let aligned = filter.aligned_input();
         if let Some((taps, gain)) = route.as_mut() {
             if taps.slot_sends(i) {
-                let (sent, emit) = if matches!(instance, Instance::Oscillator) && bank.oversampled {
+                let (sent, emit) = if let Instance::OscillatorVoice(voice) = instance {
+                    if bank.oversampled {
+                        bank.voice_send_phases[voice] = !bank.voice_send_phases[voice];
+                        (
+                            bank.voice_send_decimators[voice].next(output),
+                            !bank.voice_send_phases[voice],
+                        )
+                    } else {
+                        (output, true)
+                    }
+                } else if matches!(instance, Instance::Oscillator) && bank.oversampled {
                     bank.send_phase = !bank.send_phase;
                     (bank.send_decimator.next(output), !bank.send_phase)
                 } else {
@@ -245,10 +333,15 @@ pub(crate) fn route_chain(
                     taps.send_slot(i, sent.map(|x| x * *gain));
                 }
             } else {
-                bank.send_decimator.clear();
-                bank.send_phase = false;
+                if let Instance::OscillatorVoice(voice) = instance {
+                    bank.voice_send_decimators[voice].clear();
+                    bank.voice_send_phases[voice] = false;
+                } else {
+                    bank.send_decimator.clear();
+                    bank.send_phase = false;
+                }
             }
-            frame = taps.mix_slot(i, frame, output);
+            frame = taps.mix_slot(i, aligned, output);
         } else {
             frame = output;
         }
@@ -302,5 +395,27 @@ mod tests {
         assert_eq!(masks[FilterPosition::AfterFilters as usize], 0b0001);
         assert_eq!(masks[FilterPosition::AfterFx as usize], 0b0100);
         assert!(masks.iter().all(|m| m & 0b1010 == 0));
+    }
+
+    #[test]
+    fn spectral_parties_keep_independent_oversampled_filter_histories() {
+        let mut slot = slot(1);
+        slot.position = FilterPosition::AfterOsc1;
+        slot.cutoff = 800.0;
+        let mut banks = Prepared::default();
+        banks.prepare(&[slot], 48_000);
+        configure_voice(&[slot], &mut banks.0, 1, 60.0, [0.0; 8]);
+        configure_voice(&[slot], &mut banks.0, 2, 60.0, [0.0; 8]);
+        let mut energy = 0.0;
+        for frame in 0..128 {
+            let impulse = if frame == 0 { [1.0; 2] } else { [0.0; 2] };
+            let output = chain(&mut banks.0, 1, impulse, Instance::OscillatorVoice(1));
+            energy += output[0].abs();
+            assert_eq!(
+                chain(&mut banks.0, 1, [0.0; 2], Instance::OscillatorVoice(2)),
+                [0.0; 2]
+            );
+        }
+        assert!(energy > 0.01);
     }
 }

@@ -1,0 +1,33 @@
+{
+  "baseline_commit": "4bfe108218828af5d0667eb4b5ce28f9f025a4a8",
+  "fix_commit": "4631fad14e6a579ef41a9c7ebd8d388375ec6381",
+  "scope": "One local scene, browser MIDI emulation, 14 assignments, audio running at 44.1 kHz, output muted",
+  "navigation": [
+    {
+      "target": "Master",
+      "before_ms": 698.5,
+      "after_ms": 137.5,
+      "mount_before_ms": 572.6,
+      "mount_after_ms": 7.5,
+      "target_resolutions_before": 85308,
+      "target_resolutions_after": 1359
+    },
+    {
+      "target": "Granular 1",
+      "before_ms": 1387,
+      "after_ms": 168.3,
+      "mount_before_ms": 1227.7,
+      "mount_after_ms": 7.8,
+      "target_resolutions_before": 182712,
+      "target_resolutions_after": 1287
+    }
+  ],
+  "mount_400_controls": {
+    "before_resolutions": 80200,
+    "after_resolutions": 400
+  },
+  "wasm_sha256": {
+    "sad_pet.wasm": "9829029b89308dfda1f4beaf53f5473b0d80fab2f561b3abd0046177bf230a47",
+    "sad_pet.simd.wasm": "68329db4de732fcd22b933fa6df6831068125992e363e290468c9c0d2d4363d3"
+  }
+}

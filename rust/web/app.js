@@ -729,6 +729,7 @@ function grainGroupField(group, field) {
 }
 let grainGroupPage = 0;
 const grainOutputViews = [];
+const grainWaveshaperViews = [];
 function editGrainGroup(index, field, value) {
   const group = ensureGrainGroups().groups[index],
     [a, b] = grainGroupPath(field);
@@ -900,6 +901,28 @@ function buildGrainGroups() {
       if (title === "Grain")
         card.lastElementChild.querySelectorAll(".dial")[4].closest(".knob").title =
           "How a new note's grains of this group come in: 0% at once, 100% building up from none";
+      if (title === "Drive · Waveshaper") {
+        const get = () => grainGroupSettings().groups[index].waveshaper_options;
+        const editor = buildWaveshaperOptions({
+          label: `Group ${name} waveshaper`, key: `grain_group${index + 1}`,
+          controlKey: (field) => `grain_group${index + 1}_waveshaper_${field}`,
+          get,
+          set: (patch) => {
+            const group = ensureGrainGroups().groups[index];
+            group.waveshaper_options = { ...waveshaperOptions(get()), ...patch };
+            schedulePreset();
+            editor.sync();
+          },
+          setNumeric: (field, value) => {
+            const group = ensureGrainGroups().groups[index];
+            group.waveshaper_options = { ...waveshaperOptions(get()), [field]: value };
+            scheduleParameter(`grain_group${index + 1}_waveshaper_${field}`, value);
+            editor.sync();
+          },
+        });
+        card.append(editor.element);
+        grainWaveshaperViews[index] = editor;
+      }
       made[title] = card;
     }
     for (const titles of rows) {
@@ -1040,10 +1063,15 @@ function syncGrainGroups() {
     );
     page
       .querySelector('[data-card="Drive · Waveshaper"]')
-      ?.lastElementChild.children[1]?.classList.toggle(
+      ?.querySelector(".grain-group-knobs").children[1]?.classList.toggle(
         "is-idle",
         grainGroupField(settings.groups[index], "waveshaper") === "off",
       );
+    const shaper = grainWaveshaperViews[index];
+    if (shaper) {
+      shaper.element.hidden = grainGroupField(settings.groups[index], "waveshaper") === "off";
+      shaper.sync();
+    }
     const chain = page.querySelector(".grain-group-chain");
     if (chain && !chain.classList.contains("is-arranging"))
       arrangeGrainStages(chain, grainGroupField(settings.groups[index], "order"));
@@ -1460,6 +1488,7 @@ function buildFilters() {
     const card = document.createElement("div");
     card.className = "filter-card";
     card.id = `${prefix}-card`;
+    card.dataset.mainFilter = String(i);
     const responses = (model) =>
       filterResponses
         .map(
@@ -1472,6 +1501,9 @@ function buildFilters() {
       .map(([id, label]) => `<option value="${id}">${label}</option>`)
       .join("");
     card.innerHTML = `<div class="filter-title"><strong>Filter ${number}</strong><select id="${prefix}-type" aria-label="Filter ${number} model"><optgroup label="SAD PET">${responses("legacy")}</optgroup><optgroup label="Rustias">${models}</optgroup><optgroup label="RADIAS Filter 2">${responses("radias2")}</optgroup></select><select id="${prefix}-env" aria-label="Filter ${number} envelope"><option value="env1">ENV 1</option><option value="env2">ENV 2</option><option value="env3">ENV 3</option></select></div>${filterGraphMarkup(number)}<div id="${prefix}-controls" class="knob-grid filter-controls"></div>`;
+    card.querySelector(".filter-title").prepend(filterGrip({ main: i }, number, card));
+    card.prepend(buildFilterShaper({ main: i }, "before"));
+    card.append(buildFilterShaper({ main: i }, "after"));
     $("filters").append(card);
     const type = i === 0 ? "vcf_type" : "vcf2_type";
     card.querySelector(".filter-graph").spec = () => {
@@ -1557,12 +1589,23 @@ async function drawFilterGraph(graph) {
 function syncFilters() {
   if (!preset) return;
   const p = preset.params;
+  const order = filterOrder();
+  const chain = $("filters");
+  if (!chain.classList.contains("is-arranging")) {
+    const cards = [...chain.children];
+    if (cards.map((card) => Number(card.dataset.mainFilter)).join() !== order.join()) {
+      for (const index of order) {
+        const card = cards.find((entry) => Number(entry.dataset.mainFilter) === index);
+        if (card) chain.append(card);
+      }
+    }
+  }
   window.SadLazySelect.configure($("filter-pair-preset"),"",[{choices:[["","Tone"],...(sequenceCatalog?.filter_presets??[]).map(p=>[p.id,p.name])]}]);
   $("filter-routing").value = p.filter_routing;
   $("filter-path").textContent = {
     single: "IN → F1 → OUT",
-    serial: "IN → F1 → F2 → OUT",
-    parallel: "IN → F1 ∥ F2 → OUT",
+    serial: `IN → F${order[0] + 1} → F${order[1] + 1} → OUT`,
+    parallel: `IN → F${order[0] + 1} ∥ F${order[1] + 1} → OUT`,
   }[p.filter_routing];
   $("filter2-card").classList.toggle("inactive", p.filter_routing === "single");
   for (const [prefix, type] of [
@@ -1573,7 +1616,6 @@ function syncFilters() {
     $(`${prefix}-type`).value = ["legacy", "radias2"].includes(model)
       ? `${model}:${p[type]}`
       : model;
-    syncFilterEnvelope($(`${prefix}-env`), p[`${prefix}_env`]);
     for (const [field, active] of [
       ["drive", model !== "legacy"],
       ["morph", ["radias", "sem", "multi_filter"].includes(model)],
@@ -1603,19 +1645,30 @@ function syncFilters() {
   refreshFilterGraphs();
 }
 function syncFilterEnvelope(select, value) {
-  const available = !!preset?.tb303;
-  const choices = `${available}:${value === "tb303"}`;
+  const count = preset.env_count || 3,
+    available = !!preset.tb303;
+  const choices = `${count}:${available}:${value}`;
   if (select.dataset.envChoices !== choices) {
     select.dataset.envChoices = choices;
-    const sources = [["env1", "ENV 1"], ["env2", "ENV 2"], ["env3", "ENV 3"]];
-    if (available || value === "tb303") sources.push(["tb303", available ? "303" : "303 · unavailable"]);
+    const sources = Array.from({ length: 8 }, (_, i) => [`env${i + 1}`, `ENV ${i + 1}`])
+      .filter(([id], i) => i < count || id === value);
+    if (available || value === "tb303") sources.push(["tb303", "303"]);
     select.replaceChildren(...sources.map(([id, label]) => {
-      const item = option(id, label);
-      item.disabled = id === "tb303" && !available;
+      const disabled = id === "tb303" ? !available : Number(id.slice(3)) > count;
+      const item = option(id, disabled ? `${label} · unavailable` : label);
+      item.disabled = disabled;
       return item;
     }));
   }
   select.value = value;
+}
+function syncFilterEnvelopes() {
+  for (const prefix of ["filter", "filter2"])
+    syncFilterEnvelope($(`${prefix}-env`), preset.params[`${prefix}_env`]);
+  for (const slot of preset.filter_slots || []) {
+    const card = $("added-filters").querySelector(`[data-id="${slot.id}"]`);
+    if (card) syncFilterEnvelope(card.querySelector(".added-filter-env"), slot.env);
+  }
 }
 // Filters 3 and up. Positions inside a note's path run one filter per voice
 // with its own envelope and key tracking; the others are one shared filter
@@ -1727,6 +1780,8 @@ function syncAddedFilters() {
     $("added-filters").children.length !== slots.length
   ) {
     addedFilterSignature = signature;
+    for (const key of filterShaperViews.keys())
+      if (key.startsWith("slot:")) filterShaperViews.delete(key);
     for (const key of controls.keys())
       if (key.startsWith("filter_slot:")) {
         controls.delete(key);
@@ -1740,11 +1795,12 @@ function syncAddedFilters() {
     const card = $("added-filters").querySelector(`[data-id="${slot.id}"]`);
     if (!card) continue;
     syncFilterFxTarget(card, slot);
-    syncFilterEnvelope(card.querySelector(".added-filter-env"), slot.env);
     for (const [field] of FILTER_SLOT_CONTROLS)
       controls.get(`filter_slot:${slot.id}:${field}`)?.();
   }
+  syncFilterEnvelopes();
   syncFilterOutputs();
+  syncFilterShapers();
   refreshFilterGraphs();
 }
 function syncFilterFxTarget(card, slot) {
@@ -1847,6 +1903,9 @@ function addedFilterCard(index, slot) {
   card.classList.toggle("inactive", !slot.enabled);
   card.dataset.id = id;
   card.innerHTML = `<div class="filter-title added-filter-title"><strong>Filter ${number}</strong><select class="added-filter-type" aria-label="Filter ${number} model">${filterModelOptions()}</select><select class="added-filter-env" aria-label="Filter ${number} envelope"><option value="env1">ENV 1</option><option value="env2">ENV 2</option><option value="env3">ENV 3</option></select><div class="color-actions"><button class="color-bypass" aria-label="Bypass Filter ${number}" title="Bypass" aria-pressed="${!slot.enabled}">⏻</button><button class="color-up" aria-label="Move Filter ${number} up" title="Move up">↑</button><button class="color-down" aria-label="Move Filter ${number} down" title="Move down">↓</button><button class="color-remove" aria-label="Remove Filter ${number}" title="Remove">×</button></div><div class="added-filter-placement"><select class="added-filter-position" aria-label="Filter ${number} position"></select><select class="added-filter-fx-chain" aria-label="Filter ${number} FX chain"><option value="a">FX A</option><option value="b">FX B</option></select><select class="added-filter-fx-slot" aria-label="Filter ${number} after effect"></select></div></div>${filterGraphMarkup(number)}<div id="filter-slot-${id}-controls" class="knob-grid filter-controls"></div>`;
+  card.querySelector(".filter-title").prepend(filterGrip({ slot: id }, number, card));
+  card.prepend(buildFilterShaper({ slot: id }, "before", number));
+  card.append(buildFilterShaper({ slot: id }, "after", number));
   card.querySelector(".filter-graph").spec = () => {
     const s = findFilterSlot(id);
     return s && filterGraphSpec(s.model, s.kind, s.cutoff, s.env_depth, s.resonance, s.morph);
@@ -1938,6 +1997,408 @@ function addedFilterCard(index, slot) {
     dial.tabIndex = active ? 0 : -1;
   }
   return card;
+}
+
+// A filter owns both stages. Moving a stage swaps its complete settings with
+// the destination, while moving a filter keeps its own stages with it.
+const WAVESHAPER_OPTION_DEFAULTS = {
+  quality: "legacy", curve: "radias", curve_b: "soft_clip", morph: 0,
+  input: 0.5, output: 0.5, knee: 0.5, bias: 0.5, pre_tone: 1, post_tone: 1,
+  bass: 0, bass_frequency: 0.5, envelope: 0.5, attack: 0.2, release: 0.5,
+  dc_block: false, auto_gain: false,
+  points: Array.from({ length: 17 }, (_, i) => i / 8 - 1),
+};
+const WAVESHAPER_CURVES = [
+  ["radias", "RADIAS"], ["soft_clip", "Soft clip"], ["tanh", "Tanh"],
+  ["diode", "Diode"], ["rectify", "Rectify"], ["custom", "Custom"],
+];
+const WAVESHAPER_OPTION_KNOBS = [
+  ["input", "INPUT", (v) => `${((v - 0.5) * 48).toFixed(1)} dB`],
+  ["output", "OUTPUT", (v) => `${((v - 0.5) * 48).toFixed(1)} dB`],
+  ["knee", "KNEE", percent], ["bias", "BIAS", (v) => signedPercent(v * 2 - 1)],
+  ["pre_tone", "PRE TONE", percent], ["post_tone", "POST TONE", percent],
+  ["bass", "BASS", percent], ["bass_frequency", "BASS FREQ", (v) => `${Math.round(40 * 16 ** v)} Hz`],
+  ["envelope", "ENV", (v) => signedPercent(v * 2 - 1)],
+  ["attack", "ATTACK", (v) => `${(1 + v * v * 199).toFixed(1)} ms`],
+  ["release", "RELEASE", (v) => `${Math.round(10 + v * v * 990)} ms`],
+  ["morph", "MORPH", percent],
+];
+const waveshaperOptions = (options) => ({ ...WAVESHAPER_OPTION_DEFAULTS, ...options,
+  points: Array.isArray(options?.points) && options.points.length === 17
+    ? options.points : WAVESHAPER_OPTION_DEFAULTS.points });
+const FILTER_SHAPER_DEFAULTS = { enabled: false, mode: "drive", depth: 0.5, mix: 1 };
+const filterShaperKey = (ref, side) =>
+  `${ref.main !== undefined ? `main:${ref.main}` : `slot:${ref.slot}`}:${side}`;
+const filterOrder = () => {
+  const order = preset?.params?.filter_order;
+  return Array.isArray(order) && order.length === 2 && order.includes(0) && order.includes(1)
+    ? [...order] : [0, 1];
+};
+function filterShaperContainer(ref, create = false) {
+  if (ref.main !== undefined) {
+    if (create) {
+      preset.params.filter_shapers ??= [{}, {}];
+      preset.params.filter_shapers[ref.main] ??= {};
+    }
+    return preset.params.filter_shapers?.[ref.main];
+  }
+  const slot = findFilterSlot(ref.slot);
+  if (slot && create) slot.shapers ??= {};
+  return slot?.shapers;
+}
+function filterShaper(ref, side) {
+  const stage = filterShaperContainer(ref)?.[side];
+  return { ...FILTER_SHAPER_DEFAULTS, ...stage, options: waveshaperOptions(stage?.options) };
+}
+function writeFilterShaper(ref, side, stage) {
+  const container = filterShaperContainer(ref, true);
+  if (container) container[side] = stage;
+}
+function patchFilterShaper(ref, side, patch, numericField = null) {
+  if (ref.slot !== undefined && !findFilterSlot(ref.slot)) return;
+  const current = filterShaper(ref, side);
+  writeFilterShaper(ref, side, { ...current, ...patch,
+    options: patch.options ? { ...current.options, ...patch.options } : current.options });
+  if (numericField) {
+    const number = ref.main !== undefined ? ref.main + 1
+      : preset.filter_slots.findIndex((slot) => slot.id === ref.slot) + 3;
+    const value = patch.options ? patch.options[numericField] : patch[numericField];
+    scheduleParameter(`filter${number}_ws_${side}_${numericField}`, value);
+  } else schedulePreset();
+  syncFilterShapers();
+}
+const filterShaperViews = new Map();
+function swapFilterShapers(from, to) {
+  if (!from || !to || filterShaperKey(from.ref, from.side) === filterShaperKey(to.ref, to.side)) return;
+  const left = structuredClone(filterShaper(from.ref, from.side));
+  const right = structuredClone(filterShaper(to.ref, to.side));
+  writeFilterShaper(from.ref, from.side, right);
+  writeFilterShaper(to.ref, to.side, left);
+  schedulePreset();
+  syncFilterShapers();
+}
+function syncFilterShapers() {
+  for (const view of filterShaperViews.values()) view.sync();
+}
+function buildFilterShaper(ref, side, number = ref.main + 1) {
+  const key = filterShaperKey(ref, side), name = `Filter ${number}`;
+  const stage = document.createElement("div");
+  stage.className = "filter-shaper";
+  stage.dataset.shaper = key;
+  stage.innerHTML = `<div class="filter-shaper-title"><button class="grain-stage-grip filter-shaper-grip" type="button"><span aria-hidden="true"></span></button><button class="filter-shaper-power" type="button" title="Switch waveshaper on or off">⏻</button><strong>WS ${side === "before" ? "before" : "after"}</strong><select class="filter-shaper-mode"></select></div><div class="filter-shaper-body"><div class="filter-shaper-knobs"></div></div>`;
+  const grip = stage.querySelector(".filter-shaper-grip"),
+    power = stage.querySelector(".filter-shaper-power"),
+    mode = stage.querySelector(".filter-shaper-mode"),
+    body = stage.querySelector(".filter-shaper-body"),
+    bank = stage.querySelector(".filter-shaper-knobs");
+  grip.setAttribute("aria-label", `Move ${name} waveshaper ${side}`);
+  grip.title = "Drag to another waveshaper position · arrow keys move it too";
+  grip.onpointerdown = (event) => dragFilterShaper(event, { ref, side }, stage);
+  grip.onkeydown = (event) => {
+    const by = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[event.key];
+    if (!by) return;
+    event.preventDefault();
+    const positions = [...document.querySelectorAll(".filter-shaper")];
+    const at = positions.indexOf(stage), target = positions[at + by];
+    if (!target) return;
+    const view = filterShaperViews.get(target.dataset.shaper);
+    swapFilterShapers({ ref, side }, view);
+    target.querySelector(".filter-shaper-grip")?.focus({ preventScroll: true });
+  };
+  power.setAttribute("aria-label", `${name} waveshaper ${side}`);
+  power.onclick = () => patchFilterShaper(ref, side, { enabled: !filterShaper(ref, side).enabled });
+  mode.setAttribute("aria-label", `${name} waveshaper ${side} mode`);
+  mode.replaceChildren(...WAVESHAPER_TYPES.map(([id, label]) => option(id, label)));
+  mode.onchange = () => patchFilterShaper(ref, side, { mode: mode.value });
+  const updates = [];
+  let options = null;
+  const initialize = () => {
+    if (options) return;
+    for (const [field, label, format] of [["depth", "DEPTH", (v) => String(Math.round(v * 127))], ["mix", "MIX", percent]]) {
+      updates.push(createKnob([`filter${number}_ws_${side}_${field}`, label, format, 0, 1,
+        `${name} waveshaper ${side} ${label.toLowerCase()}`], bank, {
+        register: false, get: () => filterShaper(ref, side)[field],
+        set: (value) => patchFilterShaper(ref, side, { [field]: value }, field),
+        reset: () => FILTER_SHAPER_DEFAULTS[field],
+      }));
+    }
+    options = buildWaveshaperOptions({
+      label: `${name} waveshaper ${side}`, key: `filter_shaper:${key}`,
+      controlKey: (field) => `filter${number}_ws_${side}_${field}`,
+      get: () => filterShaper(ref, side).options,
+      set: (patch) => patchFilterShaper(ref, side, { options: patch }),
+      setNumeric: (field, value) => patchFilterShaper(ref, side, { options: { [field]: value } }, field),
+    });
+    body.append(options.element);
+  };
+  filterShaperViews.set(key, { ref, side, stage, sync() {
+    const current = filterShaper(ref, side);
+    if (power.getAttribute("aria-pressed") !== String(current.enabled))
+      power.setAttribute("aria-pressed", String(current.enabled));
+    stage.classList.toggle("is-enabled", !!current.enabled);
+    if (body.hidden !== !current.enabled) body.hidden = !current.enabled;
+    if (document.activeElement !== mode && mode.value !== current.mode) mode.value = current.mode;
+    if (current.enabled) {
+      initialize();
+      for (const update of updates) update();
+      options.sync();
+    }
+  } });
+  return stage;
+}
+
+function filterGrip(ref, number, card) {
+  const grip = document.createElement("button");
+  grip.type = "button";
+  grip.className = "grain-stage-grip filter-grip";
+  grip.innerHTML = '<span aria-hidden="true"></span>';
+  grip.setAttribute("aria-label", `Move Filter ${number}`);
+  grip.title = "Drag to change filter order · arrow keys move it too";
+  grip.onpointerdown = (event) => dragFilterCard(event, ref, card);
+  grip.onkeydown = (event) => {
+    const by = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[event.key];
+    if (!by) return;
+    event.preventDefault();
+    if (ref.main !== undefined) {
+      const order = filterOrder(), at = order.indexOf(ref.main);
+      if (at + by < 0 || at + by >= order.length) return;
+      [order[at], order[at + by]] = [order[at + by], order[at]];
+      preset.params.filter_order = order;
+      schedulePreset();
+      syncFilters();
+      grip.focus({ preventScroll: true });
+    } else {
+      moveFilter(ref.slot, by);
+      document.querySelector(`.added-filter-card[data-id="${ref.slot}"] .filter-grip`)?.focus({ preventScroll: true });
+    }
+  };
+  return grip;
+}
+function dragFilterCard(event, ref, card) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  const grip = event.currentTarget, chain = card.parentElement;
+  const before = [...chain.children];
+  chain.classList.add("is-arranging");
+  card.classList.add("is-dragging");
+  const move = (e) => {
+    const others = [...chain.children].filter((item) => item !== card),
+      boxes = others.map((item) => item.getBoundingClientRect());
+    const at = boxes.findIndex((box) =>
+      e.clientY < box.top || (e.clientY <= box.bottom && e.clientX < box.left + box.width / 2));
+    if (at < 0) chain.append(card); else chain.insertBefore(card, others[at]);
+  };
+  const finish = (commit) => {
+    window.removeEventListener("pointermove", move, true);
+    window.removeEventListener("pointerup", up, true);
+    window.removeEventListener("pointercancel", abort, true);
+    window.removeEventListener("blur", abort);
+    document.removeEventListener("keydown", cancel, true);
+    chain.classList.remove("is-arranging"); card.classList.remove("is-dragging");
+    const after = [...chain.children];
+    if (!commit) for (const item of before) chain.append(item);
+    else if (after.some((item, i) => item !== before[i])) {
+      if (ref.main !== undefined) {
+        preset.params.filter_order = after.map((item) => Number(item.dataset.mainFilter));
+        schedulePreset(); syncFilters();
+      } else {
+        const slots = new Map(preset.filter_slots.map((slot) => [String(slot.id), slot]));
+        preset.filter_slots = after.map((item) => slots.get(item.dataset.id));
+        editAddedFilters();
+      }
+    }
+    const currentGrip = ref.main !== undefined ? grip
+      : document.querySelector(`.added-filter-card[data-id="${ref.slot}"] .filter-grip`);
+    currentGrip?.focus({ preventScroll: true });
+  };
+  const up = () => finish(true), abort = () => finish(false);
+  const cancel = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(false); } };
+  window.addEventListener("pointermove", move, true); window.addEventListener("pointerup", up, true);
+  window.addEventListener("pointercancel", abort, true); window.addEventListener("blur", abort);
+  document.addEventListener("keydown", cancel, true);
+}
+function dragFilterShaper(event, from, stage) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  const grip = event.currentTarget;
+  let target = null;
+  stage.classList.add("is-dragging");
+  const move = (e) => {
+    const next = document.elementFromPoint(e.clientX, e.clientY)?.closest(".filter-shaper");
+    if (next === target) return;
+    target?.classList.remove("is-drop-target"); target = next;
+    if (target && target !== stage) target.classList.add("is-drop-target");
+  };
+  const finish = (commit) => {
+    window.removeEventListener("pointermove", move, true); window.removeEventListener("pointerup", up, true);
+    window.removeEventListener("pointercancel", abort, true); window.removeEventListener("blur", abort);
+    document.removeEventListener("keydown", cancel, true);
+    stage.classList.remove("is-dragging"); target?.classList.remove("is-drop-target");
+    if (commit && target && target !== stage) {
+      swapFilterShapers(from, filterShaperViews.get(target.dataset.shaper));
+      target.querySelector(".filter-shaper-grip")?.focus({ preventScroll: true });
+    } else grip.focus({ preventScroll: true });
+  };
+  const up = (e) => { move(e); finish(true); }, abort = () => finish(false);
+  const cancel = (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(false); } };
+  window.addEventListener("pointermove", move, true); window.addEventListener("pointerup", up, true);
+  window.addEventListener("pointercancel", abort, true); window.addEventListener("blur", abort);
+  document.addEventListener("keydown", cancel, true);
+}
+
+// The RADIAS algorithms include state and pitch; only static curves have a
+// transfer-function preview. Custom points are shared by A and B.
+function waveshaperCurve(curve, x, options) {
+  x = Math.max(-1, Math.min(1, x));
+  const knee = Math.max(0, Math.min(1, options.knee));
+  if (curve === "custom") {
+    const position = Math.max(0, Math.min(16, (x + 1) * 8)),
+      left = Math.min(15, Math.floor(position)), fraction = position - left;
+    return Math.max(-1, Math.min(1, options.points[left] * (1 - fraction) + options.points[left + 1] * fraction));
+  }
+  if (curve === "soft_clip") {
+    const threshold = 1 - 0.75 * knee, amplitude = Math.abs(x);
+    if (amplitude <= threshold) return x;
+    const u = (amplitude - threshold) / (1 - threshold);
+    return Math.sign(x) * (threshold + (1 - threshold) * (u + u * u - u * u * u));
+  }
+  if (curve === "tanh" || curve === "diode") {
+    const gain = (0.15 + 5.85 * knee) * (curve === "diode" && x < 0 ? 0.55 : 1);
+    return Math.tanh(gain * x) / Math.tanh(gain);
+  }
+  if (curve === "rectify") return Math.abs(x);
+  return x;
+}
+function buildWaveshaperOptions({ label, key, get, set, setNumeric, register = false,
+  controlKey = (field) => `${key}:waveshaper_${field}` }) {
+  const details = document.createElement("details");
+  details.className = "waveshaper-options";
+  details.innerHTML = `<summary>Shape</summary><div class="waveshaper-option-selects"><label>Quality<select class="ws-quality"></select></label><label>Curve A<select class="ws-curve"></select></label><label>Curve B<select class="ws-curve-b"></select></label></div><canvas class="waveshaper-curve" width="320" height="120"></canvas><div class="waveshaper-curve-actions"><button type="button" class="ws-linear">Reset curve</button></div><div class="waveshaper-option-knobs"></div><div class="waveshaper-switches"><label class="check"><input type="checkbox" class="ws-dc">DC block</label><label class="check"><input type="checkbox" class="ws-gain">Auto gain</label></div>`;
+  const quality = details.querySelector(".ws-quality"), curve = details.querySelector(".ws-curve"),
+    curveB = details.querySelector(".ws-curve-b"), canvas = details.querySelector(".waveshaper-curve"),
+    linear = details.querySelector(".ws-linear"), dc = details.querySelector(".ws-dc"),
+    gain = details.querySelector(".ws-gain"), bank = details.querySelector(".waveshaper-option-knobs");
+  quality.setAttribute("aria-label", `${label} quality`);
+  curve.setAttribute("aria-label", `${label} curve A`);
+  curveB.setAttribute("aria-label", `${label} curve B`);
+  quality.replaceChildren(...[["legacy", "Legacy"], ["clean2x", "Clean 2×"], ["clean4x", "Clean 4×"]].map(([id, title]) => option(id, title)));
+  curve.replaceChildren(...WAVESHAPER_CURVES.map(([id, title]) => option(id, title)));
+  curveB.replaceChildren(...WAVESHAPER_CURVES.map(([id, title]) => option(id, title)));
+  quality.onchange = () => set({ quality: quality.value });
+  curve.onchange = () => set({ curve: curve.value });
+  curveB.onchange = () => set({ curve_b: curveB.value });
+  dc.onchange = () => set({ dc_block: dc.checked });
+  gain.onchange = () => set({ auto_gain: gain.checked });
+  let selected = 8, drawing = false, signature = "";
+  const plotPadding = 5;
+  const editable = (options) => options.curve === "custom" || options.curve_b === "custom";
+  const updatePoint = (index, value) => {
+    const points = [...waveshaperOptions(get()).points];
+    points[index] = Math.max(-1, Math.min(1, value));
+    set({ points });
+  };
+  const pointAt = (event) => {
+    const box = canvas.getBoundingClientRect();
+    selected = Math.max(0, Math.min(16, Math.round((event.clientX - box.left - plotPadding) / Math.max(1, box.width - 2 * plotPadding) * 16)));
+    updatePoint(selected, 1 - 2 * (event.clientY - box.top - plotPadding) / Math.max(1, box.height - 2 * plotPadding));
+  };
+  canvas.onpointerdown = (event) => {
+    if (!editable(waveshaperOptions(get())) || event.button !== 0) return;
+    event.preventDefault(); canvas.focus(); drawing = true;
+    canvas.setPointerCapture?.(event.pointerId); pointAt(event);
+  };
+  canvas.onpointermove = (event) => { if (drawing) pointAt(event); };
+  canvas.onpointerup = canvas.onpointercancel = () => { drawing = false; };
+  canvas.onkeydown = (event) => {
+    const options = waveshaperOptions(get());
+    if (!editable(options)) return;
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      selected = Math.max(0, Math.min(16, selected + (event.key === "ArrowRight" ? 1 : -1)));
+      event.preventDefault(); signature = ""; sync();
+      return;
+    }
+    const delta = event.shiftKey ? 0.1 : 0.02;
+    let value = options.points[selected];
+    if (event.key === "ArrowUp") value += delta;
+    else if (event.key === "ArrowDown") value -= delta;
+    else if (event.key === "Home") value = -1;
+    else if (event.key === "End") value = 1;
+    else return;
+    event.preventDefault(); updatePoint(selected, value);
+  };
+  linear.onclick = () => set({ points: [...WAVESHAPER_OPTION_DEFAULTS.points] });
+  const updates = [];
+  const ensureKnobs = () => {
+    if (updates.length) return;
+    for (const [field, caption, format] of WAVESHAPER_OPTION_KNOBS)
+      updates.push(createKnob(
+        [controlKey(field), caption, format, 0, 1, `${label} ${caption.toLowerCase()}`], bank, {
+          register, get: () => waveshaperOptions(get())[field],
+          set: (value) => setNumeric ? setNumeric(field, value) : set({ [field]: value }),
+          reset: () => WAVESHAPER_OPTION_DEFAULTS[field],
+        }));
+  };
+  if (register) ensureKnobs();
+  function sync() {
+    const options = waveshaperOptions(get());
+    for (const [select, value] of [[quality, options.quality], [curve, options.curve], [curveB, options.curve_b]])
+      if (document.activeElement !== select) select.value = value;
+    dc.checked = !!options.dc_block; gain.checked = !!options.auto_gain;
+    const custom = editable(options),
+      staticMix = (options.curve !== "radias" || options.morph >= 1) &&
+        (options.curve_b !== "radias" || options.morph <= 0),
+      visible = custom || staticMix;
+    canvas.hidden = !visible;
+    linear.hidden = !custom;
+    canvas.tabIndex = custom && visible ? 0 : -1;
+    canvas.setAttribute("role", custom && visible ? "slider" : "img");
+    canvas.setAttribute("aria-label", custom ? `${label} custom curve` : `${label} curve preview`);
+    if (custom && visible) {
+      canvas.setAttribute("aria-valuemin", "-1"); canvas.setAttribute("aria-valuemax", "1");
+      canvas.setAttribute("aria-valuenow", String(options.points[selected]));
+      canvas.setAttribute("aria-valuetext", `Point ${selected + 1} of 17, ${options.points[selected].toFixed(2)}`);
+      canvas.setAttribute("aria-description", "Left and right select a point; up and down change it");
+    } else for (const attr of ["aria-valuemin", "aria-valuemax", "aria-valuenow", "aria-valuetext", "aria-description"])
+      canvas.removeAttribute(attr);
+    if (details.open) for (const update of updates) update();
+    if (!details.open || !visible) return;
+    const box = canvas.getBoundingClientRect(),
+      next = JSON.stringify([options.curve, options.curve_b, options.morph, options.knee, options.points, selected, box.width, box.height]);
+    if (signature === next) return;
+    signature = next;
+    const w = Math.max(1, box.width), h = Math.max(1, box.height),
+      dpr = Math.min(globalThis.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+    ctx.strokeStyle = "#39443a"; ctx.lineWidth = 1; ctx.beginPath();
+    ctx.moveTo(plotPadding, h / 2); ctx.lineTo(w - plotPadding, h / 2);
+    ctx.moveTo(w / 2, plotPadding); ctx.lineTo(w / 2, h - plotPadding); ctx.stroke();
+    ctx.strokeStyle = "#c4f486"; ctx.lineWidth = 2; ctx.beginPath();
+    for (let i = 0; i <= 128; i++) {
+      const x = i / 64 - 1,
+        a = waveshaperCurve(options.curve, x, options), b = waveshaperCurve(options.curve_b, x, options),
+        y = custom && !staticMix ? waveshaperCurve("custom", x, options)
+          : a * (1 - options.morph) + b * options.morph;
+      const px = plotPadding + i * (w - 2 * plotPadding) / 128,
+        py = plotPadding + (1 - y) * (h - 2 * plotPadding) / 2;
+      if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+    }
+    ctx.stroke();
+    if (custom) {
+      ctx.fillStyle = "#e6ebe5";
+      options.points.forEach((y, i) => {
+        ctx.beginPath(); ctx.arc(plotPadding + i * (w - 2 * plotPadding) / 16,
+          plotPadding + (1 - y) * (h - 2 * plotPadding) / 2, i === selected ? 4 : 2.5, 0, Math.PI * 2); ctx.fill();
+      });
+    }
+  }
+  details.ontoggle = () => {
+    signature = "";
+    if (details.open) { ensureKnobs(); requestAnimationFrame(sync); }
+  };
+  return { element: details, sync };
 }
 function scheduleDrum(edit) {
   editGeneration++;
@@ -3094,6 +3555,7 @@ let colorDefaults = null,
   colorSignature = "",
   colorRoutesSignature = "",
   nextColorId = 1;
+const colorWaveshaperViews = new Map();
 const COLOR_TYPES = [
   ["distortion", "Distortion"],
   ["reducer", "Rate reducer"],
@@ -3562,6 +4024,9 @@ function colorSchema(kind, slot = null) {
 }
 function colorDestinationSchema(kind) {
   const schema = colorSchema(kind);
+  if (kind === "waveshaper")
+    schema.push(...WAVESHAPER_OPTION_KNOBS.map(([field, label, format]) =>
+      [`waveshaper_${field}`, label, format]));
   const prefix = delayPrefix(kind);
   if (prefix)
     schema.push(
@@ -3686,6 +4151,7 @@ function syncColors() {
     )
   ) {
     colorSignature = signature;
+    colorWaveshaperViews.clear();
     for (const key of controls.keys())
       if (key.startsWith("color:")) {
         controls.delete(key);
@@ -3899,6 +4365,27 @@ function syncColors() {
           },
         );
       }
+      if (slot.kind === "waveshaper") {
+        const current = () => findColor(id)?.settings?.waveshaper_options;
+        const updateOptions = (patch) => {
+          const target = findColor(id);
+          if (!target) return;
+          target.settings.waveshaper_options = { ...waveshaperOptions(current()), ...patch };
+        };
+        const options = buildWaveshaperOptions({
+          label: `${rack.label} ${number} waveshaper`, key: `color:${id}`,
+          get: current, register: true,
+          set: (patch) => { updateOptions(patch); schedulePreset(); options.sync(); },
+          setNumeric: (field, value) => {
+            updateOptions({ [field]: value });
+            controls.get(`color:${id}:waveshaper_${field}`)?.();
+            scheduleParameter(`${rack.prefix || ""}fx${index + 1}_waveshaper_${field}`, value);
+            options.sync();
+          },
+        });
+        card.append(options.element);
+        colorWaveshaperViews.set(id, options);
+      }
       if (slot.kind === "compressor") {
         const meter = document.createElement("div");
         meter.className = "gain-reduction";
@@ -3941,6 +4428,7 @@ function syncColors() {
     const shaper = card.querySelector(".color-waveshaper-type");
     if (shaper && document.activeElement !== shaper)
       shaper.value = slot.settings.waveshaper_type;
+    colorWaveshaperViews.get(slot.id)?.sync();
     for (const [parameter, , values] of IMPORTED_FX_CHOICES[slot.kind] || []) {
       const choice = card.querySelector(`[data-parameter="${parameter}"]`);
       if (choice && document.activeElement !== choice)
@@ -5056,6 +5544,7 @@ function buildEnvs() {
 }
 function syncEnvs() {
   if (!preset?.envs) return;
+  syncFilterEnvelopes();
   const count = preset.env_count || 3;
   $("env-count").textContent = `${count} / 8`;
   $("env-add").disabled = count >= 8;

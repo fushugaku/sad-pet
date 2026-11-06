@@ -12,6 +12,8 @@ const elements = new Map(),
   bindings = new Map(),
   schemas = [],
   changes = [];
+const windowListeners = new Map(), documentListeners = new Map();
+let pointerTarget = null;
 let presetWrites = 0;
 function element() {
   const attrs = new Map(),
@@ -21,6 +23,9 @@ function element() {
   const box = {
     classList: {
       toggle: (name, on) => (on ? classes.add(name) : classes.delete(name)),
+      add: (...names) => names.forEach(name => classes.add(name)),
+      remove: (...names) => names.forEach(name => classes.delete(name)),
+      contains: name => classes.has(name),
     },
     querySelector: () => label,
   };
@@ -31,14 +36,34 @@ function element() {
     dataset: {},
     style: { setProperty() {} },
     append(...nodes) {
-      node.children.push(...nodes);
+      for (const child of nodes) {
+        if (child?.parentElement) child.parentElement.children = child.parentElement.children.filter(n => n !== child);
+        if (child && typeof child === "object") child.parentElement = node;
+        node.children.push(child);
+      }
     },
+    prepend(...nodes) {
+      for (const child of nodes.reverse()) {
+        if (child?.parentElement) child.parentElement.children = child.parentElement.children.filter(n => n !== child);
+        if (child && typeof child === "object") child.parentElement = node;
+        node.children.unshift(child);
+      }
+    },
+    insertBefore(child, target) {
+      if (child.parentElement) child.parentElement.children = child.parentElement.children.filter(n => n !== child);
+      child.parentElement = node;
+      node.children.splice(node.children.indexOf(target), 0, child);
+    },
+    getBoundingClientRect: () => node.rect ?? { left: 0, top: 0, bottom: 100, width: 100 },
     replaceChildren(...nodes) {
-      node.children = nodes;
+      node.children = [];
+      node.append(...nodes);
     },
+    focus() {},
     setAttribute: (k, v) => attrs.set(k, v),
+    removeAttribute: k => attrs.delete(k),
     getAttribute: (k) => attrs.get(k),
-    closest: () => box,
+    closest: selector => selector === ".filter-shaper" && node.className === "filter-shaper" ? node : box,
     querySelector(selector) {
       const key = selector.match(/data-control-key="([^"]+)"/)?.[1];
       if (key) return dials.get(key) ?? null;
@@ -75,6 +100,8 @@ const preset = {
 };
 const context = {
   preset,
+  structuredClone,
+  WAVESHAPER_TYPES: [["drive", "Drive"], ["hard_clip", "Hard Clip"]],
   state: null,
   timbreEditor: null,
   tapSettings: stage => ({ chain: 1, send: 0, bus: 0, ...preset.taps?.[stage] }),
@@ -88,7 +115,8 @@ const context = {
   fillBusMenu: (select, value) => { select.value = String(value); },
   $: get,
   sequenceCatalog: { filter_presets: [{id:"silk",name:"Silk",params:{filter_routing:"serial",filter2_model:"ladder_lp24"}}] },
-  window: { SadLazySelect: { configure(node, value, groups) {
+  window: { addEventListener: (type, fn) => windowListeners.set(type, fn),
+    removeEventListener: type => windowListeners.delete(type), SadLazySelect: { configure(node, value, groups) {
     assert.ok(groups.every(group => Array.isArray(group.choices)), "LazySelect expects choice groups");
     for (const group of groups) for (const choice of group.choices) assert.equal(choice.length, 2);
     node.groups=groups;
@@ -101,6 +129,9 @@ const context = {
   option: (value, label) => ({ value, label }),
   document: {
     createElement: element,
+    addEventListener: (type, fn) => documentListeners.set(type, fn),
+    removeEventListener: type => documentListeners.delete(type),
+    elementFromPoint: () => pointerTarget,
     querySelector: (selector) =>
       dials.get(selector.match(/data-control-key="([^"]+)"/)?.[1]) ?? null,
     querySelectorAll: selector => {
@@ -141,9 +172,10 @@ assert.ok(constants.length > 0 && editor.length > 0);
 const colorTypes = source.slice(source.indexOf("const COLOR_TYPES ="), source.indexOf("// Sections of the effect menus"));
 vm.runInContext(`${colorTypes}\n${constants}\n${editor}`, context);
 context.buildFilters();
-assert.equal(schemas.length, 12, "Filter controls were not registered");
+const filterSchemas = schemas.filter((s) => !/^filter\d+_ws_/.test(s[0]));
+assert.equal(filterSchemas.length, 12, "Filter controls were not registered");
 assert.deepEqual(
-  schemas.map((s) => s[0]).sort(),
+  filterSchemas.map((s) => s[0]).sort(),
   [
     "filter",
     "filter2",
@@ -267,6 +299,46 @@ assert.equal(get("add-filter").disabled, true);
 get("add-filter").onclick();
 assert.equal(preset.filter_slots.length, 16);
 assert.equal(list.children.length, 16);
+// New envelopes become selectable immediately in every filter, including
+// when syncEnvs is called by the add/copy/modulation editor paths.
+context.envCards = [];
+vm.runInContext(source.slice(source.indexOf("function syncEnvs()"), source.indexOf("function drawEnvs()")), context);
+for (let count = 4; count <= 8; count++) {
+  preset.env_count = count;
+  context.syncEnvs();
+  const sources = Array.from({ length: count }, (_, i) => `env${i + 1}`);
+  for (const prefix of ["filter", "filter2"]) {
+    const select = get(`${prefix}-env`);
+    assert.deepEqual(select.children.map(o => o.value), sources);
+    select.onchange({ target: { value: `env${count}` } });
+    assert.equal(preset.params[`${prefix}_env`], `env${count}`);
+    assert.equal(select.value, `env${count}`);
+  }
+  for (const card of list.children)
+    assert.deepEqual(card.querySelector(".added-filter-env").children.map(o => o.value), sources);
+  const select = list.children[0].querySelector(".added-filter-env");
+  select.value = `env${count}`;
+  select.onchange();
+  assert.equal(preset.filter_slots[0].env, `env${count}`);
+}
+// A removed source stays visible without silently changing the saved route.
+preset.env_count = 3;
+context.syncEnvs();
+for (const select of [get("filter-env"), get("filter2-env"), list.children[0].querySelector(".added-filter-env")]) {
+  assert.equal(select.value, "env8");
+  const missing = select.children.find(o => o.value === "env8");
+  assert.equal(missing.disabled, true);
+  assert.equal(missing.label, "ENV 8 · unavailable");
+}
+preset.env_count = 8;
+context.syncEnvs();
+for (const select of [get("filter-env"), get("filter2-env"), list.children[0].querySelector(".added-filter-env")]) {
+  assert.equal(select.value, "env8");
+  assert.equal(select.children.find(o => o.value === "env8").disabled, false);
+}
+preset.env_count = 3;
+preset.params.filter_env = preset.params.filter2_env = preset.filter_slots[0].env = "env2";
+context.syncEnvs();
 // The source envelope appears in every filter only with a 303 module.
 assert.deepEqual(get("filter-env").children.map(o => o.value), ["env1", "env2", "env3"]);
 preset.tb303 = {};
@@ -343,6 +415,76 @@ fxSelect("position").value = "after_grains";
 fxSelect("position").onchange();
 assert.equal(fxSelect("fx-chain").hidden, true);
 assert.equal(fxSelect("fx-slot").hidden, true);
+
+// A stage move swaps the complete payload, including unknown future fields.
+const mainCard = index => get("filters").children.find(card => Number(card.dataset.mainFilter) === index);
+const stage = (card, side) => card.children.find(node => node.dataset.shaper?.endsWith(`:${side}`));
+const press = (node, key) => node.onkeydown({ key, preventDefault() {} });
+const before = stage(mainCard(0), "before"), after = stage(mainCard(0), "after");
+before.querySelector(".filter-shaper-power").onclick();
+const beforeMode = before.querySelector(".filter-shaper-mode");
+beforeMode.value = "hard_clip"; beforeMode.onchange();
+bindings.get("filter1_ws_before_depth").set(.73);
+assert.deepEqual(changes.at(-1), ["filter1_ws_before_depth", .73]);
+const options = before.querySelector(".filter-shaper-body").children[0];
+options.open = true; options.ontoggle();
+bindings.get("filter1_ws_before_knee").set(.36);
+assert.deepEqual(changes.at(-1), ["filter1_ws_before_knee", .36]);
+preset.params.filter_shapers[0].before.future = { keep: true };
+preset.params.filter_shapers[0].before.options.future_option = 17;
+press(before.querySelector(".filter-shaper-grip"), "ArrowRight");
+assert.equal(preset.params.filter_shapers[0].after.mode, "hard_clip");
+assert.equal(preset.params.filter_shapers[0].after.depth, .73);
+assert.equal(preset.params.filter_shapers[0].after.future.keep, true);
+assert.equal(preset.params.filter_shapers[0].after.options.future_option, 17);
+assert.equal(preset.params.filter_shapers[0].before.enabled, false);
+assert.ok(!changes.some(([id]) => id.startsWith("filter_shaper")), "Per-filter shapers use actual host IDs");
+
+// Pointer drop crosses into an added filter; Escape cancels without a write.
+const addedBefore = stage(list.children[0], "before");
+const grip = after.querySelector(".filter-shaper-grip");
+const down = () => grip.onpointerdown({ button: 0, currentTarget: grip, preventDefault() {} });
+down(); pointerTarget = addedBefore;
+windowListeners.get("pointermove")({ clientX: 10, clientY: 10 });
+windowListeners.get("pointerup")({ clientX: 10, clientY: 10 });
+assert.equal(preset.filter_slots[0].shapers.before.mode, "hard_clip");
+assert.equal(preset.filter_slots[0].shapers.before.future.keep, true);
+bindings.get("filter3_ws_before_mix").set(.61);
+assert.deepEqual(changes.at(-1), ["filter3_ws_before_mix", .61]);
+assert.equal(preset.params.filter_shapers[0].after.enabled, false);
+const addedGrip = addedBefore.querySelector(".filter-shaper-grip");
+addedGrip.onpointerdown({ button: 0, currentTarget: addedGrip, preventDefault() {} });
+pointerTarget = before; windowListeners.get("pointermove")({ clientX: 1, clientY: 1 });
+const writesBeforeCancel = presetWrites;
+documentListeners.get("keydown")({ key: "Escape", preventDefault() {}, stopPropagation() {} });
+assert.equal(presetWrites, writesBeforeCancel);
+assert.equal(preset.filter_slots[0].shapers.before.mode, "hard_clip");
+
+// Main filter reorder changes only order, keeping both filters and their WS identities.
+press(mainCard(0).querySelector(".filter-title").children[0], "ArrowRight");
+assert.deepEqual(Array.from(preset.params.filter_order), [1, 0]);
+assert.deepEqual(get("filters").children.map(card => Number(card.dataset.mainFilter)), [1, 0]);
+assert.equal(preset.filter_slots[0].shapers.before.mode, "hard_clip");
+const firstMain = mainCard(1), secondMain = mainCard(0);
+firstMain.rect = { left: 0, top: 0, bottom: 100, width: 100 };
+secondMain.rect = { left: 120, top: 0, bottom: 100, width: 100 };
+const mainGrip = secondMain.querySelector(".filter-title").children[0];
+mainGrip.onpointerdown({ button: 0, currentTarget: mainGrip, preventDefault() {} });
+windowListeners.get("pointermove")({ clientX: 5, clientY: 50 });
+windowListeners.get("pointerup")({ clientX: 5, clientY: 50 });
+assert.deepEqual(Array.from(preset.params.filter_order), [0, 1]);
+mainGrip.onpointerdown({ button: 0, currentTarget: mainGrip, preventDefault() {} });
+windowListeners.get("pointermove")({ clientX: 180, clientY: 50 });
+const writesBeforeFilterCancel = presetWrites;
+documentListeners.get("keydown")({ key: "Escape", preventDefault() {}, stopPropagation() {} });
+assert.deepEqual(get("filters").children.map(card => Number(card.dataset.mainFilter)), [0, 1]);
+assert.equal(presetWrites, writesBeforeFilterCancel);
+
+const movedSlot = preset.filter_slots[0].id;
+context.moveFilter(movedSlot, 1);
+assert.equal(preset.filter_slots[1].shapers.before.mode, "hard_clip");
+bindings.get("filter4_ws_before_mix").set(.42);
+assert.deepEqual(changes.at(-1), ["filter4_ws_before_mix", .42]);
 console.log(
-  "Filter editor: controls, model/Comb, Morph, added filters, FX A/B targets, Last, reorder, rename and removal passed.",
+  "Filter editor: controls, routing, stage transfer and cancellation, filter reorder and FX targets passed.",
 );

@@ -4,7 +4,10 @@ use sad_pet::{
         filter::{FilterBank, cutoff_hz, voice_cutoffs},
     },
     midi::Message,
-    preset::{Destination, Env, EnvSource, FilterRouting, FilterType, Params, Preset},
+    preset::{
+        Destination, Env, EnvSource, FilterRouting, FilterSlot, FilterType, MODULATORS, Params,
+        Preset,
+    },
 };
 use std::sync::Arc;
 
@@ -127,6 +130,52 @@ fn independent_envelope_sources_signed_depth_and_clamping() {
     p.filter_env_depth = 1.0;
     p.filter2_env_depth = -1.0;
     assert_eq!(voice_cutoffs(&p, 60.0, [1.0; 3]), [1.0, 0.0]);
+}
+
+#[test]
+fn every_filter_envelope_source_drives_its_own_value_and_roundtrips() {
+    let sources = [
+        EnvSource::Env1,
+        EnvSource::Env2,
+        EnvSource::Env3,
+        EnvSource::Env4,
+        EnvSource::Env5,
+        EnvSource::Env6,
+        EnvSource::Env7,
+        EnvSource::Env8,
+        EnvSource::Tb303,
+    ];
+    let values: [f32; MODULATORS + 1] = std::array::from_fn(|i| (i + 1) as f32 * 0.1);
+    for (index, source) in sources.into_iter().enumerate() {
+        let mut preset = Preset::default();
+        preset.env_count = MODULATORS as u8;
+        preset.params.filter = 0.2;
+        preset.params.filter2 = 0.7;
+        preset.params.filter_env = source;
+        preset.params.filter2_env = source;
+        preset.params.filter_env_depth = 0.3;
+        preset.params.filter2_env_depth = -0.4;
+        preset.filter_slots.push(FilterSlot {
+            id: 1,
+            env: source,
+            ..FilterSlot::default()
+        });
+        let serialized = serde_json::to_value(&preset).unwrap();
+        let name = if index == MODULATORS {
+            "tb303".into()
+        } else {
+            format!("env{}", index + 1)
+        };
+        assert_eq!(serialized["params"]["filter_env"], name);
+        let restored: Preset = serde_json::from_value(serialized).unwrap();
+        assert_eq!(restored.params.filter_env, source);
+        assert_eq!(restored.params.filter2_env, source);
+        assert_eq!(restored.filter_slots[0].env, source);
+        assert_eq!(restored.filter_slots[0].env.value(&values), values[index]);
+        let cutoffs = voice_cutoffs(&restored.params, 60.0, values);
+        assert!((cutoffs[0] - (0.2 + values[index] * 0.3)).abs() < 1e-6);
+        assert!((cutoffs[1] - (0.7 - values[index] * 0.4)).abs() < 1e-6);
+    }
 }
 
 #[test]

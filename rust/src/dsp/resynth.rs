@@ -22,7 +22,7 @@ use radias_synth_domain::{
     vocoder::BandEnvelopes,
     waveform::WaveformTable,
 };
-use std::{f32::consts::PI, ops::Range};
+use std::{f32::consts::PI, ops::Range, sync::Arc};
 
 /// Sixteen analysis band-pass filters of one input, stored by field so each
 /// band is one vector lane. Every lane runs the per-band filter arithmetic
@@ -634,8 +634,8 @@ pub struct Resynth {
     needed: [bool; MAX_OSCILLATORS],
     external_taps: [bool; 2],
     layers: [Layer; MAX_OSCILLATORS],
-    tables: Box<radias_oscillator::Tables>,
-    waveform: Box<WaveformTable>,
+    tables: Arc<radias_oscillator::Tables>,
+    waveform: Arc<WaveformTable>,
     decimator: Decimator,
     settings: Settings,
     configured: bool,
@@ -654,9 +654,41 @@ pub struct Resynth {
     /// hold zero.
     taps_clear: bool,
     graph: Box<GraphState>,
+    filter_instance: Instance,
+    voice_mask: u8,
+    selected: [f32; MAX_OSCILLATORS],
+    selection_ready: bool,
 }
 impl Resynth {
     pub fn new(sr: u32) -> Self {
+        Self::with_tables(
+            sr,
+            Arc::new(radias_oscillator::Tables::new()),
+            Arc::new(radias_oscillator::waveform_table()),
+        )
+    }
+    /// A fresh carrier/analyzer state sharing only immutable lookup tables.
+    pub(super) fn sibling(&self) -> Self {
+        Self::with_tables(
+            self.sample_rate as u32,
+            self.tables.clone(),
+            self.waveform.clone(),
+        )
+    }
+    pub(super) fn interactions_active(&self) -> bool {
+        self.graph.active
+    }
+    pub(super) fn set_voice_mask(&mut self, mask: u8) {
+        self.voice_mask = mask;
+    }
+    pub(super) fn set_filter_instance(&mut self, instance: Instance) {
+        self.filter_instance = instance;
+    }
+    fn with_tables(
+        sr: u32,
+        tables: Arc<radias_oscillator::Tables>,
+        waveform: Arc<WaveformTable>,
+    ) -> Self {
         let frequencies = std::array::from_fn(|i| {
             60.0 * ((12000.0_f32.min(sr as f32 * 0.4) / 60.0).powf(i as f32 / (BANDS - 1) as f32))
         });
@@ -688,8 +720,8 @@ impl Resynth {
             needed: [false; MAX_OSCILLATORS],
             external_taps: [false; 2],
             layers: std::array::from_fn(|_| Layer::default()),
-            tables: Box::new(radias_oscillator::Tables::new()),
-            waveform: Box::new(radias_oscillator::waveform_table()),
+            tables,
+            waveform,
             decimator: Decimator::new(),
             settings: Settings::default(),
             configured: false,
@@ -705,7 +737,25 @@ impl Resynth {
             control_epoch: 0,
             taps_clear: false,
             graph: Box::default(),
+            filter_instance: Instance::Oscillator,
+            voice_mask: 15,
+            selected: [1.0; MAX_OSCILLATORS],
+            selection_ready: true,
         }
+    }
+    /// Start a new pooled voice without preserving the previous owner's
+    /// oscillator/folder histories or settings slew. No heap allocation.
+    pub(super) fn reset_sequence_voice(&mut self) {
+        self.clear();
+        for layer in &mut self.layers {
+            *layer = Layer::default();
+        }
+        *self.graph = GraphState::default();
+        self.configured = false;
+        self.wet = 0.0;
+        self.frame = 0;
+        self.taps_clear = false;
+        self.selection_ready = false;
     }
     pub fn clear(&mut self) {
         self.graph
@@ -1198,6 +1248,16 @@ impl Resynth {
         } else {
             self.played = self.gains;
         }
+        let selection_step = 1.0 / (self.sample_rate * 0.005).max(1.0);
+        for (i, selected) in self.selected.iter_mut().enumerate() {
+            let target = f32::from(self.voice_mask & (1 << i) != 0);
+            if self.selection_ready {
+                *selected += (target - *selected).clamp(-selection_step, selection_step);
+            } else {
+                *selected = target;
+            }
+        }
+        self.selection_ready = true;
         for layer in &mut self.layers {
             layer.gain += (layer.target_gain - layer.gain).clamp(-1.0 / 128.0, 1.0 / 128.0);
         }
@@ -1592,7 +1652,8 @@ impl Resynth {
                         &mut layer_wet
                     };
                     for c in 0..2 {
-                        sum[c] += stereo[c] * layer.gain * layer.pan[c] * 0.6;
+                        sum[c] +=
+                            stereo[c] * layer.gain * layer.pan[c] * 0.6 * self.selected[layer_id];
                     }
                 }
                 if filters != 0 {
@@ -1605,7 +1666,7 @@ impl Resynth {
                         banks,
                         filters,
                         layer_wet,
-                        Instance::Oscillator,
+                        self.filter_instance,
                         route
                             .as_mut()
                             .map(|(taps, gain)| (&mut **taps, *gain * send_scale)),

@@ -1,0 +1,77 @@
+[
+  {
+    "mode": 1,
+    "file": "XL3-before-SADPET-mode-01.syx",
+    "sha256": "8575b51db10ee894c90118a5df9cb0e2c18dbc4a5899262702bdda971cfbb795"
+  },
+  {
+    "mode": 2,
+    "file": "XL3-before-SADPET-mode-02.syx",
+    "sha256": "224064f5bebe0526b3f2caa7efa70b0e7e0f04d51203c46923da553c19a450d9"
+  },
+  {
+    "mode": 3,
+    "file": "XL3-before-SADPET-mode-03.syx",
+    "sha256": "2acdc9c33659c882f78d6ac958b1db82967d520600e5b3f283d769ca8803cd7d"
+  },
+  {
+    "mode": 4,
+    "file": "XL3-before-SADPET-mode-04.syx",
+    "sha256": "3dbc17b9cd29c919bd1ca9a6a7d6e74274634f68eec614fb1e46d0342295be00"
+  },
+  {
+    "mode": 5,
+    "file": "XL3-before-SADPET-mode-05.syx",
+    "sha256": "d1a3d5da4aa51ddd3b938a99e48dadab7f55ac9049df46eceedf8187fe375785"
+  },
+  {
+    "mode": 6,
+    "file": "XL3-before-SADPET-mode-06.syx",
+    "sha256": "0d2250f399a683cf8cb324202a84ec50041d26c7160c758c5966877a0ed15f2a"
+  },
+  {
+    "mode": 7,
+    "file": "XL3-before-SADPET-mode-07.syx",
+    "sha256": "f4e47186673ca9901de43c3f77b1e4ab739c8d04767d067b6482f70d26d29dba"
+  },
+  {
+    "mode": 8,
+    "file": "XL3-before-SADPET-mode-08.syx",
+    "sha256": "41f2bc18e364c157206a79b7400cdecbc4e2a7257ec3a8f6e27b252c69b54799"
+  },
+  {
+    "mode": 9,
+    "file": "XL3-before-SADPET-mode-09.syx",
+    "sha256": "1cba66111bffcdeddc8ce9471e8621e7b015cd7ed46dc286edeeb47db5c90138"
+  },
+  {
+    "mode": 10,
+    "file": "XL3-before-SADPET-mode-10.syx",
+    "sha256": "18f12043a58428bc5669cb19bf32f16adf07afb30b4c93df89db85f83e1bbf2f"
+  },
+  {
+    "mode": 11,
+    "file": "XL3-before-SADPET-mode-11.syx",
+    "sha256": "5b29e603d2458eb4ea6852054b2e458e18676adc6e846e9e4fd7f61d247667b0"
+  },
+  {
+    "mode": 12,
+    "file": "XL3-before-SADPET-mode-12.syx",
+    "sha256": "32657ca31647ef39d254a4568f26a96fce068335353529107058609d7f947e7e"
+  },
+  {
+    "mode": 13,
+    "file": "XL3-before-SADPET-mode-13.syx",
+    "sha256": "2c2ddda6d826b8ae599e3354d8b0f8344037cbd063c614dd44ff2b5cc7f6236a"
+  },
+  {
+    "mode": 14,
+    "file": "XL3-before-SADPET-mode-14.syx",
+    "sha256": "084fa8743d96ac02c800caefe6d01417ea75a0ca06ac20f1bfd28e8c3c5367c4"
+  },
+  {
+    "mode": 15,
+    "file": "XL3-before-SADPET-mode-15.syx",
+    "sha256": "6dd3994d6e446ccab6e89268594d095c01ba36a3fce9eef42560c952770e994f"
+  }
+]

@@ -1,0 +1,42 @@
+{
+  "controller": [
+    {
+      "height": 44,
+      "label": "Control surface",
+      "left": 36,
+      "right": 372
+    },
+    {
+      "height": 44,
+      "label": "Controller mapping",
+      "left": 36,
+      "right": 290
+    },
+    {
+      "height": 44,
+      "label": "Refresh",
+      "left": 298,
+      "right": 372
+    },
+    {
+      "height": 44,
+      "label": "Previous mapping page",
+      "left": 36,
+      "right": 80
+    },
+    {
+      "height": 44,
+      "label": "MIDI mapping page",
+      "left": 88,
+      "right": 320
+    },
+    {
+      "height": 44,
+      "label": "Next mapping page",
+      "left": 328,
+      "right": 372
+    }
+  ],
+  "scrollWidth": 388,
+  "width": 388
+}

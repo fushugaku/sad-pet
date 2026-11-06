@@ -350,11 +350,12 @@ microphone selection, MIDI-device selection and Quit controls are hidden here.
 
 Enable **Neuropolis**, then **+ Add track**. The destination selects **Main track
 pitch**, **OSC 1–4 pitch offset**, **Notes → grains + ENV**, or a named realtime parameter.
-Main pitch uses **Root note** as zero transposition. Its **Pitch → OSC 1–4**
-checkboxes also transpose the selected oscillators. A separate oscillator track
-adds its own **−24…+24 st** offset to that main pitch, with its own clock, length,
-gate and slide. The oscillator's saved Transpose and Fine settings remain additive.
-Unchecked oscillators keep their own tuning and oscillator-track offsets.
+Each **Main pitch** track owns an independent voice. **Root note** is its zero
+transposition; choose the oscillators it plays and whether it plays **Granular**.
+ENV and all oscillators start enabled. ENV off holds a continuous voice.
+Released notes keep their pitch and routing while subsequent steps play.
+A separate oscillator pitch-offset track modulates that source globally, with
+its own clock, length, gate and slide. Saved Transpose and Fine remain additive.
 Parameter tracks edit signed values: Relative adds CV × Depth to the saved knob;
 Absolute blends the full parameter range according to Depth. Source FX for files
 is prepared ahead of playback and is not a realtime destination.
@@ -377,7 +378,7 @@ in step with the other tracks. A track added while playing waits silently for
 its place in the same way.
 
 There is no fixed track-count limit. The list pages its readouts in groups of 64;
-all tracks continue processing. Note tracks share SAD PET's existing eight-note
+all tracks continue processing. Main pitch, Notes and MIDI share SAD PET's 32-note
 audio polyphony. DAW sync follows host tempo and starts each pattern at the first
 96 PPQN grid tick after transport starts or seeks; preset changes while the host
 plays keep the patterns running. Stopping the sequencer releases

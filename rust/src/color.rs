@@ -41,22 +41,30 @@ impl WaveshaperMode {
 }
 
 // A single registry keeps persisted destinations, control keys and telemetry aligned.
+macro_rules! color_parameter_key {
+    ($field:ident) => {
+        stringify!($field)
+    };
+    (waveshaper_options.$field:ident) => {
+        concat!("waveshaper_", stringify!($field))
+    };
+}
 macro_rules! color_parameters {
-    ($($variant:ident => $field:ident),* $(,)?) => {
+    ($($variant:ident => $field:ident $(.$nested:ident)?),* $(,)?) => {
         #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
         #[serde(rename_all = "snake_case")]
         pub enum ColorParameter { Mix, $($variant),* }
         impl ColorParameter {
             pub const ALL: &'static [Self] = &[Self::Mix, $(Self::$variant),*];
             pub fn key(self) -> &'static str {
-                match self { Self::Mix => "mix", $(Self::$variant => stringify!($field)),* }
+                match self { Self::Mix => "mix", $(Self::$variant => color_parameter_key!($field $(.$nested)?)),* }
             }
         }
         impl ColorSlot {
             pub fn parameter_mut(&mut self, parameter: ColorParameter) -> &mut f32 {
                 match parameter {
                     ColorParameter::Mix => &mut self.mix,
-                    $(ColorParameter::$variant => &mut self.settings.$field),*
+                    $(ColorParameter::$variant => &mut self.settings.$field $(.$nested)?),*
                 }
             }
         }
@@ -174,6 +182,18 @@ color_parameters! {
     MoozP9 => mooz_p9,
     LcrConverge => lcr_converge,
     LcrReverse => lcr_reverse,
+    WaveshaperInput => waveshaper_options.input,
+    WaveshaperOutput => waveshaper_options.output,
+    WaveshaperKnee => waveshaper_options.knee,
+    WaveshaperBias => waveshaper_options.bias,
+    WaveshaperPreTone => waveshaper_options.pre_tone,
+    WaveshaperPostTone => waveshaper_options.post_tone,
+    WaveshaperBass => waveshaper_options.bass,
+    WaveshaperBassFrequency => waveshaper_options.bass_frequency,
+    WaveshaperEnvelope => waveshaper_options.envelope,
+    WaveshaperAttack => waveshaper_options.attack,
+    WaveshaperRelease => waveshaper_options.release,
+    WaveshaperMorph => waveshaper_options.morph,
 }
 
 impl ColorParameter {
@@ -193,6 +213,21 @@ impl ColorParameter {
     ];
     /// Controls added after the mooz block, whose host IDs append last.
     pub const LATER: [Self; 2] = [Self::LcrConverge, Self::LcrReverse];
+    /// Append as a separate host block, after every released parameter index.
+    pub const WAVESHAPER: [Self; 12] = [
+        Self::WaveshaperInput,
+        Self::WaveshaperOutput,
+        Self::WaveshaperKnee,
+        Self::WaveshaperBias,
+        Self::WaveshaperPreTone,
+        Self::WaveshaperPostTone,
+        Self::WaveshaperBass,
+        Self::WaveshaperBassFrequency,
+        Self::WaveshaperEnvelope,
+        Self::WaveshaperAttack,
+        Self::WaveshaperRelease,
+        Self::WaveshaperMorph,
+    ];
     /// Part of the released 0.8 host layout.
     pub fn is_legacy(self) -> bool {
         (self as usize) < Self::LEGACY_COUNT
@@ -278,6 +313,7 @@ pub struct ColorSettings {
     pub compressor_makeup: f32,
     pub waveshaper_type: WaveshaperMode,
     pub waveshaper_depth: f32,
+    pub waveshaper_options: crate::waveshaper::Options,
     pub super_echo_dirty: f32,
     pub super_echo_orbit: f32,
     pub super_echo_reverb: f32,
@@ -400,6 +436,7 @@ impl Default for ColorSettings {
             compressor_makeup: 0.0,
             waveshaper_type: WaveshaperMode::Drive,
             waveshaper_depth: 64.0 / 127.0,
+            waveshaper_options: crate::waveshaper::Options::default(),
             super_echo_dirty: 0.0,
             super_echo_orbit: 0.2,
             super_echo_reverb: 0.0,
@@ -664,7 +701,22 @@ impl ColorSlot {
                 P::CompressorMakeup,
                 P::Mix,
             ],
-            SaturatorType::Waveshaper => &[P::WaveshaperDepth, P::Mix],
+            SaturatorType::Waveshaper => &[
+                P::WaveshaperDepth,
+                P::WaveshaperInput,
+                P::WaveshaperOutput,
+                P::WaveshaperKnee,
+                P::WaveshaperBias,
+                P::WaveshaperPreTone,
+                P::WaveshaperPostTone,
+                P::WaveshaperBass,
+                P::WaveshaperBassFrequency,
+                P::WaveshaperEnvelope,
+                P::WaveshaperAttack,
+                P::WaveshaperRelease,
+                P::WaveshaperMorph,
+                P::Mix,
+            ],
             SaturatorType::SuperEcho => &[
                 P::SuperEchoDirty,
                 P::SuperEchoOrbit,
@@ -845,6 +897,7 @@ impl ColorSlot {
         slot
     }
     pub fn sanitize(&mut self) {
+        self.settings.waveshaper_options = self.settings.waveshaper_options.sanitize();
         let mut defaults = Self::default();
         for &parameter in ColorParameter::ALL {
             let fallback = *defaults.parameter_mut(parameter);

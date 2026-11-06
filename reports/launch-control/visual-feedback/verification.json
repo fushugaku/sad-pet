@@ -1,0 +1,89 @@
+{
+  "timestamp": "2026-11-02T22:40:00.328024+00:00",
+  "commit": "8d85a82858ef079ffd316be288ff7b13aefa6bb4",
+  "environment": {
+    "app": "SAD PET browser WASM",
+    "qa_url": "http://127.0.0.1:53306/verify-xl3-visuals.html",
+    "midi": "Virtual Launch Control XL 3 DAW ports via QA page, no physical-device claim",
+    "runtime_version": "50f4c876e13c",
+    "wasm_baseline_commit": "81cd96261dcdfddfd8fef22eae00ed9ae86bd9cf"
+  },
+  "reproduced_before": {
+    "focused_sustain_gui": 0.733,
+    "model_sustain": 0.713,
+    "focus_retained": true,
+    "oled": "Parameter overlay disappeared after 100 ms and fell back to bank header"
+  },
+  "passed_browser_cases": [
+    "Focused ENV 2 sustain updates .733 -> .713 without changing browser focus",
+    "Five more encoder movements update focused Sustain .713 -> .613",
+    "Empty unfinished Tempo number draft remains empty while MIDI changes Sustain to .593",
+    "Sustain .573 still displayed after five seconds idle",
+    "Linked Control 1 focused range updates to .553 while controlling source Granular 1",
+    "Next physical-control simulation changes stationary OLED from Sustain .533 to Attack .689",
+    "No browser console warnings or errors"
+  ],
+  "passed_node_checks": [
+    "test-xl3-feedback.mjs",
+    "test-controls-ui.mjs",
+    "test-midi-targets.mjs",
+    "test-midi-learn-ui.mjs",
+    "test-sequencer-ui.mjs",
+    "test-modulation-ui.mjs",
+    "test-mixer-ui.mjs",
+    "test-taps-ui.mjs",
+    "test-lfo-ui.mjs"
+  ],
+  "screenshot": "sustain-held.jpg",
+  "deployment": {
+    "status": "published",
+    "completed_at": "2026-11-02T23:06:28.059252+00:00",
+    "url": "https://fushugaku.github.io/sad-pet/",
+    "version": "50f4c876e13c",
+    "all_10_assets_match_commit": true,
+    "ci_url": "https://github.com/fushugaku/sad-pet/actions/runs/41539083421"
+  },
+  "mobile": {
+    "width_css_px": 389,
+    "content_width_css_px": 389,
+    "focused_sustain": 0.713,
+    "next_control_attack": 0.669,
+    "focus_still_sustain": true,
+    "mapping_tracks": 6,
+    "track_selector_bounds": [
+      87.99,
+      321.56
+    ],
+    "visual_check": "CUA screenshot inspected at 389 CSS px; see conversation, desktop proof saved separately"
+  },
+  "github_actions_url": "https://github.com/fushugaku/sad-pet/actions/runs/41539083421",
+  "local_user_url_check": {
+    "url": "http://127.0.0.1:53305/verify-xl3-auto-learn.html",
+    "focus": "ENV 2 sustain",
+    "values": [
+      0.733,
+      0.753,
+      0.733
+    ],
+    "oled_retained_after_idle": true,
+    "console_errors": [],
+    "test_mapping_removed": true,
+    "original_bank_restored": "Page 1 / Track 1, 1 assignment",
+    "screenshot": "local-focused-range.jpg"
+  },
+  "public_browser_check": {
+    "version": "50f4c876e13c",
+    "state_loaded": true,
+    "sustain": 0.35,
+    "track_selector_present": true,
+    "audio_status": "Click Play or a key to enable audio",
+    "console_errors": []
+  },
+  "cleanup": {
+    "temporary_qa_tabs_closed": true,
+    "qa_server_53306_stopped": true,
+    "user_server_53305_preserved": true,
+    "native_read_only_monitor_closed": true,
+    "native_user_app_preserved": true
+  }
+}

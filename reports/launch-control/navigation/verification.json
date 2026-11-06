@@ -1,0 +1,95 @@
+{
+  "timestamp": "2026-11-03T09:48:50.369178+00:00",
+  "baseline_commit": "4bfe108",
+  "hardware": "Browser QA uses virtual LCXL3 DAW ports; native user controller/app left unchanged",
+  "browser": {
+    "before_unmapped": "before-unmapped.json",
+    "before_mapped_idle": "before-mapped-idle.json",
+    "before_mapped_audio_running": "before-mapped-playing.json",
+    "after_mapped_audio_running": "after-mapped-playing.json",
+    "mappings": 14,
+    "audio_running": true,
+    "output_muted": true,
+    "offscreen_control": {
+      "selected": "Master",
+      "edited_source": "Granular 1",
+      "parameter": "Dry / wet",
+      "before": 1,
+      "after": 0.98,
+      "visible_on_return": true
+    },
+    "mapping_pages": "Page 2 empty, Page 1 restores 14 assignments",
+    "console_errors": [],
+    "screenshot": "after-navigation.jpg"
+  },
+  "regressions": {
+    "mount_400_controls": {
+      "before_target_resolutions": 80200,
+      "after_target_resolutions": 400
+    },
+    "read_only_feedback": {
+      "before_state_stamp_after_35_reads": 36,
+      "initial_stamp": 1,
+      "after_state_stamp": 1,
+      "writes_still_increment_stamp": true
+    }
+  },
+  "passed_checks": [
+    "test-midi-learn-ui.mjs",
+    "test-realtime.mjs",
+    "test.mjs",
+    "test-neuropolis.mjs",
+    "test-xl3-feedback.mjs",
+    "test-midi-targets.mjs",
+    "test-controls-ui.mjs",
+    "node --check",
+    "git diff --check"
+  ],
+  "commit": "4631fad14e6a579ef41a9c7ebd8d388375ec6381",
+  "local": {
+    "url": "http://127.0.0.1:53305/",
+    "qa_url": "http://127.0.0.1:53305/verify-xl3-auto-learn.html",
+    "updated": [
+      "midi.js",
+      "worklet.mjs"
+    ],
+    "cache_version": "b55def49d128",
+    "existing_backend_and_wasm_preserved": true,
+    "browser_verified": true,
+    "existing_assignment_count": 1,
+    "console_errors": [],
+    "server_started_for_verification": true
+  },
+  "mobile": {
+    "width_css_px": 389,
+    "content_width_css_px": 389,
+    "midi_badges": 14,
+    "selected": "Granular 1",
+    "master_navigation_passed": true,
+    "console_errors": [],
+    "screenshot": "mobile-navigation.jpg"
+  },
+  "ci_url": "https://github.com/fushugaku/sad-pet/actions/runs/41614116222",
+  "cleanup": {
+    "benchmark_server_53307_stopped": true,
+    "benchmark_tabs_closed": true,
+    "mobile_viewport_reset": true,
+    "local_server_53305_left_available": true,
+    "native_user_app_unchanged": true
+  },
+  "deployment": {
+    "status": "published",
+    "url": "https://fushugaku.github.io/sad-pet/",
+    "version": "87a30de193ab",
+    "all_5_assets_match_commit": true,
+    "ci_url": "https://github.com/fushugaku/sad-pet/actions/runs/41614116222",
+    "verified_at": "2026-11-03T10:14:27.483108+00:00"
+  },
+  "public_browser_check": {
+    "version": "87a30de193ab",
+    "instrument": "303 Bass 1",
+    "master_and_return_navigation_passed": true,
+    "console_errors": [],
+    "state_loaded": true
+  }
+}

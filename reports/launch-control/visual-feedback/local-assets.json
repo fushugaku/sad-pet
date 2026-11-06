@@ -1,0 +1,25 @@
+{
+  "version": "50f4c876e13c",
+  "commit": "8d85a82858ef079ffd316be288ff7b13aefa6bb4",
+  "assets": {
+    "app.js": "06d458f2e3ca4b7127c0e4ebfacf19e89aeabbf3b4401a95b8aad9ad71452964",
+    "control.js": "29d2d658125fdaa7623416c491d816b20ee6d0cf5476ae6be8cbc1efc4150d50",
+    "midi-targets.js": "de2ea844b99915f7834e96b91cde2d887f27d21830787b4308dfd1fb937dd0dd",
+    "modulation.js": "7011d7a7851ea9f79d5246329c12d9ef9c41b7c6629530b1553cc81e20316c9c",
+    "panels.js": "771e46dcc891885aadd261ba3c981b8bec80fcfa94159076178a9dd8f27a5d24",
+    "rack.js": "873e4d71f6bbb3603510328938421caee0a472fbe1c82eb236cfa7758e21de35",
+    "sequence.js": "38133f4c79084b17af551fc6b415c89c6b83afbadc8f5ad56b6b22295e5b398b",
+    "midi.js": "258648c02d4af452699f94dddc4a2f2d8777bcac9915650053cebe5c9f6b35cb",
+    "controller.js": "9e2eea192e6e819b6a04d664b6cfac039d9f7661117d0bdc0b9a32578c9fe954",
+    "style.css": "8e295f1016097413502167c46c9c1c915c899d6e4ab2591fdb5b8698ad491bd7",
+    "xl3-feedback.mjs": "5df732a719bf28c98c4c005b87767eb28676c1134364be6ad1235bdafcc38f31",
+    "midi-inputs.mjs": "d34e9e89651da970f310d0d9c88a06e92a9d39813b3ebb4deb13382316bff2d5",
+    "index.html": "e916f5846c213c2e41f41f969d210d9881229507aee6e728091f4ea8d66fc3c0",
+    "verify-xl3-auto-learn.html": "880d1e226752acef93d647f511aac16cfa7a085c2f860ba222927b4f7c04bf3d"
+  },
+  "backend": "Existing local backend/core/worklet/WASM files preserved",
+  "urls": [
+    "http://127.0.0.1:53305/",
+    "http://127.0.0.1:53305/verify-xl3-auto-learn.html"
+  ]
+}

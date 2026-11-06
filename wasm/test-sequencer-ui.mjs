@@ -167,6 +167,9 @@ const track = {
   gate_output: false,
   root_note: 60,
   pitch_oscillators: [false, false, false, false],
+  oscillator_mask: 0x1ffffff,
+  granular: true,
+  env_gate: true,
   config: Array(43).fill(0),
   steps: Array.from({ length: 16 }, () => ({ ...step })),
 };
@@ -351,24 +354,85 @@ assert.equal(
   false,
   "Slide button read an old snapshot",
 );
-for (let i = 0; i < 4; i++) {
-  const input = control(`Main pitch affects OSC ${i + 1}`);
-  input.checked = i % 2 === 0;
-  input.onchange();
-}
-assert.deepEqual(ui.track().pitch_oscillators, [true, false, true, false]);
-const envGate = control("Track gate env");
+const resynth1 = control("Main pitch affects Resynth OSC 1");
+assert.equal(resynth1.checked, true, "MainPitch routing defaults on");
+resynth1.checked = false;
+resynth1.onchange();
+const resynth3 = control("Main pitch affects Resynth OSC 3");
+resynth3.checked = false;
+resynth3.onchange();
+assert.equal(ui.track().oscillator_mask & (1 << 16), 0);
+assert.equal(ui.track().oscillator_mask & (1 << 18), 0);
+assert.deepEqual(ui.track().pitch_oscillators, [false, false, false, false]);
+const granular = control("Granular output");
+assert.equal(granular.checked, true);
+granular.checked = false;
+granular.onchange();
+assert.equal(ui.track().granular, false);
+assert.deepEqual({ ...edits.at(-1) }, { track: 1, stage: null, field: 57, value: 0 });
+const envGate = control("Gate ENV");
 assert.equal(envGate.type, "checkbox");
-envGate.value = "on";
-envGate.checked = true;
-envGate.oninput();
+assert.equal(envGate.checked, true, "ENV gating defaults on");
+envGate.checked = false;
+envGate.onchange();
 preset = structuredClone(preset);
-assert.equal(ui.track().env_gate, true);
-assert.equal(ui.configValue(ui.track(), 53), true);
-assert.deepEqual({ ...edits.at(-1) }, { track: 1, stage: null, field: 53, value: 1 });
+assert.equal(ui.track().env_gate, false);
+assert.equal(ui.configValue(ui.track(), 53), false);
+assert.deepEqual({ ...edits.at(-1) }, { track: 1, stage: null, field: 53, value: 0 });
 assert.equal(structures, 0, "A scalar gesture rebuilt the sequencer");
-assert.ok(edits.some((e) => e.field === 49 && e.stage === null));
+assert.ok(edits.some((e) => e.field === 76 && e.stage === null));
+assert.ok(edits.some((e) => e.field === 57 && e.stage === null));
 assert.ok(edits.some((e) => e.field === 9 && e.stage === 0 && e.value === 27));
+
+// The routing panel lists only present sources while preserving each bank's
+// stable oscillator bit, even when Rack slots are ordered sparsely.
+preset.oscillators = {
+  order: [5, 1],
+  slots: Array.from({ length: 8 }, (_, i) => ({ id: [1, 5].includes(i) ? `slot${i}` : "" })),
+};
+preset.synth = { count: 1 };
+preset.wavetable = { count: 3 };
+preset.resynth = { count: 2 };
+preset.tb303 = { count: 2 };
+ui.buildEditor();
+assert.equal(control("Main pitch affects Rack OSC 6").dataset.config, 65);
+assert.equal(control("Main pitch affects Rack OSC 2").dataset.config, 61);
+assert.equal(editor.all().some((e) => e.getAttribute("aria-label") === "Main pitch affects Rack OSC 1"), false);
+assert.equal(control("Main pitch affects Synth OSC 1").dataset.config, 68);
+assert.equal(editor.all().some((e) => e.getAttribute("aria-label") === "Main pitch affects Synth OSC 2"), false);
+assert.equal(control("Main pitch affects Wavetable C").dataset.config, 74);
+assert.equal(editor.all().some((e) => e.getAttribute("aria-label") === "Main pitch affects Wavetable D"), false);
+assert.equal(control("Main pitch affects Resynth OSC 2").dataset.config, 77);
+assert.equal(editor.all().some((e) => e.getAttribute("aria-label") === "Main pitch affects Resynth OSC 3"), false);
+assert.equal(control("Main pitch affects 303 VCO").dataset.config, 84);
+assert.equal(control("Main pitch affects 303 RADIAS OSC 2").dataset.config, 81);
+assert.equal(editor.all().some((e) => e.getAttribute("aria-label") === "Main pitch affects 303 RADIAS OSC 3"), false);
+const rack6 = control("Main pitch affects Rack OSC 6");
+rack6.checked = false;
+rack6.onchange();
+assert.equal(ui.track().oscillator_mask & (1 << 5), 0, "Rack slot routing uses its stable slot bit");
+preset.oscillators = undefined;
+delete preset.synth;
+delete preset.wavetable;
+delete preset.resynth;
+delete preset.tb303;
+ui.buildEditor();
+
+// Older source snapshots without a count retain their full four-lane banks.
+preset.synth = {};
+preset.resynth = {};
+preset.wavetable = {};
+preset.tb303 = {};
+ui.buildEditor();
+assert.equal(control("Main pitch affects Synth OSC 4").dataset.config, 71);
+assert.equal(control("Main pitch affects Resynth OSC 4").dataset.config, 79);
+assert.equal(control("Main pitch affects Wavetable B").dataset.config, 73);
+assert.equal(control("Main pitch affects 303 RADIAS OSC 4").dataset.config, 83);
+delete preset.synth;
+delete preset.resynth;
+delete preset.wavetable;
+delete preset.tb303;
+ui.buildEditor();
 
 const name = control("Track name");
 name.value = "Current main";
@@ -522,8 +586,8 @@ assert.equal(ui.pitchText(ui.track(), 48), "-12 st");
 assert.equal(ui.notesName(), "Notes → 303 + RADIAS");
 ui.track().target = { kind: "main_pitch" };
 ui.buildEditor();
-assert.equal(control("Track destination").textContent, "303 pattern pitch");
-assert.equal(ui.targetName(ui.track()), "303 pattern pitch");
+assert.equal(control("Track destination").textContent, "Main pitch");
+assert.equal(ui.targetName(ui.track()), "Main pitch");
 delete preset.tb303;
 ui.track().target = { kind: "oscillator", index: 1 };
 delete preset.synth;

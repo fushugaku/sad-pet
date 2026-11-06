@@ -541,6 +541,9 @@ struct Voice {
     last_frame: u64,
     pairs: [interaction::Pair; 2],
     graph: interaction::Graph,
+    /// Routing a note away from an audible layer must not disable its FM tap.
+    selected: [f32; OSCILLATORS],
+    selection_ready: bool,
 }
 impl Default for Voice {
     fn default() -> Self {
@@ -554,6 +557,8 @@ impl Default for Voice {
             last_frame: 0,
             pairs: [interaction::Pair::default(); 2],
             graph: interaction::Graph::default(),
+            selected: [1.0; OSCILLATORS],
+            selection_ready: false,
         }
     }
 }
@@ -857,12 +862,29 @@ impl Runtime {
         lfos: &[f32; crate::preset::MODULATORS],
         external: Option<([super::interaction::Input; OSCILLATORS], u8)>,
     ) -> Stereo {
+        self.render_interacting_masked(index, generation, note, envs, lfos, external, u8::MAX)
+    }
+
+    /// Select the layers heard for this note while leaving modulation and
+    /// interaction operators running at their normal levels.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn render_interacting_masked(
+        &mut self,
+        index: usize,
+        generation: u32,
+        note: f32,
+        envs: &[f32; crate::preset::MODULATORS],
+        lfos: &[f32; crate::preset::MODULATORS],
+        external: Option<([super::interaction::Input; OSCILLATORS], u8)>,
+        mask: u8,
+    ) -> Stereo {
         if !note.is_finite() || note.abs() > 512.0 || index >= self.voices.len() {
             return [0.0; 2];
         }
         let voice = &mut self.voices[index];
         if voice.generation != generation {
             voice.generation = generation;
+            voice.selection_ready = false;
             voice.note = u32::MAX;
             for pair in &mut voice.pairs {
                 pair.reset();
@@ -906,6 +928,17 @@ impl Runtime {
                 voice.frames[osc] = [Ramp::new(c.position); MAX_UNISON];
             }
         }
+        let selection_step = 1.0 / (self.rate as f32 * 0.005).max(1.0);
+        for (i, selected) in voice.selected.iter_mut().enumerate() {
+            let target = f32::from(mask & (1 << i) != 0);
+            if voice.selection_ready {
+                *selected += (target - *selected).clamp(-selection_step, selection_step);
+            } else {
+                *selected = target;
+            }
+        }
+        voice.selection_ready = true;
+        let weights = std::array::from_fn(|i| self.weights[i] * voice.selected[i]);
         if voice.note != note.to_bits() {
             voice.note = note.to_bits();
             voice.hz = 440.0 * 2.0_f64.powf((note as f64 - 69.0) / 12.0);
@@ -988,7 +1021,7 @@ impl Runtime {
                         &self.previous,
                         &self.fade_blend,
                         &positions,
-                        &self.weights,
+                        &weights,
                         voice.hz,
                         self.rate,
                         self.interaction_kernel,
@@ -1026,7 +1059,7 @@ impl Runtime {
                         }
                         sample *= lane.high_gain;
                         for c in 0..2 {
-                            output[c] += sample * gains[c] * self.weights[osc];
+                            output[c] += sample * gains[c] * weights[osc];
                         }
                     }
                     lane.phase += frequency / self.rate;
@@ -1080,7 +1113,7 @@ impl Runtime {
                 &self.previous,
                 &self.fade_blend,
                 &positions,
-                &self.weights,
+                &weights,
                 voice.hz,
                 self.rate,
                 self.interaction_kernel,
@@ -1219,6 +1252,66 @@ impl Prepared {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mask_selects_each_notes_audio_without_removing_fm_operators() {
+        for source in [1, 3] {
+            let mut settings = Settings {
+                count: 4,
+                ..Settings::default()
+            };
+            for oscillator in &mut settings.oscillators {
+                oscillator.controls.enabled = false;
+            }
+            settings.oscillators[0].controls.enabled = true;
+            settings.oscillators[0].controls.fm_mode = 1;
+            settings.oscillators[0].controls.fm_index = 0.8;
+            settings.oscillators[0].controls.fm_source = source as u8;
+            settings.oscillators[source].controls.enabled = true;
+            settings.oscillators[source].controls.transpose = 7.0;
+            let pool = Pool::default();
+            let mut runtime = Runtime::new(8_000, &settings, &pool).unwrap();
+            let env = [0.0; crate::preset::MODULATORS];
+            let mut selected = Vec::new();
+            let mut energy = 0.0_f32;
+            for _ in 0..1024 {
+                runtime.begin_frame(true);
+                let mut render = |index, mask| {
+                    runtime.render_interacting_masked(index, 1, 60.0, &env, &env, None, mask)
+                };
+                let a = render(0, 1);
+                let b = render(1, 1 << source);
+                let both = render(2, 1 | (1 << source));
+                let silent = render(3, 0);
+                for c in 0..2 {
+                    assert!((both[c] - (a[c] + b[c])).abs() < 2e-5);
+                    assert_eq!(silent[c], 0.0);
+                }
+                energy += a[0].abs();
+                selected.push(a[0]);
+            }
+            assert!(energy > 1.0);
+            runtime.begin_frame(true);
+            runtime.render_interacting_masked(0, 1, 60.0, &env, &env, None, 0);
+            assert!(runtime.voices[0].selected[0] > 0.97);
+            assert_eq!(runtime.voices[1].selected[source], 1.0);
+            drop(runtime);
+
+            settings.oscillators[0].controls.fm_index = 0.0;
+            let mut plain = Runtime::new(8_000, &settings, &pool).unwrap();
+            let mut difference = 0.0_f32;
+            for fm in selected {
+                plain.begin_frame(true);
+                let dry = plain.render_interacting_masked(0, 1, 60.0, &env, &env, None, 1);
+                difference += (fm - dry[0]).abs();
+            }
+            assert!(
+                difference > 1.0,
+                "unselected oscillator {source} lost its FM effect"
+            );
+        }
+    }
+
     fn sine_frames() -> Asset {
         let samples: Vec<_> = (0..FRAME_SIZE * 2)
             .map(|i| {

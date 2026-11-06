@@ -1,0 +1,150 @@
+{
+  "conclusion": "success",
+  "headSha": "8d85a82858ef079ffd316be288ff7b13aefa6bb4",
+  "jobs": [
+    {
+      "completedAt": "2026-11-02T23:04:18Z",
+      "conclusion": "success",
+      "databaseId": 125598335386,
+      "name": "build",
+      "startedAt": "2026-11-02T22:39:21Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-11-02T22:39:24Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-11-02T22:39:22Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-11-02T22:39:38Z",
+          "conclusion": "success",
+          "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 2,
+          "startedAt": "2026-11-02T22:39:24Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-11-02T22:39:44Z",
+          "conclusion": "success",
+          "name": "Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+          "number": 3,
+          "startedAt": "2026-11-02T22:39:38Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-11-02T22:39:57Z",
+          "conclusion": "success",
+          "name": "Install Rust with the WebAssembly target",
+          "number": 4,
+          "startedAt": "2026-11-02T22:39:44Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-11-02T22:49:47Z",
+          "conclusion": "success",
+          "name": "Check Rust",
+          "number": 5,
+          "startedAt": "2026-11-02T22:39:57Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-11-02T22:59:14Z",
+          "conclusion": "success",
+          "name": "Build the standalone site",
+          "number": 6,
+          "startedAt": "2026-11-02T22:49:47Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-11-02T23:03:57Z",
+          "conclusion": "success",
+          "name": "Exercise the compiled audio engine",
+          "number": 7,
+          "startedAt": "2026-11-02T22:59:14Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-11-02T23:03:57Z",
+          "conclusion": "success",
+          "name": "Run actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d",
+          "number": 8,
+          "startedAt": "2026-11-02T23:03:57Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-11-02T23:04:15Z",
+          "conclusion": "success",
+          "name": "Run actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9",
+          "number": 9,
+          "startedAt": "2026-11-02T23:03:57Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-11-02T23:04:15Z",
+          "conclusion": "success",
+          "name": "Post Run actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38",
+          "number": 17,
+          "startedAt": "2026-11-02T23:04:15Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-11-02T23:04:15Z",
+          "conclusion": "success",
+          "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "number": 18,
+          "startedAt": "2026-11-02T23:04:15Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-11-02T23:04:16Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 19,
+          "startedAt": "2026-11-02T23:04:16Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/fushugaku/sad-pet/actions/runs/41539083421/job/125598335386"
+    },
+    {
+      "completedAt": "2026-11-02T23:04:51Z",
+      "conclusion": "success",
+      "databaseId": 125609780011,
+      "name": "deploy",
+      "startedAt": "2026-11-02T23:04:23Z",
+      "status": "completed",
+      "steps": [
+        {
+          "completedAt": "2026-11-02T23:04:25Z",
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "startedAt": "2026-11-02T23:04:24Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-11-02T23:04:50Z",
+          "conclusion": "success",
+          "name": "Deploy to GitHub Pages",
+          "number": 2,
+          "startedAt": "2026-11-02T23:04:25Z",
+          "status": "completed"
+        },
+        {
+          "completedAt": "2026-11-02T23:04:50Z",
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 3,
+          "startedAt": "2026-11-02T23:04:50Z",
+          "status": "completed"
+        }
+      ],
+      "url": "https://github.com/fushugaku/sad-pet/actions/runs/41539083421/job/125609780011"
+    }
+  ],
+  "status": "completed",
+  "url": "https://github.com/fushugaku/sad-pet/actions/runs/41539083421"
+}

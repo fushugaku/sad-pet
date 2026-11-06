@@ -203,6 +203,8 @@ enum Target {
     Tb303Pattern(usize),
     /// An added filter by list position: a FILTER_SLOT_FIELDS index.
     FilterSlot(usize, usize),
+    FilterShaper(usize, bool, usize),
+    GrainShaper(usize, usize),
     /// A section's Chain share or bus send.
     Tap(Stage, TapField),
     /// A macro knob's value.
@@ -263,6 +265,65 @@ fn filter_slot_set(slot: &mut crate::preset::FilterSlot, field: usize, value: f3
         8 => slot.output.chain = value,
         9 => slot.output.send = value,
         _ => slot.output.bus = value.round() as u8,
+    }
+}
+
+fn waveshaper_option(options: &mut crate::waveshaper::Options, field: usize) -> &mut f32 {
+    match field {
+        0 => &mut options.input,
+        1 => &mut options.output,
+        2 => &mut options.knee,
+        3 => &mut options.bias,
+        4 => &mut options.pre_tone,
+        5 => &mut options.post_tone,
+        6 => &mut options.bass,
+        7 => &mut options.bass_frequency,
+        8 => &mut options.envelope,
+        9 => &mut options.attack,
+        10 => &mut options.release,
+        _ => &mut options.morph,
+    }
+}
+fn waveshaper_field(stage: &mut crate::waveshaper::Stage, field: usize) -> &mut f32 {
+    match field {
+        0 => &mut stage.depth,
+        1 => &mut stage.mix,
+        _ => waveshaper_option(&mut stage.options, field - 2),
+    }
+}
+fn filter_shapers<'a>(
+    params: &'a crate::preset::Params,
+    slots: &'a [crate::preset::FilterSlot],
+    i: usize,
+) -> Option<&'a crate::waveshaper::FilterShapers> {
+    if i < 2 {
+        Some(&params.filter_shapers[i])
+    } else {
+        slots.get(i - 2).map(|s| &s.shapers)
+    }
+}
+fn filter_shapers_mut<'a>(
+    params: &'a mut crate::preset::Params,
+    slots: &'a mut [crate::preset::FilterSlot],
+    i: usize,
+) -> Option<&'a mut crate::waveshaper::FilterShapers> {
+    if i < 2 {
+        Some(&mut params.filter_shapers[i])
+    } else {
+        slots.get_mut(i - 2).map(|s| &mut s.shapers)
+    }
+}
+fn shaper_at(shapers: &crate::waveshaper::FilterShapers, after: bool) -> crate::waveshaper::Stage {
+    if after { shapers.after } else { shapers.before }
+}
+fn shaper_at_mut(
+    shapers: &mut crate::waveshaper::FilterShapers,
+    after: bool,
+) -> &mut crate::waveshaper::Stage {
+    if after {
+        &mut shapers.after
+    } else {
+        &mut shapers.before
     }
 }
 
@@ -343,6 +404,14 @@ impl Spec {
             Target::FilterSlot(i, field) => {
                 filter_slot_get(m.filter_slots[..m.filter_len].get(i)?, field)
             }
+            Target::FilterShaper(i, after, field) => {
+                let shapers = filter_shapers(&m.params, &m.filter_slots[..m.filter_len], i)?;
+                *waveshaper_field(&mut shaper_at(shapers, after), field)
+            }
+            Target::GrainShaper(i, field) => *waveshaper_option(
+                &mut m.grain_groups.groups[i].waveshaper_options.to_owned(),
+                field,
+            ),
             Target::Lfo(i, field) => lfo_get(&m.lfos[i], field),
             Target::LfoPoly(i) => f32::from(m.lfos[i].poly),
             Target::Env(i, field) => env_get(&m.envs[i], field),
@@ -459,6 +528,16 @@ impl Spec {
                     filter_slot_set(slot, field, value);
                 }
             }
+            Target::FilterShaper(i, after, field) => {
+                if let Some(shapers) =
+                    filter_shapers_mut(&mut m.params, &mut m.filter_slots[..m.filter_len], i)
+                {
+                    *waveshaper_field(shaper_at_mut(shapers, after), field) = value;
+                }
+            }
+            Target::GrainShaper(i, field) => {
+                *waveshaper_option(&mut m.grain_groups.groups[i].waveshaper_options, field) = value
+            }
             Target::Lfo(i, field) => *lfo_field(&mut m.lfos[i], field) = value,
             Target::LfoPoly(i) => m.lfos[i].poly = value >= 0.5,
             Target::Env(i, field) => env_set(&mut m.envs[i], field, value),
@@ -564,6 +643,15 @@ impl Spec {
                 .filter_slots
                 .get(i)
                 .map_or(self.default, |slot| filter_slot_get(slot, field)),
+            Target::FilterShaper(i, after, field) => {
+                filter_shapers(&preset.params, &preset.filter_slots, i).map_or(self.default, |s| {
+                    *waveshaper_field(&mut shaper_at(s, after), field)
+                })
+            }
+            Target::GrainShaper(i, field) => *waveshaper_option(
+                &mut preset.grain_groups.groups[i].waveshaper_options.to_owned(),
+                field,
+            ),
             Target::Drum(i, field) => preset
                 .drums
                 .as_ref()
@@ -709,6 +797,17 @@ impl Spec {
                 if let Some(slot) = preset.filter_slots.get_mut(i) {
                     filter_slot_set(slot, field, value);
                 }
+            }
+            Target::FilterShaper(i, after, field) => {
+                if let Some(shapers) =
+                    filter_shapers_mut(&mut preset.params, &mut preset.filter_slots, i)
+                {
+                    *waveshaper_field(shaper_at_mut(shapers, after), field) = value;
+                }
+            }
+            Target::GrainShaper(i, field) => {
+                *waveshaper_option(&mut preset.grain_groups.groups[i].waveshaper_options, field) =
+                    value
             }
             Target::DrumGrain => {
                 if let Some(d) = &mut preset.drums {
@@ -2426,6 +2525,109 @@ pub fn specs() -> &'static [Spec] {
             }
         }
         append_oscillator_parameters(&mut result);
+        // Keep every released host index and range unchanged. These controls
+        // live after all previous blocks, including oscillator connections.
+        for rack in 0..3 {
+            let count = if rack == 2 { 1 } else { MAX_COLOR_SLOTS };
+            for i in 0..count {
+                for field in ColorParameter::WAVESHAPER {
+                    let mut spec = Spec {
+                        id: format!(
+                            "{}fx{}_{}",
+                            ["", "pre_", "source_"][rack],
+                            i + 1,
+                            field.key()
+                        ),
+                        name: format!(
+                            "{}FX {} {}",
+                            ["", "Pre ", "Source "][rack],
+                            i + 1,
+                            field.key().replace('_', " ")
+                        ),
+                        min: 0.0,
+                        max: 1.0,
+                        default: 0.0,
+                        target: if rack == 2 {
+                            Target::SourceFx(field)
+                        } else {
+                            Target::Fx(rack == 1, i, field)
+                        },
+                    };
+                    spec.default = spec.get(&preset);
+                    result.push(spec);
+                }
+            }
+        }
+        for i in 0..crate::preset::MAX_FILTER_SLOTS + 2 {
+            for after in [false, true] {
+                for (field, key) in [
+                    "depth",
+                    "mix",
+                    "input",
+                    "output",
+                    "knee",
+                    "bias",
+                    "pre_tone",
+                    "post_tone",
+                    "bass",
+                    "bass_frequency",
+                    "envelope",
+                    "attack",
+                    "release",
+                    "morph",
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    let mut defaults = crate::waveshaper::Stage::default();
+                    result.push(Spec {
+                        id: format!(
+                            "filter{}_ws_{}_{key}",
+                            i + 1,
+                            if after { "after" } else { "before" }
+                        ),
+                        name: format!(
+                            "Filter {} WS {} {key}",
+                            i + 1,
+                            if after { "after" } else { "before" }
+                        ),
+                        min: 0.0,
+                        max: 1.0,
+                        default: *waveshaper_field(&mut defaults, field),
+                        target: Target::FilterShaper(i, after, field),
+                    });
+                }
+            }
+        }
+        for i in 0..grain_groups::GROUPS {
+            for (field, key) in [
+                "input",
+                "output",
+                "knee",
+                "bias",
+                "pre_tone",
+                "post_tone",
+                "bass",
+                "bass_frequency",
+                "envelope",
+                "attack",
+                "release",
+                "morph",
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let mut defaults = crate::waveshaper::Options::default();
+                result.push(Spec {
+                    id: format!("grain_group{}_waveshaper_{key}", i + 1),
+                    name: format!("Grain group {} waveshaper {key}", i + 1),
+                    min: 0.0,
+                    max: 1.0,
+                    default: *waveshaper_option(&mut defaults, field),
+                    target: Target::GrainShaper(i, field),
+                });
+            }
+        }
         result
     })
 }

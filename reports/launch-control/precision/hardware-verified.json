@@ -1,0 +1,77 @@
+[
+  {
+    "mode": 1,
+    "channel": 1,
+    "controls": 48
+  },
+  {
+    "mode": 2,
+    "channel": 2,
+    "controls": 48
+  },
+  {
+    "mode": 3,
+    "channel": 3,
+    "controls": 48
+  },
+  {
+    "mode": 4,
+    "channel": 4,
+    "controls": 48
+  },
+  {
+    "mode": 5,
+    "channel": 5,
+    "controls": 48
+  },
+  {
+    "mode": 6,
+    "channel": 6,
+    "controls": 48
+  },
+  {
+    "mode": 7,
+    "channel": 7,
+    "controls": 48
+  },
+  {
+    "mode": 8,
+    "channel": 8,
+    "controls": 48
+  },
+  {
+    "mode": 9,
+    "channel": 9,
+    "controls": 48
+  },
+  {
+    "mode": 10,
+    "channel": 10,
+    "controls": 48
+  },
+  {
+    "mode": 11,
+    "channel": 11,
+    "controls": 48
+  },
+  {
+    "mode": 12,
+    "channel": 12,
+    "controls": 48
+  },
+  {
+    "mode": 13,
+    "channel": 13,
+    "controls": 48
+  },
+  {
+    "mode": 14,
+    "channel": 14,
+    "controls": 48
+  },
+  {
+    "mode": 15,
+    "channel": 15,
+    "controls": 48
+  }
+]

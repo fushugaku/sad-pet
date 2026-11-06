@@ -12,6 +12,9 @@ const core = new Core(module, 48000),
 const catalog = core.request("/api/sequencer/catalog");
 assert.equal(catalog.orders.length, 21);
 assert.equal(catalog.scales.length, 49);
+assert.equal(catalog.track.oscillator_mask, 0x1ffffff);
+assert.equal(catalog.track.granular, true);
+assert.equal(catalog.track.env_gate, true);
 assert.ok(catalog.parameters.some((p) => p.id === "resynth_osc4_control1"));
 assert.ok(catalog.parameters.some((p) => p.id === "source_fx1_waveshaper_depth"));
 const preset = core.request("/api/preset");
@@ -31,8 +34,13 @@ preset.sequencer.tracks = Array.from({ length: 257 }, (_, i) => {
   if (i === 0) {
     t.destinations = ["filter", "resynth_osc4_control1", "fx1_distortion_drive"];
     t.steps[5].destination1 = 0.23;
+    t.env_gate = false;
+    t.pitch_oscillators = [true, false, true, false];
   }
-  if (i === 0) t.pitch_oscillators = [true, false, true, false];
+  if (i === 1) {
+    t.env_gate = false;
+    t.granular = false;
+  }
   t.steps.forEach((s, n) => {
     s.pitch = 60 + n;
     s.cv = (n - 8) * 500;
@@ -59,13 +67,27 @@ let imported = worker.json(
 ).state;
 assert.equal(imported.preset.sequencer.tracks.length, 257);
 assert.deepEqual(imported.preset.sequencer.tracks[0].destinations, ["filter", "resynth_osc4_control1", "fx1_distortion_drive"]);
+assert.equal(imported.preset.sequencer.tracks[0].oscillator_mask, 0x1ffffff);
+assert.equal(imported.preset.sequencer.tracks[0].granular, true);
+assert.equal(imported.preset.sequencer.tracks[0].env_gate, false);
+assert.equal(imported.preset.sequencer.tracks[0].pitch_oscillators[0], true);
+assert.equal(imported.preset.sequencer.tracks[1].env_gate, false);
+assert.equal(imported.preset.sequencer.tracks[1].granular, false);
 assert.equal(imported.sequencer.offset, 193);
 core.wasm.sad_snapshot_ack(core.wasm.sad_snapshot_sequence(), 1);
+core.request("/api/sequencer/view", { offset: 0 });
+const mainStepBeforeRoutingEdits = core
+  .request("/api/state")
+  .sequencer.tracks.find((t) => t.id === 1).step;
 core.request("/api/sequencer/edit", [
   { track: 256, stage: 5, field: 0, value: 77 },
   { track: 2, field: 3, value: 65 },
   { track: 1, field: 52, value: 1 },
   { track: 1, field: 53, value: 1 },
+  { track: 1, field: 57, value: 0 },
+  { track: 1, field: 60, value: 0 },
+  { track: 1, field: 76, value: 0 },
+  { track: 1, field: 84, value: 0 },
   { track: 2, stage: 0, field: 9, value: 27 },
   { track: 1, stage: 5, field: 16, value: -0.25 },
   { track: 1, stage: 5, field: 17, value: 0.125 },
@@ -85,7 +107,13 @@ assert.deepEqual(imported.preset.sequencer.tracks[0].pitch_oscillators, [
   true,
 ]);
 assert.equal(imported.preset.sequencer.tracks[0].env_gate, true);
+assert.equal(imported.preset.sequencer.tracks[0].granular, false);
+assert.equal(
+  imported.preset.sequencer.tracks[0].oscillator_mask,
+  0x1ffffff & ~(1 << 0) & ~(1 << 16) & ~(1 << 24),
+);
 assert.equal(imported.preset.sequencer.tracks[1].env_gate, false);
+assert.equal(imported.preset.sequencer.tracks[1].granular, false);
 assert.equal(imported.preset.sequencer.tracks[1].steps[0].gate_override, 27);
 assert.equal(imported.preset.sequencer.tracks[0].steps[5].ratchet_span, 4);
 assert.deepEqual(
@@ -93,6 +121,11 @@ assert.deepEqual(
   [-0.25, 0.125, -0.5],
 );
 assert.ok(Math.abs(imported.preset.params.filter - 0.38) < 1e-6);
+assert.equal(
+  imported.sequencer.tracks.find((t) => t.id === 1).step,
+  mainStepBeforeRoutingEdits,
+  "MainPitch routing edits reset the track clock",
+);
 core.wasm.sad_snapshot_ack(core.wasm.sad_snapshot_sequence(), 1);
 const next = core.request("/api/preset");
 next.sequencer.tracks.reverse();

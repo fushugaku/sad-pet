@@ -27,8 +27,11 @@ class Element {
     // menu and status.
     this.children = [];
     this.parts = new Map();
-    if (html.includes("grain-group-card-title"))
-      this.children.push(new Element(), new Element());
+    if (html.includes("grain-group-card-title")) {
+      const title = new Element(), knobs = new Element();
+      knobs.className = "grain-group-knobs";
+      this.children.push(title, knobs);
+    }
     else if (html.includes("<small>")) this.children.push(new Element("i"), new Element("small"));
     else if (html.includes("tap-knobs"))
       for (const [selector, tag] of [[".tap-knobs"], ["select", "select"], [".tap-status", "output"]]) {
@@ -63,6 +66,8 @@ class Element {
     if (card) return all(this).find((n) => n.dataset.card === card);
     if (selector === ".grain-group-chain")
       return all(this).find((n) => n.className?.includes?.("grain-group-chain"));
+    if (selector === ".grain-group-knobs")
+      return all(this).find((n) => n.className === "grain-group-knobs");
     return this.parts?.get(selector);
   }
   querySelectorAll(selector) {
@@ -99,6 +104,7 @@ const shapeDial = Object.assign(new Element(), { knob: shapeKnob });
 const knobs = new Map();
 const controls = new Map();
 const calls = [];
+const shaperEditors = [];
 const context = vm.createContext({
   timbreEditor: null,
   $,
@@ -110,6 +116,12 @@ const context = vm.createContext({
       selector.includes('data-control-key="grain_shape"') ? shapeDial : null,
   },
   percent: (v) => `${Math.round(v * 100)}%`,
+  waveshaperOptions: (value) => ({ curve: "radias", ...value }),
+  buildWaveshaperOptions: (binding) => {
+    const editor = { ...binding, element: new Element(), sync() {} };
+    shaperEditors.push(editor);
+    return editor;
+  },
   signedPercent: (v) => `${v > 0 ? "+" : ""}${Math.round(v * 100)}%`,
   grainSeconds: (v) => 0.01 + 2 * Math.abs(v * 2 - 1) ** 3,
   option: (value, label) => Object.assign(new Element("option"), { value, textContent: label }),
@@ -245,8 +257,9 @@ assert.deepEqual(
 const shaper = menu(0, "waveshaper");
 assert.equal(shaper.value, "off");
 assert.equal(shaper.getAttribute("aria-label"), "Group A waveshaper");
-const depthKnob = pages[0].querySelector('[data-card="Drive · Waveshaper"]').lastElementChild.children[1];
+const depthKnob = pages[0].querySelector('[data-card="Drive · Waveshaper"]').querySelector(".grain-group-knobs").children[1];
 assert.ok(depthKnob.classes.has("is-idle"));
+assert.equal(shaperEditors[0].element.hidden, true);
 shaper.value = "hard_clip";
 shaper.onchange();
 knobs.get("grain_group1_drive").binding.set(0.6);
@@ -256,7 +269,18 @@ assert.deepEqual(calls.splice(0), [
 ]);
 assert.deepEqual([groups().groups[0].waveshaper, groups().groups[0].drive], ["hard_clip", 0.6]);
 assert.ok(!depthKnob.classes.has("is-idle"));
+assert.equal(shaperEditors[0].element.hidden, false);
 assert.equal(knobs.get("grain_group1_waveshaper_depth").binding.get(), 64 / 127);
+run('preset.grain_groups.groups[0].waveshaper_options = { curve: "tanh", future: 42 }');
+shaperEditors[0].set({ quality: "clean2x" });
+assert.deepEqual(calls.splice(0), [["preset"]]);
+assert.equal(groups().groups[0].waveshaper_options.future, 42);
+assert.equal(groups().groups[0].waveshaper_options.quality, "clean2x");
+shaperEditors[0].setNumeric("input", .7);
+assert.deepEqual(calls.splice(0), [["parameter", "grain_group1_waveshaper_input", .7]]);
+assert.equal(groups().groups[0].waveshaper_options.input, .7);
+run('preset.grain_groups.groups[0].waveshaper_options = { curve: "diode" }');
+assert.equal(shaperEditors[0].get().curve, "diode", "Editor follows the current group after a preset refresh");
 
 // Each page has three rows: Grain, Pitch and Playback; the stages in the
 // group's order; the envelopes; then its Output.

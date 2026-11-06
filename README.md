@@ -92,7 +92,7 @@ with different per-timbre BPM values use the first timbre's tempo on recall.
   direct filters/effects or granular processing of an eight-second live buffer.
 - Polyphonic keyboard, note/chord hold and arpeggiator.
 - **Neuropolis sequencer**, using its actual Rust core: add any number of independently
-  clocked 16-stage tracks. Route a track to main sample pitch, OSC 1–4 pitch offsets, notes
+  clocked 16-stage tracks. Route a track to Main pitch, oscillator pitch offsets, notes
   and envelopes, or a realtime parameter (including oscillator controls and FX).
   Each track has 21 play orders, length, clock multiplier/divider, swing, quantizer,
   pulses, Rest/Single/Multi/Hold gates, ratchets, probability, Analog/Tempo/Acid
@@ -101,10 +101,15 @@ with different per-timbre BPM values use the first timbre's tempo on recall.
   no fixed cap; the instrument plays 32 notes at once, so long releases
   overlap under fast steps.
   Pitch, a per-step Gate length knob, Pulses, Ratchet, Slide, Probability and
-  Velocity are available together. Main pitch can also target any combination
-  of OSC 1–4; their own tracks add −24…+24 semitones to that pitch, at independent
-  clocks. With Gate ENV, Main pitch steps also restart and release the envelopes
-  like notes. Double-click a step's Gate knob to inherit the track's Gate setting.
+  Velocity are available together. Each Main pitch track plays its own voice,
+  with independent pitch, slide, velocity and envelopes. Select its oscillators
+  in each source bank and whether it plays Granular; ENV and all oscillators
+  start enabled. ENV off holds a continuous voice. Released notes keep their
+  pitch and routing while later steps play, sharing the 32-note pool with MIDI
+  and Notes tracks. Synth, Wavetable, mixed oscillators, Resynth and 303 all
+  follow this routing; timbre controls and the outer FX remain shared.
+  Oscillator pitch-offset lanes still modulate the selected source globally.
+  Double-click a step's Gate knob to inherit the track's Gate setting.
   **Ratchet time** spreads a step's repeats across 1–8 clock pulses (×), up to
   that step's **Pulses** length. For four evenly spaced repeats over four pulses,
   set Pulses, Ratchet and Ratchet time to 4. **Auto** keeps the track's original
@@ -534,6 +539,19 @@ with different per-timbre BPM values use the first timbre's tempo on recall.
   MultiTri, MultiSin, SubSaw, SubSquare, SubTriangle, SubSine, Pickup and LvlBoost.
   Original fixed-point kernels and Depth transfer, plus per-slot Mix and bypass.
   Depth accepts LFO, envelope, matrix and DAW automation; SubOSC/Pickup follow MIDI pitch.
+  **Shape** opens Legacy / Clean 2× / Clean 4×, input/output trim, knee, bias,
+  pre/post tone, clean-bass blend and crossover, envelope drive with attack/release,
+  DC removal and static level matching. Curve A/B and Morph combine RADIAS with
+  Soft Clip, Tanh, Diode, Rectify or a 17-point editable Custom curve. These settings
+  are also available to each grain group's Waveshaper. Neutral Legacy preserves
+  existing presets; Clean uses filtered oversampling with 32/48 host samples of
+  latency. Decimator retains its intentional sample-and-hold character.
+  File Source FX compensates that latency when preparing its sample cache.
+  Every main and added filter has independent **WS before / WS after** stages,
+  initially off. Their grips move or exchange the whole stage, including its
+  curve; filter grips keep both stages with their filter. The main serial pair
+  and added filters can be reordered; added filters retain their selected signal
+  position. Arrow keys move a focused grip, and Escape cancels pointer dragging.
 - Live modulation feedback on controls, MIDI input and stereo WAV/MP3 recording.
 - MIDI learn on every knob and modulation slider: right-click it, choose **MIDI
   learn** and move a controller. The web version reads the MIDI input chosen next
@@ -604,6 +622,7 @@ node wasm/test-telemetry.mjs
 node wasm/test-loader.mjs
 node wasm/test-resynth.mjs
 node wasm/test-neuropolis.mjs
+node wasm/test-polyphony.mjs
 node wasm/test-sequencer-ui.mjs
 node wasm/test-microphone.mjs
 node wasm/test-library.mjs

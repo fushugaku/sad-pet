@@ -151,9 +151,10 @@ function lane(core, id, target, pitch) {
   core.request("/api/transport", { playing: true });
   render(core, 256);
   const state = core.request("/api/state");
-  assert.equal(state.tb303.step, 0, "Neuropolis Notes disabled the internal 303 pattern");
+  assert.equal(state.tb303.step, null, "Main pitch must play its independent circuit instead of the built-in pattern");
   assert.deepEqual(state.preset.tb303.steps, p.tb303.steps, "Neuropolis rewrote the 303 pattern");
-  assert.ok(Math.abs(state.tb303.note - 48) < .01, "Main pitch does not transpose the 303 voice");
+  assert.ok(state.notes.includes(72), "Main pitch did not create its own pitched voice");
+  assert.equal(state.preset.params.sample_tune_semis, 0, "Main pitch changed shared tuning");
   assert.ok(Math.abs(state.knobs.tb303_osc1_transpose.current - 7) < .01);
   assert.ok(Math.abs(state.knobs.tb303_cutoff.current - .55) < .01);
   assert.ok(Math.abs(state.knobs.tb303_osc1_control1.current - .2) < .01);

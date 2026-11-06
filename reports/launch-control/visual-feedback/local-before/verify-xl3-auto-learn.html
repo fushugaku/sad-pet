@@ -1,0 +1,1028 @@
+<!doctype html>
+<html lang="en">
+  <head><script>
+if (!window.frameElement) {
+const pageTrace=[];const recordPage=(text)=>{pageTrace.push(text);const log=document.getElementById('qa-page-trace');if(log)log.textContent=pageTrace.join('\n')};let testLearner;
+Object.defineProperty(window,'SadMidiLearn',{configurable:true,get(){return testLearner},set(value){testLearner=value;recordPage('New learner');const select=value.selectPage;value.selectPage=(...args)=>{recordPage('Page '+args[0]+' '+new Error().stack.split('\n').slice(2,5).join(' | '));return select(...args)}}});
+
+localStorage.setItem('sad-pet-midi-pages',JSON.stringify({version:1,active:0,pages:Array.from({length:16},()=>({}))}));
+localStorage.removeItem('sad-pet-midi-map');
+localStorage.setItem('sad-pet-launch-control',JSON.stringify({enabled:true,mode:'native'}));
+  const sent=[], main={id:'qa-midi',name:'LCXL3 1 MIDI Out',manufacturer:'Novation',state:'connected',type:'input',async close(){}}, daw={...main,id:'qa-daw',name:'LCXL3 2 DAW Out'};
+  const colors=new Map(), screen=new Map(), rows=new Map([[69,0],[72,0],[73,0]]); let paint=false;
+  const receive=(bytes)=>{
+    const b=[...bytes]; sent.push(b); if(b.join()==='182,30,2')rows.set(69,0);if(b[0]===182&&rows.has(b[1]))rows.set(b[1],b[2]);
+    if(b[0]===240&&b[6]===1&&b[7]===83) colors.set(b[8],b.slice(9,12));
+    if(b[0]===240&&b[6]===6&&b[7]===54) screen.set(b[8],String.fromCharCode(...b.slice(9,-1)));
+    if(!paint){paint=true;requestAnimationFrame(()=>{paint=false;
+      const box=document.getElementById('qa-feedback'); if(!box)return;
+      box.textContent=`OLED: ${[0,1,2].map(i=>screen.get(i)||'').join(' / ')}\n`+[...colors].filter(([,rgb])=>rgb.some(Boolean)).map(([cc,rgb])=>`LED ${cc}: RGB ${rgb.join(',')}`).join('\n')+`\nRelative rows: ${[...rows.values()].join(',')}\nPackets: ${sent.length}`;
+    });}
+  };
+  const outputs=[{...main,id:'qa-midi-out',name:'LCXL3 1 MIDI In',type:'output',send:receive},{...daw,id:'qa-daw-out',name:'LCXL3 2 DAW In',type:'output',send:receive}];
+  const access={sysexEnabled:true,inputs:new Map([main,daw].map(p=>[p.id,p])),outputs:new Map(outputs.map(p=>[p.id,p]))};
+  Object.defineProperty(navigator,'requestMIDIAccess',{value:async()=>access});
+  const query=navigator.permissions.query.bind(navigator.permissions);
+  navigator.permissions.query=async args=>args.name==='midi'?{state:'granted'}:query(args);
+  document.addEventListener('DOMContentLoaded',()=>{
+    const panel=document.createElement('aside');panel.id='qa-midi';panel.style='position:fixed;right:12px;bottom:12px;z-index:99999;background:#172028;color:#fff;border:1px solid #527989;border-radius:10px;padding:12px;max-width:290px;font:12px monospace;box-shadow:0 4px 16px #0008';
+    const title=document.createElement('b');title.textContent='Virtual XL3 · verification';panel.append(title);
+    const buttons=document.createElement('div');buttons.style='display:flex;flex-wrap:wrap;gap:4px;margin-top:8px';
+    for(const [text,packets] of [['Encoder 1 +1',[[191,77,65]]],['Encoder 1 -1',[[191,77,63]]],['Encoder 2 +1',[[191,78,65]]],['Fader 1 min',[[191,5,0]]],['Fader 1 max',[[191,5,127]]],['Hardware Mode 1',[[182,30,6]]],['Hardware Mode 2',[[182,30,7]]]]){
+      const button=document.createElement('button');button.textContent=text;button.style='font-size:11px;padding:6px;min-height:30px';button.onclick=()=>{for(const bytes of packets){const data=[...bytes];if(data[0]===191&&data[1]>=77&&data[1]<=100&&rows.get([69,72,73][Math.floor((data[1]-77)/8)])!==127){data[1]-=64;data[2]=64;}daw.onmidimessage?.({data:Uint8Array.from(data)});}};buttons.append(button);
+    }
+    const log=document.createElement('pre');log.id='qa-feedback';log.style='white-space:pre-wrap;margin:8px 0 0';panel.append(buttons,log);const trace=document.createElement('pre');trace.id='qa-page-trace';trace.style='font-size:9px;white-space:pre-wrap;max-height:150px;overflow:auto';trace.textContent=pageTrace.join('\n');panel.append(trace);document.body.append(panel);
+  });
+}
+</script>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>SAD PET</title>
+    <link rel="stylesheet" href="./style.css?v=88a7a5dd2313" />
+    <link rel="stylesheet" href="./vocal.css?v=88a7a5dd2313" />
+    <link rel="stylesheet" href="./sampler.css?v=88a7a5dd2313" />
+    <link rel="stylesheet" href="./wavetable.css?v=88a7a5dd2313" />
+    <link rel="stylesheet" href="./oscillators.css?v=88a7a5dd2313" />
+    <script src="./control.js?v=88a7a5dd2313" defer></script>
+    <script src="./browser.js?v=88a7a5dd2313" defer></script>
+    <script src="./library.js?v=88a7a5dd2313" defer></script>
+    <script src="./selection.js?v=88a7a5dd2313" defer></script>
+    <script src="./presets.js?v=88a7a5dd2313" defer></script>
+    <script src="./sequence.js?v=88a7a5dd2313" defer></script>
+    <script src="./panels.js?v=88a7a5dd2313" defer></script>
+    <script src="./tb303.js?v=88a7a5dd2313" defer></script>
+    <script src="./wavetable.js?v=88a7a5dd2313" defer></script>
+    <script src="./wavetable-tools.js?v=88a7a5dd2313" defer></script>
+    <script src="./oscillators.js?v=88a7a5dd2313" defer></script>
+    <script src="./eq.js?v=88a7a5dd2313" defer></script>
+    <script src="./rack.js?v=88a7a5dd2313" defer></script>
+    <script src="./vocal.js?v=88a7a5dd2313" defer></script>
+    <script src="./sampler-library.js?v=88a7a5dd2313" defer></script>
+    <script src="./sampler.js?v=88a7a5dd2313" defer></script>
+    <script src="./midi-targets.js?v=88a7a5dd2313" defer></script>
+    <script src="./midi.js?v=88a7a5dd2313" defer></script>
+    <script src="./controller.js?v=88a7a5dd2313" defer></script>
+    <script src="./clock.js?v=88a7a5dd2313" defer></script>
+    <script src="./modulation.js?v=88a7a5dd2313" defer></script>
+    <script src="./app.js?v=88a7a5dd2313" defer></script>
+  </head>
+  <body>
+    <svg class="svg-defs" aria-hidden="true">
+      <symbol id="power-glyph" viewBox="0 0 24 24">
+        <path d="M12 3v9M6.86 6.87A8 8 0 1 0 17.14 6.87" />
+      </symbol>
+    </svg>
+    <main>
+      <header>
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true"><i></i><i></i><b></b></div>
+          <div>
+            <h1>SAD PET<span>WEBASSEMBLY</span></h1>
+            <p>Granular instrument</p>
+          </div>
+        </div>
+        <div class="header-actions">
+          <div class="preset-picker" id="preset-picker">
+            <button
+              id="preset"
+              aria-label="Choose preset"
+              aria-haspopup="dialog"
+              aria-expanded="false"
+              aria-controls="preset-browser"
+              disabled
+            >
+              <span id="preset-name">Init</span
+              ><span id="preset-modified" aria-label="Modified" hidden>•</span
+              ><span class="preset-chevron" aria-hidden="true">⌄</span>
+            </button>
+            <div
+              id="preset-browser"
+              class="preset-browser"
+              role="dialog"
+              aria-label="Presets"
+              hidden
+            >
+              <div class="preset-browser-top">
+                <div
+                  class="preset-banks"
+                  role="tablist"
+                  aria-label="Preset bank"
+                >
+                  <button
+                    role="tab"
+                    data-preset-bank="factory"
+                    aria-selected="true"
+                  >
+                    Factory
+                  </button>
+                  <button
+                    role="tab"
+                    data-preset-bank="user"
+                    aria-selected="false"
+                    tabindex="-1"
+                  >
+                    User
+                  </button>
+                </div>
+                <button
+                  id="preset-close"
+                  class="preset-icon"
+                  aria-label="Close presets"
+                >
+                  ×
+                </button>
+              </div>
+              <input
+                id="preset-search"
+                type="search"
+                aria-label="Search presets"
+                placeholder="Search presets"
+                autocomplete="off"
+              />
+              <div
+                id="preset-list"
+                class="preset-list"
+                role="listbox"
+                aria-label="Preset list"
+              ></div>
+              <p id="preset-empty" class="muted" hidden>No user presets yet.</p>
+              <p id="preset-error" class="preset-error" role="alert"></p>
+              <div
+                id="preset-delete-confirm"
+                class="preset-delete-confirm"
+                hidden
+              >
+                <span id="preset-delete-label"></span>
+                <div>
+                  <button id="preset-delete-cancel">Cancel</button
+                  ><button id="preset-delete-yes">Delete</button>
+                </div>
+              </div>
+              <div class="preset-browser-actions">
+                <button id="preset-import">Import…</button
+                ><button id="preset-export" disabled>Export…</button
+                ><button id="preset-delete" disabled>Delete</button>
+              </div>
+            </div>
+          </div>
+          <button id="save-preset" title="Save preset" disabled>Save</button>
+          <label class="tempo"
+            ><input
+              id="bpm"
+              aria-label="Tempo"
+              type="number"
+              min="20"
+              max="300"
+              step="0.1"
+              value="120"
+              inputmode="decimal"
+              disabled
+            /><span>BPM</span></label
+          >
+          <button id="load-wav" class="light" disabled>
+            Load audio <span>↗</span>
+          </button>
+        </div>
+      </header>
+      <div
+        id="preset-save-modal"
+        class="preset-save-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="preset-save-title"
+        hidden
+      >
+        <form id="preset-save-form" class="preset-save-form">
+          <h2 id="preset-save-title">Save preset</h2>
+          <label for="preset-save-name">Name</label>
+          <input
+            id="preset-save-name"
+            type="text"
+            maxlength="80"
+            required
+            autocomplete="off"
+          />
+          <p id="preset-save-error" class="preset-error" role="alert"></p>
+          <div class="preset-save-actions">
+            <button id="preset-save-cancel" type="button">Cancel</button
+            ><button id="preset-save-new" type="button" hidden>
+              Save as new</button
+            ><button id="preset-save-submit" type="submit" class="light">
+              Save
+            </button>
+          </div>
+        </form>
+      </div>
+      <div id="notice" role="status" hidden></div>
+      <section id="timbres" aria-label="Timbres" hidden></section>
+      <div id="engine-type" class="engine-type" hidden>
+        <label
+          >ENGINE<select id="engine-kind" aria-label="Engine type">
+            <option value="granular">Granular</option>
+            <option value="synth">Synth engine</option>
+            <option value="drums" disabled hidden>Drum machine</option>
+          </select></label
+        >
+      </div>
+      <div class="transport">
+        <div class="transport-buttons">
+          <button id="play" class="play" aria-pressed="false">
+            <span id="play-icon">▶</span><span id="play-label">Play</span
+            ><kbd>SPACE</kbd></button
+          ><button id="freeze" aria-pressed="false">Freeze</button
+          ><button id="reverse" aria-pressed="false">Reverse</button
+          ><button id="bypass" aria-pressed="false">Bypass</button>
+          <button
+            id="record"
+            aria-label="Start recording"
+            aria-pressed="false"
+            title="Record the audio output · up to 30 minutes / 512 MB per take"
+            disabled
+          >
+            <span class="record-dot" aria-hidden="true"></span>
+            <span id="record-label">Record</span>
+            <output id="record-time" hidden>00:00</output>
+          </button>
+        </div>
+        <div class="output-controls">
+          <label
+            >DRY / WET<input
+              id="mix"
+              title="Blend source audio and grains before filters and effects"
+              type="range"
+              min="0"
+              max="1"
+              step="0.001"
+              value="1"
+            /><output id="mix-value">100%</output></label
+          ><label
+            >OUTPUT<input
+              id="volume"
+              type="range"
+              min="0"
+              max="1"
+              step="0.001"
+              value="0.65"
+            /><output id="volume-value">65%</output></label
+          >
+          <div class="meters" aria-label="Output level">
+            <i id="meter-l"></i><i id="meter-r"></i>
+          </div>
+        </div>
+      </div>
+      <div id="recording-result-slot">
+        <section
+          id="recording-result"
+          class="recording-result"
+          aria-label="Saved recording"
+          hidden
+        >
+          <div class="recording-result-info" role="status">
+            <strong id="recording-result-title">Recording saved</strong>
+            <span id="recording-result-info" class="muted"></span>
+          </div>
+          <div class="recording-result-actions">
+            <button id="recording-use" class="light">Use as sample</button>
+            <button id="recording-trim">Trim</button>
+            <button id="recording-wav">WAV ↓</button>
+            <button id="recording-mp3">MP3 ↓</button>
+            <button id="recording-library">Show in Library</button>
+          </div>
+        </section>
+      </div>
+      <section
+        id="drum-machine"
+        class="bank drum-bank"
+        aria-label="Drum machine"
+        hidden
+      ></section>
+      <section
+        id="tb303-engine"
+        class="bank tb303-bank"
+        aria-label="303 Bass"
+        hidden
+      ></section>
+      <section
+        id="synth-engine"
+        class="bank resynth-bank synth-bank"
+        aria-label="Synth engine"
+        hidden
+      >
+        <div class="section-heading">
+          <h2>Synth engine <span>Rustias OSC</span></h2>
+          <div class="resynth-actions">
+            <button id="synth-add">+ Oscillator</button>
+          </div>
+        </div>
+        <div id="synth-oscillators" class="resynth-oscillators"></div>
+      </section>
+      <section id="wavetable-engine" class="bank wavetable-bank" aria-label="Wavetable" hidden></section>
+      <section id="oscillator-engine" class="bank oscillator-bank" aria-label="Oscillators" hidden></section>
+      <section id="interaction-engine" class="bank interaction-bank" aria-label="Oscillator connections" hidden></section>
+      <section
+        id="vocal-editor"
+        class="bank vocal-bank"
+        aria-label="Vocal score"
+        hidden
+      ></section>
+      <section
+        id="sampler-editor"
+        class="bank sampler-bank"
+        aria-label="Sampler"
+        hidden
+      ></section>
+      <section
+        id="bus-engine"
+        class="bank resynth-bank synth-bank bus-bank"
+        aria-label="Bus"
+        hidden
+      >
+        <div class="section-heading">
+          <h2 id="bus-title">Bus <span>sends from timbres</span></h2>
+          <div class="resynth-actions">
+            <output id="master-reduction" class="muted" aria-label="Limiter gain reduction" hidden></output>
+            <button id="master-limiter" aria-pressed="true" title="Protect the Master output from clipping · −1 dBFS" hidden>Limiter</button>
+            <button id="bus-back" hidden></button>
+          </div>
+        </div>
+        <div id="bus-mixer" class="bus-mixer" hidden></div>
+        <p id="bus-hint" class="muted bus-hint">
+          Everything is off, so the input passes through unchanged and uses almost
+          no CPU. Switch on Granular, Filters or Resynth, or add effects below.
+        </p>
+      </section>
+      <section class="bank color-bank" aria-label="Source effects" data-tap="source">
+        <div class="section-heading">
+          <h2>
+            Source FX
+            <output id="source-fx-status" class="muted" role="status"></output>
+          </h2>
+          <div class="color-add">
+            <button
+              type="button"
+              id="source-color-add-type"
+              aria-label="Source effect to add"
+            ></button>
+            <button id="source-color-add">+ Add effect</button>
+          </div>
+        </div>
+        <div id="source-color-chain" class="color-chain"></div>
+      </section>
+      <div id="sample-panel-home" hidden></div>
+      <section class="sample-panel" aria-label="Sample and grains">
+        <div class="input-source" id="browser-input" hidden>
+          <div class="source-tabs" role="group" aria-label="Input source">
+            <button id="source-file" aria-pressed="true">File</button>
+            <button id="source-mic" aria-pressed="false" disabled>
+              Microphone
+            </button>
+          </div>
+          <div class="microphone-controls" id="microphone-controls" hidden>
+            <div class="microphone-settings">
+              <select id="input-device" aria-label="Microphone device">
+                <option value="">Default microphone</option>
+              </select>
+              <select id="input-mode" aria-label="Microphone processing">
+                <option value="effects">Filters + FX</option>
+                <option value="grains">Grains + Filters + FX</option>
+              </select>
+              <label class="input-gain"
+                >GAIN<input
+                  id="input-gain"
+                  type="range"
+                  min="0"
+                  max="2"
+                  step="0.01"
+                  value="1"
+                /><output id="input-gain-value">100%</output></label
+              >
+              <div
+                class="input-meter"
+                role="meter"
+                aria-label="Microphone level"
+                aria-valuemin="0"
+                aria-valuemax="100"
+                aria-valuenow="0"
+              >
+                <i id="input-level"></i>
+              </div>
+              <button
+                id="input-listen"
+                aria-pressed="false"
+                title="Hear the processed microphone through your speakers or headphones"
+              >
+                Listen
+              </button>
+            </div>
+            <div class="microphone-recording">
+              <div id="microphone-record-slot"></div>
+              <label class="record-source-label"
+                >RECORD<select id="record-source" aria-label="Recording source">
+                  <option value="input">Microphone only</option>
+                  <option value="output">With processing</option>
+                </select></label
+              >
+              <button
+                id="input-capture"
+                class="buffer-capture"
+                title="Save a snapshot of the input buffer as WAV"
+              >
+                Capture last 8 s
+              </button>
+            </div>
+            <div id="microphone-result-slot"></div>
+          </div>
+          <span id="input-status" class="muted" role="status"></span>
+        </div>
+        <div class="sample-top">
+          <div>
+            <span class="led"></span
+            ><strong id="sample-name" class="sr-only">Glass sequence</strong>
+            <button id="sample-select" type="button" aria-label="Audio source" disabled>
+              Glass sequence</button
+            ><strong id="live-source-name" hidden>Microphone</strong
+            ><strong id="drum-source-name" hidden>Drum machine</strong
+            ><span id="sample-info" class="muted">8.00 s</span>
+          </div>
+          <button
+            id="library-toggle"
+            aria-expanded="false"
+            aria-controls="file-library"
+          >
+            Library <span id="library-count">0</span>
+          </button>
+        </div>
+        <div class="wave-wrap" id="drop-zone">
+          <canvas
+            id="wave"
+            aria-label="Sample waveform. Drag to select a loop, click to change position"
+            title="Drag to select a loop · drag the handles to adjust it"
+          ></canvas>
+          <button
+            id="region-start-handle"
+            class="region-handle"
+            data-edge="start"
+            role="slider"
+            aria-label="Selection start"
+            aria-orientation="horizontal"
+            hidden
+          >
+            IN
+          </button>
+          <button
+            id="region-end-handle"
+            class="region-handle"
+            data-edge="end"
+            role="slider"
+            aria-label="Selection end"
+            aria-orientation="horizontal"
+            hidden
+          >
+            OUT
+          </button>
+          <div class="drop-hint">Drop a WAV or MP3 file</div>
+        </div>
+        <div class="sample-bottom">
+          <span id="position-info">00:00.00</span
+          ><span><b id="grain-count">0</b> / 128 grains</span
+          ><span id="sample-end">00:08.00</span>
+        </div>
+        <div
+          id="sample-selection"
+          class="sample-selection"
+          aria-label="Playback region"
+          hidden
+        >
+          <div class="region-times">
+            <label
+              >IN
+              <input
+                id="region-start"
+                type="number"
+                min="0"
+                step="0.001"
+                aria-label="Selection start in seconds"
+                disabled
+            /></label>
+            <label
+              >OUT
+              <input
+                id="region-end"
+                type="number"
+                min="0"
+                step="0.001"
+                aria-label="Selection end in seconds"
+                disabled
+            /></label>
+          </div>
+          <div class="region-times fade-times">
+            <label
+              >FADE IN
+              <input
+                id="fade-in"
+                type="number"
+                min="0"
+                step="1"
+                value="0"
+                aria-label="Fade in milliseconds"
+                disabled
+              /><span>ms</span></label
+            >
+            <label
+              >FADE OUT
+              <input
+                id="fade-out"
+                type="number"
+                min="0"
+                step="1"
+                value="0"
+                aria-label="Fade out milliseconds"
+                disabled
+              /><span>ms</span></label
+            >
+          </div>
+          <div class="region-loop">
+            <label
+              class="bar-loop-toggle"
+              title="Play the selection in one bar at any MIDI note or pitch"
+            >
+              <input id="loop-one-bar" type="checkbox" disabled />
+              Loop 1 bar
+            </label>
+            <label class="sample-root-label" for="sample-root-note">Root</label>
+            <select
+              id="sample-root-note"
+              aria-label="Sample root note"
+              title="Original pitch of the sample"
+              disabled
+            ></select>
+          </div>
+          <output id="region-duration">0.000 s loop</output>
+          <div class="region-actions">
+            <button id="region-reset" title="Play the full file" disabled>
+              Full
+            </button>
+            <button
+              id="region-save"
+              class="light"
+              title="Save the selection and fades as a new sample in Library"
+              disabled
+            >
+              Save edit
+            </button>
+          </div>
+        </div>
+        <section
+          id="file-library"
+          class="file-library"
+          aria-label="File library"
+          hidden
+        >
+          <div class="library-heading">
+            <div>
+              <h2>Library</h2>
+              <span id="library-status" role="status">Opening library…</span>
+            </div>
+            <button id="library-import" disabled>+ Import files</button>
+          </div>
+          <div class="library-tools">
+            <div class="library-filters" aria-label="File type">
+              <button data-library-filter="all" aria-pressed="true">All</button>
+              <button data-library-filter="audio" aria-pressed="false">
+                Audio
+              </button>
+              <button data-library-filter="render" aria-pressed="false">
+                Renders
+              </button>
+              <button data-library-filter="recording" aria-pressed="false">
+                Recordings
+              </button>
+              <button data-library-filter="trash" aria-pressed="false">
+                Trash
+              </button>
+            </div>
+            <input
+              id="library-search"
+              type="search"
+              placeholder="Search files"
+              aria-label="Search library"
+            />
+          </div>
+          <div id="library-list" class="library-list"></div>
+        </section>
+      </section>
+      <div id="grain-engine-home" hidden></div>
+      <section class="bank" id="grain-engine" aria-label="Grain engine" data-tap="grains">
+        <div class="section-heading">
+          <div class="section-title">
+            <button
+              id="history-granular"
+              class="power"
+              aria-label="Granular"
+              aria-pressed="false"
+              title="Granular processing of this timbre's live history"
+              hidden
+            >
+              <svg aria-hidden="true"><use href="#power-glyph" /></svg>
+            </button>
+            <h2>Grain engine <span id="drum-grain-count" hidden>0 grains</span></h2>
+          </div>
+          <div class="resynth-actions">
+            <label id="grain-buffer-field" class="history-buffer" hidden
+              >Buffer<select
+                id="grain-buffer"
+                aria-label="Granular buffer duration"
+              ></select
+            ></label>
+            <label
+              class="history-buffer"
+              title="What CLOUD scatters grains over: a share of the whole source, or a span of time up to 4 s"
+              >Cloud<select id="cloud-mode" aria-label="Cloud scatter range">
+                <option value="region">% of source</option>
+                <option value="time">Time</option>
+              </select></label
+            >
+            <label class="check"
+              ><input id="antialias" type="checkbox" checked />Anti-alias</label
+            >
+            <label
+              id="grain-quality-field"
+              class="history-buffer"
+              title="How this device's grains read between frames. High: pitched-up grains get kernels that keep what lies above the new Nyquist from folding back. Eco: every grain reads like an unpitched one, lighter on the CPU when pitched up, but the top folds back. Exports always render High."
+              hidden
+              >Reads<select id="grain-quality" aria-label="Grain read quality">
+                <option value="high">High</option>
+                <option value="eco">Eco</option>
+              </select></label
+            >
+            <button
+              id="grain-advanced"
+              class="mode-toggle"
+              aria-pressed="false"
+              title="Advanced mode: deal grains to four groups, each with its own pitch, shape, drive, waveshaper, filter and envelopes"
+            >
+              Advanced
+            </button>
+          </div>
+        </div>
+        <div id="grain-controls" class="knob-grid"></div>
+        <div id="grain-groups" class="grain-groups" hidden>
+          <div class="grain-group-bar">
+            <div
+              id="grain-group-tabs"
+              class="grain-group-tabs"
+              role="tablist"
+              aria-label="Grain groups"
+            ></div>
+            <canvas
+              id="grain-group-curve"
+              class="grain-group-curve"
+              role="img"
+              aria-label="Envelopes of the selected group over one grain"
+            ></canvas>
+          </div>
+          <div id="grain-group-pages"></div>
+        </div>
+      </section>
+      <section class="bank resynth-bank" aria-label="Resynth" data-tap="resynth">
+        <div class="section-heading">
+          <div class="section-title">
+            <button
+              id="resynth-enabled"
+              class="power"
+              aria-label="Resynth"
+              aria-pressed="false"
+              title="Switch Resynth on or off"
+            >
+              <svg aria-hidden="true"><use href="#power-glyph" /></svg>
+            </button>
+            <h2>Resynth</h2>
+          </div>
+          <div class="resynth-actions">
+            <select id="resynth-input" aria-label="Resynth analysis input">
+              <option value="source">Source</option>
+              <option value="grains">Grains</option>
+            </select>
+            <div id="resynth-tracking" class="resynth-tracking" role="group" aria-label="Resynth tracking">
+              <button
+                data-tracking="fixed"
+                aria-pressed="true"
+                title="Find each band's frequency around fixed band centres: steady for chords and loops"
+              >
+                Fixed
+              </button>
+              <button
+                data-tracking="follow"
+                aria-pressed="false"
+                title="Follow the partial each band finds and keep its pitch as notes die away: for single lines"
+              >
+                Follow
+              </button>
+            </div>
+            <button id="resynth-add">+ Oscillator</button>
+          </div>
+        </div>
+        <div
+          id="resynth-spectrum"
+          class="resynth-spectrum"
+          role="img"
+          aria-label="Resynth 16 band envelopes"
+        ></div>
+        <div id="resynth-controls" class="knob-grid resynth-controls"></div>
+        <div id="resynth-oscillators" class="resynth-oscillators"></div>
+      </section>
+      <section class="bank color-bank" aria-label="Pre-filter effects" data-tap="pre_fx">
+        <div class="section-heading">
+          <h2>Pre-filter effects</h2>
+          <div class="color-add">
+            <button
+              type="button"
+              id="pre-color-add-type"
+              aria-label="Pre-filter effect to add"
+            ></button>
+            <button id="pre-color-add">+ Add effect</button>
+          </div>
+        </div>
+        <div id="pre-color-chain" class="color-chain"></div>
+      </section>
+      <section class="bank filter-bank" aria-label="Filters" data-tap="filters">
+        <div class="section-heading">
+          <div class="section-title">
+            <button
+              id="bus-filters"
+              class="power"
+              aria-label="Filters 1 and 2"
+              aria-pressed="false"
+              title="Switch Filters 1 and 2 of this bus on or off"
+              hidden
+            >
+              <svg aria-hidden="true"><use href="#power-glyph" /></svg>
+            </button>
+            <h2>Filters</h2>
+          </div>
+          <div class="filter-routing">
+            <output id="filter-path">IN → F1 → OUT</output>
+            <select id="filter-routing" aria-label="Filter routing">
+              <option value="single">Single</option>
+              <option value="serial">Serial</option>
+              <option value="parallel">Parallel</option>
+            </select>
+            <button id="add-filter" title="Add a filter at any point of the signal path">+ Add filter</button>
+          </div>
+        </div>
+        <div id="filters" class="filter-grid"></div>
+        <div id="added-filters" class="filter-grid added-filter-grid"></div>
+        <div id="filter-outputs" class="filter-outputs" aria-label="Individual filter outputs"></div>
+      </section>
+      <section class="bank color-bank" aria-label="Post-filter effects" data-tap="post_fx">
+        <div class="section-heading">
+          <h2>Post-filter effects</h2>
+          <div class="color-add">
+            <button type="button" id="color-add-type" aria-label="Effect to add"></button>
+            <button id="color-add">+ Add effect</button>
+          </div>
+        </div>
+        <div id="color-chain" class="color-chain"></div>
+      </section>
+      <section class="mod-section">
+        <div class="section-heading">
+          <h2>Modulation</h2>
+        </div>
+        <div class="mod-bank-tools">
+          <strong>LFO <span id="lfo-count">3 / 8</span></strong
+          ><button id="lfo-remove" aria-label="Remove last LFO" hidden>− LFO</button>
+          <button id="lfo-add">+ LFO</button>
+        </div>
+        <div id="lfos" class="lfo-grid"></div>
+        <div class="mod-bank-tools">
+          <strong>ENV <span id="env-count">3 / 8</span></strong
+          ><button id="env-remove" aria-label="Remove last ENV" hidden>− ENV</button>
+          <button id="env-add">+ ENV</button>
+        </div>
+        <div id="envs" class="env-grid"></div>
+      </section>
+      <section class="bank macro-bank" aria-label="Macros">
+        <div class="section-heading">
+          <h2>Macros <span id="macro-count">0 / 8</span></h2>
+          <button id="macro-add">+ Macro</button>
+        </div>
+        <p id="macro-empty" class="macro-empty">
+          A macro turns several controls with one knob. Add one here, or
+          right-click any knob or slider and choose Macro.
+        </p>
+        <div id="macros" class="macro-grid"></div>
+      </section>
+      <section class="bank matrix-bank" aria-label="Modulation matrix">
+        <div class="section-heading">
+          <h2>Mod matrix <span id="matrix-count">0 / 8</span></h2>
+          <button id="matrix-add">+ Add modulation</button>
+        </div>
+        <div id="matrix" class="matrix"></div>
+      </section>
+      <section class="performance-section">
+        <div class="section-heading">
+          <h2>Performance</h2>
+          <select id="performance-mode" aria-label="Performance mode">
+            <option value="keys">Keys</option>
+            <option value="hold">Hold note</option>
+            <option value="arp">Arpeggiator</option>
+          </select>
+        </div>
+        <div id="arp-controls" class="performance-controls" hidden>
+          <label
+            >ORDER<select id="arp-direction" aria-label="Arpeggiator order">
+              <option value="up">Up</option>
+              <option value="down">Down</option>
+              <option value="up_down">Up / down</option>
+              <option value="random">Random</option>
+              <option value="as_played">As played</option>
+            </select></label
+          >
+          <label
+            >RATE<select id="arp-division" aria-label="Arpeggiator rate">
+              <option value="1">1/4</option>
+              <option value="0.5">1/8</option>
+              <option value="0.25">1/16</option>
+              <option value="0.125">1/32</option>
+              <option value="0.33333334">1/8 triplet</option>
+              <option value="0.16666667">1/16 triplet</option>
+            </select></label
+          >
+          <label
+            >OCTAVES<select id="arp-octaves" aria-label="Arpeggiator octaves">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+            </select></label
+          >
+          <label
+            >GATE<input
+              id="arp-gate"
+              type="range"
+              min="0.05"
+              max="0.95"
+              step="0.01"
+              aria-label="Arpeggiator gate"
+            /><output id="arp-gate-value">65%</output></label
+          >
+        </div>
+        <div id="hold-controls" class="hold-controls" hidden>
+          <label class="check" id="arp-hold-label"
+            ><input id="arp-hold" type="checkbox" checked />Hold chord</label
+          >
+          <label class="chord-input"
+            >NOTES<input
+              id="performance-chord"
+              type="text"
+              spellcheck="false"
+              aria-label="Held chord"
+              value="C4 E4 G4"
+          /></label>
+          <button id="clear-hold">Clear hold</button>
+        </div>
+      </section>
+      <section
+        class="bank neuro-bank"
+        id="neuropolis"
+        aria-label="Neuropolis sequencer"
+      ></section>
+      <section class="keyboard-section" id="keyboard-section">
+        <div class="keyboard-head">
+          <div>
+            <h2>Keyboard</h2>
+            <span class="muted">A W S E D F T G Y H U J K</span>
+          </div>
+          <div class="midi-controls">
+            <span class="led" id="midi-led"></span
+            ><select id="midi" aria-label="MIDI input">
+              <option value="">Computer keyboard</option></select
+            ><button
+              id="midi-refresh"
+              class="icon-button"
+              aria-label="Refresh MIDI devices"
+              title="Refresh MIDI devices"
+            >
+              ↻
+            </button>
+          </div>
+        </div>
+        <div class="controller-controls" id="controller-controls" hidden>
+          <div class="controller-head">
+            <span class="led off" id="controller-led"></span>
+            <select id="controller-device" aria-label="Control surface">
+              <option value="auto">Launch Control XL · Auto</option>
+              <option value="">Off</option>
+            </select>
+            <select id="controller-mode" aria-label="Controller mapping">
+              <option value="mixer">Mixer</option>
+              <option value="learn">MIDI Learn</option>
+              <option value="native">XL3 · 16 modes</option>
+              <option value="daw">XL3 · 16 pages + RGB</option>
+            </select>
+            <button id="controller-connect">Connect</button>
+          </div>
+          <div id="controller-pages" class="controller-pages" hidden>
+            <button id="controller-page-prev" aria-label="Previous mapping page">←</button>
+            <select id="controller-page" aria-label="MIDI mapping page"></select>
+            <button id="controller-page-next" aria-label="Next mapping page">→</button>
+            <output id="controller-page-count" aria-live="polite"></output>
+          </div>
+          <p id="controller-learn-hint" class="controller-learn-hint" hidden>
+            Upper buttons: pages 1–8 · lower: 9–16 · ← / → changes page.
+          </p>
+          <output id="controller-status" aria-live="polite"></output>
+          <details id="controller-map">
+            <summary>Mapping</summary>
+            <p id="controller-template"></p>
+            <dl>
+              <dt>Faders</dt><dd>Timbre levels into Master</dd>
+              <dt>Knobs, top to bottom</dt><dd id="controller-send-names"></dd>
+              <dt>Upper buttons</dt><dd>Select timbre</dd>
+              <dt>Lower buttons</dt><dd>Mute or Solo · choose with the side buttons</dd>
+              <dt>← / →</dt><dd>Previous / next 8 timbres</dd>
+              <dt>↑ / ↓ · Mk1/Mk2</dt><dd>Previous / next 3 buses</dd>
+            </dl>
+            <div id="controller-tracks" class="controller-tracks"></div>
+            <p>To assign a control yourself, right-click a knob → MIDI learn, then move the control. Assignments stay in this browser.</p>
+          </details>
+        </div>
+        <div class="clock-controls" id="clock-controls" hidden>
+          <span class="led off" id="clock-led"></span>
+          <span class="clock-title">MIDI CLOCK</span>
+          <label
+            class="check"
+            title="Follow tempo, song position, Start and Stop from the MIDI input"
+            ><input type="checkbox" id="clock-follow" />Follow input</label
+          >
+          <label
+            class="clock-lead"
+            title="Play this far ahead of the clock (behind when negative), to make up for a slow link"
+            >OFFSET<input
+              id="clock-lead"
+              type="number"
+              min="-500"
+              max="500"
+              step="1"
+              value="0"
+              aria-label="Clock offset in milliseconds"
+            />MS</label
+          >
+          <select id="clock-out" aria-label="Send MIDI clock to">
+            <option value="">No clock out</option>
+          </select>
+          <output id="clock-status" aria-live="polite"></output>
+        </div>
+        <div class="keyboard-tools">
+          <div class="octave-controls">
+            <button id="octave-down" aria-label="Octave down">−</button>
+            <select id="keyboard-octave" aria-label="Keyboard octave"></select>
+            <button id="octave-up" aria-label="Octave up">+</button>
+            <output id="keyboard-range" aria-live="polite">C4–C5</output>
+            <span class="octave-shortcut">Z / X</span>
+          </div>
+          <div id="step-entry-prompt" hidden>
+            <span id="step-entry-label" aria-live="polite"></span>
+            <button id="step-entry-clear">Clear</button>
+            <button id="step-entry-cancel">Done</button>
+          </div>
+        </div>
+        <div id="keyboard" aria-label="C4 to C5 keyboard"></div>
+      </section>
+      <footer>
+        <div class="runtime-status">
+          <span class="led" id="audio-led"></span
+          ><span id="audio-status">Connecting…</span
+          ><span class="divider">/</span><span id="cpu">DSP 0.0%</span>
+          <button id="quit" class="text-button">Quit</button>
+        </div>
+        <div class="render-controls">
+          <select id="render-duration" aria-label="Export duration">
+            <option value="8">8 seconds</option>
+            <option value="16" selected>16 seconds</option>
+            <option value="32">32 seconds</option>
+            <option value="60">60 seconds</option></select
+          ><button id="render">Render WAV <span>↓</span></button>
+        </div>
+      </footer>
+      <input
+        id="wav-file"
+        type="file"
+        accept=".wav,.mp3,audio/wav,audio/x-wav,audio/wave,audio/mpeg"
+        hidden
+      /><input
+        id="preset-file"
+        type="file"
+        accept=".sadpet,.json,.sad.json,.evil.json"
+        hidden
+      />
+      <input
+        id="library-files"
+        type="file"
+        accept=".wav,.mp3,audio/wav,audio/mpeg,.sadpet,.json,.sad.json,.evil.json"
+        multiple
+        hidden
+      />
+    </main>
+  </body>
+</html>

@@ -11,13 +11,17 @@ pub const GLOBAL: usize = VOICES + BANDS;
 pub const LANES: usize = GLOBAL + 1;
 const ABSENT: f32 = -1.0;
 const EVENT_DELAY: usize = 64;
-// Polyphonic sources have voice lanes, spectral sources have band lanes,
-// and mono sources/groups use GLOBAL. Their unused cross-domain lanes never
-// receive natural events, so they do not need 64-sample delay lines.
+// Legacy polyphonic sources have voice lanes, Resynth has band lanes, and
+// mono sources/groups use GLOBAL. MainPitch additionally gives Resynth and
+// the five 303 nodes voice lanes; the other unused domains stay unallocated.
 const POLY_DELAY_LINES: usize = 16 * (VOICES + 1);
 const SPECTRAL_DELAY_LINES: usize = 4 * (BANDS + 1);
-const DELAY_LINES: usize = POLY_DELAY_LINES + SPECTRAL_DELAY_LINES + model::NODES - 20;
+const LEGACY_DELAY_LINES: usize = POLY_DELAY_LINES + SPECTRAL_DELAY_LINES + model::NODES - 20;
+const DELAY_LINES: usize = LEGACY_DELAY_LINES + 9 * VOICES;
 fn delay_line(node: usize, lane: usize) -> Option<usize> {
+    if (16..25).contains(&node) && lane < VOICES {
+        return Some(LEGACY_DELAY_LINES + (node - 16) * VOICES + lane);
+    }
     if node < 16 {
         let lane = if lane < VOICES {
             lane
@@ -237,6 +241,7 @@ pub struct Runtime {
     count: usize,
     frame: u64,
     voice_generations: [u32; VOICES],
+    sequence_voices: u64,
     pub demanded: u32,
     pub targets: u32,
     pub dropped_births: u64,
@@ -256,6 +261,7 @@ impl Runtime {
             targets: 0,
             dropped_births: 0,
             voice_generations: [u32::MAX; VOICES],
+            sequence_voices: 0,
         }
     }
     pub fn active(&self) -> bool {
@@ -346,6 +352,7 @@ impl Runtime {
         }
         self.scheduled.fill(Scheduled::default());
         self.voice_generations.fill(u32::MAX);
+        self.sequence_voices = 0;
         for r in &mut self.routes {
             r.counters.fill(0);
             r.permitted.fill(false);
@@ -356,6 +363,7 @@ impl Runtime {
             return;
         }
         self.voice_generations[lane] = generation;
+        self.sequence_voices &= !(1_u64 << lane);
         for node in 0..model::NODES {
             self.previous[node][lane] = Frame::default();
             self.current[node][lane] = Frame::default();
@@ -364,6 +372,14 @@ impl Runtime {
                 let start = line * EVENT_DELAY;
                 self.scheduled[start..start + EVENT_DELAY].fill(Scheduled::default());
             }
+        }
+    }
+    /// MainPitch sources have their own Resynth/303 runtime in this lane.
+    /// Ordinary voices retain the legacy spectral/mono GLOBAL bridge behavior.
+    pub fn prepare_sequence_voice(&mut self, lane: usize, generation: u32) {
+        self.prepare_voice(lane, generation);
+        if lane < VOICES {
+            self.sequence_voices |= 1_u64 << lane;
         }
     }
     pub fn invalidate_node(&mut self, node: usize) {
@@ -440,10 +456,15 @@ impl Runtime {
     pub fn needed(&self, node: usize) -> bool {
         node < model::NODES && (self.demanded | self.targets) & (1 << node) != 0
     }
-    fn source_lane(route: &Compiled, target_lane: usize) -> usize {
+    fn source_lane(&self, route: &Compiled, target_lane: usize) -> usize {
+        let voice_source = |lane: usize| {
+            lane < VOICES
+                && (route.source < 16
+                    || (route.source < 25 && self.sequence_voices & (1_u64 << lane) != 0))
+        };
         match route.route.bridge {
             Bridge::SameVoice => {
-                if route.source < 16 && target_lane < VOICES {
+                if voice_source(target_lane) {
                     target_lane
                 } else {
                     GLOBAL
@@ -451,11 +472,8 @@ impl Runtime {
             }
             Bridge::Mix => GLOBAL,
             Bridge::Voice { index } => {
-                if route.source < 16 {
-                    usize::from(index).min(VOICES - 1)
-                } else {
-                    GLOBAL
-                }
+                let lane = usize::from(index).min(VOICES - 1);
+                if voice_source(lane) { lane } else { GLOBAL }
             }
             Bridge::Band { index } => {
                 if (16..20).contains(&route.source) {
@@ -465,7 +483,7 @@ impl Runtime {
                 }
             }
             Bridge::Auto => {
-                if (route.source < 16 && target_lane < VOICES)
+                if voice_source(target_lane)
                     || ((16..20).contains(&route.source) && (VOICES..GLOBAL).contains(&target_lane))
                 {
                     target_lane
@@ -486,7 +504,7 @@ impl Runtime {
             .take(self.count)
             .filter(|r| r.target == node)
         {
-            let source_lane = Self::source_lane(route, lane);
+            let source_lane = self.source_lane(route, lane);
             let frame = self.previous[route.source][source_lane];
             let live = frame.stamp + 1 == self.frame;
             if route.depth > 0.0 {
@@ -690,7 +708,7 @@ mod tests {
             }
         }
         assert!(used.into_iter().all(|v| v));
-        assert!(DELAY_LINES * EVENT_DELAY * std::mem::size_of::<Scheduled>() <= 640 * 1024);
+        assert!(DELAY_LINES * EVENT_DELAY * std::mem::size_of::<Scheduled>() <= 1024 * 1024);
         let mut r = Runtime::new(48000);
         r.configure(
             &Settings {
@@ -737,6 +755,88 @@ mod tests {
         for (i, events) in seen.iter().enumerate() {
             assert_eq!(events.len(), 1, "lane {i}");
             assert!((events[0] - (0.175 + i as f64 * 0.1)).abs() < 1e-6);
+        }
+    }
+    #[test]
+    fn sequence_sources_route_same_voice_without_changing_legacy_domains() {
+        let mut r = Runtime::new(48000);
+        let routes = [Node::Resynth { index: 0 }, Node::Tb303Vco].map(|source| Route {
+            source,
+            target: Node::Synth { index: 0 },
+            ring: 1.0,
+            ..Route::default()
+        });
+        // Exercise each source separately because one target chooses its last ring route.
+        for route in routes {
+            r.configure(
+                &Settings {
+                    routes: vec![route],
+                    ..Settings::default()
+                },
+                None,
+            );
+            let node = route.source.resolve(None).unwrap();
+            r.prepare_sequence_voice(1, 7);
+            r.prepare_sequence_voice(2, 9);
+            r.prepare_voice(1, 7); // Other backends preparing the same voice keep the marker.
+            r.begin_frame();
+            r.publish(node, 1, [0.25; 2], [0.25; 2], 1.0);
+            r.publish(node, 2, [0.75; 2], [0.75; 2], 1.0);
+            r.finish_frame();
+            r.begin_frame();
+            assert_eq!(r.input(8, 1).ring, 0.25);
+            assert_eq!(r.input(8, 2).ring, 0.75);
+            // Ordinary MIDI voices still hear the source's mono/mixed domain.
+            assert_eq!(r.input(8, 3).ring, 0.5);
+            r.prepare_voice(1, 8); // Reassignment to MIDI retires the sequence domain.
+            assert_eq!(r.input(8, 1).ring, 0.5);
+            r.finish_frame();
+        }
+    }
+
+    #[test]
+    fn sequence_spectral_and_303_delayed_wraps_do_not_alias_other_voices() {
+        for source in [
+            Node::Resynth { index: 0 },
+            Node::Tb303 { index: 0 },
+            Node::Tb303Vco,
+        ] {
+            let mut r = Runtime::new(48000);
+            r.configure(
+                &Settings {
+                    routes: vec![Route {
+                        source,
+                        target: Node::Synth { index: 0 },
+                        event: Event::NaturalWrap,
+                        sync: SyncMode::Hard,
+                        ..Route::default()
+                    }],
+                    ..Settings::default()
+                },
+                None,
+            );
+            let node = source.resolve(None).unwrap();
+            r.prepare_sequence_voice(1, 1);
+            r.prepare_sequence_voice(2, 1);
+            r.begin_frame();
+            r.natural_event(node, 1, 0.2, 3.125);
+            r.natural_event(node, 2, 0.6, 3.125);
+            r.finish_frame();
+            let mut events = [Vec::new(), Vec::new()];
+            for _ in 0..7 {
+                r.begin_frame();
+                for (i, events) in events.iter_mut().enumerate() {
+                    let event = r.input(8, i + 1).playback.event;
+                    if event >= 0.0 {
+                        events.push(event);
+                    }
+                }
+                r.finish_frame();
+            }
+            for (events, expected) in events.iter().zip([0.325, 0.725]) {
+                assert_eq!(events.len(), 1);
+                assert!((events[0] - expected).abs() < 1e-6);
+            }
         }
     }
     #[test]

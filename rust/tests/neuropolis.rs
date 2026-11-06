@@ -419,7 +419,10 @@ fn destinations_change_working_sound_parameters_without_overwriting_the_patch() 
     e.set_playing(true);
     frames(&mut e, 50);
     let v = view(&mut e);
-    assert_eq!(v.params.sample_tune_semis, 12.0);
+    assert_eq!(
+        v.params.sample_tune_semis, 0.0,
+        "MainPitch is a voice route"
+    );
     assert!((v.params.filter - (base - 0.125)).abs() < 1e-5);
     assert_eq!(e.preset.params.sample_tune_semis, 0.0);
     assert_eq!(e.preset.params.filter, base);
@@ -726,45 +729,47 @@ fn opposite_tracks_cancel_before_clamping_and_unipolar_absolute_cv_uses_the_full
 }
 
 #[test]
-fn main_pitch_steps_can_gate_envelopes_like_notes() {
-    use sad_pet::matrix::Source;
+fn main_pitch_env_gate_defaults_on_and_drone_is_track_local() {
     let mut p = Preset::default();
     p.sequencer.enabled = true;
     // 1/16 at 120 BPM is 1000 frames at 8 kHz; the 55% gate closes near 550.
-    p.sequencer.tracks = vec![track(1, 1, Target::MainPitch)];
+    let mut gated = track(1, 1, Target::MainPitch);
+    gated.oscillator_mask = 0;
+    gated.granular = false;
+    let mut drone = track(2, 1, Target::MainPitch);
+    drone.steps.fill(Stage {
+        pitch: 72,
+        ..Stage::default()
+    });
+    drone.oscillator_mask = 0;
+    drone.granular = false;
+    drone.env_gate = false;
+    p.sequencer.tracks = vec![gated, drone];
     for env in &mut p.envs {
         env.release = 0.0;
     }
-    let old = p.clone();
-    p.sequencer.tracks[0].env_gate = true;
     let mut e = engine(p);
     e.set_playing(true);
-    let mut starts = [0; 3];
-    let mut closed = [0; 3];
-    let mut previous = [0.0; 3];
-    no_heap(|| {
-        for frame in 0..4000 {
-            e.process_frame();
-            for env in 0..3 {
-                let value = e.env_values[env];
-                starts[env] += usize::from(previous[env] == 0.0 && value > 0.0);
-                closed[env] += usize::from(frame % 1000 > 700 && value == 0.0);
-                previous[env] = value;
-            }
-            let gate = e.modulation_source(Source::Gate);
-            match frame % 1000 {
-                0..500 => assert_eq!(gate, 1.0, "frame {frame}"),
-                701.. => assert_eq!(gate, 0.0, "frame {frame}"),
-                _ => {}
-            }
-        }
-    });
-    assert_eq!(starts, [4; 3], "ENV1-3 restart on every step");
-    assert_eq!(closed, [4 * 299; 3], "ENV1-3 release after each gate");
+    frames(&mut e, 4);
+    assert!(
+        e.voice_filter_cutoffs(60).is_some(),
+        "default ENV gate starts the track voice"
+    );
+    assert!(
+        e.voice_filter_cutoffs(72).is_some(),
+        "the drone starts its own voice"
+    );
+    frames(&mut e, 700);
+    assert!(
+        e.voice_filter_cutoffs(60).is_none(),
+        "ENV-gated voice releases when its gate closes"
+    );
+    assert!(
+        e.voice_filter_cutoffs(72).is_some(),
+        "another track's drone remains held"
+    );
 
-    // Switching the gate off reopens the held voice without waiting a step.
-    frames(&mut e, 800);
-    assert_eq!(e.env_values[0], 0.0);
+    // Switching ENV off reopens only this track's voice between clock steps.
     let edit = |value| Edit {
         track: 1,
         stage: None,
@@ -774,54 +779,79 @@ fn main_pitch_steps_can_gate_envelopes_like_notes() {
     e.apply_sequence_edits(&[edit(0.0)]);
     assert!(!e.preset.sequencer.tracks[0].env_gate);
     frames(&mut e, 40);
-    assert!(e.env_values[0] > 0.5);
-    frames(&mut e, 1000);
-    assert!(e.env_values[0] > 0.5, "The free voice was gated while off");
+    assert!(
+        e.voice_filter_cutoffs(60).is_some(),
+        "ENV-off track reopens between steps"
+    );
+    assert!(e.voice_filter_cutoffs(72).is_some());
     e.apply_sequence_edits(&[edit(1.0)]);
-    frames(&mut e, 1000);
-    assert_eq!(e.env_values[0], 0.0, "The gate did not resume");
-
-    // Without the option, Main pitch keeps the free voice droning as before.
-    let mut e = engine(old);
-    e.set_playing(true);
-    frames(&mut e, 100);
-    for _ in 0..4000 {
-        e.process_frame();
-        assert!(e.env_values[0] > 0.5);
-        assert_eq!(e.modulation_source(Source::Gate), 1.0);
-    }
+    frames(&mut e, 40);
+    let after_40_frames = e.voice_filter_cutoffs(60);
+    frames(&mut e, 40);
+    let after_80_frames = e.voice_filter_cutoffs(60);
+    assert!(
+        after_80_frames.is_none(),
+        "turning ENV back on closes the gated voice; +40={after_40_frames:?}, +80={after_80_frames:?}"
+    );
+    assert!(
+        e.voice_filter_cutoffs(72).is_some(),
+        "ENV edits remain independent per track"
+    );
 
     let mut value = serde_json::to_value(Preset::default()).unwrap();
     let saved = value["sequencer"]["tracks"][0].as_object_mut().unwrap();
-    assert_eq!(saved.remove("env_gate"), Some(serde_json::json!(false)));
+    assert_eq!(saved.remove("env_gate"), Some(serde_json::json!(true)));
     let p: Preset = serde_json::from_value(value).unwrap();
-    assert!(!p.sequencer.tracks[0].env_gate);
+    assert!(
+        p.sequencer.tracks[0].env_gate,
+        "missing ENV flag uses the new default"
+    );
+    let mut saved = serde_json::to_value(Preset::default()).unwrap();
+    saved["sequencer"]["tracks"][0]["env_gate"] = serde_json::json!(false);
+    let p: Preset = serde_json::from_value(saved).unwrap();
+    assert!(
+        !p.sequencer.tracks[0].env_gate,
+        "explicit ENV-off survives recall"
+    );
     let json = serde_json::json!([{"track":1,"field":53,"value":1}]);
     assert_eq!(sad_pet::sequence::parse_edits(&json).unwrap()[0].field, 53);
-    let json = serde_json::json!([{"track":1,"field":57,"value":1}]);
-    assert!(sad_pet::sequence::parse_edits(&json).is_err());
+    let json =
+        serde_json::json!([{"track":1,"field":57,"value":1},{"track":1,"field":84,"value":1}]);
+    assert_eq!(sad_pet::sequence::parse_edits(&json).unwrap().len(), 2);
 }
 
 #[test]
-fn env_gate_steps_retrigger_every_envelope_type_without_a_dip() {
-    use sad_pet::{matrix::Source, preset::EnvMode};
-    // A steady 600 Hz tone through the free voice: ENV1 is its VCA and ENV2
-    // opens the closed filter. With full sustain and a long release, a gate
-    // only retriggers levels that barely moved, so no step may dip.
+fn env_gate_steps_retrigger_each_main_pitch_voice_without_a_dip() {
+    use sad_pet::preset::EnvMode;
+    // Repeating steps start independent voices at one pitch. Long releases
+    // let each tail overlap the next, so a fresh gate never cuts the tone.
     let tone = (0..8000)
         .map(|i| [(i as f32 * std::f32::consts::TAU * 600.0 / 8000.0).sin() * 0.5; 2])
         .collect();
     let sample = Arc::new(SampleBuffer::new("Tone".into(), 8000, tone).unwrap());
     for mode in EnvMode::ALL {
         if matches!(mode, EnvMode::QLoopS1s2 | EnvMode::QLoopAll) {
-            // Their levels move on their own while the gate is open.
+            // These modes move their levels without a gate.
             continue;
         }
         let mut p = Preset::default();
         p.sequencer.enabled = true;
-        p.sequencer.tracks = vec![track(1, 1, Target::MainPitch)];
-        p.sequencer.tracks[0].env_gate = true;
-        p.params.mix = 0.0;
+        let mut main = track(1, 1, Target::MainPitch);
+        main.oscillator_mask = 0;
+        main.granular = true;
+        // Core track velocity is a percent: 100 maps to 127. Keep both
+        // velocity inputs at full scale so this tests envelope continuity.
+        main.config[field::VELOCITY] = 100;
+        main.steps.fill(Stage {
+            pitch: 60,
+            velocity: 127,
+            ..Stage::default()
+        });
+        p.sequencer.tracks = vec![main];
+        p.params.mix = 1.0;
+        p.params.grains = 0.8;
+        p.params.cloud = 0.0;
+        p.params.detune = 0.5;
         p.params.filter = 0.0;
         p.params.filter_env_depth = 1.0;
         for env in &mut p.envs {
@@ -836,14 +866,14 @@ fn env_gate_steps_retrigger_every_envelope_type_without_a_dip() {
         e.set_playing(true);
         let mut out = vec![];
         let mut starts = vec![];
-        let mut gate = 1.0;
+        let mut previous_step = 0;
         for frame in 0..6000 {
             out.push(e.process_frame()[0]);
-            let open = e.modulation_source(Source::Gate);
-            if open > gate && frame > 1000 {
+            let step = e.sequence_view().tracks[0].step;
+            if step != previous_step && frame > 1000 {
                 starts.push(frame);
             }
-            gate = open;
+            previous_step = step;
         }
         assert_eq!(starts.len(), 4, "{mode:?}");
         let energy = |from: usize| out[from..from + 32].iter().map(|x| x * x).sum::<f32>();
@@ -1060,7 +1090,10 @@ fn pages_save_only_what_was_edited_and_new_pages_copy_the_last() {
     let field = |field| parse_edits(&serde_json::json!([{"track": 1, "field": field, "value": 2}]));
     assert!(field(55).is_ok());
     assert!(field(56).is_ok());
-    assert!(field(57).is_err());
+    assert!(field(57).is_ok());
+    assert!(field(60).is_ok());
+    assert!(field(84).is_ok());
+    assert!(field(85).is_err());
 }
 
 #[test]

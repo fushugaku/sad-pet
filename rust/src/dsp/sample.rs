@@ -225,6 +225,77 @@ fn read_kernel<const MONO: bool>(
     }
 }
 
+/// Interpolate a compact live history with the same prepared grain kernels.
+/// Faster reads average the intervening PCM frames before interpolation, so
+/// high playback rates remain low-passed without a mip pyramid per party.
+pub(super) fn read_compact(
+    position: f64,
+    rate: f64,
+    antialiasing: bool,
+    mut frame: impl FnMut(i64) -> Stereo,
+) -> Stereo {
+    if !position.is_finite() || !rate.is_finite() {
+        return [0.0; 2];
+    }
+    let factor = if antialiasing && rate.abs() >= 2.0 {
+        (1usize << (rate.abs().log2().floor() as usize).min(6)).max(1)
+    } else {
+        1
+    };
+    let p = position / factor as f64;
+    let base = p.floor() as i64;
+    let fraction = p - base as f64;
+    let kernel = if antialiasing {
+        kernel_for_step((rate.abs() / factor as f64) as f32)
+    } else {
+        0
+    };
+    fn gather<const N: usize>(
+        base: i64,
+        fraction: f64,
+        factor: usize,
+        rows: &[[f32; N]],
+        frame: &mut impl FnMut(i64) -> Stereo,
+    ) -> Stereo {
+        let frames = std::array::from_fn(|i| {
+            let index = (base + i as i64 - (N / 2 - 1) as i64) * factor as i64;
+            let mut sum = [0.0; 2];
+            for n in 0..factor {
+                let next = frame(index + n as i64);
+                sum[0] += next[0];
+                sum[1] += next[1];
+            }
+            sum.map(|x| x / factor as f32)
+        });
+        interpolate::<N, false>(&frames, fraction, rows)
+    }
+    let rows = |offset: u8| offset as usize * ROWS..(offset as usize + 1) * ROWS;
+    match kernel {
+        0 => gather::<TAPS>(base, fraction, factor, &KERNEL[..], &mut frame),
+        1..=3 => gather::<16>(
+            base,
+            fraction,
+            factor,
+            &WIDE.taps16[rows(kernel - 1)],
+            &mut frame,
+        ),
+        4 | 5 => gather::<20>(
+            base,
+            fraction,
+            factor,
+            &WIDE.taps20[rows(kernel - 4)],
+            &mut frame,
+        ),
+        _ => gather::<24>(
+            base,
+            fraction,
+            factor,
+            &WIDE.taps24[rows(kernel - 6)],
+            &mut frame,
+        ),
+    }
+}
+
 /// The frame `fraction` (0..1) past `frames[N / 2 - 1]`.
 #[inline(always)]
 fn interpolate<const N: usize, const MONO: bool>(

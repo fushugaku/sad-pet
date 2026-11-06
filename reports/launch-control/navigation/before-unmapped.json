@@ -1,0 +1,22 @@
+{
+  "attach": 293,
+  "attachMs": 1.1000003814697266,
+  "resolutions": 3163,
+  "navigation": [
+    {
+      "label": "Master",
+      "ms": 286.3,
+      "attach": 106,
+      "attachMs": 0.8,
+      "resolutions": 1155
+    },
+    {
+      "label": "Granular 1",
+      "ms": 155.3,
+      "attach": 187,
+      "attachMs": 0.3,
+      "resolutions": 1004
+    }
+  ],
+  "mappings": 0
+}

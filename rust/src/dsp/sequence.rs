@@ -369,8 +369,9 @@ struct Lane {
     absolute: bool,
     gate_output: bool,
     env_gate: bool,
+    granular: bool,
+    oscillator_mask: u32,
     root: u8,
-    pitch_oscillators: [bool; 4],
     /// Every page's stages; the core holds the page playing.
     stages: Box<[Stage; STEPS]>,
     pages: u8,
@@ -399,15 +400,25 @@ impl Lane {
 struct Route {
     parameter: usize,
     lane: Option<usize>,
-    oscillator: Option<usize>,
     destination: Option<usize>,
+}
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MainPitchVoice {
+    pub id: u32,
+    pub offset: f32,
+    pub root_note: u8,
+    pub velocity: u8,
+    pub env_gate: bool,
+    pub open: bool,
+    pub trigger: bool,
+    pub oscillators: u32,
+    pub granular: bool,
 }
 pub(crate) struct Runtime {
     core: Sequencer,
     lanes: Vec<Lane>,
     indices: Vec<(u32, usize)>,
     routes: Vec<Route>,
-    main_pitch_routes: Vec<usize>,
     oscillator_routes: Vec<usize>,
     phase: f64,
     started: bool,
@@ -474,9 +485,7 @@ impl Runtime {
                         ),
                 };
                 let route = match binding {
-                    Binding::MainPitch => parameters::specs()
-                        .iter()
-                        .position(|s| s.id == "sample_tune_semis"),
+                    Binding::MainPitch => None,
                     Binding::Oscillator(index) => {
                         let id = format!("resynth_osc{}_transpose", index + 1);
                         parameters::specs().iter().position(|s| s.id == id)
@@ -513,8 +522,9 @@ impl Runtime {
                     absolute: t.absolute,
                     gate_output: t.gate_output,
                     env_gate: t.env_gate,
+                    granular: t.granular,
+                    oscillator_mask: t.oscillator_mask,
                     root: t.root_note,
-                    pitch_oscillators: t.pitch_oscillators,
                     stages,
                     pages: t.pages.clamp(1, PAGES as u8),
                     pager,
@@ -530,17 +540,12 @@ impl Runtime {
             .collect();
         let mut indices: Vec<_> = tracks.iter().enumerate().map(|(i, t)| (t.id, i)).collect();
         indices.sort_unstable_by_key(|p| p.0);
-        let oscillator_parameters: [usize; 4] = std::array::from_fn(|index| {
-            let id = format!("resynth_osc{}_transpose", index + 1);
-            parameters::specs().iter().position(|s| s.id == id).unwrap()
-        });
         let mut routes = Vec::new();
         for (i, lane) in lanes.iter().enumerate() {
             if let Some(parameter) = lane.route {
                 routes.push(Route {
                     parameter,
                     lane: Some(i),
-                    oscillator: oscillator_parameters.iter().position(|&id| id == parameter),
                     destination: None,
                 });
             }
@@ -553,26 +558,12 @@ impl Runtime {
                     routes.push(Route {
                         parameter,
                         lane: Some(i),
-                        oscillator: oscillator_parameters.iter().position(|&id| id == parameter),
                         destination: Some(destination),
                     });
                 }
             }
         }
-        // Include each carrier once even when it has no lane of its own. Main
-        // pitch masks can then change in place, without four routes per track.
-        for (oscillator, &parameter) in oscillator_parameters.iter().enumerate() {
-            routes.push(Route {
-                parameter,
-                lane: None,
-                oscillator: Some(oscillator),
-                destination: None,
-            });
-        }
         routes.sort_unstable_by_key(|route| route.parameter);
-        let main_pitch_routes = (0..lanes.len())
-            .filter(|&i| lanes[i].binding == Binding::MainPitch)
-            .collect();
         let oscillator_routes = (0..lanes.len())
             .filter(|&i| {
                 matches!(
@@ -595,7 +586,6 @@ impl Runtime {
             lanes,
             indices,
             routes,
-            main_pitch_routes,
             oscillator_routes,
             phase: 0.0,
             started: false,
@@ -796,8 +786,9 @@ impl Runtime {
             l.absolute = track.absolute;
             l.gate_output = track.gate_output;
             l.env_gate = track.env_gate;
+            l.granular = track.granular;
+            l.oscillator_mask = track.oscillator_mask;
             l.root = track.root_note;
-            l.pitch_oscillators = track.pitch_oscillators;
         }
     }
     /// Queue a replay that moves this playhead to where its settings, played
@@ -1008,6 +999,40 @@ impl Runtime {
     pub fn len(&self) -> usize {
         self.lanes.len()
     }
+    /// Current voice state for one MainPitch lane. Offsets follow the same
+    /// glide clock as parameter destinations and may be read between ticks.
+    pub fn main_pitch(&self, index: usize) -> Option<MainPitchVoice> {
+        let lane = self.lanes.get(index)?;
+        if lane.binding != Binding::MainPitch {
+            return None;
+        }
+        let now = self.core.ticks.saturating_sub(1) as f64 + self.phase.min(1.0);
+        let stage = lane.stage(self.core.stage(index).unwrap_or(0));
+        let open = self.enabled
+            && self.started
+            && self.sounding(index)
+            && (!lane.env_gate || self.core.gate(index));
+        let trigger = lane.env_gate && open && self.core.track_events(index) & 1 != 0;
+        let velocity =
+            (self.core.velocity(index) * i32::from(stage.velocity) / 127).clamp(0, 127) as u8;
+        Some(MainPitchVoice {
+            id: lane.id,
+            offset: (lane.pitch.value(now) - lane.root as f32) * lane.amount,
+            root_note: lane.root,
+            velocity,
+            env_gate: lane.env_gate,
+            open,
+            trigger,
+            oscillators: lane.oscillator_mask,
+            granular: lane.granular,
+        })
+    }
+    /// Whether the current lane with this stable track ID owns a MainPitch
+    /// voice, for retiring voices after a remove or retarget edit.
+    pub fn main_pitch_owner(&self, id: u32) -> bool {
+        self.index(id)
+            .is_some_and(|i| self.lanes[i].binding == Binding::MainPitch)
+    }
     /// Unmuted and placed on the grid.
     fn sounding(&self, i: usize) -> bool {
         self.core.tracks[i].config[field::MUTE] == 0 && !self.lanes[i].waiting
@@ -1063,21 +1088,6 @@ impl Runtime {
         }
         (lane.id, actions)
     }
-    /// Unmuted Main pitch lanes that gate ENV, read right after a clock tick:
-    /// whether one of them triggered a new gate and whether any gate is open.
-    /// Tied steps keep the gate open without a retrigger, like a legato note.
-    pub fn env_gate(&self) -> Option<(bool, bool)> {
-        let mut gate = None;
-        for &i in &self.main_pitch_routes {
-            if self.lanes[i].env_gate && self.sounding(i) {
-                let open = self.core.gate(i);
-                let (trigger, any) = gate.get_or_insert((false, false));
-                *trigger |= open && self.core.track_events(i) & 1 != 0;
-                *any |= open;
-            }
-        }
-        gate
-    }
     /// LFOs a step started over, read right after a clock tick: one bit each.
     /// A reset lane's every gate resets; a step destination's, where the
     /// step is set to 1.
@@ -1101,34 +1111,16 @@ impl Runtime {
         }
         mask
     }
-    fn oscillator_pitch(&self, now: f64) -> [f32; 4] {
-        let mut oscillator_pitch = [0.0; 4];
-        for &i in &self.main_pitch_routes {
-            let lane = &self.lanes[i];
-            if self.sounding(i) && lane.pitch_oscillators.iter().any(|&on| on) {
-                let delta = (lane.pitch.value(now) - lane.root as f32) * lane.amount;
-                for (value, selected) in oscillator_pitch.iter_mut().zip(lane.pitch_oscillators) {
-                    if selected {
-                        *value += delta;
-                    }
-                }
-            }
-        }
-        oscillator_pitch
-    }
     fn parameter_delta(
         &self,
         m: &Modulated,
         cursor: &mut usize,
         now: f64,
-        oscillator_pitch: [f32; 4],
     ) -> (usize, Option<f32>, f32) {
         let id = self.routes[*cursor].parameter;
         let spec = &parameters::specs()[id];
         let base = spec.frame_get(m);
-        let mut delta = self.routes[*cursor]
-            .oscillator
-            .map_or(0.0, |index| oscillator_pitch[index]);
+        let mut delta = 0.0;
         while *cursor < self.routes.len() && self.routes[*cursor].parameter == id {
             let route = self.routes[*cursor];
             *cursor += 1;
@@ -1174,10 +1166,9 @@ impl Runtime {
             return;
         }
         let now = self.core.ticks.saturating_sub(1) as f64 + self.phase.min(1.0);
-        let pitch = self.oscillator_pitch(now);
         let mut cursor = 0;
         while cursor < self.routes.len() {
-            let (id, base, delta) = self.parameter_delta(m, &mut cursor, now, pitch);
+            let (id, base, delta) = self.parameter_delta(m, &mut cursor, now);
             if base.is_none() {
                 continue;
             }
@@ -1193,10 +1184,9 @@ impl Runtime {
             return;
         }
         let now = self.core.ticks.saturating_sub(1) as f64 + self.phase.min(1.0);
-        let pitch = self.oscillator_pitch(now);
         let mut cursor = 0;
         while cursor < self.routes.len() {
-            let (id, base, delta) = self.parameter_delta(m, &mut cursor, now, pitch);
+            let (id, base, delta) = self.parameter_delta(m, &mut cursor, now);
             if let Some(base) = base {
                 parameters::specs()[id].frame_set(m, base + delta);
             }
@@ -1341,61 +1331,121 @@ mod tests {
     }
 
     #[test]
-    fn main_pitch_routes_to_selected_carriers_and_oscillator_offsets_are_additive() {
-        let mut main = lane(1, Target::MainPitch, 72);
-        main.pitch_oscillators = [true, false, true, false];
-        let tracks = [
-            main,
-            lane(2, Target::Oscillator { index: 0 }, 55),
-            lane(3, Target::Oscillator { index: 2 }, 67),
-        ];
-        let mut r = Runtime::new(&tracks);
+    fn main_pitch_voices_are_independent_and_do_not_change_parameter_tuning() {
+        let mut a = lane(1, Target::MainPitch, 72);
+        a.oscillator_mask = 1 << 0;
+        a.granular = false;
+        let mut b = lane(2, Target::MainPitch, 55);
+        b.amount = 0.5;
+        b.oscillator_mask = 1 << 24;
+        let mut r = Runtime::new(&[a.clone(), b]);
         r.tick(8000, 120.0, true);
         let mut p = Preset::default();
         for (osc, transpose) in p.resynth.oscillators.iter_mut().zip([3.0, -2.0, 5.0, -8.0]) {
             osc.transpose = transpose;
         }
         let m = current(&r, &p);
-        assert_eq!(m.params.sample_tune_semis, 12.0);
-        assert_eq!(
-            m.resynth.oscillators.map(|o| o.transpose),
-            [10.0, -2.0, 24.0, -8.0]
-        );
-        assert_eq!(p.resynth.oscillators[0].transpose, 3.0);
-
-        let mut main = tracks[0].clone();
-        let ticks = r.core.ticks;
-        let stage = r.core.stage(0);
-        for (field, value) in [(49, 0.0), (50, 1.0)] {
-            let edit = Edit {
-                track: 1,
-                stage: None,
-                field,
-                value,
-            };
-            main.edit(edit);
-            r.edit(0, &main, edit);
-        }
-        assert_eq!(r.core.ticks, ticks, "Routing reset the transport");
-        assert_eq!(r.core.stage(0), stage);
-        assert_eq!(
-            current(&r, &p).resynth.oscillators.map(|o| o.transpose),
-            [-2.0, 10.0, 24.0, -8.0]
-        );
-        let edit = Edit {
-            track: 1,
-            stage: None,
-            field: 8,
-            value: 1.0,
-        };
-        main.edit(edit);
-        r.edit(0, &main, edit);
-        let m = current(&r, &p);
         assert_eq!(m.params.sample_tune_semis, 0.0);
         assert_eq!(
             m.resynth.oscillators.map(|o| o.transpose),
-            [-2.0, -2.0, 12.0, -8.0]
+            [3.0, -2.0, 5.0, -8.0]
         );
+        let first = r.main_pitch(0).unwrap();
+        let second = r.main_pitch(1).unwrap();
+        assert_eq!((first.id, first.offset, first.oscillators), (1, 12.0, 1));
+        assert!(!first.granular);
+        assert_eq!(
+            (second.id, second.offset, second.oscillators),
+            (2, -2.5, 1 << 24)
+        );
+        assert!(second.granular);
+
+        let ticks = r.core.ticks;
+        let stage = r.core.stage(0);
+        let edit = Edit {
+            track: 1,
+            stage: None,
+            field: 60,
+            value: 0.0,
+        };
+        a.edit(edit);
+        r.edit(0, &a, edit);
+        assert_eq!(r.core.ticks, ticks, "Routing reset the transport");
+        assert_eq!(r.core.stage(0), stage);
+        assert_eq!(r.main_pitch(0).unwrap().oscillators, 0);
+        assert_eq!(current(&r, &p).resynth.oscillators[0].transpose, 3.0);
+    }
+
+    #[test]
+    fn main_pitch_voice_reports_glide_env_gate_drone_mute_and_ownership() {
+        let mut gated = lane(10, Target::MainPitch, 72);
+        gated.root_note = 60;
+        gated.steps[0].velocity = 80;
+        let mut drone = lane(11, Target::MainPitch, 67);
+        drone.env_gate = false;
+        drone.oscillator_mask = 0;
+        drone.granular = false;
+        let mut muted = lane(12, Target::MainPitch, 64);
+        muted.config[field::MUTE] = 1;
+        let notes = lane(13, Target::Notes, 60);
+        let mut r = Runtime::new(&[gated, drone, muted, notes]);
+        r.tick(8000, 120.0, true);
+
+        let mut voice = r.main_pitch(0).unwrap();
+        assert_eq!(voice.id, 10);
+        assert_eq!(voice.root_note, 60);
+        assert_eq!(
+            voice.velocity,
+            (r.core.velocity(0) * 80 / 127).clamp(0, 127) as u8
+        );
+        assert!(voice.env_gate);
+        assert!(voice.open);
+        assert!(voice.trigger);
+        assert_eq!(voice.offset, 12.0);
+
+        // The runtime keeps advancing the same glide between clock ticks.
+        r.lanes[0].pitch = Glide {
+            from: 60.0,
+            to: 72.0,
+            start: 0.0,
+            duration: 1.0,
+        };
+        r.phase = 0.5;
+        voice = r.main_pitch(0).unwrap();
+        assert_eq!(voice.offset, 6.0);
+
+        let drone = r.main_pitch(1).unwrap();
+        assert!(!drone.env_gate);
+        assert!(drone.open, "ENV-off tracks stay open as a drone");
+        assert!(!drone.trigger);
+        assert_eq!(drone.oscillators, 0);
+        assert!(!drone.granular);
+        let muted = r.main_pitch(2).unwrap();
+        assert!(!muted.open);
+        assert!(!muted.trigger);
+        assert!(
+            r.main_pitch(3).is_none(),
+            "non-MainPitch tracks have no voice"
+        );
+
+        assert!(r.main_pitch_owner(10));
+        assert!(r.main_pitch_owner(11));
+        assert!(!r.main_pitch_owner(13));
+        assert!(!r.main_pitch_owner(99));
+        let retargeted = Runtime::new(&[lane(10, Target::Oscillator { index: 0 }, 60)]);
+        assert!(!retargeted.main_pitch_owner(10));
+        let removed = Runtime::new(&[]);
+        assert!(!removed.main_pitch_owner(10));
+
+        // Once the gate closes, ENV-gated lanes close while the drone remains.
+        for _ in 0..8000 {
+            if !r.core.gate(0) {
+                break;
+            }
+            r.tick(8000, 120.0, true);
+        }
+        assert!(!r.main_pitch(0).unwrap().open);
+        assert!(r.main_pitch(1).unwrap().open);
     }
 
     #[test]
@@ -1481,7 +1531,7 @@ mod tests {
         };
         p.tb303.as_mut().unwrap().oscillators[2].transpose = -12.0;
         let m = current(&r, &p);
-        assert_eq!(m.params.sample_tune_semis, 12.0);
+        assert_eq!(m.params.sample_tune_semis, 0.0);
         assert_eq!(m.tb303_radias.oscillators[2].transpose, -5.0);
         assert_eq!(m.synth.oscillators[2].transpose, 0.0);
         assert_eq!(m.resynth.oscillators[2].transpose, 0.0);
@@ -1496,9 +1546,8 @@ mod tests {
     }
 
     #[test]
-    fn carrier_pitch_contributions_cancel_before_clamping_and_keep_independent_clocks() {
+    fn main_pitch_tracks_never_accumulate_into_oscillator_lane_offsets() {
         let mut a = lane(1, Target::MainPitch, 84);
-        a.pitch_oscillators = [true; 4];
         let mut b = a.clone();
         b.id = 2;
         b.steps.fill(Stage {
@@ -1514,7 +1563,6 @@ mod tests {
         }
 
         let mut main = lane(1, Target::MainPitch, 72);
-        main.pitch_oscillators[0] = true;
         main.config[field::DIVISION] = 2;
         main.steps[1].pitch = 74;
         let mut osc = lane(2, Target::Oscillator { index: 0 }, 60);
@@ -1527,7 +1575,7 @@ mod tests {
         assert_eq!(r.core.stage(1), Some(1));
         assert_eq!(
             current(&r, &Preset::default()).resynth.oscillators[0].transpose,
-            19.0
+            7.0
         );
     }
 

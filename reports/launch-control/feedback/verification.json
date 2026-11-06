@@ -1,0 +1,149 @@
+{
+  "commit": "e3ba4a65b77b09195e77c6af16c78d2ef266f83b",
+  "tests": [
+    "midi-learn-ui",
+    "midi-targets",
+    "xl3-feedback",
+    "launch-control",
+    "control",
+    "controls-ui",
+    "parameters",
+    "sampler",
+    "startup",
+    "Rust clippy wasm",
+    "Rust wasm lib 9 tests"
+  ],
+  "browser": {
+    "source0Encoder13": "0.2 st while Granular 2 remains 0.1 st",
+    "source3Encoder14": "0.1 st independently",
+    "controlProxy": "source Granular 1, CC13",
+    "fader14bit": "source Pitch reaches 36.0 st",
+    "relativeAfterFader": "35.9 st",
+    "mouseFeedback": {
+      "min": "-36.0 st / RGB 10,0,0",
+      "max": "36.0 st / RGB 127,0,0"
+    },
+    "oled": "Granular 1 / PITCH / 0.1 st"
+  },
+  "physicalLedsVisuallyObserved": false,
+  "workflow": "https://github.com/fushugaku/sad-pet/actions/runs/41499280303",
+  "mobile": {
+    "viewport": 388,
+    "documentWidth": 388,
+    "controllerHeights": 44,
+    "screenshot": "mobile-controls.jpg"
+  },
+  "userPresetBackup": "Butterfly (2) XL3 feedback",
+  "userControllerBeforeDeploy": {
+    "mode": "native",
+    "page": 15,
+    "assignments": 12
+  },
+  "hardware": {
+    "browser": "Brave",
+    "sysexEnabled": true,
+    "main": [
+      "LCXL3 1 MIDI Out",
+      "LCXL3 1 MIDI In"
+    ],
+    "daw": [
+      "LCXL3 1 DAW Out",
+      "LCXL3 1 DAW In"
+    ],
+    "query": "b7 1e 00",
+    "reply": "b6 1e 1c",
+    "reportedMode": 15,
+    "sentRgbMinPitch": [
+      10,
+      0,
+      0
+    ],
+    "sentRgbMinResonance": [
+      0,
+      2,
+      10
+    ],
+    "sentRgbMinCutoff": [
+      0,
+      10,
+      1
+    ],
+    "cleanup": "feedback stopped, helper tab closed"
+  },
+  "initialDeployment": {
+    "commit": "e3ba4a65b77b09195e77c6af16c78d2ef266f83b",
+    "success": true,
+    "version": "6a697384cce4"
+  },
+  "userVerified": {
+    "CustomMode": "no live colours/brightness",
+    "DAWControlTest": "colour and brightness work, confirmed by user"
+  },
+  "fix": {
+    "commit": "387d2f65ff6e108e44ffc62cc49869fd38f3dfdb",
+    "workflow": "https://github.com/fushugaku/sad-pet/actions/runs/41506663462",
+    "mode": "daw",
+    "pageSelection": "Mode + 1–16 then return to DAW Control",
+    "relativePitch": ".1 st",
+    "faders": "7-bit with pickup; native 14-bit profile preserved",
+    "browserChecks": {
+      "PitchPage1": ".1 st then .2 st while Granular 2 remains .0 st",
+      "CutoffPage2": "green RGB 0,69,6 at midpoint; RGB 0,127,12 at maximum"
+    }
+  },
+  "hardwareRegression": {
+    "measuredBeforeFix": {
+      "surface": 2,
+      "rows": [
+        0,
+        127,
+        127
+      ],
+      "faderPickup": 127
+    },
+    "experiment": [
+      {
+        "command": "b6 45 7f",
+        "row1": 127
+      },
+      {
+        "command": "bf 0d 40",
+        "row1": 127
+      },
+      {
+        "command": "b6 1e 02",
+        "row1": 0
+      }
+    ],
+    "liveTemporaryRepair": {
+      "surface": 2,
+      "rows": [
+        127,
+        127,
+        127
+      ]
+    },
+    "fix": "relative rows configured AFTER surface selection and restored on mode reports; Learn reasserts without exiting DAW mode",
+    "testPulseTabClosed": true
+  },
+  "finalFix": {
+    "commit": "5c85cf804919e238e1b32141e4d68e7793a059cc",
+    "workflow": "https://github.com/fushugaku/sad-pet/actions/runs/41515148869",
+    "automaticLearn": true,
+    "simulatedFirmwareReset": {
+      "page1Cutoff": "green RGB 0,69,6",
+      "page2Pitch": "0.1 st; red RGB 69,0,0",
+      "relativeRowsAfterBoth": [
+        127,
+        127,
+        127
+      ]
+    },
+    "temporaryRowGuard": {
+      "active": false,
+      "sendsRgb": false,
+      "requiresRemovalBeforeFinalVerification": false,
+      "verification": "No helper tab present in either native Brave window on 2026-11-02; user confirmed normal Learn and RGB work."
+    }
+  }
+}

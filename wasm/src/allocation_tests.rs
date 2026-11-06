@@ -41,6 +41,83 @@ fn no_heap(f: impl FnOnce()) {
 }
 
 #[test]
+fn clean_waveshapers_render_retarget_and_publish_without_heap_operations() {
+    use sad_pet::{
+        color::{ColorSlot, WaveshaperMode},
+        preset::{FilterSlot, SaturatorType},
+        waveshaper::{Curve, Options, Quality, Stage},
+    };
+    let mut audio = Host::new(48_000);
+    audio
+        .engine
+        .set_sample(Arc::new(SampleBuffer::demo(48_000)));
+    let mut preset = sad_pet::preset::Preset::default();
+    preset.params.filter_shapers[0].before = Stage {
+        enabled: true,
+        mode: WaveshaperMode::HardClip,
+        depth: 0.75,
+        options: Options {
+            quality: Quality::Clean4x,
+            auto_gain: true,
+            ..Options::default()
+        },
+        ..Stage::default()
+    };
+    let mut extra = FilterSlot {
+        id: 71,
+        ..FilterSlot::default()
+    };
+    extra.shapers.after = Stage {
+        enabled: true,
+        options: Options {
+            quality: Quality::Clean2x,
+            curve: Curve::Custom,
+            ..Options::default()
+        },
+        ..Stage::default()
+    };
+    preset.filter_slots.push(extra);
+    let mut effect = ColorSlot {
+        kind: SaturatorType::Waveshaper,
+        mix: 0.5,
+        ..ColorSlot::default()
+    };
+    effect.settings.waveshaper_options = Options {
+        quality: Quality::Clean4x,
+        curve: Curve::Diode,
+        dc_block: true,
+        ..Options::default()
+    };
+    preset.color_chain = vec![effect];
+    preset.grain_groups.advanced = true;
+    for group in &mut preset.grain_groups.groups {
+        group.waveshaper = sad_pet::grain_groups::Waveshaper::Type(WaveshaperMode::MultiTriangle);
+        group.waveshaper_options = Options {
+            quality: Quality::Clean2x,
+            curve: Curve::SoftClip,
+            ..Options::default()
+        };
+    }
+    audio.engine.set_preset(preset);
+    audio.engine.set_live_input(true, false);
+    audio.engine.set_playing(true);
+    let changes = sad_pet::parameters::parse(&json!({
+        "filter1_ws_before_input":0.7, "filter3_ws_after_morph":0.4,
+        "fx1_waveshaper_bias":0.6, "grain_group1_waveshaper_knee":0.8,
+    }))
+    .unwrap();
+    no_heap(|| {
+        audio.engine.apply_parameters(&changes);
+        for i in 0..4096 {
+            let input = (i as f32 * 0.13).sin() * 0.2;
+            let frame = audio.engine.process_input_frame([input, -input * 0.7]);
+            assert!(frame.iter().all(|x| x.is_finite()));
+        }
+        assert!(audio.publish_snapshot() > 0);
+    });
+}
+
+#[test]
 fn telemetry_decoder_does_not_initialize_an_audio_registry() {
     HOST.with(|h| *h.borrow_mut() = None);
     telemetry::sad_telemetry_init(48_000);
@@ -411,4 +488,89 @@ fn drum_step_edits_and_granular_routing_publish_sparse_views_without_heap_work()
     assert_eq!(view["state"]["sample_seconds"], 16.);
     assert_eq!(view["state"]["sample_frames"], 128000);
     assert_eq!(host.config_revision, revision);
+}
+
+#[test]
+fn main_pitch_303_resynth_and_grain_voices_render_without_heap_operations() {
+    use sad_pet::{
+        rack::{Module, Slot},
+        sequence::{Stage, Target, Track},
+    };
+    const RATE: u32 = 16_000;
+    for bass in [false, true] {
+        let mut preset = if bass {
+            sad_pet::timbres::Kind::Tb303.preset().unwrap()
+        } else {
+            Preset::default()
+        };
+        if let Some(rack) = &mut preset.rack {
+            rack.modules = [
+                Module::Tb303,
+                Module::Grains,
+                Module::Resynth,
+                Module::Filters,
+                Module::PostFx,
+                Module::Mixer,
+            ]
+            .map(|module| Slot {
+                module,
+                ..Slot::default()
+            })
+            .to_vec();
+        }
+        preset.resynth.enabled = true;
+        preset.resynth.attack = 0.0;
+        preset.resynth.threshold = 0.0;
+        preset.color_chain.clear();
+        preset.pre_color_chain.clear();
+        preset.sequencer.enabled = true;
+        preset.sequencer.tracks = [60, 72]
+            .into_iter()
+            .enumerate()
+            .map(|(i, pitch)| {
+                let mut track = Track {
+                    id: i as u32 + 1,
+                    target: Target::MainPitch,
+                    env_gate: true,
+                    granular: true,
+                    oscillator_mask: (15 << 16) | (31 << 20),
+                    ..Track::default()
+                };
+                track.steps.fill(Stage {
+                    pitch,
+                    ..Stage::default()
+                });
+                track
+            })
+            .collect();
+        let mut engine = Engine::new(RATE, Arc::new(SampleBuffer::demo(RATE)), preset);
+        engine.set_midi_gate(true);
+        engine.set_playing(true);
+        let changes =
+            sad_pet::parameters::parse(&json!({"resynth_osc1_transpose": 0.5, "resynth_mix": 0.7}))
+                .unwrap();
+        let mut finite = true;
+        let mut energy = 0.0_f32;
+        // Include first voice births, repeated triggers/release tails and
+        // scalar reconfiguration, not only an already warmed-up render.
+        no_heap(|| {
+            for frame in 0..4096 {
+                if frame == 1024 {
+                    engine.apply_parameters(&changes);
+                }
+                let out = engine.process_frame();
+                finite &= out.into_iter().all(f32::is_finite);
+                energy += out[0].abs();
+            }
+            engine.set_playing(false);
+            for _ in 0..256 {
+                finite &= engine.process_frame().into_iter().all(f32::is_finite);
+            }
+        });
+        assert!(finite);
+        assert!(
+            energy > 0.001,
+            "prepared MainPitch source was silent: 303={bass}"
+        );
+    }
 }

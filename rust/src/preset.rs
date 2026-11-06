@@ -84,6 +84,11 @@ pub enum EnvSource {
     Env2,
     Env3,
     Tb303,
+    Env4,
+    Env5,
+    Env6,
+    Env7,
+    Env8,
 }
 impl EnvSource {
     pub fn index(self) -> usize {
@@ -92,6 +97,11 @@ impl EnvSource {
             Self::Env2 => 1,
             Self::Env3 => 2,
             Self::Tb303 => MODULATORS,
+            Self::Env4 => 3,
+            Self::Env5 => 4,
+            Self::Env6 => 5,
+            Self::Env7 => 6,
+            Self::Env8 => 7,
         }
     }
     pub fn value(self, envs: &[f32]) -> f32 {
@@ -180,6 +190,7 @@ pub struct FilterSlot {
     pub env_depth: f32,
     pub keytrack: f32,
     pub output: crate::taps::Tap,
+    pub shapers: crate::waveshaper::FilterShapers,
 }
 impl Default for FilterSlot {
     fn default() -> Self {
@@ -199,6 +210,7 @@ impl Default for FilterSlot {
             env_depth: 0.0,
             keytrack: 0.0,
             output: crate::taps::Tap::default(),
+            shapers: crate::waveshaper::FilterShapers::default(),
         }
     }
 }
@@ -206,6 +218,7 @@ impl FilterSlot {
     pub fn sanitize(&mut self) {
         FilterSlotParameter::sanitize_controls(self);
         self.output.sanitize();
+        self.shapers = self.shapers.sanitize();
     }
 }
 
@@ -685,6 +698,9 @@ pub struct Params {
     pub filter2_keytrack: f32,
     pub filter2_env: EnvSource,
     pub filter_routing: FilterRouting,
+    /// Stable main filter identities in serial order; parallel keeps its branches.
+    pub filter_order: [u8; 2],
+    pub filter_shapers: [crate::waveshaper::FilterShapers; 2],
     pub saturation: f32,
     pub reverb: f32,
     pub reverb_decay: f32,
@@ -751,6 +767,8 @@ impl Default for Params {
             filter2_keytrack: 0.0,
             filter2_env: EnvSource::Env2,
             filter_routing: FilterRouting::Single,
+            filter_order: [0, 1],
+            filter_shapers: [crate::waveshaper::FilterShapers::default(); 2],
             saturation: 0.0,
             reverb: 0.22,
             reverb_decay: 0.45,
@@ -795,6 +813,12 @@ pub(crate) fn finite_clamp(value: &mut f32, min: f32, max: f32, fallback: f32) {
 
 impl Params {
     pub fn sanitize(&mut self) {
+        if self.filter_order != [0, 1] && self.filter_order != [1, 0] {
+            self.filter_order = [0, 1];
+        }
+        self.filter_shapers
+            .iter_mut()
+            .for_each(|shapers| *shapers = shapers.sanitize());
         macro_rules! unit { ($($f:ident),*) => { $(finite_clamp(&mut self.$f, 0.0, 1.0, Self::default().$f);)* }; }
         unit!(
             grain_size,

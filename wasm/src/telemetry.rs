@@ -116,7 +116,9 @@ struct OwnedPacket {
     #[serde(default)]
     drum_edits: Vec<sad_pet::drums::Edit>,
     revision: u64,
-    view: RealtimeView,
+    // Keep the large worker snapshot off the packet visitor/call-stack.
+    // Box is transparent on the wire and is allocated only by the decoder.
+    view: Box<RealtimeView>,
     waveform: Vec<[f32; 2]>,
     configuration: Option<OwnedConfiguration>,
     grains: Vec<sad_pet::dsp::GrainView>,

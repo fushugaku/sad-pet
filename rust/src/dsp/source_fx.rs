@@ -83,12 +83,24 @@ pub fn prepare(
     processor.prepare_imported(slot);
     processor.set_pitch(root);
     processor.configure_tempo(slot, bpm);
+    let latency = processor.latency_samples();
     let mut frames = Vec::with_capacity(range.len());
-    for (i, frame) in original.frames()[range.clone()].iter().enumerate() {
+    // The prepared cache is read on the original file's frame grid. Discard
+    // the processor's leading delay and flush it with silence so the final
+    // selected frames are still present. At zero latency this processes the
+    // exact same input, in the same order, as the legacy path.
+    let input = original.frames()[range.clone()]
+        .iter()
+        .copied()
+        .chain(std::iter::repeat_n([0.0; 2], latency));
+    for (i, frame) in input.enumerate() {
         if i % 4096 == 0 && cancelled() {
             return Err("Source FX preparation superseded".into());
         }
-        frames.push(processor.process(*frame));
+        let output = processor.process(frame);
+        if i >= latency {
+            frames.push(output);
+        }
     }
     if cancelled() {
         return Err("Source FX preparation superseded".into());

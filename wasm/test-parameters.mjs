@@ -208,3 +208,12 @@ console.log("Sequencer transport passed: stage drags coalesce, structural edits 
   assert.deepEqual(e.calls.map(c=>c.path),["/api/preset"],"A pitch routing checkbox was mistaken for a restart command");
   assert.equal(e.calls[0].data.sequencer.tracks[0].pitch_oscillators[0],true);
 }
+{
+  const e=editor();
+  e.evaluate('scheduleSequence({track:1,stage:null,field:57,value:0});scheduleSequence({track:1,stage:null,field:84,value:0})');
+  await e.next();
+  assert.deepEqual(e.calls,[{path:"/api/sequencer/edit",data:[
+    {track:1,stage:null,field:57,value:0},
+    {track:1,stage:null,field:84,value:0},
+  ]}],"Granular and the last oscillator route bit stay on the live edit API");
+}

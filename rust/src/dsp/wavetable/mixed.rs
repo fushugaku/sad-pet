@@ -63,6 +63,8 @@ struct MixedVoice {
     last: [Stereo; SLOTS],
     tails: [Stereo; SLOTS],
     transition_left: [u32; SLOTS],
+    selected: [f32; SLOTS],
+    selection_ready: bool,
 }
 impl Default for MixedVoice {
     fn default() -> Self {
@@ -89,6 +91,8 @@ impl Default for MixedVoice {
             last: [[0.0; 2]; SLOTS],
             tails: [[0.0; 2]; SLOTS],
             transition_left: [0; SLOTS],
+            selected: [1.0; SLOTS],
+            selection_ready: false,
         }
     }
 }
@@ -382,8 +386,48 @@ impl Runtime {
         sample: &SampleBuffer,
         range: &Range<usize>,
         root: f32,
+        transports: Option<&mut crate::dsp::phase_transport::Runtime>,
+        stamp: u64,
+    ) -> ([SlotFrame; SLOTS], Stereo, Stereo) {
+        self.render_masked(
+            index,
+            generation,
+            note,
+            envs,
+            lfos,
+            inputs,
+            demand,
+            export,
+            capture,
+            sample,
+            range,
+            root,
+            transports,
+            stamp,
+            u8::MAX,
+        )
+    }
+
+    /// Select the slots heard for this voice without removing their signals
+    /// from the interaction graph or their audio from other voices.
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_masked(
+        &mut self,
+        index: usize,
+        generation: u32,
+        note: f32,
+        envs: &[f32; crate::preset::MODULATORS],
+        lfos: &[f32; crate::preset::MODULATORS],
+        inputs: [Input; SLOTS],
+        demand: u8,
+        export: u8,
+        capture: [f32; SLOTS],
+        sample: &SampleBuffer,
+        range: &Range<usize>,
+        root: f32,
         mut transports: Option<&mut crate::dsp::phase_transport::Runtime>,
         stamp: u64,
+        mask: u8,
     ) -> ([SlotFrame; SLOTS], Stereo, Stereo) {
         let mut result = [SlotFrame::default(); SLOTS];
         if index >= self.voices.len() || !note.is_finite() {
@@ -391,6 +435,7 @@ impl Runtime {
         }
         let voice = &mut self.voices[index];
         if voice.generation != generation {
+            voice.selection_ready = false;
             voice.taps.fill(0.0);
             voice.edges.fill(-1.0);
             voice.transition_left.fill(0);
@@ -399,6 +444,16 @@ impl Runtime {
             voice.bypass_reduction = interaction::Filter::default();
             voice.bypass_quiet = u16::MAX;
         }
+        let selection_step = 1.0 / (self.rate as f32 * 0.005).max(1.0);
+        for (i, selected) in voice.selected.iter_mut().enumerate() {
+            let target = f32::from(mask & (1 << i) != 0);
+            if voice.selection_ready {
+                *selected += (target - *selected).clamp(-selection_step, selection_step);
+            } else {
+                *selected = target;
+            }
+        }
+        voice.selection_ready = true;
         if voice.note != note.to_bits() {
             voice.note = note.to_bits();
             voice.hz = 440.0 * 2.0f64.powf((note as f64 - 69.0) / 12.0);
@@ -616,7 +671,7 @@ impl Runtime {
                             - voice.transition_left[i] as f32 / (self.rate as f32 * 0.005).max(1.0);
                         let fade = 1.0 - t * t * (3.0 - 2.0 * t);
                         for c in 0..2 {
-                            let audio = voice.tails[i][c] * fade;
+                            let audio = voice.tails[i][c] * fade * voice.selected[i];
                             into[c] += audio * capture[i];
                             bypass[c] += audio * (1.0 - capture[i]);
                         }
@@ -965,8 +1020,8 @@ impl Runtime {
                 }
                 voice.last[i] = audio;
                 for c in 0..2 {
-                    into[c] += audio[c] * capture[i];
-                    bypass[c] += audio[c] * (1.0 - capture[i]);
+                    into[c] += audio[c] * capture[i] * voice.selected[i];
+                    bypass[c] += audio[c] * (1.0 - capture[i]) * voice.selected[i];
                 }
             }
             reduce(&mut voice.mix_reduction, into, factor, sub, self.kernel);
@@ -1042,6 +1097,85 @@ fn reduce(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn per_note_mask_selects_audio_but_not_fm_or_exported_taps() {
+        let mut settings = model::Settings {
+            xy_slots: [0; 4],
+            ..Default::default()
+        };
+        settings.slots[0].kind = Kind::Wavetable;
+        settings.add(Kind::Wavetable).unwrap();
+        settings.slots[0].controls.wavetable.fm_mode = 1;
+        settings.slots[0].controls.wavetable.fm_index = 0.8;
+        settings.slots[0].controls.wavetable.fm_source = 1;
+        settings.slots[1].controls.transpose = 7.0;
+        let mut runtime = Runtime::new(8_000, &settings, &Pool::default()).unwrap();
+        let sample = SampleBuffer::new("Unused".into(), 8_000, vec![[0.0; 2]; 128]).unwrap();
+        let env = [0.0; crate::preset::MODULATORS];
+        let mut energy = 0.0_f32;
+        let mut tap_energy = 0.0_f32;
+        for stamp in 0..1024 {
+            runtime.begin_frame(true);
+            let mut render = |index, mask| {
+                runtime.render_masked(
+                    index,
+                    1,
+                    60.0,
+                    &env,
+                    &env,
+                    [Input::default(); SLOTS],
+                    3,
+                    3,
+                    [0.5; SLOTS],
+                    &sample,
+                    &(0..128),
+                    60.0,
+                    None,
+                    stamp,
+                    mask,
+                )
+            };
+            let (at, a, a_bypass) = render(0, 1);
+            let (_, b, b_bypass) = render(1, 2);
+            let (both_taps, both, both_bypass) = render(2, 3);
+            let (_, silent, silent_bypass) = render(3, 0);
+            for c in 0..2 {
+                assert!((both[c] - (a[c] + b[c])).abs() < 2e-5);
+                assert!((both_bypass[c] - (a_bypass[c] + b_bypass[c])).abs() < 2e-5);
+                assert_eq!(silent[c], 0.0);
+                assert_eq!(silent_bypass[c], 0.0);
+                assert_eq!(at[1].generation[c], both_taps[1].generation[c]);
+            }
+            energy += a[0].abs();
+            tap_energy += at[1].generation[0].abs();
+        }
+        assert!(energy > 1.0);
+        assert!(
+            tap_energy > 1.0,
+            "an unselected modulation source lost its tap"
+        );
+        runtime.begin_frame(true);
+        runtime.render_masked(
+            0,
+            1,
+            60.0,
+            &env,
+            &env,
+            [Input::default(); SLOTS],
+            3,
+            3,
+            [0.5; SLOTS],
+            &sample,
+            &(0..128),
+            60.0,
+            None,
+            1024,
+            0,
+        );
+        assert!(runtime.voices[0].selected[0] > 0.97);
+        assert_eq!(runtime.voices[1].selected[1], 1.0);
+    }
 
     fn fixed_point_needed(runtime: &Runtime, mut needed: u8) -> u8 {
         for _ in 0..SLOTS {

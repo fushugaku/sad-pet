@@ -1,0 +1,74 @@
+{
+  "commit": "81cd96261dcdfddfd8fef22eae00ed9ae86bd9cf",
+  "workflow": "https://github.com/fushugaku/sad-pet/actions/runs/41521903860",
+  "checks": [
+    "node wasm/test-xl3-feedback.mjs",
+    "node wasm/test-midi-targets.mjs",
+    "node wasm/test-midi-learn-ui.mjs",
+    "node wasm/test-launch-control.mjs",
+    "node wasm/test-startup.mjs",
+    "node wasm/test-controls-ui.mjs",
+    "node wasm/test-library.mjs",
+    "node --check rust/web/app.js",
+    "node --check rust/web/controller.js",
+    "git diff --check",
+    "python3 wasm/build.py --simd"
+  ],
+  "browser": {
+    "url": "http://127.0.0.1:53306/verify-xl3-transport.html",
+    "ports": "virtual XL3",
+    "pitch": {
+      "fine": 0.1,
+      "shift": 1.1,
+      "released": 1.2
+    },
+    "play": [
+      "started",
+      "stopped"
+    ],
+    "record": [
+      "started playback and recording",
+      "Record stopped and saved to Library",
+      "Play stopped and saved active take"
+    ],
+    "leds": {
+      "playing": [
+        0,
+        127,
+        0
+      ],
+      "recording": [
+        127,
+        0,
+        0
+      ],
+      "stopped": {
+        "play": [
+          0,
+          12,
+          0
+        ],
+        "record": [
+          12,
+          0,
+          0
+        ]
+      }
+    },
+    "consoleErrors": []
+  },
+  "realHardware": {
+    "previousFeaturesConfirmedByUser": true,
+    "newShiftAndTransportPhysicallyConfirmed": false,
+    "temporaryRowGuard": "No helper tab present in either native Brave window"
+  },
+  "recordingExport": {
+    "format": 3,
+    "channels": 2,
+    "rate": 48000,
+    "bits": 32,
+    "seconds": 0.256,
+    "peak": 0.1745164543390274,
+    "rms": 0.10291574436183501
+  }
+}

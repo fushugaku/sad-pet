@@ -1,0 +1,11 @@
+{
+  "url": "https://fushugaku.github.io/sad-pet/",
+  "commit": "a860043f33653159f9b94f931cb4c1054be1b3fb",
+  "workflow": "https://github.com/fushugaku/sad-pet/actions/runs/41480745801",
+  "build": "fd3ecf819b9b",
+  "manifest_matches": true,
+  "source_sha256": {
+    "midi-inputs.mjs": "a3dadada6b8f70aed151da55dfda5e776f30891fcf18de63204d4fa86f773fef",
+    "app.js": "fef09ce30a6e0e32ad5192bfca5ea21052e5f8a129b036a9ceb6cd00ac982a2d"
+  }
+}

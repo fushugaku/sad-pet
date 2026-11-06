@@ -17,6 +17,8 @@ pub(super) struct Resources {
     pub imported_effects: crate::imported_fx::PreparedEffects,
     pub filter_banks: super::filter_slots::Prepared,
     pub sequence: Option<Box<super::sequence::Runtime>>,
+    pub sequence_sources: Option<Box<super::sequence_sources::SequenceSources>>,
+    pub sequence_histories: Option<Box<super::sequence_histories::SequenceHistories>>,
 }
 
 /// A finalized update, constructed outside the audio callback. Exchange reuses
@@ -77,7 +79,7 @@ pub struct PresetPreparation {
 }
 
 impl PresetPreparation {
-    const STAGES: u8 = 11;
+    const STAGES: u8 = 12;
 
     pub fn new(mut preset: Preset, sample_rate: u32) -> Self {
         preset.sanitize();
@@ -121,6 +123,41 @@ impl PresetPreparation {
         let rate = self.sample_rate;
         match self.stage {
             0 => r.sequence = Some(Box::new(super::sequence::Runtime::new(&p.sequencer.tracks))),
+            11 => {
+                let parties = p
+                    .sequencer
+                    .tracks
+                    .iter()
+                    .filter(|t| t.target == crate::sequence::Target::MainPitch)
+                    .count();
+                let tails = previous
+                    .as_ref()
+                    .is_some_and(|e| e.voices.iter().any(|v| v.main_pitch && v.active()));
+                if parties > 0 || tails {
+                    // Resynth can be enabled by numeric automation without a
+                    // resource exchange, so its per-note states must be ready.
+                    r.sequence_sources =
+                        Some(Box::new(super::sequence_sources::SequenceSources::new(
+                            rate,
+                            super::VOICES,
+                            true,
+                            p.tb303.as_deref(),
+                        )));
+                    let history = if let Some(rack) = &p.rack {
+                        rack.history().is_some()
+                    } else {
+                        p.synth.is_some()
+                    };
+                    if history {
+                        let old = previous
+                            .as_ref()
+                            .and_then(|e| e.preset_runtime.sequence_histories.as_deref());
+                        r.sequence_histories = Some(Box::new(
+                            super::sequence_histories::SequenceHistories::new(rate, parties, old),
+                        ));
+                    }
+                }
+            }
             1 => r.wavetable_runtime.prepare_reusing(
                 p.wavetable.as_deref(),
                 assets,

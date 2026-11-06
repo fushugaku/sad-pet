@@ -614,6 +614,32 @@ h2 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
 }
+/* The two main filters share the same five rows, even when only one has an
+   expanded waveshaper. Their model, response and knobs stay level. */
+@supports (grid-template-rows: subgrid) {
+  #filters {
+    row-gap: 0;
+  }
+  #filters > .filter-card {
+    display: grid;
+    grid-row: span 5;
+    grid-template-rows: subgrid;
+    row-gap: 0;
+  }
+  #filters > .filter-card > .filter-shaper {
+    align-self: start;
+  }
+  @media (max-width: 760px) {
+    #filters {
+      row-gap: 14px;
+    }
+    #filters > .filter-card {
+      display: block;
+      grid-row: auto;
+      grid-template-rows: none;
+    }
+  }
+}
 .filter-card {
   min-width: 0;
   padding: 13px;
@@ -627,7 +653,7 @@ h2 {
 }
 .filter-title {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) 82px;
+  grid-template-columns: 18px 64px minmax(0, 1fr) 82px;
   gap: 8px;
   align-items: center;
   margin-bottom: 10px;
@@ -674,6 +700,7 @@ h2 {
 }
 .added-filter-title strong {
   grid-area: 1 / 1;
+  margin-left: 24px;
 }
 .added-filter-title .color-actions {
   grid-area: 1 / 1 / 2 / -1;
@@ -706,6 +733,168 @@ h2 {
 .filter-unused .dial {
   cursor: default;
   pointer-events: none;
+}
+/* A filter's waveshapers travel with it; their own grips exchange stages. */
+.filter-title .filter-grip,
+.filter-shaper-title .grain-stage-grip {
+  margin: 0;
+}
+.added-filter-title .filter-grip {
+  grid-area: 1 / 1;
+  justify-self: start;
+}
+.added-filter-title .color-up,
+.added-filter-title .color-down {
+  display: none;
+}
+.filter-shaper {
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+.filter-shaper + .filter-title {
+  margin-top: 12px;
+}
+.filter-controls + .filter-shaper {
+  margin-top: 12px;
+}
+.filter-shaper-title {
+  display: grid;
+  grid-template-columns: 18px 32px minmax(64px, 1fr) minmax(90px, 1.2fr);
+  align-items: center;
+  gap: 8px;
+}
+.filter-shaper-title strong {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.filter-shaper.is-enabled .filter-shaper-title strong {
+  color: var(--text);
+}
+.filter-shaper-title select,
+.filter-shaper-power {
+  min-width: 0;
+  width: 100%;
+  height: 32px;
+  font-size: 11px;
+}
+.filter-shaper-power {
+  padding: 0;
+  color: var(--muted);
+}
+.filter-shaper-power[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.filter-shaper-body[hidden],
+.waveshaper-curve[hidden],
+.waveshaper-curve-actions button[hidden] {
+  display: none;
+}
+.filter-shaper-body {
+  padding-top: 8px;
+}
+.filter-shaper-knobs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  max-width: 280px;
+}
+.filter-card.is-dragging,
+.filter-shaper.is-dragging,
+.filter-shaper.is-drop-target {
+  border-color: var(--accent);
+}
+.filter-grid.is-arranging,
+.filter-grid.is-arranging * {
+  cursor: grabbing;
+}
+.waveshaper-options {
+  min-width: 0;
+  margin-top: 8px;
+}
+.waveshaper-options > summary {
+  width: fit-content;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+}
+.waveshaper-options > summary:hover,
+.waveshaper-options[open] > summary {
+  color: var(--text);
+}
+.waveshaper-option-selects {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 105px), 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+.waveshaper-option-selects label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+.waveshaper-option-selects select {
+  min-width: 0;
+  width: 100%;
+  height: 32px;
+  font-size: 11px;
+}
+.waveshaper-curve {
+  display: block;
+  width: 100%;
+  height: 120px;
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+}
+.waveshaper-curve[role="slider"] {
+  cursor: crosshair;
+  touch-action: none;
+}
+.waveshaper-curve:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.waveshaper-curve-actions button {
+  height: 32px;
+  margin-top: 8px;
+  font-size: 11px;
+}
+.waveshaper-option-knobs {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.filter-shaper .waveshaper-option-knobs,
+.grain-group-card .waveshaper-option-knobs {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.waveshaper-switches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 8px;
+}
+@media (max-width: 760px) {
+  .waveshaper-option-knobs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .waveshaper-option-selects select,
+  .filter-shaper-title select,
+  .filter-shaper-power,
+  .waveshaper-curve-actions button {
+    height: 36px;
+  }
+  .filter-shaper-title {
+    grid-template-columns: 18px 36px minmax(64px, 1fr) minmax(80px, 1.2fr);
+  }
 }
 /* Advanced grain mode: group tabs beside a curve of the selected group over
    one grain, then that group's controls in three rows of cards (Grain, Pitch
@@ -2200,8 +2389,11 @@ h2 {
     height: 64px;
   }
   .filter-title {
-    grid-template-columns: 56px minmax(0, 1fr) 78px;
+    grid-template-columns: 18px 56px minmax(0, 1fr) 78px;
     gap: 6px;
+  }
+  .filter-title select {
+    height: 36px;
   }
   .filter-routing {
     flex-wrap: wrap;

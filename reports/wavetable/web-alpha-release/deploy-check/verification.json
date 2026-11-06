@@ -1,0 +1,56 @@
+{
+  "date": "2026-10-31T17:29:05.240455+00:00",
+  "commit": "39e65e65385dd96285e750d052c36b07c80d912c",
+  "site": "https://fushugaku.github.io/sad-pet/",
+  "build_version": "43bda9e3fa2a",
+  "pages_ci": {
+    "conclusion": "success",
+    "run": "https://github.com/fushugaku/sad-pet/actions/runs/41220857250",
+    "node_checks": 49
+  },
+  "deployed_simd_sha256": "3d873bcc21ecdf5f7475bab87623ad0519cb233d4c6537f54c63ebc55dcbe8be",
+  "quality": {
+    "cases": 21,
+    "passed": true,
+    "all_bit_identical_to_measured_optimized_reference": true,
+    "report": "audio/audio.json"
+  },
+  "ui": {
+    "connectionError": false,
+    "overflow": false,
+    "unison": [
+      "4",
+      "4",
+      "4",
+      "4"
+    ],
+    "waves": 4,
+    "console_errors": 0,
+    "factory": "Steel Cascade",
+    "screenshot": "public-ui.png"
+  },
+  "realtime": {
+    "scope": "Exact deployed SIMD downloaded from the versioned URL, production worklet and prepared-bank utility worker served locally. Four notes, four different complex tables, U4, four FM and sync clocks. No quality reductions. Same desktop/device as reference; browser visible for accepted run.",
+    "passed_visible": true,
+    "wall_seconds": 30.072199999809264,
+    "underrun_events_visible": 0,
+    "processor_errors_visible": 0,
+    "report": "realtime-public-visible.json",
+    "hidden_browser_runs": [
+      {
+        "report": "realtime-public-first.json",
+        "underrun_events": 5595
+      },
+      {
+        "report": "realtime-public-repeat.json",
+        "underrun_events": 5823
+      }
+    ],
+    "limitation": "Hidden in-app browser failed this stress profile; foreground success does not promise background/other-device acceptance. Failed runs are preserved. A short Node A/B under current host load did not show a server-binary CPU regression; both caller-thread timings exceeded the 2.667 ms quantum. See diagnostic CPU reports; these short runs are not the original full AB/BA benchmark."
+  },
+  "memory": {
+    "sample_bank_high_water_mib": 134.25,
+    "mobile_128_mib_gate_met": false
+  },
+  "workspace": "Main synchronized with deployed commit; all original non-task files preserved byte-for-byte; pending Control/MIDI changes remain local."
+}

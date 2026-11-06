@@ -165,6 +165,7 @@ struct Grain {
     /// None for DRIVE at 0 or the waveshaper off as the grain started.
     drive: Option<Drive>,
     shaper: Option<Shaper>,
+    advanced_shaper: bool,
     filters: [Svf; 2],
 }
 
@@ -215,6 +216,9 @@ pub(crate) struct Runtime {
     gains: [f32; CUTOFF_STEPS + 1],
     shaper_tables: ShaperTables,
     grains: [Grain; MAX_GRAINS],
+    /// Prepared once; starting or retargeting a grain never allocates DSP.
+    advanced_shapers: Box<[super::waveshaper::Processor]>,
+    parallel_delays: Box<[filter::FrameDelay]>,
     /// Smooth weighted round robin: each deal adds every share, the richest
     /// group takes the grain and pays the total back.
     credit: [f32; GROUPS],
@@ -234,6 +238,14 @@ impl Runtime {
             }),
             shaper_tables: shaper::tables(),
             grains: [Grain::default(); MAX_GRAINS],
+            advanced_shapers: (0..MAX_GRAINS)
+                .map(|_| super::waveshaper::Processor::new(sample_rate))
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+            parallel_delays: (0..MAX_GRAINS)
+                .map(|_| filter::FrameDelay::new())
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
             credit: [0.0; GROUPS],
             random: Random(0x6772_6169_6e5f_6772),
         }
@@ -273,6 +285,15 @@ impl Runtime {
         duration: u32,
         note: f32,
     ) {
+        if let Waveshaper::Type(mode) = group.waveshaper {
+            self.advanced_shapers[slot].reset_for_note(
+                mode,
+                group.waveshaper_depth,
+                group.waveshaper_options,
+                note,
+            );
+        }
+        self.parallel_delays[slot].clear();
         let cutoff_offset = if group.random_cutoff > 0.0 {
             self.random.bipolar() * group.random_cutoff
         } else {
@@ -301,6 +322,7 @@ impl Runtime {
             amp: Segments::new(&group.amp, duration),
             filter_env: Segments::new(&group.filter_env, duration),
             drive: (group.drive > 0.0).then(|| Drive::new(group.drive)),
+            advanced_shaper: group.waveshaper_options != crate::waveshaper::Options::default(),
             shaper: match group.waveshaper {
                 Waveshaper::Off => None,
                 Waveshaper::Type(mode) => Some(Shaper::new(
@@ -365,6 +387,13 @@ impl Runtime {
         // oscillators are, wherever the group's order puts them.
         let refresh = age.is_multiple_of(REFRESH);
         let tables = &self.shaper_tables;
+        let advanced = &mut self.advanced_shapers[slot];
+        let parallel_delay = &mut self.parallel_delays[slot];
+        let shaper_latency = std::cell::Cell::new(if grain.advanced_shaper {
+            advanced.latency_samples()
+        } else {
+            0
+        });
         let mut shape = |mut frame: Stereo| {
             if let Some(drive) = &mut grain.drive {
                 if refresh {
@@ -375,8 +404,30 @@ impl Runtime {
             if let Some(shaper) = &mut grain.shaper {
                 if refresh {
                     shaper.tune(group.waveshaper_depth);
+                    let active = group.waveshaper_options != crate::waveshaper::Options::default();
+                    if active && !grain.advanced_shaper {
+                        advanced.clear();
+                    }
+                    grain.advanced_shaper = active;
+                    if active {
+                        advanced.set_pitch(shaper.pitch.0 as f32 / 256.0);
+                        advanced.configure(
+                            shaper.mode,
+                            group.waveshaper_depth,
+                            group.waveshaper_options,
+                        );
+                    }
                 }
-                frame = shaper.process(frame, tables);
+                shaper_latency.set(if grain.advanced_shaper {
+                    advanced.latency_samples()
+                } else {
+                    0
+                });
+                frame = if grain.advanced_shaper {
+                    advanced.process(frame)
+                } else {
+                    shaper.process(frame, tables)
+                };
             }
             frame
         };
@@ -417,14 +468,27 @@ impl Runtime {
         let mut out = frame;
         // In parallel, what the earlier filter heard, for the later one.
         let mut split = None;
+        let mut shaped_split = false;
         for stage in group.order {
             out = match stage {
-                Stage::Drive => shape(out),
+                Stage::Drive => {
+                    let output = shape(out);
+                    shaped_split = split.is_some();
+                    output
+                }
                 Stage::Filter1 | Stage::Filter2 => {
                     let n = (stage == Stage::Filter2) as usize;
                     match (routing, split) {
                         (FilterRouting::Parallel, Some(heard)) => {
                             let beside = filter(n, heard);
+                            let beside = parallel_delay.process(
+                                beside,
+                                if shaped_split {
+                                    shaper_latency.get()
+                                } else {
+                                    0
+                                },
+                            );
                             std::array::from_fn(|c| (out[c] + beside[c]) * 0.5)
                         }
                         (FilterRouting::Parallel, None) => {

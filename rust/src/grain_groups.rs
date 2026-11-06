@@ -257,6 +257,7 @@ pub struct Group {
     pub drive: f32,
     pub waveshaper: Waveshaper,
     pub waveshaper_depth: f32,
+    pub waveshaper_options: crate::waveshaper::Options,
     /// The order each grain passes the drive and the filters in. With the
     /// filters in parallel, the later filter hears what the earlier one
     /// heard, and the two are mixed where the later one sits.
@@ -294,6 +295,7 @@ impl Default for Group {
             waveshaper: Waveshaper::Off,
             // The FX Waveshaper's DEPTH of 64.
             waveshaper_depth: 64.0 / 127.0,
+            waveshaper_options: crate::waveshaper::Options::default(),
             order: ORDERS[0],
         }
     }
@@ -335,6 +337,7 @@ impl Group {
             1.0,
             fallback.waveshaper_depth,
         );
+        self.waveshaper_options = self.waveshaper_options.sanitize();
         if !ORDERS.contains(&self.order) {
             self.order = fallback.order;
         }

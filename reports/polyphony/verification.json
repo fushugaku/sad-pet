@@ -1,0 +1,35 @@
+{
+  "feature": "Independent Main pitch voices and per-track oscillator/granular routing",
+  "native_checks": {
+    "passed_tests": 608,
+    "scope": "DSP/unit and integration suites; unrelated sample-library generation stopped after several minutes"
+  },
+  "wasm_library_tests": {
+    "passed": 11,
+    "failed": 0,
+    "default_stack": true,
+    "audio_allocations": 0
+  },
+  "compiled_wasm_suites": [
+    "polyphony",
+    "neuropolis",
+    "synth",
+    "tb303",
+    "wavetable"
+  ],
+  "checks": [
+    "Clippy with -D warnings",
+    "Rustfmt",
+    "git diff --check"
+  ],
+  "browser": {
+    "desktop": "passed",
+    "mobile_width_px": 390,
+    "routing_independence": "passed"
+  },
+  "preview": "http://127.0.0.1:8767/",
+  "screenshots": [
+    "desktop-routing.jpg",
+    "mobile-routing.jpg"
+  ]
+}

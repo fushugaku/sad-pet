@@ -8,6 +8,55 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+/// A fixed-size audio-thread snapshot serialized with only its active slots.
+#[derive(Clone, Copy)]
+pub struct FilterSlotsView {
+    slots: [crate::preset::FilterSlot; crate::preset::MAX_FILTER_SLOTS],
+    len: usize,
+}
+
+impl Serialize for FilterSlotsView {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.slots[..self.len.min(self.slots.len())].serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for FilterSlotsView {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Slots;
+        impl<'de> serde::de::Visitor<'de> for Slots {
+            type Value = FilterSlotsView;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(
+                    formatter,
+                    "up to {} filter slots",
+                    crate::preset::MAX_FILTER_SLOTS
+                )
+            }
+
+            fn visit_seq<A: serde::de::SeqAccess<'de>>(
+                self,
+                mut sequence: A,
+            ) -> Result<Self::Value, A::Error> {
+                let mut view = FilterSlotsView {
+                    slots: [crate::preset::FilterSlot::default(); crate::preset::MAX_FILTER_SLOTS],
+                    len: 0,
+                };
+                while let Some(slot) = sequence.next_element()? {
+                    if view.len == view.slots.len() {
+                        return Err(serde::de::Error::invalid_length(view.len + 1, &self));
+                    }
+                    view.slots[view.len] = slot;
+                    view.len += 1;
+                }
+                Ok(view)
+            }
+        }
+        deserializer.deserialize_seq(Slots)
+    }
+}
+
 /// Fixed-size feedback for hosts. Publishing it does not allocate or lock.
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct RealtimeView {
@@ -62,6 +111,11 @@ pub struct RealtimeView {
     pub waveform: [[f32; 2]; 640],
     pub waveform_len: usize,
     pub params: crate::preset::Params,
+    /// Omitted when the current controls match the saved preset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modulated_filter_slots: Option<FilterSlotsView>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modulated_grain_groups: Option<crate::grain_groups::Settings>,
     pub filter_cutoffs: [f32; 2],
     pub resynth_bands: [f32; crate::resynth::BANDS],
     pub resynth_frequencies: [f32; crate::resynth::BANDS],
@@ -141,6 +195,8 @@ impl Default for RealtimeView {
             waveform: [[0.0; 2]; 640],
             waveform_len: 0,
             params: crate::preset::Params::default(),
+            modulated_filter_slots: None,
+            modulated_grain_groups: None,
             filter_cutoffs: [1.0; 2],
             resynth_bands: [0.0; crate::resynth::BANDS],
             resynth_frequencies: [0.0; crate::resynth::BANDS],
@@ -258,6 +314,18 @@ impl Engine {
         view.envs = self.env_values;
         view.matrix = self.matrix_values;
         view.params = self.modulated.params;
+        view.modulated_filter_slots = if self.modulated.filter_slots[..self.modulated.filter_len]
+            != self.preset.filter_slots[..]
+        {
+            Some(FilterSlotsView {
+                slots: self.modulated.filter_slots,
+                len: self.modulated.filter_len,
+            })
+        } else {
+            None
+        };
+        view.modulated_grain_groups = (self.modulated.grain_groups != self.preset.grain_groups)
+            .then_some(self.modulated.grain_groups);
         view.modulated_resynth = self.modulated.resynth;
         view.modulated_synth = self.modulated.synth;
         view.modulated_wavetable = self.modulated.wavetable;
@@ -374,19 +442,26 @@ impl Engine {
         let voice = self
             .voices
             .iter()
-            .find(|v| v.active() && v.note == self.source_note && v.channel == self.source_channel)
-            .or_else(|| self.voices.iter().find(|v| v.active()));
-        let (note, envs) = voice.map_or((60.0, [0.0; crate::preset::MODULATORS]), |v| {
+            .enumerate()
+            .find(|(_, v)| {
+                v.active() && v.note == self.source_note && v.channel == self.source_channel
+            })
+            .or_else(|| self.voices.iter().enumerate().find(|(_, v)| v.active()));
+        let (note, envs, bass_env) = voice.map_or(
             (
-                v.note as f32 + self.bend[v.channel as usize] * m.midi_pitchbend_range,
-                v.env_values,
-            )
-        });
-        filter::voice_cutoffs(
-            &m,
-            note,
-            filter::envelopes(envs, self.tb303_view().envelope),
-        )
+                60.0,
+                [0.0; crate::preset::MODULATORS],
+                self.tb303_view().envelope,
+            ),
+            |(index, v)| {
+                (
+                    v.pitch() + self.bend[v.channel as usize] * m.midi_pitchbend_range,
+                    v.env_values,
+                    self.voice_tb303_envelope(index),
+                )
+            },
+        );
+        filter::voice_cutoffs(&m, note, filter::envelopes(envs, bass_env))
     }
 }
 
@@ -589,6 +664,8 @@ impl ControlFeedback<'_> {
                 || (self.preset.synth.is_some() && s.id.starts_with("synth_"))
                 || (self.preset.wavetable.is_some() && s.id.starts_with("wt_"))
                 || (self.preset.oscillators.is_some() && s.id.starts_with("osc"))
+                || (s.id.starts_with("filter") && s.id.contains("_ws_"))
+                || (s.id.starts_with("grain_group") && s.id.contains("_waveshaper_"))
                 || s.id
                     .strip_prefix("interaction")
                     .and_then(|tail| tail.split('_').next()?.parse::<usize>().ok())
@@ -621,6 +698,13 @@ pub fn knob_states_from_view(
 ) -> BTreeMap<String, KnobState> {
     let mut m = Modulated::from_preset(preset);
     m.params = view.params;
+    if let Some(slots) = view.modulated_filter_slots {
+        m.filter_slots = slots.slots;
+        m.filter_len = slots.len;
+    }
+    if let Some(groups) = view.modulated_grain_groups {
+        m.grain_groups = groups;
+    }
     m.color_slots = view.color;
     m.pre_color_slots = view.pre_color;
     m.source_color = view.source_color;
@@ -639,4 +723,104 @@ pub fn knob_states_from_view(
     m.drum_shifts = view.drums.shifts.map(|s| s as f32);
     m.rack_eqs = view.modulated_rack_eqs;
     ControlFeedback { preset }.knob_states_at(&m, view.filter_cutoffs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        dsp::SampleBuffer,
+        macros::{Macro, Target},
+        parameters,
+        preset::{FilterSlot, Preset},
+    };
+    use std::sync::Arc;
+
+    fn control(id: &str) -> Destination {
+        let index = parameters::specs()
+            .iter()
+            .position(|spec| spec.id == id)
+            .unwrap();
+        Destination::Control {
+            index: u16::try_from(index).unwrap(),
+        }
+    }
+
+    fn close(actual: f32, expected: f32) {
+        assert!((actual - expected).abs() < 1e-5, "{actual} != {expected}");
+    }
+
+    #[test]
+    fn shaper_modulation_feedback_survives_realtime_view_and_serialization() {
+        let mut preset = Preset::default();
+        preset.params.filter_shapers[0].before.depth = 0.2;
+        let mut slot = FilterSlot {
+            id: 77,
+            ..FilterSlot::default()
+        };
+        slot.shapers.after.options.bias = 0.3;
+        preset.filter_slots.push(slot);
+        preset.grain_groups.groups[2].waveshaper_options.input = 0.25;
+        let cases = [
+            ("filter1_ws_before_depth", 0.4, 0.2, 0.4, 0.2, 0.6),
+            ("filter3_ws_after_bias", -0.2, 0.3, 0.2, 0.1, 0.3),
+            ("grain_group3_waveshaper_input", 0.6, 0.25, 0.55, 0.25, 0.85),
+        ];
+        preset.macros.push(Macro {
+            value: 0.5,
+            targets: cases
+                .iter()
+                .map(|(id, depth, ..)| Target {
+                    destination: control(id),
+                    depth: *depth,
+                })
+                .collect(),
+            ..Macro::default()
+        });
+        let mut engine = Engine::new(8_000, Arc::new(SampleBuffer::demo(8_000)), preset);
+        let direct = engine.knob_states();
+        let mut view = RealtimeView::default();
+        engine.realtime_view(&mut view);
+        let packet = serde_json::to_value(&view).unwrap();
+        assert_eq!(
+            packet["modulated_filter_slots"].as_array().unwrap().len(),
+            1
+        );
+        let decoded: RealtimeView = serde_json::from_value(packet.clone()).unwrap();
+        let published = engine.knob_states_from_view(&decoded);
+        for (id, _, base, current, min, max) in cases {
+            for state in [&direct[id], &published[id]] {
+                close(state.base, base);
+                close(state.current, current);
+                close(state.min, min);
+                close(state.max, max);
+                assert!(state.modulated, "{id}");
+            }
+        }
+        assert!(!direct.contains_key("filter4_ws_before_depth"));
+
+        // Older snapshots omit the new fields and fall back to saved values.
+        let mut old_packet = packet;
+        let old = old_packet.as_object_mut().unwrap();
+        old.remove("modulated_filter_slots");
+        old.remove("modulated_grain_groups");
+        let old: RealtimeView = serde_json::from_value(old_packet).unwrap();
+        let old = engine.knob_states_from_view(&old);
+        close(old["filter3_ws_after_bias"].current, 0.3);
+        close(old["grain_group3_waveshaper_input"].current, 0.25);
+
+        // Reusing the view must not retain an earlier modulated snapshot.
+        engine.preset.macros[0].value = 0.0;
+        engine.refresh_parameters();
+        engine.realtime_view(&mut view);
+        assert!(view.modulated_filter_slots.is_none());
+        assert!(view.modulated_grain_groups.is_none());
+        let packet = serde_json::to_value(&view).unwrap();
+        assert!(packet.get("modulated_filter_slots").is_none());
+        assert!(packet.get("modulated_grain_groups").is_none());
+        let decoded: RealtimeView = serde_json::from_value(packet).unwrap();
+        let published = engine.knob_states_from_view(&decoded);
+        close(published["filter3_ws_after_bias"].current, 0.3);
+        close(published["grain_group3_waveshaper_input"].current, 0.25);
+    }
 }

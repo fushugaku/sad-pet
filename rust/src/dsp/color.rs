@@ -2,7 +2,7 @@ use super::compressor::Compressor;
 use super::delay::RadiasDelay;
 use super::effects::{Delay, Effects};
 use super::fast;
-use super::radias_waveshaper::RadiasWaveshaper;
+use super::waveshaper::Processor as Waveshaper;
 use crate::{
     Stereo,
     color::{ColorSlot, MAX_COLOR_SLOTS, WaveshaperMode},
@@ -44,7 +44,7 @@ pub struct ColorProcessor {
     reverb_params: Params,
     radias_delay: RadiasDelay,
     compressor: Compressor,
-    waveshaper: RadiasWaveshaper,
+    waveshaper: Waveshaper,
     imported: Option<Box<crate::imported_fx::Core>>,
     imported_fresh: bool,
     imported_rate: super::imported_rate::RateBridge,
@@ -86,7 +86,7 @@ impl ColorProcessor {
             radias_delay: RadiasDelay::unallocated(sample_rate),
             reverb_params: Params::default(),
             compressor: Compressor::new(sample_rate),
-            waveshaper: RadiasWaveshaper::new(sample_rate),
+            waveshaper: Waveshaper::new(sample_rate),
             imported: None,
             imported_fresh: false,
             imported_rate: super::imported_rate::RateBridge::new(sample_rate),
@@ -291,9 +291,11 @@ impl ColorProcessor {
                 }
             }
             SaturatorType::Compressor => self.compressor.configure(&s),
-            SaturatorType::Waveshaper => self
-                .waveshaper
-                .configure(s.waveshaper_type, s.waveshaper_depth),
+            SaturatorType::Waveshaper => self.waveshaper.configure(
+                s.waveshaper_type,
+                s.waveshaper_depth,
+                s.waveshaper_options,
+            ),
         }
     }
     pub fn process(&mut self, frame: Stereo) -> Stereo {
@@ -302,6 +304,11 @@ impl ColorProcessor {
     fn process_with_voice_gain(&mut self, frame: Stereo, voice_gain: f32) -> Stereo {
         if !self.slot.enabled {
             return frame;
+        }
+        if self.slot.kind == SaturatorType::Waveshaper {
+            return self
+                .waveshaper
+                .process_mixed(frame, self.slot.mix, voice_gain);
         }
         let s = self.slot.settings;
         let result = match self.slot.kind {
@@ -393,7 +400,7 @@ impl ColorProcessor {
                 None => frame,
             },
             SaturatorType::Compressor => self.compressor.process(frame),
-            SaturatorType::Waveshaper => self.waveshaper.process_with_voice_gain(frame, voice_gain),
+            SaturatorType::Waveshaper => unreachable!("Waveshaper owns its aligned dry/wet path"),
         };
         std::array::from_fn(|c| frame[c] * (1.0 - self.slot.mix) + self.slot.mix * result[c])
     }
@@ -405,12 +412,23 @@ impl ColorProcessor {
             0.0
         }
     }
+    pub(crate) fn latency_samples(&self) -> usize {
+        if self.slot.enabled && self.slot.kind == SaturatorType::Waveshaper {
+            self.waveshaper.latency_samples()
+        } else {
+            0
+        }
+    }
 }
 
 pub struct ColorRack {
     processors: [ColorProcessor; MAX_COLOR_SLOTS],
     len: usize,
     active: bool,
+    dry: Box<super::filter::FrameDelay<4096>>,
+    reference: Box<super::filter::FrameDelay<4096>>,
+    aligned_input: Stereo,
+    latency: usize,
 }
 impl ColorRack {
     pub fn new(sample_rate: u32) -> Self {
@@ -418,10 +436,17 @@ impl ColorRack {
             processors: std::array::from_fn(|_| ColorProcessor::new(sample_rate)),
             len: 0,
             active: false,
+            dry: Box::new(super::filter::FrameDelay::new()),
+            reference: Box::new(super::filter::FrameDelay::new()),
+            aligned_input: [0.0; 2],
+            latency: 0,
         }
     }
     pub fn clear(&mut self) {
         self.processors.iter_mut().for_each(ColorProcessor::clear);
+        self.dry.clear();
+        self.reference.clear();
+        self.aligned_input = [0.0; 2];
     }
     pub fn configure(&mut self, slots: &[ColorSlot]) {
         self.configure_tempo(slots, 120.0);
@@ -485,12 +510,14 @@ impl ColorRack {
         }
     }
     pub fn process(&mut self, mut frame: Stereo) -> Stereo {
+        self.capture_dry(frame, 0);
         for processor in &mut self.processors[..self.len] {
             frame = processor.process(frame);
         }
         frame
     }
     pub fn process_with_voice_gain(&mut self, mut frame: Stereo, voice_gain: f32) -> Stereo {
+        self.capture_dry(frame, 0);
         for processor in &mut self.processors[..self.len] {
             frame = processor.process_with_voice_gain(frame, voice_gain);
         }
@@ -509,6 +536,11 @@ impl ColorRack {
         send_gain: f32,
     ) -> Stereo {
         use super::filter_slots::{Instance, route_chain};
+        let extra = masks[..self.len.max(1)]
+            .iter()
+            .map(|&mask| super::filter_slots::latency_samples(banks, mask, Instance::Shared))
+            .sum();
+        self.capture_dry(frame, extra);
         for (i, processor) in self.processors[..self.len].iter_mut().enumerate() {
             frame = processor.process_with_voice_gain(frame, voice_gain);
             frame = route_chain(
@@ -529,6 +561,24 @@ impl ColorRack {
             );
         }
         frame
+    }
+
+    fn capture_dry(&mut self, frame: Stereo, extra: usize) {
+        self.latency = extra
+            + self.processors[..self.len]
+                .iter()
+                .map(ColorProcessor::latency_samples)
+                .sum::<usize>();
+        self.aligned_input = self.dry.process(frame, self.latency);
+    }
+    pub(crate) fn aligned_input(&self) -> Stereo {
+        self.aligned_input
+    }
+    pub(crate) fn latency_samples(&self) -> usize {
+        self.latency
+    }
+    pub(crate) fn align_reference(&mut self, frame: Stereo, extra: usize) -> Stereo {
+        self.reference.process(frame, self.latency + extra)
     }
 
     pub fn gain_reduction(&self) -> std::collections::BTreeMap<u32, f32> {

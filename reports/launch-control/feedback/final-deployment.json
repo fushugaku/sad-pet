@@ -1,0 +1,9 @@
+{
+  "version": "1efbd5573de1",
+  "files": {
+    "midi-inputs.mjs": true,
+    "xl3-feedback.mjs": true,
+    "controller.js": true,
+    "midi.js": true
+  }
+}

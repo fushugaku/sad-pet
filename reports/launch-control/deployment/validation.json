@@ -1,0 +1,94 @@
+{
+  "url": "https://fushugaku.github.io/sad-pet/",
+  "commit": "ed9d6633462c4d10ca97fa67d77da48771e7b005",
+  "virtualMidi": true,
+  "checkedAt": "2026-11-02T15:25:52.268Z",
+  "checks": [
+    "published HTTPS page loads the new controller UI and all sixteen mapping pages",
+    "the same controller knob changes different WASM parameters on pages 1 and 2",
+    "hardware page buttons and LED feedback work; mappings and the selected page survive reload",
+    "mobile layout fits 390px with equal control heights, no script errors or failed resource requests"
+  ],
+  "errors": [],
+  "failedRequests": [],
+  "runtimeBuild": "c30f034b1250",
+  "pages": [
+    {
+      "id": 0,
+      "count": 1
+    },
+    {
+      "id": 1,
+      "count": 1
+    },
+    {
+      "id": 2,
+      "count": 0
+    },
+    {
+      "id": 3,
+      "count": 0
+    },
+    {
+      "id": 4,
+      "count": 0
+    },
+    {
+      "id": 5,
+      "count": 0
+    },
+    {
+      "id": 6,
+      "count": 0
+    },
+    {
+      "id": 7,
+      "count": 0
+    },
+    {
+      "id": 8,
+      "count": 0
+    },
+    {
+      "id": 9,
+      "count": 0
+    },
+    {
+      "id": 10,
+      "count": 0
+    },
+    {
+      "id": 11,
+      "count": 0
+    },
+    {
+      "id": 12,
+      "count": 0
+    },
+    {
+      "id": 13,
+      "count": 0
+    },
+    {
+      "id": 14,
+      "count": 0
+    },
+    {
+      "id": 15,
+      "count": 0
+    }
+  ],
+  "mobile": {
+    "width": 390,
+    "scrollWidth": 390,
+    "heights": [
+      44,
+      44,
+      44,
+      44,
+      44,
+      44
+    ]
+  },
+  "passed": true
+}

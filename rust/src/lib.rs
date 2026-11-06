@@ -43,6 +43,7 @@ pub mod tb303;
 pub mod timbres;
 pub mod vocal;
 pub mod wav;
+pub mod waveshaper;
 pub mod wavetable;
 
 pub type Stereo = [f32; 2];
