@@ -138,7 +138,8 @@ const editor = source.slice(
   source.indexOf("function syncAll()"),
 );
 assert.ok(constants.length > 0 && editor.length > 0);
-vm.runInContext(`${constants}\n${editor}`, context);
+const colorTypes = source.slice(source.indexOf("const COLOR_TYPES ="), source.indexOf("// Sections of the effect menus"));
+vm.runInContext(`${colorTypes}\n${constants}\n${editor}`, context);
 context.buildFilters();
 assert.equal(schemas.length, 12, "Filter controls were not registered");
 assert.deepEqual(
@@ -198,6 +199,8 @@ assert.deepEqual(
     id: 1,
     enabled: true,
     position: "after_filters",
+    fx_chain: "b",
+    fx_slot: null,
     model: "legacy",
     kind: "low_pass",
     cutoff: 0.7,
@@ -287,6 +290,59 @@ assert.equal(pairMenu.groups[0].choices[1][0],"silk");
 pairMenu.value="silk";pairMenu.onchange();
 assert.equal(preset.params.filter_routing,"serial");
 assert.equal(preset.params.filter2_model,"ladder_lp24");
+
+// After FX chooses a rack, then an effect by stable ID or its moving end.
+const filter = preset.filter_slots[0];
+const fxCard = () => list.querySelector(`[data-id="${filter.id}"]`);
+const fxSelect = name => fxCard().querySelector(`.added-filter-${name}`);
+assert.equal(fxSelect("fx-chain").hidden, true);
+preset.pre_color_chain = [{ id: 31, kind: "distortion" }, { id: 32, kind: "chorus" }];
+preset.color_chain = [{ id: 41, kind: "reverb" }];
+preset.source_color_chain = [];
+fxSelect("position").value = "after_fx";
+fxSelect("position").onchange();
+assert.equal(fxSelect("fx-chain").hidden, false);
+assert.equal(fxSelect("fx-chain").value, "b");
+assert.deepEqual(fxSelect("fx-slot").children.map(o => [o.value, o.label]), [["41", "1 · Reverb"], ["last", "Last"]]);
+assert.equal(fxSelect("fx-slot").value, "last");
+fxSelect("fx-chain").value = "a";
+fxSelect("fx-chain").onchange();
+assert.equal(filter.fx_chain, "a");
+assert.deepEqual(fxSelect("fx-slot").children.map(o => o.value), ["31", "32", "last"]);
+fxSelect("fx-slot").value = "31";
+fxSelect("fx-slot").onchange();
+assert.equal(filter.fx_slot, 31);
+preset.pre_color_chain.reverse();
+context.syncAddedFilters();
+assert.equal(fxSelect("fx-slot").value, "31");
+assert.equal(fxSelect("fx-slot").children[1].label, "2 · Distortion");
+preset.pre_color_chain[1].kind = "crusher";
+context.syncAddedFilters();
+assert.equal(fxSelect("fx-slot").children[1].label, "2 · Bit crusher");
+fxSelect("fx-slot").value = "last";
+fxSelect("fx-slot").onchange();
+assert.equal(filter.fx_slot, null);
+preset.pre_color_chain.push({ id: 33, kind: "flanger" });
+context.syncAddedFilters();
+assert.equal(fxSelect("fx-slot").value, "last");
+fxSelect("fx-slot").value = "33";
+fxSelect("fx-slot").onchange();
+fxSelect("fx-chain").value = "b";
+fxSelect("fx-chain").onchange();
+assert.equal(filter.fx_slot, null, "Changing rack resets to its Last");
+fxSelect("fx-slot").value = "41";
+fxSelect("fx-slot").onchange();
+const racks = source.slice(source.indexOf("const COLOR_RACKS ="), source.indexOf("function colorEntries()"));
+const removeColor = source.slice(source.indexOf("function removeColor(id)"), source.indexOf("function moveColor(id, delta)"));
+context.editColorChain = () => context.syncAddedFilters();
+vm.runInContext(`${racks}\n${removeColor}`, context);
+context.removeColor(41);
+assert.equal(filter.fx_slot, null, "Removing the selected effect falls back to Last");
+assert.deepEqual(fxSelect("fx-slot").children.map(o => o.value), ["last"]);
+fxSelect("position").value = "after_grains";
+fxSelect("position").onchange();
+assert.equal(fxSelect("fx-chain").hidden, true);
+assert.equal(fxSelect("fx-slot").hidden, true);
 console.log(
-  "Filter editor: initialization, 12 controls, model/Comb selection, conditional Morph, scalar transport and added filters (position, model, host IDs, order, removal, limit) passed.",
+  "Filter editor: controls, model/Comb, Morph, added filters, FX A/B targets, Last, reorder, rename and removal passed.",
 );

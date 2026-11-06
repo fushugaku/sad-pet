@@ -670,18 +670,30 @@ h2 {
   display: none;
 }
 .filter-title.added-filter-title {
-  display: flex;
-  flex-wrap: wrap;
+  grid-template-columns: minmax(0, 1fr) 82px;
 }
 .added-filter-title strong {
-  flex: 0 0 auto;
+  grid-area: 1 / 1;
 }
-.added-filter-title select {
-  flex: 1 1 120px;
-  width: auto;
+.added-filter-title .color-actions {
+  grid-area: 1 / 1 / 2 / -1;
+  justify-self: end;
 }
+.added-filter-title .added-filter-type,
 .added-filter-title .added-filter-env {
-  flex: 0 0 82px;
+  grid-row: 2;
+}
+.added-filter-placement {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+.added-filter-placement.after-fx {
+  grid-template-columns: minmax(0, 1fr) 70px minmax(0, 1.2fr);
+}
+.added-filter-placement select[hidden] {
+  display: none;
 }
 .filter-routing button {
   height: 31px;

@@ -497,6 +497,40 @@ impl ColorRack {
         frame
     }
 
+    /// Filters attached to an effect run even when that effect is bypassed.
+    /// The masks are prepared at control rate, including Last for empty racks.
+    pub(super) fn process_with_filters(
+        &mut self,
+        mut frame: Stereo,
+        voice_gain: f32,
+        masks: &[u16; MAX_COLOR_SLOTS],
+        banks: &mut [Box<super::filter_slots::Bank>],
+        taps: &mut super::taps::Runtime,
+        send_gain: f32,
+    ) -> Stereo {
+        use super::filter_slots::{Instance, route_chain};
+        for (i, processor) in self.processors[..self.len].iter_mut().enumerate() {
+            frame = processor.process_with_voice_gain(frame, voice_gain);
+            frame = route_chain(
+                banks,
+                masks[i],
+                frame,
+                Instance::Shared,
+                Some((taps, send_gain)),
+            );
+        }
+        if self.len == 0 {
+            frame = route_chain(
+                banks,
+                masks[0],
+                frame,
+                Instance::Shared,
+                Some((taps, send_gain)),
+            );
+        }
+        frame
+    }
+
     pub fn gain_reduction(&self) -> std::collections::BTreeMap<u32, f32> {
         self.processors[..self.len]
             .iter()

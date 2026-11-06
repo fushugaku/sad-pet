@@ -633,7 +633,14 @@ impl Engine {
                 }
                 Module::PreFx if flow.per_note => {
                     let (mean, weight) = self.rack_mean(&flow);
-                    let output = self.pre_color_rack.process(mean);
+                    let output = self.pre_color_rack.process_with_filters(
+                        mean,
+                        1.0,
+                        &self.filter_fx_masks[0],
+                        &mut self.filter_banks,
+                        &mut self.taps,
+                        weight,
+                    );
                     if self.taps.sends(Stage::PreFx) {
                         self.taps.send(Stage::PreFx, output.map(|x| x * weight));
                     }
@@ -687,21 +694,26 @@ impl Engine {
                 Module::PreFx => {
                     self.rack_collapse(&mut flow);
                     let input = flow.signal;
-                    let output = self.pre_color_rack.process(input);
+                    let output = self.pre_color_rack.process_with_filters(
+                        input,
+                        1.0,
+                        &self.filter_fx_masks[0],
+                        &mut self.filter_banks,
+                        &mut self.taps,
+                        1.0,
+                    );
                     flow.signal = self.tap(Stage::PreFx, input, output);
                 }
                 Module::PostFx => {
                     self.rack_collapse(&mut flow);
                     let input = flow.signal;
-                    let output = self
-                        .color_rack
-                        .process_with_voice_gain(input, loudest_voice);
-                    let output = filter_slots::route_chain(
+                    let output = self.color_rack.process_with_filters(
+                        input,
+                        loudest_voice,
+                        &self.filter_fx_masks[1],
                         &mut self.filter_banks,
-                        masks[FilterPosition::AfterFx as usize],
-                        output,
-                        Instance::Shared,
-                        Some((&mut self.taps, 1.0)),
+                        &mut self.taps,
+                        1.0,
                     );
                     flow.signal = self.tap(Stage::PostFx, input, output);
                 }

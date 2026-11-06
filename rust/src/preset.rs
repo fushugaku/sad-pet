@@ -152,12 +152,24 @@ impl FilterPosition {
     }
 }
 
+/// FX A is the pre-filter rack; FX B is the post-filter rack.
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FilterFxChain {
+    A,
+    #[default]
+    B,
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct FilterSlot {
     pub id: u32,
     pub enabled: bool,
     pub position: FilterPosition,
+    pub fx_chain: FilterFxChain,
+    /// Stable effect slot ID, or None for the end of the selected FX rack.
+    pub fx_slot: Option<u32>,
     pub model: FilterModel,
     pub kind: FilterType,
     pub cutoff: f32,
@@ -175,6 +187,8 @@ impl Default for FilterSlot {
             id: 0,
             enabled: true,
             position: FilterPosition::default(),
+            fx_chain: FilterFxChain::default(),
+            fx_slot: None,
             model: FilterModel::Legacy,
             kind: FilterType::LowPass,
             cutoff: 0.7,
@@ -1375,6 +1389,7 @@ impl Preset {
             .chain(&self.source_color_chain)
             .map(|s| s.id)
             .collect();
+        reserved.extend(self.filter_slots.iter().filter_map(|s| s.fx_slot));
         reserved.extend(
             self.lfos
                 .iter()
@@ -1407,6 +1422,18 @@ impl Preset {
             }
             used.push(slot.id);
             slot.sanitize();
+        }
+        for filter in &mut self.filter_slots {
+            let chain = match filter.fx_chain {
+                FilterFxChain::A => &self.pre_color_chain,
+                FilterFxChain::B => &self.color_chain,
+            };
+            if filter
+                .fx_slot
+                .is_some_and(|id| !chain.iter().any(|s| s.id == id))
+            {
+                filter.fx_slot = None;
+            }
         }
         self.params.saturation = self.color_chain.first().map_or(0.0, |s| s.mix);
         self.params.saturator_type = self
@@ -1495,7 +1522,11 @@ impl Preset {
         if self.resynth.enabled {
             modules.push(Module::Resynth);
         }
-        if !self.pre_color_chain.is_empty() {
+        if !self.pre_color_chain.is_empty()
+            || self.filter_slots.iter().any(|s| {
+                s.enabled && s.position == FilterPosition::AfterFx && s.fx_chain == FilterFxChain::A
+            })
+        {
             modules.push(Module::PreFx);
         }
         modules.extend([Module::Filters, Module::PostFx]);

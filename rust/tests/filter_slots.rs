@@ -1,13 +1,15 @@
 //! Filters 3 and up: positions, bypass, presets, host IDs, modulation and the
 //! allocation-free audio path.
 use sad_pet::{
+    color::{ColorSettings, ColorSlot},
     dsp::Engine,
     midi::Message,
     parameters,
     preset::{
-        Destination, EnvSource, FilterModel, FilterPosition, FilterSlot, FilterSlotParameter,
-        FilterType, MAX_FILTER_SLOTS, Preset,
+        Destination, EnvSource, FilterFxChain, FilterModel, FilterPosition, FilterSlot,
+        FilterSlotParameter, FilterType, MAX_FILTER_SLOTS, Preset, SaturatorType,
     },
+    rack::{Module, Settings, Slot},
 };
 use std::{
     alloc::{GlobalAlloc, Layout, System},
@@ -222,6 +224,224 @@ fn presets_keep_added_filters_and_sanitize_them() {
     // Presets from before added filters load with none.
     let old: Preset = serde_json::from_str(r#"{"format":"evil-pet-rust-v1"}"#).unwrap();
     assert!(old.filter_slots.is_empty());
+}
+
+#[test]
+fn fx_filter_targets_recall_and_old_after_fx_means_b_last() {
+    let old: FilterSlot = serde_json::from_str(r#"{"id":1,"position":"after_fx"}"#).unwrap();
+    assert_eq!(old.fx_chain, FilterFxChain::B);
+    assert_eq!(old.fx_slot, None);
+    let mut preset = fx_scene(FilterFxChain::A, None);
+    preset.filter_slots[0].fx_slot = Some(11);
+    let restored: Preset = serde_json::from_value(serde_json::to_value(&preset).unwrap()).unwrap();
+    assert_eq!(restored.filter_slots, preset.filter_slots);
+    preset.pre_color_chain.reverse();
+    preset.sanitize();
+    assert_eq!(preset.filter_slots[0].fx_slot, Some(11));
+    preset.filter_slots[0].fx_chain = FilterFxChain::B;
+    preset.sanitize();
+    assert_eq!(
+        preset.filter_slots[0].fx_slot, None,
+        "An effect in another rack is not a target"
+    );
+    preset.filter_slots[0].fx_slot = Some(1);
+    preset.color_chain.push(ColorSlot {
+        id: 0,
+        ..ColorSlot::default()
+    });
+    preset.sanitize();
+    assert_eq!(preset.filter_slots[0].fx_slot, None);
+    assert!(
+        preset.color_chain.iter().all(|fx| fx.id != 1),
+        "A new FX must not inherit a stale target ID"
+    );
+}
+
+fn fx_scene(chain: FilterFxChain, modules: Option<&[Module]>) -> Preset {
+    let mut preset = scene(&[FilterSlot {
+        fx_chain: chain,
+        ..dark(1, FilterPosition::AfterFx)
+    }]);
+    preset.params.mix = 0.0;
+    preset.resynth.enabled = false;
+    preset.fx_chain_version = 1;
+    preset.color_chain.clear();
+    preset.pre_color_chain.clear();
+    preset.source_color_chain.clear();
+    let effects = vec![
+        ColorSlot {
+            id: 11,
+            kind: SaturatorType::Distortion,
+            mix: 1.0,
+            settings: ColorSettings {
+                distortion_drive: 0.9,
+                ..Default::default()
+            },
+            ..ColorSlot::default()
+        },
+        ColorSlot {
+            id: 12,
+            kind: SaturatorType::Crusher,
+            mix: 1.0,
+            settings: ColorSettings {
+                crusher_bits: 0.3,
+                crusher_drive: 0.8,
+                crusher_dither: 0.0,
+                ..Default::default()
+            },
+            ..ColorSlot::default()
+        },
+    ];
+    match chain {
+        FilterFxChain::A => preset.pre_color_chain = effects,
+        FilterFxChain::B => preset.color_chain = effects,
+    }
+    if let Some(modules) = modules {
+        preset.rack = Some(Box::new(Settings {
+            modules: modules
+                .iter()
+                .map(|&module| Slot {
+                    module,
+                    enabled: true,
+                    id: 0,
+                })
+                .collect(),
+            ..Default::default()
+        }));
+    }
+    preset.sanitize();
+    preset
+}
+
+fn fx_chain(preset: &mut Preset, chain: FilterFxChain) -> &mut Vec<ColorSlot> {
+    match chain {
+        FilterFxChain::A => &mut preset.pre_color_chain,
+        FilterFxChain::B => &mut preset.color_chain,
+    }
+}
+
+#[test]
+fn fx_filters_run_between_effects_follow_ids_and_keep_bypass_and_last() {
+    let sound = |preset| render(&mut play(preset, [48, 60, 67]), 4096);
+    let per_note = [Module::Sample, Module::PreFx, Module::PostFx];
+    let shared = [Module::Sample, Module::Mixer, Module::PreFx, Module::PostFx];
+    for modules in [None, Some(per_note.as_slice()), Some(shared.as_slice())] {
+        for chain in [FilterFxChain::A, FilterFxChain::B] {
+            let mut preset = fx_scene(chain, modules);
+            let last = sound(preset.clone());
+            preset.filter_slots[0].fx_slot = Some(12);
+            assert_eq!(
+                sound(preset.clone()),
+                last,
+                "Last must match the final effect"
+            );
+            preset.filter_slots[0].fx_slot = Some(11);
+            assert_ne!(
+                sound(preset.clone()),
+                last,
+                "The first FX target ran at Last ({chain:?}, {modules:?})"
+            );
+            fx_chain(&mut preset, chain).reverse();
+            let moved = sound(preset.clone());
+            preset.filter_slots[0].fx_slot = None;
+            assert_eq!(
+                sound(preset.clone()),
+                moved,
+                "A reordered effect lost its filter"
+            );
+            fx_chain(&mut preset, chain).reverse();
+            fx_chain(&mut preset, chain)[0].enabled = false;
+            let bypassed_last = sound(preset.clone());
+            preset.filter_slots[0].fx_slot = Some(11);
+            assert_ne!(
+                sound(preset.clone()),
+                bypassed_last,
+                "A bypassed FX lost its filter point"
+            );
+            fx_chain(&mut preset, chain).clear();
+            preset.filter_slots[0].fx_slot = None;
+            let empty_last = sound(preset.clone());
+            preset.filter_slots[0].enabled = false;
+            assert_ne!(sound(preset), empty_last, "Last skipped an empty rack");
+        }
+    }
+}
+
+#[test]
+fn empty_fx_a_filters_survive_rack_conversion_and_run_without_heap() {
+    let mut preset = fx_scene(FilterFxChain::A, None);
+    preset.pre_color_chain.clear();
+    let rack = preset.as_rack().unwrap();
+    assert!(rack.rack.as_ref().unwrap().has(Module::PreFx));
+    assert_eq!(
+        render(&mut play(preset, [48, 60, 67]), 4096),
+        render(&mut play(rack, [48, 60, 67]), 4096)
+    );
+    let mut preset = fx_scene(FilterFxChain::A, None);
+    preset.filter_slots[0].fx_slot = Some(11);
+    let mut engine = play(preset, [48, 60, 67]);
+    let mut next = engine.preset.clone();
+    next.pre_color_chain.reverse();
+    let mut next = engine.prepare_preset_update(next).unwrap();
+    let mut out = [[0.0; 2]; 2048];
+    no_heap(|| {
+        engine.process(&mut out);
+        engine.exchange_preset(&mut next);
+        engine.process(&mut out);
+    });
+    assert!(out.iter().flatten().all(|v| v.is_finite()));
+}
+
+#[test]
+fn fx_last_filters_send_the_same_normalized_audio_as_their_rack() {
+    let per_note = [Module::Sample, Module::PreFx, Module::PostFx];
+    let shared = [Module::Sample, Module::Mixer, Module::PreFx, Module::PostFx];
+    for modules in [None, Some(per_note.as_slice()), Some(shared.as_slice())] {
+        for chain in [FilterFxChain::A, FilterFxChain::B] {
+            let mut preset = fx_scene(chain, modules);
+            preset.filter_slots[0].output = sad_pet::taps::Tap {
+                bus: 1,
+                send: 1.0,
+                chain: 1.0,
+            };
+            let tap = match chain {
+                FilterFxChain::A => &mut preset.taps.pre_fx,
+                FilterFxChain::B => &mut preset.taps.post_fx,
+            };
+            tap.bus = 2;
+            tap.send = 1.0;
+            let mut engine = play(preset, [48, 60, 67]);
+            engine.set_open_buses(1 << 1 | 1 << 2);
+            let mut peak = 0.0_f32;
+            for _ in 0..4096 {
+                engine.process_frame();
+                let sends = engine.bus_sends().unwrap();
+                assert_eq!(
+                    sends[0], sends[1],
+                    "Wrong FX filter send gain ({chain:?}, {modules:?})"
+                );
+                peak = peak.max(sends[0][0].abs());
+            }
+            assert!(peak > 1e-6, "FX filter send is silent");
+        }
+    }
+}
+
+#[test]
+fn fx_last_and_final_effect_share_filter_list_order() {
+    for chain in [FilterFxChain::A, FilterFxChain::B] {
+        let mut preset = fx_scene(chain, None);
+        preset.filter_slots.push(FilterSlot {
+            fx_chain: chain,
+            model: FilterModel::LadderLp24,
+            drive: 0.8,
+            cutoff: 0.5,
+            ..dark(2, FilterPosition::AfterFx)
+        });
+        let reference = render(&mut play(preset.clone(), [48, 60, 67]), 4096);
+        preset.filter_slots[1].fx_slot = Some(12);
+        assert_eq!(render(&mut play(preset, [48, 60, 67]), 4096), reference);
+    }
 }
 
 #[test]

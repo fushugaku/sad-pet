@@ -318,7 +318,7 @@ console.log(
 );
 
 // Every external filter sends its own output, before its Chain share.
-function filterSendScene({ target = 1, position = "after_filters", rack = false, send = 1, muted = false, enabled = true, routing = "serial", count = 1, rate = 8000 } = {}) {
+function filterSendScene({ target = 1, position = "after_filters", rack = false, send = 1, muted = false, enabled = true, routing = "serial", count = 1, rate = 8000, fx_chain = "b", fx_slot = null, effects = false } = {}) {
   const scene = new Core(module, rate);
   scene.call("sad_load", utility.call("sad_pack"));
   const bus = scene.request("/api/timbres/add", { kind: "bus" }).timbres.find(t => t.kind === "bus");
@@ -328,13 +328,16 @@ function filterSendScene({ target = 1, position = "after_filters", rack = false,
   const p = scene.request("/api/preset");
   p.sequencer.enabled = false;
   p.color_chain = []; p.pre_color_chain = []; p.source_color_chain = [];
+  if (effects) p[fx_chain === "a" ? "pre_color_chain" : "color_chain"] = [
+    { id: 21, kind: "distortion", mix: .5 }, { id: 22, kind: "crusher", mix: .5 },
+  ];
   for (const mod of [...p.lfos, ...p.envs])
     for (const field of ["destination", "destination2", "destination3", "extra_destination"]) mod[field] = "none";
   p.matrix = []; p.macros = [];
   Object.assign(p.params, { mix: .5, filter: .85, filter2: .1, filter_env_depth: 0, filter2_env_depth: 0, filter_routing: routing });
   p.resynth = { enabled: true, count: 4, input: "source", mix: 1, oscillators: Array.from({ length: 4 }, () => ({ waveform: "audio_in", level: .25 })) };
-  if (rack) p.rack = { modules: ["sample", "grains", "resynth", "filters", "post_fx"].map(module => ({ module, enabled: true })) };
-  if (target >= 3) p.filter_slots = Array.from({ length: count }, (_, i) => ({ id: i + 1, enabled, position, cutoff: .6, output: { bus: i === count - 1 ? 1 : 0, send, chain: 0 } }));
+  if (rack) p.rack = { modules: ["sample", "grains", "resynth", ...(fx_chain === "a" ? ["pre_fx"] : []), "filters", "post_fx"].map(module => ({ module, enabled: true })) };
+  if (target >= 3) p.filter_slots = Array.from({ length: count }, (_, i) => ({ id: i + 1, enabled, position, fx_chain, fx_slot, cutoff: .6, output: { bus: i === count - 1 ? 1 : 0, send, chain: 0 } }));
   scene.request("/api/preset", p);
   if (target <= 2) scene.request("/api/parameters", { [`tap_filter${target}_bus`]: 1, [`tap_filter${target}_send`]: send, [`tap_filter${target}_chain`]: 0 });
   scene.request("/api/transport", { playing: true, midi_gate: false });
@@ -363,6 +366,15 @@ for (const rack of [false, true]) {
     restored.call("sad_scene_load", sent.scene.call("sad_scene_pack"));
     assert.deepEqual(restored.request("/api/preset").filter_slots, sent.scene.request("/api/preset").filter_slots);
   }
+}
+for (const rack of [false, true]) for (const fx_chain of ["a", "b"]) for (const fx_slot of [null, 21, 22]) {
+  const sent = filterSendScene({ rack, target: 3, position: "after_fx", fx_chain, fx_slot, effects: true });
+  assert.ok(sent.energy > 1e-9, `After FX ${fx_chain}/${fx_slot ?? "Last"}: silent filter send (Rack ${rack})`);
+  const restored = new Core(module, 8000);
+  restored.call("sad_scene_load", sent.scene.call("sad_scene_pack"));
+  const filter = restored.request("/api/preset").filter_slots[0];
+  assert.equal(filter.fx_chain, fx_chain);
+  assert.equal(filter.fx_slot, fx_slot);
 }
 assert.ok(filterSendScene({ target: 18, count: 16 }).energy > 1e-9, "The last filter slot's send bit was lost");
 for (const rate of [48000, 96000])

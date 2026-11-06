@@ -1636,6 +1636,8 @@ const FILTER_SLOT_DEFAULT = {
   id: 0,
   enabled: true,
   position: "after_filters",
+  fx_chain: "b",
+  fx_slot: null,
   model: "legacy",
   kind: "low_pass",
   cutoff: 0.7,
@@ -1737,12 +1739,33 @@ function syncAddedFilters() {
   for (const slot of slots) {
     const card = $("added-filters").querySelector(`[data-id="${slot.id}"]`);
     if (!card) continue;
+    syncFilterFxTarget(card, slot);
     syncFilterEnvelope(card.querySelector(".added-filter-env"), slot.env);
     for (const [field] of FILTER_SLOT_CONTROLS)
       controls.get(`filter_slot:${slot.id}:${field}`)?.();
   }
   syncFilterOutputs();
   refreshFilterGraphs();
+}
+function syncFilterFxTarget(card, slot) {
+  const placement = card.querySelector(".added-filter-placement"),
+    chain = card.querySelector(".added-filter-fx-chain"),
+    target = card.querySelector(".added-filter-fx-slot"),
+    afterFx = slot.position === "after_fx";
+  placement.classList.toggle("after-fx", afterFx);
+  chain.hidden = target.hidden = !afterFx;
+  if (!afterFx) return;
+  chain.value = slot.fx_chain ?? "b";
+  const effects = preset[chain.value === "a" ? "pre_color_chain" : "color_chain"] ?? [];
+  const choices = JSON.stringify(effects.map(fx => [fx.id, fx.kind]));
+  if (target.dataset.fxChoices !== choices) {
+    target.dataset.fxChoices = choices;
+    target.replaceChildren(
+      ...effects.map((fx, i) => option(String(fx.id), `${i + 1} · ${COLOR_TYPES.find(([kind]) => kind === fx.kind)?.[1] ?? fx.kind}`)),
+      option("last", "Last"),
+    );
+  }
+  target.value = effects.some(fx => fx.id === slot.fx_slot) ? String(slot.fx_slot) : "last";
 }
 function filterOutput(number, id) {
   return id === undefined ? tapSettings(`filter${number}`)
@@ -1823,7 +1846,7 @@ function addedFilterCard(index, slot) {
   card.className = "filter-card added-filter-card";
   card.classList.toggle("inactive", !slot.enabled);
   card.dataset.id = id;
-  card.innerHTML = `<div class="filter-title added-filter-title"><strong>Filter ${number}</strong><select class="added-filter-position" aria-label="Filter ${number} position"></select><select class="added-filter-type" aria-label="Filter ${number} model">${filterModelOptions()}</select><select class="added-filter-env" aria-label="Filter ${number} envelope"><option value="env1">ENV 1</option><option value="env2">ENV 2</option><option value="env3">ENV 3</option></select><div class="color-actions"><button class="color-bypass" aria-label="Bypass Filter ${number}" title="Bypass" aria-pressed="${!slot.enabled}">⏻</button><button class="color-up" aria-label="Move Filter ${number} up" title="Move up">↑</button><button class="color-down" aria-label="Move Filter ${number} down" title="Move down">↓</button><button class="color-remove" aria-label="Remove Filter ${number}" title="Remove">×</button></div></div>${filterGraphMarkup(number)}<div id="filter-slot-${id}-controls" class="knob-grid filter-controls"></div>`;
+  card.innerHTML = `<div class="filter-title added-filter-title"><strong>Filter ${number}</strong><select class="added-filter-type" aria-label="Filter ${number} model">${filterModelOptions()}</select><select class="added-filter-env" aria-label="Filter ${number} envelope"><option value="env1">ENV 1</option><option value="env2">ENV 2</option><option value="env3">ENV 3</option></select><div class="color-actions"><button class="color-bypass" aria-label="Bypass Filter ${number}" title="Bypass" aria-pressed="${!slot.enabled}">⏻</button><button class="color-up" aria-label="Move Filter ${number} up" title="Move up">↑</button><button class="color-down" aria-label="Move Filter ${number} down" title="Move down">↓</button><button class="color-remove" aria-label="Remove Filter ${number}" title="Remove">×</button></div><div class="added-filter-placement"><select class="added-filter-position" aria-label="Filter ${number} position"></select><select class="added-filter-fx-chain" aria-label="Filter ${number} FX chain"><option value="a">FX A</option><option value="b">FX B</option></select><select class="added-filter-fx-slot" aria-label="Filter ${number} after effect"></select></div></div>${filterGraphMarkup(number)}<div id="filter-slot-${id}-controls" class="knob-grid filter-controls"></div>`;
   card.querySelector(".filter-graph").spec = () => {
     const s = findFilterSlot(id);
     return s && filterGraphSpec(s.model, s.kind, s.cutoff, s.env_depth, s.resonance, s.morph);
@@ -1835,6 +1858,18 @@ function addedFilterCard(index, slot) {
   position.value = slot.position;
   position.onchange = () => {
     findFilterSlot(id).position = position.value;
+    editAddedFilters();
+  };
+  const fxChain = card.querySelector(".added-filter-fx-chain"),
+    fxSlot = card.querySelector(".added-filter-fx-slot");
+  fxChain.onchange = () => {
+    const s = findFilterSlot(id);
+    s.fx_chain = fxChain.value;
+    s.fx_slot = null;
+    editAddedFilters();
+  };
+  fxSlot.onchange = () => {
+    findFilterSlot(id).fx_slot = fxSlot.value === "last" ? null : Number(fxSlot.value);
     editAddedFilters();
   };
   const type = card.querySelector(".added-filter-type");
@@ -3588,6 +3623,7 @@ function colorLegacy() {
 function editColorChain() {
   colorLegacy();
   syncColors();
+  syncAddedFilters();
   syncLfos();
   syncEnvs();
   schedulePreset();
@@ -3595,6 +3631,8 @@ function editColorChain() {
 function removeColor(id) {
   for (const rack of COLOR_RACKS)
     preset[rack.key] = preset[rack.key].filter((s) => s.id !== id);
+  for (const filter of preset.filter_slots ?? [])
+    if (filter.fx_slot === id) filter.fx_slot = null;
   unroute((d) => d?.color?.slot === id);
   editColorChain();
 }

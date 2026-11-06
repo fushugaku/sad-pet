@@ -6,10 +6,12 @@
 use super::filter::{Filter, tracked_cutoff};
 use crate::{
     Stereo,
+    color::{ColorSlot, MAX_COLOR_SLOTS},
     preset::{FilterPosition, FilterSlot},
 };
 
 pub(crate) const POSITIONS: usize = FilterPosition::ALL.len();
+pub(crate) type FxMasks = [[u16; MAX_COLOR_SLOTS]; 2];
 
 pub(crate) struct Bank {
     id: u32,
@@ -100,6 +102,25 @@ pub(crate) fn masks(slots: &[FilterSlot], banks: &[Box<Bank>]) -> [u16; POSITION
         if slot.enabled && slot.id == bank.id {
             masks[slot.position as usize] |= 1 << i;
         }
+    }
+    masks
+}
+
+/// Resolve stable FX IDs at control rate. Last shares the final effect's
+/// point, preserving filter list order there; an empty rack uses point 0.
+pub(crate) fn fx_masks(slots: &[FilterSlot], mut mask: u16, chains: [&[ColorSlot]; 2]) -> FxMasks {
+    let mut masks = [[0; MAX_COLOR_SLOTS]; 2];
+    while mask != 0 {
+        let i = mask.trailing_zeros() as usize;
+        mask &= mask - 1;
+        let slot = &slots[i];
+        let chain = slot.fx_chain as usize;
+        let effects = chains[chain];
+        let point = slot
+            .fx_slot
+            .and_then(|id| effects.iter().position(|fx| fx.id == id))
+            .unwrap_or_else(|| effects.len().saturating_sub(1));
+        masks[chain][point] |= 1 << i;
     }
     masks
 }

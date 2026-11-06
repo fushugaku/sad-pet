@@ -668,6 +668,8 @@ pub struct Engine {
     filter_banks: Vec<Box<filter_slots::Bank>>,
     /// Enabled added filters per position, refreshed at control rate.
     filter_masks: [u16; filter_slots::POSITIONS],
+    /// Added filters after individual effects in FX A and B.
+    filter_fx_masks: filter_slots::FxMasks,
     random: Random,
     frame: u64,
     cursor: f64,
@@ -907,6 +909,7 @@ impl Engine {
             filters: prepared.filters.unwrap(),
             filter_banks: Vec::new(),
             filter_masks: [0; filter_slots::POSITIONS],
+            filter_fx_masks: [[0; MAX_COLOR_SLOTS]; 2],
             random: Random::default(),
             frame: 0,
             cursor: 0.0,
@@ -2856,6 +2859,14 @@ impl Engine {
         }
         let slots = &m.filter_slots[..m.filter_len];
         self.filter_masks = filter_slots::masks(slots, &self.filter_banks);
+        self.filter_fx_masks = filter_slots::fx_masks(
+            slots,
+            self.filter_masks[FilterPosition::AfterFx as usize],
+            [
+                &m.pre_color_slots[..m.pre_color_len],
+                &m.color_slots[..m.color_len],
+            ],
+        );
         let last_note = self.source_note as f32
             + self.bend[self.source_channel as usize] * m.params.midi_pitchbend_range;
         let bass_env = self.tb303_view().envelope;
@@ -4392,13 +4403,21 @@ impl Engine {
             Some(e) => std::array::from_fn(|c| resynth_output[c] + e[0][c] * input_gain),
             None => resynth_output,
         };
-        let pre_output = self.pre_color_rack.process(resynth_output);
+        let pre_output = self.pre_color_rack.process_with_filters(
+            resynth_output,
+            1.0,
+            &self.filter_fx_masks[0],
+            &mut self.filter_banks,
+            &mut self.taps,
+            voice_sum,
+        );
         if self.taps.sends(Stage::PreFx) {
             self.taps
                 .send(Stage::PreFx, pre_output.map(|x| x * voice_sum));
         }
         let pre_output = self.taps.mix(Stage::PreFx, resynth_output, pre_output);
         let correction = if self.pre_color_rack.is_active()
+            || self.filter_fx_masks[0].iter().any(|&mask| mask != 0)
             || resynth_active
             || after_resynth != 0
             || entered.is_some()
@@ -4475,15 +4494,13 @@ impl Engine {
             Some(e) => std::array::from_fn(|c| filtered[c] + e[2][c] * input_gain),
             None => filtered,
         };
-        let processed = self
-            .color_rack
-            .process_with_voice_gain(filtered, loudest_voice);
-        let processed = filter_slots::route_chain(
+        let processed = self.color_rack.process_with_filters(
+            filtered,
+            loudest_voice,
+            &self.filter_fx_masks[1],
             &mut self.filter_banks,
-            masks[FilterPosition::AfterFx as usize],
-            processed,
-            Instance::Shared,
-            Some((&mut self.taps, 1.0)),
+            &mut self.taps,
+            1.0,
         );
         if self.taps.sends(Stage::PostFx) {
             self.taps.send(Stage::PostFx, processed);
