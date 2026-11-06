@@ -144,6 +144,7 @@ const step = {
   pulses: 1,
   gate: 2,
   ratchet: 1,
+  ratchet_span: 0,
   probability: 100,
   slide: false,
   skip: false,
@@ -247,7 +248,7 @@ assert.equal(
   "Every step needs Gate, Pulses, Ratchet and three destination knobs",
 );
 for (let n = 1; n <= 16; n++)
-  for (const field of ["pitch", "slide", "probability", "velocity"])
+  for (const field of ["pitch", "ratchet time", "slide", "probability", "velocity"])
     control(`Stage ${n} ${field}`);
 assert.ok(
   !editor.all().some((e) => e.getAttribute("aria-label") === "Stage layer"),
@@ -308,6 +309,20 @@ for (const [key, index] of [
   knob.binding.set(knob.binding.reset());
   assert.equal(ui.track().steps[0][key], 1);
 }
+const ratchetTime = control("Stage 1 ratchet time");
+assert.deepEqual(ratchetTime.children.map((option) => Number(option.value)), [0, 1, 2, 3, 4, 5, 6, 7, 8]);
+ratchetTime.value = "4";
+ratchetTime.onchange();
+assert.equal(ui.track().steps[0].ratchet_span, 4);
+assert.equal(edits.at(-1).field, 19);
+preset = structuredClone(preset);
+ratchetTime.value = "6";
+ratchetTime.onchange();
+assert.equal(ui.track().steps[0].ratchet_span, 6, "Ratchet duration edited an obsolete snapshot");
+assert.equal(ui.track().steps[0].pulses, 1, "Ratchet duration moved the stage clock");
+ratchetTime.value = "0";
+ratchetTime.onchange();
+assert.equal(ui.track().steps[0].ratchet_span, 0);
 for (let i = 0; i < 3; i++) {
   const k = knobs[3 + i];
   assert.equal(k.schema[5], `Stage 1 destination ${i + 1} amount`);
@@ -621,6 +636,8 @@ lane(1).steps.forEach((s, i) => {
   s.velocity = 10 + i;
 });
 lane(1).steps[2].slide = true;
+lane(1).steps[0].ratchet_span = 4;
+lane(1).steps[2].ratchet_span = 2;
 Object.assign(ui, {
   root: { ...ui.root, getClientRects: () => [{}], contains: () => true },
   selected: 1,
@@ -666,6 +683,8 @@ ui.paste();
 assert.deepEqual(lane(1).steps.slice(8, 11).map((s) => s.pitch), [48, 57, 50]);
 assert.equal(lane(1).steps[10].slide, true);
 assert.equal(lane(1).steps[10].velocity, 12);
+assert.equal(lane(1).steps[8].ratchet_span, 4);
+assert.equal(lane(1).steps[10].ratchet_span, 2);
 assert.deepEqual(picked(), [8, 9, 10], "A lone step is where the whole copy starts");
 assert.ok(edits.every((e) => e.track === 1 && e.stage !== 9), "The gap was pasted over");
 assert.ok(!edits.some((e) => e.field === 1), "Unchanged fields were resent");

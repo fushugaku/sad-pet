@@ -71,6 +71,76 @@ fn track(id: u32, division: i32, target: Target) -> Track {
 }
 
 #[test]
+fn ratchet_span_roundtrips_and_live_edits_retime_audio_without_moving_steps() {
+    let mut p = Preset::default();
+    p.sequencer.enabled = true;
+    let t = &mut p.sequencer.tracks[0];
+    t.target = Target::Notes;
+    t.config[field::LENGTH] = 2;
+    t.steps[0].pulses = 4;
+    t.steps[0].ratchet = 4;
+    t.steps[0].ratchet_span = 4;
+    t.steps[1].gate = 0;
+    let saved = serde_json::to_value(&p).unwrap();
+    let restored: Preset = serde_json::from_value(saved.clone()).unwrap();
+    assert_eq!(restored.sequencer.tracks[0].steps[0].ratchet_span, 4);
+
+    let mut old = saved;
+    old["sequencer"]["tracks"][0]["steps"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("ratchet_span");
+    let old: Preset = serde_json::from_value(old).unwrap();
+    assert_eq!(old.sequencer.tracks[0].steps[0].ratchet_span, 0);
+
+    let mut e = engine(restored);
+    let capture = |e: &mut Engine, expected: [usize; 4]| {
+        let mut starts = [usize::MAX; 4];
+        let mut count = 0;
+        let mut was_pulse = false;
+        no_heap(|| {
+            e.set_playing(true);
+            for frame in 0..4000 {
+                e.process_frame();
+                let track = e.sequence_view().tracks[0];
+                assert_eq!(track.step, 0, "Ratchet time advanced the stage early");
+                if track.pulse && !was_pulse {
+                    assert!(
+                        count < starts.len(),
+                        "A second burst started inside the stage"
+                    );
+                    starts[count] = frame;
+                    count += 1;
+                }
+                was_pulse = track.pulse;
+            }
+        });
+        assert_eq!(count, 4);
+        for (actual, expected) in starts.into_iter().zip(expected) {
+            assert!(
+                actual.abs_diff(expected) <= 1,
+                "Ratchet at {actual}, expected {expected}"
+            );
+        }
+    };
+    capture(&mut e, [0, 1000, 2000, 3000]);
+    let edits = sad_pet::sequence::parse_edits(&serde_json::json!([
+        {"track":1,"stage":0,"field":19,"value":2},
+        {"track":0,"field":1,"value":1},
+    ]))
+    .unwrap();
+    no_heap(|| e.apply_sequence_edits(&edits));
+    assert_eq!(e.preset.sequencer.tracks[0].steps[0].ratchet_span, 2);
+    capture(&mut e, [0, 500, 1000, 1500]);
+
+    let mut stage = Stage::default();
+    stage.set(19, 99.0);
+    assert_eq!(stage.ratchet_span, 8);
+    stage.set(19, -1.0);
+    assert_eq!(stage.ratchet_span, 0);
+}
+
+#[test]
 fn three_step_destinations_reach_filters_oscillators_and_fx_with_sparse_realtime_edits() {
     use sad_pet::{color::ColorSlot, preset::SaturatorType};
     let mut p = Preset::default();
@@ -728,7 +798,7 @@ fn main_pitch_steps_can_gate_envelopes_like_notes() {
     assert!(!p.sequencer.tracks[0].env_gate);
     let json = serde_json::json!([{"track":1,"field":53,"value":1}]);
     assert_eq!(sad_pet::sequence::parse_edits(&json).unwrap()[0].field, 53);
-    let json = serde_json::json!([{"track":1,"field":56,"value":1}]);
+    let json = serde_json::json!([{"track":1,"field":57,"value":1}]);
     assert!(sad_pet::sequence::parse_edits(&json).is_err());
 }
 
@@ -985,9 +1055,12 @@ fn pages_save_only_what_was_edited_and_new_pages_copy_the_last() {
     };
     assert!(edits(STEPS as u32 - 1, 0).is_ok());
     assert!(edits(STEPS as u32, 0).is_err());
+    assert!(edits(0, 19).is_ok());
+    assert!(edits(0, 20).is_err());
     let field = |field| parse_edits(&serde_json::json!([{"track": 1, "field": field, "value": 2}]));
     assert!(field(55).is_ok());
-    assert!(field(56).is_err());
+    assert!(field(56).is_ok());
+    assert!(field(57).is_err());
 }
 
 #[test]

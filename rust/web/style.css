@@ -4277,7 +4277,7 @@ input[type="range"] {
 .neuro-stage,
 .neuro-row-labels {
   display: grid;
-  grid-template-rows: 14px 26px 24px 96px 76px 30px 64px 64px repeat(3, 30px) repeat(3, 64px);
+  grid-template-rows: 14px 26px 24px 96px 76px 30px 64px 64px repeat(4, 30px) repeat(3, 64px);
   gap: 4px;
   align-items: center;
   justify-items: stretch;

@@ -616,6 +616,7 @@ window.SadNeuropolis = class {
       "destination1",
       "destination2",
       "destination3",
+      "ratchet_span",
     ];
   }
   get boolFields() {
@@ -1420,6 +1421,7 @@ window.SadNeuropolis = class {
       "Gate type",
       "Pulses",
       "Ratchet",
+      "Ratchet time",
       "Slide",
       "Chance %",
       "Velocity",
@@ -1545,6 +1547,18 @@ window.SadNeuropolis = class {
         );
         card.append(slot);
       }
+      const ratchetTime = document.createElement("select");
+      ratchetTime.dataset.stage = i;
+      ratchetTime.dataset.field = 19;
+      ratchetTime.setAttribute("aria-label", `Stage ${i + 1} ratchet time`);
+      ratchetTime.title =
+        "Ratchet duration in clock pulses (×). One burst per step, up to the step's Pulses setting. Auto follows the track's ratchet mode.";
+      ratchetTime.append(this.option(0, "Auto"));
+      for (let pulses = 1; pulses <= 8; pulses++)
+        ratchetTime.append(this.option(pulses, `${pulses}×`));
+      ratchetTime.onchange = () =>
+        this.edit(track.id, i, 19, Number(ratchetTime.value));
+      card.append(ratchetTime);
       this.stepToggle(card, track, i, 5, "Slide");
       this.stepInput(card, track, i, 4, 0, 100, "probability");
       this.stepInput(card, track, i, 15, 1, 127, "velocity");

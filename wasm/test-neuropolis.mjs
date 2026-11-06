@@ -1,10 +1,11 @@
 // Run the actual shared Rust core and the site's AudioWorklet bridge.
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { Core } from "../dist/web/core.mjs";
-import { BrowserBackend } from "../dist/web/browser-backend.mjs";
+const output = new URL(`${process.argv[2] ?? "../dist/web"}/`, import.meta.url);
+const { Core } = await import(new URL("core.mjs", output));
+const { BrowserBackend } = await import(new URL("browser-backend.mjs", output));
 const module = await WebAssembly.compile(
-  await readFile("dist/web/sad_pet.wasm"),
+  await readFile(new URL("sad_pet.wasm", output)),
 );
 const core = new Core(module, 48000),
   worker = new Core(module, 48000);
@@ -69,6 +70,7 @@ core.request("/api/sequencer/edit", [
   { track: 1, stage: 5, field: 16, value: -0.25 },
   { track: 1, stage: 5, field: 17, value: 0.125 },
   { track: 1, stage: 5, field: 18, value: -0.5 },
+  { track: 1, stage: 5, field: 19, value: 4 },
 ]);
 core.request("/api/parameters", { filter: 0.38 });
 length = core.snapshot(buffer);
@@ -85,6 +87,7 @@ assert.deepEqual(imported.preset.sequencer.tracks[0].pitch_oscillators, [
 assert.equal(imported.preset.sequencer.tracks[0].env_gate, true);
 assert.equal(imported.preset.sequencer.tracks[1].env_gate, false);
 assert.equal(imported.preset.sequencer.tracks[1].steps[0].gate_override, 27);
+assert.equal(imported.preset.sequencer.tracks[0].steps[5].ratchet_span, 4);
 assert.deepEqual(
   ["destination1", "destination2", "destination3"].map(k => imported.preset.sequencer.tracks[0].steps[5][k]),
   [-0.25, 0.125, -0.5],
@@ -117,7 +120,7 @@ globalThis.AudioWorkletProcessor = class {
     };
   }
 };
-await import("../dist/web/worklet.mjs");
+await import(new URL("worklet.mjs", output));
 const processor = new Processor({ processorOptions: { module } });
 let id = 0;
 const send = (path, data) =>

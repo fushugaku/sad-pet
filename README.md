@@ -105,6 +105,10 @@ with different per-timbre BPM values use the first timbre's tempo on recall.
   of OSC 1–4; their own tracks add −24…+24 semitones to that pitch, at independent
   clocks. With Gate ENV, Main pitch steps also restart and release the envelopes
   like notes. Double-click a step's Gate knob to inherit the track's Gate setting.
+  **Ratchet time** spreads a step's repeats across 1–8 clock pulses (×), up to
+  that step's **Pulses** length. For four evenly spaced repeats over four pulses,
+  set Pulses, Ratchet and Ratchet time to 4. **Auto** keeps the track's original
+  ratchet mode and the sound of existing presets.
   Select steps on the bar above each stage (drag for a run, Shift to extend,
   ⌘/Ctrl to add or remove, Esc to clear), then **Copy** and **Paste** (⌘/Ctrl+C,
   ⌘/Ctrl+V) within a track or into another one. A single selected step is where

@@ -11,7 +11,7 @@ pub const STAGES: usize = 16;
 pub const PAGES: usize = 8;
 pub const STEPS: usize = STAGES * PAGES;
 pub const VIEW_TRACKS: usize = 64;
-pub const STAGE_FIELDS: u8 = 19;
+pub const STAGE_FIELDS: u8 = 20;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -77,6 +77,9 @@ pub struct Stage {
     pub pulses: u8,
     pub gate: u8,
     pub ratchet: u8,
+    /// Zero keeps the track's ratchet mode. Otherwise one burst spans this
+    /// many clock pulses, bounded by the stage's effective pulse count.
+    pub ratchet_span: u8,
     pub probability: u8,
     pub slide: bool,
     pub skip: bool,
@@ -101,6 +104,7 @@ impl Default for Stage {
             pulses: 1,
             gate: 2,
             ratchet: 1,
+            ratchet_span: 0,
             probability: 100,
             slide: false,
             skip: false,
@@ -151,6 +155,7 @@ impl Stage {
                     0.0
                 };
             }
+            19 => self.ratchet_span = n.clamp(0, 8) as u8,
             _ => {}
         }
     }
@@ -175,6 +180,7 @@ impl Stage {
             16 => self.destination1,
             17 => self.destination2,
             18 => self.destination3,
+            19 => self.ratchet_span as f32,
             _ => 0.0,
         }
     }

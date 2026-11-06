@@ -115,6 +115,7 @@ fn core_step(s: &Stage) -> Step {
             GateMode::Hold,
         ][usize::from(s.gate.min(3))],
         ratchet: s.ratchet,
+        ratchet_span: s.ratchet_span,
         probability: s.probability,
         slide: s.slide,
         skip: s.skip,

@@ -34,7 +34,7 @@ base64 = "0.22"
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 radias-synth-domain = { git = "https://github.com/fushugaku/Rustias.git", rev = "6fc15cebd79264a99c467b2ea55615da3afae7ae" }
 radias-synth-application = { git = "https://github.com/fushugaku/Rustias.git", rev = "6fc15cebd79264a99c467b2ea55615da3afae7ae" }
-metropolix-core = { git = "https://github.com/fushugaku/neuropolis.git", rev = "872a28c70de0cc6264dfab84aad8b78a2f224395" }
+metropolix-core = { path = "../vendor/metropolix-core" }
 
 [dev-dependencies]
 libc = "0.2"
