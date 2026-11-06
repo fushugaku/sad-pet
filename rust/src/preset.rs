@@ -190,57 +190,49 @@ impl Default for FilterSlot {
 }
 impl FilterSlot {
     pub fn sanitize(&mut self) {
-        let d = Self::default();
-        finite_clamp(&mut self.cutoff, 0.0, 1.0, d.cutoff);
-        finite_clamp(&mut self.resonance, 0.0, 1.0, d.resonance);
-        finite_clamp(&mut self.drive, 0.0, 1.0, d.drive);
-        finite_clamp(&mut self.morph, 0.0, 1.0, d.morph);
-        finite_clamp(&mut self.env_depth, -1.0, 1.0, d.env_depth);
-        finite_clamp(&mut self.keytrack, 0.0, 1.0, d.keytrack);
+        FilterSlotParameter::sanitize_controls(self);
         self.output.sanitize();
-    }
-    /// A modulatable control with its range.
-    pub fn parameter_mut(&mut self, parameter: FilterSlotParameter) -> (&mut f32, f32, f32) {
-        match parameter {
-            FilterSlotParameter::Cutoff => (&mut self.cutoff, 0.0, 1.0),
-            FilterSlotParameter::Resonance => (&mut self.resonance, 0.0, 1.0),
-            FilterSlotParameter::Drive => (&mut self.drive, 0.0, 1.0),
-            FilterSlotParameter::Morph => (&mut self.morph, 0.0, 1.0),
-            FilterSlotParameter::EnvDepth => (&mut self.env_depth, -1.0, 1.0),
-            FilterSlotParameter::Keytrack => (&mut self.keytrack, 0.0, 1.0),
-        }
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum FilterSlotParameter {
-    Cutoff,
-    Resonance,
-    Drive,
-    Morph,
-    EnvDepth,
-    Keytrack,
-}
-impl FilterSlotParameter {
-    pub const ALL: [Self; 6] = [
-        Self::Cutoff,
-        Self::Resonance,
-        Self::Drive,
-        Self::Morph,
-        Self::EnvDepth,
-        Self::Keytrack,
-    ];
-    pub fn key(self) -> &'static str {
-        match self {
-            Self::Cutoff => "cutoff",
-            Self::Resonance => "resonance",
-            Self::Drive => "drive",
-            Self::Morph => "morph",
-            Self::EnvDepth => "env_depth",
-            Self::Keytrack => "keytrack",
+macro_rules! filter_slot_parameters {
+    ($count:expr; $($variant:ident => $field:ident, $key:literal, $min:expr, $max:expr),+ $(,)?) => {
+        #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+        #[serde(rename_all = "snake_case")]
+        pub enum FilterSlotParameter {
+            $($variant),+
         }
-    }
+        impl FilterSlotParameter {
+            pub const ALL: [Self; $count] = [$(Self::$variant),+];
+            pub const fn key(self) -> &'static str {
+                match self { $(Self::$variant => $key),+ }
+            }
+            pub const fn range(self) -> (f32, f32) {
+                match self { $(Self::$variant => ($min, $max)),+ }
+            }
+            fn sanitize_controls(slot: &mut FilterSlot) {
+                let defaults = FilterSlot::default();
+                $(finite_clamp(&mut slot.$field, $min, $max, defaults.$field);)+
+            }
+        }
+        impl FilterSlot {
+            /// A modulatable control with its host range.
+            pub fn parameter_mut(&mut self, parameter: FilterSlotParameter) -> (&mut f32, f32, f32) {
+                match parameter {
+                    $(FilterSlotParameter::$variant => (&mut self.$field, $min, $max)),+
+                }
+            }
+        }
+    };
+}
+filter_slot_parameters! {
+    6;
+    Cutoff => cutoff, "cutoff", 0.0, 1.0,
+    Resonance => resonance, "resonance", 0.0, 1.0,
+    Drive => drive, "drive", 0.0, 1.0,
+    Morph => morph, "morph", 0.0, 1.0,
+    EnvDepth => env_depth, "env_depth", -1.0, 1.0,
+    Keytrack => keytrack, "keytrack", 0.0, 1.0,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -840,6 +832,7 @@ impl Params {
     }
 }
 
+/// Persisted instrument settings. DSP state and resolved assets belong to their owners.
 #[derive(Clone, Debug, Serialize)]
 pub struct Preset {
     pub format: String,
@@ -862,10 +855,6 @@ pub struct Preset {
     pub grain_groups: crate::grain_groups::Settings,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub oscillators: Option<Box<crate::oscillators::Settings>>,
-    #[serde(skip)]
-    pub oscillator_runtime: crate::dsp::oscillators::Prepared,
-    #[serde(skip)]
-    pub phase_runtime: crate::dsp::phase_transport::Prepared,
     #[serde(skip_serializing_if = "crate::interaction::Settings::is_default")]
     pub interactions: crate::interaction::Settings,
     #[serde(skip_serializing_if = "crate::interaction::Capture::is_default")]
@@ -873,30 +862,16 @@ pub struct Preset {
     #[serde(skip_serializing_if = "crate::interaction::Scheduler::is_legacy")]
     pub grain_scheduler: crate::interaction::Scheduler,
     pub drums: Option<Box<crate::drums::Settings>>,
-    #[serde(skip)]
-    pub drum_runtime: crate::drums::Prepared,
     /// Present only in Synth engine timbres; other presets serialize unchanged.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub synth: Option<Box<crate::synth::Settings>>,
-    #[serde(skip)]
-    pub synth_runtime: crate::dsp::synth::Prepared,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wavetable: Option<Box<crate::wavetable::Settings>>,
-    #[serde(skip)]
-    pub wavetable_runtime: crate::dsp::wavetable::Prepared,
-    /// A control owner's canonical assets; portable host formats store their
-    /// deduplicated manifest separately from numeric preset settings.
-    #[serde(skip)]
-    pub wavetable_pool: crate::wavetable::assets::Pool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tb303: Option<Box<crate::tb303::Settings>>,
-    #[serde(skip)]
-    pub tb303_runtime: crate::tb303::Prepared,
     /// Present only in Bus and Master timbres; other presets serialize unchanged.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bus: Option<Box<crate::bus::Settings>>,
-    #[serde(skip)]
-    pub bus_runtime: crate::bus::Prepared,
     /// Present in Vocal timbres, which also carry Bus settings: their engine
     /// processes the sung voice the way a bus processes its input; and in a
     /// Rack with a Vocal module.
@@ -907,29 +882,20 @@ pub struct Preset {
     /// with a Sampler module.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sampler: Option<Box<crate::sampler::Settings>>,
-    /// A native host's kit runtime, built with the pool it holds.
-    #[serde(skip)]
-    pub sampler_runtime: crate::dsp::sampler::Prepared,
     /// Present only in Rack timbres, which may also hold Drum, Synth, Sampler
     /// and Vocal settings for their modules; other presets serialize unchanged.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rack: Option<Box<crate::rack::Settings>>,
-    #[serde(skip)]
-    pub rack_runtime: crate::rack::Prepared,
     pub pre_color_chain: Vec<crate::color::ColorSlot>,
     pub source_color_chain: Vec<crate::color::ColorSlot>,
     pub color_chain: Vec<crate::color::ColorSlot>,
     pub fx_chain_version: u8,
-    #[serde(skip)]
-    pub imported_effects: crate::imported_fx::PreparedEffects,
     pub matrix: Vec<crate::matrix::Route>,
     /// Knobs of the user's own, each turning several destinations at once.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub macros: Vec<crate::macros::Macro>,
     /// Filters 3 and up, in processing order within each position.
     pub filter_slots: Vec<FilterSlot>,
-    #[serde(skip)]
-    pub filter_banks: crate::dsp::filter_slots::Prepared,
 }
 impl Default for Preset {
     fn default() -> Self {
@@ -949,27 +915,17 @@ impl Default for Preset {
             taps: Default::default(),
             grain_groups: Default::default(),
             oscillators: None,
-            oscillator_runtime: Default::default(),
-            phase_runtime: Default::default(),
             interactions: Default::default(),
             grain_capture: Default::default(),
             grain_scheduler: Default::default(),
             drums: None,
-            drum_runtime: Default::default(),
             synth: None,
-            synth_runtime: Default::default(),
             wavetable: None,
-            wavetable_runtime: Default::default(),
-            wavetable_pool: Default::default(),
             tb303: None,
-            tb303_runtime: Default::default(),
             bus: None,
-            bus_runtime: Default::default(),
             vocal: None,
             sampler: None,
-            sampler_runtime: Default::default(),
             rack: None,
-            rack_runtime: Default::default(),
             pre_color_chain: Vec::new(),
             source_color_chain: Vec::new(),
             color_chain: vec![
@@ -977,11 +933,9 @@ impl Default for Preset {
                 crate::color::ColorSlot::legacy_reverb(2, &Params::default()),
             ],
             fx_chain_version: 1,
-            imported_effects: Default::default(),
             matrix: Vec::new(),
             macros: Vec::new(),
             filter_slots: Vec::new(),
-            filter_banks: Default::default(),
         }
     }
 }
@@ -1196,58 +1150,33 @@ impl<'de> Deserialize<'de> for Preset {
             taps,
             grain_groups: d.grain_groups,
             oscillators: d.oscillators,
-            oscillator_runtime: Default::default(),
-            phase_runtime: Default::default(),
             interactions: d.interactions,
             grain_capture: d.grain_capture,
             grain_scheduler: d.grain_scheduler,
             drums: d.drums,
-            drum_runtime: Default::default(),
             synth: d.synth,
-            synth_runtime: Default::default(),
             wavetable: d.wavetable,
-            wavetable_runtime: Default::default(),
-            wavetable_pool: Default::default(),
             tb303: d.tb303,
-            tb303_runtime: Default::default(),
             bus: d.bus,
-            bus_runtime: Default::default(),
             vocal: d.vocal,
             sampler: d.sampler,
-            sampler_runtime: Default::default(),
             rack: d.rack,
-            rack_runtime: Default::default(),
             pre_color_chain: d.pre_color_chain,
             source_color_chain: d.source_color_chain,
             color_chain,
             fx_chain_version: 1,
-            imported_effects: Default::default(),
             matrix,
             macros: d.macros,
             filter_slots: d.filter_slots,
-            filter_banks: Default::default(),
         })
     }
 }
 impl Preset {
-    pub fn prepare_phase_transports(&mut self, rate: u32) -> Result<(), String> {
-        let mut prepared = crate::dsp::phase_transport::Prepared::default();
-        let result = prepared.prepare(self, rate);
-        self.phase_runtime = prepared;
-        result
-    }
     pub fn needs_wavetable_interactions(&self) -> bool {
         self.interactions.routes.iter().any(|r| {
             matches!(r.source, crate::interaction::Node::Wavetable { .. })
                 || matches!(r.target, crate::interaction::Node::Wavetable { .. })
         })
-    }
-    pub fn prepare_wavetable_interactions(&mut self) {
-        if self.needs_wavetable_interactions()
-            && let Some(w) = &mut self.wavetable_runtime.0
-        {
-            w.prepare_interactions();
-        }
     }
     pub fn wavetable_ids(&self) -> impl Iterator<Item = &str> {
         self.wavetable
@@ -1261,49 +1190,6 @@ impl Preset {
                     .filter(|s| s.id != 0 && s.kind == crate::oscillators::Kind::Wavetable)
                     .map(|s| s.asset_id.as_str()),
             )
-    }
-    pub fn wavetable_assets(
-        &self,
-    ) -> Result<Vec<std::sync::Arc<crate::wavetable::assets::Asset>>, String> {
-        self.wavetable_pool.manifest_ids(self.wavetable_ids())
-    }
-    /// Prepare the audio owner's copy on the control thread.
-    pub fn prepared_clone(&self) -> Self {
-        self.prepared_clone_for(self.imported_effects.sample_rate().unwrap_or(48_000))
-    }
-    pub fn prepared_clone_for(&self, rate: u32) -> Self {
-        let mut preset = self.clone();
-        preset.sanitize();
-        let _ = preset.prepare_phase_transports(rate);
-        let _ = preset.oscillator_runtime.prepare(
-            preset.oscillators.as_deref(),
-            &preset.wavetable_pool,
-            rate,
-        );
-        let _ = preset.wavetable_runtime.prepare(
-            preset.wavetable.as_deref(),
-            &preset.wavetable_pool,
-            rate,
-        );
-        preset.prepare_wavetable_interactions();
-        preset.tb303_runtime.prepare(preset.tb303.as_deref(), rate);
-        preset.prepare_effects(rate);
-        if preset.rack.is_some() {
-            // A Rack's sources hand their sound down its modules, so only its
-            // Grain engine keeps a history.
-            preset
-                .drum_runtime
-                .prepare_engine(preset.drums.as_deref(), rate);
-            preset
-                .synth_runtime
-                .prepare_engine(preset.synth.as_deref(), rate);
-        } else {
-            preset.drum_runtime.prepare(preset.drums.as_deref(), rate);
-            preset.synth_runtime.prepare(preset.synth.as_deref(), rate);
-        }
-        preset.bus_runtime.prepare(preset.bus.as_deref(), rate);
-        preset.rack_runtime.prepare(preset.rack.as_deref(), rate);
-        preset
     }
     /// Drum and Synth timbres keep their own output in a windowed live history.
     /// A Rack's Grain engine keeps one when it does not read the file.
@@ -1320,39 +1206,6 @@ impl Preset {
         } else {
             self.synth.as_ref().map(|synth| synth.history())
         }
-    }
-    pub fn prepare_imported_effects(&mut self) {
-        self.prepare_effects(48_000);
-    }
-    pub fn prepare_effects(&mut self, rate: u32) {
-        self.imported_effects.prepare_racks(
-            [
-                &self.color_chain,
-                &self.pre_color_chain,
-                &self.source_color_chain,
-            ],
-            rate,
-        );
-        self.filter_banks.prepare(&self.filter_slots, rate);
-    }
-    /// Synchronous owners know exactly which histories are still available.
-    /// Queued native updates use prepared_clone_for instead, so a future slot
-    /// change cannot invalidate their prepared resources.
-    pub fn prepare_effects_reusing(&mut self, rate: u32, previous: &Self) {
-        self.imported_effects.prepare_racks_reusing(
-            [
-                &self.color_chain,
-                &self.pre_color_chain,
-                &self.source_color_chain,
-            ],
-            rate,
-            &previous.imported_effects,
-            [
-                &previous.color_chain,
-                &previous.pre_color_chain,
-                &previous.source_color_chain,
-            ],
-        );
     }
     /// The engine settings of every other kind: one source at most.
     fn sanitize_engine(&mut self) {

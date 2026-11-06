@@ -23,6 +23,7 @@ use std::{cell::RefCell, io::Cursor, sync::Arc};
 
 const MAX_INPUT: usize = 300 * 1024 * 1024;
 const BLOCK: usize = 4096;
+const PRESET_INSTALL_ERROR: &str = "Unable to install prepared preset";
 
 struct ByteCount(usize);
 impl std::io::Write for ByteCount {
@@ -159,6 +160,14 @@ impl Host {
     }
 
     fn command(&mut self, request: Value) -> Result<Value, String> {
+        self.command_for(request, None)
+    }
+
+    fn command_for(
+        &mut self,
+        request: Value,
+        target: Option<sad_pet::application::presets::Target>,
+    ) -> Result<Value, String> {
         let path = request["path"].as_str().ok_or("Missing command")?;
         let data = &request["data"];
         let before = self.engine.preset.params;
@@ -195,12 +204,26 @@ impl Host {
                 if data["format"].as_str() != Some("evil-pet-rust-v1") {
                     return Err("Use an SAD PET preset (.sad.json)".into());
                 }
-                let mut preset = Preset::deserialize(data).map_err(|e| e.to_string())?;
-                preset.sanitize();
-                preset.wavetable_pool = self.engine.preset.wavetable_pool.clone();
-                // Resolve only staged banks and inherit this engine's voice storage.
-                self.engine.prepare_preset_update(&mut preset)?;
-                self.engine.set_preset(preset);
+                let preset = Preset::deserialize(data).map_err(|e| e.to_string())?;
+                let preset = if let Some(target) = target {
+                    sad_pet::application::presets::load_into_timbre(
+                        &self.engine.preset,
+                        preset,
+                        target,
+                    )
+                    .map_err(|e| e.to_string())?
+                } else {
+                    // Utility workers load documents without a scene destination.
+                    let mut preset = preset;
+                    preset.sanitize();
+                    preset
+                };
+                // User banks were staged by the utility worker. Preparation
+                // resolves their cache entries and reuses this engine's resources.
+                let mut prepared = self.engine.prepare_preset_update(preset)?;
+                if !self.engine.exchange_preset(&mut prepared) {
+                    return Err(PRESET_INSTALL_ERROR.into());
+                }
                 let size = Self::snapshot_bytes(&self.engine.preset)?;
                 if self.snapshot_buffer.len() < size {
                     self.snapshot_buffer.resize(size, 0);
@@ -704,10 +727,16 @@ pub extern "C" fn sad_render() -> u32 {
             if !seconds.is_finite() || !(0.1..=120.0).contains(&seconds) {
                 return Err("Render duration must be 0.1–120 seconds".into());
             }
-            let mut preset: Preset =
+            let preset: Preset =
                 serde_json::from_value(value["preset"].clone()).map_err(|e| e.to_string())?;
-            preset.sanitize();
-            let mut engine = Engine::new(h.rate, h.engine.sample.clone(), preset);
+            let assets = h.engine.wavetable_pool.clone();
+            let kit = h.engine.sampler_pool().cloned().unwrap_or_default();
+            let mut preparation =
+                sad_pet::dsp::PresetPreparation::new(preset, h.rate).with_history_reserve(8);
+            while !preparation.step(&assets, None)? {}
+            let prepared = preparation.finish()?.with_sampler(&kit, &[]);
+            let mut engine = Engine::from_prepared(h.engine.sample.clone(), prepared);
+            engine.wavetable_pool = assets;
             if let Some(region) = value.get("region") {
                 engine.set_region(
                     serde_json::from_value(region.clone()).map_err(|e| e.to_string())?,

@@ -7,105 +7,71 @@ mod fixed;
 pub mod kernels;
 
 use crate::Stereo;
+// Preserve the DSP adapter's public path; the persisted enum is owned by the model.
+pub use crate::color::WaveshaperMode;
 use controller::{ShaperControl, WaveshaperType as NativeType};
 use kernels::{
     DriveCoefficients, PickupCoefficients, ShaperCoefficients, ShaperSignal, ShaperTables,
     SubOscillatorCoefficients, SubOscillatorWaveform, Waveshaper,
 };
-use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Sample(pub i32);
 #[derive(Clone, Copy, Debug)]
 pub struct PhaseIncrement(pub u32);
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum WaveshaperMode {
-    #[default]
-    Drive,
-    HardClip,
-    Decimator,
-    OctSaw,
-    MultiTriangle,
-    MultiSine,
-    SubSaw,
-    SubSquare,
-    SubTriangle,
-    SubSine,
-    Pickup,
-    LevelBoost,
-}
-impl WaveshaperMode {
-    pub const ALL: [Self; 12] = [
-        Self::Drive,
-        Self::HardClip,
-        Self::Decimator,
-        Self::OctSaw,
-        Self::MultiTriangle,
-        Self::MultiSine,
-        Self::SubSaw,
-        Self::SubSquare,
-        Self::SubTriangle,
-        Self::SubSine,
-        Self::Pickup,
-        Self::LevelBoost,
-    ];
-
-    pub(crate) fn coefficients(self, depth: f32, pitch: u16) -> ShaperCoefficients {
-        // Retain fractional DEPTH modulation through the original manual offset.
-        let raw = (depth.clamp(0.0, 1.0) * 127.0 * 256.0).round() as u16;
-        let control = ShaperControl {
-            depth: (raw / 256) as u8,
-            manual_offset: (raw % 256) as i16,
-            modulation: 0,
-        };
-        let native = match self {
-            Self::Drive => {
-                return ShaperCoefficients::Drive(DriveCoefficients {
-                    depth: control.drive_depth(),
-                    normalization: 23920,
-                    feedback_gain: 0,
-                    threshold: 19660,
-                    curves: [26214, -26214],
-                });
-            }
-            Self::HardClip => NativeType::HardClip,
-            Self::Decimator => NativeType::Decimator,
-            Self::OctSaw => NativeType::OctSaw,
-            Self::MultiTriangle => NativeType::MultiTriangle,
-            Self::MultiSine => NativeType::MultiSine,
-            Self::SubSaw => NativeType::SubSaw,
-            Self::SubSquare => NativeType::SubSquare,
-            Self::SubTriangle => NativeType::SubTriangle,
-            Self::SubSine => NativeType::SubSine,
-            Self::Pickup => NativeType::Pickup,
-            Self::LevelBoost => NativeType::LevelBoost,
-        };
-        let depth = control.waveshaper_depth(native);
-        match self {
-            Self::Drive => unreachable!(),
-            Self::HardClip => ShaperCoefficients::HardClip { depth },
-            Self::Decimator => ShaperCoefficients::Decimator { depth },
-            Self::OctSaw => ShaperCoefficients::OctSaw { depth },
-            Self::MultiTriangle => ShaperCoefficients::MultiTriangle { depth },
-            Self::MultiSine => ShaperCoefficients::MultiSine { depth },
-            Self::Pickup => {
-                ShaperCoefficients::Pickup(PickupCoefficients::new(depth, pitch as i16))
-            }
-            Self::LevelBoost => ShaperCoefficients::LevelBoost { depth },
-            _ => ShaperCoefficients::SubOscillator(SubOscillatorCoefficients {
-                waveform: match self {
-                    Self::SubSaw => SubOscillatorWaveform::Saw,
-                    Self::SubSquare => SubOscillatorWaveform::Square,
-                    Self::SubTriangle => SubOscillatorWaveform::Triangle,
-                    _ => SubOscillatorWaveform::Sine,
-                },
-                depth,
-                target_depth: depth,
-                gain_current: 0,
-            }),
+pub(crate) fn coefficients(mode: WaveshaperMode, depth: f32, pitch: u16) -> ShaperCoefficients {
+    use WaveshaperMode as Mode;
+    // Retain fractional DEPTH modulation through the original manual offset.
+    let raw = (depth.clamp(0.0, 1.0) * 127.0 * 256.0).round() as u16;
+    let control = ShaperControl {
+        depth: (raw / 256) as u8,
+        manual_offset: (raw % 256) as i16,
+        modulation: 0,
+    };
+    let native = match mode {
+        Mode::Drive => {
+            return ShaperCoefficients::Drive(DriveCoefficients {
+                depth: control.drive_depth(),
+                normalization: 23920,
+                feedback_gain: 0,
+                threshold: 19660,
+                curves: [26214, -26214],
+            });
         }
+        Mode::HardClip => NativeType::HardClip,
+        Mode::Decimator => NativeType::Decimator,
+        Mode::OctSaw => NativeType::OctSaw,
+        Mode::MultiTriangle => NativeType::MultiTriangle,
+        Mode::MultiSine => NativeType::MultiSine,
+        Mode::SubSaw => NativeType::SubSaw,
+        Mode::SubSquare => NativeType::SubSquare,
+        Mode::SubTriangle => NativeType::SubTriangle,
+        Mode::SubSine => NativeType::SubSine,
+        Mode::Pickup => NativeType::Pickup,
+        Mode::LevelBoost => NativeType::LevelBoost,
+    };
+    let depth = control.waveshaper_depth(native);
+    match mode {
+        Mode::Drive => unreachable!(),
+        Mode::HardClip => ShaperCoefficients::HardClip { depth },
+        Mode::Decimator => ShaperCoefficients::Decimator { depth },
+        Mode::OctSaw => ShaperCoefficients::OctSaw { depth },
+        Mode::MultiTriangle => ShaperCoefficients::MultiTriangle { depth },
+        Mode::MultiSine => ShaperCoefficients::MultiSine { depth },
+        Mode::Pickup => ShaperCoefficients::Pickup(PickupCoefficients::new(depth, pitch as i16)),
+        Mode::LevelBoost => ShaperCoefficients::LevelBoost { depth },
+        _ => ShaperCoefficients::SubOscillator(SubOscillatorCoefficients {
+            waveform: match mode {
+                Mode::SubSaw => SubOscillatorWaveform::Saw,
+                Mode::SubSquare => SubOscillatorWaveform::Square,
+                Mode::SubTriangle => SubOscillatorWaveform::Triangle,
+                _ => SubOscillatorWaveform::Sine,
+            },
+            depth,
+            target_depth: depth,
+            gain_current: 0,
+        }),
     }
 }
 
@@ -126,8 +92,8 @@ impl RadiasWaveshaper {
             states: [Waveshaper::default(); 2],
             tables: tables(),
             mode: WaveshaperMode::Drive,
-            current: WaveshaperMode::Drive.coefficients(0.5, 60 * 256),
-            target: WaveshaperMode::Drive.coefficients(0.5, 60 * 256),
+            current: coefficients(WaveshaperMode::Drive, 0.5, 60 * 256),
+            target: coefficients(WaveshaperMode::Drive, 0.5, 60 * 256),
             pitch: 60 * 256,
             increment: PhaseIncrement(0),
             sample_rate: sample_rate as f64,
@@ -145,7 +111,7 @@ impl RadiasWaveshaper {
         self.frame = 0;
     }
     pub fn configure(&mut self, mode: WaveshaperMode, depth: f32) {
-        self.target = mode.coefficients(depth, self.pitch);
+        self.target = coefficients(mode, depth, self.pitch);
         if self.mode != mode {
             self.mode = mode;
             self.clear();

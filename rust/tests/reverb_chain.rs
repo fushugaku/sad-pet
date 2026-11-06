@@ -83,8 +83,9 @@ fn prepared_edits_keep_effect_histories_at_the_engine_sample_rate() {
                 reference.process_input_frame(frame).map(f32::to_bits)
             );
         }
-        let mut next = edited.preset.prepared_clone();
+        let mut next = edited.preset.clone();
         next.name = "Renamed".into();
+        let mut next = edited.prepare_preset_update(next).unwrap();
         edited.exchange_preset(&mut next);
         for i in 4096..16384 {
             let frame = input(i, rate);

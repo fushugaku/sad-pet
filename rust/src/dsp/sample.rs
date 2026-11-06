@@ -633,19 +633,38 @@ pub struct LiveInputPreparation {
     levels: Vec<Vec<Stereo>>,
     level: usize,
     length: usize,
+    capacity: usize,
+    window: usize,
+    name: String,
 }
 impl LiveInputPreparation {
     pub fn new(sample_rate: u32, effects_only: bool) -> Self {
+        Self::for_history(sample_rate, effects_only, 8, 8.0, "Microphone")
+    }
+    pub(crate) fn for_history(
+        sample_rate: u32,
+        effects_only: bool,
+        seconds: usize,
+        window_seconds: f32,
+        name: &str,
+    ) -> Self {
         assert!(
             (8_000..=384_000).contains(&sample_rate),
             "valid input sample rate"
         );
+        let capacity = sample_rate as usize * seconds;
+        let window = ((window_seconds.clamp(0.125, seconds as f32) * sample_rate as f32).round()
+            as usize)
+            .clamp(1, capacity);
         Self {
             sample_rate,
             effects_only,
             levels: Vec::with_capacity(7),
             level: 0,
-            length: sample_rate as usize * 8,
+            length: capacity,
+            capacity,
+            window,
+            name: name.into(),
         }
     }
     /// Reserve at most one level or initialize at most 256 KiB in one step.
@@ -666,11 +685,10 @@ impl LiveInputPreparation {
         self.level == 7
     }
     pub fn finish(self) -> Option<LiveInput> {
-        // Eight seconds, all of them visible, as LiveInput::new.
-        let capacity = self.sample_rate as usize * 8;
+        let capacity = self.capacity;
         (self.level == 7).then(|| LiveInput {
             sample: SampleBuffer {
-                name: "Microphone".into(),
+                name: self.name,
                 library_id: None,
                 sample_rate: self.sample_rate,
                 levels: self.levels,
@@ -683,7 +701,7 @@ impl LiveInputPreparation {
             write: 0,
             captured: 0,
             total: capacity as u64,
-            window: capacity,
+            window: self.window,
             waveform_rebuild: None,
             lowpass: [[[0.0; 2]; 2]; 6],
         })

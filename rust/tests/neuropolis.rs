@@ -423,6 +423,7 @@ fn unlimited_tracks_recall_and_id_based_adoption_do_not_allocate_or_reset_other_
     next.sequencer.tracks.remove(0);
     next.sequencer.tracks.reverse();
     next.sanitize();
+    let mut next = e.prepare_preset_update(next).unwrap();
     no_heap(|| {
         e.apply_sequence_edits(&edits);
         e.exchange_preset(&mut next);
@@ -547,8 +548,9 @@ fn note_tracks_trigger_envelopes_and_do_not_release_an_external_note_with_the_sa
     frames(&mut e, 150);
     let v = view(&mut e);
     assert_eq!(&v.notes[..v.note_count], &[60]);
-    let mut next = e.preset.prepared_clone();
+    let mut next = e.preset.clone();
     next.sequencer.tracks.clear();
+    let mut next = e.prepare_preset_update(next).unwrap();
     e.exchange_preset(&mut next);
     assert_eq!(e.held_notes(), vec![60]);
 }
@@ -860,6 +862,7 @@ fn timing_edits_and_tracks_added_while_playing_stay_on_the_grid_of_the_others() 
     next.sequencer.tracks.extend([linear, pendulum]);
     next.sequencer.tracks[1].target = Target::MainPitch;
     next.sanitize();
+    let mut next = e.prepare_preset_update(next).unwrap();
     no_heap(|| {
         e.exchange_preset(&mut next);
         assert!(

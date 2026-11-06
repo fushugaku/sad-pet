@@ -327,7 +327,7 @@ impl Track {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Program {
     pub enabled: bool,
@@ -337,8 +337,6 @@ pub struct Program {
         deserialize_with = "motion::patterns"
     )]
     pub patterns: Vec<motion::Pattern>,
-    #[serde(skip)]
-    pub(crate) runtime: Option<Box<crate::dsp::sequence::Runtime>>,
 }
 impl Default for Program {
     fn default() -> Self {
@@ -346,17 +344,6 @@ impl Default for Program {
             enabled: false,
             tracks: vec![Track::default()],
             patterns: Vec::new(),
-            runtime: None,
-        }
-    }
-}
-impl Clone for Program {
-    fn clone(&self) -> Self {
-        Self {
-            enabled: self.enabled,
-            tracks: self.tracks.clone(),
-            patterns: self.patterns.clone(),
-            runtime: None,
         }
     }
 }
@@ -411,26 +398,17 @@ impl Program {
             enabled: true,
             tracks,
             patterns: Vec::new(),
-            runtime: None,
         }
     }
-    /// Only the small numeric edit crosses into the audio owner.
+    /// Update stored settings; the audio owner applies the same edit to its runtime.
     pub fn edit(&mut self, edits: &[Edit]) {
         for &edit in edits {
             if edit.track == 0 {
                 if edit.field == 0 {
                     self.enabled = edit.value >= 0.5;
                 }
-            } else if let Some(index) = self
-                .runtime
-                .as_ref()
-                .and_then(|r| r.index(edit.track))
-                .or_else(|| self.tracks.iter().position(|t| t.id == edit.track))
-            {
-                self.tracks[index].edit(edit);
-                if let Some(runtime) = &mut self.runtime {
-                    runtime.edit(index, &self.tracks[index], edit);
-                }
+            } else if let Some(track) = self.tracks.iter_mut().find(|t| t.id == edit.track) {
+                track.edit(edit);
             }
         }
     }
@@ -461,9 +439,6 @@ impl Program {
             }
             pattern.tracks.truncate(16);
             sanitize_tracks(&mut pattern.tracks);
-        }
-        if self.runtime.is_none() {
-            self.runtime = Some(Box::new(crate::dsp::sequence::Runtime::new(&self.tracks)));
         }
     }
 }

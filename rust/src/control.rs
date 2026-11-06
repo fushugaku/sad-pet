@@ -53,6 +53,7 @@ pub struct Input {
     pub bpm: f32,
     pub muted: bool,
     pub program: Program,
+    pub(crate) runtime: Option<Box<crate::dsp::sequence::Runtime>>,
     pub(crate) sums: Vec<(usize, f32)>,
 }
 
@@ -103,6 +104,9 @@ pub fn inputs<'a>(target: u32, parts: impl Iterator<Item = (&'a Meta, &'a Preset
                 source: meta.id,
                 bpm: preset.params.bpm,
                 muted: meta.mix.muted,
+                runtime: Some(Box::new(crate::dsp::sequence::Runtime::new(
+                    &program.tracks,
+                ))),
                 program,
                 sums: Vec::with_capacity(crate::parameters::specs().len()),
             })

@@ -2,6 +2,9 @@
 
 A granular instrument with a shared Rust audio engine for desktop and WebAssembly.
 
+See [the model and DSP boundaries](docs/ARCHITECTURE.md) for code ownership,
+preset preparation and the update lifecycle shared by all hosts.
+
 **[Play SAD PET in your browser](https://fushugaku.github.io/sad-pet/)**
 
 The web version runs entirely in the browser: Rust DSP in an AudioWorklet, with

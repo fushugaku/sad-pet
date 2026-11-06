@@ -357,27 +357,17 @@ fn handle(
                 preset.bus = None;
                 preset.vocal = None;
                 preset.sanitize();
-                let rate = state.lock().map_err(|e| e.to_string())?.sample_rate;
-                preset.wavetable_pool = state
-                    .lock()
-                    .map_err(|e| e.to_string())?
-                    .preset
-                    .wavetable_pool
-                    .clone();
-                let prepared = preset.prepared_clone_for(rate);
-                if let Some(error) = prepared
-                    .wavetable_runtime
-                    .1
-                    .as_ref()
-                    .or(prepared.oscillator_runtime.1.as_ref())
-                    .or(prepared.phase_runtime.1.as_ref())
-                {
-                    return Err(error.clone());
-                }
+                let (rate, assets) = {
+                    let state = state.lock().map_err(|e| e.to_string())?;
+                    (state.sample_rate, state.wavetable_pool.clone())
+                };
+                let prepared = crate::dsp::PreparedPreset::prepare(preset.clone(), &assets, rate)
+                    .map_err(|e| format!("Preset: {e}"))?;
                 let (reply, result) = std::sync::mpsc::sync_channel(1);
                 send(&commands, Command::preset(prepared, reply))?;
                 result
                     .recv_timeout(Duration::from_secs(5))
+                    .map_err(|e| format!("Preset: {e}"))?
                     .map_err(|e| format!("Preset: {e}"))?;
                 json(&preset)
             }

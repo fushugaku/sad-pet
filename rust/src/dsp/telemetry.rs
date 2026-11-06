@@ -235,9 +235,8 @@ impl Engine {
         view.drums = self.drum_view();
         view.drum_controls = self.modulated.drums;
         view.sequencer = self
-            .preset
-            .sequencer
-            .runtime
+            .preset_runtime
+            .sequence
             .as_ref()
             .map_or_else(crate::sequence::View::default, |r| r.view());
         view.peak = self.peak;

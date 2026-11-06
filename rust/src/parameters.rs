@@ -2,7 +2,7 @@
 use crate::{
     color::{ColorParameter, ColorSlot, MAX_COLOR_SLOTS},
     grain_groups,
-    preset::Preset,
+    preset::{FilterSlotParameter, Preset},
     taps::Stage,
 };
 use serde::Serialize;
@@ -218,13 +218,20 @@ enum Target {
 }
 
 /// Host controls of each added filter, in host order.
+const fn filter_slot_field(
+    parameter: FilterSlotParameter,
+    name: &'static str,
+) -> (&'static str, &'static str, f32, f32) {
+    let (min, max) = parameter.range();
+    (parameter.key(), name, min, max)
+}
 const FILTER_SLOT_FIELDS: [(&str, &str, f32, f32); 8] = [
-    ("cutoff", "cutoff", 0.0, 1.0),
-    ("resonance", "resonance", 0.0, 1.0),
-    ("drive", "drive", 0.0, 1.0),
-    ("morph", "morph", 0.0, 1.0),
-    ("env_depth", "envelope", -1.0, 1.0),
-    ("keytrack", "key tracking", 0.0, 1.0),
+    filter_slot_field(FilterSlotParameter::Cutoff, "cutoff"),
+    filter_slot_field(FilterSlotParameter::Resonance, "resonance"),
+    filter_slot_field(FilterSlotParameter::Drive, "drive"),
+    filter_slot_field(FilterSlotParameter::Morph, "morph"),
+    filter_slot_field(FilterSlotParameter::EnvDepth, "envelope"),
+    filter_slot_field(FilterSlotParameter::Keytrack, "key tracking"),
     ("model", "model", 0.0, 19.0),
     ("response", "response", 0.0, 3.0),
 ];
@@ -1172,49 +1179,109 @@ pub fn specs() -> &'static [Spec] {
     SPECS.get_or_init(|| {
         let preset = Preset::default();
         let mut result = Vec::new();
-        macro_rules! core {
-            ($field:ident, $name:literal, $min:expr, $max:expr) => {
+        macro_rules! host_scalar {
+            ($id:literal, $name:literal, $min:expr, $max:expr, $root:ident $(.$field:ident)+) => {
                 result.push(Spec {
-                    id: stringify!($field).into(),
+                    id: $id.into(),
                     name: $name.into(),
                     min: $min,
                     max: $max,
-                    default: preset.params.$field,
+                    default: preset.$root $(.$field)+,
                     target: Target::Core {
-                        get: |p| p.params.$field,
-                        set: |p, v| p.params.$field = v,
-                        frame_get: |m| m.params.$field,
-                        frame_set: |m, v| m.params.$field = v,
+                        get: |p| p.$root $(.$field)+,
+                        set: |p, v| p.$root $(.$field)+ = v,
+                        frame_get: |m| m.$root $(.$field)+,
+                        frame_set: |m, v| m.$root $(.$field)+ = v,
                     },
                 });
             };
         }
-        core!(position, "Position", 0.0, 1.0);
-        core!(grain_size, "Grain size", 0.0, 1.0);
-        core!(grain_shape, "Grain shape", 0.0, 1.0);
-        core!(grains, "Grain density", 0.0, 1.0);
-        core!(pitch, "Pitch", 0.0, 1.0);
-        core!(detune, "Detune", 0.0, 1.0);
-        core!(cloud, "Cloud", 0.0, 1.0);
-        core!(stereo_spread, "Stereo spread", 0.0, 1.0);
-        core!(mix, "Dry / wet", 0.0, 1.0);
-        core!(filter, "Filter 1 cutoff", 0.0, 1.0);
-        core!(filter_resonance, "Filter 1 resonance", 0.0, 1.0);
-        core!(filter_env_depth, "Filter 1 envelope", -1.0, 1.0);
-        core!(filter_keytrack, "Filter 1 key tracking", 0.0, 1.0);
-        core!(filter2, "Filter 2 cutoff", 0.0, 1.0);
-        core!(filter2_resonance, "Filter 2 resonance", 0.0, 1.0);
-        core!(filter2_env_depth, "Filter 2 envelope", -1.0, 1.0);
-        core!(filter2_keytrack, "Filter 2 key tracking", 0.0, 1.0);
-        core!(master_volume, "Volume", 0.0, 1.0);
-        core!(in_gain, "Input gain", -20.0, 20.0);
-        core!(out_gain, "Output gain", -12.0, 12.0);
-        core!(sample_tune_semis, "Sample tune semitones", -48.0, 48.0);
-        core!(sample_tune_cents, "Sample tune cents", -100.0, 100.0);
-        core!(pitch_range, "Pitch range", 12.0, 48.0);
-        core!(midi_pitchbend_range, "Pitch bend range", 0.0, 48.0);
-        core!(min_grains, "Minimum grains", 0.0, 1.0);
-        core!(bpm, "Tempo", 20.0, 300.0);
+        host_scalar!("position", "Position", 0.0, 1.0, params.position);
+        host_scalar!("grain_size", "Grain size", 0.0, 1.0, params.grain_size);
+        host_scalar!("grain_shape", "Grain shape", 0.0, 1.0, params.grain_shape);
+        host_scalar!("grains", "Grain density", 0.0, 1.0, params.grains);
+        host_scalar!("pitch", "Pitch", 0.0, 1.0, params.pitch);
+        host_scalar!("detune", "Detune", 0.0, 1.0, params.detune);
+        host_scalar!("cloud", "Cloud", 0.0, 1.0, params.cloud);
+        host_scalar!(
+            "stereo_spread",
+            "Stereo spread",
+            0.0,
+            1.0,
+            params.stereo_spread
+        );
+        host_scalar!("mix", "Dry / wet", 0.0, 1.0, params.mix);
+        host_scalar!("filter", "Filter 1 cutoff", 0.0, 1.0, params.filter);
+        host_scalar!(
+            "filter_resonance",
+            "Filter 1 resonance",
+            0.0,
+            1.0,
+            params.filter_resonance
+        );
+        host_scalar!(
+            "filter_env_depth",
+            "Filter 1 envelope",
+            -1.0,
+            1.0,
+            params.filter_env_depth
+        );
+        host_scalar!(
+            "filter_keytrack",
+            "Filter 1 key tracking",
+            0.0,
+            1.0,
+            params.filter_keytrack
+        );
+        host_scalar!("filter2", "Filter 2 cutoff", 0.0, 1.0, params.filter2);
+        host_scalar!(
+            "filter2_resonance",
+            "Filter 2 resonance",
+            0.0,
+            1.0,
+            params.filter2_resonance
+        );
+        host_scalar!(
+            "filter2_env_depth",
+            "Filter 2 envelope",
+            -1.0,
+            1.0,
+            params.filter2_env_depth
+        );
+        host_scalar!(
+            "filter2_keytrack",
+            "Filter 2 key tracking",
+            0.0,
+            1.0,
+            params.filter2_keytrack
+        );
+        host_scalar!("master_volume", "Volume", 0.0, 1.0, params.master_volume);
+        host_scalar!("in_gain", "Input gain", -20.0, 20.0, params.in_gain);
+        host_scalar!("out_gain", "Output gain", -12.0, 12.0, params.out_gain);
+        host_scalar!(
+            "sample_tune_semis",
+            "Sample tune semitones",
+            -48.0,
+            48.0,
+            params.sample_tune_semis
+        );
+        host_scalar!(
+            "sample_tune_cents",
+            "Sample tune cents",
+            -100.0,
+            100.0,
+            params.sample_tune_cents
+        );
+        host_scalar!("pitch_range", "Pitch range", 12.0, 48.0, params.pitch_range);
+        host_scalar!(
+            "midi_pitchbend_range",
+            "Pitch bend range",
+            0.0,
+            48.0,
+            params.midi_pitchbend_range
+        );
+        host_scalar!("min_grains", "Minimum grains", 0.0, 1.0, params.min_grains);
+        host_scalar!("bpm", "Tempo", 20.0, 300.0, params.bpm);
         for i in 0..3 {
             append_modulators(&mut result, &preset, i);
         }
@@ -1329,28 +1396,29 @@ pub fn specs() -> &'static [Spec] {
                 target: Target::SourceFx(field),
             });
         }
-        macro_rules! resynth {
-            ($field:ident, $name:literal, $min:expr, $max:expr) => {
-                result.push(Spec {
-                    id: concat!("resynth_", stringify!($field)).into(),
-                    name: concat!("Resynth ", $name).into(),
-                    min: $min,
-                    max: $max,
-                    default: preset.resynth.$field,
-                    target: Target::Core {
-                        get: |p| p.resynth.$field,
-                        set: |p, v| p.resynth.$field = v,
-                        frame_get: |m| m.resynth.$field,
-                        frame_set: |m, v| m.resynth.$field = v,
-                    },
-                });
-            };
-        }
-        resynth!(mix, "mix", 0.0, 1.0);
-        resynth!(sensitivity, "sensitivity", 0.0, 1.0);
-        resynth!(attack, "attack", 0.0, 1.0);
-        resynth!(release, "release", 0.0, 1.0);
-        resynth!(threshold, "threshold", 0.0, 1.0);
+        host_scalar!("resynth_mix", "Resynth mix", 0.0, 1.0, resynth.mix);
+        host_scalar!(
+            "resynth_sensitivity",
+            "Resynth sensitivity",
+            0.0,
+            1.0,
+            resynth.sensitivity
+        );
+        host_scalar!("resynth_attack", "Resynth attack", 0.0, 1.0, resynth.attack);
+        host_scalar!(
+            "resynth_release",
+            "Resynth release",
+            0.0,
+            1.0,
+            resynth.release
+        );
+        host_scalar!(
+            "resynth_threshold",
+            "Resynth threshold",
+            0.0,
+            1.0,
+            resynth.threshold
+        );
         result.push(Spec {
             id: "resynth_enabled".into(),
             name: "Resynth enabled".into(),
@@ -1467,10 +1535,34 @@ pub fn specs() -> &'static [Spec] {
             }
         }
         // New filter controls append after every released host index.
-        core!(filter_drive, "Filter 1 drive", 0.0, 1.0);
-        core!(filter_morph, "Filter 1 morph", 0.0, 1.0);
-        core!(filter2_drive, "Filter 2 drive", 0.0, 1.0);
-        core!(filter2_morph, "Filter 2 morph", 0.0, 1.0);
+        host_scalar!(
+            "filter_drive",
+            "Filter 1 drive",
+            0.0,
+            1.0,
+            params.filter_drive
+        );
+        host_scalar!(
+            "filter_morph",
+            "Filter 1 morph",
+            0.0,
+            1.0,
+            params.filter_morph
+        );
+        host_scalar!(
+            "filter2_drive",
+            "Filter 2 drive",
+            0.0,
+            1.0,
+            params.filter2_drive
+        );
+        host_scalar!(
+            "filter2_morph",
+            "Filter 2 morph",
+            0.0,
+            1.0,
+            params.filter2_morph
+        );
         macro_rules! choice {
             ($field:ident, $name:literal, $kind:ident, $max:expr) => {
                 result.push(Spec {
@@ -1895,7 +1987,7 @@ pub fn specs() -> &'static [Spec] {
         });
         // Then how far Resynth carriers follow what their bands hear, and
         // whether the band resonators stay fixed or follow it.
-        resynth!(track, "track", 0.0, 1.0);
+        host_scalar!("resynth_track", "Resynth track", 0.0, 1.0, resynth.track);
         result.push(Spec {
             id: "resynth_tracking".into(),
             name: "Resynth tracking".into(),
@@ -1916,9 +2008,15 @@ pub fn specs() -> &'static [Spec] {
         // Then the Rack's Sampler and Vocal strips.
         rack_strips(&mut result, 3..5);
         // Then the envelope Resynth carriers play their band levels through.
-        resynth!(hold, "hold", 0.0, 1.0);
-        resynth!(sustain, "sustain", 0.0, 1.0);
-        resynth!(fade, "fade", 0.0, 1.0);
+        host_scalar!("resynth_hold", "Resynth hold", 0.0, 1.0, resynth.hold);
+        host_scalar!(
+            "resynth_sustain",
+            "Resynth sustain",
+            0.0,
+            1.0,
+            resynth.sustain
+        );
+        host_scalar!("resynth_fade", "Resynth fade", 0.0, 1.0, resynth.fade);
         // Then how much of the grain cloud's build-up a note waits through.
         result.push(Spec {
             id: "grain_attack".into(),

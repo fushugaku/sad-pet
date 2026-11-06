@@ -341,9 +341,6 @@ impl PreparedEffects {
             self.inherit(old);
         }
     }
-    pub(crate) fn sample_rate(&self) -> Option<u32> {
-        self.rate
-    }
     pub fn store(&mut self, id: u32, core: &mut Option<Box<Core>>) {
         if core.is_some() {
             let entry = self

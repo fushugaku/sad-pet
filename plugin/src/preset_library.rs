@@ -387,10 +387,11 @@ impl Controller {
                     mix: Default::default(),
                     preset: *super::sampler::prepared_with(
                         &preset,
+                        &self.wavetable_pool,
                         &Default::default(),
                         &[],
                         self.rate,
-                    ),
+                    )?,
                     source,
                     sync: self.sync,
                     frozen: self.frozen,
@@ -471,7 +472,8 @@ impl Controller {
                 {
                     return Ok(json!(record));
                 }
-                let mut state = if bytes.starts_with(MAGIC) {
+                let from_plugin_state = bytes.starts_with(MAGIC);
+                let mut state = if from_plugin_state {
                     decode(&bytes)?.1
                 } else {
                     let value: Value = serde_json::from_slice(&bytes)
@@ -486,8 +488,14 @@ impl Controller {
                     state.meta = sad_pet::timbres::Meta::default();
                     state
                 };
-                validate(&state)?;
                 state.preset.sanitize();
+                if !from_plugin_state {
+                    state.wavetable_assets = state
+                        .wavetable_pool
+                        .manifest_ids(state.preset.wavetable_ids())?;
+                }
+                state.bind_wavetables()?;
+                validate(&state)?;
                 let title = name(&state.preset.name)?;
                 let mut available = title.clone();
                 let mut suffix = 2;

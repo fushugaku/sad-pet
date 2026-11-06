@@ -10,8 +10,9 @@ pub(super) enum Applied {
     Program(u8),
     Preset {
         view: Box<Preset>,
-        retired: Box<Preset>,
-        reply: SyncSender<()>,
+        retired: Box<crate::dsp::PreparedPreset>,
+        accepted: bool,
+        reply: SyncSender<Result<(), &'static str>>,
     },
     Parameters(Vec<crate::parameters::Change>, SyncSender<()>),
     Sequence(Vec<crate::sequence::Edit>, SyncSender<()>),
@@ -38,12 +39,20 @@ impl Applied {
             Self::Preset {
                 view,
                 retired,
+                accepted,
                 reply,
             } => {
-                state.preset = *view;
-                let _ = reply.try_send(());
-                drop(state);
-                drop(retired);
+                if accepted {
+                    state.preset = *view;
+                    drop(state);
+                    drop(retired);
+                    let _ = reply.try_send(Ok(()));
+                } else {
+                    drop(state);
+                    drop((view, retired));
+                    let _ = reply
+                        .try_send(Err("The prepared preset was rejected by the audio engine."));
+                }
             }
             Self::Parameters(changes, reply) => {
                 crate::parameters::apply(&mut state.preset, &changes);

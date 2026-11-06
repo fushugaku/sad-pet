@@ -31,7 +31,7 @@ impl Recipe {
             _ => false,
         });
         let pitched = slot.is_some_and(|s| {
-            use crate::dsp::radias_waveshaper::WaveshaperMode::*;
+            use crate::color::WaveshaperMode::*;
             s.kind == crate::preset::SaturatorType::Waveshaper
                 && matches!(
                     s.settings.waveshaper_type,
@@ -167,7 +167,7 @@ mod tests {
     }
     #[test]
     fn source_recipe_tracks_pitch_for_pickup_and_every_sub_oscillator() {
-        use crate::dsp::radias_waveshaper::WaveshaperMode;
+        use crate::color::WaveshaperMode;
         let raw = sample();
         for mode in WaveshaperMode::ALL {
             let mut slot = ColorSlot::legacy(SaturatorType::Waveshaper, 1.0);

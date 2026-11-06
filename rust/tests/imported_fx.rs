@@ -225,8 +225,9 @@ fn numeric_changes_and_prepared_preset_exchange_retain_running_tails_and_do_not_
         };
         let mut a = engine(preset.clone());
         let mut b = engine(preset.clone());
-        let mut next = preset.prepared_clone();
+        let mut next = preset.clone();
         next.name = "Renamed".into();
+        let mut next = a.prepare_preset_update(next).unwrap();
         let key = if kind == Kind::SuperEcho {
             "fx1_super_echo_feedback"
         } else {
@@ -237,7 +238,7 @@ fn numeric_changes_and_prepared_preset_exchange_retain_running_tails_and_do_not_
             let input = [(i as f32 * 0.07).sin() * 0.1, 0.05];
             assert_eq!(a.process_input_frame(input), b.process_input_frame(input));
         }
-        no_heap(|| a.exchange_preset(&mut next));
+        no_heap(|| assert!(a.exchange_preset(&mut next)));
         for i in 0..1024 {
             let input = [(i as f32 * 0.07).sin() * 0.1, 0.05];
             assert_eq!(
@@ -253,11 +254,11 @@ fn numeric_changes_and_prepared_preset_exchange_retain_running_tails_and_do_not_
             }
         });
         // Deletion retires the large instance inside the returned preset.
-        let mut removed = Preset {
+        let removed = Preset {
             color_chain: vec![],
             ..Default::default()
-        }
-        .prepared_clone();
+        };
+        let mut removed = a.prepare_preset_update(removed).unwrap();
         no_heap(|| {
             a.exchange_preset(&mut removed);
             a.process_input_frame([0.1; 2]);

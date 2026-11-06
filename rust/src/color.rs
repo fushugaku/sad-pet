@@ -5,6 +5,41 @@ use serde::{Deserialize, Serialize};
 
 pub const MAX_COLOR_SLOTS: usize = 12;
 
+/// Persisted RADIAS waveshaper selection. Host values index `ALL` in this order.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WaveshaperMode {
+    #[default]
+    Drive,
+    HardClip,
+    Decimator,
+    OctSaw,
+    MultiTriangle,
+    MultiSine,
+    SubSaw,
+    SubSquare,
+    SubTriangle,
+    SubSine,
+    Pickup,
+    LevelBoost,
+}
+impl WaveshaperMode {
+    pub const ALL: [Self; 12] = [
+        Self::Drive,
+        Self::HardClip,
+        Self::Decimator,
+        Self::OctSaw,
+        Self::MultiTriangle,
+        Self::MultiSine,
+        Self::SubSaw,
+        Self::SubSquare,
+        Self::SubTriangle,
+        Self::SubSine,
+        Self::Pickup,
+        Self::LevelBoost,
+    ];
+}
+
 // A single registry keeps persisted destinations, control keys and telemetry aligned.
 macro_rules! color_parameters {
     ($($variant:ident => $field:ident),* $(,)?) => {
@@ -241,7 +276,7 @@ pub struct ColorSettings {
     pub compressor_release: f32,
     pub compressor_knee: f32,
     pub compressor_makeup: f32,
-    pub waveshaper_type: crate::dsp::radias_waveshaper::WaveshaperMode,
+    pub waveshaper_type: WaveshaperMode,
     pub waveshaper_depth: f32,
     pub super_echo_dirty: f32,
     pub super_echo_orbit: f32,
@@ -363,7 +398,7 @@ impl Default for ColorSettings {
             compressor_release: 12.0_f32.ln() / 200.0_f32.ln(), // 120 ms
             compressor_knee: 0.25,                              // 6 dB
             compressor_makeup: 0.0,
-            waveshaper_type: crate::dsp::radias_waveshaper::WaveshaperMode::Drive,
+            waveshaper_type: WaveshaperMode::Drive,
             waveshaper_depth: 64.0 / 127.0,
             super_echo_dirty: 0.0,
             super_echo_orbit: 0.2,
@@ -810,122 +845,11 @@ impl ColorSlot {
         slot
     }
     pub fn sanitize(&mut self) {
-        finite_clamp(&mut self.mix, 0.0, 1.0, 0.5);
-        let defaults = ColorSettings::default();
-        macro_rules! unit { ($($field:ident),*) => { $(finite_clamp(&mut self.settings.$field, 0.0, 1.0, defaults.$field);)* }; }
-        unit!(
-            super_echo_dirty,
-            super_echo_orbit,
-            super_echo_reverb,
-            super_echo_time,
-            super_echo_cutoff,
-            super_echo_mod_speed,
-            super_echo_mod_depth,
-            super_echo_pitch,
-            super_echo_shimmer,
-            super_echo_feedback,
-            super_echo_resonance,
-            super_echo_ping_pong,
-            super_echo_compression,
-            super_echo_shimmer_mode,
-            super_echo_filter_mode,
-            super_echo_dub,
-            super_echo_dub_mix,
-            super_echo_shimmer_style,
-            super_echo_freeze,
-            super_echo_sync,
-            super_echo_note,
-            alpha_verb_dirty,
-            alpha_verb_predelay,
-            alpha_verb_early_late,
-            alpha_verb_size,
-            alpha_verb_shape,
-            alpha_verb_low_damp,
-            alpha_verb_high_damp,
-            alpha_verb_bass,
-            alpha_verb_treble,
-            alpha_verb_feedback,
-            alpha_verb_spin,
-            alpha_verb_stereo,
-            alpha_verb_shimmer,
-            alpha_verb_dynamics,
-            alpha_verb_comp_threshold,
-            alpha_verb_comp_ratio,
-            alpha_verb_comp_release,
-            alpha_verb_gate_threshold,
-            alpha_verb_gate_hold,
-            alpha_verb_gate_release,
-            alpha_verb_freeze,
-            distortion_drive,
-            distortion_tone,
-            distortion_bias,
-            reducer_rate,
-            reducer_jitter,
-            reducer_smooth,
-            crusher_bits,
-            crusher_drive,
-            crusher_dither,
-            flanger_rate,
-            flanger_depth,
-            flanger_delay,
-            flanger_feedback,
-            flanger_stereo,
-            chorus_rate,
-            chorus_depth,
-            chorus_delay,
-            chorus_feedback,
-            chorus_stereo,
-            binaural_delay,
-            binaural_crossfeed,
-            binaural_width,
-            reverb_predelay,
-            reverb_decay,
-            reverb_tone,
-            reverb_shimmer,
-            reverb_diffuse,
-            lcr_ratio,
-            lcr_left_delay,
-            lcr_center_delay,
-            lcr_right_delay,
-            lcr_left_note,
-            lcr_center_note,
-            lcr_right_note,
-            lcr_left_level,
-            lcr_center_level,
-            lcr_right_level,
-            lcr_feedback,
-            lcr_high_damp,
-            lcr_low_damp,
-            lcr_trim,
-            lcr_spread,
-            lcr_converge,
-            lcr_reverse,
-            mod_delay_ratio,
-            mod_delay_left_delay,
-            mod_delay_right_delay,
-            mod_delay_left_note,
-            mod_delay_right_note,
-            mod_delay_feedback,
-            mod_delay_depth,
-            mod_delay_rate,
-            mod_delay_spread,
-            compressor_threshold,
-            compressor_ratio,
-            compressor_attack,
-            compressor_release,
-            compressor_knee,
-            compressor_makeup,
-            waveshaper_depth,
-            mooz_p1,
-            mooz_p2,
-            mooz_p3,
-            mooz_p4,
-            mooz_p5,
-            mooz_p6,
-            mooz_p7,
-            mooz_p8,
-            mooz_p9
-        );
+        let mut defaults = Self::default();
+        for &parameter in ColorParameter::ALL {
+            let fallback = *defaults.parameter_mut(parameter);
+            finite_clamp(self.parameter_mut(parameter), 0.0, 1.0, fallback);
+        }
     }
 }
 

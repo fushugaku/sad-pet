@@ -15,6 +15,16 @@ const SLIDE_TAU: f64 = 100_000.0 * 0.22e-6; // R91, C35.
 mod oscillator;
 use oscillator::Tables;
 
+/// A TB-303 runtime voice prepared off the audio thread from document settings.
+#[derive(Default, Debug)]
+pub struct Prepared(pub Option<Box<Runtime>>);
+
+impl Prepared {
+    pub fn prepare(&mut self, settings: Option<&Settings>, rate: u32) {
+        self.0 = settings.map(|s| Box::new(Runtime::new(rate, s.controls)));
+    }
+}
+
 /// 63-tap Kaiser half-band (beta 8.6): flat below 0.4 of the receiving
 /// rate and >85 dB rejection above 0.6. Symmetry/zero taps cost 17 products
 /// only on the samples that survive each 2:1 stage. The voice is mono.

@@ -3,7 +3,7 @@
 //! envelopes that run over every grain's own life. A group's amp envelope is its grains' window,
 //! curved by its shape. A group's controls that the engine also has move
 //! from the engine's value, so untouched groups play as the engine does.
-use crate::dsp::radias_waveshaper::WaveshaperMode;
+use crate::color::WaveshaperMode;
 use serde::{Deserialize, Serialize};
 
 pub const GROUPS: usize = 4;

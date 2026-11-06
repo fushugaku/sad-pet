@@ -17,7 +17,10 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use rtrb::{Consumer, Producer, RingBuffer};
 use sad_pet::{
     Stereo,
-    dsp::{Engine, Fades, Region, SampleBuffer, sample::LiveInput, telemetry::RealtimeView},
+    dsp::{
+        Engine, Fades, PreparedPreset, Region, SampleBuffer, sample::LiveInput,
+        telemetry::RealtimeView,
+    },
     midi::{Controls, Message, Parser},
     performance::Mode,
     preset::Preset,
@@ -61,7 +64,7 @@ struct Transport {
 enum Command {
     Preview(Option<Box<preview::Preview>>),
     PreviewStop,
-    Preset(Box<Preset>),
+    Preset(Box<PreparedPreset>),
     Parameters(Box<[parameters::Change]>),
     Sequence(Box<[sad_pet::sequence::Edit]>),
     ControlInputs(Vec<sad_pet::control::Input>),
@@ -118,7 +121,7 @@ struct Restore {
     parts: Option<Box<timbres::PartAudio>>,
     /// The Pad FX timbres of the scene's own kit.
     chains: Option<Box<timbres::PartAudio>>,
-    preset: Preset,
+    preset: PreparedPreset,
     source: PreparedSource,
     sync: bool,
     frozen: bool,
@@ -215,6 +218,8 @@ pub struct Controller {
     retired: Consumer<Update>,
     feedback: Consumer<Feedback>,
     preset: Preset,
+    /// User wavetable assets belong to the control side, apart from settings.
+    wavetable_pool: sad_pet::wavetable::assets::Pool,
     sample: Arc<SampleBuffer>,
     source: Source,
     region: Region,
@@ -420,6 +425,9 @@ struct SavedState {
     kit_samples: Vec<sampler::KitSample>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     wavetable_assets: Vec<Arc<sad_pet::wavetable::assets::Asset>>,
+    /// Restored asset bytes live outside the serialized preset manifest.
+    #[serde(skip)]
+    wavetable_pool: sad_pet::wavetable::assets::Pool,
 }
 
 impl SavedState {
@@ -440,15 +448,19 @@ impl SavedState {
     }
     fn bind_wavetables(&mut self) -> Result<(), String> {
         self.hoist_wavetables();
-        let pool = sad_pet::wavetable::assets::Pool::from_manifest(&self.wavetable_assets)?;
+        let manifest = sad_pet::wavetable::assets::Pool::from_manifest(&self.wavetable_assets)?;
+        let mut pool = self.wavetable_pool.clone();
+        pool.merge(&manifest)?;
         fn bind(
             state: &mut SavedState,
             pool: &sad_pet::wavetable::assets::Pool,
         ) -> Result<(), String> {
-            state.preset.wavetable_pool.merge(pool)?;
-            state.preset.wavetable_assets()?;
+            state.wavetable_pool.merge(pool)?;
+            let _ = state
+                .wavetable_pool
+                .manifest_ids(state.preset.wavetable_ids())?;
             for part in &mut state.timbres {
-                bind(part, pool)?;
+                bind(part, &state.wavetable_pool)?;
             }
             Ok(())
         }
@@ -501,6 +513,7 @@ impl Controller {
             retired,
             feedback,
             preset,
+            wavetable_pool: Default::default(),
             sample: sad_pet::samples::get("glass-sequence").expect("bundled sample"),
             source: if effect { Source::Grains } else { Source::File },
             region: Region::default(),
@@ -547,6 +560,7 @@ impl Controller {
         part.standalone = self.standalone;
         part.sync = self.sync;
         part.voices = self.voices.clone();
+        part.wavetable_pool = self.wavetable_pool.clone();
         part
     }
 
@@ -606,24 +620,13 @@ impl Controller {
     }
 
     fn enqueue(&mut self, command: Command) -> Result<(), String> {
-        let error = match &command {
-            Command::Preset(preset) => preset
-                .wavetable_runtime
-                .1
-                .as_ref()
-                .or(preset.oscillator_runtime.1.as_ref())
-                .or(preset.phase_runtime.1.as_ref()),
-            Command::Restore(restore) => restore
-                .preset
-                .wavetable_runtime
-                .1
-                .as_ref()
-                .or(restore.preset.oscillator_runtime.1.as_ref())
-                .or(restore.preset.phase_runtime.1.as_ref()),
+        let prepared_rate = match &command {
+            Command::Preset(preset) => Some(preset.sample_rate()),
+            Command::Restore(restore) => Some(restore.preset.sample_rate()),
             _ => None,
         };
-        if let Some(error) = error {
-            return Err(error.clone());
+        if prepared_rate.is_some_and(|rate| rate != self.rate) {
+            return Err("Prepared preset sample rate does not match controller rate.".into());
         }
         self.drain();
         let revision = self.revision.wrapping_add(1);
@@ -703,10 +706,11 @@ impl Controller {
         self.commands = commands;
         self.retired = retired;
         self.feedback = feedback;
-        let mut engine = Box::new(Engine::new(
+        let mut engine = Box::new(Engine::new_with_assets(
             self.rate,
             self.sample.clone(),
             self.preset.clone(),
+            self.wavetable_pool.clone(),
         ));
         // A kit plays the samples this part holds.
         let mut kit = self.kit_runtime();
@@ -1056,7 +1060,10 @@ impl Controller {
             } else {
                 Vec::new()
             },
-            wavetable_assets: self.preset.wavetable_assets()?,
+            wavetable_assets: self
+                .wavetable_pool
+                .manifest_ids(self.preset.wavetable_ids())?,
+            wavetable_pool: self.wavetable_pool.clone(),
         };
         state.hoist_wavetables();
         Ok(state)
@@ -1074,6 +1081,8 @@ impl Controller {
 
     fn restore_saved(&mut self, mut saved: SavedState) -> Result<(), String> {
         saved.bind_wavetables()?;
+        let mut wavetable_pool = self.wavetable_pool.clone();
+        wavetable_pool.merge(&saved.wavetable_pool)?;
         if saved.version != 1 {
             return Err("Unsupported SAD PET plugin state version".into());
         }
@@ -1126,7 +1135,7 @@ impl Controller {
             chains,
             mix: saved.meta.mix,
             // The scene routes the kit's pads to its Pad FX timbres below.
-            preset: *sampler::prepared_with(&saved.preset, &kit, &[], self.rate),
+            preset: *sampler::prepared_with(&saved.preset, &wavetable_pool, &kit, &[], self.rate)?,
             source,
             sync: saved.sync,
             frozen: saved.frozen,
@@ -1144,6 +1153,7 @@ impl Controller {
         );
         self.parts = parts;
         self.meta = saved.meta;
+        self.wavetable_pool = wavetable_pool;
         self.active = if self.parts.iter().any(|c| c.meta.id == saved.active_timbre) {
             saved.active_timbre
         } else {
@@ -1218,15 +1228,12 @@ impl Controller {
         }
         if path.starts_with("/api/wavetables") {
             if let Ok(root) = self.library.root() {
-                self.preset
-                    .wavetable_pool
-                    .set_directory(root.join("Wavetables"));
+                self.wavetable_pool.set_directory(root.join("Wavetables"));
             }
             if path == "/api/wavetables/export"
                 && let Some(path) = data["path"].as_str()
             {
                 let asset = self
-                    .preset
                     .wavetable_pool
                     .resolve(data["id"].as_str().ok_or("Choose a wavetable")?)?;
                 audio_library::write_file(
@@ -1261,20 +1268,13 @@ impl Controller {
                     settings.oscillators[index].asset_id =
                         data["id"].as_str().ok_or("Choose a wavetable")?.into();
                 }
-                preset.wavetable_assets()?;
-                let prepared = self.prepared_preset(&preset);
-                if let Some(error) = &prepared.wavetable_runtime.1 {
-                    return Err(error.clone());
-                }
+                self.wavetable_pool.manifest_ids(preset.wavetable_ids())?;
+                let prepared = self.prepared_preset(&preset)?;
                 self.enqueue(Command::Preset(prepared))?;
                 self.preset = preset;
                 return Ok(json!({"timbre":self.meta.id,"wavetable":self.preset.wavetable}));
             }
-            return sad_pet::wavetable::library::command(
-                path,
-                data,
-                &mut self.preset.wavetable_pool,
-            );
+            return sad_pet::wavetable::library::command(path, data, &mut self.wavetable_pool);
         }
         let result = match (path, post) {
             ("/api/state", _) => Ok(self.state()),
@@ -1309,16 +1309,27 @@ impl Controller {
                 if data["format"] != "evil-pet-rust-v1" {
                     return Err("Use a SAD PET preset (.sad.json)".into());
                 }
-                let mut preset: Preset =
+                let preset: Preset =
                     serde_json::from_value(data.clone()).map_err(|e| e.to_string())?;
-                timbres::keep_role(&mut preset, &self.preset, self.meta.kind);
-                preset.sanitize();
-                if self.meta.id != 0 {
-                    preset.params.bpm = self.preset.params.bpm;
-                }
-                preset.wavetable_pool = self.preset.wavetable_pool.clone();
-                preset.wavetable_assets()?;
-                self.enqueue(Command::Preset(self.prepared_preset(&preset)))?;
+                use sad_pet::application::presets::{Target, TempoPolicy, load_into_timbre};
+                let preset = load_into_timbre(
+                    &self.preset,
+                    preset,
+                    Target {
+                        kind: self.meta.kind,
+                        tempo: if self.meta.id == 0 {
+                            TempoPolicy::FromPreset
+                        } else {
+                            TempoPolicy::Session(self.preset.params.bpm)
+                        },
+                    },
+                )
+                .map_err(|e| e.to_string())?;
+                // Native preparation owns the original assets; the browser
+                // instead validates banks staged by its utility worker.
+                self.wavetable_pool.manifest_ids(preset.wavetable_ids())?;
+                let prepared = self.prepared_preset(&preset)?;
+                self.enqueue(Command::Preset(prepared))?;
                 // A loaded preset can change the timbre's engine type; a Pad
                 // FX timbre stays one.
                 if self.meta.kind != sad_pet::timbres::Kind::PadFx {
@@ -1680,8 +1691,7 @@ impl Audio {
                 Command::AddChain(owner, chain) => self.add_chain(*owner, chain),
                 Command::PartMix(id, mix) => self.set_part_mix(*id, *mix),
                 Command::Preset(preset) => {
-                    self.engine.exchange_preset(preset);
-                    preset_changed = true;
+                    preset_changed |= self.engine.exchange_preset(preset);
                 }
                 Command::Parameters(changes) => {
                     numeric_changed |= parameters::apply(&mut self.engine.preset, changes);
@@ -1694,18 +1704,19 @@ impl Audio {
                 Command::SequenceView(offset) => self.engine.set_sequence_view(*offset),
                 Command::Source(source) => self.source(source),
                 Command::Restore(state) => {
-                    std::mem::swap(&mut self.parts, &mut state.parts);
-                    std::mem::swap(&mut self.chains, &mut state.chains);
-                    self.meta.mix = state.mix;
-                    self.engine.midi(Message::Reset);
-                    self.engine.exchange_preset(&mut state.preset);
-                    self.source(&mut state.source);
-                    self.sync = state.sync;
-                    self.engine.bypass = state.bypass;
-                    self.engine.set_midi_gate(state.midi_gate);
-                    self.engine.set_playing(state.playing);
-                    self.engine.set_frozen(state.frozen);
-                    preset_changed = true;
+                    if self.engine.exchange_preset(&mut state.preset) {
+                        std::mem::swap(&mut self.parts, &mut state.parts);
+                        std::mem::swap(&mut self.chains, &mut state.chains);
+                        self.meta.mix = state.mix;
+                        self.engine.midi(Message::Reset);
+                        self.source(&mut state.source);
+                        self.sync = state.sync;
+                        self.engine.bypass = state.bypass;
+                        self.engine.set_midi_gate(state.midi_gate);
+                        self.engine.set_playing(state.playing);
+                        self.engine.set_frozen(state.frozen);
+                        preset_changed = true;
+                    }
                 }
                 Command::Transport(t) => {
                     if let Some(v) = t.sync {

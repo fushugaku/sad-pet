@@ -1,5 +1,6 @@
-//! A monophonic 303 voice and its sixteen-step pattern. DSP and fidelity
-//! boundaries are documented in docs/TB303.md.
+//! TB-303 settings and its sixteen-step pattern. Runtime audio processing lives
+//! in `crate::dsp::tb303`; DSP and fidelity boundaries are documented in
+//! docs/TB303.md.
 use serde::{Deserialize, Serialize};
 
 pub const STEPS: usize = 16;
@@ -238,17 +239,4 @@ pub struct View {
     pub envelope: f32,
     pub accent_sweep: f32,
     pub filter_hz: f32,
-}
-
-#[derive(Default, Debug)]
-pub struct Prepared(pub Option<Box<crate::dsp::tb303::Runtime>>);
-impl Clone for Prepared {
-    fn clone(&self) -> Self {
-        Self::default()
-    }
-}
-impl Prepared {
-    pub fn prepare(&mut self, settings: Option<&Settings>, rate: u32) {
-        self.0 = settings.map(|s| Box::new(crate::dsp::tb303::Runtime::new(rate, s.controls)));
-    }
 }

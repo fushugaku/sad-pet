@@ -1,6 +1,7 @@
 //! A Rack timbre's frame: its modules in the order they stand, top to bottom.
 //! See `crate::rack` for what each module does. The notes, modulators,
 //! sequencer and output stage are the engine's own, as in any other timbre.
+use super::sample::LiveInput;
 use super::{
     CONTROL_INTERVAL, Engine, Stereo, VOICES, bits, fast,
     filter_slots::{self, Instance},
@@ -10,6 +11,19 @@ use crate::{
     rack::{Chain, Module, Plan, STRIP_SOURCES as SOURCES, STRIPS, Settings, Strip, Strips},
     taps::Stage,
 };
+
+/// The Grain history allocated off the audio thread for a Rack.
+/// The engine takes it over in `exchange_preset`.
+#[derive(Default)]
+pub struct Prepared(pub Option<LiveInput>);
+
+impl std::fmt::Debug for Prepared {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PreparedRack")
+            .field("history", &self.0.is_some())
+            .finish()
+    }
+}
 
 fn strip_index(source: Module) -> usize {
     SOURCES.iter().position(|&s| s == source).unwrap_or(0)

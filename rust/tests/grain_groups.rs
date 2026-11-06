@@ -1,5 +1,5 @@
 use sad_pet::{
-    dsp::radias_waveshaper::WaveshaperMode,
+    color::WaveshaperMode,
     dsp::{Engine, SampleBuffer},
     grain_groups::{Envelope, FilterType, GROUPS, ORDERS, Settings, Stage, Waveshaper},
     parameters,

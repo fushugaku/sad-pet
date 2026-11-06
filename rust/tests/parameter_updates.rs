@@ -1,10 +1,6 @@
 use sad_pet::{
-    color::ColorSlot,
-    dsp::{
-        Engine, SampleBuffer,
-        color::ColorRack,
-        radias_waveshaper::{RadiasWaveshaper, WaveshaperMode},
-    },
+    color::{ColorSlot, WaveshaperMode},
+    dsp::{Engine, SampleBuffer, color::ColorRack, radias_waveshaper::RadiasWaveshaper},
     performance::{Mode, Modulation, Performance, Settings},
     preset::{Preset, SaturatorType},
 };

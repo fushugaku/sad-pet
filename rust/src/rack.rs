@@ -3,7 +3,6 @@
 //! modules under it process that chain, and the chains meet in the Mixer,
 //! whose sum the modules under it process in turn. The sequencer and the
 //! modulators are the timbre's own and stay under every module.
-use crate::dsp::sample::LiveInput;
 use crate::eq::{Equalizer, MAX_EQS};
 use crate::taps::Stage;
 use serde::{Deserialize, Serialize};
@@ -545,38 +544,6 @@ impl Plan {
     }
     pub fn iter(&self) -> impl Iterator<Item = Step> + '_ {
         self.steps.iter().map_while(|s| *s)
-    }
-}
-
-/// The history a Grain engine reads, allocated off the audio thread; the
-/// engine takes it over in `exchange_preset`.
-#[derive(Default)]
-pub struct Prepared(pub Option<LiveInput>);
-impl Clone for Prepared {
-    fn clone(&self) -> Self {
-        Self::default()
-    }
-}
-impl std::fmt::Debug for Prepared {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PreparedRack")
-            .field("history", &self.0.is_some())
-            .finish()
-    }
-}
-impl Prepared {
-    pub fn prepare(&mut self, settings: Option<&Settings>, rate: u32) {
-        self.0 = settings
-            .and_then(Settings::history)
-            .map(|history| LiveInput::for_rack(rate, history.buffer_seconds));
-    }
-    /// A synchronous owner keeps the engine's running history when it fits.
-    pub fn prepare_reusing(&mut self, settings: Option<&Settings>, rate: u32, kept: bool) {
-        if kept {
-            self.0 = None;
-        } else {
-            self.prepare(settings, rate);
-        }
     }
 }
 

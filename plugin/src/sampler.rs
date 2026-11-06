@@ -81,14 +81,17 @@ fn pad_label(index: usize) -> String {
     format!("{bank}{:02}", index % kits::BANK_PADS + 1)
 }
 
-/// `preset` ready for a part's audio, with a kit's runtime built from
-/// `kit` and the pads `routes` sends to Pad FX timbres.
-pub(super) fn prepared_with(preset: &Preset, kit: &Pool, routes: &[u32], rate: u32) -> Box<Preset> {
-    let mut prepared = Box::new(preset.prepared_clone_for(rate));
-    prepared
-        .sampler_runtime
-        .prepare(prepared.sampler.as_deref(), kit, routes, rate);
-    prepared
+/// `preset` and its wavetable assets prepared with a kit and Pad FX routes.
+pub(super) fn prepared_with(
+    preset: &Preset,
+    assets: &sad_pet::wavetable::assets::Pool,
+    kit: &Pool,
+    routes: &[u32],
+    rate: u32,
+) -> Result<Box<sad_pet::dsp::PreparedPreset>, String> {
+    let mut prepared = sad_pet::dsp::PreparedPreset::prepare(preset.clone(), assets, rate)?;
+    prepared.set_tempo(preset.params.bpm);
+    Ok(Box::new(prepared.with_sampler(kit, routes)))
 }
 
 impl Controller {
@@ -103,8 +106,17 @@ impl Controller {
             .map(|settings| Runtime::prepared(settings, &self.kit, &self.pad_routes, self.rate))
     }
     /// `preset` ready for this part's audio, its kit included.
-    pub(super) fn prepared_preset(&self, preset: &Preset) -> Box<Preset> {
-        prepared_with(preset, &self.kit, &self.pad_routes, self.rate)
+    pub(super) fn prepared_preset(
+        &self,
+        preset: &Preset,
+    ) -> Result<Box<sad_pet::dsp::PreparedPreset>, String> {
+        prepared_with(
+            preset,
+            &self.wavetable_pool,
+            &self.kit,
+            &self.pad_routes,
+            self.rate,
+        )
     }
     /// Sends the kit's runtime for a changed pool or routes. Without a queue
     /// slot it waits for the next scene request.

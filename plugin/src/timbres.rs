@@ -29,44 +29,6 @@ pub(super) fn ensure_master_in(
     }));
     parts.push(master);
 }
-/// A Bus or Master keeps its role when a preset loads into it; any other
-/// timbre ignores bus settings.
-pub(super) fn keep_role(preset: &mut Preset, current: &Preset, kind: Kind) {
-    if kind.keeps_role() {
-        preset.control = None;
-        preset.tb303 = None;
-        preset.rack = None;
-    }
-    if kind.keeps_role() {
-        if preset.bus.is_none() {
-            preset.bus = current.bus.clone();
-        }
-        if let Some(bus) = &mut preset.bus {
-            bus.master = kind == Kind::Master;
-        }
-    } else {
-        preset.bus = None;
-    }
-    // A Vocal timbre keeps its score, and a Rack preset brings that of its
-    // Vocal module; nothing else gains one.
-    if kind == Kind::Vocal {
-        if preset.vocal.is_none() {
-            preset.vocal = current.vocal.clone();
-        }
-    } else if preset.rack.is_none() {
-        preset.vocal = None;
-    }
-    // A Sampler keeps its kit, and a Rack preset brings that of its Sampler
-    // module or keeps the timbre's own; nothing else gains one.
-    if kind == Kind::Sampler || preset.rack.is_some() {
-        if preset.sampler.is_none() {
-            preset.sampler = current.sampler.clone();
-        }
-    } else {
-        preset.sampler = None;
-    }
-}
-
 type RestoredParts = (
     Vec<Controller>,
     Option<Box<PartAudio>>,
@@ -466,7 +428,7 @@ impl Controller {
         let mut preset = Kind::Empty.preset().unwrap();
         preset.name = self.preset.name.clone();
         preset.params.bpm = self.preset.params.bpm;
-        self.enqueue(Command::Preset(self.prepared_preset(&preset)))?;
+        self.enqueue(Command::Preset(self.prepared_preset(&preset)?))?;
         self.preset = preset;
         self.forget_unused_kit();
         self.meta = Meta {
@@ -494,7 +456,7 @@ impl Controller {
         preset.name = self.preset.name.clone();
         preset.params.bpm = self.preset.params.bpm;
         preset.sanitize();
-        self.enqueue(Command::Preset(self.prepared_preset(&preset)))?;
+        self.enqueue(Command::Preset(self.prepared_preset(&preset)?))?;
         self.preset = preset;
         self.meta = Meta {
             id: 0,

@@ -1,4 +1,5 @@
 //! SAD PET granular instrument, developed from EVIL PET firmware analysis. See PORT_STATUS.txt for fidelity boundaries.
+pub mod application;
 #[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
 pub mod audio;
 pub mod audio_import;

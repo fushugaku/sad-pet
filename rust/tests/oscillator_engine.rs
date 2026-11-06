@@ -1,5 +1,5 @@
 use sad_pet::{
-    dsp::{Engine, SampleBuffer},
+    dsp::{Engine, PreparedPreset, SampleBuffer},
     interaction::{self, Event, Node, Route, Scope, SyncMode},
     midi::Message,
     oscillators::{Kind, Settings},
@@ -118,10 +118,11 @@ fn prepared_updates_preserve_held_voices_and_release_tails() {
             if let Some(settings) = &mut next.wavetable {
                 settings.oscillators[1].controls.position = edit as f32 * 0.13;
             }
-            let cold = next.prepared_clone_for(48000);
-            reference.set_preset(cold);
-            actual.prepare_preset_update(&mut next).unwrap();
-            actual.set_preset(next);
+            let mut cold =
+                PreparedPreset::prepare(next.clone(), &reference.wavetable_pool, 48_000).unwrap();
+            reference.exchange_preset(&mut cold);
+            let mut prepared = actual.prepare_preset_update(next).unwrap();
+            actual.exchange_preset(&mut prepared);
             if edit == 3 {
                 for engine in [&mut actual, &mut reference] {
                     engine.midi(Message::NoteOff {
@@ -160,7 +161,7 @@ fn eight_wavetables_are_real_slots_and_reorder_keeps_the_held_note() {
     assert!(energy(&before) > 1e-6);
     let mut next = actual.preset.clone();
     next.oscillators.as_mut().unwrap().move_slot(8, -1).unwrap();
-    let mut next = next.prepared_clone_for(48000);
+    let mut next = actual.prepare_preset_update(next).unwrap();
     actual.exchange_preset(&mut next);
     let a = audio(&mut actual, 1024);
     let b = audio(&mut reference, 1024);
@@ -405,7 +406,7 @@ fn prepared_topology_noise_windows_cycles_groups_and_scalar_changes_do_not_touch
         .unwrap()
         .move_slot(id, -1)
         .unwrap();
-    let mut prepared = next.prepared_clone_for(48000);
+    let mut prepared = e.prepare_preset_update(next).unwrap();
     let changes =
         sad_pet::parameters::parse(&serde_json::json!({"interaction1_ring":0.75})).unwrap();
     no_heap(|| {

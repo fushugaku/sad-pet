@@ -1,10 +1,7 @@
 use sad_pet::{
     Stereo,
-    color::{ColorParameter, ColorSettings, ColorSlot},
-    dsp::{
-        Engine, SampleBuffer,
-        radias_waveshaper::{RadiasWaveshaper, WaveshaperMode},
-    },
+    color::{ColorParameter, ColorSettings, ColorSlot, WaveshaperMode},
+    dsp::{Engine, SampleBuffer, radias_waveshaper::RadiasWaveshaper},
     midi::Message,
     preset::{Destination, Env, Preset, SaturatorType},
 };

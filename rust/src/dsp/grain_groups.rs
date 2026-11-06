@@ -1,12 +1,13 @@
 //! The advanced grain mode's per-grain state: which group a grain joined, its
 //! two envelopes over its own life, its drive, waveshaper and stereo filter.
 use super::radias_waveshaper::{
-    self as shaper, PhaseIncrement, WaveshaperMode,
+    self as shaper, PhaseIncrement,
     kernels::{self, ShaperCoefficients, ShaperTables},
 };
 use super::{MAX_GRAINS, fast, filter};
 use crate::{
     Stereo,
+    color::WaveshaperMode,
     grain_groups::{Envelope, FilterType, GROUPS, Group, Settings, Stage, Waveshaper},
     preset::{self, FilterRouting},
     tables::{self, Random},
@@ -128,7 +129,7 @@ impl Shaper {
         }
     }
     fn coefficients(mode: WaveshaperMode, depth: f32, pitch: u16) -> ShaperCoefficients {
-        let mut coefficients = mode.coefficients(depth, pitch);
+        let mut coefficients = shaper::coefficients(mode, depth, pitch);
         if let Some(gain) = coefficients.gain_target(pitch) {
             coefficients.set_gain_current(gain);
         }

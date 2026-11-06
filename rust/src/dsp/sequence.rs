@@ -705,6 +705,23 @@ impl Runtime {
         self.index(id)
             .is_some_and(|i| self.lanes[i].binding == Binding::Notes)
     }
+    /// Keep persistent settings and the compiled lane in sync without allocation.
+    pub fn edit_program(&mut self, program: &mut crate::sequence::Program, edits: &[Edit]) {
+        for &edit in edits {
+            if edit.track == 0 {
+                if edit.field == 0 {
+                    program.enabled = edit.value >= 0.5;
+                }
+            } else if let Some(index) = self
+                .index(edit.track)
+                .or_else(|| program.tracks.iter().position(|t| t.id == edit.track))
+            {
+                program.tracks[index].edit(edit);
+                self.edit(index, &program.tracks[index], edit);
+            }
+        }
+    }
+
     pub fn edit(&mut self, index: usize, track: &Track, edit: Edit) {
         if edit.stage.is_none() && edit.field == 56 {
             // Coalesced edits can grow the page count later in this batch.

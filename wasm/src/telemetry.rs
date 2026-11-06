@@ -353,13 +353,7 @@ fn decode_snapshot(
             .parameter_edits
             .as_object()
             .is_some_and(|v| !v.is_empty());
-    if let Some(mut config) = packet.configuration {
-        // Imported UI data must not discard the ownership metadata for
-        // this host's prepared DSP buffers, even if it is reused later.
-        std::mem::swap(
-            &mut config.preset.imported_effects,
-            &mut preset.imported_effects,
-        );
+    if let Some(config) = packet.configuration {
         *preset = config.preset;
         *region = config.region;
         *state_cache = json!({

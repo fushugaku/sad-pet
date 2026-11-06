@@ -263,7 +263,9 @@ impl Controller {
             ..Meta::default()
         };
         state.timbres.clear();
-        state.wavetable_assets = state.preset.wavetable_assets()?;
+        state.wavetable_assets = self
+            .wavetable_pool
+            .manifest_ids(state.preset.wavetable_ids())?;
         state.active_timbre = 0;
         state.source = Source::File;
         state.sync = true;
@@ -298,6 +300,8 @@ impl Controller {
             }
             state.preset.name = self.preset.name.clone();
             let kit = super::sampler::decode_kit(&state.kit_samples)?;
+            let mut wavetable_pool = self.wavetable_pool.clone();
+            wavetable_pool.merge(&state.wavetable_pool)?;
             let sample = Arc::new(sample);
             let source = self.prepared_source_for(
                 sample.clone(),
@@ -307,12 +311,14 @@ impl Controller {
                 &state.preset,
             );
             // The scene routes the kit's pads to its Pad FX timbres after.
-            self.enqueue(Command::Preset(super::sampler::prepared_with(
+            let prepared = super::sampler::prepared_with(
                 &state.preset,
+                &wavetable_pool,
                 &kit,
                 &[],
                 self.rate,
-            )))?;
+            )?;
+            self.enqueue(Command::Preset(prepared))?;
             self.enqueue(Command::Source(Box::new(source)))?;
             self.enqueue(Command::Transport(Transport {
                 midi_gate: Some(state.midi_gate),
@@ -323,6 +329,7 @@ impl Controller {
             self.meta.name = title.into();
             self.meta.sanitize();
             self.preset = state.preset;
+            self.wavetable_pool = wavetable_pool;
             self.kit = kit;
             self.pad_routes.clear();
             self.sample = sample;

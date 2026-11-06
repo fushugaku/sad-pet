@@ -70,7 +70,7 @@ impl Controller {
                 .ok_or("Unknown timbre")?
         };
         let audition =
-            sad_pet::dsp::wavetable::Audition::new(id, &current.preset.wavetable_pool, self.rate)?;
+            sad_pet::dsp::wavetable::Audition::new(id, &current.wavetable_pool, self.rate)?;
         let mut preview = Preview::new(self.sample.clone(), self.rate);
         preview.wavetable = Some(Box::new(audition));
         self.enqueue(Command::Preview(Some(Box::new(preview))))?;

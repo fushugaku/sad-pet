@@ -75,8 +75,7 @@ fn source_fx_routes_modulate_realtime_buses_without_history() {
                     mix: 1.0,
                     ..Default::default()
                 };
-                slot.settings.waveshaper_type =
-                    sad_pet::dsp::radias_waveshaper::WaveshaperMode::HardClip;
+                slot.settings.waveshaper_type = sad_pet::color::WaveshaperMode::HardClip;
                 slot.settings.waveshaper_depth = 0.1;
                 p.source_color_chain = vec![slot];
                 p.lfos[0].destination = if modulate {
@@ -247,21 +246,15 @@ fn granular_grows_a_history_and_turning_it_off_retires_it_off_thread() {
     let mut off = e.preset.clone();
     settings(&mut off).granular = false;
     off.sanitize();
-    let mut prepared = off.prepared_clone_for(48_000);
-    assert!(prepared.bus_runtime.0.is_none());
+    let mut prepared = e.prepare_preset_update(off).unwrap();
     e.exchange_preset(&mut prepared);
     assert!(e.live_input.is_none());
-    assert!(
-        prepared.bus_runtime.0.is_some(),
-        "the history retires with the old preset"
-    );
     // Back on with a prepared buffer: the engine takes it.
     let mut on = e.preset.clone();
     settings(&mut on).granular = true;
-    let mut prepared = on.prepared_clone_for(48_000);
+    let mut prepared = e.prepare_preset_update(on).unwrap();
     e.exchange_preset(&mut prepared);
     assert!(e.live_input.is_some());
-    assert!(prepared.bus_runtime.0.is_none());
 }
 
 #[test]

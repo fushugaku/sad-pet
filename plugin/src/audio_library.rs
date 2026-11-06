@@ -374,6 +374,7 @@ impl Controller {
         copy.parts = self.parts.iter().map(Controller::offline_copy).collect();
         copy.active = self.active;
         copy.preset = self.preset.clone();
+        copy.wavetable_pool = self.wavetable_pool.clone();
         copy.kit = self.kit.clone();
         copy.pad_routes = self.pad_routes.clone();
         copy.sample = self.sample.clone();

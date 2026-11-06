@@ -37,6 +37,14 @@ fn barrier(publisher: &mut Publisher, region: Region) {
     done.recv_timeout(Duration::from_secs(2)).unwrap().unwrap();
 }
 
+fn prepare(runtime: &Runtime, preset: Preset) -> crate::dsp::PreparedPreset {
+    let (rate, assets) = {
+        let state = runtime.state.lock().unwrap();
+        (state.sample_rate, state.wavetable_pool.clone())
+    };
+    crate::dsp::PreparedPreset::prepare(preset, &assets, rate).unwrap()
+}
+
 #[test]
 fn a_blocked_ui_does_not_allocate_stall_or_change_dsp_samples() {
     let sample = Arc::new(SampleBuffer::demo(8000));
@@ -139,6 +147,35 @@ fn a_blocked_ui_does_not_allocate_stall_or_change_dsp_samples() {
 #[test]
 fn native_command_replies_follow_the_published_metadata() {
     let runtime = Runtime::new(Arc::new(SampleBuffer::demo(8000)), Preset::default(), false);
+    let serialized_state = serde_json::to_value(&*runtime.state.lock().unwrap()).unwrap();
+    assert!(serialized_state.get("wavetable_pool").is_none());
+    let previous_preset = serde_json::to_value(&runtime.state.lock().unwrap().preset).unwrap();
+    let assets = runtime.state.lock().unwrap().wavetable_pool.clone();
+    let rejected = crate::dsp::PreparedPreset::prepare(
+        Preset {
+            name: "Wrong rate".into(),
+            ..Preset::default()
+        },
+        &assets,
+        44_100,
+    )
+    .unwrap();
+    let (reply, done) = mpsc::sync_channel(1);
+    assert!(
+        runtime
+            .commands
+            .send(Command::preset(rejected, reply))
+            .is_ok()
+    );
+    assert_eq!(
+        done.recv_timeout(Duration::from_secs(2)).unwrap(),
+        Err("The prepared preset was rejected by the audio engine.")
+    );
+    assert_eq!(
+        serde_json::to_value(&runtime.state.lock().unwrap().preset).unwrap(),
+        previous_preset
+    );
+
     let preset = Preset {
         name: "Ordered publication".into(),
         ..Preset::builtin(2)
@@ -147,10 +184,10 @@ fn native_command_replies_follow_the_published_metadata() {
     assert!(
         runtime
             .commands
-            .send(Command::preset(preset.prepared_clone_for(48_000), reply))
+            .send(Command::preset(prepare(&runtime, preset.clone()), reply))
             .is_ok()
     );
-    done.recv_timeout(Duration::from_secs(2)).unwrap();
+    done.recv_timeout(Duration::from_secs(2)).unwrap().unwrap();
     assert_eq!(runtime.state.lock().unwrap().preset.name, preset.name);
     let (reply, done) = mpsc::sync_channel(1);
     let changes =
@@ -222,10 +259,10 @@ fn native_command_replies_follow_the_published_metadata() {
     assert!(
         runtime
             .commands
-            .send(Command::preset(drums.prepared_clone_for(48_000), reply))
+            .send(Command::preset(prepare(&runtime, drums.clone()), reply))
             .is_ok()
     );
-    done.recv_timeout(Duration::from_secs(2)).unwrap();
+    done.recv_timeout(Duration::from_secs(2)).unwrap().unwrap();
     assert!(
         runtime
             .commands

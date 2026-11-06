@@ -137,6 +137,47 @@ fn shared_capture_builds_an_edited_table_that_recalls_with_motion_and_wave_env()
 }
 
 #[test]
+fn rejected_preset_keeps_the_active_timbres_kind_and_settings() {
+    let mut control = Controller::new_plugin(false);
+    call(
+        &mut control,
+        "/api/timbres/add",
+        json!({"kind":"wavetable"}),
+    );
+    let mut invalid = call(&mut control, "/api/preset", Value::Null);
+    invalid["wavetable"]["oscillators"][0]["asset_id"] = json!(format!("user:{}", "0".repeat(64)));
+
+    let context = call(
+        &mut control,
+        "/api/timbres/add",
+        json!({"kind":"synth","classic":true}),
+    );
+    let id = context["active"].as_u64().unwrap();
+    let before = call(&mut control, "/api/preset", Value::Null);
+    let result = control.request(&json!({
+        "path":"/api/preset",
+        "method":"POST",
+        "data":invalid
+    }));
+    assert!(
+        result.is_err(),
+        "the missing wavetable asset must reject the preset"
+    );
+    assert_eq!(call(&mut control, "/api/preset", Value::Null), before);
+
+    let state = call(&mut control, "/api/state", Value::Null);
+    assert_eq!(
+        state["timbres"]["timbres"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["id"].as_u64() == Some(id))
+            .unwrap()["kind"],
+        "synth"
+    );
+}
+
+#[test]
 fn wavetable_four_waves_are_host_addressed_and_edit_without_audio_heap_work() {
     let mut control = Controller::new_plugin(false);
     let context = call(
@@ -1177,8 +1218,7 @@ fn disk_presets_restore_sound_sample_region_and_host_values_in_another_instance(
         kind: sad_pet::preset::SaturatorType::Waveshaper,
         ..Default::default()
     }];
-    patch.pre_color_chain[0].settings.waveshaper_type =
-        sad_pet::dsp::radias_waveshaper::WaveshaperMode::MultiSine;
+    patch.pre_color_chain[0].settings.waveshaper_type = sad_pet::color::WaveshaperMode::MultiSine;
     call(&mut control, "/api/preset", json!(patch));
     let mut values = control.values();
     let position = parameters::specs()
@@ -1213,7 +1253,7 @@ fn disk_presets_restore_sound_sample_region_and_host_values_in_another_instance(
     assert_eq!(other.preset.params.position, 0.37);
     assert_eq!(
         other.preset.pre_color_chain[0].settings.waveshaper_type,
-        sad_pet::dsp::radias_waveshaper::WaveshaperMode::MultiSine
+        sad_pet::color::WaveshaperMode::MultiSine
     );
     let values = other.values();
     no_heap(|| {
@@ -1382,7 +1422,8 @@ fn effect_processes_audio_and_granular_source_is_prepared_off_thread() {
 #[test]
 fn both_fx_racks_waveshaper_changes_automation_and_feedback_are_realtime_safe() {
     use sad_pet::{
-        color::ColorSlot, dsp::radias_waveshaper::WaveshaperMode, preset::SaturatorType,
+        color::{ColorSlot, WaveshaperMode},
+        preset::SaturatorType,
     };
     let mut control = Controller::new(true);
     let mut audio = control.prepare(48000);
@@ -1693,7 +1734,9 @@ fn queue_backpressure_never_frees_or_blocks_on_the_audio_thread() {
     let values = control.values();
     for _ in 0..QUEUE {
         control
-            .enqueue(Command::Preset(Box::new(control.preset.clone())))
+            .enqueue(Command::Preset(
+                control.prepared_preset(&control.preset).unwrap(),
+            ))
             .unwrap();
     }
     no_heap(|| audio.begin(&values, 120.0, None, false, 128));
@@ -3026,6 +3069,25 @@ fn a_racks_vocal_module_sings_once_added_and_leaves_without_audio_allocations() 
         {"id":1,"start":480,"length":480,"key":64,"lyric":"ら"},
         {"id":2,"start":960,"length":480,"key":67,"lyric":"ら"}]}});
     call(&mut control, "/api/vocal/score", score);
+
+    // Module edits without Vocal settings keep the score, including an explicit null.
+    let mut preset = call(&mut control, "/api/preset", Value::Null);
+    preset.as_object_mut().unwrap().remove("vocal");
+    preset["rack"]["modules"][1]["enabled"] = json!(false);
+    let kept = call(&mut control, "/api/preset", preset);
+    assert_eq!(kept["vocal"]["score"]["notes"][0]["lyric"], "ら");
+
+    let mut preset = call(&mut control, "/api/preset", Value::Null);
+    preset["vocal"] = Value::Null;
+    preset["rack"]["modules"][1]["enabled"] = json!(true);
+    let kept = call(&mut control, "/api/preset", preset);
+    assert_eq!(kept["vocal"]["score"]["notes"][0]["lyric"], "ら");
+
+    // A supplied score replaces the current one.
+    let mut preset = call(&mut control, "/api/preset", Value::Null);
+    preset["vocal"]["score"]["notes"][0]["lyric"] = json!("れ");
+    let replaced = call(&mut control, "/api/preset", preset);
+    assert_eq!(replaced["vocal"]["score"]["notes"][0]["lyric"], "れ");
     wait_for_vocal(&mut control);
     let strips = |control: &mut Controller| {
         call(control, "/api/state", Value::Null)["rack_peaks"]
@@ -3101,6 +3163,16 @@ fn a_racks_vocal_module_sings_once_added_and_leaves_without_audio_allocations() 
         control
             .request(&json!({"path":"/api/vocal/score","method":"POST","data":{"score":{}}}))
             .is_err()
+    );
+    let state = call(&mut control, "/api/state", Value::Null);
+    assert_eq!(
+        state["timbres"]["timbres"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["id"].as_u64() == Some(id as u64))
+            .unwrap()["kind"],
+        "rack"
     );
 
     // Removing a Rack that sings forgets its score too.
@@ -3811,9 +3883,25 @@ fn sampler_kits_play_their_pads_natively_without_audio_allocations() {
     let rack = context["active"].as_u64().unwrap() as u32;
     assert_eq!(context["timbres"][2]["kind"], "rack");
     load_pad(&mut control, rack);
+    let mut preset = call(&mut control, "/api/preset", Value::Null);
+    assert_eq!(preset["rack"]["modules"][0]["module"], "sampler");
+    preset.as_object_mut().unwrap().remove("sampler");
+    preset["rack"]["modules"][0]["enabled"] = json!(false);
+    let kept = call(&mut control, "/api/preset", preset);
+    assert_eq!(kept["sampler"]["pads"][0]["zones"][0]["sample"], "tone");
     assert_eq!(
-        call(&mut control, "/api/preset", Value::Null)["rack"]["modules"][0]["module"],
-        "sampler"
+        call(&mut control, "/api/sampler/state", Value::Null)["view"]["loaded"],
+        json!(["tone"])
+    );
+
+    let mut preset = call(&mut control, "/api/preset", Value::Null);
+    preset["sampler"] = Value::Null;
+    preset["rack"]["modules"][0]["enabled"] = json!(true);
+    let kept = call(&mut control, "/api/preset", preset);
+    assert_eq!(kept["sampler"]["pads"][0]["zones"][0]["sample"], "tone");
+    assert_eq!(
+        call(&mut control, "/api/sampler/state", Value::Null)["view"]["loaded"],
+        json!(["tone"])
     );
     no_heap(|| {
         audio.begin(&values, 120., None, false, 9600);
@@ -3920,6 +4008,15 @@ fn sampler_kits_play_their_pads_natively_without_audio_allocations() {
     );
 
     // Without its Sampler module the Rack lets the kit and its chain go.
+    call(
+        &mut control,
+        "/api/sampler/upload",
+        json!({"id":"tone","part":rack,"wav":tone_wav()}),
+    );
+    assert_eq!(
+        call(&mut control, "/api/sampler/state", Value::Null)["view"]["loaded"],
+        json!(["tone"])
+    );
     let mut preset = call(&mut control, "/api/preset", Value::Null);
     preset["rack"]["modules"] = json!([{"module":"synth","enabled":true}]);
     assert!(call(&mut control, "/api/preset", preset)["sampler"].is_null());
@@ -3931,6 +4028,32 @@ fn sampler_kits_play_their_pads_natively_without_audio_allocations() {
             .unwrap()
             .iter()
             .all(|t| t["kind"] != "pad_fx")
+    );
+    assert_eq!(
+        state["timbres"]["timbres"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["id"].as_u64() == Some(rack as u64))
+            .unwrap()["kind"],
+        "rack"
+    );
+    assert_eq!(
+        call(&mut control, "/api/sampler/state", Value::Null)["view"]["loaded"],
+        json!([])
+    );
+
+    // Re-adding the module creates a fresh kit without the removed sample pool.
+    let mut preset = call(&mut control, "/api/preset", Value::Null);
+    preset["rack"]["modules"] = json!([
+        {"module":"sampler","enabled":true},
+        {"module":"synth","enabled":true}
+    ]);
+    let readded = call(&mut control, "/api/preset", preset);
+    assert_eq!(readded["sampler"]["pads"].as_array().unwrap().len(), 16);
+    assert_eq!(
+        call(&mut control, "/api/sampler/state", Value::Null)["view"]["loaded"],
+        json!([])
     );
     no_heap(|| {
         audio.begin(&values, 120., None, false, 2400);

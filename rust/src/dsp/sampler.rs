@@ -479,6 +479,9 @@ impl Runtime {
         runtime.configure(settings);
         runtime
     }
+    pub(crate) fn prepare_update(&self, settings: &Settings, rate: u32) -> Box<Self> {
+        Self::prepared(settings, &self.pool, &self.routes, rate)
+    }
     /// Takes over the sounding voices of the runtime this one replaces,
     /// without allocating: by pad identity, as `configure` keeps them. A
     /// voice whose pad is gone, or whose sample this pool no longer holds,

@@ -2,10 +2,10 @@ use super::compressor::Compressor;
 use super::delay::RadiasDelay;
 use super::effects::{Delay, Effects};
 use super::fast;
-use super::radias_waveshaper::{RadiasWaveshaper, WaveshaperMode};
+use super::radias_waveshaper::RadiasWaveshaper;
 use crate::{
     Stereo,
-    color::{ColorSlot, MAX_COLOR_SLOTS},
+    color::{ColorSlot, MAX_COLOR_SLOTS, WaveshaperMode},
     preset::{Params, SaturatorType},
     tables::{self, Random},
 };

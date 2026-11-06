@@ -456,7 +456,7 @@ fn four_waves_add_remove_and_recall_while_notes_keep_playing_without_heap() {
         p.wavetable.as_mut().unwrap().oscillators[i]
             .controls
             .transpose = i as f32 * 7.0;
-        let mut prepared = p.prepared_clone_for(48_000);
+        let mut prepared = e.prepare_preset_update(p.clone()).unwrap();
         no_heap(|| {
             e.exchange_preset(&mut prepared);
             for _ in 0..1024 {
@@ -491,7 +491,7 @@ fn four_waves_add_remove_and_recall_while_notes_keep_playing_without_heap() {
         .unwrap()
         .edit_layers("remove", Some(1))
         .unwrap();
-    let mut prepared = p.prepared_clone_for(48_000);
+    let mut prepared = e.prepare_preset_update(p).unwrap();
     no_heap(|| {
         e.exchange_preset(&mut prepared);
         for _ in 0..2048 {
@@ -615,15 +615,30 @@ fn coherent_unison_level_does_not_jump_while_its_count_changes() {
 
 #[test]
 fn prepared_replacement_retains_the_voice_and_removed_sources_retire_off_audio() {
+    let mut reference = engine();
     let mut engine = engine();
     note(&mut engine, 60);
+    note(&mut reference, 60);
     for _ in 0..500 {
-        engine.process_frame();
+        assert_eq!(engine.process_frame(), reference.process_frame());
+    }
+    let before = serde_json::to_value(&engine.preset).unwrap();
+    let mut unavailable = engine.preset.clone();
+    unavailable.wavetable.as_mut().unwrap().oscillators[0].asset_id =
+        format!("user:{}", "0".repeat(64));
+    assert!(engine.prepare_preset_update(unavailable).is_err());
+    assert_eq!(serde_json::to_value(&engine.preset).unwrap(), before);
+    no_heap(|| {
+        for _ in 0..128 {
+            assert_eq!(engine.process_frame(), reference.process_frame());
+        }
+    });
+    for _ in 0..372 {
+        assert_eq!(engine.process_frame(), reference.process_frame());
     }
     let mut preset = engine.preset.clone();
     preset.wavetable.as_mut().unwrap().oscillators[0].asset_id = "factory:wt-vowel-sweep:v1".into();
-    let mut prepared = preset.prepared_clone_for(48_000);
-    assert!(prepared.wavetable_runtime.1.is_none());
+    let mut prepared = engine.prepare_preset_update(preset).unwrap();
     no_heap(|| {
         engine.exchange_preset(&mut prepared);
         for _ in 0..2000 {
@@ -637,7 +652,7 @@ fn prepared_replacement_retains_the_voice_and_removed_sources_retire_off_audio()
         .unwrap()
         .modules
         .retain(|s| s.module != Module::Wavetable);
-    let mut removed = removed.prepared_clone_for(48_000);
+    let mut removed = engine.prepare_preset_update(removed).unwrap();
     no_heap(|| {
         engine.exchange_preset(&mut removed);
         for _ in 0..64 {
@@ -739,7 +754,7 @@ fn shared_wave_env_and_poly_lfo_follow_each_held_note() {
     next.lfos[0].waveform = sad_pet::preset::Waveform::Saw;
     next.lfos[0].rate_hz = 1.0;
     next.lfos[0].reset = sad_pet::preset::LfoReset::Note;
-    let mut prepared = next.prepared_clone_for(48_000);
+    let mut prepared = e.prepare_preset_update(next).unwrap();
     no_heap(|| {
         e.exchange_preset(&mut prepared);
     });

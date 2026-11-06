@@ -1,8 +1,10 @@
 #[cfg(test)]
 mod bar_loop_tests;
+pub mod bus;
 pub mod color;
 pub mod compressor;
 pub mod delay;
+pub mod drums;
 pub mod effects;
 pub mod eq;
 pub mod fast;
@@ -19,6 +21,8 @@ pub mod limiter;
 pub mod modulation;
 pub mod oscillators;
 pub mod phase_transport;
+mod prepared_preset;
+pub use prepared_preset::{PreparedPreset, PresetPreparation};
 mod rack;
 mod radias_filter;
 mod radias_oscillator;
@@ -591,6 +595,9 @@ impl Modulated {
 pub struct Engine {
     pub sample_rate: u32,
     pub preset: Preset,
+    /// Canonical control-side assets; the audio path reads prepared banks only.
+    pub wavetable_pool: crate::wavetable::assets::Pool,
+    preset_runtime: prepared_preset::Resources,
     pub sample: Arc<SampleBuffer>,
     pub live_input: Option<LiveInput>,
     pub region: Region,
@@ -645,7 +652,7 @@ pub struct Engine {
     entered: Option<crate::timbres::Entered>,
     /// What a Rack's Pad FX timbres returned, for its Sampler's next frame.
     pad_return: Stereo,
-    drums: Option<Box<crate::drums::Runtime>>,
+    drums: Option<Box<drums::Runtime>>,
     /// Present while the preset is a Sampler kit: its pads replace the input.
     sampler: Option<Box<sampler::Runtime>>,
     /// Present while the preset is a Rack: its modules' order and Mixer.
@@ -787,7 +794,8 @@ impl EnginePreparation {
     /// Applying the supplied preset may prepare its own resources; live hosts
     /// finish with Init, then prepare their instrument separately before commit.
     pub fn finish(self, sample: Arc<SampleBuffer>, preset: Preset) -> Option<Engine> {
-        (self.stage == 12).then(|| Engine::from_preparation(self, sample, preset))
+        (self.stage == 12)
+            .then(|| Engine::from_preparation(self, sample, preset, Default::default(), None))
     }
 }
 
@@ -798,15 +806,46 @@ impl Engine {
         prepared.finish(sample, preset).unwrap()
     }
 
+    /// Construct from a document and an explicit canonical asset owner.
+    pub fn new_with_assets(
+        sample_rate: u32,
+        sample: Arc<SampleBuffer>,
+        preset: Preset,
+        assets: crate::wavetable::assets::Pool,
+    ) -> Self {
+        let mut preparation = EnginePreparation::new(sample_rate);
+        while !preparation.step() {}
+        Self::from_preparation(preparation, sample, preset, assets, None)
+    }
+
+    /// A host has already prepared this update, including its external kit.
+    /// Canonical originals remain with the host; set `wavetable_pool` explicitly
+    /// if this engine will also resolve assets for later control-side edits.
+    pub fn from_prepared(sample: Arc<SampleBuffer>, preset: PreparedPreset) -> Self {
+        let mut preparation = EnginePreparation::new(preset.sample_rate());
+        while !preparation.step() {}
+        Self::from_preparation(
+            preparation,
+            sample,
+            Preset::default(),
+            Default::default(),
+            Some(preset),
+        )
+    }
+
     fn from_preparation(
         prepared: EnginePreparation,
         sample: Arc<SampleBuffer>,
         preset: Preset,
+        assets: crate::wavetable::assets::Pool,
+        update: Option<PreparedPreset>,
     ) -> Self {
         let sr = prepared.sample_rate;
         let mut engine = Self {
             sample_rate: sr,
             preset: Preset::default(),
+            wavetable_pool: assets,
+            preset_runtime: Default::default(),
             region: Region::default(),
             fades: Fades::default(),
             file_range: 0..sample.len(),
@@ -914,7 +953,11 @@ impl Engine {
             peak: [0.0; 2],
             limiter: limiter::Limiter::new(sr),
         };
-        engine.set_preset(preset);
+        if let Some(mut update) = update {
+            engine.exchange_preset(&mut update);
+        } else {
+            engine.set_preset(preset);
+        }
         // Idle voices need their initial coefficients even when the first preset
         // has the same envelopes as Modulated::default(). Later refreshes only
         // configure envelopes whose values actually changed.
@@ -930,106 +973,22 @@ impl Engine {
         engine
     }
 
-    /// Prepare an immediate update for this engine. Existing voice banks are
-    /// inherited at exchange, rather than allocating unused replacement voices.
-    /// The prepared preset must be exchanged with this same engine before render.
-    pub fn prepare_preset_update(&self, preset: &mut Preset) -> Result<(), String> {
-        preset.wavetable_runtime.prepare_reusing(
-            preset.wavetable.as_deref(),
-            &preset.wavetable_pool,
-            self.sample_rate,
-            self.oscillator_engine.wavetable.as_deref(),
-        )?;
-        preset.oscillator_runtime.prepare_reusing(
-            preset.oscillators.as_deref(),
-            &preset.wavetable_pool,
-            self.sample_rate,
-            self.oscillator_engine.mixed.as_deref(),
-        )?;
-        preset.prepare_phase_transports(self.sample_rate)
+    /// Prepare against this engine's active banks. The returned update must be
+    /// exchanged with this engine before rendering resumes; queued hosts instead
+    /// use PreparedPreset::prepare with independent resources.
+    pub fn prepare_preset_update(&mut self, preset: Preset) -> Result<PreparedPreset, String> {
+        let assets = self.wavetable_pool.clone();
+        let mut preparation = PresetPreparation::new(preset, self.sample_rate);
+        while !preparation.step(&assets, Some(self))? {}
+        preparation.finish()
     }
 
-    pub fn set_preset(&mut self, mut preset: Preset) {
-        preset.sanitize();
-        if preset.phase_runtime.1.is_some() {
-            return;
+    /// Synchronous control/offline convenience. Replaced resources drop here,
+    /// outside rendering; realtime owners exchange a PreparedPreset themselves.
+    pub fn set_preset(&mut self, preset: Preset) {
+        if let Ok(mut prepared) = self.prepare_preset_update(preset) {
+            self.exchange_preset(&mut prepared);
         }
-        if preset.phase_runtime.0.is_none()
-            && preset.prepare_phase_transports(self.sample_rate).is_err()
-        {
-            return;
-        }
-        if preset.oscillator_runtime.1.is_some() {
-            return;
-        }
-        if preset.oscillator_runtime.0.is_none()
-            && preset
-                .oscillator_runtime
-                .prepare_reusing(
-                    preset.oscillators.as_deref(),
-                    &preset.wavetable_pool,
-                    self.sample_rate,
-                    self.oscillator_engine.mixed.as_deref(),
-                )
-                .is_err()
-        {
-            return;
-        }
-        if preset.wavetable_runtime.1.is_some() {
-            return;
-        }
-        if preset.wavetable_runtime.0.is_none()
-            && preset
-                .wavetable_runtime
-                .prepare_reusing(
-                    preset.wavetable.as_deref(),
-                    &preset.wavetable_pool,
-                    self.sample_rate,
-                    self.oscillator_engine.wavetable.as_deref(),
-                )
-                .is_err()
-        {
-            return;
-        }
-        preset
-            .tb303_runtime
-            .prepare(preset.tb303.as_deref(), self.sample_rate);
-        preset.prepare_wavetable_interactions();
-        preset.prepare_effects_reusing(self.sample_rate, &self.preset);
-        if preset.rack.is_some() {
-            // A Rack's sources hand their sound down its modules, so only its
-            // Grain engine keeps a history.
-            preset
-                .drum_runtime
-                .prepare_engine(preset.drums.as_deref(), self.sample_rate);
-            preset
-                .synth_runtime
-                .prepare_engine(preset.synth.as_deref(), self.sample_rate);
-        } else {
-            preset
-                .drum_runtime
-                .prepare(preset.drums.as_deref(), self.sample_rate);
-            preset
-                .synth_runtime
-                .prepare(preset.synth.as_deref(), self.sample_rate);
-        }
-        preset.rack_runtime.prepare_reusing(
-            preset.rack.as_deref(),
-            self.sample_rate,
-            // A running history of the Rack's own, not an input in its Sample.
-            self.rack.is_some() && self.live_input.is_some() && !self.rack_input(),
-        );
-        preset.bus_runtime.prepare_reusing(
-            preset.bus.as_deref(),
-            self.sample_rate,
-            self.bus_history(),
-        );
-        preset.filter_banks.prepare_reusing(
-            &preset.filter_slots,
-            self.sample_rate,
-            &mut self.filter_banks,
-        );
-        self.exchange_preset(&mut preset);
     }
 
     pub fn wavetable_motion(&self) -> crate::wavetable::motion::Motion {
@@ -1072,18 +1031,19 @@ impl Engine {
         }
     }
 
-    /// Exchange a sanitized preset without allocating or destroying its buffers.
-    /// Structural FX/drum edits must use `prepared_clone_for(sample_rate)`.
-    /// The caller retires the previous preset away from the audio callback.
-    pub fn exchange_preset(&mut self, preset: &mut Preset) {
-        // Fallible preparation happens off audio. A rejected bank cannot
-        // replace a playing scene, and its error/buffers retire with the update.
-        if preset.wavetable_runtime.1.is_some()
-            || preset.oscillator_runtime.1.is_some()
-            || preset.phase_runtime.1.is_some()
-        {
-            return;
+    /// Install a finalized update without allocating or destroying buffers.
+    /// The same envelope receives every old resource for off-thread retirement.
+    /// An incompatible format or already retired envelope is left untouched.
+    pub fn exchange_preset(&mut self, prepared: &mut PreparedPreset) -> bool {
+        if !prepared.ready || prepared.sample_rate != self.sample_rate {
+            return false;
         }
+        let PreparedPreset {
+            preset,
+            resources: runtime,
+            ready,
+            ..
+        } = prepared;
         for slot in 0..crate::oscillators::SLOTS {
             let before = self
                 .preset
@@ -1121,15 +1081,15 @@ impl Engine {
         // preset, whose bus_runtime is empty while that preset is installed.
         let was_bus = self.preset.bus.is_some();
         if was_bus && preset.bus.is_none() {
-            std::mem::swap(&mut self.live_input, &mut self.preset.bus_runtime.0);
+            std::mem::swap(&mut self.live_input, &mut self.preset_runtime.bus_runtime.0);
         }
         // A retiring synth restores the input it replaced before drums install.
-        if preset.synth_runtime.0.is_none()
+        if runtime.synth_runtime.0.is_none()
             && let Some(old) = &mut self.oscillator_engine.synth
         {
             std::mem::swap(&mut self.live_input, &mut old.live);
         }
-        if let Some(next) = &mut preset.drum_runtime.0 {
+        if let Some(next) = &mut runtime.drum_runtime.0 {
             if let Some(old) = &mut self.drums {
                 next.engine.take_audio(&mut old.engine);
                 next.engine.inherit_clock(&old.engine);
@@ -1140,8 +1100,8 @@ impl Engine {
         } else if let Some(old) = &mut self.drums {
             std::mem::swap(&mut self.live_input, &mut old.live);
         }
-        std::mem::swap(&mut self.drums, &mut preset.drum_runtime.0);
-        if let Some(next) = &mut preset.synth_runtime.0 {
+        std::mem::swap(&mut self.drums, &mut runtime.drum_runtime.0);
+        if let Some(next) = &mut runtime.synth_runtime.0 {
             if let Some(old) = &mut self.oscillator_engine.synth {
                 next.inherit(old);
             } else {
@@ -1150,10 +1110,10 @@ impl Engine {
         }
         std::mem::swap(
             &mut self.oscillator_engine.synth,
-            &mut preset.synth_runtime.0,
+            &mut runtime.synth_runtime.0,
         );
         if let (Some(next), Some(old)) = (
-            &mut preset.wavetable_runtime.0,
+            &mut runtime.wavetable_runtime.0,
             &mut self.oscillator_engine.wavetable,
         ) {
             next.inherit(old);
@@ -1163,50 +1123,47 @@ impl Engine {
         }
         std::mem::swap(
             &mut self.oscillator_engine.wavetable,
-            &mut preset.wavetable_runtime.0,
+            &mut runtime.wavetable_runtime.0,
         );
         if let (Some(next), Some(old)) = (
-            &mut preset.oscillator_runtime.0,
+            &mut runtime.oscillator_runtime.0,
             &mut self.oscillator_engine.mixed,
         ) {
             next.inherit(old);
         }
         std::mem::swap(
             &mut self.oscillator_engine.mixed,
-            &mut preset.oscillator_runtime.0,
+            &mut runtime.oscillator_runtime.0,
         );
         if let (Some(next), Some(old)) = (
-            &mut preset.phase_runtime.0,
+            &mut runtime.phase_runtime.0,
             &mut self.oscillator_engine.phase_adapters,
         ) {
             next.inherit(old);
         }
         std::mem::swap(
             &mut self.oscillator_engine.phase_adapters,
-            &mut preset.phase_runtime.0,
+            &mut runtime.phase_runtime.0,
         );
         if let (Some(next), Some(old)) = (
-            &mut preset.tb303_runtime.0,
+            &mut runtime.tb303_runtime.0,
             &mut self.oscillator_engine.tb303,
         ) {
             next.inherit(old);
         }
         std::mem::swap(
             &mut self.oscillator_engine.tb303,
-            &mut preset.tb303_runtime.0,
+            &mut runtime.tb303_runtime.0,
         );
-        if let (Some(next), Some(old)) = (
-            &mut preset.sequencer.runtime,
-            &mut self.preset.sequencer.runtime,
-        ) {
+        if let (Some(next), Some(old)) = (&mut runtime.sequence, &mut self.preset_runtime.sequence)
+        {
             next.inherit(old);
         }
         for voice in self.voices.iter_mut() {
             if voice.owner != 0
                 && (!preset.sequencer.enabled
-                    || !preset
-                        .sequencer
-                        .runtime
+                    || !runtime
+                        .sequence
                         .as_ref()
                         .is_some_and(|r| r.retained_note(voice.owner)))
             {
@@ -1234,13 +1191,13 @@ impl Engine {
             self.step_entry = None;
         }
         self.color_rack
-            .detach_imported(&mut self.preset.imported_effects);
+            .detach_imported(&mut self.preset_runtime.imported_effects);
         self.pre_color_rack
-            .detach_imported(&mut self.preset.imported_effects);
+            .detach_imported(&mut self.preset_runtime.imported_effects);
         self.source_color
-            .detach_imported(&mut self.preset.imported_effects);
-        preset.imported_effects.inherit_matching(
-            &mut self.preset.imported_effects,
+            .detach_imported(&mut self.preset_runtime.imported_effects);
+        runtime.imported_effects.inherit_matching(
+            &mut self.preset_runtime.imported_effects,
             preset
                 .color_chain
                 .iter()
@@ -1248,20 +1205,20 @@ impl Engine {
                 .chain(&preset.source_color_chain),
         );
         self.color_rack
-            .attach_imported(&preset.color_chain, &mut preset.imported_effects);
+            .attach_imported(&preset.color_chain, &mut runtime.imported_effects);
         self.pre_color_rack
-            .attach_imported(&preset.pre_color_chain, &mut preset.imported_effects);
+            .attach_imported(&preset.pre_color_chain, &mut runtime.imported_effects);
         if let Some(slot) = preset.source_color_chain.first() {
             self.source_color
-                .attach_imported(*slot, &mut preset.imported_effects);
+                .attach_imported(*slot, &mut runtime.imported_effects);
         }
-        filter_slots::inherit(&mut preset.filter_banks.0, &mut self.filter_banks);
-        std::mem::swap(&mut self.filter_banks, &mut preset.filter_banks.0);
+        filter_slots::inherit(&mut runtime.filter_banks.0, &mut self.filter_banks);
+        std::mem::swap(&mut self.filter_banks, &mut runtime.filter_banks.0);
         if preset.rack.is_some() && keep_input {
             // The input plays on in the next Rack; what the old one held retires.
-            preset.rack_runtime.0 = rack_history.take();
+            runtime.rack_runtime.0 = rack_history.take();
         } else if preset.rack.is_some() {
-            let prepared = preset.rack_runtime.0.take();
+            let prepared = runtime.rack_runtime.0.take();
             let (kept, retired) = if rack_history.is_some() && preset.history().is_some() {
                 // The running history stays; the prepared one retires unused.
                 (rack_history.take(), prepared)
@@ -1271,12 +1228,15 @@ impl Engine {
             // What the previous kind recorded into retires instead.
             let previous = std::mem::replace(&mut self.live_input, kept);
             debug_assert!(retired.is_none() || previous.is_none());
-            preset.rack_runtime.0 = retired.or(previous);
+            runtime.rack_runtime.0 = retired.or(previous);
         } else {
-            preset.rack_runtime.0 = rack_history.take();
+            runtime.rack_runtime.0 = rack_history.take();
         }
         // It retires with the outgoing preset.
-        std::mem::swap(&mut self.preset.rack_runtime.0, &mut preset.rack_runtime.0);
+        std::mem::swap(
+            &mut self.preset_runtime.rack_runtime.0,
+            &mut runtime.rack_runtime.0,
+        );
         self.rack = preset
             .rack
             .as_deref()
@@ -1286,23 +1246,27 @@ impl Engine {
         if let Some(bus) = &preset.bus {
             // Granular staying on keeps the running history and its audio.
             if !(bus.granular && self.bus_history()) {
-                std::mem::swap(&mut self.live_input, &mut preset.bus_runtime.0);
+                std::mem::swap(&mut self.live_input, &mut runtime.bus_runtime.0);
             }
-            std::mem::swap(&mut self.preset.bus_runtime.0, &mut preset.bus_runtime.0);
+            std::mem::swap(
+                &mut self.preset_runtime.bus_runtime.0,
+                &mut runtime.bus_runtime.0,
+            );
         }
         std::mem::swap(&mut self.preset, preset);
+        std::mem::swap(&mut self.preset_runtime, runtime);
         // A kit's runtime prepared off the audio thread takes over its
         // voices; the one it replaces, or a kit's last, retires with the
         // outgoing preset, whose slot was emptied when it was installed.
-        match self.preset.sampler_runtime.0.take() {
+        match self.preset_runtime.sampler_runtime.0.take() {
             Some(mut next) => {
                 if let Some(old) = &mut self.sampler {
                     next.inherit(old);
                 }
-                preset.sampler_runtime.0 = self.sampler.replace(next);
+                runtime.sampler_runtime.0 = self.sampler.replace(next);
             }
             None if self.preset.sampler.is_none() => {
-                preset.sampler_runtime.0 = self.sampler.take();
+                runtime.sampler_runtime.0 = self.sampler.take();
             }
             None => self.sync_sampler(),
         }
@@ -1323,6 +1287,8 @@ impl Engine {
             }
         }
         self.refresh_sequence_free_voice();
+        *ready = false;
+        true
     }
     pub fn set_sample(&mut self, sample: Arc<SampleBuffer>) {
         if self.preset.bus.is_none() && self.takes_input() {
@@ -1480,7 +1446,7 @@ impl Engine {
         }
         if restart {
             for input in &mut self.control_inputs {
-                if let Some(runtime) = &mut input.program.runtime {
+                if let Some(runtime) = &mut input.runtime {
                     runtime.seek(beat.filter(|b| b.is_finite()).unwrap_or(0.0));
                 }
             }
@@ -1494,7 +1460,7 @@ impl Engine {
             } else if sequencer {
                 self.release_sequence_notes();
             }
-            if sequencer && let Some(runtime) = &mut self.preset.sequencer.runtime {
+            if sequencer && let Some(runtime) = &mut self.preset_runtime.sequence {
                 runtime.seek(beat.filter(|b| b.is_finite()).unwrap_or(0.0));
             }
             if let Some(beat) = beat.filter(|b| b.is_finite()) {
@@ -1616,12 +1582,10 @@ impl Engine {
                 .iter_mut()
                 .find(|i| i.source == input.source)
             {
-                if let (Some(runtime), Some(previous)) =
-                    (&mut input.program.runtime, &mut old.program.runtime)
-                {
+                if let (Some(runtime), Some(previous)) = (&mut input.runtime, &mut old.runtime) {
                     runtime.inherit(previous);
                 }
-            } else if let Some(runtime) = &mut input.program.runtime {
+            } else if let Some(runtime) = &mut input.runtime {
                 runtime.start(input.program.enabled && self.playing && self.sequence_running);
             }
         }
@@ -1631,7 +1595,11 @@ impl Engine {
     }
 
     pub fn apply_sequence_edits(&mut self, edits: &[crate::sequence::Edit]) {
-        self.preset.sequencer.edit(edits);
+        if let Some(runtime) = &mut self.preset_runtime.sequence {
+            runtime.edit_program(&mut self.preset.sequencer, edits);
+        } else {
+            self.preset.sequencer.edit(edits);
+        }
         for edit in edits.iter().filter(|e| {
             e.stage.is_none() && (matches!(e.field, 47 | 56) || (e.field == 8 && e.value >= 0.5))
         }) {
@@ -1648,7 +1616,7 @@ impl Engine {
         }
         if !self.preset.sequencer.enabled || edits.iter().any(|e| e.track == 0 && e.field == 1) {
             self.release_sequence_notes();
-            if let Some(runtime) = &mut self.preset.sequencer.runtime {
+            if let Some(runtime) = &mut self.preset_runtime.sequence {
                 runtime.restart();
             }
         }
@@ -1666,10 +1634,14 @@ impl Engine {
             } else {
                 edit
             };
-            input.program.edit(std::slice::from_ref(&edit));
+            if let Some(runtime) = &mut input.runtime {
+                runtime.edit_program(&mut input.program, std::slice::from_ref(&edit));
+            } else {
+                input.program.edit(std::slice::from_ref(&edit));
+            }
         }
         if edits.iter().any(|e| e.track == 0 && e.field == 1)
-            && let Some(runtime) = &mut input.program.runtime
+            && let Some(runtime) = &mut input.runtime
         {
             runtime.restart();
         }
@@ -1696,7 +1668,7 @@ impl Engine {
         }
         self.sequence_running = running;
         for input in &mut self.control_inputs {
-            if let Some(runtime) = &mut input.program.runtime {
+            if let Some(runtime) = &mut input.runtime {
                 runtime.start(running && input.program.enabled && self.playing);
             }
         }
@@ -1708,7 +1680,7 @@ impl Engine {
             }
         }
         self.release_sequence_notes();
-        if let Some(runtime) = &mut self.preset.sequencer.runtime {
+        if let Some(runtime) = &mut self.preset_runtime.sequence {
             runtime.start(running && self.preset.sequencer.enabled);
         }
         self.invalidate_racks();
@@ -1716,14 +1688,13 @@ impl Engine {
         self.refresh_sequence_free_voice();
     }
     pub fn set_sequence_view(&mut self, offset: usize) {
-        if let Some(runtime) = &mut self.preset.sequencer.runtime {
+        if let Some(runtime) = &mut self.preset_runtime.sequence {
             runtime.view_offset = offset.min(self.preset.sequencer.tracks.len().saturating_sub(1));
         }
     }
     pub fn sequence_view(&self) -> crate::sequence::View {
-        self.preset
-            .sequencer
-            .runtime
+        self.preset_runtime
+            .sequence
             .as_ref()
             .map_or_else(crate::sequence::View::default, |r| r.view())
     }
@@ -1945,7 +1916,7 @@ impl Engine {
         }
         self.playing = playing;
         for input in &mut self.control_inputs {
-            if let Some(runtime) = &mut input.program.runtime {
+            if let Some(runtime) = &mut input.runtime {
                 runtime.start(input.program.enabled && playing && self.sequence_running);
             }
         }
@@ -1956,7 +1927,7 @@ impl Engine {
                 drums.engine.stop();
             }
         }
-        if let Some(runtime) = &mut self.preset.sequencer.runtime {
+        if let Some(runtime) = &mut self.preset_runtime.sequence {
             runtime.start(self.preset.sequencer.enabled && playing && self.sequence_running);
         }
         if playing {
@@ -2691,14 +2662,14 @@ impl Engine {
             let mut sums = std::mem::take(&mut self.control_inputs[0].sums);
             sums.clear();
             if self.preset.sequencer.enabled
-                && let Some(runtime) = &self.preset.sequencer.runtime
+                && let Some(runtime) = &self.preset_runtime.sequence
             {
                 runtime.accumulate(&m, &mut sums);
             }
             for input in &self.control_inputs {
                 if input.program.enabled
                     && !input.muted
-                    && let Some(runtime) = &input.program.runtime
+                    && let Some(runtime) = &input.runtime
                 {
                     runtime.accumulate(&m, &mut sums);
                 }
@@ -2710,14 +2681,14 @@ impl Engine {
                 }
             }
             if self.preset.sequencer.enabled
-                && let Some(runtime) = &self.preset.sequencer.runtime
+                && let Some(runtime) = &self.preset_runtime.sequence
             {
                 runtime.apply_gates(&mut m);
             }
             self.control_inputs[0].sums = sums;
         } else if self.preset.sequencer.enabled
             && self.sequence_running
-            && let Some(runtime) = &self.preset.sequencer.runtime
+            && let Some(runtime) = &self.preset_runtime.sequence
         {
             runtime.apply(&mut m);
         }
@@ -3455,7 +3426,7 @@ impl Engine {
     fn tick_events(&mut self) {
         let mut control_tick = false;
         for input in &mut self.control_inputs {
-            if let Some(runtime) = &mut input.program.runtime {
+            if let Some(runtime) = &mut input.runtime {
                 control_tick |= runtime.tick(
                     self.sample_rate,
                     input.bpm,
@@ -3466,7 +3437,7 @@ impl Engine {
         if control_tick {
             self.update_modulation();
         }
-        let tick = self.preset.sequencer.runtime.as_mut().is_some_and(|r| {
+        let tick = self.preset_runtime.sequence.as_mut().is_some_and(|r| {
             r.tick(
                 self.sample_rate,
                 self.preset.params.bpm,
@@ -3474,17 +3445,11 @@ impl Engine {
             )
         });
         if tick {
-            let count = self
-                .preset
-                .sequencer
-                .runtime
-                .as_ref()
-                .map_or(0, |r| r.len());
+            let count = self.preset_runtime.sequence.as_ref().map_or(0, |r| r.len());
             for index in 0..count {
                 let (id, actions) = self
-                    .preset
-                    .sequencer
-                    .runtime
+                    .preset_runtime
+                    .sequence
                     .as_mut()
                     .unwrap()
                     .actions(index);
@@ -3547,9 +3512,8 @@ impl Engine {
                 }
             }
             let resets = self
-                .preset
-                .sequencer
-                .runtime
+                .preset_runtime
+                .sequence
                 .as_ref()
                 .map_or(0, |r| r.lfo_resets());
             for (i, (oscillator, lfo)) in self
@@ -3567,9 +3531,8 @@ impl Engine {
             }
             // Main pitch steps can gate the free voice's ENV like notes.
             if let Some((trigger, open)) = self
-                .preset
-                .sequencer
-                .runtime
+                .preset_runtime
+                .sequence
                 .as_ref()
                 .and_then(|r| r.env_gate())
                 && self.voices[0].held

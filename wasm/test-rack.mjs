@@ -205,6 +205,26 @@ assert.deepEqual(steps.map((s) => s.mixed), [true, false, true, false]);
     return buffer;
   };
   const jobs = () => core.json("sad_vocal_jobs");
+  const deliverVocalJob = () => {
+    const pending = jobs();
+    assert.equal(pending.length, 1, JSON.stringify(pending));
+    for (const job of pending) vocal.command(job);
+    while (vocal.step(0));
+    for (const update of vocal.updates()) {
+      const wasm = core.wasm;
+      const count = update.plan.length;
+      const plan = new Float64Array(wasm.memory.buffer, wasm.sad_vocal_plan(count), count * 3);
+      update.plan.forEach((entry, i) => plan.set(entry, i * 3));
+      wasm.sad_vocal_plan_commit(update.id, count);
+      for (const key of update.fresh) {
+        const samples = new Float32Array(vocal.clip(key));
+        const start = update.plan.find((p) => p[0] === key)[1];
+        const pointer = wasm.sad_vocal_clip_begin(update.id, key, start, samples.length);
+        new Float32Array(wasm.memory.buffer, pointer, samples.length).set(samples);
+        wasm.sad_vocal_clip_commit();
+      }
+    }
+  };
   const rack = core.request("/api/timbres/add", { kind: "rack" }).active;
   jobs();
   let preset = core.request("/api/preset");
@@ -224,13 +244,21 @@ assert.deepEqual(steps.map((s) => s.mixed), [true, false, true, false]);
   assert.deepEqual(core.request("/api/sampler/state").view.loaded, ["tone"]);
   preset.sampler.pads[0].zones = [{ sample: "tone" }];
   core.request("/api/sampler/settings", { settings: preset.sampler });
-  // An edit of the modules that carries no kit keeps the timbre's own.
+  // Module edits without Sampler settings keep the kit and its pool.
   preset = core.request("/api/preset");
   delete preset.sampler;
+  preset.rack.modules[0].enabled = false;
   preset.rack.strips = { ...preset.rack.strips, synth: { level: 1, pan: 0.5, muted: true, solo: false } };
   core.request("/api/preset", preset);
   assert.equal(core.request("/api/preset").sampler.pads[0].zones[0].sample, "tone");
   assert.deepEqual(core.request("/api/sampler/state").view.loaded, ["tone"], "the pool stays");
+
+  preset = core.request("/api/preset");
+  preset.sampler = null;
+  preset.rack.modules[0].enabled = true;
+  core.request("/api/preset", preset);
+  assert.equal(core.request("/api/preset").sampler.pads[0].zones[0].sample, "tone");
+  assert.deepEqual(core.request("/api/sampler/state").view.loaded, ["tone"], "null keeps the kit pool too");
 
   core.request("/api/transport", { playing: true });
   // Long enough for the muted Synth strip to fade all the way.
@@ -266,24 +294,27 @@ assert.deepEqual(steps.map((s) => s.mixed), [true, false, true, false]);
     notes: [{ id: 1, start: 0, length: 960, key: 64, lyric: "さ" }],
   };
   core.request("/api/vocal/score", { score });
-  queued = jobs();
-  assert.equal(queued.length, 1);
-  for (const job of queued) vocal.command(job);
-  while (vocal.step(0));
-  for (const update of vocal.updates()) {
-    const wasm = core.wasm;
-    const count = update.plan.length;
-    const plan = new Float64Array(wasm.memory.buffer, wasm.sad_vocal_plan(count), count * 3);
-    update.plan.forEach((entry, i) => plan.set(entry, i * 3));
-    wasm.sad_vocal_plan_commit(update.id, count);
-    for (const key of update.fresh) {
-      const samples = new Float32Array(vocal.clip(key));
-      const start = update.plan.find((p) => p[0] === key)[1];
-      const pointer = wasm.sad_vocal_clip_begin(update.id, key, start, samples.length);
-      new Float32Array(wasm.memory.buffer, pointer, samples.length).set(samples);
-      wasm.sad_vocal_clip_commit();
-    }
-  }
+  deliverVocalJob();
+
+  // Module edits without Vocal settings keep the current score.
+  preset = core.request("/api/preset");
+  delete preset.vocal;
+  preset.rack.modules[2].enabled = false;
+  core.request("/api/preset", preset);
+  assert.equal(core.request("/api/preset").vocal.score.notes[0].lyric, "さ");
+
+  preset = core.request("/api/preset");
+  preset.vocal = null;
+  preset.rack.modules[2].enabled = true;
+  core.request("/api/preset", preset);
+  assert.equal(core.request("/api/preset").vocal.score.notes[0].lyric, "さ");
+
+  preset = core.request("/api/preset");
+  preset.vocal.score = { ...score, notes: [{ ...score.notes[0], lyric: "ら" }] };
+  core.request("/api/preset", preset);
+  assert.equal(core.request("/api/preset").vocal.score.notes[0].lyric, "ら");
+
+  deliverVocalJob();
   assert.equal(core.request("/api/vocal/state").clips, 1);
   core.request("/api/state");
   core.request("/api/vocal/transport", { start: 0, playing: true });
@@ -302,7 +333,7 @@ assert.deepEqual(steps.map((s) => s.mixed), [true, false, true, false]);
   recalled.request("/api/timbres/select", { id: rack });
   const kept = recalled.request("/api/preset");
   assert.equal(kept.sampler.pads[0].zones[0].sample, "tone");
-  assert.equal(kept.vocal.score.notes[0].lyric, "さ");
+  assert.equal(kept.vocal.score.notes[0].lyric, "ら");
   assert.deepEqual(recalled.request("/api/sampler/state").view.loaded, ["tone"]);
   const asked = recalled.json("sad_vocal_jobs");
   assert.ok(asked.some((j) => j.id === rack && j.fresh), "the recalled Rack asks for its clips");
@@ -321,6 +352,8 @@ assert.deepEqual(steps.map((s) => s.mixed), [true, false, true, false]);
   assert.ok(!preset.sampler && !preset.vocal);
   assert.ok(!core.request("/api/timbres").timbres.some((t) => t.kind === "pad_fx"), "the Pad FX chain goes with the kit");
   assert.ok(jobs().some((j) => j.type === "forget" && j.id === rack));
+  assert.deepEqual(core.request("/api/sampler/state").view.loaded, [], "removing Sampler drops the kit pool");
+  assert.equal(core.request("/api/timbres").timbres.find((t) => t.id === rack).kind, "rack");
 }
 
 console.log("Rack timbres: drums and synth meet in the Mixer, grains read the chain, a kit and a voice join them");

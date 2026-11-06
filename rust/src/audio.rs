@@ -1,6 +1,6 @@
 use crate::{
     Stereo,
-    dsp::{Engine, Fades, GrainView, Region, SampleBuffer},
+    dsp::{Engine, Fades, GrainView, PreparedPreset, Region, SampleBuffer},
     midi::Message,
     preset::Preset,
 };
@@ -31,9 +31,9 @@ pub struct Transport {
 
 pub enum Command {
     Preset {
-        audio: Box<Preset>,
+        audio: Box<PreparedPreset>,
         view: Box<Preset>,
-        reply: SyncSender<()>,
+        reply: SyncSender<Result<(), &'static str>>,
     },
     Parameters(Vec<crate::parameters::Change>, SyncSender<()>),
     Sequence(Vec<crate::sequence::Edit>, SyncSender<()>),
@@ -49,9 +49,9 @@ pub enum Command {
 }
 impl Command {
     /// Both owners' copies are prepared by the caller, outside the DSP thread.
-    pub fn preset(preset: Preset, reply: SyncSender<()>) -> Self {
+    pub fn preset(preset: PreparedPreset, reply: SyncSender<Result<(), &'static str>>) -> Self {
         Self::Preset {
-            view: Box::new(preset.clone()),
+            view: Box::new(preset.preset().clone()),
             audio: Box::new(preset),
             reply,
         }
@@ -90,6 +90,8 @@ pub struct State {
     pub bypass: bool,
     pub midi_gate: bool,
     pub preset: Preset,
+    #[serde(skip)]
+    pub wavetable_pool: crate::wavetable::assets::Pool,
     pub sample_name: String,
     pub sample_id: Option<String>,
     pub sample_seconds: f64,
@@ -262,6 +264,7 @@ impl Runtime {
             bypass: false,
             midi_gate: false,
             preset: preset.clone(),
+            wavetable_pool: Default::default(),
             sample_name: sample.name.clone(),
             sample_id: sample.library_id.clone(),
             sample_seconds: sample.duration(),
@@ -337,10 +340,11 @@ impl Runtime {
                                 view,
                                 reply,
                             } => {
-                                engine.exchange_preset(&mut preset);
+                                let accepted = engine.exchange_preset(&mut preset);
                                 publisher.applied(telemetry::Applied::Preset {
                                     view,
                                     retired: preset,
+                                    accepted,
                                     reply,
                                 });
                             }

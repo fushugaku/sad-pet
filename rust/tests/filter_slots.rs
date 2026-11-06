@@ -95,6 +95,52 @@ const SHARED: [FilterPosition; 3] = [
     FilterPosition::AfterFx,
 ];
 
+#[test]
+fn filter_slot_parameter_registry_keeps_control_ranges_and_sanitization() {
+    let parameters = FilterSlotParameter::ALL;
+    assert_eq!(
+        parameters.map(FilterSlotParameter::key),
+        [
+            "cutoff",
+            "resonance",
+            "drive",
+            "morph",
+            "env_depth",
+            "keytrack"
+        ]
+    );
+
+    let mut slot = FilterSlot {
+        cutoff: f32::NAN,
+        resonance: f32::NEG_INFINITY,
+        drive: 2.0,
+        morph: -1.0,
+        env_depth: 3.0,
+        keytrack: -1.0,
+        ..FilterSlot::default()
+    };
+    for (parameter, range) in parameters.into_iter().zip([
+        (0.0, 1.0),
+        (0.0, 1.0),
+        (0.0, 1.0),
+        (0.0, 1.0),
+        (-1.0, 1.0),
+        (0.0, 1.0),
+    ]) {
+        assert_eq!(parameter.range(), range);
+        let (_, min, max) = slot.parameter_mut(parameter);
+        assert_eq!((min, max), range);
+    }
+
+    slot.sanitize();
+    assert_eq!(slot.cutoff, FilterSlot::default().cutoff);
+    assert_eq!(slot.resonance, FilterSlot::default().resonance);
+    assert_eq!(slot.drive, 1.0);
+    assert_eq!(slot.morph, 0.0);
+    assert_eq!(slot.env_depth, 1.0);
+    assert_eq!(slot.keytrack, 0.0);
+}
+
 fn render(e: &mut Engine, frames: usize) -> Vec<u32> {
     let mut out = vec![[0.0; 2]; frames];
     e.process(&mut out);
@@ -330,7 +376,7 @@ fn added_filters_render_and_update_without_heap() {
     next.filter_slots.remove(2);
     next.filter_slots
         .push(dark(11, FilterPosition::AfterGrains));
-    let mut next = next.prepared_clone_for(RATE);
+    let mut next = e.prepare_preset_update(next).unwrap();
     no_heap(|| {
         e.process(&mut out);
         e.apply_parameters(&changes);
