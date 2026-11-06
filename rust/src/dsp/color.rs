@@ -422,7 +422,7 @@ impl ColorProcessor {
 }
 
 pub struct ColorRack {
-    processors: [ColorProcessor; MAX_COLOR_SLOTS],
+    processors: Box<[ColorProcessor]>,
     len: usize,
     active: bool,
     dry: Box<super::filter::FrameDelay<4096>>,
@@ -433,7 +433,12 @@ pub struct ColorRack {
 impl ColorRack {
     pub fn new(sample_rate: u32) -> Self {
         Self {
-            processors: std::array::from_fn(|_| ColorProcessor::new(sample_rate)),
+            // Prepare the bank one processor at a time, so nested engine
+            // creation does not build or move a large stack array in debug.
+            processors: (0..MAX_COLOR_SLOTS)
+                .map(|_| ColorProcessor::new(sample_rate))
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
             len: 0,
             active: false,
             dry: Box::new(super::filter::FrameDelay::new()),
@@ -476,7 +481,7 @@ impl ColorRack {
         self.active = slots.iter().any(|s| s.enabled && s.mix > 0.0);
     }
     pub(super) fn detach_imported(&mut self, pool: &mut crate::imported_fx::PreparedEffects) {
-        for processor in &mut self.processors {
+        for processor in self.processors.iter_mut() {
             processor.detach_imported(pool);
         }
     }

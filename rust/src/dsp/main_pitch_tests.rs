@@ -598,17 +598,46 @@ fn generated_grains_are_not_transposed_a_second_time_by_resynth() {
     preset.resynth.threshold = 0.0;
     let mut lane = track(1, 72, SYNTH_A | RESYNTH_A, true);
     lane.env_gate = false;
-    let output = capture(engine(preset, vec![lane]), 16_000);
+    let output = capture(engine(preset.clone(), vec![lane.clone()]), 16_000);
     let output = &output[5_000..];
     let fundamental = spectral_energy(output, 523.25);
-    let doubled = spectral_energy(output, 1046.5);
     assert!(
         fundamental > 0.001,
         "Resynth's pitched input produced no fundamental"
     );
+
+    // Give Resynth the exact same already-pitched input for voices an octave
+    // apart. The note must not transpose grains that already carry pitch.
+    let render_input = |input, pitch| {
+        let mut preset = preset.clone();
+        preset.resynth.input = input;
+        let mut engine = engine(preset, vec![lane.clone()]);
+        advance(&mut engine, 32);
+        let index = held(&engine, 1).unwrap();
+        engine.voices[index].pitch = pitch;
+        engine.voices[index].generation = engine.voices[index].generation.wrapping_add(1);
+        (0..8_000)
+            .map(|i| {
+                let sample = (std::f32::consts::TAU * 523.25 * i as f32 / RATE as f32).sin() * 0.3;
+                engine.render_main_resynth(index, [0.0; 2], [sample; 2], [sample; 2], false)[0]
+            })
+            .collect::<Vec<_>>()
+    };
+    let grains_low = render_input(crate::resynth::Input::Grains, 60.0);
+    let grains_high = render_input(crate::resynth::Input::Grains, 72.0);
+    let source_low = render_input(crate::resynth::Input::Source, 60.0);
+    let source_high = render_input(crate::resynth::Input::Source, 72.0);
+    let grains_energy = energy(&grains_low);
+    let grains_delta = difference(&grains_low, &grains_high);
     assert!(
-        fundamental > doubled * 1.5,
-        "Resynth sounded an octave too high: {fundamental} / {doubled}"
+        grains_energy > 0.001 && grains_delta < grains_energy * 1e-5,
+        "Resynth transposed the already-pitched grains: {grains_delta} / {grains_energy}"
+    );
+    let source_energy = energy(&source_low);
+    let source_delta = difference(&source_low, &source_high);
+    assert!(
+        source_energy > 0.001 && source_delta > source_energy * 0.01,
+        "the octave control did not change the unpitched source: {source_delta} / {source_energy}"
     );
 }
 
