@@ -1931,7 +1931,7 @@ window.SadNeuropolis = class {
           ...Array.from({ length: sourceCount(state.tb303, 4) }, (_, i) => [20 + i, `RADIAS ${i + 1}`, `303 RADIAS OSC ${i + 1}`]),
         ]);
       for (const [field, text, aria] of [
-        [57, "Granular", "Granular output"],
+        [57, "Grains", "Main pitch affects grains"],
         [53, "ENV", "Gate ENV"],
       ]) {
         const check = document.createElement("label");

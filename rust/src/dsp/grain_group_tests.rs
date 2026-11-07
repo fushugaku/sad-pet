@@ -70,7 +70,7 @@ fn all_groups_off_stop_legacy_independent_and_forced_clock_births() {
             note: 60,
             velocity: 100,
         });
-        e.spawn_grain_group(0, false, 0, Some(0), true, 0.0);
+        e.spawn_grain_group((0, false), false, 0, Some(0), true, 0.0);
         assert_eq!(e.live_grains, 0);
         for _ in 0..24_000 {
             e.process_frame();

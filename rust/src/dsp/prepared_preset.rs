@@ -12,6 +12,24 @@ pub(super) fn resynth_voice_count(preset: &Preset) -> usize {
     if bus_mono(preset) { 1 } else { super::VOICES }
 }
 
+/// An independent grain return needs its own main-filter history,
+/// separate from a free voice's release in filter bank 0. Reserve by physical
+/// module presence so bypass, routing edits, and removal of the last MainPitch
+/// binding leave already-playing shared grains intact. Classic file playback
+/// always has Grains and Filters; generated instruments and buses do not.
+pub(super) fn needs_shared_grain_filter(preset: &Preset) -> bool {
+    if let Some(rack) = &preset.rack {
+        return [crate::rack::Module::Grains, crate::rack::Module::Filters]
+            .into_iter()
+            .all(|module| rack.modules.iter().any(|slot| slot.module == module));
+    }
+    preset.bus.is_none()
+        && preset.synth.is_none()
+        && preset.wavetable.is_none()
+        && preset.drums.is_none()
+        && preset.sampler.is_none()
+}
+
 /// Full banks made off-thread for a possible mono-bus to instrument change.
 #[derive(Default)]
 pub(super) struct FilterUpgrades(pub Vec<(usize, super::filter::FilterBank)>);
@@ -24,7 +42,7 @@ impl std::fmt::Debug for FilterUpgrades {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default)]
 pub(super) struct Resources {
     pub oscillator_runtime: super::oscillators::Prepared,
     pub phase_runtime: super::phase_transport::Prepared,
@@ -43,6 +61,33 @@ pub(super) struct Resources {
     pub reuse_sequence_sources: bool,
     pub sequence_histories: Option<Box<super::sequence_histories::SequenceHistories>>,
     pub filter_upgrades: FilterUpgrades,
+    /// Prepared independently, inherited by swap, and retired with this owner.
+    /// It must never share DSP state with the note-owned filter bank 0.
+    pub shared_grain_filter: Option<super::filter::FilterBank>,
+}
+
+impl std::fmt::Debug for Resources {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Resources")
+            .field("oscillator_runtime", &self.oscillator_runtime)
+            .field("phase_runtime", &self.phase_runtime)
+            .field("drum_runtime", &self.drum_runtime)
+            .field("synth_runtime", &self.synth_runtime)
+            .field("wavetable_runtime", &self.wavetable_runtime)
+            .field("tb303_runtime", &self.tb303_runtime)
+            .field("bus_runtime", &self.bus_runtime)
+            .field("sampler_runtime", &self.sampler_runtime)
+            .field("rack_runtime", &self.rack_runtime)
+            .field("imported_effects", &self.imported_effects)
+            .field("filter_banks", &self.filter_banks)
+            .field("sequence", &self.sequence)
+            .field("sequence_sources", &self.sequence_sources)
+            .field("reuse_sequence_sources", &self.reuse_sequence_sources)
+            .field("sequence_histories", &self.sequence_histories)
+            .field("filter_upgrades", &self.filter_upgrades)
+            .field("shared_grain_filter", &self.shared_grain_filter.is_some())
+            .finish()
+    }
 }
 
 /// A finalized update, constructed outside the audio callback. Exchange reuses
@@ -337,6 +382,9 @@ impl PresetPreparation {
                         return Ok(false);
                     }
                 }
+                if needs_shared_grain_filter(p) {
+                    r.shared_grain_filter = Some(super::filter::FilterBank::new(rate));
+                }
             }
             _ => return Ok(true),
         }
@@ -354,5 +402,165 @@ impl PresetPreparation {
             sample_rate: self.sample_rate,
             ready: true,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rack::{Module, Slot};
+    use std::sync::Arc;
+
+    fn grain_filter_rack(enabled: bool) -> Preset {
+        let mut preset = crate::timbres::Kind::Oscillators.rack_instrument().unwrap();
+        let rack = preset.rack.as_mut().unwrap();
+        rack.buffer_seconds = 0.25;
+        for (index, module) in [Module::Grains, Module::Filters].into_iter().enumerate() {
+            rack.modules.insert(
+                index + 1,
+                Slot {
+                    module,
+                    enabled,
+                    id: 0,
+                },
+            );
+        }
+        preset
+    }
+
+    #[test]
+    fn shared_grain_filter_is_prepared_for_bypassed_modules_but_not_other_racks() {
+        let assets = Pool::default();
+        for enabled in [false, true] {
+            let prepared =
+                PreparedPreset::prepare(grain_filter_rack(enabled), &assets, 8_000).unwrap();
+            assert!(needs_shared_grain_filter(prepared.preset()));
+            assert!(prepared.resources.shared_grain_filter.is_some());
+        }
+
+        let wavetable = crate::timbres::Kind::Wavetable.rack_instrument().unwrap();
+        assert!(!needs_shared_grain_filter(&wavetable));
+        let bus = crate::timbres::Kind::Bus.preset().unwrap();
+        assert!(!needs_shared_grain_filter(&bus));
+        let prepared = PreparedPreset::prepare(bus, &assets, 8_000).unwrap();
+        assert!(prepared.resources.shared_grain_filter.is_none());
+
+        let mut without_filters = grain_filter_rack(false);
+        without_filters
+            .rack
+            .as_mut()
+            .unwrap()
+            .modules
+            .retain(|slot| slot.module != Module::Filters);
+        let prepared = PreparedPreset::prepare(without_filters, &assets, 8_000).unwrap();
+        assert!(prepared.resources.shared_grain_filter.is_none());
+
+        // Classic file playback can switch the existing MainPitch grain
+        // route during playback, including while the sequencer is stopped.
+        for granular in [false, true] {
+            let mut file = Preset::default();
+            file.sequencer.enabled = false;
+            let binding = file
+                .sequencer
+                .tracks
+                .iter_mut()
+                .find(|track| track.target == crate::sequence::Target::MainPitch)
+                .expect("the default preset has a MainPitch binding");
+            binding.granular = granular;
+            let prepared = PreparedPreset::prepare(file, &assets, 8_000).unwrap();
+            assert!(prepared.resources.shared_grain_filter.is_some());
+        }
+        let mut no_binding = Preset::default();
+        no_binding.sequencer.tracks.clear();
+        let prepared = PreparedPreset::prepare(no_binding, &assets, 8_000).unwrap();
+        assert!(prepared.resources.shared_grain_filter.is_some());
+        assert!(!needs_shared_grain_filter(&Preset {
+            synth: Some(Box::default()),
+            ..Preset::default()
+        }));
+        assert!(!needs_shared_grain_filter(&Preset {
+            wavetable: Some(Box::default()),
+            ..Preset::default()
+        }));
+    }
+
+    #[test]
+    fn shared_grain_filter_cancellation_exchange_and_retirement_preserve_histories() {
+        let preset = grain_filter_rack(false);
+        let mut engine = Engine::new(
+            8_000,
+            Arc::new(super::super::SampleBuffer::demo(8_000)),
+            preset.clone(),
+        );
+        let marker = [0.25, -0.125];
+        let bank = engine.preset_runtime.shared_grain_filter.as_mut().unwrap();
+        assert_eq!(bank.align_source_input(marker, 1), [0.0; 2]);
+
+        // Preparing and abandoning a document cannot take the sounding state.
+        let cancelled = engine.prepare_preset_update(preset.clone()).unwrap();
+        assert!(cancelled.resources.shared_grain_filter.is_some());
+        drop(cancelled);
+
+        // An independent queued document owns a fresh bank. Exchange retains
+        // the running delay and sends the unused bank back for off-thread drop.
+        let mut queued = PreparedPreset::prepare(preset.clone(), &Pool::default(), 8_000).unwrap();
+        assert!(engine.exchange_preset(&mut queued));
+        assert_eq!(
+            engine
+                .preset_runtime
+                .shared_grain_filter
+                .as_mut()
+                .unwrap()
+                .align_source_input([0.0; 2], 1),
+            marker,
+        );
+        assert_eq!(
+            queued
+                .resources
+                .shared_grain_filter
+                .as_mut()
+                .unwrap()
+                .align_source_input([0.0; 2], 1),
+            [0.0; 2],
+        );
+
+        engine
+            .preset_runtime
+            .shared_grain_filter
+            .as_mut()
+            .unwrap()
+            .align_source_input(marker, 1);
+        let mut without_grains = preset.clone();
+        without_grains
+            .rack
+            .as_mut()
+            .unwrap()
+            .modules
+            .retain(|slot| slot.module != Module::Grains);
+        let mut remove = engine.prepare_preset_update(without_grains).unwrap();
+        assert!(remove.resources.shared_grain_filter.is_none());
+        assert!(engine.exchange_preset(&mut remove));
+        assert!(engine.preset_runtime.shared_grain_filter.is_none());
+        assert_eq!(
+            remove
+                .resources
+                .shared_grain_filter
+                .as_mut()
+                .unwrap()
+                .align_source_input([0.0; 2], 1),
+            marker,
+        );
+
+        let mut restore = engine.prepare_preset_update(preset).unwrap();
+        assert!(engine.exchange_preset(&mut restore));
+        assert_eq!(
+            engine
+                .preset_runtime
+                .shared_grain_filter
+                .as_mut()
+                .unwrap()
+                .align_source_input([0.0; 2], 1),
+            [0.0; 2],
+        );
     }
 }

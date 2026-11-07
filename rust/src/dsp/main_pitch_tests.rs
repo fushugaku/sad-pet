@@ -264,7 +264,7 @@ fn oscillator_masks_reach_synth_wavetable_and_mixed_audio() {
 }
 
 #[test]
-fn granular_participation_can_be_switched_independently() {
+fn main_pitch_grains_route_selects_control_without_muting_the_file_cloud() {
     let mut granular = Preset::default();
     granular.params.mix = 1.0;
     granular.params.grains = 0.8;
@@ -273,7 +273,10 @@ fn granular_participation_can_be_switched_independently() {
     let on = capture(engine(granular.clone(), vec![track(1, 60, 0, true)]), 450);
     let off = capture(engine(granular, vec![track(1, 60, 0, false)]), 450);
     assert!(energy(&on) > 0.01, "selected grains did not sound");
-    assert!(energy(&off) < 1e-5, "deselected grains still sound");
+    assert!(
+        energy(&off) > 0.01,
+        "removing pitch control muted the physical Grain engine"
+    );
     let osc = capture(
         engine(instrument(Kind::Synth), vec![track(1, 60, SYNTH_A, false)]),
         450,
@@ -716,7 +719,7 @@ fn rack_generated_histories_keep_parties_separate() {
 }
 
 #[test]
-fn rack_grain_bypass_keeps_each_selected_oscillator_audible() {
+fn rack_unbound_grains_still_capture_each_selected_oscillator() {
     use crate::rack::{Module, Slot};
     for (kind, mask) in [
         (Kind::Wavetable, WAVETABLE_A),
@@ -732,14 +735,407 @@ fn rack_grain_bypass_keeps_each_selected_oscillator_audible() {
                 id: 0,
             },
         );
+        preset.rack.as_mut().unwrap().buffer_seconds = 0.25;
         preset.params.mix = 1.0;
         preset.params.grains = 0.8;
+        preset.params.position = 0.0;
+        preset.params.cloud = 0.0;
+        preset.params.detune = 0.5;
         let mut lane = track(1, 60, mask, false);
         lane.env_gate = false;
-        let output = capture(engine(preset, vec![lane]), 1_000);
+        let mut e = engine(preset, vec![lane]);
+        advance(&mut e, 4_000);
         assert!(
-            energy(&output[400..]) > 0.01,
-            "{kind:?}: disabling its grains cut the oscillator"
+            energy(&history_tail(&e, None, 512)) > 0.01,
+            "{kind:?}: the shared capture was empty"
+        );
+        assert!(
+            e.live_grain_list().any(|grain| grain.shared),
+            "{kind:?}: the independent cloud never spawned"
+        );
+        let output = capture(e, 512);
+        assert!(
+            energy(&output) > 0.01,
+            "{kind:?}: removing note control silenced the captured grains"
         );
     }
+}
+
+fn oscillator_grain_rack(grains_enabled: bool, filters_enabled: bool) -> Preset {
+    use crate::rack::{Module, Slot};
+    let mut preset = instrument(Kind::Oscillators);
+    let rack = preset.rack.as_mut().unwrap();
+    rack.modules = [
+        (Module::Oscillators, true),
+        (Module::Grains, grains_enabled),
+        (Module::Filters, filters_enabled),
+        (Module::Mixer, true),
+        (Module::PostFx, true),
+    ]
+    .into_iter()
+    .map(|(module, enabled)| Slot {
+        module,
+        enabled,
+        id: 0,
+    })
+    .collect();
+    rack.buffer_seconds = 0.25;
+    preset.params.mix = 1.0;
+    preset.params.position = 0.0;
+    preset.params.grain_size = 0.5;
+    preset.params.grains = 0.9;
+    preset.params.cloud = 0.0;
+    preset.params.detune = 0.5;
+    preset.params.filter_keytrack = 0.0;
+    preset.params.filter2_keytrack = 0.0;
+    preset
+}
+
+fn history_tail(engine: &Engine, owner: Option<u32>, count: usize) -> Vec<f32> {
+    let live = engine
+        .live_input
+        .as_ref()
+        .expect("prepared capture history");
+    let range = live.range();
+    assert!(range.len() >= count);
+    if let Some(owner) = owner {
+        let bank = engine.preset_runtime.sequence_histories.as_ref().unwrap();
+        let slot = bank.slot(owner).expect("party history slot");
+        (range.end - count..range.end)
+            .map(|position| {
+                bank.read(
+                    slot,
+                    position as f64,
+                    &range,
+                    live.range_epoch(),
+                    1.0,
+                    false,
+                )[0]
+            })
+            .collect()
+    } else {
+        live.sample.frames()[range.end - count..range.end]
+            .iter()
+            .map(|frame| frame[0])
+            .collect()
+    }
+}
+
+#[test]
+fn owned_file_voice_zero_and_independent_grains_keep_separate_onsets_and_returns() {
+    let mut preset = Preset::default();
+    preset.params.grain_size = 0.8;
+    preset.params.grain_attack = 0.8;
+    preset.params.cloud = 0.0;
+    preset.params.detune = 0.5;
+    preset.color_chain.clear();
+    let mut e = Engine::new(RATE, sample(), preset);
+    e.set_midi_gate(false);
+    e.set_playing(true);
+    assert!(e.voices[0].active());
+    assert_eq!(
+        e.grain_voice(false),
+        Some((0, false)),
+        "ordinary free-file voice 0 lost note ownership"
+    );
+
+    // Deliberately overlap the old note-owned cloud and the new independent
+    // cloud in logical slot 0. Their DSP returns must remain distinct.
+    e.live_grains = 0;
+    e.spawn_grain(0, false, 0, false);
+    e.spawn_grain(0, false, 0, true);
+    assert_eq!(e.live_grain_list().filter(|grain| !grain.shared).count(), 1);
+    assert_eq!(e.live_grain_list().filter(|grain| grain.shared).count(), 1);
+    e.onsets |= 1;
+    e.voices[0].onset[crate::grain_groups::GROUPS] = 0.0;
+    e.voices[0].onset_step[crate::grain_groups::GROUPS] = 0.0;
+    let mut shared_energy = 0.0;
+    for _ in 0..64 {
+        let (owned, _, owners, shared) = e.render_grains(false);
+        assert_eq!(owned[0], [0.0; 2], "ordinary file ATTACK was bypassed");
+        assert_ne!(owners & 1, 0);
+        shared_energy += shared[0].abs() + shared[1].abs();
+    }
+    assert!(
+        shared_energy > 1e-4,
+        "shared grains inherited voice 0's onset gate"
+    );
+    e.kill_voice_grains(0);
+    assert!(
+        e.live_grain_list().any(|grain| grain.shared),
+        "reusing voice 0 killed an independent tail"
+    );
+    assert!(e.live_grain_list().all(|grain| grain.shared));
+}
+
+#[test]
+fn mixed_private_and_independent_histories_survive_release_and_freeze() {
+    let preset = oscillator_grain_rack(true, false);
+    let mut private = track(1, 60, 1, true);
+    let mut independent = track(2, 72, 1, false);
+    private.env_gate = false;
+    independent.env_gate = false;
+    let mut both = engine(preset.clone(), vec![private.clone(), independent]);
+    let mut isolated = engine(preset, vec![private]);
+    advance(&mut both, 4_000);
+    advance(&mut isolated, 4_000);
+    let own = history_tail(&both, Some(1), 512);
+    let reference = history_tail(&isolated, Some(1), 512);
+    let shared = history_tail(&both, None, 512);
+    assert!(energy(&own) > 0.01 && energy(&shared) > 0.01);
+    assert!(
+        difference(&own, &reference) < energy(&reference) * 0.02 + 1e-4,
+        "the independent source leaked into the private party's history"
+    );
+    assert!(
+        energy(&history_tail(&both, Some(2), 512)) < 1e-7,
+        "the independent party also recorded into a private tape"
+    );
+    // At grain_size=0.5 a grain lasts only four frames: a single snapshot can
+    // legitimately land between births in either half of the round robin.
+    let mut saw_shared = false;
+    let mut saw_private = false;
+    for _ in 0..512 {
+        both.process_frame();
+        saw_shared |= both.live_grain_list().any(|grain| grain.shared);
+        saw_private |= both
+            .live_grain_list()
+            .any(|grain| !grain.shared && grain.history.is_some());
+    }
+    assert!(
+        saw_shared && saw_private,
+        "both grain domains must receive births"
+    );
+
+    both.set_frozen(true);
+    let frozen_shared = history_tail(&both, None, 512);
+    let frozen_private = history_tail(&both, Some(1), 512);
+    let mut short_release = both.preset.clone();
+    short_release.envs[0].release = 0.0;
+    both.set_preset(short_release);
+    both.set_sequence_transport(false);
+    let tail: Vec<_> = (0..512).map(|_| both.process_frame()[0]).collect();
+    assert!(
+        energy(&tail) > 0.01,
+        "note release cut the frozen independent cloud"
+    );
+    assert_eq!(history_tail(&both, None, 512), frozen_shared);
+    assert_eq!(history_tail(&both, Some(1), 512), frozen_private);
+}
+
+#[test]
+fn unbound_oscillator_capture_obeys_chain_and_selected_oscillator_modes() {
+    use crate::interaction::CaptureMode;
+    let mut captured = Vec::new();
+    for (mode, slots) in [
+        (CaptureMode::Chain, 3),
+        (CaptureMode::Osc, 1),
+        (CaptureMode::Osc, 2),
+    ] {
+        let mut preset = oscillator_grain_rack(true, false);
+        preset.grain_capture.mode = mode;
+        preset.grain_capture.slots = slots;
+        let mut lane = track(1, 60, 3, false);
+        lane.env_gate = false;
+        let mut e = engine(preset, vec![lane]);
+        advance(&mut e, 4_000);
+        let tape = history_tail(&e, None, 512);
+        assert!(energy(&tape) > 0.01, "capture was silent for slots={slots}");
+        assert!(e.live_grain_list().any(|grain| grain.shared));
+        assert_eq!(
+            e.sounding & 1,
+            0,
+            "the grain fallback started a ghost oscillator voice"
+        );
+        captured.push(tape);
+    }
+    assert!(
+        difference(&captured[1], &captured[2]) > 0.1,
+        "the selected oscillator did not affect captured PCM"
+    );
+    let sum: Vec<_> = captured[1]
+        .iter()
+        .zip(&captured[2])
+        .map(|(a, b)| a + b)
+        .collect();
+    assert!(
+        difference(&captured[0], &sum) < energy(&sum) * 0.01 + 1e-4,
+        "Chain capture did not contain the selected oscillator streams once each"
+    );
+}
+
+fn render_filter_envelope(
+    granular: bool,
+    grains_enabled: bool,
+    sustain: f32,
+    ws: bool,
+) -> Vec<f32> {
+    let mut preset = oscillator_grain_rack(grains_enabled, true);
+    preset.params.filter = if ws { 1.0 } else { 0.35 };
+    preset.params.filter_env = crate::preset::EnvSource::Env2;
+    preset.params.filter_env_depth = if ws { 0.0 } else { 0.8 };
+    preset.envs[1].attack = 0.0;
+    preset.envs[1].decay = 0.0;
+    preset.envs[1].sustain = sustain;
+    if ws {
+        preset.params.filter_shapers[0].before = crate::waveshaper::Stage {
+            enabled: true,
+            mode: crate::color::WaveshaperMode::Decimator,
+            depth: 0.0,
+            options: crate::waveshaper::Options {
+                envelope: 1.0,
+                envelope_source: Some(crate::preset::EnvSource::Env2),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+    }
+    let mut lane = track(1, 60, 1, granular);
+    lane.env_gate = false;
+    let mut e = engine(preset, vec![lane]);
+    advance(&mut e, 4_000);
+    capture(e, 512)
+}
+
+#[test]
+fn filters_after_history_grains_follow_envelopes_even_when_grains_are_bypassed() {
+    for granular in [false, true] {
+        for grains_enabled in [false, true] {
+            let closed = render_filter_envelope(granular, grains_enabled, 0.0, false);
+            let open = render_filter_envelope(granular, grains_enabled, 1.0, false);
+            assert!(energy(&open) > 0.01);
+            assert!(
+                difference(&closed, &open) > energy(&open) * 0.05,
+                "filter ENV did not reach its active bank: private={granular}, grains_on={grains_enabled}"
+            );
+        }
+    }
+}
+
+#[test]
+fn filter_waveshaper_after_grains_receives_private_and_shared_envelopes() {
+    for granular in [false, true] {
+        let low = render_filter_envelope(granular, true, 0.0, true);
+        let high = render_filter_envelope(granular, true, 1.0, true);
+        assert!(energy(&high) > 0.01);
+        assert!(
+            difference(&low, &high) > energy(&high) * 0.05,
+            "filter WS ENV did not reach its active bank: private={granular}"
+        );
+    }
+}
+
+#[test]
+fn independent_file_cloud_has_dry_and_wet_without_note_transpose_or_ghost_playback() {
+    for rack in [false, true] {
+        for mix in [0.0, 1.0] {
+            let mut preset = if rack {
+                let mut p = oscillator_grain_rack(true, false);
+                p.oscillators = None;
+                p.rack.as_mut().unwrap().modules[0].module = crate::rack::Module::Sample;
+                p
+            } else {
+                Preset::default()
+            };
+            preset.params.mix = mix;
+            preset.params.position = 0.0;
+            preset.params.grains = 0.9;
+            preset.params.cloud = 0.0;
+            preset.params.detune = 0.5;
+            preset.params.filter_keytrack = 0.0;
+            let low = capture(engine(preset.clone(), vec![track(1, 60, 0, false)]), 2_048);
+            let high = capture(engine(preset.clone(), vec![track(1, 84, 0, false)]), 2_048);
+            assert!(
+                energy(&low) > 0.01,
+                "independent file mix={mix}, rack={rack} was silent"
+            );
+            assert!(
+                difference(&low, &high) < energy(&low) * 1e-5 + 1e-5,
+                "MainPitch transposed the unbound file path: mix={mix}, rack={rack}"
+            );
+
+            let mut e = engine(preset, vec![track(1, 60, 0, false)]);
+            advance(&mut e, 256);
+            assert_eq!(e.sounding & 1, 0);
+            let mut release = e.preset.clone();
+            release.envs[0].release = 0.0;
+            e.set_preset(release);
+            e.set_sequence_transport(false);
+            advance(&mut e, 256);
+            assert!(
+                !e.file_grain_fallback(),
+                "stopped note lanes started a default file player"
+            );
+            let remaining = e
+                .live_grain_list()
+                .map(|grain| grain.duration.saturating_sub(grain.age))
+                .max()
+                .unwrap_or(0);
+            advance(&mut e, remaining as usize + 256);
+            let silent = capture(e, 256);
+            assert!(
+                energy(&silent) < 1e-5,
+                "stopping the sequencer left ghost file playback: mix={mix}, rack={rack}"
+            );
+        }
+    }
+}
+
+#[test]
+fn classic_independent_file_return_obeys_pre_fx_and_does_not_start_an_idle_sub() {
+    for mix in [0.0, 1.0] {
+        let mut preset = Preset::default();
+        preset.params.mix = mix;
+        preset.params.grains = 0.9;
+        preset.params.cloud = 0.0;
+        preset.params.detune = 0.5;
+        let mut plain = engine(preset.clone(), vec![track(1, 60, 0, false)]);
+        advance(&mut plain, 2_048);
+        assert!(energy(&capture(plain, 512)) > 0.01);
+
+        // A zero transfer in physical PreFX must silence both the independent
+        // file dry and its grains. Clean2x also tests alignment of that return.
+        let mut fx = crate::color::ColorSlot {
+            id: 81,
+            kind: crate::preset::SaturatorType::Waveshaper,
+            enabled: true,
+            mix: 1.0,
+            ..Default::default()
+        };
+        fx.settings.waveshaper_type = crate::color::WaveshaperMode::Decimator;
+        fx.settings.waveshaper_depth = 0.0;
+        fx.settings.waveshaper_options = crate::waveshaper::Options {
+            quality: crate::waveshaper::Quality::Clean2x,
+            curve: crate::waveshaper::Curve::Custom,
+            points: [0.0; 17],
+            ..Default::default()
+        };
+        let mut processed = engine(preset, vec![track(1, 60, 0, false)]);
+        let mut routed = processed.preset.clone();
+        routed.pre_color_chain = vec![fx];
+        processed.set_preset(routed);
+        advance(&mut processed, 2_048);
+        assert!(
+            energy(&capture(processed, 512)) < 1e-5,
+            "independent file mix={mix} bypassed its physical PreFX"
+        );
+    }
+
+    let mut silent = Preset::default();
+    silent.sequencer.enabled = false;
+    silent.color_chain.clear();
+    silent.pre_color_chain.clear();
+    silent.params.filter_shapers[0].before = crate::waveshaper::Stage {
+        enabled: true,
+        mode: crate::color::WaveshaperMode::SubSine,
+        depth: 1.0,
+        ..Default::default()
+    };
+    let mut e = Engine::new(RATE, sample(), silent);
+    e.set_midi_gate(true);
+    e.set_playing(true);
+    assert!(
+        energy(&capture(e, 1_024)) < 1e-5,
+        "an unused shared filter started a Sub oscillator without a cloud or a note"
+    );
 }

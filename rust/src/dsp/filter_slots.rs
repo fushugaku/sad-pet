@@ -287,10 +287,24 @@ pub(crate) fn chain(
 #[inline]
 pub(crate) fn route_chain(
     banks: &mut [Box<Bank>],
+    mask: u16,
+    frame: Stereo,
+    instance: Instance,
+    route: Option<(&mut super::taps::Runtime, f32)>,
+) -> Stereo {
+    route_chain_with_voice_gain(banks, mask, frame, instance, route, None)
+}
+
+/// Override the generated Sub component for a split note/shared branch.
+/// Filter histories and the incoming audio continue at their original gain.
+#[inline]
+pub(crate) fn route_chain_with_voice_gain(
+    banks: &mut [Box<Bank>],
     mut mask: u16,
     mut frame: Stereo,
     instance: Instance,
     mut route: Option<(&mut super::taps::Runtime, f32)>,
+    voice_gain: Option<f32>,
 ) -> Stereo {
     while mask != 0 {
         let i = mask.trailing_zeros() as usize;
@@ -304,7 +318,9 @@ pub(crate) fn route_chain(
             Instance::Oscillator => &mut bank.oscillator,
             Instance::OscillatorVoice(voice) => &mut bank.oscillator_voices[voice],
         };
-        let gain = if matches!(instance, Instance::Shared | Instance::Oscillator) {
+        let gain = if let Some(gain) = voice_gain {
+            gain
+        } else if matches!(instance, Instance::Shared | Instance::Oscillator) {
             bank.voice_gain
         } else {
             1.0

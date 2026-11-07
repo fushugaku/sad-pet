@@ -86,6 +86,8 @@ jobs:
           node wasm/test-wavetable.mjs
           node wasm/test-oscillators.mjs
           node wasm/test-oscillators.mjs dist/web sad_pet.simd.wasm
+          node wasm/test-grain-capture.mjs
+          node wasm/test-grain-capture.mjs dist/web sad_pet.simd.wasm
           node wasm/test-control.mjs
           node wasm/test-wavetable-memory.mjs
           node wasm/test-wavetable-cache.mjs

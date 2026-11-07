@@ -131,6 +131,8 @@ struct Grain {
     shape: f32,
     pan: Stereo,
     voice: usize,
+    /// A grain in the shared post-VCA cloud, independent of a note's gate.
+    shared: bool,
     /// A history-granulated MainPitch party; None retains the legacy/file path.
     history: Option<u8>,
 }
@@ -728,6 +730,9 @@ pub struct Engine {
     source_channel: u8,
     source_velocity: f32,
     source_random: f32,
+    /// Physical Synth mix for the next LiveInput display update. This is not
+    /// part of the shared history audio, which keeps MainPitch lanes separate.
+    display_output: Stereo,
     mod_random: Random,
     wheel: [f32; 16],
     expression: [f32; 16],
@@ -994,6 +999,7 @@ impl Engine {
             source_channel: 0,
             source_velocity: 0.0,
             source_random: 0.0,
+            display_output: [0.0; 2],
             mod_random: Random(0x4d41545249585f31),
             wheel: [0.0; 16],
             expression: [1.0; 16],
@@ -1400,6 +1406,14 @@ impl Engine {
             );
         }
         std::mem::swap(&mut self.preset, preset);
+        if let (Some(current), Some(next)) = (
+            self.preset_runtime.shared_grain_filter.as_mut(),
+            runtime.shared_grain_filter.as_mut(),
+        ) {
+            // A compatible update reuses the shared return's FIR/filter state;
+            // the replacement envelope retires the newly prepared bank.
+            std::mem::swap(current, next);
+        }
         std::mem::swap(&mut self.preset_runtime, runtime);
         // A kit's runtime prepared off the audio thread takes over its
         // voices; the one it replaces, or a kit's last, retires with the
@@ -2340,7 +2354,7 @@ impl Engine {
         // Its next note fades in afresh, or not at all.
         self.onsets &= !(1 << voice);
         for slot in self.live_grain_slots() {
-            if self.grains[slot].voice == voice {
+            if self.grains[slot].voice == voice && !self.grains[slot].shared {
                 self.live_grains &= !(1 << slot);
             }
         }
@@ -3122,22 +3136,38 @@ impl Engine {
             self.source_color.set_envelopes(&[]);
         }
         // Any added filter of a Rack may filter a chain as one.
+        let dedicated_shared_filter = self
+            .preset_runtime
+            .shared_grain_filter
+            .as_ref()
+            .is_some_and(|filter| filter.is_prepared());
         filter_slots::configure_shared(
             slots,
             &mut self.filter_banks,
             last_note,
             shared_envs,
-            self.rack.is_some(),
+            self.rack.is_some()
+                || dedicated_shared_filter
+                || self.oscillator_engine.synth.is_some(),
         );
         let bus = self.preset.bus.is_some();
-        let chain_filters = self.rack.is_some_and(|r| !r.filters_per_note);
+        let chain_filters =
+            self.rack.is_some_and(|r| !r.filters_per_note) && !dedicated_shared_filter;
         if chain_filters {
             // Without notes of its own, a chain's filters follow each
             // envelope's loudest voice and the last note, as added ones do.
             self.filters[0].configure(&m.params, last_note, shared_envs);
         }
+        if let Some(shared) = self
+            .preset_runtime
+            .shared_grain_filter
+            .as_mut()
+            .filter(|filter| filter.is_prepared())
+        {
+            shared.configure(&m.params, last_note, shared_envs);
+        }
         for (i, voice) in self.voices.iter().enumerate() {
-            if chain_filters || (!voice.active() && !(bus && i == 0)) {
+            if (chain_filters && i == 0) || (!voice.active() && !(bus && i == 0)) {
                 continue;
             }
             let note =
@@ -3238,7 +3268,14 @@ impl Engine {
         let note = voice.pitch()
             + self.bend[voice.channel as usize] * self.modulated.params.midi_pitchbend_range;
         let envs = filter::envelopes(voice.env_values, self.voice_tb303_envelope(index));
-        if !self.rack.is_some_and(|r| !r.filters_per_note) {
+        let dedicated_shared_filter = self
+            .preset_runtime
+            .shared_grain_filter
+            .as_ref()
+            .is_some_and(|filter| filter.is_prepared());
+        let chain_filters =
+            self.rack.is_some_and(|r| !r.filters_per_note) && !dedicated_shared_filter;
+        if !chain_filters || index != 0 {
             self.filters[index].configure(&self.modulated.params, note, envs);
         }
         filter_slots::configure_voice(
@@ -3257,6 +3294,9 @@ impl Engine {
     }
     fn clear_filters(&mut self) {
         self.filters.iter_mut().for_each(FilterBank::clear);
+        if let Some(shared) = self.preset_runtime.shared_grain_filter.as_mut() {
+            shared.clear();
+        }
         for bank in &mut self.filter_banks {
             bank.clear();
         }
@@ -3311,29 +3351,87 @@ impl Engine {
             || self.voices.iter().any(|v| v.main_pitch && v.active())
     }
 
-    fn grain_voice(&mut self, synth: bool) -> Option<usize> {
+    /// Return whether any MainPitch binding exists and whether at least one
+    /// binding routes its notes into private grain histories.
+    fn main_pitch_grain_bindings(&self) -> (bool, bool, bool) {
+        let mut present = false;
+        let mut private = false;
+        let mut shared = false;
+        for track in &self.preset.sequencer.tracks {
+            if track.target == crate::sequence::Target::MainPitch {
+                present = true;
+                private |= track.granular;
+                shared |= !track.granular;
+            }
+        }
+        (present, private, shared)
+    }
+
+    /// A file cloud is independent only when the MainPitch configuration has
+    /// no private grain controller and that mode is currently active. An
+    /// ordinary closed gate on a private lane must not start a fallback cloud.
+    fn file_grain_fallback(&self) -> bool {
+        if !self.playing
+            || !self.preset.sequencer.enabled
+            || !self.sequence_running
+            || self.live_input.is_some()
+        {
+            return false;
+        }
+        let (present, private, _) = self.main_pitch_grain_bindings();
+        if !present || private {
+            return false;
+        }
+        if self.rack.as_ref().is_some_and(|rack| rack.reads_file) {
+            return true;
+        }
+        self.rack.is_none()
+            && self.preset.bus.is_none()
+            && self.preset.drums.is_none()
+            && self.preset.synth.is_none()
+            && self.preset.wavetable.is_none()
+            && self.preset.oscillators.is_none()
+            && self.preset.tb303.is_none()
+            && self.preset.sampler.is_none()
+            && self.preset.vocal.is_none()
+    }
+
+    fn grain_voice(&mut self, synth: bool) -> Option<(usize, bool)> {
         if synth && !self.main_pitch_sequence() {
-            return (self.playing || self.rack.is_some()).then_some(0);
+            return (self.playing || self.rack.is_some()).then_some((0, true));
         }
         let bus = self.preset.bus.is_some();
         let legacy = synth && self.voices.iter().any(|v| !v.main_pitch && v.active());
+        let (has_main_pitch, has_private_grains, has_shared_grains) =
+            self.main_pitch_grain_bindings();
+        let file_fallback =
+            !synth && has_main_pitch && !has_private_grains && self.file_grain_fallback();
+        let shared_default = if synth {
+            has_main_pitch && has_shared_grains
+        } else {
+            file_fallback
+        };
         let voice = (0..VOICES)
             .map(|i| (i + self.next_voice) % VOICES)
             .find(|&i| {
                 let v = &self.voices[i];
                 (synth && i == 0 && legacy)
+                    || (i == 0 && shared_default)
                     || ((v.active() || (bus && i == 0)) && v.granular() && (!synth || v.main_pitch))
             })?;
         self.next_voice = (voice + 1) % VOICES;
-        Some(voice)
+        let shared = voice == 0 && (synth || file_fallback);
+        Some((voice, shared))
     }
 
     /// History grains may be shared post-VCA grains or a Main pitch party's
     /// own pitched/gated cloud. File grains always follow their voice's VCA.
-    fn mixed_grains(&self, frames: &[Stereo; VOICES], history: bool) -> Stereo {
-        let mut output = [0.0; 2];
+    fn mixed_grains(&self, frames: &[Stereo; VOICES], shared: Stereo, history: bool) -> Stereo {
+        let mut output = shared;
         for (i, frame) in frames.iter().enumerate() {
-            let weight = if history && !self.voices[i].main_pitch {
+            let weight = if i == 0 {
+                1.0
+            } else if history && !self.voices[i].main_pitch {
                 f32::from(i == 0)
             } else {
                 self.voices[i].value.max(0.0)
@@ -3399,18 +3497,18 @@ impl Engine {
             return;
         }
         let synth = self.synth_grains();
-        let Some(voice) = self.grain_voice(synth) else {
+        let Some((voice, shared)) = self.grain_voice(synth) else {
             return;
         };
-        self.spawn_grain(voice, synth, 0);
+        self.spawn_grain(voice, synth, 0, shared);
     }
 
     fn spawn_group(&mut self, group: usize, forced: bool, time: f64) {
         let synth = self.synth_grains();
-        let Some(voice) = self.grain_voice(synth) else {
+        let Some((voice, shared)) = self.grain_voice(synth) else {
             return;
         };
-        self.spawn_grain_group(voice, synth, 0, Some(group), forced, time);
+        self.spawn_grain_group((voice, shared), synth, 0, Some(group), forced, time);
     }
     fn schedule_grains(&mut self, enabled: bool) {
         self.grain_clock += self.grain_step;
@@ -3476,19 +3574,19 @@ impl Engine {
     }
 
     /// Start a grain of `voice` as it would be `age` frames after it began.
-    fn spawn_grain(&mut self, voice: usize, synth: bool, age: u32) {
-        self.spawn_grain_group(voice, synth, age, None, false, 0.0);
+    fn spawn_grain(&mut self, voice: usize, synth: bool, age: u32, shared: bool) {
+        self.spawn_grain_group((voice, shared), synth, age, None, false, 0.0);
     }
     fn spawn_grain_group(
         &mut self,
-        voice: usize,
+        (voice, shared): (usize, bool),
         synth: bool,
         age: u32,
         chosen: Option<usize>,
         forced: bool,
         birth_time: f64,
     ) {
-        if !self.voices[voice].granular() {
+        if !shared && !self.voices[voice].granular() {
             return;
         }
         let slot = (!self.live_grains).trailing_zeros() as usize;
@@ -3524,7 +3622,13 @@ impl Engine {
         let grain_envs = group.as_ref().and_then(|(_, group)| {
             (group.waveshaper_options.envelope_source.is_some()
                 && matches!(group.waveshaper, crate::grain_groups::Waveshaper::Type(_)))
-            .then(|| filter::envelopes(note.env_values, self.voice_tb303_envelope(voice)))
+            .then(|| {
+                if shared {
+                    filter::envelopes(self.env_values, self.tb303_view().envelope)
+                } else {
+                    filter::envelopes(note.env_values, self.voice_tb303_envelope(voice))
+                }
+            })
         });
         let individual = synth && note.main_pitch && self.individual_history();
         let bend = if synth && (voice == 0 || individual) {
@@ -3678,6 +3782,7 @@ impl Engine {
             shape: shape.clamp(0.0, 1.0),
             pan: tables::pan(pan),
             voice,
+            shared,
             history,
         };
         if let Some((group, _)) = group {
@@ -3746,7 +3851,9 @@ impl Engine {
             || self.preset.bus.is_some()
             || self.live_input.as_ref().is_some_and(|i| i.effects_only)
             // A sounding voice keeps the grains it has.
-            || self.live_grain_slots().any(|slot| self.grains[slot].voice == voice)
+            || self
+                .live_grain_slots()
+                .any(|slot| self.grains[slot].voice == voice && !self.grains[slot].shared)
         {
             return;
         }
@@ -3766,7 +3873,7 @@ impl Engine {
         while n as f64 * interval < longest && self.live_grains != u128::MAX {
             // Whole refresh steps, so a group's filters tune on their first frame.
             let age = (n as f64 * interval) as u32 / grain_groups::REFRESH * grain_groups::REFRESH;
-            self.spawn_grain(voice, false, age);
+            self.spawn_grain(voice, false, age, false);
             n += 1;
         }
         // The overlap level follows at once, or the cloud would enter loud.
@@ -4710,7 +4817,11 @@ impl Engine {
             } else {
                 std::array::from_fn(|c| source_input[c] + fed[c])
             };
-            live.push_with_meter(recorded, input, self.frozen);
+            if self.oscillator_engine.synth.is_some() {
+                live.push_with_display(recorded, input, self.display_output, self.frozen);
+            } else {
+                live.push_with_meter(recorded, input, self.frozen);
+            }
             if windowed {
                 let shift = (live.range_epoch() - epoch) as f64;
                 if shift != 0.0 {
@@ -4793,28 +4904,56 @@ impl Engine {
         filter_slots::set_voice_gain(&mut self.filter_banks, loudest_voice);
         self.schedule_grains(!effects_only);
         let synth_grains = self.oscillator_engine.synth.is_some();
-        let (voice_frames, group_sent) = self.render_grains(synth_grains);
-        let file_source = self.live_input.is_none();
-        let group_sends = self.taps.group_sends();
+        let shared_grains_active = self.live_grain_slots().any(|slot| self.grains[slot].shared);
+        let (voice_frames, group_sent, voice_owned, shared_frame) =
+            self.render_grains(synth_grains);
         let norm = self.grain_norm(effects_only);
         let input_gain = self.input_gain;
+        let file_fallback = self.file_grain_fallback();
+        let shared_grain_path = self
+            .preset_runtime
+            .shared_grain_filter
+            .as_ref()
+            .is_some_and(|filter| filter.is_prepared())
+            || synth_grains;
+        let independent_source = file_fallback || shared_grains_active;
+        if shared_grain_path && !synth_grains && !independent_source {
+            filter_slots::set_voice_gain(&mut self.filter_banks, 0.0);
+        }
+        let shared_activity = f32::from(synth_grains || independent_source);
+        let shared_aftergrains = if shared_grain_path {
+            filter_slots::route_chain(
+                &mut self.filter_banks,
+                self.filter_masks[FilterPosition::AfterGrains as usize],
+                shared_frame,
+                Instance::Shared,
+                Some((&mut self.taps, norm * input_gain * shared_activity)),
+            )
+            .map(|x| x * shared_activity)
+        } else {
+            shared_frame
+        };
+        filter_slots::set_voice_gain(&mut self.filter_banks, loudest_voice);
+        let file_source = self.live_input.is_none();
+        let group_sends = self.taps.group_sends();
         let feedback = self.modulated.params.grain_feedback;
         if feedback > 0.0 || self.grain_feedback.output != [0.0; 2] {
             // The grains as the notes' VCA weighs them, at the overlap level.
-            let mut grains = [0.0; 2];
-            if synth_grains && self.main_pitch_sequence() {
+            let grains = if synth_grains && self.main_pitch_sequence() {
                 // MainPitch histories feed themselves, never the legacy tape.
-                grains = voice_frames[0];
+                shared_frame
             } else if synth_grains {
-                grains = self.mixed_grains(&voice_frames, true);
+                self.mixed_grains(&voice_frames, shared_frame, true)
             } else {
+                let mut grains = shared_frame;
                 for i in bits(self.sounding | u64::from(bus.is_some())) {
                     let weight = self.voices[i].value.max(0.0);
                     for c in 0..2 {
                         grains[c] += voice_frames[i][c] * weight;
                     }
                 }
-            }
+                grains
+            };
             self.grain_feedback.feed(grains.map(|x| x * norm), feedback);
             if file_source && feedback > 0.0 && !self.frozen {
                 let center = self.center();
@@ -4854,6 +4993,24 @@ impl Engine {
                 grain_amount * grain_chain,
             )
         };
+        let shared_file_filter = self
+            .preset_runtime
+            .shared_grain_filter
+            .as_ref()
+            .is_some_and(|filter| filter.is_prepared());
+        let shared_file_return = if shared_file_filter && file_source {
+            if file_fallback {
+                let dry = 1.0 - self.smooth_mix * grain_chain;
+                std::array::from_fn(|c| {
+                    source[c] * input_gain * dry
+                        + shared_aftergrains[c] * norm * input_gain * self.smooth_mix * grain_chain
+                })
+            } else {
+                shared_aftergrains.map(|x| x * chain_grain * input_gain)
+            }
+        } else {
+            [0.0; 2]
+        };
         let grain_sends = self.oscillator_engine.synth.is_none() && self.taps.sends(Stage::Grains);
         let mut grain_send = [0.0; 2];
         let mut mixed_frames = [[0.0; 2]; VOICES];
@@ -4862,6 +5019,39 @@ impl Engine {
         let masks = self.filter_masks;
         // Voices outside the sounding set have no gain, except a bus's voice.
         let mixing = self.sounding | u64::from(bus.is_some());
+        // An unbound file is one post-VCA contribution. Its MainPitch lanes
+        // do not create extra copies of the shared return or divide its drive
+        // by their velocities. Keep actual private grains/Resynth voices.
+        let private_weights: [f32; VOICES] = std::array::from_fn(|i| {
+            let voice = self.voices[i];
+            let private_resynth =
+                self.modulated.resynth.enabled && voice.oscillator_mask() & (15 << 16) != 0;
+            if file_fallback
+                && voice.main_pitch
+                && !voice.granular
+                && voice_owned & (1 << i) == 0
+                && !private_resynth
+            {
+                0.0
+            } else {
+                voice.value
+            }
+        });
+        let private_weight = if file_fallback {
+            bits(mixing).map(|i| private_weights[i]).sum::<f32>()
+        } else {
+            voice_sum
+        };
+        let independent_file_active =
+            shared_file_filter && file_source && (file_fallback || shared_grains_active);
+        // With no note owners, the shared bus also carries its existing FX
+        // release. This does not start a source, a grain or a Sub oscillator.
+        let shared_weight = f32::from(
+            shared_file_filter && file_source && (independent_file_active || private_weight == 0.0),
+        );
+        let total_weight = private_weight + shared_weight;
+        let audible_shared_weight = shared_weight * f32::from(independent_file_active);
+        let audible_weight = private_weight + audible_shared_weight;
         if self.oscillator_engine.synth.is_some() {
             // Oscillators replace each voice's source and grains before its
             // filter; the grains of voice slot 0 follow the VCA instead.
@@ -4895,14 +5085,19 @@ impl Engine {
             if self.voices[i].value <= 0.0 || self.oscillator_engine.synth.is_some() {
                 continue;
             }
+            let owned = voice_owned & (1 << i) != 0;
+            let independent_file_lane =
+                file_fallback && self.voices[i].main_pitch && !self.voices[i].granular;
             let frame = filter_slots::route_chain(
                 &mut self.filter_banks,
                 masks[FilterPosition::AfterGrains as usize],
-                voice_frames[i],
+                if owned { voice_frames[i] } else { [0.0; 2] },
                 Instance::Voice(i),
-                Some((&mut self.taps, norm * input_gain * self.voices[i].value)),
+                Some((&mut self.taps, norm * input_gain * private_weights[i])),
             );
-            let dry = if self.voices[i].granular() {
+            let dry = if independent_file_lane {
+                0.0
+            } else if self.voices[i].granular() {
                 chain_dry
             } else {
                 0.0
@@ -4910,15 +5105,25 @@ impl Engine {
             mixed_frames[i] =
                 std::array::from_fn(|c| (source[c] * dry + frame[c] * chain_grain) * input_gain);
             for (c, total) in before_fx.iter_mut().enumerate() {
-                *total += mixed_frames[i][c] * self.voices[i].value;
-                grain_tap[c] += frame[c] * norm * input_gain * self.voices[i].value;
+                *total += mixed_frames[i][c] * private_weights[i];
+                grain_tap[c] += frame[c] * norm * input_gain * private_weights[i];
             }
-            if grain_sends {
+            if grain_sends && !independent_file_lane {
                 for (c, total) in grain_send.iter_mut().enumerate() {
                     *total += (source[c] * dry_amount + frame[c] * grain_amount)
                         * input_gain
                         * self.voices[i].value;
                 }
+            }
+        }
+        if grain_sends && file_fallback && shared_file_filter {
+            let dry = 1.0 - self.smooth_mix;
+            let send: Stereo = std::array::from_fn(|c| {
+                source[c] * input_gain * dry
+                    + shared_aftergrains[c] * norm * input_gain * self.smooth_mix
+            });
+            for (c, total) in grain_send.iter_mut().enumerate() {
+                *total += send[c];
             }
         }
         if grain_sends {
@@ -4928,10 +5133,6 @@ impl Engine {
         // shared return enters each note's filter before its VCA. Normalizing
         // the send/return by voice weight preserves per-note envelopes and the
         // dry voice/filter separation; an empty or bypassed rack is transparent.
-        if voice_sum > 0.0 {
-            before_fx.iter_mut().for_each(|v| *v /= voice_sum);
-            grain_tap.iter_mut().for_each(|v| *v /= voice_sum);
-        }
         let main_pitch = self.main_pitch_sequence();
         if main_pitch {
             before_fx = [0.0; 2];
@@ -4952,23 +5153,51 @@ impl Engine {
                     );
                 }
                 for c in 0..2 {
-                    before_fx[c] += mixed_frames[i][c] * self.voices[i].value;
+                    before_fx[c] += mixed_frames[i][c] * private_weights[i];
                 }
             }
-            if voice_sum > 0.0 {
-                before_fx = before_fx.map(|x| x / voice_sum);
-            }
         }
-        let resynth_active = !main_pitch && self.oscillator_engine.resynth.active();
-        let resynth_output = if main_pitch {
+        let private_before_fx = before_fx;
+        if total_weight > 0.0 {
+            before_fx = std::array::from_fn(|c| {
+                (before_fx[c] + shared_file_return[c] * shared_weight) / total_weight
+            });
+            grain_tap = std::array::from_fn(|c| {
+                (grain_tap[c] + shared_aftergrains[c] * norm * input_gain * shared_weight)
+                    / total_weight
+            });
+        }
+        // Keep the independent branch's histories advancing on silence too;
+        // returning to it must not replay frozen Resynth/filter samples.
+        let render_shared_resynth = !main_pitch || (shared_file_filter && file_source);
+        if main_pitch && !independent_file_active {
+            filter_slots::set_voice_gain(&mut self.filter_banks, 0.0);
+        }
+        let resynth_input = if main_pitch {
+            shared_file_return
+        } else {
             before_fx
+        };
+        let resynth_active = render_shared_resynth && self.oscillator_engine.resynth.active();
+        let resynth_output = if !render_shared_resynth {
+            [0.0; 2]
         } else {
             self.oscillator_engine.resynth.process_interacting(
-                before_fx,
-                source.map(|x| x * input_gain),
-                grain_tap,
+                resynth_input,
+                if (main_pitch && !independent_file_active)
+                    || (shared_file_filter && private_weight == 0.0 && !independent_file_active)
+                {
+                    [0.0; 2]
+                } else {
+                    source.map(|x| x * input_gain)
+                },
+                if main_pitch {
+                    shared_aftergrains.map(|x| x * norm * input_gain)
+                } else {
+                    grain_tap
+                },
                 self.lfo_values[0],
-                dry_scale,
+                if shared_weight > 0.0 { 1.0 } else { dry_scale },
                 &self.sample,
                 &self.file_range,
                 self.playing,
@@ -4979,12 +5208,19 @@ impl Engine {
                     masks[FilterPosition::AfterOsc4 as usize],
                 ],
                 &mut self.filter_banks,
-                Some((&mut self.taps, voice_sum)),
+                Some((
+                    &mut self.taps,
+                    if main_pitch {
+                        audible_shared_weight
+                    } else {
+                        audible_weight
+                    },
+                )),
                 self.oscillator_engine.phase_adapters.as_deref_mut(),
                 self.frame,
             )
         };
-        let after_resynth = if main_pitch {
+        let after_resynth = if !render_shared_resynth {
             0
         } else {
             masks[FilterPosition::AfterResynth as usize]
@@ -4994,37 +5230,86 @@ impl Engine {
             after_resynth,
             resynth_output,
             Instance::Shared,
-            Some((&mut self.taps, voice_sum)),
+            Some((
+                &mut self.taps,
+                if main_pitch {
+                    audible_shared_weight
+                } else {
+                    audible_weight
+                },
+            )),
         );
         // The shared stages reach every voice and are weighted by each, so
         // what they send follows the notes' VCA as their return does.
-        if !main_pitch && self.taps.sends(Stage::Resynth) {
-            self.taps
-                .send(Stage::Resynth, resynth_output.map(|x| x * voice_sum));
+        if render_shared_resynth && self.taps.sends(Stage::Resynth) {
+            self.taps.send(
+                Stage::Resynth,
+                resynth_output.map(|x| {
+                    x * if main_pitch {
+                        audible_shared_weight
+                    } else {
+                        audible_weight
+                    }
+                }),
+            );
         }
         let resynth_latency =
             filter_slots::latency_samples(&self.filter_banks, after_resynth, Instance::Shared);
-        let resynth_output = if main_pitch {
-            resynth_output
+        let resynth_output = if main_pitch && render_shared_resynth {
+            let aligned = self
+                .preset_runtime
+                .shared_grain_filter
+                .as_mut()
+                .unwrap()
+                .align_resynth_input(resynth_input, resynth_latency);
+            self.taps.mix(Stage::Resynth, aligned, resynth_output)
+        } else if main_pitch {
+            [0.0; 2]
         } else {
             let aligned = self.filters[0].align_resynth_input(before_fx, resynth_latency);
             self.taps.mix(Stage::Resynth, aligned, resynth_output)
         };
+        // Private MainPitch returns already include their Resynth/filter
+        // latency. The shared counterpart reaches this same point separately;
+        // only the following PreFX latency remains to align their main filters.
+        let shared_filter_input = if main_pitch {
+            resynth_output
+        } else {
+            shared_file_return
+        };
+        let (resynth_output, resynth_latency) = if main_pitch {
+            let combined = if total_weight > 0.0 {
+                std::array::from_fn(|c| {
+                    (private_before_fx[c] + resynth_output[c] * shared_weight) / total_weight
+                })
+            } else {
+                [0.0; 2]
+            };
+            before_fx = combined;
+            (combined, 0)
+        } else {
+            (resynth_output, resynth_latency)
+        };
+        filter_slots::set_voice_gain(&mut self.filter_banks, loudest_voice);
         let resynth_output = match entered {
             Some(e) => std::array::from_fn(|c| resynth_output[c] + e[0][c] * input_gain),
             None => resynth_output,
         };
         let pre_output = self.pre_color_rack.process_with_filters(
             resynth_output,
-            1.0,
+            if shared_weight > 0.0 {
+                loudest_voice
+            } else {
+                1.0
+            },
             &self.filter_fx_masks[0],
             &mut self.filter_banks,
             &mut self.taps,
-            voice_sum,
+            audible_weight,
         );
         if self.taps.sends(Stage::PreFx) {
             self.taps
-                .send(Stage::PreFx, pre_output.map(|x| x * voice_sum));
+                .send(Stage::PreFx, pre_output.map(|x| x * audible_weight));
         }
         let pre_output = self.taps.mix(
             Stage::PreFx,
@@ -5048,14 +5333,13 @@ impl Engine {
             [0.0; 2]
         };
         let mut filtered = [0.0; 2];
-        let mut grain_bypass = [0.0; 2];
         let mut private_dry = [0.0; 2];
         let mut private_frames = [[0.0; 2]; VOICES];
         let filter_sends = self.taps.sends(Stage::Filters);
         let mut filter_send = [0.0; 2];
         for i in bits(mixing) {
             let mixed = self.filters[i].align_source_input(mixed_frames[i], shared_latency);
-            if self.voices[i].value <= 0.0 {
+            if private_weights[i] <= 0.0 {
                 continue;
             }
             let unfiltered = std::array::from_fn(|c| mixed[c] + correction[c]);
@@ -5064,23 +5348,23 @@ impl Engine {
                 masks[FilterPosition::BeforeFilters as usize],
                 unfiltered,
                 Instance::Voice(i),
-                Some((&mut self.taps, self.voices[i].value)),
+                Some((&mut self.taps, private_weights[i])),
             );
             let voice = if bus.is_some_and(|b| !b.filters) {
                 voice
             } else {
-                self.filters[i].process_tapped(voice, &mut self.taps, self.voices[i].value)
+                self.filters[i].process_tapped(voice, &mut self.taps, private_weights[i])
             };
             let voice = filter_slots::route_chain(
                 &mut self.filter_banks,
                 masks[FilterPosition::AfterFilters as usize],
                 voice,
                 Instance::Voice(i),
-                Some((&mut self.taps, self.voices[i].value)),
+                Some((&mut self.taps, private_weights[i])),
             );
             if filter_sends {
                 for c in 0..2 {
-                    filter_send[c] += voice[c] * self.voices[i].value;
+                    filter_send[c] += voice[c] * private_weights[i];
                 }
             }
             let extra_latency = filter_slots::latency_samples(
@@ -5095,30 +5379,95 @@ impl Engine {
                 private_frames[i] = voice;
             }
             for c in 0..2 {
-                filtered[c] += voice[c] * self.voices[i].value;
-                if self.voices[i].main_pitch && !self.voices[i].granular {
-                    grain_bypass[c] += voice[c] * self.voices[i].value;
-                } else if self.voices[i].main_pitch {
-                    private_dry[c] += voice[c] * self.voices[i].value;
+                filtered[c] += voice[c] * private_weights[i];
+                if self.voices[i].main_pitch && self.voices[i].granular {
+                    private_dry[c] += voice[c] * private_weights[i];
                 }
             }
+        }
+        if shared_file_filter {
+            let activity = f32::from(independent_file_active);
+            filter_slots::set_voice_gain(
+                &mut self.filter_banks,
+                if independent_file_active {
+                    loudest_voice
+                } else {
+                    0.0
+                },
+            );
+            let aligned = self
+                .preset_runtime
+                .shared_grain_filter
+                .as_mut()
+                .unwrap()
+                .align_source_input(shared_filter_input, shared_latency);
+            let input = std::array::from_fn(|c| aligned[c] + correction[c] * shared_weight);
+            let output = filter_slots::route_chain(
+                &mut self.filter_banks,
+                masks[FilterPosition::BeforeFilters as usize],
+                input,
+                Instance::Shared,
+                Some((&mut self.taps, activity)),
+            );
+            let output = self
+                .preset_runtime
+                .shared_grain_filter
+                .as_mut()
+                .unwrap()
+                .process_tapped_with_voice_gain(
+                    output,
+                    &mut self.taps,
+                    activity,
+                    if independent_file_active {
+                        loudest_voice
+                    } else {
+                        0.0
+                    },
+                );
+            let output = filter_slots::route_chain(
+                &mut self.filter_banks,
+                masks[FilterPosition::AfterFilters as usize],
+                output,
+                Instance::Shared,
+                Some((&mut self.taps, activity)),
+            );
+            let extra_latency = filter_slots::latency_samples(
+                &self.filter_banks,
+                masks[FilterPosition::BeforeFilters as usize]
+                    | masks[FilterPosition::AfterFilters as usize],
+                Instance::Shared,
+            );
+            let aligned = self
+                .preset_runtime
+                .shared_grain_filter
+                .as_mut()
+                .unwrap()
+                .align_chain_input(input, extra_latency);
+            let output = self
+                .taps
+                .mix(Stage::Filters, aligned, output)
+                .map(|x| x * activity);
+            for c in 0..2 {
+                filtered[c] += output[c];
+                filter_send[c] += output[c];
+            }
+            filter_slots::set_voice_gain(&mut self.filter_banks, loudest_voice);
         }
         if filter_sends {
             self.taps.send(Stage::Filters, filter_send);
         }
-        let history_grains = self.mixed_grains(&voice_frames, true);
+        let history_grains = self.mixed_grains(&voice_frames, shared_aftergrains, true);
         if self.oscillator_engine.synth.is_some() && main_pitch {
             self.capture_sequence_histories(&private_frames, &voice_frames, norm);
         }
         if let Some(synth) = &mut self.oscillator_engine.synth {
-            // The shared tape only records legacy/MIDI voices. MainPitch
-            // parties own separate tapes and must never enter each other's.
-            synth.set_output(std::array::from_fn(|c| {
-                filtered[c] - grain_bypass[c] - private_dry[c]
-            }));
+            // Unassigned notes join the shared tape; assigned MainPitch
+            // parties keep their own tapes and cannot enter each other's.
+            self.display_output = filtered;
+            synth.set_output(std::array::from_fn(|c| filtered[c] - private_dry[c]));
             // The history's source path, one frame later, is the dry signal.
             let dry = if self.live_input.is_some() {
-                std::array::from_fn(|c| source[c] + grain_bypass[c] + private_dry[c])
+                std::array::from_fn(|c| source[c] + private_dry[c])
             } else {
                 filtered
             };
@@ -5127,9 +5476,7 @@ impl Engine {
                 dry
             } else {
                 std::array::from_fn(|c| {
-                    grain_bypass[c]
-                        + (dry[c] - grain_bypass[c]) * (1.0 - self.smooth_mix)
-                        + history_grains[c] * norm * self.smooth_mix
+                    dry[c] * (1.0 - self.smooth_mix) + history_grains[c] * norm * self.smooth_mix
                 })
             };
             if self.taps.sends(Stage::Grains) {
@@ -5300,8 +5647,15 @@ impl Engine {
     fn render_grains(
         &mut self,
         follow_mix: bool,
-    ) -> ([Stereo; VOICES], [Stereo; crate::grain_groups::GROUPS]) {
+    ) -> (
+        [Stereo; VOICES],
+        [Stereo; crate::grain_groups::GROUPS],
+        u64,
+        Stereo,
+    ) {
         let mut voice_frames = [[0.0; 2]; VOICES];
+        let mut voice_owned = 0_u64;
+        let mut shared_frame = [0.0; 2];
         let range = self.source_range();
         let file_source = self.live_input.is_none();
         let source_effects = self.reads_source_cache()
@@ -5394,6 +5748,10 @@ impl Engine {
             let slot = pending.trailing_zeros() as usize;
             pending &= pending - 1;
             let grain_voice = self.grains[slot].voice;
+            let shared_grain = self.grains[slot].shared;
+            if !shared_grain {
+                voice_owned |= 1 << grain_voice;
+            }
             let has_external_ws_env = groups.advanced
                 && self.group_grains.group(slot).is_some_and(|index| {
                     let group = &groups.groups[index as usize];
@@ -5401,10 +5759,14 @@ impl Engine {
                         && matches!(group.waveshaper, crate::grain_groups::Waveshaper::Type(_))
                 });
             let grain_envs = has_external_ws_env.then(|| {
-                filter::envelopes(
-                    self.voices[grain_voice].env_values,
-                    self.voice_tb303_envelope(grain_voice),
-                )
+                if shared_grain {
+                    filter::envelopes(self.env_values, self.tb303_view().envelope)
+                } else {
+                    filter::envelopes(
+                        self.voices[grain_voice].env_values,
+                        self.voice_tb303_envelope(grain_voice),
+                    )
+                }
             });
             let envelope_slice = grain_envs.as_ref().map_or(&[][..], |envs| envs.as_slice());
             let grain = &mut self.grains[slot];
@@ -5532,7 +5894,7 @@ impl Engine {
                 None
             };
             if let Some((group, shaped)) = grouped {
-                let shaped = if onsets & 1 << grain.voice != 0 {
+                let shaped = if !grain.shared && onsets & 1 << grain.voice != 0 {
                     let gain = fade(self.voices[grain.voice].onset[group]);
                     shaped.map(|x| x * gain)
                 } else {
@@ -5540,11 +5902,12 @@ impl Engine {
                 };
                 let mut panned: Stereo = std::array::from_fn(|c| shaped[c] * grain.pan[c]);
                 if group_graph {
-                    let weight = if synth_grains && !self.voices[grain.voice].main_pitch {
-                        1.0
-                    } else {
-                        self.voices[grain.voice].value.max(0.0)
-                    };
+                    let weight =
+                        if grain.shared || (synth_grains && !self.voices[grain.voice].main_pitch) {
+                            1.0
+                        } else {
+                            self.voices[grain.voice].value.max(0.0)
+                        };
                     let ringed = self
                         .grain_interaction
                         .ring(slot, panned, group_inputs[group]);
@@ -5556,16 +5919,21 @@ impl Engine {
                 }
                 let chain = group_chains[group];
                 for c in 0..2 {
-                    voice_frames[grain.voice][c] += panned[c] * chain;
+                    if grain.shared {
+                        shared_frame[c] += panned[c] * chain;
+                    } else {
+                        voice_frames[grain.voice][c] += panned[c] * chain;
+                    }
                 }
                 if group_sends & 1 << group != 0 {
                     // Sends follow the notes' VCA as the chain does; a
                     // Synth's grains already read its voices after theirs.
-                    let weight = if synth_grains && !self.voices[grain.voice].main_pitch {
-                        1.0
-                    } else {
-                        self.voices[grain.voice].value.max(0.0)
-                    };
+                    let weight =
+                        if grain.shared || (synth_grains && !self.voices[grain.voice].main_pitch) {
+                            1.0
+                        } else {
+                            self.voices[grain.voice].value.max(0.0)
+                        };
                     for c in 0..2 {
                         group_sent[group][c] += panned[c] * weight;
                     }
@@ -5573,11 +5941,15 @@ impl Engine {
             } else {
                 let phase = 2.0 * grain.age as f32 / (grain.duration - 1) as f32;
                 let mut amplitude = tables::grain_window(phase, grain.shape);
-                if onsets & 1 << grain.voice != 0 {
+                if !grain.shared && onsets & 1 << grain.voice != 0 {
                     amplitude *= fade(self.voices[grain.voice].onset[crate::grain_groups::GROUPS]);
                 }
                 for c in 0..2 {
-                    voice_frames[grain.voice][c] += frame[c] * amplitude * grain.pan[c];
+                    if grain.shared {
+                        shared_frame[c] += frame[c] * amplitude * grain.pan[c];
+                    } else {
+                        voice_frames[grain.voice][c] += frame[c] * amplitude * grain.pan[c];
+                    }
                 }
             }
             grain.position = range.start as f64
@@ -5612,7 +5984,7 @@ impl Engine {
             }
         }
         if self.oscillator_engine.graph.needed(29) {
-            let mut wet = [0.0; 2];
+            let mut wet = shared_frame;
             for (i, frame) in voice_frames.iter().enumerate() {
                 let weight = if synth_grains && !self.voices[i].main_pitch {
                     f32::from(i == 0)
@@ -5628,7 +6000,7 @@ impl Engine {
                 .graph
                 .publish(29, interaction::GLOBAL, wet, wet, 1.0);
         }
-        (voice_frames, group_sent)
+        (voice_frames, group_sent, voice_owned, shared_frame)
     }
     /// Output level, the sends' share of it, soft clipping and the meter,
     /// then the file cursor and bar loops move on. `bypass_source` replaces

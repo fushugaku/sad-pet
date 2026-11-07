@@ -255,7 +255,8 @@ pub struct Track {
     /// Oscillators played by this MainPitch lane, using the stable 25-bit bank
     /// mapping in `MAIN_PITCH_OSCILLATOR_MASK`.
     pub oscillator_mask: u32,
-    /// Whether this MainPitch lane also plays the granular engine.
+    /// Whether this MainPitch lane controls the cloud's pitch and note gate.
+    /// A Rack still captures and granulates its physical input when false.
     pub granular: bool,
     /// MainPitch gates ENV when enabled; saved `false` keeps a drone.
     pub env_gate: bool,

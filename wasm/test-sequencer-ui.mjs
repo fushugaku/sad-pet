@@ -503,7 +503,7 @@ resynth3.onchange();
 assert.equal(ui.track().oscillator_mask & (1 << 16), 0);
 assert.equal(ui.track().oscillator_mask & (1 << 18), 0);
 assert.deepEqual(ui.track().pitch_oscillators, [false, false, false, false]);
-const granular = control("Granular output");
+const granular = control("Main pitch affects grains");
 assert.equal(granular.checked, true);
 granular.checked = false;
 granular.onchange();

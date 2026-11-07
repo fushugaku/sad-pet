@@ -515,6 +515,9 @@ pub struct LiveInput {
     total: u64,
     window: usize,
     waveform_rebuild: Option<(u64, u64)>,
+    /// False once the visible capture included a private source which does
+    /// not belong in this shared audio history.
+    waveform_matches_pcm: bool,
     lowpass: [[Stereo; 2]; 6],
 }
 
@@ -580,6 +583,7 @@ impl LiveInput {
             total: capacity as u64,
             window,
             waveform_rebuild: None,
+            waveform_matches_pcm: true,
             lowpass: [[[0.0; 2]; 2]; 6],
         }
     }
@@ -603,10 +607,57 @@ impl LiveInput {
         if frames == self.window {
             return false;
         }
+        if self.waveform_matches_pcm {
+            self.sample.waveform.fill([0.; 2]);
+            self.waveform_rebuild =
+                Some((self.total - self.captured.min(frames) as u64, self.total));
+        } else {
+            // Private histories aren't in shared PCM. Preserve their visible
+            // overlap at the existing bin resolution; the newly exposed part
+            // of an expanded window remains empty until new input arrives.
+            self.rebin_waveform(self.window, frames);
+            self.waveform_rebuild = None;
+        }
         self.window = frames;
-        self.sample.waveform.fill([0.; 2]);
-        self.waveform_rebuild = Some((self.total - self.captured.min(frames) as u64, self.total));
         true
+    }
+    fn rebin_waveform(&mut self, old_window: usize, new_window: usize) {
+        let bins = self.sample.waveform.len().min(640);
+        if bins == 0 {
+            return;
+        }
+        let mut output = [[0.0_f32; 2]; 640];
+        let mut filled = [false; 640];
+        let overlap = self.captured.min(old_window).min(new_window) as u64;
+        let mut at = self.total.saturating_sub(overlap);
+        let end = self.total;
+        let old_window = old_window as u64;
+        let new_window = new_window as u64;
+        let bins = bins as u64;
+        // Walk the old and new bin boundaries, at most 2*640 boundaries,
+        // rather than scanning audio frames on the callback.
+        while at < end {
+            let old_phase = at % old_window;
+            let new_phase = at % new_window;
+            let from = old_phase * bins / old_window;
+            let to = new_phase * bins / new_window;
+            let value = self.sample.waveform[from as usize];
+            let index = to as usize;
+            if filled[index] {
+                output[index][0] = output[index][0].min(value[0]);
+                output[index][1] = output[index][1].max(value[1]);
+            } else {
+                output[index] = value;
+                filled[index] = true;
+            }
+            let old_end = ((from + 1) * old_window).div_ceil(bins);
+            let new_end = ((to + 1) * new_window).div_ceil(bins);
+            let step = (old_end - old_phase).min(new_end - new_phase).max(1);
+            at = at.saturating_add(step).min(end);
+        }
+        let length = bins as usize;
+        self.sample.waveform[..length].copy_from_slice(&output[..length]);
+        self.sample.waveform[length..].fill([0.0; 2]);
     }
     // Rebuild the new view in bounded work, including while capture is frozen.
     // The retained PCM and antialiasing levels are never rebuilt or cleared.
@@ -631,6 +682,33 @@ impl LiveInput {
         self.push_with_meter(frame, frame, frozen);
     }
     pub fn push_with_meter(&mut self, frame: Stereo, meter: Stereo, frozen: bool) {
+        self.push_inner(frame, meter, frame, frozen, false);
+    }
+    /// Record shared PCM while showing the actual selected capture input.
+    /// Private MainPitch histories are separate from the shared PCM.
+    pub(crate) fn push_with_display(
+        &mut self,
+        frame: Stereo,
+        meter: Stereo,
+        display: Stereo,
+        frozen: bool,
+    ) {
+        self.push_inner(frame, meter, display, frozen, true);
+    }
+    fn push_inner(
+        &mut self,
+        frame: Stereo,
+        meter: Stereo,
+        display: Stereo,
+        frozen: bool,
+        separate_display: bool,
+    ) {
+        if separate_display && !frozen {
+            // An unfinished shared-PCM rebuild cannot represent private
+            // voices and must not overwrite their newly captured display.
+            self.waveform_matches_pcm = false;
+            self.waveform_rebuild = None;
+        }
         self.rebuild_waveform();
         let mut frame = frame.map(|x| {
             if x.is_finite() {
@@ -651,12 +729,29 @@ impl LiveInput {
         self.sample.levels[0][index] = frame;
         let phase = (self.total % self.window as u64) as usize;
         let bin = phase * self.sample.waveform.len() / self.window;
-        let value = (frame[0] + frame[1]) * 0.5;
-        if phase == 0 || (phase - 1) * self.sample.waveform.len() / self.window != bin {
-            self.sample.waveform[bin] = [value; 2];
+        let display = if separate_display {
+            display.map(|x| {
+                if x.is_finite() {
+                    x.clamp(-16.0, 16.0)
+                } else {
+                    0.0
+                }
+            })
         } else {
-            self.sample.waveform[bin][0] = self.sample.waveform[bin][0].min(value);
-            self.sample.waveform[bin][1] = self.sample.waveform[bin][1].max(value);
+            frame
+        };
+        let (low, high) = if separate_display {
+            // Retain either channel even when a stereo signal cancels in mono.
+            (display[0].min(display[1]), display[0].max(display[1]))
+        } else {
+            let value = (display[0] + display[1]) * 0.5;
+            (value, value)
+        };
+        if phase == 0 || (phase - 1) * self.sample.waveform.len() / self.window != bin {
+            self.sample.waveform[bin] = [low, high];
+        } else {
+            self.sample.waveform[bin][0] = self.sample.waveform[bin][0].min(low);
+            self.sample.waveform[bin][1] = self.sample.waveform[bin][1].max(high);
         }
         let mut parent_index = index;
         for (level, filter) in self.lowpass.iter_mut().enumerate() {
@@ -774,6 +869,7 @@ impl LiveInputPreparation {
             total: capacity as u64,
             window: self.window,
             waveform_rebuild: None,
+            waveform_matches_pcm: true,
             lowpass: [[[0.0; 2]; 2]; 6],
         })
     }
@@ -1305,6 +1401,87 @@ mod preparation_tests {
             assert_eq!(actual.peak, reference.peak);
             assert_eq!(actual.lowpass, reference.lowpass);
         }
+    }
+
+    #[test]
+    fn separate_capture_display_keeps_pcm_mips_meter_and_freeze_independent() {
+        let mut live = LiveInput::with_frames(8000, false, 4000, 2000);
+        let mut reference = LiveInput::with_frames(8000, false, 4000, 2000);
+        let recorded = [0.125, 0.25];
+        for _ in 0..1500 {
+            // This private, opposite-phase source is audible in stereo even
+            // though its mono sum and the shared history contain none of it.
+            live.push_with_display(recorded, [0.3, -0.4], [0.9, -0.9], false);
+            reference.push_with_meter(recorded, [0.3, -0.4], false);
+        }
+        assert_eq!(live.sample.levels, reference.sample.levels);
+        assert_eq!(live.capture(), reference.capture());
+        assert_eq!(live.peak, reference.peak);
+        assert!(live.sample.waveform.iter().any(|bin| *bin == [-0.9, 0.9]));
+        let waveform = live.sample.waveform.clone();
+        let write = live.write;
+        let total = live.total;
+        for _ in 0..64 {
+            live.push_with_display([1.0; 2], [0.5; 2], [-1.0; 2], true);
+        }
+        assert_eq!(
+            live.sample.waveform, waveform,
+            "Freeze changed the displayed history"
+        );
+        assert_eq!((live.write, live.total), (write, total));
+        assert_eq!(live.sample.levels, reference.sample.levels);
+        assert_eq!(
+            live.peak, [0.5; 2],
+            "The input meter must still respond while frozen"
+        );
+    }
+
+    #[test]
+    fn resizing_separate_capture_display_keeps_only_the_overlap() {
+        let mut live = LiveInput::with_frames(8000, false, 4000, 2000);
+        for index in 0..2500 {
+            let input = if index < 1500 { 0.25 } else { 0.75 };
+            live.push_with_display([0.0; 2], [input; 2], [input; 2], false);
+        }
+        let captured = live.capture();
+        let storage = live.sample.waveform.as_ptr();
+        assert!(live.set_window_seconds(0.125));
+        assert_eq!(
+            live.sample.waveform.as_ptr(),
+            storage,
+            "Resize allocated new display storage"
+        );
+        assert!(live.sample.waveform.iter().all(|bin| *bin == [0.75; 2]));
+        assert_eq!(
+            live.capture(),
+            captured[1000..],
+            "The displayed resize changed recorded PCM"
+        );
+
+        assert!(live.set_window_seconds(0.25));
+        let visible = live
+            .sample
+            .waveform
+            .iter()
+            .filter(|bin| **bin == [0.75; 2])
+            .count();
+        assert_eq!(
+            visible, 320,
+            "Only the known half of the expanded window is visible"
+        );
+        assert!(
+            live.sample
+                .waveform
+                .iter()
+                .all(|bin| *bin == [0.0; 2] || *bin == [0.75; 2])
+        );
+        let waveform = live.sample.waveform.clone();
+        live.push_with_display([0.0; 2], [1.0; 2], [1.0; 2], true);
+        assert_eq!(
+            live.sample.waveform, waveform,
+            "Frozen expanded history changed"
+        );
+        assert_eq!(live.capture(), captured);
     }
 }
 
