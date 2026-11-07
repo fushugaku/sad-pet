@@ -123,7 +123,7 @@ const context = {
   } } },
   requestAnimationFrame: () => 1,
   percent: (v) => `${v * 100}%`,
-  signedPercent: (v) => `${v * 100}%`,
+  signedPercent: (v) => `${v > 0 ? "+" : ""}${Math.round(v * 100)}%`,
   controls: new Map(),
   modulationViews: new Map(),
   option: (value, label) => ({ value, label }),
@@ -154,9 +154,12 @@ const context = {
   schedulePreset() {
     presetWrites++;
   },
+  schedulePresetStream() { presetWrites++; },
+  finishPresetStream() {},
   refreshColorDestinations() {},
   syncLfos() {},
   syncEnvs() {},
+  syncWaveshaperEnvelopeSources() {},
   syncMatrix() {},
 };
 vm.createContext(context);
@@ -426,6 +429,17 @@ const beforeMode = before.querySelector(".filter-shaper-mode");
 beforeMode.value = "hard_clip"; beforeMode.onchange();
 bindings.get("filter1_ws_before_depth").set(.73);
 assert.deepEqual(changes.at(-1), ["filter1_ws_before_depth", .73]);
+const keytrack = bindings.get("filter1_ws_before_keytrack");
+const keytrackSchema = schemas.findLast((s) => s[0] === "filter1_ws_before_keytrack");
+assert.deepEqual(Array.from(keytrackSchema.slice(3, 5)), [-1, 1]);
+assert.equal(keytrackSchema[2](-0.75), "-75%");
+assert.equal(keytrackSchema[2](0.75), "+75%");
+assert.equal(keytrack.get(), 0, "A legacy shaper must default to zero key tracking");
+assert.equal(keytrack.reset(), 0);
+const presetWritesBeforeKeytrack = presetWrites;
+keytrack.set(-0.75);
+assert.deepEqual(changes.at(-1), ["filter1_ws_before_keytrack", -0.75]);
+assert.equal(presetWrites, presetWritesBeforeKeytrack, "Keytrack must use the realtime numeric route");
 const options = before.querySelector(".filter-shaper-body").children[0];
 options.open = true; options.ontoggle();
 bindings.get("filter1_ws_before_knee").set(.36);
@@ -435,6 +449,7 @@ preset.params.filter_shapers[0].before.options.future_option = 17;
 press(before.querySelector(".filter-shaper-grip"), "ArrowRight");
 assert.equal(preset.params.filter_shapers[0].after.mode, "hard_clip");
 assert.equal(preset.params.filter_shapers[0].after.depth, .73);
+assert.equal(preset.params.filter_shapers[0].after.keytrack, -0.75);
 assert.equal(preset.params.filter_shapers[0].after.future.keep, true);
 assert.equal(preset.params.filter_shapers[0].after.options.future_option, 17);
 assert.equal(preset.params.filter_shapers[0].before.enabled, false);
@@ -448,6 +463,7 @@ down(); pointerTarget = addedBefore;
 windowListeners.get("pointermove")({ clientX: 10, clientY: 10 });
 windowListeners.get("pointerup")({ clientX: 10, clientY: 10 });
 assert.equal(preset.filter_slots[0].shapers.before.mode, "hard_clip");
+assert.equal(preset.filter_slots[0].shapers.before.keytrack, -0.75);
 assert.equal(preset.filter_slots[0].shapers.before.future.keep, true);
 bindings.get("filter3_ws_before_mix").set(.61);
 assert.deepEqual(changes.at(-1), ["filter3_ws_before_mix", .61]);
@@ -483,8 +499,51 @@ assert.equal(presetWrites, writesBeforeFilterCancel);
 const movedSlot = preset.filter_slots[0].id;
 context.moveFilter(movedSlot, 1);
 assert.equal(preset.filter_slots[1].shapers.before.mode, "hard_clip");
+assert.equal(preset.filter_slots[1].shapers.before.keytrack, -0.75);
 bindings.get("filter4_ws_before_mix").set(.42);
 assert.deepEqual(changes.at(-1), ["filter4_ws_before_mix", .42]);
+bindings.get("filter4_ws_before_keytrack").set(.65);
+assert.deepEqual(changes.at(-1), ["filter4_ws_before_keytrack", .65]);
+assert.equal(preset.filter_slots[1].shapers.before.keytrack, .65);
+context.patchFilterShaper({ main: 0 }, "before", { options: { envelope_source: "env2" } });
+context.patchFilterShaper({ slot: movedSlot }, "after", { options: { envelope_source: "env3" } });
+const recalledShapers = JSON.parse(JSON.stringify(preset));
+assert.equal(recalledShapers.params.filter_shapers[0].before.options.envelope_source, "env2");
+assert.equal(recalledShapers.filter_slots[1].shapers.after.options.envelope_source, "env3");
+assert.equal(recalledShapers.filter_slots[1].shapers.before.keytrack, .65);
+
+// Every main and added filter has two independent bipolar keytrack controls.
+// These operate on the WS stage, never the filter cutoff's own key tracking.
+const cutoffKeytracks = JSON.stringify([
+  preset.params.filter_keytrack, preset.params.filter2_keytrack,
+  ...preset.filter_slots.map((slot) => slot.keytrack),
+]);
+for (const [number, card] of [[1, mainCard(0)], [2, mainCard(1)], [3, list.children[0]], [4, list.children[1]]]) {
+  for (const side of ["before", "after"]) {
+    const model = () => number <= 2
+      ? preset.params.filter_shapers?.[number - 1]?.[side]
+      : preset.filter_slots[number - 3].shapers?.[side];
+    if (!model()?.enabled) stage(card, side).querySelector(".filter-shaper-power").onclick();
+    const id = `filter${number}_ws_${side}_keytrack`, binding = bindings.get(id);
+    assert.ok(binding, `${id} must exist when the stage is enabled`);
+    assert.deepEqual(Array.from(schemas.findLast((s) => s[0] === id).slice(3, 5)), [-1, 1]);
+    for (const value of [-1, 1, 0]) {
+      binding.set(value);
+      assert.equal(binding.get(), value);
+      assert.equal(model().keytrack, value);
+      assert.deepEqual(changes.at(-1), [id, value]);
+    }
+    binding.set(binding.reset());
+    assert.equal(model().keytrack, 0);
+    const value = (side === "before" ? -1 : 1) * number / 10;
+    binding.set(value);
+    assert.equal(JSON.parse(JSON.stringify(model())).keytrack, value, `${id} must survive serialization`);
+  }
+}
+assert.equal(JSON.stringify([
+  preset.params.filter_keytrack, preset.params.filter2_keytrack,
+  ...preset.filter_slots.map((slot) => slot.keytrack),
+]), cutoffKeytracks, "WS keytrack changed a filter's cutoff keytrack");
 console.log(
-  "Filter editor: controls, routing, stage transfer and cancellation, filter reorder and FX targets passed.",
+  "Filter editor: controls, WS keytrack, routing, stage transfer and cancellation, filter reorder and FX targets passed.",
 );

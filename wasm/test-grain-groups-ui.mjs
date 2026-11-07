@@ -150,6 +150,8 @@ const context = vm.createContext({
   },
   scheduleParameter: (id, value) => calls.push(["parameter", id, value]),
   schedulePreset: () => calls.push(["preset"]),
+  schedulePresetStream: () => calls.push(["preset stream"]),
+  finishPresetStream: () => calls.push(["finish stream"]),
   structuredClone,
 });
 const run = (code) => vm.runInContext(code, context);
@@ -276,6 +278,13 @@ shaperEditors[0].set({ quality: "clean2x" });
 assert.deepEqual(calls.splice(0), [["preset"]]);
 assert.equal(groups().groups[0].waveshaper_options.future, 42);
 assert.equal(groups().groups[0].waveshaper_options.quality, "clean2x");
+shaperEditors[0].set({ envelope_source: "env2" });
+assert.deepEqual(calls.splice(0), [["preset"]]);
+assert.equal(groups().groups[0].waveshaper_options.envelope_source, "env2");
+shaperEditors[0].set({ points: Array(17).fill(.25) }, true);
+shaperEditors[0].finishPoints();
+assert.deepEqual(calls.splice(0), [["preset stream"], ["finish stream"]]);
+assert.equal(groups().groups[0].waveshaper_options.points[8], .25);
 shaperEditors[0].setNumeric("input", .7);
 assert.deepEqual(calls.splice(0), [["parameter", "grain_group1_waveshaper_input", .7]]);
 assert.equal(groups().groups[0].waveshaper_options.input, .7);

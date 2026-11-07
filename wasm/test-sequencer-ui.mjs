@@ -247,12 +247,14 @@ ui.catalog.parameters = savedCatalog;
 delete ui.hooks.fxParameters; delete ui.hooks.fxName; delete ui.hooks.sourceFxRealtime;
 assert.equal(
   knobs.length,
-  96,
-  "Every step needs Gate, Pulses, Ratchet and three destination knobs",
+  112,
+  "Every step needs Gate, Pulses, Ratchet, Velocity and three destination knobs",
 );
-for (let n = 1; n <= 16; n++)
-  for (const field of ["pitch", "ratchet time", "slide", "probability", "velocity"])
+for (let n = 1; n <= 16; n++) {
+  for (const field of ["pitch", "ratchet time", "slide", "probability"])
     control(`Stage ${n} ${field}`);
+  assert.ok(knobs.some((k) => k.schema[5] === `Stage ${n} velocity`), `Stage ${n} velocity knob`);
+}
 assert.ok(
   !editor.all().some((e) => e.getAttribute("aria-label") === "Stage layer"),
 );
@@ -312,6 +314,143 @@ for (const [key, index] of [
   knob.binding.set(knob.binding.reset());
   assert.equal(ui.track().steps[0][key], 1);
 }
+const velocity = knobs[3];
+assert.equal(velocity.schema[5], "Stage 1 velocity");
+assert.deepEqual(Array.from(velocity.schema.slice(3, 5)), [0, 127]);
+assert.equal(velocity.binding.step, 1);
+assert.equal(velocity.binding.ariaScale, 1);
+assert.equal(velocity.binding.quantize(45.8), 46);
+assert.equal(velocity.binding.get(), 100);
+ui.selection = new Set([0, 1]);
+velocity.binding.set(0);
+assert.equal(ui.track().steps[0].velocity, 0);
+assert.equal(ui.track().steps[1].velocity, 100, "editing a step must preserve the existing selection semantics");
+assert.deepEqual([...ui.selection], [0, 1]);
+assert.deepEqual({ ...edits.at(-1) }, { track: 1, stage: 0, field: 15, value: 0 });
+const oldVelocityTrack = ui.track();
+preset = structuredClone(preset);
+velocity.binding.set(126.8);
+assert.equal(ui.track().steps[0].velocity, 127);
+assert.equal(oldVelocityTrack.steps[0].velocity, 0, "Velocity edited a stale snapshot");
+assert.equal(preset.sequencer.tracks[0].steps[0].velocity, 100, "Velocity edited the wrong track after reorder");
+velocity.binding.set(-5);
+assert.equal(velocity.binding.get(), 0);
+velocity.binding.set(999);
+assert.equal(velocity.binding.get(), 127);
+velocity.binding.set(velocity.binding.reset());
+assert.equal(velocity.binding.get(), 100);
+
+// An existing Control tile can still contain the old input selector. Resolve
+// it to the actual new knob, then exercise the shipping tile's proxy and its
+// shared knob renderer all the way through the sequencer edit callback.
+{
+  class KnobElement {
+    constructor(tag) {
+      this.tagName = tag.toUpperCase();
+      this.namespaceURI = "http://www.w3.org/1999/xhtml";
+      this.children = [];
+      this.nodes = new Map();
+      this.attributes = new Map();
+      this.events = {};
+      this.dataset = {};
+      this.style = {};
+      this.className = "";
+      this.isConnected = true;
+      this.classList = { add() {}, remove() {}, toggle() {} };
+    }
+    get parentElement() { return this.parentNode ?? null; }
+    get firstElementChild() { return this.children[0] ?? null; }
+    append(...nodes) { for (const node of nodes) node.parentNode = this; this.children.push(...nodes); }
+    replaceWith(node) {
+      const parent = this.parentNode;
+      parent.children[parent.children.indexOf(this)] = node;
+      node.parentNode = parent;
+    }
+    matches(selector) { return selector === ".knob" && this.className.split(" ").includes("knob"); }
+    closest(selector) {
+      for (let node = this; node; node = node.parentNode)
+        if (node.matches(selector)) return node;
+      return null;
+    }
+    querySelector(selector) {
+      if (!this.nodes.has(selector)) {
+        const node = new KnobElement(selector === "output" ? "output" : "div");
+        node.className = selector.startsWith(".") ? selector.slice(1) : "";
+        node.parentNode = this;
+        this.nodes.set(selector, node);
+      }
+      return this.nodes.get(selector);
+    }
+    querySelectorAll() { return []; }
+    all() { return [this, ...this.children.flatMap((node) => node.all())]; }
+    setAttribute(name, value) { this.attributes.set(name, String(value)); }
+    getAttribute(name) { return this.attributes.get(name); }
+    removeAttribute(name) { this.attributes.delete(name); }
+    addEventListener(name, callback) { this.events[name] = callback; }
+    setPointerCapture() {}
+    focus() { knobDocument.activeElement = this; }
+  }
+  const knobDocument = {
+    activeElement: null,
+    createElement: (tag) => new KnobElement(tag),
+    importNode: (node) => Object.assign(new KnobElement(node.tagName), { className: node.className }),
+  };
+  const knobContext = vm.createContext({
+    document: knobDocument, window: {}, preset: {}, state: { knobs: {} }, editing: 0,
+    controls: new Map(), modulationViews: new Map(), knobUnits: new Map(),
+  });
+  const app = await readFile(new URL("../rust/web/app.js", import.meta.url), "utf8");
+  vm.runInContext(app.slice(app.indexOf("function createKnob("), app.indexOf("function syncControl(")), knobContext);
+  vm.runInContext(app.slice(app.indexOf("function controlSourceNode("), app.indexOf("// Each drum voice")), knobContext);
+  const sourceBank = new KnobElement("div");
+  knobContext.createKnob(velocity.schema, sourceBank, velocity.binding);
+  const sourceKnob = sourceBank.children[0], sourceDial = sourceKnob.querySelector(".dial");
+  const legacySelector = 'input[aria-label="Stage 1 velocity"]';
+  knobDocument.querySelector = (selector) =>
+    selector === '.dial[aria-label="Stage 1 velocity"]' ? sourceDial : null;
+  const item = { selector: legacySelector, timbre: 1, view: { sequence: true, neuro: { selected: 1 } } };
+  assert.equal(knobContext.controlSourceNode(item), sourceKnob);
+  assert.equal(knobContext.controlSourceNode({ selector: 'input[aria-label="Stage 1 probability"]' }), null);
+  const api = {
+    valid: () => true,
+    describe: (value) => knobContext.controlSourceNode(value),
+    parameter: () => null,
+    run: (_item, action) => action(),
+    read: () => ({ state: { knobs: {} } }),
+    gesture() {},
+  };
+  Object.assign(knobContext, {
+    sourceEditor: async () => api,
+    el: (tag, className) => Object.assign(new KnobElement(tag), { className }),
+    hooks: { knob: (...args) => knobContext.createKnob(...args), catalog: () => ({ parameters: [] }) },
+    extent() {}, sync() {},
+  });
+  const controlSource = await readFile(new URL("../rust/web/control.js", import.meta.url), "utf8");
+  vm.runInContext(controlSource.slice(controlSource.indexOf("async function proxyFor("), controlSource.indexOf("function move(")), knobContext);
+  const tile = new KnobElement("div");
+  await knobContext.proxyFor(tile, item);
+  const proxyKnob = tile.all().find((node) => node.matches(".knob"));
+  assert.ok(proxyKnob, "The old Control tile must be rebuilt as a knob");
+  const proxyDial = proxyKnob.querySelector(".dial");
+  const key = (key) => proxyDial.events.keydown({ key, preventDefault() {} });
+  key("Home");
+  assert.equal(ui.track().steps[0].velocity, 0);
+  assert.deepEqual({ ...edits.at(-1) }, { track: 1, stage: 0, field: 15, value: 0 });
+  key("End");
+  assert.equal(ui.track().steps[0].velocity, 127);
+  key("ArrowDown");
+  assert.equal(ui.track().steps[0].velocity, 126);
+  key("Home");
+  proxyDial.events.pointerdown({ button: 0, pointerId: 1, clientX: 0, clientY: 180, preventDefault() {} });
+  proxyDial.events.pointermove({ clientX: 0, clientY: 90 });
+  proxyDial.events.pointerup();
+  assert.equal(ui.track().steps[0].velocity, 64, "Dragging the saved tile must edit integer velocity");
+  velocity.binding.set(42);
+  tile.paint();
+  assert.equal(proxyDial.getAttribute("aria-valuenow"), "42", "A tile must reflect external edits");
+  proxyDial.events.dblclick();
+  assert.equal(ui.track().steps[0].velocity, 100);
+}
 const ratchetTime = control("Stage 1 ratchet time");
 assert.deepEqual(ratchetTime.children.map((option) => Number(option.value)), [0, 1, 2, 3, 4, 5, 6, 7, 8]);
 ratchetTime.value = "4";
@@ -327,7 +466,7 @@ ratchetTime.value = "0";
 ratchetTime.onchange();
 assert.equal(ui.track().steps[0].ratchet_span, 0);
 for (let i = 0; i < 3; i++) {
-  const k = knobs[3 + i];
+  const k = knobs[4 + i];
   assert.equal(k.schema[5], `Stage 1 destination ${i + 1} amount`);
   k.binding.set(0.2 * (i + 1));
   preset = structuredClone(preset);
@@ -480,7 +619,7 @@ ui.edit(old, 0, 0, 77);
 assert.equal(edits.length, before, "A removed track received a stale edit");
 assert.ok(refreshes > 0);
 console.log(
-  "Sequencer editor: snapshot/reorder-safe pitch, 96 step knobs, integer Pulses/Ratchet, scalar OSC routing and ±24 st offsets passed.",
+  "Sequencer editor: snapshot/reorder-safe pitch and velocity, 112 step knobs, integer Pulses/Ratchet, scalar OSC routing and ±24 st offsets passed.",
 );
 
 // Destination pickers: a closed picker is one button. Its section → target
@@ -861,6 +1000,13 @@ console.log(
   assert.equal(paged().steps[16].pitch, 71);
   assert.equal(paged().steps[0].pitch, first, "the first page changed");
   assert.throws(() => control("Stage 1 pitch"), /Stage 1 pitch/);
+  const velocity17 = knobs.findLast((k) => k.schema[0] === "sequence_1_16_velocity");
+  const firstVelocity = paged().steps[0].velocity;
+  assert.equal(velocity17.schema[5], "Stage 17 velocity");
+  velocity17.binding.set(0);
+  assert.deepEqual({ ...edits.at(-1) }, { track: 1, stage: 16, field: 15, value: 0 });
+  assert.equal(paged().steps[16].velocity, 0);
+  assert.equal(paged().steps[0].velocity, firstVelocity, "a page-two velocity edit changed page one");
 
   // Picks are columns of the page shown: a phrase copied on the second
   // page pastes into the same columns of the third.

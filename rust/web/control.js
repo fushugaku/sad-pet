@@ -66,7 +66,7 @@
     const mount = () => {
       if (!editor || pool) return;
       if (!editor.valid(item)) return error("Source track removed");
-      const node = document.querySelector(item.selector);
+      const node = editor.node(item);
       if (!node) return error("Source control unavailable");
       // Keep the original DOM hierarchy intact: sequencer updates and module
       // editors use queries scoped to their own roots. Only the selected

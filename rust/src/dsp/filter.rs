@@ -372,9 +372,12 @@ impl ShapedFilter {
         &mut self,
         shapers: crate::waveshaper::FilterShapers,
         note: f32,
+        envelopes: &[f32],
     ) {
         self.before.configure(shapers.before, note);
         self.after.configure(shapers.after, note);
+        self.before.set_envelopes(envelopes);
+        self.after.set_envelopes(envelopes);
     }
     pub(crate) fn latency_samples(&self) -> usize {
         self.before.latency_samples() + self.after.latency_samples()
@@ -447,7 +450,7 @@ impl FilterBankState {
             p.filter2_morph,
         );
         for (filter, shapers) in self.filters.iter_mut().zip(p.filter_shapers) {
-            filter.configure_shapers(shapers, note);
+            filter.configure_shapers(shapers, note, &envs);
         }
     }
     pub fn process(&mut self, frame: Stereo) -> Stereo {

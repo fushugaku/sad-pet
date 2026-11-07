@@ -194,7 +194,7 @@ pub(crate) fn configure_shared<const N: usize>(
             slot.drive,
             slot.morph,
         );
-        filter.configure_shapers(slot.shapers, note);
+        filter.configure_shapers(slot.shapers, note, &envs);
     }
 }
 
@@ -218,7 +218,7 @@ pub(crate) fn configure_voice<const N: usize>(
             slot.drive,
             slot.morph,
         );
-        bank.voices[voice].configure_shapers(slot.shapers, note);
+        bank.voices[voice].configure_shapers(slot.shapers, note, &envs);
         if slot.position.oscillator().is_some() {
             bank.oscillator_voices[voice].configure(
                 slot.model,
@@ -228,7 +228,7 @@ pub(crate) fn configure_voice<const N: usize>(
                 slot.drive,
                 slot.morph,
             );
-            bank.oscillator_voices[voice].configure_shapers(slot.shapers, note);
+            bank.oscillator_voices[voice].configure_shapers(slot.shapers, note, &envs);
         }
     }
 }

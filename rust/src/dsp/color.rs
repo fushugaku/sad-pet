@@ -165,6 +165,11 @@ impl ColorProcessor {
     pub fn set_pitch(&mut self, note: f32) {
         self.waveshaper.set_pitch(note);
     }
+    pub(crate) fn set_envelopes(&mut self, envelopes: &[f32]) {
+        if self.slot.kind == SaturatorType::Waveshaper {
+            self.waveshaper.set_envelopes(envelopes);
+        }
+    }
     pub fn configure_tempo(&mut self, slot: ColorSlot, bpm: f32) {
         let tempo = if matches!(
             slot.kind,
@@ -512,6 +517,11 @@ impl ColorRack {
             if processor.slot.kind == SaturatorType::Waveshaper {
                 processor.waveshaper.set_pitch(note);
             }
+        }
+    }
+    pub(crate) fn set_envelopes(&mut self, envelopes: &[f32]) {
+        for processor in &mut self.processors[..self.len] {
+            processor.set_envelopes(envelopes);
         }
     }
     pub fn process(&mut self, mut frame: Stereo) -> Stereo {

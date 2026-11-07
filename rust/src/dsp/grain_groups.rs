@@ -279,6 +279,7 @@ impl Runtime {
         Some(chosen)
     }
     /// `note` is the pitch the grain plays at, as a MIDI note.
+    #[cfg(test)]
     pub(crate) fn start(
         &mut self,
         slot: usize,
@@ -287,6 +288,18 @@ impl Runtime {
         duration: u32,
         note: f32,
     ) {
+        self.start_with_envelopes(slot, index, group, duration, note, &[]);
+    }
+
+    pub(crate) fn start_with_envelopes(
+        &mut self,
+        slot: usize,
+        index: usize,
+        group: &Group,
+        duration: u32,
+        note: f32,
+        envelopes: &[f32],
+    ) {
         if let Waveshaper::Type(mode) = group.waveshaper {
             self.advanced_shapers[slot].reset_for_note(
                 mode,
@@ -294,6 +307,7 @@ impl Runtime {
                 group.waveshaper_options,
                 note,
             );
+            self.advanced_shapers[slot].set_envelopes(envelopes);
         }
         self.parallel_delays[slot].clear();
         let cutoff_offset = if group.random_cutoff > 0.0 {
@@ -348,6 +362,7 @@ impl Runtime {
     /// filters in the group's order, then its amp envelope and level, or None for a grain outside the
     /// groups, which keeps the engine's window. All but the waveshaper's type
     /// follow the group's current settings while it plays.
+    #[cfg(test)]
     #[inline]
     pub(crate) fn process(
         &mut self,
@@ -356,8 +371,19 @@ impl Runtime {
         frame: Stereo,
         settings: &Settings,
     ) -> Option<(usize, Stereo)> {
-        self.process_gain(slot, age, frame, settings, true)
+        self.process_gain(slot, age, frame, settings, true, &[])
     }
+    pub(crate) fn process_with_envelopes(
+        &mut self,
+        slot: usize,
+        age: u32,
+        frame: Stereo,
+        settings: &Settings,
+        envelopes: &[f32],
+    ) -> Option<(usize, Stereo)> {
+        self.process_gain(slot, age, frame, settings, true, envelopes)
+    }
+    #[cfg(test)]
     pub(crate) fn process_unleveled(
         &mut self,
         slot: usize,
@@ -365,7 +391,17 @@ impl Runtime {
         frame: Stereo,
         settings: &Settings,
     ) -> Option<(usize, Stereo)> {
-        self.process_gain(slot, age, frame, settings, false)
+        self.process_gain(slot, age, frame, settings, false, &[])
+    }
+    pub(crate) fn process_unleveled_with_envelopes(
+        &mut self,
+        slot: usize,
+        age: u32,
+        frame: Stereo,
+        settings: &Settings,
+        envelopes: &[f32],
+    ) -> Option<(usize, Stereo)> {
+        self.process_gain(slot, age, frame, settings, false, envelopes)
     }
     fn process_gain(
         &mut self,
@@ -374,6 +410,7 @@ impl Runtime {
         frame: Stereo,
         settings: &Settings,
         include_level: bool,
+        envelopes: &[f32],
     ) -> Option<(usize, Stereo)> {
         let grain = &mut self.grains[slot];
         if !grain.grouped {
@@ -426,6 +463,7 @@ impl Runtime {
                     0
                 });
                 frame = if grain.advanced_shaper {
+                    advanced.set_envelopes(envelopes);
                     advanced.process(frame)
                 } else {
                     shaper.process(frame, tables)
@@ -594,6 +632,54 @@ mod tests {
             (0.0, 1.0)
         );
         assert_eq!(runtime.grains[0].filtering, [false; 2]);
+    }
+
+    #[test]
+    fn advanced_waveshapers_follow_each_grains_owner_envelope() {
+        let group = Group {
+            amp: Envelope {
+                attack: 0.0,
+                decay: 0.0,
+                sustain: 1.0,
+                release: 0.0,
+            },
+            waveshaper: Waveshaper::Type(WaveshaperMode::Drive),
+            waveshaper_depth: 0.65,
+            waveshaper_options: crate::waveshaper::Options {
+                envelope: 1.0,
+                envelope_source: Some(crate::preset::EnvSource::Env2),
+                ..Default::default()
+            },
+            ..Group::default()
+        };
+        let settings = Settings {
+            advanced: true,
+            groups: [group; GROUPS],
+        };
+        let low_owner = [0.0; crate::preset::MODULATORS + 1];
+        let mut high_owner = low_owner;
+        high_owner[crate::preset::EnvSource::Env2.index()] = 1.0;
+        let mut runtime = Runtime::new(48_000);
+        runtime.start_with_envelopes(0, 0, &group, 4_800, 60.0, &low_owner);
+        runtime.start_with_envelopes(1, 0, &group, 4_800, 60.0, &high_owner);
+
+        let mut difference = 0.0;
+        for age in 0..512 {
+            let input = 0.2 * (std::f32::consts::TAU * age as f32 / 48.0).sin();
+            let low = runtime
+                .process_with_envelopes(0, age, [input; 2], &settings, &low_owner)
+                .unwrap()
+                .1[0];
+            let high = runtime
+                .process_with_envelopes(1, age, [input; 2], &settings, &high_owner)
+                .unwrap()
+                .1[0];
+            difference += (low - high).abs();
+        }
+        assert!(
+            difference > 0.1,
+            "grains shared the wrong owner envelope: {difference}"
+        );
     }
 
     /// One grain of a held envelope, fed a 1 kHz sine at half scale.

@@ -117,6 +117,32 @@ function editor() {
   assert.equal(e.snapshot().edits, 0);
 }
 {
+  const e = editor();
+  e.evaluate("preset.params.position=0.1;schedulePresetStream()");
+  await e.next();
+  e.evaluate("preset.params.position=0.4;schedulePresetStream()");
+  await e.next();
+  e.evaluate("preset.params.position=0.9;schedulePresetStream();finishPresetStream()");
+  await e.next();
+  assert.deepEqual(e.calls.map(c => c.data.params.position), [0.1, 0.4, 0.9],
+    "A continuing curve gesture must publish intermediate snapshots and the final point");
+  assert.ok(e.calls.every(c => c.path === "/api/preset"));
+  assert.equal(e.snapshot().pending, 0);
+}
+{
+  const e = editor(), gate = e.hold();
+  e.evaluate("preset.params.position=0.1;schedulePresetStream()");
+  const first = e.next();
+  await gate.entered;
+  e.evaluate("for(let i=0;i<1000;i++){preset.params.position=i/1000;schedulePresetStream()}finishPresetStream()");
+  assert.equal(e.timerCount(), 0, "A slow write must not queue a timer per curve point");
+  gate.release();
+  await first;
+  await e.next();
+  assert.deepEqual(e.calls.map(c => c.data.params.position), [0.1, 0.999]);
+  assert.equal(e.snapshot().pending, 0);
+}
+{
   const e = editor(), gate = e.hold();
   e.evaluate("setParam('position',0.2)");
   const first = e.next();

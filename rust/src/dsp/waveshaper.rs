@@ -345,6 +345,11 @@ fn finite_or_zero(value: f32) -> f32 {
 }
 
 #[inline]
+fn external_envelope_gain(amount: f32, value: f32) -> f32 {
+    2.0_f32.powf((amount - 0.5) * 4.0 * value)
+}
+
+#[inline]
 fn safe_audio(value: f32) -> f32 {
     finite_or_zero(value).clamp(-8.0, 8.0)
 }
@@ -646,6 +651,7 @@ pub struct Processor {
     depth: f32,
     options: Options,
     target_options: Options,
+    external_envelope: f32,
     options_slew_left: usize,
     curve_from: [Curve; 2],
     curve_slew_left: usize,
@@ -687,6 +693,7 @@ impl Processor {
             depth: 0.5,
             options: Options::default(),
             target_options: Options::default(),
+            external_envelope: 0.0,
             options_slew_left: 0,
             curve_from: [Curve::Radias, Curve::SoftClip],
             curve_slew_left: 0,
@@ -776,6 +783,12 @@ impl Processor {
             self.auto_gain_target = static_level_match(mode, next_depth, options, self.sample_rate);
             self.auto_gain_slew_left = self.transition_samples();
         }
+        if self.options.envelope_source != options.envelope_source {
+            self.external_envelope = 0.0;
+        }
+        // Envelope source is a structural selector. Publish it immediately;
+        // the follower amount and all audio trims keep their normal slew.
+        self.options.envelope_source = options.envelope_source;
         self.mode = mode;
         self.depth = next_depth;
         self.target_options = options;
@@ -812,6 +825,7 @@ impl Processor {
         self.depth = depth;
         self.options = options;
         self.target_options = options;
+        self.external_envelope = 0.0;
         self.options_slew_left = 0;
         self.curve_from = [options.curve, options.curve_b];
         self.curve_slew_left = 0;
@@ -844,6 +858,14 @@ impl Processor {
     pub fn set_pitch(&mut self, note: f32) {
         self.shaper.set_pitch(note);
         self.clean.set_pitch(note);
+    }
+
+    /// Resolve the selected external envelope now and retain only one scalar.
+    /// Call on the control update that already owns this processor's envelopes.
+    pub fn set_envelopes(&mut self, envelopes: &[f32]) {
+        self.external_envelope = self.options.envelope_source.map_or(0.0, |source| {
+            finite_or_zero(source.value(envelopes)).clamp(0.0, 1.0)
+        });
     }
 
     pub fn pitch_code(&self) -> u16 {
@@ -1055,9 +1077,12 @@ impl Processor {
             self.envelope_state[channel] = (magnitude
                 + coefficient * (self.envelope_state[channel] - magnitude))
                 .clamp(0.0, 8.0);
-            let envelope_octaves = (options.envelope - 0.5) * 4.0;
-            let envelope_gain =
-                2.0_f32.powf(envelope_octaves * (0.5 - self.envelope_state[channel]));
+            let envelope_gain = if options.envelope_source.is_some() {
+                external_envelope_gain(options.envelope, self.external_envelope)
+            } else {
+                let envelope_octaves = (options.envelope - 0.5) * 4.0;
+                2.0_f32.powf(envelope_octaves * (0.5 - self.envelope_state[channel]))
+            };
             let driven = raw * envelope_gain;
             self.pre_tone_state[channel] = one_pole(
                 driven,
@@ -1255,12 +1280,24 @@ impl StageProcessor {
                 ((self.processor.sample_rate as f32 * SMOOTH_SECONDS).round() as usize).max(1);
         }
         if stage.enabled {
-            self.processor
-                .configure(stage.mode, stage.depth, stage.options);
+            let mut options = stage.options;
+            if stage.keytrack != 0.0 && note.is_finite() && note != 60.0 {
+                // The existing input trim spans 48 dB over [0, 1]. Keytrack
+                // applies 6.0206 dB per octave around MIDI note 60 without
+                // modifying the saved trim value.
+                let octaves = (note - 60.0) / 12.0;
+                options.input =
+                    (options.input + stage.keytrack * octaves * (6.0206 / 48.0)).clamp(0.0, 1.0);
+            }
+            self.processor.configure(stage.mode, stage.depth, options);
             self.processor.set_pitch(note);
         }
         self.stage = stage;
         self.configured = true;
+    }
+
+    pub fn set_envelopes(&mut self, envelopes: &[f32]) {
+        self.processor.set_envelopes(envelopes);
     }
 
     pub fn clear(&mut self) {
@@ -1327,6 +1364,84 @@ mod tests {
         assert_eq!(curve_transfer(Curve::Custom, -2.0, 0.5, &points), -1.0);
         assert_eq!(curve_transfer(Curve::Custom, 2.0, 0.5, &points), 1.0);
         assert!((curve_transfer(Curve::Custom, -0.9375, 0.5, &points) + 0.9375).abs() < 1e-6);
+    }
+
+    #[test]
+    fn filter_keytrack_is_centered_at_c4_and_updates_when_only_note_changes() {
+        let stage = Stage {
+            enabled: true,
+            mode: WaveshaperMode::Decimator,
+            depth: 0.0,
+            keytrack: 1.0,
+            ..Stage::default()
+        };
+        let mut processor = StageProcessor::new(48_000);
+        processor.configure(stage, 60.0);
+        assert_eq!(
+            processor.processor.target_options.input,
+            stage.options.input
+        );
+        assert_eq!(processor.stage.options.input, stage.options.input);
+
+        let octave = 6.0206_f32 / 48.0;
+        processor.configure(stage, 72.0);
+        assert!(
+            (processor.processor.target_options.input - (stage.options.input + octave)).abs()
+                < 1e-7
+        );
+        assert_eq!(processor.stage.options.input, stage.options.input);
+        processor.configure(stage, 48.0);
+        assert!(
+            (processor.processor.target_options.input - (stage.options.input - octave)).abs()
+                < 1e-7
+        );
+
+        let mut untracked = StageProcessor::new(48_000);
+        untracked.configure(
+            Stage {
+                keytrack: 0.0,
+                ..stage
+            },
+            48.0,
+        );
+        let mut audio_delta = 0.0;
+        for index in 0..512 {
+            let sample = (std::f32::consts::TAU * index as f32 / 37.0).sin() * 0.18;
+            let frame = [sample, -sample];
+            let keyed = processor.process(frame);
+            let plain = untracked.process(frame);
+            audio_delta += (keyed[0] - plain[0]).abs();
+        }
+        assert_eq!(
+            processor.processor.options.input,
+            processor.processor.target_options.input
+        );
+        assert_eq!(
+            untracked.processor.options.input,
+            untracked.processor.target_options.input
+        );
+        assert!(
+            audio_delta > 0.1,
+            "keytrack did not change filter WS PCM: delta={audio_delta}"
+        );
+    }
+
+    #[test]
+    fn filter_waveshaper_keytrack_keeps_mix_zero_as_exact_dry_bypass() {
+        let mut processor = StageProcessor::new(48_000);
+        processor.configure(
+            Stage {
+                enabled: true,
+                mode: WaveshaperMode::HardClip,
+                mix: 0.0,
+                keytrack: 1.0,
+                ..Stage::default()
+            },
+            84.0,
+        );
+        for frame in [[0.125, -0.375], [0.75, 0.25], [-0.9, 0.1]] {
+            assert_eq!(processor.process(frame), frame);
+        }
     }
 
     #[test]

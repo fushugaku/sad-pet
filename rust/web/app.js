@@ -185,7 +185,7 @@ function download(blob, name) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-function schedulePreset() {
+function markStructuralEdit() {
   editGeneration++;
   presetLibrary?.markDirty();
   pending++;
@@ -193,8 +193,23 @@ function schedulePreset() {
   parameterEdits.clear();
   for (const [key, edit] of sequenceEdits)
     if (!sequenceCommand(edit)) sequenceEdits.delete(key);
+}
+function schedulePreset() {
+  markStructuralEdit();
   clearTimeout(commitTimer);
   armPresetWrite(50);
+}
+// A curve drag publishes snapshots while it moves; normal structural edits
+// keep their existing debounce and every write remains in the same queue.
+function schedulePresetStream() {
+  markStructuralEdit();
+  if (commitTimer === null && !presetWriteCount) armPresetWrite(40);
+}
+function finishPresetStream() {
+  if (!structuralPending) return;
+  clearTimeout(commitTimer);
+  commitTimer = null;
+  if (!presetWriteCount) armPresetWrite(0);
 }
 function scheduleParameter(id, value) {
   if (!Number.isFinite(value)) return;
@@ -907,12 +922,13 @@ function buildGrainGroups() {
           label: `Group ${name} waveshaper`, key: `grain_group${index + 1}`,
           controlKey: (field) => `grain_group${index + 1}_waveshaper_${field}`,
           get,
-          set: (patch) => {
+          set: (patch, streaming = false) => {
             const group = ensureGrainGroups().groups[index];
             group.waveshaper_options = { ...waveshaperOptions(get()), ...patch };
-            schedulePreset();
+            if (streaming) schedulePresetStream(); else schedulePreset();
             editor.sync();
           },
+          finishPoints: finishPresetStream,
           setNumeric: (field, value) => {
             const group = ensureGrainGroups().groups[index];
             group.waveshaper_options = { ...waveshaperOptions(get()), [field]: value };
@@ -1644,23 +1660,26 @@ function syncFilters() {
   syncAddedFilters();
   refreshFilterGraphs();
 }
-function syncFilterEnvelope(select, value) {
+function syncFilterEnvelope(select, value, { follower = false, enabled = true } = {}) {
   const count = preset.env_count || 3,
-    available = !!preset.tb303;
-  const choices = `${count}:${available}:${value}`;
+    available = !!preset.tb303,
+    selected = value ?? "";
+  const choices = `${count}:${available}:${selected}:${follower}:${enabled}`;
   if (select.dataset.envChoices !== choices) {
     select.dataset.envChoices = choices;
     const sources = Array.from({ length: 8 }, (_, i) => [`env${i + 1}`, `ENV ${i + 1}`])
-      .filter(([id], i) => i < count || id === value);
-    if (available || value === "tb303") sources.push(["tb303", "303"]);
+      .filter(([id], i) => i < count || id === selected);
+    if (available || selected === "tb303") sources.push(["tb303", "303"]);
+    if (follower) sources.unshift(["", "Follower"]);
     select.replaceChildren(...sources.map(([id, label]) => {
-      const disabled = id === "tb303" ? !available : Number(id.slice(3)) > count;
+      const disabled = id !== "" && (!enabled || (id === "tb303" ? !available : Number(id.slice(3)) > count));
       const item = option(id, disabled ? `${label} · unavailable` : label);
       item.disabled = disabled;
       return item;
     }));
   }
-  select.value = value;
+  select.value = selected;
+  if (follower) select.disabled = false;
 }
 function syncFilterEnvelopes() {
   for (const prefix of ["filter", "filter2"])
@@ -2005,7 +2024,7 @@ const WAVESHAPER_OPTION_DEFAULTS = {
   quality: "legacy", curve: "radias", curve_b: "soft_clip", morph: 0,
   input: 0.5, output: 0.5, knee: 0.5, bias: 0.5, pre_tone: 1, post_tone: 1,
   bass: 0, bass_frequency: 0.5, envelope: 0.5, attack: 0.2, release: 0.5,
-  dc_block: false, auto_gain: false,
+  envelope_source: null, dc_block: false, auto_gain: false,
   points: Array.from({ length: 17 }, (_, i) => i / 8 - 1),
 };
 const WAVESHAPER_CURVES = [
@@ -2026,7 +2045,7 @@ const WAVESHAPER_OPTION_KNOBS = [
 const waveshaperOptions = (options) => ({ ...WAVESHAPER_OPTION_DEFAULTS, ...options,
   points: Array.isArray(options?.points) && options.points.length === 17
     ? options.points : WAVESHAPER_OPTION_DEFAULTS.points });
-const FILTER_SHAPER_DEFAULTS = { enabled: false, mode: "drive", depth: 0.5, mix: 1 };
+const FILTER_SHAPER_DEFAULTS = { enabled: false, mode: "drive", depth: 0.5, mix: 1, keytrack: 0 };
 const filterShaperKey = (ref, side) =>
   `${ref.main !== undefined ? `main:${ref.main}` : `slot:${ref.slot}`}:${side}`;
 const filterOrder = () => {
@@ -2054,7 +2073,7 @@ function writeFilterShaper(ref, side, stage) {
   const container = filterShaperContainer(ref, true);
   if (container) container[side] = stage;
 }
-function patchFilterShaper(ref, side, patch, numericField = null) {
+function patchFilterShaper(ref, side, patch, numericField = null, streaming = false) {
   if (ref.slot !== undefined && !findFilterSlot(ref.slot)) return;
   const current = filterShaper(ref, side);
   writeFilterShaper(ref, side, { ...current, ...patch,
@@ -2064,7 +2083,8 @@ function patchFilterShaper(ref, side, patch, numericField = null) {
       : preset.filter_slots.findIndex((slot) => slot.id === ref.slot) + 3;
     const value = patch.options ? patch.options[numericField] : patch[numericField];
     scheduleParameter(`filter${number}_ws_${side}_${numericField}`, value);
-  } else schedulePreset();
+  } else if (streaming) schedulePresetStream();
+  else schedulePreset();
   syncFilterShapers();
 }
 const filterShaperViews = new Map();
@@ -2114,8 +2134,12 @@ function buildFilterShaper(ref, side, number = ref.main + 1) {
   let options = null;
   const initialize = () => {
     if (options) return;
-    for (const [field, label, format] of [["depth", "DEPTH", (v) => String(Math.round(v * 127))], ["mix", "MIX", percent]]) {
-      updates.push(createKnob([`filter${number}_ws_${side}_${field}`, label, format, 0, 1,
+    for (const [field, label, format, min, max] of [
+      ["depth", "DEPTH", (v) => String(Math.round(v * 127)), 0, 1],
+      ["mix", "MIX", percent, 0, 1],
+      ["keytrack", "KEYTRACK", (v) => signedPercent(v), -1, 1],
+    ]) {
+      updates.push(createKnob([`filter${number}_ws_${side}_${field}`, label, format, min, max,
         `${name} waveshaper ${side} ${label.toLowerCase()}`], bank, {
         register: false, get: () => filterShaper(ref, side)[field],
         set: (value) => patchFilterShaper(ref, side, { [field]: value }, field),
@@ -2126,8 +2150,9 @@ function buildFilterShaper(ref, side, number = ref.main + 1) {
       label: `${name} waveshaper ${side}`, key: `filter_shaper:${key}`,
       controlKey: (field) => `filter${number}_ws_${side}_${field}`,
       get: () => filterShaper(ref, side).options,
-      set: (patch) => patchFilterShaper(ref, side, { options: patch }),
+      set: (patch, streaming = false) => patchFilterShaper(ref, side, { options: patch }, null, streaming),
       setNumeric: (field, value) => patchFilterShaper(ref, side, { options: { [field]: value } }, field),
+      finishPoints: finishPresetStream,
     });
     body.append(options.element);
   };
@@ -2270,37 +2295,49 @@ function waveshaperCurve(curve, x, options) {
   return x;
 }
 function buildWaveshaperOptions({ label, key, get, set, setNumeric, register = false,
+  finishPoints = () => {}, canUseEnvelope = () => true,
   controlKey = (field) => `${key}:waveshaper_${field}` }) {
   const details = document.createElement("details");
   details.className = "waveshaper-options";
-  details.innerHTML = `<summary>Shape</summary><div class="waveshaper-option-selects"><label>Quality<select class="ws-quality"></select></label><label>Curve A<select class="ws-curve"></select></label><label>Curve B<select class="ws-curve-b"></select></label></div><canvas class="waveshaper-curve" width="320" height="120"></canvas><div class="waveshaper-curve-actions"><button type="button" class="ws-linear">Reset curve</button></div><div class="waveshaper-option-knobs"></div><div class="waveshaper-switches"><label class="check"><input type="checkbox" class="ws-dc">DC block</label><label class="check"><input type="checkbox" class="ws-gain">Auto gain</label></div>`;
+  details.innerHTML = `<summary>Shape</summary><div class="waveshaper-option-selects"><label>Quality<select class="ws-quality"></select></label><label>Curve A<select class="ws-curve"></select></label><label>Curve B<select class="ws-curve-b"></select></label><label>ENV source<select class="ws-env-source"></select></label></div><div class="waveshaper-morph"><button type="button" class="ws-morph-a">A</button><div class="ws-morph-knob"></div><button type="button" class="ws-morph-b">B</button></div><div class="waveshaper-curve-key"><span>Mix</span><span>Custom</span></div><canvas class="waveshaper-curve" width="320" height="120"></canvas><div class="waveshaper-curve-actions"><button type="button" class="ws-linear">Reset curve</button></div><div class="waveshaper-option-knobs"></div><div class="waveshaper-switches"><label class="check"><input type="checkbox" class="ws-dc">DC block</label><label class="check"><input type="checkbox" class="ws-gain">Auto gain</label></div>`;
   const quality = details.querySelector(".ws-quality"), curve = details.querySelector(".ws-curve"),
     curveB = details.querySelector(".ws-curve-b"), canvas = details.querySelector(".waveshaper-curve"),
+    envSource = details.querySelector(".ws-env-source"), morphBank = details.querySelector(".ws-morph-knob"),
+    morphA = details.querySelector(".ws-morph-a"), morphB = details.querySelector(".ws-morph-b"),
+    curveKey = details.querySelector(".waveshaper-curve-key"),
     linear = details.querySelector(".ws-linear"), dc = details.querySelector(".ws-dc"),
     gain = details.querySelector(".ws-gain"), bank = details.querySelector(".waveshaper-option-knobs");
   quality.setAttribute("aria-label", `${label} quality`);
   curve.setAttribute("aria-label", `${label} curve A`);
   curveB.setAttribute("aria-label", `${label} curve B`);
+  envSource.setAttribute("aria-label", `${label} envelope source`);
+  morphA.setAttribute("aria-label", `${label} use curve A`);
+  morphB.setAttribute("aria-label", `${label} use curve B`);
+  morphA.title = "Morph 0% · Curve A"; morphB.title = "Morph 100% · Curve B";
   quality.replaceChildren(...[["legacy", "Legacy"], ["clean2x", "Clean 2×"], ["clean4x", "Clean 4×"]].map(([id, title]) => option(id, title)));
   curve.replaceChildren(...WAVESHAPER_CURVES.map(([id, title]) => option(id, title)));
   curveB.replaceChildren(...WAVESHAPER_CURVES.map(([id, title]) => option(id, title)));
   quality.onchange = () => set({ quality: quality.value });
   curve.onchange = () => set({ curve: curve.value });
   curveB.onchange = () => set({ curve_b: curveB.value });
+  envSource.onchange = () => set({ envelope_source: envSource.value || null });
+  const setMorph = (value) => setNumeric ? setNumeric("morph", value) : set({ morph: value });
+  morphA.onclick = () => setMorph(0);
+  morphB.onclick = () => setMorph(1);
   dc.onchange = () => set({ dc_block: dc.checked });
   gain.onchange = () => set({ auto_gain: gain.checked });
   let selected = 8, drawing = false, signature = "";
   const plotPadding = 5;
   const editable = (options) => options.curve === "custom" || options.curve_b === "custom";
-  const updatePoint = (index, value) => {
+  const updatePoint = (index, value, streaming = false) => {
     const points = [...waveshaperOptions(get()).points];
     points[index] = Math.max(-1, Math.min(1, value));
-    set({ points });
+    set({ points }, streaming);
   };
   const pointAt = (event) => {
     const box = canvas.getBoundingClientRect();
     selected = Math.max(0, Math.min(16, Math.round((event.clientX - box.left - plotPadding) / Math.max(1, box.width - 2 * plotPadding) * 16)));
-    updatePoint(selected, 1 - 2 * (event.clientY - box.top - plotPadding) / Math.max(1, box.height - 2 * plotPadding));
+    updatePoint(selected, 1 - 2 * (event.clientY - box.top - plotPadding) / Math.max(1, box.height - 2 * plotPadding), true);
   };
   canvas.onpointerdown = (event) => {
     if (!editable(waveshaperOptions(get())) || event.button !== 0) return;
@@ -2308,7 +2345,14 @@ function buildWaveshaperOptions({ label, key, get, set, setNumeric, register = f
     canvas.setPointerCapture?.(event.pointerId); pointAt(event);
   };
   canvas.onpointermove = (event) => { if (drawing) pointAt(event); };
-  canvas.onpointerup = canvas.onpointercancel = () => { drawing = false; };
+  const finishDrawing = (event) => {
+    if (!drawing) return;
+    if (event?.type === "pointerup" && Number.isFinite(event.clientX) && Number.isFinite(event.clientY))
+      pointAt(event);
+    drawing = false;
+    finishPoints();
+  };
+  canvas.onpointerup = canvas.onpointercancel = canvas.onlostpointercapture = finishDrawing;
   canvas.onkeydown = (event) => {
     const options = waveshaperOptions(get());
     if (!editable(options)) return;
@@ -2327,22 +2371,31 @@ function buildWaveshaperOptions({ label, key, get, set, setNumeric, register = f
     event.preventDefault(); updatePoint(selected, value);
   };
   linear.onclick = () => set({ points: [...WAVESHAPER_OPTION_DEFAULTS.points] });
-  const updates = [];
+  const updates = [], followerKnobs = [];
   const ensureKnobs = () => {
     if (updates.length) return;
-    for (const [field, caption, format] of WAVESHAPER_OPTION_KNOBS)
+    for (const [field, caption, format] of WAVESHAPER_OPTION_KNOBS) {
+      const target = field === "morph" ? morphBank : bank;
       updates.push(createKnob(
-        [controlKey(field), caption, format, 0, 1, `${label} ${caption.toLowerCase()}`], bank, {
+        [controlKey(field), caption, format, 0, 1, `${label} ${caption.toLowerCase()}`], target, {
           register, get: () => waveshaperOptions(get())[field],
           set: (value) => setNumeric ? setNumeric(field, value) : set({ [field]: value }),
           reset: () => WAVESHAPER_OPTION_DEFAULTS[field],
         }));
+      if (field === "attack" || field === "release") followerKnobs.push(target.children[target.children.length - 1]);
+    }
   };
   if (register) ensureKnobs();
   function sync() {
     const options = waveshaperOptions(get());
     for (const [select, value] of [[quality, options.quality], [curve, options.curve], [curveB, options.curve_b]])
       if (document.activeElement !== select) select.value = value;
+    const envelopeAvailable = !!canUseEnvelope();
+    syncFilterEnvelope(envSource, options.envelope_source, { follower: true, enabled: envelopeAvailable });
+    envSource.title = envelopeAvailable ? "" : "External envelopes require a live source";
+    for (const knob of followerKnobs) knob.hidden = options.envelope_source != null;
+    morphA.setAttribute("aria-pressed", String(options.morph <= 0));
+    morphB.setAttribute("aria-pressed", String(options.morph >= 1));
     dc.checked = !!options.dc_block; gain.checked = !!options.auto_gain;
     const custom = editable(options),
       staticMix = (options.curve !== "radias" || options.morph >= 1) &&
@@ -2350,6 +2403,7 @@ function buildWaveshaperOptions({ label, key, get, set, setNumeric, register = f
       visible = custom || staticMix;
     canvas.hidden = !visible;
     linear.hidden = !custom;
+    curveKey.hidden = !(custom && staticMix);
     canvas.tabIndex = custom && visible ? 0 : -1;
     canvas.setAttribute("role", custom && visible ? "slider" : "img");
     canvas.setAttribute("aria-label", custom ? `${label} custom curve` : `${label} curve preview`);
@@ -2375,18 +2429,26 @@ function buildWaveshaperOptions({ label, key, get, set, setNumeric, register = f
     ctx.strokeStyle = "#39443a"; ctx.lineWidth = 1; ctx.beginPath();
     ctx.moveTo(plotPadding, h / 2); ctx.lineTo(w - plotPadding, h / 2);
     ctx.moveTo(w / 2, plotPadding); ctx.lineTo(w / 2, h - plotPadding); ctx.stroke();
-    ctx.strokeStyle = "#c4f486"; ctx.lineWidth = 2; ctx.beginPath();
-    for (let i = 0; i <= 128; i++) {
-      const x = i / 64 - 1,
-        a = waveshaperCurve(options.curve, x, options), b = waveshaperCurve(options.curve_b, x, options),
-        y = custom && !staticMix ? waveshaperCurve("custom", x, options)
-          : a * (1 - options.morph) + b * options.morph;
-      const px = plotPadding + i * (w - 2 * plotPadding) / 128,
-        py = plotPadding + (1 - y) * (h - 2 * plotPadding) / 2;
-      if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+    if (staticMix) {
+      ctx.strokeStyle = "#c4f486"; ctx.lineWidth = 2; ctx.beginPath();
+      for (let i = 0; i <= 128; i++) {
+        const x = i / 64 - 1,
+          a = waveshaperCurve(options.curve, x, options), b = waveshaperCurve(options.curve_b, x, options),
+          y = a * (1 - options.morph) + b * options.morph;
+        const px = plotPadding + i * (w - 2 * plotPadding) / 128,
+          py = plotPadding + (1 - y) * (h - 2 * plotPadding) / 2;
+        if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+      }
+      ctx.stroke();
     }
-    ctx.stroke();
     if (custom) {
+      ctx.strokeStyle = "#e6ebe5"; ctx.lineWidth = 1; ctx.globalAlpha = 0.7; ctx.beginPath();
+      options.points.forEach((y, i) => {
+        const px = plotPadding + i * (w - 2 * plotPadding) / 16,
+          py = plotPadding + (1 - y) * (h - 2 * plotPadding) / 2;
+        if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+      });
+      ctx.stroke(); ctx.globalAlpha = 1;
       ctx.fillStyle = "#e6ebe5";
       options.points.forEach((y, i) => {
         ctx.beginPath(); ctx.arc(plotPadding + i * (w - 2 * plotPadding) / 16,
@@ -4375,7 +4437,13 @@ function syncColors() {
         const options = buildWaveshaperOptions({
           label: `${rack.label} ${number} waveshaper`, key: `color:${id}`,
           get: current, register: true,
-          set: (patch) => { updateOptions(patch); schedulePreset(); options.sync(); },
+          set: (patch, streaming = false) => {
+            updateOptions(patch);
+            if (streaming) schedulePresetStream(); else schedulePreset();
+            options.sync();
+          },
+          finishPoints: finishPresetStream,
+          canUseEnvelope: () => rack.key !== "source_color_chain" || sourceFxRealtime(),
           setNumeric: (field, value) => {
             updateOptions({ [field]: value });
             controls.get(`color:${id}:waveshaper_${field}`)?.();
@@ -4630,6 +4698,16 @@ function sequencerParameter(key) {
     id = index >= 0 && `filter${index + 3}_${filter[2]}`;
   }
   return id && sequenceCatalog?.parameters?.some((p) => p.id === id) ? id : null;
+}
+// Saved Control surfaces may still address a stage's former numeric input.
+// Resolve that old selector to the replacement knob with its live binding.
+function controlSourceNode(item) {
+  const node = document.querySelector(item.selector);
+  if (node) return node;
+  const legacy = /^(?:#neuropolis )?input\[aria-label="Stage ([1-9]\d*) velocity"\]$/.exec(item.selector);
+  return legacy
+    ? document.querySelector(`.dial[aria-label="Stage ${legacy[1]} velocity"]`)?.closest(".knob") ?? null
+    : null;
 }
 // Each drum voice is a top-level section, its controls grouped by module like
 // the voice editor: "Snare → Filter 1 → Cutoff". Drum voices go by their kit
@@ -5542,9 +5620,15 @@ function buildEnvs() {
     });
   }
 }
+function syncWaveshaperEnvelopeSources() {
+  syncFilterShapers();
+  for (const view of grainWaveshaperViews) view?.sync();
+  for (const view of colorWaveshaperViews.values()) view.sync();
+}
 function syncEnvs() {
   if (!preset?.envs) return;
   syncFilterEnvelopes();
+  syncWaveshaperEnvelopeSources();
   const count = preset.env_count || 3;
   $("env-count").textContent = `${count} / 8`;
   $("env-add").disabled = count >= 8;
@@ -7000,11 +7084,11 @@ async function init() {
         gesture: active => { editing = Math.max(0, editing + (active ? 1 : -1)); },
         pick: (stage, event) => neuroEditor?.pickKey(stage, event),
         picked: stage => neuroEditor?.selection.has(stage),
-        node: item => document.querySelector(item.selector),
+        node: controlSourceNode,
         describe(item) {
           this.view(item.view);
           syncAll();
-          return document.querySelector(item.selector);
+          return controlSourceNode(item);
         },
         run(item, action) {
           const neuro = neuroEditor && { selected: neuroEditor.selected, visiblePage: neuroEditor.visiblePage, page: neuroEditor.page };
@@ -7036,7 +7120,7 @@ async function init() {
         },
       });
       const item = window.sadPetControlSource.item;
-      const node = document.querySelector(item.selector);
+      const node = controlSourceNode(item);
       const bindings = [...(node?.querySelectorAll("[data-control-key]") || [])];
       if (node?.matches("[data-control-key]")) bindings.push(node);
       const ids = new Set(bindings.map(n => sequencerParameter(n.dataset.controlKey)).filter(Boolean));

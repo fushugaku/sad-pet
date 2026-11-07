@@ -1458,7 +1458,7 @@ impl Engine {
         self.source_fade_remaining = if self.playing { 128 } else { 0 };
     }
     pub fn prepare_source_effects(&mut self) -> Result<(), String> {
-        if self.preset.rack.is_some() {
+        if !self.reads_source_cache() {
             return Ok(());
         }
         let mut prepared = source_fx::prepare(
@@ -1482,7 +1482,7 @@ impl Engine {
     /// Whether the file plays through a Source FX cache. A live input has no
     /// file, and a Rack's Insert FX runs live wherever it stands.
     pub fn reads_source_cache(&self) -> bool {
-        self.live_input.is_none() && self.preset.rack.is_none()
+        self.live_input.is_none() && self.preset.rack.is_none() && self.preset.bus.is_none()
     }
     pub fn source_effects_pending(&self) -> bool {
         if !self.reads_source_cache() || self.source_fx_error {
@@ -3110,6 +3110,17 @@ impl Engine {
             + self.bend[self.source_channel as usize] * m.params.midi_pitchbend_range;
         let bass_env = self.tb303_view().envelope;
         let shared_envs = filter::envelopes(self.env_values, bass_env);
+        // The Rack configure key intentionally excludes envelope motion:
+        // update the selected scalar separately on every control refresh.
+        self.pre_color_rack.set_envelopes(&shared_envs);
+        self.color_rack.set_envelopes(&shared_envs);
+        if self.live_input.is_some() || self.preset.bus.is_some() || self.rack.is_some() {
+            self.source_color.set_envelopes(&shared_envs);
+        } else {
+            // Offline FileSource FX has no note-owned envelope. Keep an
+            // external source neutral rather than falling back to the follower.
+            self.source_color.set_envelopes(&[]);
+        }
         // Any added filter of a Rack may filter a chain as one.
         filter_slots::configure_shared(
             slots,
@@ -3510,6 +3521,11 @@ impl Engine {
         }
         let p = &self.modulated.params;
         let note = self.voices[voice];
+        let grain_envs = group.as_ref().and_then(|(_, group)| {
+            (group.waveshaper_options.envelope_source.is_some()
+                && matches!(group.waveshaper, crate::grain_groups::Waveshaper::Type(_)))
+            .then(|| filter::envelopes(note.env_values, self.voice_tb303_envelope(voice)))
+        });
         let individual = synth && note.main_pitch && self.individual_history();
         let bend = if synth && (voice == 0 || individual) {
             0.0
@@ -3602,8 +3618,25 @@ impl Engine {
                 } else {
                     p.sample_root_note
                 };
-                self.group_grains
-                    .start(slot, index, &g, duration, base + semis)
+                if let Some(envelopes) = grain_envs.as_ref() {
+                    self.group_grains.start_with_envelopes(
+                        slot,
+                        index,
+                        &g,
+                        duration,
+                        base + semis,
+                        envelopes,
+                    );
+                } else {
+                    self.group_grains.start_with_envelopes(
+                        slot,
+                        index,
+                        &g,
+                        duration,
+                        base + semis,
+                        &[],
+                    );
+                }
             }
             None => self.group_grains.release(slot),
         }
@@ -5271,8 +5304,9 @@ impl Engine {
         let mut voice_frames = [[0.0; 2]; VOICES];
         let range = self.source_range();
         let file_source = self.live_input.is_none();
-        let source_effects =
-            file_source && (self.processed_source.is_some() || self.source_fade_remaining != 0);
+        let source_effects = self.reads_source_cache()
+            && file_source
+            && (self.processed_source.is_some() || self.source_fade_remaining != 0);
         let sample = self
             .live_input
             .as_ref()
@@ -5359,6 +5393,20 @@ impl Engine {
         while pending != 0 {
             let slot = pending.trailing_zeros() as usize;
             pending &= pending - 1;
+            let grain_voice = self.grains[slot].voice;
+            let has_external_ws_env = groups.advanced
+                && self.group_grains.group(slot).is_some_and(|index| {
+                    let group = &groups.groups[index as usize];
+                    group.waveshaper_options.envelope_source.is_some()
+                        && matches!(group.waveshaper, crate::grain_groups::Waveshaper::Type(_))
+                });
+            let grain_envs = has_external_ws_env.then(|| {
+                filter::envelopes(
+                    self.voices[grain_voice].env_values,
+                    self.voice_tb303_envelope(grain_voice),
+                )
+            });
+            let envelope_slice = grain_envs.as_ref().map_or(&[][..], |envs| envs.as_slice());
             let grain = &mut self.grains[slot];
             let group = self.group_grains.group(slot).filter(|_| group_graph);
             let command = if self.group_sync_mask & (1 << slot) != 0 {
@@ -5465,10 +5513,21 @@ impl Engine {
             }
             // A group's grains take its amp envelope in place of the window.
             let grouped = if group_graph {
-                self.group_grains
-                    .process_unleveled(slot, grain.age, frame, groups)
+                self.group_grains.process_unleveled_with_envelopes(
+                    slot,
+                    grain.age,
+                    frame,
+                    groups,
+                    envelope_slice,
+                )
             } else if groups.advanced {
-                self.group_grains.process(slot, grain.age, frame, groups)
+                self.group_grains.process_with_envelopes(
+                    slot,
+                    grain.age,
+                    frame,
+                    groups,
+                    envelope_slice,
+                )
             } else {
                 None
             };

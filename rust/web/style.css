@@ -798,9 +798,18 @@ h2 {
 }
 .filter-shaper-knobs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   max-width: 280px;
+}
+.filter-shaper-knobs .dial {
+  width: min(77px, 100%);
+  height: auto;
+  aspect-ratio: 1;
+}
+.filter-shaper-knobs .dial svg {
+  width: 100%;
+  height: 100%;
 }
 .filter-card.is-dragging,
 .filter-shaper.is-dragging,
@@ -827,7 +836,7 @@ h2 {
 }
 .waveshaper-option-selects {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 105px), 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin-top: 8px;
 }
@@ -843,6 +852,45 @@ h2 {
   width: 100%;
   height: 32px;
   font-size: 11px;
+}
+.waveshaper-morph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.ws-morph-knob {
+  width: 77px;
+  flex: 0 0 77px;
+}
+.waveshaper-morph button {
+  width: 34px;
+  height: 32px;
+  padding: 0;
+  color: var(--muted);
+}
+.waveshaper-morph button[aria-pressed="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.waveshaper-curve-key {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.waveshaper-curve-key span::before {
+  display: inline-block;
+  width: 12px;
+  margin: 0 4px 3px 0;
+  border-top: 2px solid var(--accent);
+  content: "";
+}
+.waveshaper-curve-key span + span::before {
+  border-color: #e6ebe5;
 }
 .waveshaper-curve {
   display: block;
@@ -889,6 +937,7 @@ h2 {
   .waveshaper-option-selects select,
   .filter-shaper-title select,
   .filter-shaper-power,
+  .waveshaper-morph button,
   .waveshaper-curve-actions button {
     height: 36px;
   }
@@ -4469,7 +4518,7 @@ input[type="range"] {
 .neuro-stage,
 .neuro-row-labels {
   display: grid;
-  grid-template-rows: 14px 26px 24px 96px 76px 30px 64px 64px repeat(4, 30px) repeat(3, 64px);
+  grid-template-rows: 14px 26px 24px 96px 76px 30px 64px 64px repeat(3, 30px) repeat(4, 64px);
   gap: 4px;
   align-items: center;
   justify-items: stretch;

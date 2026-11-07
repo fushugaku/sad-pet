@@ -204,6 +204,7 @@ enum Target {
     /// An added filter by list position: a FILTER_SLOT_FIELDS index.
     FilterSlot(usize, usize),
     FilterShaper(usize, bool, usize),
+    FilterShaperKeytrack(usize, bool),
     GrainShaper(usize, usize),
     /// A section's Chain share or bus send.
     Tap(Stage, TapField),
@@ -408,6 +409,10 @@ impl Spec {
                 let shapers = filter_shapers(&m.params, &m.filter_slots[..m.filter_len], i)?;
                 *waveshaper_field(&mut shaper_at(shapers, after), field)
             }
+            Target::FilterShaperKeytrack(i, after) => {
+                let shapers = filter_shapers(&m.params, &m.filter_slots[..m.filter_len], i)?;
+                shaper_at(shapers, after).keytrack
+            }
             Target::GrainShaper(i, field) => *waveshaper_option(
                 &mut m.grain_groups.groups[i].waveshaper_options.to_owned(),
                 field,
@@ -535,6 +540,13 @@ impl Spec {
                     *waveshaper_field(shaper_at_mut(shapers, after), field) = value;
                 }
             }
+            Target::FilterShaperKeytrack(i, after) => {
+                if let Some(shapers) =
+                    filter_shapers_mut(&mut m.params, &mut m.filter_slots[..m.filter_len], i)
+                {
+                    shaper_at_mut(shapers, after).keytrack = value;
+                }
+            }
             Target::GrainShaper(i, field) => {
                 *waveshaper_option(&mut m.grain_groups.groups[i].waveshaper_options, field) = value
             }
@@ -647,6 +659,10 @@ impl Spec {
                 filter_shapers(&preset.params, &preset.filter_slots, i).map_or(self.default, |s| {
                     *waveshaper_field(&mut shaper_at(s, after), field)
                 })
+            }
+            Target::FilterShaperKeytrack(i, after) => {
+                filter_shapers(&preset.params, &preset.filter_slots, i)
+                    .map_or(self.default, |s| shaper_at(s, after).keytrack)
             }
             Target::GrainShaper(i, field) => *waveshaper_option(
                 &mut preset.grain_groups.groups[i].waveshaper_options.to_owned(),
@@ -803,6 +819,13 @@ impl Spec {
                     filter_shapers_mut(&mut preset.params, &mut preset.filter_slots, i)
                 {
                     *waveshaper_field(shaper_at_mut(shapers, after), field) = value;
+                }
+            }
+            Target::FilterShaperKeytrack(i, after) => {
+                if let Some(shapers) =
+                    filter_shapers_mut(&mut preset.params, &mut preset.filter_slots, i)
+                {
+                    shaper_at_mut(shapers, after).keytrack = value;
                 }
             }
             Target::GrainShaper(i, field) => {
@@ -2628,6 +2651,28 @@ pub fn specs() -> &'static [Spec] {
                 });
             }
         }
+        // Append keytrack after every released numeric parameter. Keep it out
+        // of the existing filter-shaper loops so host indices remain stable.
+        for i in 0..crate::preset::MAX_FILTER_SLOTS + 2 {
+            for after in [false, true] {
+                result.push(Spec {
+                    id: format!(
+                        "filter{}_ws_{}_keytrack",
+                        i + 1,
+                        if after { "after" } else { "before" }
+                    ),
+                    name: format!(
+                        "Filter {} WS {} keytrack",
+                        i + 1,
+                        if after { "after" } else { "before" }
+                    ),
+                    min: -1.0,
+                    max: 1.0,
+                    default: 0.0,
+                    target: Target::FilterShaperKeytrack(i, after),
+                });
+            }
+        }
         result
     })
 }
@@ -2931,5 +2976,57 @@ mod tests {
         ] {
             assert!(parse(&bad).is_err(), "Accepted invalid message: {bad}");
         }
+    }
+
+    #[test]
+    fn filter_waveshaper_keytrack_ids_append_and_update_both_filter_kinds() {
+        let tail_count = 2 * (crate::preset::MAX_FILTER_SLOTS + 2);
+        assert_eq!(tail_count, 36);
+        let first = specs().len() - tail_count;
+        assert_eq!(specs()[first - 1].id, "grain_group4_waveshaper_morph");
+        assert_eq!(specs()[first].id, "filter1_ws_before_keytrack");
+        assert_eq!(specs()[first].min, -1.0);
+        assert_eq!(specs()[first].max, 1.0);
+        assert_eq!(specs()[first].default, 0.0);
+        assert_eq!(
+            specs().last().unwrap().id,
+            format!(
+                "filter{}_ws_after_keytrack",
+                crate::preset::MAX_FILTER_SLOTS + 2
+            )
+        );
+
+        for filter in 1..=crate::preset::MAX_FILTER_SLOTS + 2 {
+            for side in ["before", "after"] {
+                let id = format!("filter{filter}_ws_{side}_keytrack");
+                // The final ID is checked above; advance through this
+                // appended block in its published filter/side order.
+                let offset = (filter - 1) * 2 + usize::from(side == "after");
+                assert_eq!(specs()[first + offset].id, id);
+            }
+        }
+
+        let mut preset = Preset {
+            filter_slots: vec![crate::preset::FilterSlot::default()],
+            ..Preset::default()
+        };
+        apply(
+            &mut preset,
+            &parse(&json!({"filter1_ws_before_keytrack":0.75})).unwrap(),
+        );
+        apply(
+            &mut preset,
+            &parse(&json!({"filter3_ws_after_keytrack":-2.0})).unwrap(),
+        );
+        assert_eq!(preset.params.filter_shapers[0].before.keytrack, 0.75);
+        assert_eq!(preset.filter_slots[0].shapers.after.keytrack, -1.0);
+        assert_eq!(
+            read_values(
+                &preset,
+                &json!(["filter1_ws_before_keytrack", "filter3_ws_after_keytrack"])
+            )
+            .unwrap(),
+            json!({"filter1_ws_before_keytrack":0.75,"filter3_ws_after_keytrack":-1.0})
+        );
     }
 }

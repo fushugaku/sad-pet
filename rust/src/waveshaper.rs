@@ -1,6 +1,6 @@
 //! Persisted controls for the extended waveshaper.
 
-use crate::color::WaveshaperMode;
+use crate::{color::WaveshaperMode, preset::EnvSource};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -40,6 +40,8 @@ pub struct Options {
     pub bass: f32,
     pub bass_frequency: f32,
     pub envelope: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub envelope_source: Option<EnvSource>,
     pub attack: f32,
     pub release: f32,
     pub dc_block: bool,
@@ -63,6 +65,7 @@ impl Default for Options {
             bass: 0.0,
             bass_frequency: 0.5,
             envelope: 0.5,
+            envelope_source: None,
             attack: 0.2,
             release: 0.5,
             dc_block: false,
@@ -109,6 +112,8 @@ pub struct Stage {
     pub mode: WaveshaperMode,
     pub depth: f32,
     pub mix: f32,
+    /// Scales waveshaper input by octaves from MIDI note 60.
+    pub keytrack: f32,
     pub options: Options,
 }
 
@@ -119,6 +124,7 @@ impl Default for Stage {
             mode: WaveshaperMode::Drive,
             depth: 0.5,
             mix: 1.0,
+            keytrack: 0.0,
             options: Options::default(),
         }
     }
@@ -128,6 +134,7 @@ impl Stage {
     pub fn sanitize(mut self) -> Self {
         self.depth = finite_unit(self.depth, 0.5);
         self.mix = finite_unit(self.mix, 1.0);
+        self.keytrack = finite_signed_unit(self.keytrack, 0.0);
         self.options = self.options.sanitize();
         self
     }
@@ -156,6 +163,14 @@ fn finite_unit(value: f32, default: f32) -> f32 {
     }
 }
 
+fn finite_signed_unit(value: f32, default: f32) -> f32 {
+    if value.is_finite() {
+        value.clamp(-1.0, 1.0)
+    } else {
+        default
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,6 +179,7 @@ mod tests {
     fn defaults_round_trip_and_partial_json_keeps_neutral_values() {
         let defaults = Options::default();
         let encoded = serde_json::to_string(&defaults).unwrap();
+        assert!(!encoded.contains("envelope_source"));
         let decoded: Options = serde_json::from_str(&encoded).unwrap();
         assert_eq!(decoded, defaults);
 
@@ -171,6 +187,21 @@ mod tests {
         assert_eq!(partial.quality, Quality::Clean4x);
         assert_eq!(partial.input, 0.5);
         assert_eq!(partial.points, defaults.points);
+        assert_eq!(partial.envelope_source, None);
+        let explicit_null: Options = serde_json::from_str(r#"{"envelope_source":null}"#).unwrap();
+        assert_eq!(explicit_null.envelope_source, None);
+        let selected: Options = serde_json::from_str(r#"{"envelope_source":"env3"}"#).unwrap();
+        assert_eq!(selected.envelope_source, Some(EnvSource::Env3));
+
+        let old_stage: Stage = serde_json::from_str(r#"{"enabled":true,"mix":0.4}"#).unwrap();
+        assert_eq!(old_stage.keytrack, 0.0);
+        let encoded_stage = serde_json::to_string(&Stage {
+            keytrack: -0.75,
+            ..Stage::default()
+        })
+        .unwrap();
+        let restored_stage: Stage = serde_json::from_str(&encoded_stage).unwrap();
+        assert_eq!(restored_stage.keytrack, -0.75);
     }
 
     #[test]
@@ -205,5 +236,24 @@ mod tests {
         assert_eq!(options.points[0], 0.0);
         assert_eq!(options.points[1], 1.0);
         assert_eq!(options.points[2], -1.0);
+
+        assert_eq!(
+            Stage {
+                keytrack: f32::INFINITY,
+                ..Stage::default()
+            }
+            .sanitize()
+            .keytrack,
+            0.0
+        );
+        assert_eq!(
+            Stage {
+                keytrack: 2.0,
+                ..Stage::default()
+            }
+            .sanitize()
+            .keytrack,
+            1.0
+        );
     }
 }

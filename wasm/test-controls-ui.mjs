@@ -362,17 +362,20 @@ const midiEnvNode = id => {
 };
 const midiEnvLabel = new Element("label"), midiEnvInput = midiEnvLabel.querySelector("input");
 midiEnvInput.type = "range"; midiEnvInput.value = .2;
+let waveshaperEnvSyncs = 0;
 const midiEnvContext = vm.createContext({
   document, $: midiEnvNode, preset: { env_count: 1, envs: [{ sustain: .55 }] },
   envCards: [{ card: new Element("div"), routes: [], mode: new Element("select"), curve: new Element("select"),
     parameters: [midiEnvLabel], waveEditor: { sync() {} } }],
   ENV_FIELDS: ["sustain"], ENV_EXTENDED: [], ENV_LEVELS: ["sustain"],
   envExtended: () => false, envMode: () => "legacy", syncModulatorRoutes() {}, syncFilterEnvelopes() {},
+  syncWaveshaperEnvelopeSources() { waveshaperEnvSyncs++; },
   envLevel: (env, field) => env[field], percent: value => `${Math.round(value * 100)}%`,
 });
 vm.runInContext(app.slice(app.indexOf("function syncEnvs()"), app.indexOf("function drawEnvs()")), midiEnvContext);
 document.activeElement = midiEnvInput;
 midiEnvContext.syncEnvs();
+assert.equal(waveshaperEnvSyncs, 1, "ENV edits must refresh waveshaper source menus");
 assert.equal(midiEnvInput.value, .55, "a focused MIDI slider ignored the model value");
 assert.equal(midiEnvLabel.querySelector("output").textContent, "55%");
 midiEnvContext.preset.envs[0].sustain = .713;

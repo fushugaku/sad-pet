@@ -122,4 +122,30 @@ recalled = core.request("/api/preset");
 recalled.envs[1].destination = { color: { slot: 999999, parameter: "mix" } };
 core.request("/api/preset", recalled);
 assert.equal(core.request("/api/preset").envs[1].destination, "none");
+
+// The WS source selector must drive the realtime insert itself, even when
+// neither envelope has an ordinary modulation destination.
+function envelopeInsert(source, unusedLevel = 1) {
+  const fixture = rack();
+  fixture.p.envs[1].sustain = 0;
+  fixture.p.envs[2].sustain = unusedLevel;
+  const slot = fixture.p.source_color_chain[0];
+  slot.mix = 1;
+  Object.assign(slot.settings, { waveshaper_type: "decimator", waveshaper_depth: 0,
+    waveshaper_options: { quality: "clean2x", curve: "soft_clip", envelope: 1,
+      envelope_source: source } });
+  start(fixture.core, fixture.p);
+  return fixture;
+}
+const externalA = envelopeInsert("env2"), externalB = envelopeInsert("env3"),
+  unused = envelopeInsert("env2", 0);
+const a = render(externalA.core), b = render(externalB.core), notSelected = render(unused.core);
+assert.ok(a.some(v => Math.abs(v) > 0.001), "The external-ENV comparison must play real audio");
+assert.ok(difference(a, b) > 1e-6, "The Source FX selector changed metadata without changing PCM");
+assert.deepEqual(a, notSelected, "An unselected envelope changed the realtime insert");
+const changed = externalA.core.request("/api/preset");
+changed.source_color_chain[0].settings.waveshaper_options.envelope_source = "env3";
+externalA.core.request("/api/preset", changed);
+assert.ok(difference(render(externalA.core), render(unused.core)) > 1e-6,
+  "Changing the selected envelope during playback must refresh the realtime insert");
 console.log("Source FX modulation passed: saved ENV/LFO routes, PCM, release, CV lanes and worker feedback.");
