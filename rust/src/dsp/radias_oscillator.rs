@@ -271,7 +271,10 @@ impl Controller {
                 self.phase_code = Some(code);
             }
         }
-        let before = *oscillator;
+        // The old oscillator is only rendered at a fractional hard reset.
+        // Its unison/noise state is large; ordinary oversampled frames do
+        // not need a copy of it.
+        let before = fraction.filter(|_| sync).map(|at| (at, *oscillator));
         if sync {
             // Shift the whole Unison bank together; preserve its phase spread.
             let reset_phase = reset_phase
@@ -290,8 +293,7 @@ impl Controller {
             oscillator.control_feedback = 0;
         }
         let sample = oscillator.next_with_modulator(waveform, *parameters, modulator);
-        if let Some(at) = fraction.filter(|_| sync) {
-            let mut old = before;
+        if let Some((at, mut old)) = before {
             let old = old.next_with_modulator(waveform, *parameters, modulator).0 as f64;
             let jump = sample.0 as f64 - old;
             let left = 1.0 - at;

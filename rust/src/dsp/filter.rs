@@ -333,6 +333,7 @@ impl<const N: usize> FrameDelay<N> {
 /// A main/added filter and its two independent shapers. Grain filters retain
 /// the smaller raw Filter and do not pay for these extra states.
 pub(crate) struct ShapedFilter {
+    processed: bool,
     filter: Filter,
     before: super::waveshaper::StageProcessor,
     after: super::waveshaper::StageProcessor,
@@ -342,6 +343,7 @@ pub(crate) struct ShapedFilter {
 impl ShapedFilter {
     pub(crate) fn new(rate: u32) -> Self {
         Self {
+            processed: false,
             filter: Filter::new(rate),
             before: super::waveshaper::StageProcessor::new(rate),
             after: super::waveshaper::StageProcessor::new(rate),
@@ -350,6 +352,7 @@ impl ShapedFilter {
         }
     }
     pub(crate) fn clear(&mut self) {
+        self.processed = false;
         self.filter.clear();
         self.before.clear();
         self.after.clear();
@@ -385,7 +388,11 @@ impl ShapedFilter {
     pub(crate) fn aligned_input(&self) -> Stereo {
         self.aligned_input
     }
+    pub(crate) fn has_processed(&self) -> bool {
+        self.processed
+    }
     pub(crate) fn process_with_voice_gain(&mut self, frame: Stereo, gain: f32) -> Stereo {
+        self.processed = true;
         let latency = self.latency_samples();
         self.aligned_input = self.dry.process(frame, latency);
         let frame = self.before.process_with_voice_gain(frame, gain);
@@ -395,6 +402,7 @@ impl ShapedFilter {
 }
 
 struct FilterBankState {
+    processed: bool,
     filters: [ShapedFilter; 2],
     routing: FilterRouting,
     order: [usize; 2],
@@ -406,6 +414,7 @@ struct FilterBankState {
 impl FilterBankState {
     fn new(sample_rate: u32) -> Self {
         Self {
+            processed: false,
             filters: std::array::from_fn(|_| ShapedFilter::new(sample_rate)),
             routing: FilterRouting::Single,
             order: [0, 1],
@@ -505,6 +514,7 @@ impl FilterBankState {
         voice_gain: f32,
     ) -> Stereo {
         use crate::taps::Stage;
+        self.processed = true;
         let count = if self.routing == FilterRouting::Single {
             1
         } else {
@@ -578,6 +588,10 @@ impl FilterBank {
         self.state.is_some()
     }
 
+    pub(crate) fn has_processed(&self) -> bool {
+        self.state.as_ref().is_some_and(|state| state.processed)
+    }
+
     /// Swap a prepared bank into this holder without allocating or dropping
     /// either side. If this holder was active, its previous state moves into
     /// `prepared` and remains available for the inverse role transition.
@@ -588,6 +602,7 @@ impl FilterBank {
 
     pub fn clear(&mut self) {
         if let Some(state) = self.state.as_mut() {
+            state.processed = false;
             state.clear();
         }
     }

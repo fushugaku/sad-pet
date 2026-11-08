@@ -241,6 +241,20 @@ pub(crate) enum Instance {
     OscillatorVoice(usize),
 }
 
+/// A retained slot may have run at a different per-voice position before it
+/// moved into the main filter chain. Its live history must keep advancing.
+pub(crate) fn voice_has_processed(banks: &[Box<Bank>], mut mask: u16, voice: usize) -> bool {
+    while mask != 0 {
+        let i = mask.trailing_zeros() as usize;
+        mask &= mask - 1;
+        let Some(bank) = banks.get(i) else { break };
+        if bank.voices[voice].has_processed() {
+            return true;
+        }
+    }
+    false
+}
+
 /// This is note activity, separate from tap/send gain. Shared filters after
 /// note summing gate only the extra Sub oscillator, leaving audio tails intact.
 pub(crate) fn set_voice_gain(banks: &mut [Box<Bank>], gain: f32) {
@@ -398,6 +412,45 @@ mod tests {
         reused.prepare_reusing(&[slot(4), slot(1)], 48000, &mut next.0);
         assert_eq!(addresses(&reused.0), vec![after[1], after[2]]);
         assert_eq!(addresses(&next.0), vec![after[0]]);
+    }
+
+    #[test]
+    fn moved_voice_filters_keep_their_live_history_and_processing_marker() {
+        let mut slot = slot(7);
+        slot.position = FilterPosition::AfterGrains;
+        slot.cutoff = 0.3;
+        let mut running = Prepared::default();
+        let mut reference = Prepared::default();
+        running.prepare(&[slot], 8000);
+        reference.prepare(&[slot], 8000);
+        configure_voice(&[slot], &mut running.0, 2, 60.0, [0.0; 8]);
+        configure_voice(&[slot], &mut reference.0, 2, 60.0, [0.0; 8]);
+        assert!(!voice_has_processed(&running.0, 1, 2));
+        for _ in 0..32 {
+            assert_eq!(
+                chain(&mut running.0, 1, [0.5; 2], Instance::Voice(2)),
+                chain(&mut reference.0, 1, [0.5; 2], Instance::Voice(2)),
+            );
+        }
+        slot.position = FilterPosition::BeforeFilters;
+        let mut next = Prepared::default();
+        next.prepare(&[slot], 8000);
+        inherit(&mut next.0, &mut running.0);
+        let mask = masks(&[slot], &next.0)[FilterPosition::BeforeFilters as usize];
+        assert!(voice_has_processed(&next.0, mask, 2));
+        assert!(!voice_has_processed(&next.0, mask, 1));
+        let mut tail = 0.0;
+        for _ in 0..32 {
+            let output = chain(&mut next.0, mask, [0.0; 2], Instance::Voice(2));
+            assert_eq!(
+                output,
+                chain(&mut reference.0, 1, [0.0; 2], Instance::Voice(2))
+            );
+            tail += output[0].abs();
+        }
+        assert!(tail > 0.01);
+        next.0[0].clear_voice(2);
+        assert!(!voice_has_processed(&next.0, mask, 2));
     }
 
     #[test]

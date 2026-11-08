@@ -425,6 +425,46 @@ impl Runtime {
         sample: &SampleBuffer,
         range: &Range<usize>,
         root: f32,
+        transports: Option<&mut crate::dsp::phase_transport::Runtime>,
+        stamp: u64,
+        mask: u8,
+    ) -> ([SlotFrame; SLOTS], Stereo, Stereo) {
+        // Native-only patches do not need wavetable lookup views. A separate
+        // specialization removes that large per-frame scratch array while
+        // retaining the same internal clock, filters and interaction graph.
+        if self
+            .identities
+            .iter()
+            .zip(self.kinds)
+            .any(|(&id, kind)| id != 0 && kind == Kind::Wavetable)
+        {
+            self.render_masked_inner::<true>(
+                index, generation, note, envs, lfos, inputs, demand, export, capture, sample,
+                range, root, transports, stamp, mask,
+            )
+        } else {
+            self.render_masked_inner::<false>(
+                index, generation, note, envs, lfos, inputs, demand, export, capture, sample,
+                range, root, transports, stamp, mask,
+            )
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_masked_inner<const TABLES: bool>(
+        &mut self,
+        index: usize,
+        generation: u32,
+        note: f32,
+        envs: &[f32; crate::preset::MODULATORS],
+        lfos: &[f32; crate::preset::MODULATORS],
+        inputs: [Input; SLOTS],
+        demand: u8,
+        export: u8,
+        capture: [f32; SLOTS],
+        sample: &SampleBuffer,
+        range: &Range<usize>,
+        root: f32,
         mut transports: Option<&mut crate::dsp::phase_transport::Runtime>,
         stamp: u64,
         mask: u8,
@@ -517,79 +557,82 @@ impl Runtime {
         let mut norms = [1.0; SLOTS];
         let mut views: [[Option<interaction::Lookup<'_>>; MAX_UNISON]; SLOTS] =
             [[None; MAX_UNISON]; SLOTS];
-        for i in 0..SLOTS {
-            let layer = &self.layers[i];
-            let Some(bank) = &self.banks[i] else {
-                continue;
-            };
-            norms[i] = layer
-                .lanes
-                .iter()
-                .map(|lane| lane.value)
-                .sum::<f32>()
-                .max(1.0);
-            let env = layer
-                .target
-                .position_env
-                .checked_sub(1)
-                .and_then(|e| envs.get(e as usize))
-                .copied()
-                .unwrap_or(0.0);
-            voice.envelopes[i].target(env, crate::dsp::CONTROL_INTERVAL as u32);
-            let position = layer.ramps[0].value
-                + self.motion[0].value * layer.ramps[8].value
-                + (note - 60.0) / 60.0 * layer.ramps[9].value
-                + layer.ramps[7].value * voice.envelopes[i].next()
-                + layer.ramps[10].value
-                    * layer
-                        .target
-                        .position_lfo
-                        .checked_sub(1)
-                        .and_then(|e| lfos.get(e as usize))
-                        .copied()
-                        .unwrap_or(0.0);
-            for j in 0..MAX_UNISON {
-                let mut p = (position + layer.position_offsets[j].value * layer.ramps[13].value)
-                    .clamp(0.0, 1.0);
-                if layer.target.step {
-                    let n = (bank.frames - 1).max(1) as f32;
-                    voice.frames[i][j].target((p * n).round() / n, (self.rate * 0.002) as u32);
-                    p = voice.frames[i][j].next();
-                }
-                positions[i][j] = p;
-                self.view[i].min = self.view[i].min.min(p);
-                self.view[i].max = self.view[i].max.max(p);
-                if layer.lanes[j].value == 0.0 {
+        if TABLES {
+            for i in 0..SLOTS {
+                let layer = &self.layers[i];
+                let Some(bank) = &self.banks[i] else {
                     continue;
+                };
+                norms[i] = layer
+                    .lanes
+                    .iter()
+                    .map(|lane| lane.value)
+                    .sum::<f32>()
+                    .max(1.0);
+                let env = layer
+                    .target
+                    .position_env
+                    .checked_sub(1)
+                    .and_then(|e| envs.get(e as usize))
+                    .copied()
+                    .unwrap_or(0.0);
+                voice.envelopes[i].target(env, crate::dsp::CONTROL_INTERVAL as u32);
+                let position = layer.ramps[0].value
+                    + self.motion[0].value * layer.ramps[8].value
+                    + (note - 60.0) / 60.0 * layer.ramps[9].value
+                    + layer.ramps[7].value * voice.envelopes[i].next()
+                    + layer.ramps[10].value
+                        * layer
+                            .target
+                            .position_lfo
+                            .checked_sub(1)
+                            .and_then(|e| lfos.get(e as usize))
+                            .copied()
+                            .unwrap_or(0.0);
+                for j in 0..MAX_UNISON {
+                    let mut p = (position
+                        + layer.position_offsets[j].value * layer.ramps[13].value)
+                        .clamp(0.0, 1.0);
+                    if layer.target.step {
+                        let n = (bank.frames - 1).max(1) as f32;
+                        voice.frames[i][j].target((p * n).round() / n, (self.rate * 0.002) as u32);
+                        p = voice.frames[i][j].next();
+                    }
+                    positions[i][j] = p;
+                    self.view[i].min = self.view[i].min.min(p);
+                    self.view[i].max = self.view[i].max.max(p);
+                    if layer.lanes[j].value == 0.0 {
+                        continue;
+                    }
+                    let frequency = voice.hz * layer.ratios[j];
+                    let source = layer.target.fm_source.min(7) as usize;
+                    let fm = layer.target.fm_mode != 0 && self.identities[source] != 0;
+                    let depth = layer.ramps[11].value as f64;
+                    let band = limits[source] * 0.45;
+                    let base = frequency
+                        * if layer.target.sync {
+                            layer.ramps[12].value as f64
+                        } else {
+                            1.0
+                        };
+                    let bound = base
+                        + if fm && layer.target.fm_mode == 1 {
+                            2.0 * depth * voice.hz * self.layers[source].tune + band
+                        } else if fm {
+                            (2.0 * depth + 1.0) * band
+                        } else {
+                            0.0
+                        };
+                    let selection =
+                        bank.selection(bound, if hard { self.rate * 4.0 } else { internal });
+                    views[i][j] = Some(interaction::Lookup::new(
+                        bank,
+                        self.previous[i].as_deref(),
+                        self.blends[i],
+                        p,
+                        selection,
+                    ));
                 }
-                let frequency = voice.hz * layer.ratios[j];
-                let source = layer.target.fm_source.min(7) as usize;
-                let fm = layer.target.fm_mode != 0 && self.identities[source] != 0;
-                let depth = layer.ramps[11].value as f64;
-                let band = limits[source] * 0.45;
-                let base = frequency
-                    * if layer.target.sync {
-                        layer.ramps[12].value as f64
-                    } else {
-                        1.0
-                    };
-                let bound = base
-                    + if fm && layer.target.fm_mode == 1 {
-                        2.0 * depth * voice.hz * self.layers[source].tune + band
-                    } else if fm {
-                        (2.0 * depth + 1.0) * band
-                    } else {
-                        0.0
-                    };
-                let selection =
-                    bank.selection(bound, if hard { self.rate * 4.0 } else { internal });
-                views[i][j] = Some(interaction::Lookup::new(
-                    bank,
-                    self.previous[i].as_deref(),
-                    self.blends[i],
-                    p,
-                    selection,
-                ));
             }
         }
         if self.root != root.to_bits() {
@@ -681,7 +724,7 @@ impl Runtime {
                 let input = inputs[i];
                 let mut raw = [0.0; 2];
                 let mut heard = [0.0; 2];
-                if self.kinds[i] == Kind::Wavetable {
+                if TABLES && self.kinds[i] == Kind::Wavetable {
                     let norm = norms[i];
                     let reference = voice.lanes[i][0].phase;
                     for (j, view) in views[i].iter_mut().enumerate() {
@@ -1097,6 +1140,115 @@ fn reduce(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_specialization_preserves_audio_taps_and_fractional_resets() {
+        for kind in [Kind::Radias, Kind::Wavefolder] {
+            for waveform in [
+                Waveform::Saw,
+                Waveform::Sine,
+                Waveform::Triangle,
+                Waveform::Noise,
+                Waveform::Pcm,
+            ] {
+                let mut settings = model::Settings::default();
+                settings.slots[0].kind = kind;
+                settings.add(Kind::Radias).unwrap();
+                settings.slots[0].controls.native.waveform = waveform;
+                settings.slots[0].controls.native.control1 = 0.7;
+                settings.slots[0].controls.native.control2 = 0.3;
+                settings.slots[0].controls.transpose = -12.0;
+                settings.slots[1].controls.transpose = 27.3;
+                let mut native = Runtime::new(8000, &settings, &Pool::default()).unwrap();
+                let mut full = Runtime::new(8000, &settings, &Pool::default()).unwrap();
+                let sample = SampleBuffer::new(
+                    "PCM".into(),
+                    8000,
+                    (0..128).map(|i| [(i as f32 * 0.1).sin(); 2]).collect(),
+                )
+                .unwrap();
+                let envs = [0.3; crate::preset::MODULATORS];
+                let mut audible = false;
+                for stamp in 0..512 {
+                    if stamp == 384 {
+                        settings.slots[1].id = 0;
+                        let mut next = Runtime::new(8000, &settings, &Pool::default()).unwrap();
+                        next.inherit(&mut native);
+                        native = next;
+                        let mut next = Runtime::new(8000, &settings, &Pool::default()).unwrap();
+                        next.inherit(&mut full);
+                        full = next;
+                    }
+                    native.begin_frame(true);
+                    full.begin_frame(true);
+                    let mut inputs = [Input::default(); SLOTS];
+                    inputs[1].ring = (stamp as f32 * 0.017).sin();
+                    inputs[1].ring_start = inputs[1].ring * 0.9;
+                    inputs[1].depth = 1.0;
+                    if stamp % 11 == 0 {
+                        inputs[1].playback = crate::dsp::interaction::PhaseCommand {
+                            mode: SyncMode::Hard,
+                            event: 0.371,
+                            phase: 0.23,
+                            strength: 1.0,
+                            ..Default::default()
+                        };
+                    }
+                    let generation = 1 + stamp / 256;
+                    let note = 48.0 + (stamp / 64) as f32 * 0.7;
+                    let (actual, mix, bypass) = native.render_masked(
+                        0,
+                        generation,
+                        note,
+                        &envs,
+                        &envs,
+                        inputs,
+                        3,
+                        3,
+                        [0.5; SLOTS],
+                        &sample,
+                        &(0..128),
+                        60.0,
+                        None,
+                        stamp as u64,
+                        3,
+                    );
+                    let (expected, expected_mix, expected_bypass) = full
+                        .render_masked_inner::<true>(
+                            0,
+                            generation,
+                            note,
+                            &envs,
+                            &envs,
+                            inputs,
+                            3,
+                            3,
+                            [0.5; SLOTS],
+                            &sample,
+                            &(0..128),
+                            60.0,
+                            None,
+                            stamp as u64,
+                            3,
+                        );
+                    assert_eq!(mix.map(f32::to_bits), expected_mix.map(f32::to_bits));
+                    audible |= mix.iter().any(|x| x.abs() > 1e-5);
+                    assert_eq!(bypass.map(f32::to_bits), expected_bypass.map(f32::to_bits));
+                    for (a, b) in actual.into_iter().zip(expected) {
+                        assert_eq!(a.audio.map(f32::to_bits), b.audio.map(f32::to_bits));
+                        assert_eq!(
+                            a.generation.map(f32::to_bits),
+                            b.generation.map(f32::to_bits)
+                        );
+                        assert_eq!(a.output.map(f32::to_bits), b.output.map(f32::to_bits));
+                        assert_eq!(a.wrap.map(f64::to_bits), b.wrap.map(f64::to_bits));
+                        assert_eq!(a.latency.to_bits(), b.latency.to_bits());
+                    }
+                }
+                assert!(audible, "{kind:?} {waveform:?} did not render audio");
+            }
+        }
+    }
 
     #[test]
     fn per_note_mask_selects_audio_but_not_fm_or_exported_taps() {

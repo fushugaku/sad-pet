@@ -628,6 +628,23 @@ impl Engine {
                             }
                             let unfiltered = flow.notes[i];
                             let activity = f32::from(flow.note_sub_gain[i] > 0.0);
+                            // A note routed into the shared cloud may never
+                            // use its private return. Defer that filter chain
+                            // until its first active frame. Once used, keep
+                            // clocking it through gaps so tails and delays
+                            // cannot resume from a frozen history.
+                            if activity == 0.0
+                                && !self.filters[i].has_processed()
+                                && !filter_slots::voice_has_processed(
+                                    &self.filter_banks,
+                                    masks[FilterPosition::BeforeFilters as usize]
+                                        | masks[FilterPosition::AfterFilters as usize],
+                                    i,
+                                )
+                            {
+                                flow.notes[i] = [0.0; 2];
+                                continue;
+                            }
                             let voice = filter_slots::route_chain_with_voice_gain(
                                 &mut self.filter_banks,
                                 masks[FilterPosition::BeforeFilters as usize],

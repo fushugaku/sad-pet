@@ -157,4 +157,28 @@ for (const granular of [false, true]) {
   }
 }
 
-console.log(`${variant}: Rack capture, independent/private clouds, selected OSC, frozen playback, filter ENV and waveshaper passed`);
+// An unused private return can start lazily, but live Main pitch routing
+// must still activate its filter and retain the shared filter on the way back.
+for (const mode of ["chain", "osc"]) {
+  const core = setup({ mode });
+  render(core);
+  for (const granular of [true, false, true]) {
+    const trackId = core.request("/api/preset").sequencer.tracks[0].id;
+    core.request("/api/sequencer/edit", [{ track: trackId, stage: null, field: 57, value: +granular }]);
+    assert.equal(core.request("/api/preset").sequencer.tracks[0].granular, granular);
+    assert.ok(energy(render(core)) > .001, `${mode}: switching the cloud route lost the audio`);
+    const preset = core.request("/api/preset");
+    const shaper = preset.params.filter_shapers[0].before;
+    Object.assign(shaper, { enabled: true, mix: 1, depth: 1 });
+    Object.assign(shaper.options, { curve: "custom", points: Array(17).fill(0), quality: "clean4x" });
+    core.request("/api/preset", preset);
+    render(core);
+    assert.ok(energy(render(core)) < .000001,
+      `${mode}: the activated filter does not process its cloud, route=${granular}`);
+    shaper.options.points = Array.from({ length: 17 }, (_, i) => i / 8 - 1);
+    core.request("/api/preset", preset);
+    assert.ok(energy(render(core)) > .001, `${mode}: the filter did not recover after a live curve edit`);
+  }
+}
+
+console.log(`${variant}: Rack capture, independent/private clouds, live routing, selected OSC, frozen playback, filter ENV and waveshaper passed`);

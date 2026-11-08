@@ -419,9 +419,18 @@ impl Down2 {
         }
         let output = if !self.phase {
             let mut sum = 0.0;
-            for (lag, coefficient) in HALF_BAND.iter().enumerate() {
+            // Halfband even taps are zero except the center. Keep the
+            // nonzero additions in their original order so the FIR's PCM,
+            // phase and latency stay unchanged.
+            for lag in (1..FIR_CENTER).step_by(2) {
                 let index = (self.cursor + FIR_TAPS - 1 - lag) % FIR_TAPS;
-                sum += *coefficient * self.history[index];
+                sum += HALF_BAND[lag] * self.history[index];
+            }
+            let index = (self.cursor + FIR_TAPS - 1 - FIR_CENTER) % FIR_TAPS;
+            sum += HALF_BAND[FIR_CENTER] * self.history[index];
+            for lag in (FIR_CENTER + 1..FIR_TAPS).step_by(2) {
+                let index = (self.cursor + FIR_TAPS - 1 - lag) % FIR_TAPS;
+                sum += HALF_BAND[lag] * self.history[index];
             }
             Some(sum)
         } else {
@@ -565,8 +574,10 @@ impl CleanRadias {
     }
 
     fn set_factor(&mut self, factor: usize) {
-        self.factor = factor;
-        self.set_pitch(self.note);
+        if self.factor != factor {
+            self.factor = factor;
+            self.set_pitch(self.note);
+        }
     }
 
     fn process_high(
@@ -641,6 +652,73 @@ fn slew(current: i16, target: i16) -> i16 {
     (value.clamp(i32::MIN as i64, i32::MAX as i64) >> 16) as i16
 }
 
+// Derived controls change only when their smoothed input changes. Retain
+// the existing per-sample slew without repeating exponentials at rest.
+struct Coefficients {
+    input_gain: f32,
+    output_gain: f32,
+    attack: f32,
+    release: f32,
+    pre_tone: f32,
+    post_tone: f32,
+    bass: f32,
+    dc: f32,
+}
+
+impl Coefficients {
+    fn new(options: Options, sample_rate: u32) -> Self {
+        let mut result = Self {
+            input_gain: 0.0,
+            output_gain: 0.0,
+            attack: 0.0,
+            release: 0.0,
+            pre_tone: 0.0,
+            post_tone: 0.0,
+            bass: 0.0,
+            dc: (-std::f32::consts::TAU * 5.0 / sample_rate.max(1) as f32).exp(),
+        };
+        let previous = Options {
+            input: f32::NAN,
+            output: f32::NAN,
+            attack: f32::NAN,
+            release: f32::NAN,
+            pre_tone: f32::NAN,
+            post_tone: f32::NAN,
+            bass_frequency: f32::NAN,
+            ..options
+        };
+        result.update(&previous, &options, sample_rate);
+        result
+    }
+
+    fn update(&mut self, previous: &Options, options: &Options, sample_rate: u32) {
+        if previous.input != options.input {
+            let input_db = (options.input - 0.5) * 48.0;
+            self.input_gain = 10.0_f32.powf(input_db / 20.0);
+        }
+        if previous.output != options.output {
+            self.output_gain = 10.0_f32.powf((options.output - 0.5) * 48.0 / 20.0);
+        }
+        if previous.attack != options.attack {
+            let ms = 1.0 + options.attack * options.attack * 199.0;
+            self.attack = (-1.0 / (ms * 0.001 * sample_rate as f32)).exp();
+        }
+        if previous.release != options.release {
+            let ms = 10.0 + options.release * options.release * 990.0;
+            self.release = (-1.0 / (ms * 0.001 * sample_rate as f32)).exp();
+        }
+        if previous.pre_tone != options.pre_tone {
+            self.pre_tone = tone_coefficient(options.pre_tone, sample_rate);
+        }
+        if previous.post_tone != options.post_tone {
+            self.post_tone = tone_coefficient(options.post_tone, sample_rate);
+        }
+        if previous.bass_frequency != options.bass_frequency {
+            self.bass = bass_coefficient(options.bass_frequency, sample_rate);
+        }
+    }
+}
+
 /// Full per-voice processor. Its fixed FIR histories allocate nothing in
 /// `process` or `configure`; the largest path has a 48-sample integer latency.
 pub struct Processor {
@@ -651,6 +729,7 @@ pub struct Processor {
     depth: f32,
     options: Options,
     target_options: Options,
+    coefficients: Coefficients,
     external_envelope: f32,
     options_slew_left: usize,
     curve_from: [Curve; 2],
@@ -693,6 +772,7 @@ impl Processor {
             depth: 0.5,
             options: Options::default(),
             target_options: Options::default(),
+            coefficients: Coefficients::new(Options::default(), sample_rate),
             external_envelope: 0.0,
             options_slew_left: 0,
             curve_from: [Curve::Radias, Curve::SoftClip],
@@ -825,6 +905,7 @@ impl Processor {
         self.depth = depth;
         self.options = options;
         self.target_options = options;
+        self.coefficients = Coefficients::new(options, self.sample_rate);
         self.external_envelope = 0.0;
         self.options_slew_left = 0;
         self.curve_from = [options.curve, options.curve_b];
@@ -945,7 +1026,7 @@ impl Processor {
             self.bass_input_state[channel] = one_pole(
                 front_sample,
                 self.bass_input_state[channel],
-                bass_coefficient(self.options.bass_frequency, self.sample_rate),
+                self.coefficients.bass,
             );
         }
         self.bass_delay[self.delay_cursor] = self.bass_input_state;
@@ -1059,26 +1140,23 @@ impl Processor {
 
     fn apply_front_end(&mut self, input: Stereo) -> Stereo {
         let options = self.options;
-        let input_db = (options.input - 0.5) * 48.0;
-        let input_gain = 10.0_f32.powf(input_db / 20.0);
         let bias = (options.bias - 0.5) * 0.5;
-        let attack_ms = 1.0 + options.attack * options.attack * 199.0;
-        let release_ms = 10.0 + options.release * options.release * 990.0;
-        let attack = (-1.0 / (attack_ms * 0.001 * self.sample_rate as f32)).exp();
-        let release = (-1.0 / (release_ms * 0.001 * self.sample_rate as f32)).exp();
+        let external_gain = options
+            .envelope_source
+            .map(|_| external_envelope_gain(options.envelope, self.external_envelope));
         std::array::from_fn(|channel| {
-            let raw = safe_audio(input[channel] * input_gain + bias);
+            let raw = safe_audio(input[channel] * self.coefficients.input_gain + bias);
             let magnitude = raw.abs();
             let coefficient = if magnitude > self.envelope_state[channel] {
-                attack
+                self.coefficients.attack
             } else {
-                release
+                self.coefficients.release
             };
             self.envelope_state[channel] = (magnitude
                 + coefficient * (self.envelope_state[channel] - magnitude))
                 .clamp(0.0, 8.0);
-            let envelope_gain = if options.envelope_source.is_some() {
-                external_envelope_gain(options.envelope, self.external_envelope)
+            let envelope_gain = if let Some(gain) = external_gain {
+                gain
             } else {
                 let envelope_octaves = (options.envelope - 0.5) * 4.0;
                 2.0_f32.powf(envelope_octaves * (0.5 - self.envelope_state[channel]))
@@ -1087,7 +1165,7 @@ impl Processor {
             self.pre_tone_state[channel] = one_pole(
                 driven,
                 self.pre_tone_state[channel],
-                tone_coefficient(options.pre_tone, self.sample_rate),
+                self.coefficients.pre_tone,
             );
             self.pre_tone_state[channel]
                 + (driven - self.pre_tone_state[channel]) * options.pre_tone
@@ -1096,27 +1174,21 @@ impl Processor {
 
     fn apply_post_end(&mut self, wet: Stereo, delayed_bass: Stereo) -> Stereo {
         let options = self.options;
-        let output_gain = 10.0_f32.powf((options.output - 0.5) * 48.0 / 20.0);
         let mut result = std::array::from_fn(|channel| {
             let sample = safe_audio(wet[channel]);
             self.post_tone_state[channel] = one_pole(
                 sample,
                 self.post_tone_state[channel],
-                tone_coefficient(options.post_tone, self.sample_rate),
+                self.coefficients.post_tone,
             );
             let tone = self.post_tone_state[channel]
                 + (sample - self.post_tone_state[channel]) * options.post_tone;
-            let low = one_pole(
-                tone,
-                self.bass_wet_state[channel],
-                bass_coefficient(options.bass_frequency, self.sample_rate),
-            );
+            let low = one_pole(tone, self.bass_wet_state[channel], self.coefficients.bass);
             self.bass_wet_state[channel] = low;
             let preserved = tone + options.bass * (delayed_bass[channel] - low);
             let dc = if options.dc_block {
                 let value = preserved - self.dc_previous_input[channel]
-                    + (-std::f32::consts::TAU * 5.0 / self.sample_rate.max(1) as f32).exp()
-                        * self.dc_previous_output[channel];
+                    + self.coefficients.dc * self.dc_previous_output[channel];
                 self.dc_previous_input[channel] = preserved;
                 self.dc_previous_output[channel] = value;
                 value
@@ -1125,7 +1197,7 @@ impl Processor {
                 self.dc_previous_output[channel] = preserved;
                 preserved
             };
-            dc * output_gain
+            dc * self.coefficients.output_gain
         });
         for sample in &mut result {
             if !sample.is_finite() {
@@ -1158,6 +1230,7 @@ impl Processor {
             return;
         }
         let left = self.options_slew_left as f32;
+        let previous = self.options;
         let target = self.target_options;
         self.options.morph = step(self.options.morph, target.morph, left);
         self.options.input = step(self.options.input, target.input, left);
@@ -1182,6 +1255,8 @@ impl Processor {
         if self.options_slew_left == 0 {
             self.options = target;
         }
+        self.coefficients
+            .update(&previous, &self.options, self.sample_rate);
     }
 
     fn transition_samples(&self) -> usize {
