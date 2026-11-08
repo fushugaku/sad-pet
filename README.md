@@ -108,6 +108,9 @@ with different per-timbre BPM values use the first timbre's tempo on recall.
   pitch and routing while later steps play, sharing the 32-note pool with MIDI
   and Notes tracks. Synth, Wavetable, mixed oscillators, Resynth and 303 all
   follow this routing; timbre controls and the outer FX remain shared.
+  Grains-only tracks play the loaded audio file polyphonically. Each note owns
+  its grain clock and ENV, so release tails cannot take later notes' grain
+  onsets. Grain density applies to each note; all clouds share the 128-grain pool.
   Oscillator pitch-offset lanes still modulate the selected source globally.
   Double-click a step's Gate knob to inherit the track's Gate setting.
   **Ratchet time** spreads a step's repeats across 1–8 clock pulses (×), up to

@@ -334,6 +334,7 @@ impl Engine {
         let (loudest_voice, voice_sum) = self.advance_modulators(sr);
         if self.frame.is_multiple_of(CONTROL_INTERVAL) {
             self.update_modulation();
+            self.advance_grain_overlap();
         }
         filter_slots::set_voice_gain(&mut self.filter_banks, loudest_voice);
         let bass = self.render_tb303();

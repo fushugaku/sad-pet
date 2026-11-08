@@ -83,6 +83,61 @@ fn reused_queued_and_stale_source_exchanges_do_not_touch_the_heap() {
     no_heap(|| assert!(engine.exchange_preset(&mut without_bass)));
 }
 
+#[test]
+fn private_grain_clocks_and_full_pool_note_onsets_do_not_touch_the_heap() {
+    for rack in [false, true] {
+        let mut preset = if rack {
+            Kind::Granular.rack_instrument().unwrap()
+        } else {
+            Preset::default()
+        };
+        preset.color_chain.clear();
+        preset.params.mix = 1.0;
+        preset.params.grains = 1.0;
+        preset.params.grain_size = 1.0;
+        preset.params.grain_attack = 1.0;
+        preset.sequencer.enabled = true;
+        preset.sequencer.tracks = [60, 72]
+            .into_iter()
+            .enumerate()
+            .map(|(i, pitch)| {
+                let mut track = sad_pet::sequence::Track {
+                    id: i as u32 + 1,
+                    oscillator_mask: 0,
+                    granular: true,
+                    env_gate: true,
+                    ..Default::default()
+                };
+                track.config[1] = 1;
+                track.config[3] = 32;
+                track.config[7] = 100;
+                track.config[8] = i as i32;
+                for step in &mut track.steps {
+                    step.pitch = pitch;
+                    step.gate = 3;
+                }
+                track
+            })
+            .collect();
+        let mut engine = Engine::new(8_000, Arc::new(SampleBuffer::demo(8_000)), preset);
+        engine.set_midi_gate(true);
+        engine.set_playing(true);
+        no_heap(|| {
+            for frame in 0..16_000 {
+                if frame == 10_000 {
+                    engine.apply_sequence_edits(&[Edit {
+                        track: 2,
+                        stage: None,
+                        field: 8,
+                        value: 0.0,
+                    }]);
+                }
+                assert!(engine.process_frame().into_iter().all(f32::is_finite));
+            }
+        });
+    }
+}
+
 /// Compare a bus born with mono-only resources with a dense engine switched
 /// to the same bus before rendering. Every frame must stay bit-identical.
 #[test]

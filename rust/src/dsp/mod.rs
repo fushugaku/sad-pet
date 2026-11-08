@@ -116,6 +116,34 @@ struct GroupClock {
     phase: f64,
     slew: interaction::PhaseSlew,
 }
+impl GroupClock {
+    /// A natural wrap or a forced event, with its position inside this frame.
+    fn advance(
+        &mut self,
+        step: f64,
+        sample_rate: f64,
+        command: interaction::PhaseCommand,
+    ) -> Option<(bool, f64)> {
+        self.slew.correct(self.phase, command, sample_rate);
+        let step = step + self.slew.next();
+        let hard = command.mode == crate::interaction::SyncMode::Hard
+            && command.event >= 0.0
+            && command.strength > 0.0;
+        let old = self.phase;
+        self.phase = if hard {
+            (command.phase + step * (1.0 - command.event)).rem_euclid(1.0)
+        } else {
+            (old + step).rem_euclid(1.0)
+        };
+        if hard {
+            Some((true, command.event))
+        } else if old + step >= 1.0 {
+            Some((false, ((1.0 - old) / step).clamp(0.0, 1.0)))
+        } else {
+            None
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default)]
 struct Grain {
@@ -170,6 +198,12 @@ struct Voice {
     gated: bool,
     value: f32,
     env_values: [f32; crate::preset::MODULATORS],
+    /// MainPitch clouds keep their own cadence through note release.
+    grain_clock: f64,
+    grain_group_clocks: [GroupClock; crate::grain_groups::GROUPS],
+    grain_birth_times: [f64; crate::grain_groups::GROUPS],
+    /// One pending natural birth per group, plus the ungrouped/dealer clock.
+    grain_pending: u8,
     loop_phase: f64,
     /// Counts note-ons, so Synth engine carriers restart with each note.
     generation: u32,
@@ -715,6 +749,7 @@ pub struct Engine {
     last_position: f32,
     grain_clock: f64,
     next_voice: usize,
+    next_grain_party: usize,
     /// Voices whose envelopes may still run, bit n for voice n. The frame
     /// loop advances only these, so idle voices cost nothing per frame.
     sounding: u64,
@@ -990,6 +1025,7 @@ impl Engine {
             last_position: 0.0,
             grain_clock: 1.0,
             next_voice: 0,
+            next_grain_party: 1,
             sounding: 0,
             maybe_active: 0,
             bend: [0.0; 16],
@@ -1707,6 +1743,11 @@ impl Engine {
             }
         }
         self.voices[index].on(self.preset.env_count as usize);
+        self.voices[index].grain_clock = 1.0;
+        self.voices[index].grain_group_clocks =
+            [GroupClock::default(); crate::grain_groups::GROUPS];
+        self.voices[index].grain_pending = 0;
+        self.voices[index].grain_birth_times = [0.0; crate::grain_groups::GROUPS];
         self.sounding |= 1 << index;
         self.maybe_active |= 1 << index;
         self.prefill_grains(index);
@@ -1782,10 +1823,14 @@ impl Engine {
                 v.sustained = false;
                 self.start_voice(index);
                 self.mod_note_on(0, pitch.round().clamp(0.0, 127.0) as u8, state.velocity);
-                self.grain_clock = 1.0;
                 index
             });
             let v = &mut self.voices[index];
+            if !v.granular && state.granular {
+                v.grain_clock = 1.0;
+                v.grain_group_clocks = [GroupClock::default(); crate::grain_groups::GROUPS];
+                v.grain_pending = 0;
+            }
             if v.env_gate && !state.env_gate {
                 v.drone_gain = if v.velocity > 0.0 {
                     v.value / v.velocity
@@ -2155,6 +2200,13 @@ impl Engine {
         self.onsets = 0;
         self.grain_clock = 1.0;
         self.group_clocks = [GroupClock::default(); 4];
+        self.next_grain_party = 1;
+        for voice in self.voices.iter_mut() {
+            voice.grain_clock = 1.0;
+            voice.grain_group_clocks = [GroupClock::default(); crate::grain_groups::GROUPS];
+            voice.grain_pending = 0;
+            voice.grain_birth_times = [0.0; crate::grain_groups::GROUPS];
+        }
         self.group_grains.reset();
         self.grain_feedback.reset();
     }
@@ -3197,6 +3249,10 @@ impl Engine {
             params.min_grains + (MAX_GRAINS as f32 - params.min_grains) * params.grains.powi(3);
         self.grain_step = self.grain_density as f64 / self.sample_rate as f64;
         self.bar_phase_step = params.bpm as f64 / (60.0 * self.sample_rate as f64 * self.bar_beats);
+    }
+    /// Integrate overlap only as audio time advances. Preset exchanges and
+    /// unchanged control refreshes must not alter the cloud's output gain.
+    fn advance_grain_overlap(&mut self) {
         let count = self.active_grains() as f32;
         self.overlap = fast::flush(
             self.overlap + (count - self.overlap) * if count > self.overlap { 0.9 } else { 0.2 },
@@ -3417,7 +3473,7 @@ impl Engine {
                 let v = &self.voices[i];
                 (synth && i == 0 && legacy)
                     || (i == 0 && shared_default)
-                    || ((v.active() || (bus && i == 0)) && v.granular() && (!synth || v.main_pitch))
+                    || ((v.active() || (bus && i == 0)) && v.granular() && !v.main_pitch && !synth)
             })?;
         self.next_voice = (voice + 1) % VOICES;
         let shared = voice == 0 && (synth || file_fallback);
@@ -3516,10 +3572,11 @@ impl Engine {
             [..self.modulated.interaction_controls.count]
             .iter()
             .any(|r| r.needs_group_clock());
-        if (self.preset.grain_scheduler != crate::interaction::Scheduler::Independent
-            && !clock_routes)
-            || !self.modulated.grain_groups.advanced
-        {
+        let independent = self.modulated.grain_groups.advanced
+            && (self.preset.grain_scheduler == crate::interaction::Scheduler::Independent
+                || clock_routes);
+        self.schedule_main_pitch_grains(enabled, independent);
+        if !independent {
             if enabled && self.grain_density > 0.0 && self.grain_clock >= 1.0 {
                 self.grain_clock = self.grain_clock.fract();
                 self.spawn();
@@ -3537,39 +3594,189 @@ impl Engine {
                 .graph
                 .input(25 + i, interaction::GLOBAL)
                 .clock;
-            let clock = &mut self.group_clocks[i];
-            clock
-                .slew
-                .correct(clock.phase, command, self.sample_rate as f64);
-            let step = self.grain_step * (group.share / total) as f64 + clock.slew.next();
-            let hard = command.mode == crate::interaction::SyncMode::Hard
-                && command.event >= 0.0
-                && command.strength > 0.0;
-            let old = clock.phase;
-            clock.phase = if hard {
-                (command.phase + step * (1.0 - command.event)).rem_euclid(1.0)
-            } else {
-                (old + step).rem_euclid(1.0)
-            };
-            let wrap = !hard && old + step >= 1.0;
-            if wrap {
-                let at = ((1.0 - old) / step).clamp(0.0, 1.0);
-                self.oscillator_engine.graph.event(
-                    25 + i,
-                    interaction::GLOBAL,
-                    crate::interaction::Event::GroupClockWrap,
-                    at,
-                    false,
-                );
-            }
-            if hard || wrap {
-                let at = if hard {
-                    command.event
-                } else {
-                    ((1.0 - old) / step).clamp(0.0, 1.0)
-                };
+            let event = self.group_clocks[i].advance(
+                self.grain_step * (group.share / total) as f64,
+                self.sample_rate as f64,
+                command,
+            );
+            if let Some((hard, at)) = event {
+                if !hard {
+                    self.oscillator_engine.graph.event(
+                        25 + i,
+                        interaction::GLOBAL,
+                        crate::interaction::Event::GroupClockWrap,
+                        at,
+                        false,
+                    );
+                }
                 self.spawn_group(i, hard, at);
             }
+        }
+    }
+
+    /// MainPitch notes own complete clouds. A released note's clock never
+    /// takes births away from the next note, or from another track.
+    fn schedule_main_pitch_grains(&mut self, enabled: bool, independent: bool) {
+        const DEALER: u8 = 1 << crate::grain_groups::GROUPS;
+        if !bits(self.sounding).any(|i| self.voices[i].main_pitch && self.voices[i].granular) {
+            return;
+        }
+        let synth = self.synth_grains();
+        let groups = self.modulated.grain_groups;
+        let total = groups.groups.iter().map(|g| g.share).sum::<f32>();
+        let mut parties = 0_u64;
+        for index in bits(self.sounding) {
+            let voice = &mut self.voices[index];
+            if !voice.main_pitch || !voice.granular || (!voice.held && voice.value <= 0.0) {
+                voice.grain_pending = 0;
+                continue;
+            }
+            parties |= 1 << index;
+            // A deferred natural birth starts at the beginning of the new
+            // frame; newly wrapped clocks retain their fractional timing.
+            voice.grain_birth_times.fill(0.0);
+            let onset = voice.grain_clock >= 1.0;
+            voice.grain_clock += self.grain_step;
+            if !enabled || self.grain_density <= 0.0 {
+                continue;
+            }
+            if groups.advanced && total <= 0.0 {
+                voice.grain_pending = 0;
+                continue;
+            }
+            if !independent {
+                // Switching from group clocks cancels their pending births.
+                voice.grain_pending &= DEALER;
+                if voice.grain_clock >= 1.0 {
+                    voice.grain_clock = voice.grain_clock.fract();
+                    voice.grain_pending |= DEALER;
+                }
+                continue;
+            }
+            voice.grain_clock = voice.grain_clock.fract();
+            self.oscillator_engine
+                .graph
+                .prepare_sequence_voice(index, voice.generation);
+            let mut group_event = false;
+            for (group, settings) in groups.groups.iter().enumerate() {
+                if settings.share <= 0.0 {
+                    self.voices[index].grain_pending &= !(1 << group);
+                    continue;
+                }
+                let command = self.oscillator_engine.graph.input(25 + group, index).clock;
+                let event = self.voices[index].grain_group_clocks[group].advance(
+                    self.grain_step * (settings.share / total) as f64,
+                    self.sample_rate as f64,
+                    command,
+                );
+                if let Some((hard, at)) = event {
+                    group_event = true;
+                    if hard {
+                        // Forced events belong to this frame; never queue their
+                        // fractional timestamp for a later natural birth.
+                        self.voices[index].grain_pending &= !(1 << group);
+                        self.spawn_grain_group((index, false), synth, 0, Some(group), true, at);
+                    } else {
+                        self.oscillator_engine.graph.event(
+                            25 + group,
+                            interaction::GLOBAL,
+                            crate::interaction::Event::GroupClockWrap,
+                            at,
+                            false,
+                        );
+                        let voice = &mut self.voices[index];
+                        if voice.grain_pending & (1 << group) == 0 {
+                            voice.grain_birth_times[group] = at;
+                        }
+                        voice.grain_pending |= 1 << group;
+                    }
+                }
+            }
+            // One first grain at note-on, including at 100% Grain ATTACK.
+            // A simultaneous group event already supplies that first birth.
+            if onset && !group_event {
+                self.voices[index].grain_pending |= DEALER;
+            }
+        }
+        if !enabled || self.grain_density <= 0.0 {
+            return;
+        }
+        // Reserve no heap queue and no catch-up burst. One pending birth per
+        // clock survives capacity pressure; rotating admission prevents a
+        // simultaneous chord from always favoring its lowest voice index.
+        let start = self.next_grain_party;
+        for offset in 0..VOICES {
+            let index = (start + offset) % VOICES;
+            if parties & (1 << index) == 0 {
+                continue;
+            }
+            let pending = self.voices[index].grain_pending;
+            if pending == 0 {
+                continue;
+            }
+            if self.live_grains == u128::MAX && !self.make_room_for_grain_onset(index) {
+                continue;
+            }
+            let clock = pending.trailing_zeros() as usize;
+            let chosen = (clock < crate::grain_groups::GROUPS).then_some(clock);
+            let at = chosen.map_or(0.0, |group| self.voices[index].grain_birth_times[group]);
+            if self.spawn_grain_group((index, false), synth, 0, chosen, false, at) {
+                self.voices[index].grain_pending &= !(1 << clock);
+                self.next_grain_party = (index + 1) % VOICES;
+            }
+        }
+    }
+
+    /// A new held note needs a first grain even when older clouds fill the
+    /// pool. Prefer the quietest grain of a released note, then a cloud with
+    /// multiple grains; never take another held note's only grain.
+    fn make_room_for_grain_onset(&mut self, voice: usize) -> bool {
+        if !self.voices[voice].held
+            || self
+                .live_grain_slots()
+                .any(|slot| !self.grains[slot].shared && self.grains[slot].voice == voice)
+        {
+            return false;
+        }
+        let mut counts = [0_u8; VOICES];
+        for slot in self.live_grain_slots() {
+            let grain = self.grains[slot];
+            counts[grain.voice] += 1;
+        }
+        let victim = self
+            .live_grain_slots()
+            .filter(|&slot| {
+                let grain = self.grains[slot];
+                let owner = self.voices[grain.voice];
+                grain.shared || (!owner.held && !owner.sustained) || counts[grain.voice] > 1
+            })
+            .min_by(|&a, &b| {
+                let rank = |slot: usize| {
+                    let grain = self.grains[slot];
+                    let owner = self.voices[grain.voice];
+                    let released = !grain.shared && !owner.held && !owner.sustained;
+                    let window = tables::grain_window(
+                        2.0 * grain.age as f32 / (grain.duration - 1) as f32,
+                        grain.shape,
+                    );
+                    let gain = if grain.shared {
+                        1.0
+                    } else {
+                        owner.value.max(0.0)
+                    };
+                    (!released, window * gain)
+                };
+                let (a_released, a_gain) = rank(a);
+                let (b_released, b_gain) = rank(b);
+                a_released.cmp(&b_released).then(a_gain.total_cmp(&b_gain))
+            });
+        if let Some(slot) = victim {
+            self.live_grains &= !(1 << slot);
+            self.wide_grains &= !(1 << slot);
+            self.group_sync_mask &= !(1 << slot);
+            true
+        } else {
+            false
         }
     }
 
@@ -3585,16 +3792,16 @@ impl Engine {
         chosen: Option<usize>,
         forced: bool,
         birth_time: f64,
-    ) {
+    ) -> bool {
         if !shared && !self.voices[voice].granular() {
-            return;
+            return false;
         }
         let slot = (!self.live_grains).trailing_zeros() as usize;
         if slot == MAX_GRAINS {
             if chosen.is_some() {
                 self.oscillator_engine.graph.dropped_births += 1;
             }
-            return;
+            return false;
         }
         // Since it began, the grain moved at its rate and the centre it
         // started from at the cursor's.
@@ -3602,12 +3809,12 @@ impl Engine {
         let groups = &self.modulated.grain_groups;
         let group = if groups.advanced {
             let Some(index) = chosen.or_else(|| self.group_grains.deal(groups)) else {
-                return;
+                return false;
             };
             // Explicit Clock/prefill births obey the same allocation gate as
             // the dealer, including when every group is Off.
             if groups.groups[index].share <= 0.0 {
-                return;
+                return false;
             }
             Some((index, groups.groups[index]))
         } else {
@@ -3615,7 +3822,7 @@ impl Engine {
         };
         // A group at 100% ATTACK grows from none: it plays no grains in.
         if age > 0 && group.is_some_and(|(_, g)| g.attack >= 1.0) {
-            return;
+            return false;
         }
         let p = &self.modulated.params;
         let note = self.voices[voice];
@@ -3691,7 +3898,7 @@ impl Engine {
         let seconds = self.layer_seconds(group.map(|(_, g)| g.size));
         let duration = (seconds * self.sample_rate as f32).round().max(4.0) as u32;
         if age >= duration {
-            return;
+            return false;
         }
         let center = match group {
             Some((_, g)) => self.layer_center(voice, g.position),
@@ -3751,7 +3958,7 @@ impl Engine {
                 .as_ref()
                 .and_then(|h| h.slot(note.owner))
             else {
-                return;
+                return false;
             };
             Some(index as u8)
         } else {
@@ -3794,6 +4001,7 @@ impl Engine {
                 forced,
             );
         }
+        true
     }
 
     /// How far the grains' centre moves each frame: the cursor's step, a bar
@@ -3858,8 +4066,17 @@ impl Engine {
             return;
         }
         let sr = self.sample_rate as f64;
-        // The round robin deals each sounding voice its share of the grains.
-        let voices = self.voices.iter().filter(|v| v.active()).count().max(1);
+        // Private sequence clouds retain the same density when notes overlap.
+        // The legacy cloud still deals its rate among its keyboard voices.
+        let voices = if self.voices[voice].main_pitch {
+            1
+        } else {
+            self.voices
+                .iter()
+                .filter(|v| !v.main_pitch && v.active())
+                .count()
+                .max(1)
+        };
         let interval = voices as f64 * sr / self.grain_density as f64;
         let longest = (0..=UNGROUPED)
             .filter(|&k| attacks[k] < 1.0)
@@ -4900,6 +5117,7 @@ impl Engine {
         }
         if self.frame.is_multiple_of(CONTROL_INTERVAL) {
             self.update_modulation();
+            self.advance_grain_overlap();
         }
         filter_slots::set_voice_gain(&mut self.filter_banks, loudest_voice);
         self.schedule_grains(!effects_only);

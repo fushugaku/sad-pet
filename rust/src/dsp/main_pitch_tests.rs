@@ -285,6 +285,232 @@ fn main_pitch_grains_route_selects_control_without_muting_the_file_cloud() {
 }
 
 #[test]
+fn file_grain_parties_start_each_note_while_previous_notes_release() {
+    for rack in [false, true] {
+        for midi_gate in [false, true] {
+            let mut preset = Preset::default();
+            preset.params.mix = 1.0;
+            preset.params.grains = 0.48;
+            preset.params.grain_size = 0.69;
+            preset.params.grain_attack = 1.0;
+            preset.params.cloud = 0.0;
+            preset.params.detune = 0.5;
+            if rack {
+                preset = preset.as_rack().unwrap();
+            }
+            let mut slow = track(1, 60, 0, true);
+            let mut fast = track(2, 72, 0, true);
+            slow.config[field::DIVISION] = 4;
+            fast.config[field::DIVISION] = 1;
+            slow.config[field::GATE] = 55;
+            fast.config[field::GATE] = 55;
+            slow.steps.fill(Stage {
+                pitch: 60,
+                gate: 2,
+                ..Stage::default()
+            });
+            fast.steps.fill(Stage {
+                pitch: 72,
+                gate: 2,
+                ..Stage::default()
+            });
+            // engine() sets a long ENV 1 release, so several old notes still
+            // overlap when the next pair of gates opens.
+            let mut e = engine(preset, vec![slow, fast]);
+            e.set_midi_gate(midi_gate);
+            let mut current = [None; 2];
+            let mut received = [false; 2];
+            let mut finished = [0; 2];
+            let mut missed = [0; 2];
+            for _ in 0..RATE as usize * 4 {
+                e.process_frame();
+                for party in 0..2 {
+                    let now = held(&e, (party + 1) as u32);
+                    if now != current[party] {
+                        if current[party].is_some() {
+                            finished[party] += 1;
+                            missed[party] += usize::from(!received[party]);
+                        }
+                        current[party] = now;
+                        received[party] = false;
+                    }
+                    if let Some(voice) = now {
+                        received[party] |= e
+                            .live_grain_list()
+                            .any(|grain| !grain.shared && grain.voice == voice);
+                    }
+                }
+            }
+            assert!(finished[0] >= 4 && finished[1] >= 16, "{finished:?}");
+            assert_eq!(
+                missed,
+                [0, 0],
+                "notes ended without their own grains: rack={rack}, midi_gate={midi_gate}, finished={finished:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn independent_grain_groups_start_both_parties_and_respect_all_groups_off() {
+    use crate::interaction::Scheduler;
+    for active in [false, true] {
+        for attack in [0.0, 1.0] {
+            let mut preset = Preset::default();
+            preset.params.mix = 1.0;
+            preset.params.grains = 0.2;
+            preset.grain_groups.advanced = true;
+            preset.grain_scheduler = Scheduler::Independent;
+            for (i, group) in preset.grain_groups.groups.iter_mut().enumerate() {
+                group.share = f32::from(active && i == 0);
+                group.attack = attack;
+            }
+            let mut e = engine(preset, vec![track(1, 60, 0, true), track(2, 72, 0, true)]);
+            let mut owners = [false; 2];
+            for _ in 0..RATE / 2 {
+                e.process_frame();
+                for grain in e.live_grain_list() {
+                    match e.voices[grain.voice].owner {
+                        1 => owners[0] = true,
+                        2 => owners[1] = true,
+                        _ => {}
+                    }
+                }
+                if !active {
+                    assert_eq!(e.active_grains(), 0, "attack={attack}");
+                }
+            }
+            if active {
+                assert_eq!(owners, [true, true], "attack={attack}");
+            }
+        }
+    }
+}
+
+#[test]
+fn file_grain_parties_share_the_full_grain_pool() {
+    let mut preset = Preset::default();
+    preset.params.mix = 1.0;
+    preset.params.grains = 1.0;
+    preset.params.grain_size = 1.0;
+    preset.params.grain_attack = 1.0;
+    preset.params.cloud = 0.0;
+    preset.params.detune = 0.5;
+    let mut first = track(1, 60, 0, true);
+    let mut second = track(2, 72, 0, true);
+    for lane in [&mut first, &mut second] {
+        lane.config[field::DIVISION] = 32;
+        for step in &mut lane.steps {
+            step.gate = 3;
+        }
+    }
+    let mut e = engine(preset, vec![first, second]);
+    advance(&mut e, RATE as usize * 2);
+    assert_eq!(e.active_grains(), MAX_GRAINS);
+    let mut owners = [0; 2];
+    for grain in e.live_grain_list() {
+        match e.voices[grain.voice].owner {
+            1 => owners[0] += 1,
+            2 => owners[1] += 1,
+            _ => {}
+        }
+    }
+    assert!(
+        owners[0] >= 32 && owners[1] >= 32,
+        "one of the parties was starved in a full grain pool: {owners:?}"
+    );
+}
+
+#[test]
+fn file_grain_new_party_can_start_when_the_pool_is_full() {
+    let mut preset = Preset::default();
+    preset.params.mix = 1.0;
+    preset.params.grains = 1.0;
+    preset.params.grain_size = 1.0;
+    preset.params.grain_attack = 1.0;
+    preset.params.cloud = 0.0;
+    preset.params.detune = 0.5;
+    let mut first = track(1, 60, 0, true);
+    first.config[field::DIVISION] = 32;
+    first.steps.fill(Stage {
+        pitch: 60,
+        gate: 3,
+        ..Stage::default()
+    });
+    let mut second = track(2, 72, 0, true);
+    second.config[field::DIVISION] = 1;
+    second.config[field::GATE] = 55;
+    second.config[field::MUTE] = 1;
+    second.steps.fill(Stage {
+        pitch: 72,
+        gate: 2,
+        ..Stage::default()
+    });
+    let mut e = engine(preset, vec![first, second]);
+    advance(&mut e, RATE as usize * 3 / 2);
+    assert_eq!(e.active_grains(), MAX_GRAINS);
+    e.apply_sequence_edits(&[Edit {
+        track: 2,
+        stage: None,
+        field: field::MUTE as u8,
+        value: 0.0,
+    }]);
+    let mut opened = false;
+    let mut heard = false;
+    for _ in 0..RATE / 2 {
+        e.process_frame();
+        if let Some(voice) = held(&e, 2) {
+            opened = true;
+            heard |= e
+                .live_grain_list()
+                .any(|grain| !grain.shared && grain.voice == voice);
+        } else if opened {
+            break;
+        }
+    }
+    assert!(opened, "the second gate never opened");
+    assert!(
+        heard,
+        "the second gate ended while all grain slots were occupied"
+    );
+}
+
+#[test]
+fn file_grain_control_refresh_does_not_advance_clouds_without_audio() {
+    for rack in [false, true] {
+        let mut preset = Preset::default();
+        preset.params.mix = 1.0;
+        preset.params.grains = 0.8;
+        preset.params.grain_size = 0.8;
+        preset.params.grain_attack = 1.0;
+        preset.params.cloud = 0.0;
+        preset.params.detune = 0.5;
+        if rack {
+            preset = preset.as_rack().unwrap();
+        }
+        let tracks = vec![track(1, 60, 0, true), track(2, 72, 0, true)];
+        let mut refreshed = engine(preset.clone(), tracks.clone());
+        let mut reference = engine(preset, tracks);
+        for _ in 0..1234 {
+            assert_eq!(
+                refreshed.process_frame().map(f32::to_bits),
+                reference.process_frame().map(f32::to_bits),
+            );
+        }
+        assert!(!refreshed.frame.is_multiple_of(CONTROL_INTERVAL));
+        assert!(refreshed.active_grains() > 0);
+        refreshed.refresh_parameters();
+        for frame in 0..1024 {
+            assert_eq!(
+                refreshed.process_frame().map(f32::to_bits),
+                reference.process_frame().map(f32::to_bits),
+                "unchanged control refresh changed audio: rack={rack}, frame={frame}"
+            );
+        }
+    }
+}
+
+#[test]
 fn separate_303_and_resynth_parties_change_the_actual_output() {
     let bass = instrument(Kind::Tb303);
     let first = track(1, 48, TB303_VCO, false);
@@ -334,6 +560,64 @@ fn spectral_energy(samples: &[f32], hz: f32) -> f32 {
         cos += sample * phase.cos();
     }
     (sin * sin + cos * cos).sqrt()
+}
+
+#[test]
+fn file_grain_parties_sound_together_and_release_independently() {
+    for rack in [false, true] {
+        for midi_gate in [false, true] {
+            let mut preset = Preset::default();
+            preset.params.mix = 1.0;
+            preset.params.grains = 0.9;
+            preset.params.grain_size = 0.8;
+            preset.params.cloud = 0.0;
+            preset.params.detune = 0.5;
+            if rack {
+                preset = preset.as_rack().unwrap();
+            }
+            let mut low = track(1, 60, 0, true);
+            let mut high = track(2, 72, 0, true);
+            for lane in [&mut low, &mut high] {
+                lane.config[field::DIVISION] = 32;
+                for step in &mut lane.steps {
+                    step.gate = 3;
+                }
+            }
+            let mut e = engine(preset, vec![low, high]);
+            let mut adjusted = e.preset.clone();
+            adjusted.envs[0].release = 0.0;
+            e.set_preset(adjusted);
+            e.set_midi_gate(midi_gate);
+            advance(&mut e, RATE as usize);
+            let (a, b) = (held(&e, 1).unwrap(), held(&e, 2).unwrap());
+            assert_ne!(a, b);
+            assert!(e.voices[a].value > 0.1 && e.voices[b].value > 0.1);
+            let before: Vec<_> = (0..RATE / 2).map(|_| e.process_frame()[0]).collect();
+            let before_low = spectral_energy(&before, 220.0);
+            let before_high = spectral_energy(&before, 440.0);
+            assert!(
+                before_low > 0.1 && before_high > 0.1,
+                "both pitches must sound: rack={rack}, midi_gate={midi_gate}, {before_low}/{before_high}"
+            );
+            e.apply_sequence_edits(&[Edit {
+                track: 1,
+                stage: None,
+                field: field::MUTE as u8,
+                value: 1.0,
+            }]);
+            advance(&mut e, RATE as usize / 2);
+            assert!(held(&e, 1).is_none());
+            assert!(held(&e, 2).is_some());
+            assert!(e.voices[b].value > 0.1);
+            let after: Vec<_> = (0..RATE / 2).map(|_| e.process_frame()[0]).collect();
+            let after_low = spectral_energy(&after, 220.0);
+            let after_high = spectral_energy(&after, 440.0);
+            assert!(
+                after_low < before_low * 0.2 + 0.05 && after_high > before_high * 0.2,
+                "muting one party changed the other: rack={rack}, midi_gate={midi_gate}, before={before_low}/{before_high}, after={after_low}/{after_high}"
+            );
+        }
+    }
 }
 
 #[test]

@@ -73,6 +73,7 @@ jobs:
           node wasm/test-waveshaper-ui.mjs
           node wasm/test-neuropolis.mjs
           node wasm/test-polyphony.mjs
+          node wasm/test-polyphony.mjs dist/web sad_pet.simd.wasm
           node wasm/test-source-fx-modulation.mjs
           node wasm/test-timbres.mjs
           node wasm/test-tempo.mjs
