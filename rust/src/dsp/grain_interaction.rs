@@ -80,6 +80,12 @@ impl Runtime {
     pub fn reading(&self, slot: usize) -> bool {
         self.states[slot].read_started
     }
+    /// The sync FIR has never started or has already been fully retired.
+    #[inline]
+    pub fn can_read_direct(&self, slot: usize) -> bool {
+        let state = &self.states[slot];
+        !state.read_started && state.read_blend == 0.0
+    }
     /// `rate` already includes the finite Soft Sync phase trajectory. A hard
     /// reset changes only this trajectory, without touching the grain's life.
     pub fn read(
@@ -200,6 +206,22 @@ impl Runtime {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn direct_reads_wait_for_sync_fade_and_filter_retirement() {
+        let mut runtime = Runtime::new(8000);
+        assert!(runtime.can_read_direct(0));
+        runtime.read(0, 10.0, 1.0, Some((0.371, 4.0)), true, |p| [p as f32; 2]);
+        assert!(!runtime.can_read_direct(0));
+        runtime.read(0, 10.0, 1.0, None, false, |p| [p as f32; 2]);
+        assert_eq!(runtime.states[0].read_blend, 0.0);
+        assert!(
+            !runtime.can_read_direct(0),
+            "the old FIR still needs retirement"
+        );
+        let (frame, end) = runtime.read(0, 10.0, 1.0, None, false, |p| [p as f32; 2]);
+        assert_eq!((frame, end), ([10.0; 2], 11.0));
+        assert!(runtime.can_read_direct(0));
+    }
     #[test]
     fn fractional_reset_preserves_the_remainder_and_does_not_change_grain_life() {
         let mut r = Runtime::new(48000);

@@ -136,6 +136,46 @@ pub fn transfer(options: Options, x: f32) -> f32 {
     a + (b - a) * options.morph
 }
 
+#[derive(Clone, Copy)]
+struct CurveEvaluationPlan {
+    curves: [Curve; 4],
+    slots: [usize; 4],
+    count: usize,
+}
+
+impl CurveEvaluationPlan {
+    fn new(curves: [Curve; 4]) -> Self {
+        let mut unique_curves = [Curve::Radias; 4];
+        let mut slots = [0; 4];
+        let mut count = 0;
+        for (index, curve) in curves.into_iter().enumerate() {
+            let mut slot = 0;
+            while slot < count && unique_curves[slot] != curve {
+                slot += 1;
+            }
+            if slot == count {
+                unique_curves[slot] = curve;
+                count += 1;
+            }
+            slots[index] = slot;
+        }
+        Self {
+            curves: unique_curves,
+            slots,
+            count,
+        }
+    }
+
+    #[inline]
+    fn evaluate(&self, x: f32, knee: f32, points: &[f32; 17]) -> [f32; 4] {
+        let mut unique_values = [0.0; 4];
+        for (index, curve) in self.curves.iter().take(self.count).enumerate() {
+            unique_values[index] = curve_transfer(*curve, x, knee, points);
+        }
+        std::array::from_fn(|index| unique_values[self.slots[index]])
+    }
+}
+
 fn custom_transfer(x: f32, points: &[f32; 17]) -> f32 {
     let position = (x.clamp(-1.0, 1.0) + 1.0) * 8.0;
     let index = (position.floor() as usize).min(15);
@@ -422,15 +462,28 @@ impl Down2 {
             // Halfband even taps are zero except the center. Keep the
             // nonzero additions in their original order so the FIR's PCM,
             // phase and latency stay unchanged.
+            let mut index = if self.cursor >= 2 {
+                self.cursor - 2
+            } else {
+                self.cursor + FIR_TAPS - 2
+            };
             for lag in (1..FIR_CENTER).step_by(2) {
-                let index = (self.cursor + FIR_TAPS - 1 - lag) % FIR_TAPS;
                 sum += HALF_BAND[lag] * self.history[index];
+                index = if index >= 2 {
+                    index - 2
+                } else {
+                    index + FIR_TAPS - 2
+                };
             }
-            let index = (self.cursor + FIR_TAPS - 1 - FIR_CENTER) % FIR_TAPS;
-            sum += HALF_BAND[FIR_CENTER] * self.history[index];
+            let center_index = if index == FIR_TAPS - 1 { 0 } else { index + 1 };
+            sum += HALF_BAND[FIR_CENTER] * self.history[center_index];
             for lag in (FIR_CENTER + 1..FIR_TAPS).step_by(2) {
-                let index = (self.cursor + FIR_TAPS - 1 - lag) % FIR_TAPS;
                 sum += HALF_BAND[lag] * self.history[index];
+                index = if index >= 2 {
+                    index - 2
+                } else {
+                    index + FIR_TAPS - 2
+                };
             }
             Some(sum)
         } else {
@@ -1074,9 +1127,10 @@ impl Processor {
         };
 
         let curve_mix = self.curve_mix();
+        let curve_plan = self.curve_evaluation_plan();
         for channel in &mut shaped {
             for sample in channel.iter_mut().take(factor) {
-                *sample = self.apply_curve_sample(*sample, curve_mix);
+                *sample = self.apply_curve_sample(*sample, curve_mix, &curve_plan);
             }
         }
         self.finish_curve_frame();
@@ -1086,7 +1140,10 @@ impl Processor {
 
     fn apply_curve_host(&mut self, frame: Stereo) -> Stereo {
         let mix = self.curve_mix();
-        let result = std::array::from_fn(|channel| self.apply_curve_sample(frame[channel], mix));
+        let curve_plan = self.curve_evaluation_plan();
+        let result = std::array::from_fn(|channel| {
+            self.apply_curve_sample(frame[channel], mix, &curve_plan)
+        });
         self.finish_curve_frame();
         result
     }
@@ -1099,31 +1156,18 @@ impl Processor {
         }
     }
 
-    fn apply_curve_sample(&self, x: f32, curve_mix: f32) -> f32 {
-        let old_a = curve_transfer(
+    fn curve_evaluation_plan(&self) -> CurveEvaluationPlan {
+        CurveEvaluationPlan::new([
             self.curve_from[0],
-            x,
-            self.options.knee,
-            &self.options.points,
-        );
-        let old_b = curve_transfer(
             self.curve_from[1],
-            x,
-            self.options.knee,
-            &self.options.points,
-        );
-        let new_a = curve_transfer(
             self.target_options.curve,
-            x,
-            self.options.knee,
-            &self.options.points,
-        );
-        let new_b = curve_transfer(
             self.target_options.curve_b,
-            x,
-            self.options.knee,
-            &self.options.points,
-        );
+        ])
+    }
+
+    fn apply_curve_sample(&self, x: f32, curve_mix: f32, plan: &CurveEvaluationPlan) -> f32 {
+        let [old_a, old_b, new_a, new_b] =
+            plan.evaluate(x, self.options.knee, &self.options.points);
         let a = old_a + (new_a - old_a) * curve_mix;
         let b = old_b + (new_b - old_b) * curve_mix;
         a + (b - a) * self.options.morph
@@ -1157,6 +1201,8 @@ impl Processor {
                 .clamp(0.0, 8.0);
             let envelope_gain = if let Some(gain) = external_gain {
                 gain
+            } else if options.envelope == 0.5 {
+                1.0
             } else {
                 let envelope_octaves = (options.envelope - 0.5) * 4.0;
                 2.0_f32.powf(envelope_octaves * (0.5 - self.envelope_state[channel]))
@@ -1432,6 +1478,204 @@ pub use crate::waveshaper::FilterShapers as FilterShaperSettings;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn scalar_down2_push(
+        history: &mut [f32; FIR_TAPS],
+        cursor: &mut usize,
+        phase: &mut bool,
+        sample: f32,
+    ) -> Option<f32> {
+        history[*cursor] = sample;
+        *cursor += 1;
+        if *cursor == FIR_TAPS {
+            *cursor = 0;
+        }
+        let output = if !*phase {
+            let mut sum = 0.0;
+            for lag in (1..FIR_CENTER).step_by(2) {
+                let index = (*cursor + FIR_TAPS - 1 - lag) % FIR_TAPS;
+                sum += HALF_BAND[lag] * history[index];
+            }
+            let index = (*cursor + FIR_TAPS - 1 - FIR_CENTER) % FIR_TAPS;
+            sum += HALF_BAND[FIR_CENTER] * history[index];
+            for lag in (FIR_CENTER + 1..FIR_TAPS).step_by(2) {
+                let index = (*cursor + FIR_TAPS - 1 - lag) % FIR_TAPS;
+                sum += HALF_BAND[lag] * history[index];
+            }
+            Some(sum)
+        } else {
+            None
+        };
+        *phase = !*phase;
+        output
+    }
+
+    fn original_curve_sample(
+        curves: [Curve; 4],
+        x: f32,
+        knee: f32,
+        points: &[f32; 17],
+        curve_mix: f32,
+        morph: f32,
+    ) -> f32 {
+        let old_a = curve_transfer(curves[0], x, knee, points);
+        let old_b = curve_transfer(curves[1], x, knee, points);
+        let new_a = curve_transfer(curves[2], x, knee, points);
+        let new_b = curve_transfer(curves[3], x, knee, points);
+        let a = old_a + (new_a - old_a) * curve_mix;
+        let b = old_b + (new_b - old_b) * curve_mix;
+        a + (b - a) * morph
+    }
+
+    fn original_neutral_front_end(processor: &mut Processor, input: Stereo) -> Stereo {
+        let options = processor.options;
+        let bias = (options.bias - 0.5) * 0.5;
+        std::array::from_fn(|channel| {
+            let raw = safe_audio(input[channel] * processor.coefficients.input_gain + bias);
+            let magnitude = raw.abs();
+            let coefficient = if magnitude > processor.envelope_state[channel] {
+                processor.coefficients.attack
+            } else {
+                processor.coefficients.release
+            };
+            processor.envelope_state[channel] = (magnitude
+                + coefficient * (processor.envelope_state[channel] - magnitude))
+                .clamp(0.0, 8.0);
+            let envelope_octaves = (options.envelope - 0.5) * 4.0;
+            let envelope_gain =
+                2.0_f32.powf(envelope_octaves * (0.5 - processor.envelope_state[channel]));
+            let driven = raw * envelope_gain;
+            processor.pre_tone_state[channel] = one_pole(
+                driven,
+                processor.pre_tone_state[channel],
+                processor.coefficients.pre_tone,
+            );
+            processor.pre_tone_state[channel]
+                + (driven - processor.pre_tone_state[channel]) * options.pre_tone
+        })
+    }
+
+    #[test]
+    fn down2_index_walk_matches_the_original_scalar_tap_walk_bit_for_bit() {
+        let impulse_positions = [0, 1, 64, 65, 127, 512, 1023, 4097, 8192];
+        let mut random_state = 0x91e1_0da5_u32;
+        let mut inputs = Vec::with_capacity(FIR_TAPS * 192);
+        for index in 0..(FIR_TAPS * 192) {
+            let sample = if impulse_positions.contains(&index) {
+                if index % 2 == 0 { 1.0 } else { -0.75 }
+            } else if index < FIR_TAPS * 2 {
+                if index % 2 == 0 { 0.0 } else { -0.0 }
+            } else if index % 113 == 0 {
+                -0.0
+            } else {
+                random_state ^= random_state << 13;
+                random_state ^= random_state >> 17;
+                random_state ^= random_state << 5;
+                ((random_state >> 8) as i32 as f32 - 8_388_608.0) / 8_388_608.0
+            };
+            inputs.push(sample);
+        }
+
+        let mut actual = Down2::default();
+        let mut history = [0.0; FIR_TAPS];
+        let mut cursor = 0;
+        let mut phase = false;
+        for (index, sample) in inputs.into_iter().enumerate() {
+            let expected = scalar_down2_push(&mut history, &mut cursor, &mut phase, sample);
+            match (actual.push(sample), expected) {
+                (Some(actual), Some(expected)) => assert_eq!(
+                    actual.to_bits(),
+                    expected.to_bits(),
+                    "Down2 output mismatch at input {index}"
+                ),
+                (None, None) => {}
+                _ => panic!("Down2 phase mismatch at input {index}"),
+            }
+        }
+    }
+
+    #[test]
+    fn curve_reuse_plan_matches_four_original_evaluations_bit_for_bit() {
+        let patterns = [
+            [Curve::Radias, Curve::Radias, Curve::Radias, Curve::Radias],
+            [Curve::SoftClip, Curve::Diode, Curve::SoftClip, Curve::Diode],
+            [Curve::Custom, Curve::Custom, Curve::Tanh, Curve::Custom],
+            [Curve::Tanh, Curve::Radias, Curve::Diode, Curve::SoftClip],
+            [Curve::Rectify, Curve::Radias, Curve::Rectify, Curve::Custom],
+        ];
+        let inputs = [0.0, -0.0, -1.0, -0.9375, -0.125, 0.125, 0.73, 1.0];
+        let curve_mixes = [-0.0, 0.0, 0.125, 0.5, 0.999, 1.0];
+        let morphs = [-0.0, 0.0, 0.25, 0.5, 1.0];
+        let knees = [0.0, 0.37, 1.0];
+        let mut points = std::array::from_fn(|index| index as f32 / 8.0 - 1.0);
+        points[2] = -0.71;
+        points[9] = 0.82;
+        points[15] = -0.13;
+
+        let mut processor = Processor::new(48_000);
+        processor.options.points = points;
+        for curves in patterns {
+            processor.curve_from = [curves[0], curves[1]];
+            processor.target_options.curve = curves[2];
+            processor.target_options.curve_b = curves[3];
+            let plan = processor.curve_evaluation_plan();
+            for knee in knees {
+                processor.options.knee = knee;
+                for morph in morphs {
+                    processor.options.morph = morph;
+                    for curve_mix in curve_mixes {
+                        for x in inputs {
+                            let actual = processor.apply_curve_sample(x, curve_mix, &plan);
+                            let expected =
+                                original_curve_sample(curves, x, knee, &points, curve_mix, morph);
+                            assert_eq!(
+                                actual.to_bits(),
+                                expected.to_bits(),
+                                "curves={curves:?}, x={x:?}, knee={knee:?}, curve_mix={curve_mix:?}, morph={morph:?}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn neutral_envelope_follower_fastpath_matches_powf_and_keeps_follower_state() {
+        let options = Options {
+            envelope: 0.5,
+            ..Options::default()
+        };
+        let mut actual = Processor::new(48_000);
+        let mut expected = Processor::new(48_000);
+        actual.reset_for_note(WaveshaperMode::Drive, 0.5, options, 60.0);
+        expected.reset_for_note(WaveshaperMode::Drive, 0.5, options, 60.0);
+        let frames = [
+            [0.0, -0.0],
+            [0.75, -0.5],
+            [0.25, 0.125],
+            [-0.875, 0.375],
+            [0.0, -0.0],
+        ];
+        for frame in frames {
+            let actual_output = actual.apply_front_end(frame);
+            let expected_output = original_neutral_front_end(&mut expected, frame);
+            for channel in 0..2 {
+                assert_eq!(
+                    actual_output[channel].to_bits(),
+                    expected_output[channel].to_bits()
+                );
+                assert_eq!(
+                    actual.envelope_state[channel].to_bits(),
+                    expected.envelope_state[channel].to_bits()
+                );
+                assert_eq!(
+                    actual.pre_tone_state[channel].to_bits(),
+                    expected.pre_tone_state[channel].to_bits()
+                );
+            }
+        }
+    }
 
     #[test]
     fn custom_transfer_interpolates_in_seventeen_even_steps_and_clamps_ends() {

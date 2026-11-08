@@ -6078,8 +6078,29 @@ impl Engine {
                 frame
             };
             let (mut frame, next_position) =
-                self.grain_interaction
-                    .read(slot, grain.position, rate, reset, phase_read, read);
+                if !phase_read && self.grain_interaction.can_read_direct(slot) {
+                    let next_position = grain.position + rate;
+                    let frame = if whole_file && grain.history.is_none() && !fading && !overdub {
+                        if wide & (1 << slot) != 0 {
+                            self.wide_frames[slot]
+                        } else if !mip.is_wide() {
+                            let position = range.start as f64
+                                + sample::wrap_position(
+                                    grain.position - range.start as f64,
+                                    range.len() as f64,
+                                );
+                            sample.read_level(position, mip.level.min(top_level))
+                        } else {
+                            read(grain.position)
+                        }
+                    } else {
+                        read(grain.position)
+                    };
+                    (frame, next_position)
+                } else {
+                    self.grain_interaction
+                        .read(slot, grain.position, rate, reset, phase_read, read)
+                };
             if birth > 0.0 {
                 frame = frame.map(|v| v * (1.0 - birth) as f32);
             }
@@ -6089,7 +6110,7 @@ impl Engine {
                 } else {
                     grain.playback_phase + rate / span
                 };
-                grain.playback_phase = grain.playback_phase.rem_euclid(1.0);
+                grain.playback_phase = sample::wrap_position(grain.playback_phase, 1.0);
             }
             // A group's grains take its amp envelope in place of the window.
             let grouped = if group_graph {

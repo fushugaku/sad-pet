@@ -1316,7 +1316,12 @@ fn interpolated<const N: usize, const MONO: bool>(
         // Rolling histories use logical coordinates beyond the physical ring.
         // Once the complete footprint is inside the logical selection, only
         // the physical seam can prevent a contiguous read.
-        let i = first as usize % data.len();
+        let first = first as usize;
+        let i = if first < data.len() {
+            first
+        } else {
+            first % data.len()
+        };
         // One bounds check for the taps instead of one per frame.
         if let Some(frames) = data.get(i..i + N) {
             return interpolate::<N, MONO>(frames.try_into().unwrap(), fraction, rows);
@@ -1354,22 +1359,68 @@ mod preparation_tests {
         let data: Vec<Stereo> = (0..127)
             .map(|i| [(i as f32 * 0.37).sin(), (i as f32 * 0.19).cos()])
             .collect();
-        for range in [0..127, 90..217, 254..381, 100..107] {
-            for base in range.clone() {
-                for fraction in [0.0, 0.31, 0.999] {
-                    let first = base as i64 - (HALF - 1);
-                    let frames = std::array::from_fn(|i| {
-                        data[(range.start
-                            + (first + i as i64 - range.start as i64).rem_euclid(range.len() as i64)
-                                as usize)
-                            % data.len()]
-                    });
-                    let expected = interpolate::<TAPS, false>(&frames, fraction, &KERNEL);
-                    assert_eq!(
-                        interpolated::<TAPS, false>(&data, base as i64, fraction, &range, &KERNEL),
-                        expected
-                    );
+        fn check<const N: usize, const MONO: bool>(data: &[Stereo], rows: &[[f32; N]]) {
+            for range in [0..127, 90..217, 254..381, 100..107] {
+                for base in range.clone() {
+                    for fraction in [-0.0, 0.0, 1.0 / PHASES as f64, 0.31, 0.999] {
+                        let first = base as i64 - (N as i64 / 2 - 1);
+                        let frames = std::array::from_fn(|i| {
+                            data[(range.start
+                                + (first + i as i64 - range.start as i64)
+                                    .rem_euclid(range.len() as i64)
+                                    as usize)
+                                % data.len()]
+                        });
+                        let expected = interpolate::<N, MONO>(&frames, fraction, rows);
+                        let actual =
+                            interpolated::<N, MONO>(data, base as i64, fraction, &range, rows);
+                        assert_eq!(actual.map(f32::to_bits), expected.map(f32::to_bits));
+                    }
                 }
+            }
+        }
+        check::<TAPS, false>(&data, &KERNEL);
+        check::<TAPS, true>(&data, &KERNEL);
+        for rows in WIDE.taps16.chunks_exact(ROWS) {
+            check::<16, false>(&data, rows);
+            check::<16, true>(&data, rows);
+        }
+        for rows in WIDE.taps20.chunks_exact(ROWS) {
+            check::<20, false>(&data, rows);
+            check::<20, true>(&data, rows);
+        }
+        for rows in WIDE.taps24.chunks_exact(ROWS) {
+            check::<24, false>(&data, rows);
+            check::<24, true>(&data, rows);
+        }
+    }
+    #[test]
+    fn grain_phase_wrap_preserves_remainder_bits_at_boundaries() {
+        for position in [
+            0.0,
+            -0.0,
+            f64::from_bits(1),
+            -f64::from_bits(1),
+            0.371,
+            -0.371,
+            f64::from_bits(1.0_f64.to_bits() - 1),
+            1.0,
+            -1.0,
+            f64::from_bits(1.0_f64.to_bits() + 1),
+            2.0,
+            -2.0,
+            1e12 + 0.25,
+            -1e12 - 0.25,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NAN,
+        ] {
+            let expected = position.rem_euclid(1.0);
+            let actual = wrap_position(position, 1.0);
+            if expected.is_nan() {
+                assert!(actual.is_nan());
+            } else {
+                assert_eq!(actual.to_bits(), expected.to_bits(), "{position}");
             }
         }
     }
